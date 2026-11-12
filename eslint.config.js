@@ -84,14 +84,20 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
 
-  // Server: api, worker, db, e2e
+  // Server: api, worker, core, db, e2e
   {
-    files: ['apps/api/**/*.ts', 'apps/worker/**/*.ts', 'packages/db/**/*.ts', 'e2e/**/*.ts'],
+    files: [
+      'apps/api/**/*.ts',
+      'apps/worker/**/*.ts',
+      'packages/core/**/*.ts',
+      'packages/db/**/*.ts',
+      'e2e/**/*.ts',
+    ],
     languageOptions: { globals: globals.node },
   },
   {
     // Log wajib lewat pino (redaksi rahasia) — bukan console.
-    files: ['apps/api/src/**/*.ts', 'apps/worker/src/**/*.ts'],
+    files: ['apps/api/src/**/*.ts', 'apps/worker/src/**/*.ts', 'packages/core/src/**/*.ts'],
     rules: { 'no-console': 'error' },
   },
 
