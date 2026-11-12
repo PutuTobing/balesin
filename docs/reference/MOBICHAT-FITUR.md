@@ -120,22 +120,25 @@ username WhatsApp, profil bisnis (kategori, alamat, website, email), Validate Co
 ---
 
 ## Usulan tambahan untuk PRD Balesin (dari temuan)
-1. **Pesan interaktif** (tombol ≤3, list ≤10) dari agen & bot — ULAN bisa memakainya.
-2. Filter inbox **status sesi** (Open/Expiring/Expired/Broadcast) + hitung mundur.
-3. Pesan otomatis saat di-assign ke manusia/bot; **jam kerja bot** terpisah.
+
+Status: **sudah diproses 13 Nov 2026** (rincian di `DECISIONS.md`). Semua butir diterima ke PRD;
+butir 4 dan 7 diterima sebagian (lihat tanda per butir).
+1. **Pesan interaktif** (tombol ≤3, list ≤10) dari agen & bot — ULAN bisa memakainya. **[DITERIMA: PRD 3.3, PENTING]**
+2. Filter inbox **status sesi** (Open/Expiring/Expired/Broadcast) + hitung mundur. **[DITERIMA: PRD 3.3, WAJIB]**
+3. Pesan otomatis saat di-assign ke manusia/bot; **jam kerja bot** terpisah. **[DITERIMA: PRD 3.4, PENTING]**
 4. **Departemen** + akses "departemen sendiri" (mis. Teknisi hanya lihat tiket/percakapan
-   departemen Teknisi) + batas channel per user + tag default per user.
-5. Alokasi agen: ambil sendiri / round-robin + **kapasitas per agen**.
-6. **CSAT** setelah percakapan selesai.
+   departemen Teknisi) + batas channel per user + tag default per user. **[DITERIMA: PRD 3.6/3.8, PENTING; batas channel & tag default per user ditunda NANTI]**
+5. Alokasi agen: ambil sendiri / round-robin + **kapasitas per agen**. **[DITERIMA: PRD 3.8, PENTING]**
+6. **CSAT** setelah percakapan selesai. **[DITERIMA: PRD 3.3, PENTING]**
 7. Task: beberapa board, tampilan Kanban/List/Calendar/Summary, custom fields, tautan ke
-   kontak & percakapan, **API task** untuk bot.
+   kontak & percakapan, **API task** untuk bot. **[DITERIMA: PRD 3.6, PENTING; Kalender & Ringkasan NANTI]**
 8. Template: parameter bernama, preset template industri **ISP** (tagihan, isolir,
-   pembayaran berhasil, tiket perbaikan, gangguan massal) — keunggulan jual Balesin.
-9. Broadcast: tag percakapan otomatis untuk penerima.
-10. Halaman nomor WhatsApp: **quality rating**, status, edit profil bisnis.
-11. Laporan: first response time, waktu tunggu, waktu resolusi, kinerja agen & bot.
+   pembayaran berhasil, tiket perbaikan, gangguan massal) — keunggulan jual Balesin. **[DITERIMA: PRD 3.5, PENTING]**
+9. Broadcast: tag percakapan otomatis untuk penerima. **[DITERIMA: PRD 3.5, PENTING]**
+10. Halaman nomor WhatsApp: **quality rating**, status, edit profil bisnis. **[DITERIMA: PRD 3.2, PENTING]**
+11. Laporan: first response time, waktu tunggu, waktu resolusi, kinerja agen & bot. **[DITERIMA: PRD 3.7, PENTING]**
 12. **API untuk aplikasi billing** mengirim template ke nomor pelanggan (lihat
-    `API-MOBICHAT-MAPPING.md` §3) — saat ini ini sumber pengiriman terbanyak Sky Tech.
+    `API-MOBICHAT-MAPPING.md` §3) — saat ini ini sumber pengiriman terbanyak Sky Tech. **[DITERIMA: PRD 3.4, WAJIB]**
 
 Tidak perlu ditiru: integrasi iklan (Meta/TikTok/Google Ads), Customers B2B, target
 revenue, Threads/Google Reviews.

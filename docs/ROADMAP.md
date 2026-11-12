@@ -14,7 +14,7 @@ Orkestrator mengerjakan dari atas ke bawah. Tandai `[x]` saat Definition of Done
 - [ ] GitHub Actions: lint, typecheck, test, `pnpm audit`
 - [ ] Hook Claude Code (`.claude/settings.json`): format + typecheck setelah edit
 - [x] Riset: susun `docs/reference/MOBICHAT-FITUR.md` dari screenshot di `docs/reference/mobichat/`
-- [ ] Riset: masukkan "Usulan tambahan" dari `MOBICHAT-FITUR.md` ke `PRD.md` (catat di `DECISIONS.md`)
+- [x] Riset: masukkan "Usulan tambahan" dari `MOBICHAT-FITUR.md` ke `PRD.md` (catat di `DECISIONS.md`)
 
 ## Fase 1 — Akun, peran, keamanan
 - [ ] Wizard setup pertama (token setup dari env) → Owner + organisasi + branding + SMTP
@@ -27,9 +27,10 @@ Orkestrator mengerjakan dari atas ke bawah. Tandai `[x]` saat Definition of Done
 
 ## Fase 2 — WhatsApp & Inbox inti
 - [ ] Wizard koneksi WhatsApp manual (teks dari `SETUP-META.md`), enkripsi kredensial, tes koneksi
+- [ ] Halaman nomor WhatsApp: quality rating, status, batas pesan, edit profil bisnis dari UI
 - [ ] Webhook masuk: verifikasi, signature, idempotensi, worker
 - [ ] Kontak & percakapan otomatis, jendela 24 jam
-- [ ] Inbox real-time: tab Semua/Bot/Belum dilayani/Dilayani/Selesai, cari, filter
+- [ ] Inbox real-time: tab Semua/Bot/Belum dilayani/Dilayani/Selesai, cari, filter (termasuk filter status sesi + hitung mundur)
 - [ ] Ruang chat: teks, gambar, dokumen, audio/VN, video, lokasi, reaksi, balas-kutip, status centang
 - [ ] Assign/ambil/alihkan/antrian terbuka, tandai selesai
 - [ ] Panel detail: info, tag, catatan, media, log
@@ -43,6 +44,7 @@ Orkestrator mengerjakan dari atas ke bawah. Tandai `[x]` saat Definition of Done
 - [x] Mapping pengiriman template dari aplikasi billing (§4)
 - [ ] Endpoint mode tangkap `/compat/<vendor>/*` + adaptor vendor Qiscus untuk aplikasi billing (butuh BUTUH-TOBING #10)
 - [ ] Lapisan kompatibel MobiChat (`/api/public/*` prioritas, `/api/bot/reply*` kedua) + field `mobichat_base_url`/`mobichat_api_key` di webhook + tes kontrak
+- [ ] Pesan interaktif (tombol/daftar) dari agen dan bot + penerusan balasan tombol ke bot
 - [ ] Bot eksternal: kirim event, handoff, saklar bot
 - [ ] API native v1 + API key bertingkat scope + OpenAPI `/api/docs`
 - [ ] Webhook keluar bertanda tangan + allowlist IP privat + riwayat & kirim ulang
@@ -53,12 +55,16 @@ Orkestrator mengerjakan dari atas ke bawah. Tandai `[x]` saat Definition of Done
 - [ ] Estimasi biaya, persetujuan > ambang, jadwal, throttle, jeda/batal
 - [ ] Anti-dobel, rem darurat, alarm Telegram
 - [ ] Laporan kampanye
+- [ ] Tag percakapan otomatis untuk penerima broadcast
+- [ ] Preset template industri (ISP dahulu) sebagai draf siap ajukan
 
 ## Fase 5 — CRM, tiket, laporan
 - [ ] Kontak: atribut kustom, impor/ekspor, gabung duplikat
-- [ ] Tiket/tugas untuk teknisi + akses terbatas peran Teknisi
-- [ ] Dashboard laporan + **biaya pesan Meta** (kuota 1.000 layanan gratis/nomor/bulan, perkiraan biaya)
-- [ ] Jam kerja, pesan otomatis, alokasi agen round-robin
+- [ ] Tiket/tugas untuk teknisi + akses terbatas peran Teknisi; multi-board, Kanban/Daftar, atribut kustom, API tiket untuk bot
+- [ ] Departemen + akses "departemen sendiri"
+- [ ] CSAT otomatis setelah percakapan selesai
+- [ ] Dashboard laporan (waktu respons pertama/tunggu/resolusi, kinerja agen & bot) + **biaya pesan Meta** (kuota 1.000 layanan gratis/nomor/bulan, perkiraan biaya)
+- [ ] Jam kerja (tim & bot terpisah), pesan otomatis (termasuk saat di-assign), alokasi agen ambil sendiri/round-robin + kapasitas per agen
 
 ## Fase 6 — Channel tambahan
 - [ ] Telegram Bot
