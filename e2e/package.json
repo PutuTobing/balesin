@@ -1,0 +1,17 @@
+{
+  "name": "@balesin/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "e2e": "playwright test",
+    "screenshots": "playwright test --config playwright.screenshots.config.ts",
+    "install-browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}

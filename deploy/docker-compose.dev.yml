@@ -1,0 +1,46 @@
+# Lingkungan pengembangan lokal: hanya Postgres + Redis.
+# Aplikasi (api, worker, web) dijalankan di host dengan `pnpm dev`.
+#
+#   pnpm db:up     nyalakan      pnpm db:down   matikan (data tetap ada di volume)
+#
+# Port hanya dibuka ke 127.0.0.1 — tidak terlihat dari jaringan (SECURITY.md §9).
+name: balesin-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: balesin
+      POSTGRES_PASSWORD: balesin
+      POSTGRES_DB: balesin
+      TZ: UTC
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Membuat database balesin_test untuk tes integrasi (hanya saat volume baru).
+      - ./dev/init-test-db.sql:/docker-entrypoint-initdb.d/10-init-test-db.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U balesin -d balesin']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--requirepass', 'balesin', '--appendonly', 'yes']
+    ports:
+      - '127.0.0.1:6379:6379'
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', '-a', 'balesin', '--no-auth-warning', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+  redisdata:

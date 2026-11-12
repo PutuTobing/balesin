@@ -1,0 +1,25 @@
+packages:
+  - apps/*
+  - packages/*
+  - e2e
+
+# Versi bersama dikunci di satu tempat (SECURITY.md §9: kunci versi dependency).
+catalog:
+  '@types/node': 22.20.5
+  pino: 10.4.0
+  tsup: 9.0.0
+  tsx: 4.23.15
+  # TypeScript 7 belum didukung typescript-eslint (<6.1.0) — lihat docs/DECISIONS.md.
+  typescript: 6.0.3
+  vitest: 5.1.0
+  zod: 4.6.7
+
+# Skrip install pihak ketiga diblokir kecuali yang disetujui di sini (rantai pasok).
+allowBuilds:
+  '@embedded-postgres/darwin-arm64': true
+  '@embedded-postgres/darwin-x64': true
+  '@embedded-postgres/linux-arm64': true
+  '@embedded-postgres/linux-x64': true
+  '@embedded-postgres/windows-x64': true
+  esbuild: true
+  msgpackr-extract: false

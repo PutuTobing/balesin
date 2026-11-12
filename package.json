@@ -1,0 +1,39 @@
+{
+  "name": "balesin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.18.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./apps/*\" dev",
+    "build": "pnpm -r build",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
+    "db:up": "docker compose -f deploy/docker-compose.dev.yml up -d --wait",
+    "db:down": "docker compose -f deploy/docker-compose.dev.yml down",
+    "db:local": "pnpm --filter @balesin/db local",
+    "db:generate": "pnpm --filter @balesin/db generate",
+    "db:migrate": "pnpm --filter @balesin/db migrate",
+    "e2e": "pnpm --filter @balesin/e2e e2e",
+    "screenshots": "pnpm --filter @balesin/e2e screenshots"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.14.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "eslint-plugin-react-refresh": "0.5.7",
+    "globals": "17.14.0",
+    "prettier": "3.9.10",
+    "typescript": "catalog:",
+    "typescript-eslint": "8.72.2"
+  }
+}
