@@ -19,7 +19,6 @@
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
     "db:up": "docker compose -f deploy/docker-compose.dev.yml up -d --wait",
     "db:down": "docker compose -f deploy/docker-compose.dev.yml down",
-    "db:local": "pnpm --filter @balesin/db local",
     "db:generate": "pnpm --filter @balesin/db generate",
     "db:migrate": "pnpm --filter @balesin/db migrate",
     "e2e": "pnpm --filter @balesin/e2e e2e",

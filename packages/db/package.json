@@ -10,8 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "generate": "drizzle-kit generate",
-    "migrate": "tsx src/migrate.ts",
-    "local": "tsx scripts/local-postgres.ts"
+    "migrate": "tsx src/migrate.ts"
   },
   "dependencies": {
     "drizzle-orm": "0.45.4",
@@ -22,7 +21,6 @@
     "@types/node": "catalog:",
     "@types/pg": "8.23.1",
     "drizzle-kit": "0.31.11",
-    "embedded-postgres": "16.15.0-beta.19",
     "tsx": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

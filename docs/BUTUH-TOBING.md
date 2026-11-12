@@ -14,3 +14,4 @@ Hal yang tidak bisa dikerjakan agent sendiri. Tandai ✅ setelah selesai.
 | 8 | Telegram bot token + chat ID grup SKYTECH untuk alarm | Fase 4 | ⏳ |
 | 9 | Cek di pengaturan SKY BILL / BILL SURYA / BILL BAYU: bagaimana mereka terhubung ke MobiChat (URL API, API key/akun "User Billing") dan apakah URL-nya bisa diganti | Migrasi pengiriman template billing ke Balesin (`API-MOBICHAT-MAPPING.md` §4) | ✅ 13 Nov (ditelusuri Claude) |
 | 10 | Saat Fase 3: izinkan gateway cadangan "WA BUSINES" (ID 2) di SKY BILL diubah ke vendor Qiscus + domain Balesin staging untuk tes tangkap format | Adaptor billing → Balesin | ⏳ |
+| 11 | Pasang WSL supaya Docker Desktop bisa menyala di PC pengembangan (`wsl --install` sebagai Administrator, lalu restart) | Lingkungan dev lokal (Fase 0) | ✅ 13 Nov (WSL terpasang, Docker Desktop jalan) |
