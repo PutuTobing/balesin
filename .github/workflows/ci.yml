@@ -20,6 +20,8 @@ env:
   DATABASE_URL: postgres://balesin:balesin@localhost:5432/balesin
   DATABASE_URL_TEST: postgres://balesin:balesin@localhost:5432/balesin_test
   REDIS_URL: redis://:balesin@localhost:6379
+  # DB 15 khusus tes integrasi antrian supaya tidak menyentuh data dev.
+  REDIS_URL_TEST: redis://:balesin@localhost:6379/15
 
 jobs:
   kualitas:
