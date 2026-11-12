@@ -1,0 +1,109 @@
+/* Ilustrasi keadaan kosong: hanya warna token, jadi otomatis ikut tema. */
+.frame {
+  overflow: visible;
+}
+
+.card {
+  fill: var(--surface);
+  stroke: var(--line);
+  stroke-width: 1.5;
+}
+
+.cardBack {
+  fill: var(--surface);
+  stroke: var(--line);
+  stroke-width: 1.5;
+  opacity: 0.6;
+}
+
+.soft {
+  fill: var(--surface-2);
+}
+
+.bar {
+  fill: var(--line);
+}
+
+.tint {
+  fill: var(--primary-soft);
+}
+
+.tintBar {
+  fill: var(--primary);
+  opacity: 0.3;
+}
+
+.primary {
+  fill: var(--primary);
+}
+
+.accent {
+  fill: var(--accent);
+}
+
+.muted {
+  fill: var(--ink-2);
+  opacity: 0.55;
+}
+
+.stroke {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1.5;
+}
+
+.guide {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1.5;
+  stroke-dasharray: 2 4;
+  stroke-linecap: round;
+}
+
+.dashed {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 5;
+  stroke-linecap: round;
+}
+
+.link {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 4;
+  stroke-linecap: round;
+  opacity: 0.7;
+}
+
+.lens {
+  fill: var(--surface);
+  stroke: var(--primary);
+  stroke-width: 2.5;
+}
+
+.handle {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+}
+
+/* Lencana galat. Cincinnya sewarna latar halaman (ilustrasi ini selalu di atas --bg). */
+.badge {
+  fill: var(--danger);
+  stroke: var(--bg);
+  stroke-width: 4;
+}
+
+.badgeMark {
+  fill: none;
+  stroke: var(--surface);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+}
+
+.badgeDot {
+  fill: var(--surface);
+}

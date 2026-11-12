@@ -1,0 +1,356 @@
+/* ---------- Kerangka tiga panel ---------- */
+
+.inbox {
+  position: relative;
+  display: grid;
+  flex: 1;
+  grid-template-columns: var(--size-list) minmax(0, 1fr);
+  min-height: 0;
+}
+
+.inbox[data-detail='open'] {
+  grid-template-columns: var(--size-list) minmax(0, 1fr) var(--size-detail);
+}
+
+/* ---------- Daftar chat ---------- */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.listInner {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.listHeader {
+  flex: none;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  height: var(--size-bar);
+  padding: 0 var(--space-16);
+}
+
+.title {
+  font-size: var(--text-20);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-title);
+  letter-spacing: var(--tracking-title);
+}
+
+.searchRow {
+  padding: 0 var(--space-16) var(--space-8);
+}
+
+.tabs {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding: 0 var(--space-16);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tab {
+  flex: none;
+  height: var(--size-touch);
+  /* Garis aktif menimpa garis bawah deretan tab. */
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.tab:hover {
+  color: var(--ink);
+}
+
+.tab[data-state='active'] {
+  border-bottom-color: var(--primary);
+  color: var(--ink);
+}
+
+.tab:focus-visible {
+  outline-offset: -2px;
+}
+
+.listBody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.listBody:focus-visible {
+  outline-offset: -2px;
+}
+
+/* ---------- Ruang chat ---------- */
+
+.chat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+}
+
+.showDetail {
+  position: absolute;
+  top: calc((var(--size-bar) - var(--size-control)) / 2);
+  right: var(--space-12);
+}
+
+/* ---------- Panel detail ---------- */
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.detailHeader {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  height: var(--size-bar);
+  padding: 0 var(--space-12) 0 var(--space-16);
+}
+
+.detailTitle {
+  font-size: var(--text-16);
+}
+
+.detailEmpty {
+  padding: var(--space-4) var(--space-16) var(--space-16);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+/* ---------- Kerangka memuat ---------- */
+
+.skeletonRoot {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.skeletonSearch {
+  height: var(--size-control);
+}
+
+.skeletonTabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+  height: var(--size-touch);
+  padding: 0 var(--space-16);
+  border-bottom: 1px solid var(--line);
+}
+
+.skeletonTab {
+  width: 3rem;
+  height: var(--space-12);
+}
+
+.skeletonRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  height: 4.5rem;
+  padding: 0 var(--space-16);
+}
+
+.skeletonAvatar {
+  flex: none;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-pill);
+}
+
+.skeletonLines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.skeletonName {
+  width: 46%;
+  height: var(--space-12);
+}
+
+.skeletonSnippet {
+  width: 82%;
+  height: var(--space-8);
+}
+
+.skeletonTime {
+  flex: none;
+  align-self: flex-start;
+  width: 2rem;
+  height: var(--space-8);
+  margin-top: var(--space-16);
+}
+
+.skeletonThread {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: var(--space-12);
+  min-height: 0;
+  padding: var(--space-24);
+  overflow: hidden;
+}
+
+.skeletonBubble {
+  height: 2.75rem;
+  border-radius: var(--radius-bubble);
+}
+
+.skeletonBubbleIn {
+  align-self: flex-start;
+}
+
+.skeletonBubbleOut {
+  align-self: flex-end;
+}
+
+.w30 {
+  width: 30%;
+}
+
+.w40 {
+  width: 40%;
+}
+
+.w55 {
+  width: 55%;
+}
+
+.tall {
+  height: 4.5rem;
+}
+
+.skeletonComposer {
+  flex: none;
+  height: var(--size-touch);
+  margin: 0 var(--space-24) var(--space-24);
+  border-radius: var(--radius-card);
+}
+
+.skeletonProfile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-24) var(--space-16);
+  border-bottom: 1px solid var(--line);
+}
+
+.skeletonPortrait {
+  width: 4rem;
+  height: 4rem;
+  border-radius: var(--radius-pill);
+}
+
+.skeletonHeading {
+  width: 50%;
+  height: var(--space-16);
+}
+
+.skeletonSub {
+  width: 36%;
+  height: var(--space-8);
+}
+
+.skeletonSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding: var(--space-16);
+}
+
+.skeletonLabel {
+  width: 28%;
+  height: var(--space-8);
+}
+
+.skeletonField {
+  width: 100%;
+  height: var(--space-32);
+}
+
+/* ---------- Tablet: dua kolom, detail melayang ---------- */
+
+@media (max-width: 1023px) {
+  .inbox,
+  .inbox[data-detail='open'] {
+    grid-template-columns: min(var(--size-list), 50%) minmax(0, 1fr);
+  }
+
+  .detail {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2;
+    width: min(var(--size-detail), 100%);
+    box-shadow: var(--shadow-2);
+  }
+}
+
+/* ---------- HP: daftar saja ---------- */
+
+@media (max-width: 640px) {
+  .inbox,
+  .inbox[data-detail='open'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .list {
+    border-right: 0;
+  }
+
+  .chat,
+  .detail {
+    display: none;
+  }
+
+  .skeletonSearch {
+    height: var(--size-touch);
+  }
+}
+
+/* Target sentuh ≥ 44px juga untuk tab berlabel pendek ("Bot"). */
+@media (max-width: 640px), (pointer: coarse) {
+  .tab {
+    min-width: var(--size-touch);
+  }
+}

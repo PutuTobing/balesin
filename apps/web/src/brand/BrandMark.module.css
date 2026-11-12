@@ -1,0 +1,19 @@
+.mark {
+  display: block;
+  width: var(--space-32);
+  height: var(--space-32);
+  object-fit: contain;
+}
+
+.tile {
+  fill: var(--primary);
+}
+
+.bubble {
+  fill: var(--on-primary);
+}
+
+.dot {
+  fill: var(--accent);
+  stroke: var(--primary);
+}

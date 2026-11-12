@@ -1,0 +1,64 @@
+.screen {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: var(--space-24);
+  overflow-y: auto;
+}
+
+/* EmptyState tidak ikut melar: detail teknis menempel tepat di bawahnya. */
+.screen > :first-child {
+  flex: none;
+  padding-bottom: var(--space-24);
+}
+
+.details {
+  width: 100%;
+  max-width: 44ch;
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-align: center;
+}
+
+.summary {
+  display: inline-block;
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-input);
+  cursor: pointer;
+  list-style: none;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.summary::-webkit-details-marker {
+  display: none;
+}
+
+.summary:hover {
+  color: var(--ink);
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .summary {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--size-touch);
+  }
+}
+
+.message {
+  margin: var(--space-8) 0 0;
+  padding: var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--text-12);
+  line-height: var(--leading-text);
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

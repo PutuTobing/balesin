@@ -1,0 +1,64 @@
+.menu {
+  z-index: 40;
+  min-width: 12rem;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  animation: appear var(--duration-fast) var(--ease-out);
+}
+
+.heading {
+  padding: var(--space-8) var(--space-8) var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: var(--size-control);
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-input);
+  color: var(--ink);
+  font-size: var(--text-14);
+  cursor: pointer;
+  user-select: none;
+}
+
+.option[data-highlighted] {
+  outline: none;
+  background: var(--surface-2);
+}
+
+.option[data-state='checked'] {
+  font-weight: var(--weight-semibold);
+}
+
+.optionIcon {
+  color: var(--ink-2);
+}
+
+.optionLabel {
+  flex: 1;
+}
+
+.check {
+  color: var(--primary);
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+    transform: translateX(calc(var(--space-4) * -1));
+  }
+}
+
+@media (pointer: coarse) {
+  .option {
+    height: var(--size-touch);
+  }
+}

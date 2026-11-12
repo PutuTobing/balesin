@@ -1,0 +1,96 @@
+.page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: var(--size-bar);
+  padding: 0 var(--space-24);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.title {
+  width: 7rem;
+  height: var(--space-24);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-24);
+}
+
+.card {
+  max-width: 60rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  height: 4rem;
+  padding: 0 var(--space-16);
+}
+
+.row + .row {
+  border-top: 1px solid var(--line);
+}
+
+.avatar {
+  flex: none;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-pill);
+}
+
+.lines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.lineShort {
+  width: 32%;
+  height: var(--space-12);
+}
+
+.lineLong {
+  width: 58%;
+  height: var(--space-8);
+}
+
+.meta {
+  flex: none;
+  width: 3.5rem;
+  height: var(--space-8);
+}
+
+@media (max-width: 640px) {
+  .header {
+    padding: 0 var(--space-16);
+  }
+
+  .body {
+    padding: var(--space-16);
+  }
+
+  .lineShort {
+    width: 48%;
+  }
+
+  .lineLong {
+    width: 80%;
+  }
+}

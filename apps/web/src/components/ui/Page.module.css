@@ -1,0 +1,69 @@
+.page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-16);
+  height: var(--size-bar);
+  padding: 0 var(--space-24);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.back {
+  display: none;
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-20);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: var(--space-24);
+  overflow-y: auto;
+}
+
+@media (max-width: 640px) {
+  .header {
+    gap: var(--space-4);
+    padding: 0 var(--space-16);
+  }
+
+  /* Tombol kembali 44px; ikonnya jatuh tepat di garis tepi 16px. */
+  .header:has(.back) {
+    padding-left: var(--space-4);
+  }
+
+  .back {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: var(--size-touch);
+    height: var(--size-touch);
+    border-radius: var(--radius-input);
+    color: var(--ink);
+  }
+
+  .back:focus-visible {
+    outline-offset: -2px;
+  }
+
+  .body {
+    padding: var(--space-16);
+  }
+}

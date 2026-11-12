@@ -1,0 +1,219 @@
+.shell {
+  display: grid;
+  grid-template-areas: 'nav main';
+  grid-template-columns: calc(var(--size-rail) + env(safe-area-inset-left, 0px)) minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
+}
+
+.skip {
+  position: absolute;
+  top: var(--space-8);
+  left: var(--space-8);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  min-height: var(--size-touch);
+  padding: 0 var(--space-16);
+  border-radius: var(--radius-input);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: var(--weight-semibold);
+  transform: translateY(-200%);
+}
+
+.skip:focus {
+  transform: none;
+}
+
+.main {
+  display: flex;
+  grid-area: main;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Fokus terprogram setelah pindah halaman: tidak perlu cincin di seluruh area konten. */
+.main:focus,
+.main:focus-visible {
+  outline: none;
+}
+
+/* ---------- Rail (lebar > 640px) ---------- */
+
+.nav {
+  display: flex;
+  grid-area: nav;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-16);
+  min-height: 0;
+  /* Tanda merek berpusat di garis tengah header halaman. */
+  padding: calc((var(--size-bar) - var(--size-touch)) / 2) 0 var(--space-12)
+    env(safe-area-inset-left, 0px);
+  border-right: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.brand {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--size-touch);
+  height: var(--size-touch);
+  border-radius: var(--radius-card);
+}
+
+.items {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 0;
+}
+
+/* Item "footer" pertama mendorong dirinya dan sesudahnya ke dasar rail. */
+.item:not(.footer) + .footer {
+  margin-top: auto;
+}
+
+.more {
+  display: none;
+}
+
+.link {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--size-touch);
+  height: var(--size-touch);
+  border-radius: var(--radius-card);
+  color: var(--ink-2);
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.link:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.link[data-active] {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+/* Penanda aktif: batang di tepi kiri rail. */
+.link[data-active]::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: calc((var(--size-rail) - var(--size-touch)) / -2);
+  width: 3px;
+  height: var(--size-icon-md);
+  border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
+  background: var(--primary);
+  transform: translateY(-50%);
+}
+
+.label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------- Navigasi bawah (HP) ---------- */
+
+@media (max-width: 640px) {
+  .shell {
+    grid-template-areas:
+      'main'
+      'nav';
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .nav {
+    flex-direction: row;
+    align-items: stretch;
+    gap: 0;
+    padding: 0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px)
+      env(safe-area-inset-left, 0px);
+    border-top: 1px solid var(--line);
+    border-right: 0;
+    background: var(--surface);
+  }
+
+  .brand,
+  .secondary,
+  .footer {
+    display: none;
+  }
+
+  .items {
+    flex-direction: row;
+    align-items: stretch;
+    gap: 0;
+  }
+
+  .item {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .more {
+    display: block;
+  }
+
+  .link {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-4);
+    width: 100%;
+    height: var(--size-bar);
+    border-radius: 0;
+  }
+
+  .link:hover,
+  .link[data-active] {
+    background: none;
+  }
+
+  .link[data-active] {
+    color: var(--primary);
+  }
+
+  .link:focus-visible {
+    outline-offset: -2px;
+  }
+
+  /* Penanda aktif pindah ke tepi atas item. */
+  .link[data-active]::before {
+    top: 0;
+    left: 50%;
+    width: var(--space-24);
+    height: 3px;
+    border-radius: 0 0 var(--radius-pill) var(--radius-pill);
+    transform: translateX(-50%);
+  }
+
+  .label {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+    font-size: var(--text-12);
+    font-weight: var(--weight-semibold);
+    line-height: var(--leading-title);
+  }
+}

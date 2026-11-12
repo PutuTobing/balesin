@@ -1,0 +1,70 @@
+.empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-24);
+  min-height: 0;
+  /* Sedikit di atas tengah: terasa seimbang secara optis. */
+  padding: var(--space-24) var(--space-24) var(--space-48);
+  text-align: center;
+}
+
+.illustration {
+  width: 10rem;
+}
+
+.illustration svg {
+  width: 100%;
+  height: auto;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  max-width: 44ch;
+}
+
+.title {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+
+.body {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  text-wrap: pretty;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-8);
+}
+
+.compact {
+  gap: var(--space-16);
+}
+
+.top {
+  justify-content: flex-start;
+  padding-top: var(--space-48);
+}
+
+.compact .text {
+  gap: var(--space-4);
+  max-width: 34ch;
+}
+
+.compact .title {
+  font-size: var(--text-14);
+}
+
+.compact .body {
+  font-size: var(--text-13);
+}

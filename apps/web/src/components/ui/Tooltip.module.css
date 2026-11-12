@@ -1,0 +1,19 @@
+.tooltip {
+  z-index: 50;
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-input);
+  background: var(--ink);
+  color: var(--bg);
+  font-size: var(--text-12);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-title);
+  box-shadow: var(--shadow-1);
+  user-select: none;
+  animation: appear var(--duration-fast) var(--ease-out);
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+  }
+}
