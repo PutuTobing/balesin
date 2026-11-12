@@ -5,22 +5,23 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
-    "build": "tsup",
+    "build": "tsup && node ../../packages/core/scripts/check-bundle-deps.mjs",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run"
   },
   "dependencies": {
+    "@balesin/core": "workspace:*",
     "@balesin/db": "workspace:*",
     "@balesin/shared": "workspace:*",
     "bullmq": "6.7.2",
-    "ioredis": "6.0.0",
+    "ioredis": "catalog:",
     "pino": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "pino-pretty": "13.2.0",
+    "pino-pretty": "catalog:",
     "tsup": "catalog:",
     "tsx": "catalog:",
     "typescript": "catalog:",
