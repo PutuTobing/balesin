@@ -107,6 +107,7 @@ Tugas BELUM selesai sampai semua ini benar:
 | `docs/ROADMAP.md` | Fase & tugas berurutan + kriteria selesai |
 | `docs/SECURITY.md` | Standar keamanan wajib |
 | `docs/DESIGN.md` | Design system + rubrik penilaian layar |
+| `docs/PENGATURAN-UI.md` | Aturan wajib: semua koneksi/konfigurasi diisi lewat UI, bukan kode/`.env` |
 | `docs/API-N8N.md` | API & webhook, termasuk mode kompatibel MobiChat |
 | `docs/SETUP-META.md` | Teks wizard koneksi WhatsApp (dipakai di UI) |
 | `docs/BRANDING-PROMPTS.md` | Prompt gambar Kak Sky & logo |
