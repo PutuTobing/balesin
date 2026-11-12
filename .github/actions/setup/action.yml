@@ -1,0 +1,16 @@
+# Node 22 + pnpm (versi dari field packageManager) + cache store + install terkunci.
+name: Siapkan Node dan pnpm
+description: Checkout sudah dilakukan sebelumnya; langkah ini memasang dependency
+runs:
+  using: composite
+  steps:
+    # pnpm/action-setup v6.1.1; versi pnpm dibaca dari packageManager di package.json
+    - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115
+    # actions/setup-node v7.1.0
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      with:
+        node-version-file: .nvmrc
+        cache: pnpm
+    - name: Pasang dependency (lockfile dibekukan)
+      shell: bash
+      run: pnpm install --frozen-lockfile

@@ -1,0 +1,32 @@
+# Menyalakan Postgres 16 + Redis 7 untuk tes, meniru deploy/docker-compose.dev.yml.
+# Kredensial "balesin" hanya untuk CI lokal, bukan rahasia produksi.
+name: Infrastruktur tes
+description: Postgres 16 (database balesin + balesin_test) dan Redis 7 dengan password
+runs:
+  using: composite
+  steps:
+    - name: Nyalakan Postgres dan Redis
+      shell: bash
+      run: |
+        docker run -d --name pg -p 127.0.0.1:5432:5432 \
+          -e POSTGRES_USER=balesin -e POSTGRES_PASSWORD=balesin -e POSTGRES_DB=balesin -e TZ=UTC \
+          -v "$GITHUB_WORKSPACE/deploy/dev/init-test-db.sql:/docker-entrypoint-initdb.d/10-init-test-db.sql:ro" \
+          postgres:16-alpine
+        docker run -d --name redis -p 127.0.0.1:6379:6379 \
+          redis:7-alpine redis-server --requirepass balesin --appendonly no
+    - name: Tunggu layanan siap
+      shell: bash
+      run: |
+        for i in $(seq 1 30); do
+          if docker exec pg pg_isready -U balesin -d balesin >/dev/null 2>&1 \
+            && docker exec pg psql -U balesin -d balesin_test -c 'select 1' >/dev/null 2>&1 \
+            && docker exec redis redis-cli -a balesin --no-auth-warning ping 2>/dev/null | grep -q PONG; then
+            echo "Postgres (balesin, balesin_test) dan Redis siap."
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "::error::Postgres/Redis tidak siap dalam 60 detik"
+        docker logs pg || true
+        docker logs redis || true
+        exit 1

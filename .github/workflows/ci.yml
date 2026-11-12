@@ -1,0 +1,104 @@
+# CI Balesin: format, lint, typecheck, tes, build, audit, E2E.
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# Batalkan run lama di branch/PR yang sama.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: 'true'
+  # Kredensial dev/CI lokal (bukan rahasia produksi); cocok dengan .env.example.
+  DATABASE_URL: postgres://balesin:balesin@localhost:5432/balesin
+  DATABASE_URL_TEST: postgres://balesin:balesin@localhost:5432/balesin_test
+  REDIS_URL: redis://:balesin@localhost:6379
+
+jobs:
+  kualitas:
+    name: Format, lint, typecheck, build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      # actions/checkout v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm build
+
+  tes:
+    name: Tes unit + integrasi
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/infra
+      - run: pnpm test
+
+  audit:
+    name: Audit dependency
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      # Semua temuan tampil di log, tidak menggagalkan.
+      - name: Ringkasan semua temuan (informasi)
+        run: pnpm audit || true
+      # Hanya temuan tinggi/kritis yang menggagalkan job.
+      - name: Gagalkan jika ada temuan tinggi/kritis
+        run: pnpm audit --audit-level high
+
+  e2e:
+    name: E2E Playwright (Chromium)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/infra
+      # Belum ada berkas tes = lewati dengan peringatan jelas; kalau ada, kegagalan tetap menggagalkan job.
+      - name: Cek berkas tes E2E
+        id: cek
+        run: |
+          if [ -n "$(find e2e/tests -type f \( -name '*.spec.ts' -o -name '*.test.ts' \) 2>/dev/null | head -n 1)" ]; then
+            echo "ada=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ada=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Belum ada tes di e2e/tests, langkah E2E dilewati."
+          fi
+      - name: Pasang Chromium
+        if: steps.cek.outputs.ada == 'true'
+        run: pnpm --filter @balesin/e2e exec playwright install --with-deps chromium
+      - name: Jalankan E2E
+        if: steps.cek.outputs.ada == 'true'
+        run: pnpm e2e
+      - name: Unggah laporan saat gagal
+        if: failure() && steps.cek.outputs.ada == 'true'
+        # actions/upload-artifact v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: laporan-e2e
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7
+          if-no-files-found: ignore
