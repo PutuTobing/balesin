@@ -1,7 +1,7 @@
 # Progress
 
 **Fase aktif:** 1 — Akun, peran, keamanan
-**Terakhir diperbarui:** 2026-11-13 (Fase 0 selesai)
+**Terakhir diperbarui:** 2026-11-13 (Fase 0 selesai, CI hijau; Fase 1 baru dimulai)
 
 ## Selesai
 
@@ -26,7 +26,17 @@
   lewat eslint); `--prod` bersih. Diterima tanpa override.
 
 ## Sedang dikerjakan
-- (belum ada) — mulai Fase 1 dari butir pertama di `ROADMAP.md`.
+- **Fase 1 butir 1–2, sisi backend (BELUM SELESAI, belum di-commit).** Agent `backend` dihentikan
+  di tengah jalan pada 13 Nov karena Tobing istirahat. Perubahan setengah jadi ada di working
+  tree (`git status`): modul `auth`, `audit`, `branding`, `email-settings` di `apps/api`,
+  rate limit, cookie, skema `organizations`/`users`, Mailpit di compose dev dan CI.
+  **Jangan di-commit atau di-push apa adanya**: belum lolos typecheck/tes. Sesi berikutnya:
+  lanjutkan agent backend (atau jalankan agent baru dengan brief yang sama dan minta ia memeriksa
+  `git diff` dulu), baru kemudian frontend (layar wizard + login), QA, kritikus, security.
+- Jangan menjalankan `pnpm db:migrate` ke database dev sampai migrasi Fase 1 final.
+- Gambar merek dari Tobing sudah ada di `assets/brand/` (belum di-commit, nama berkas belum
+  sesuai `BRANDING-PROMPTS.md`): rapikan nama, buat ulang logo sebagai SVG bersih di
+  `apps/web/src/assets/`, ganti placeholder, lalu minta `kritikus-desain` menilai ulang.
 
 ## Catatan untuk sesi berikutnya
 

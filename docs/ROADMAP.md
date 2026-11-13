@@ -11,7 +11,7 @@ Orkestrator mengerjakan dari atas ke bawah. Tandai `[x]` saat Definition of Done
 - [x] Drizzle + migrasi awal (organizations, users, sessions, audit_logs)
 - [x] Web: Vite + router + design token (`DESIGN.md`) + font self-host + mode gelap + shell layout desktop/HP
 - [x] Vitest + Playwright terpasang; skrip screenshot 390px/1440px untuk kritikus
-- [~] GitHub Actions: lint, typecheck, test, `pnpm audit` (workflow selesai dan lolos actionlint; run pertama di GitHub perlu dicek — BUTUH-TOBING #12)
+- [x] GitHub Actions: lint, typecheck, test, `pnpm audit`
 - [x] Hook Claude Code (`.claude/settings.json`): format + typecheck setelah edit
 - [x] Riset: susun `docs/reference/MOBICHAT-FITUR.md` dari screenshot di `docs/reference/mobichat/`
 - [x] Riset: masukkan "Usulan tambahan" dari `MOBICHAT-FITUR.md` ke `PRD.md` (catat di `DECISIONS.md`)
