@@ -1,10 +1,13 @@
 import { Link, Navigate } from '@tanstack/react-router';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, LogOut } from 'lucide-react';
 import { BrandMark } from '../../brand/BrandMark';
 import { useBrand } from '../../brand/brand';
 import { moreMenuItems } from '../../components/shell/nav-items';
+import { UserIdentity } from '../../components/shell/UserMenu';
 import { Icon } from '../../components/ui/Icon';
+import { Notice } from '../../components/ui/Notice';
 import { Page } from '../../components/ui/Page';
+import { useLogout, useSession } from '../auth/session';
 import { t } from '../../i18n/id';
 import { media, useMediaQuery } from '../../lib/media';
 import styles from './More.module.css';
@@ -17,12 +20,19 @@ import styles from './More.module.css';
 export function MorePage() {
   const { productName } = useBrand();
   const isHp = useMediaQuery(media.hp);
+  const session = useSession();
+  const logout = useLogout();
 
   if (!isHp) return <Navigate to="/pengaturan" replace />;
 
   return (
     <Page>
-      <nav aria-label={t.more.menuLabel}>
+      {session ? (
+        <section className={styles.account} aria-label={t.auth.userMenu.account}>
+          <UserIdentity user={session.user} />
+        </section>
+      ) : null}
+      <nav aria-label={t.more.menuLabel} className={styles.nav}>
         <ul className={styles.menu}>
           {moreMenuItems.map((item) => (
             <li key={item.id} className={styles.menuItem}>
@@ -35,6 +45,25 @@ export function MorePage() {
           ))}
         </ul>
       </nav>
+      <div className={styles.logoutCard}>
+        <button
+          type="button"
+          className={styles.logout}
+          onClick={() => logout.mutate()}
+          disabled={logout.isPending}
+          aria-busy={logout.isPending || undefined}
+        >
+          <Icon icon={LogOut} size={20} />
+          <span className={styles.menuLabel}>
+            {logout.isPending ? t.auth.userMenu.loggingOut : t.auth.userMenu.logout}
+          </span>
+        </button>
+      </div>
+      {logout.isError ? (
+        <Notice tone="danger" role="alert" className={styles.logoutError}>
+          {t.auth.userMenu.logoutFailed}
+        </Notice>
+      ) : null}
       <div className={styles.about}>
         <BrandMark fit="tight" />
         <span>{t.common.version(productName, __APP_VERSION__)}</span>

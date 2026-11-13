@@ -14,6 +14,7 @@ import { t } from '../../i18n/id';
 import { deviceKey } from '../../lib/device-storage';
 import { media } from '../../lib/media';
 import { setMediaQuery } from '../../test/match-media';
+import { createTestQueryClient } from '../../test/query-client';
 import { renderApp } from '../../test/render-app';
 import { InboxPage } from './InboxPage';
 import { InboxSkeleton } from './InboxSkeleton';
@@ -292,8 +293,14 @@ describe('inbox saat memuat', () => {
 
     // Router mini dengan loader lambat: mereplikasi rute /inbox yang nanti menunggu data.
     const rootRoute = createRootRoute({ component: Outlet });
-    const inboxRoute = createRoute({
+    // Layout `_app` seperti di router aplikasi (id rute Inbox = `/_app/inbox`).
+    const appRoute = createRoute({
       getParentRoute: () => rootRoute,
+      id: '_app',
+      component: Outlet,
+    });
+    const inboxRoute = createRoute({
+      getParentRoute: () => appRoute,
       path: 'inbox',
       validateSearch: parseInboxSearch,
       loader: () => loaded,
@@ -303,11 +310,11 @@ describe('inbox saat memuat', () => {
       component: InboxPage,
     });
     const router = createRouter({
-      routeTree: rootRoute.addChildren([inboxRoute]),
+      routeTree: rootRoute.addChildren([appRoute.addChildren([inboxRoute])]),
       history: createMemoryHistory({ initialEntries: ['/inbox?tab=selesai'] }),
     });
     render(
-      <AppProviders>
+      <AppProviders queryClient={createTestQueryClient()}>
         <RouterProvider router={router as never} />
       </AppProviders>,
     );

@@ -17,8 +17,12 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // API dan WebSocket inbox dilayani apps/api.
-      '/api': { target: 'http://localhost:3000', changeOrigin: true, ws: true },
+      // API dan WebSocket inbox dilayani apps/api. E2E memakai API tersendiri (e2e/stack).
+      '/api': {
+        target: process.env.BALESIN_API_PROXY ?? 'http://localhost:3000',
+        changeOrigin: true,
+        ws: true,
+      },
     },
   },
   test: {

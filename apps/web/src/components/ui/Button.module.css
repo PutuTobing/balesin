@@ -28,6 +28,27 @@
   cursor: not-allowed;
 }
 
+/* Sedang memproses: tetap jelas terbaca, hanya kursornya yang berubah. */
+.button[data-loading] {
+  opacity: 1;
+  cursor: progress;
+}
+
+.spinner {
+  animation: spin var(--duration-pulse) linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+.lg {
+  height: var(--size-touch);
+  padding: 0 var(--space-24);
+}
+
 .primary {
   background: var(--primary);
   color: var(--on-primary);

@@ -100,6 +100,80 @@
   font-size: var(--text-13);
 }
 
+/* ---------- Menu pengaturan organisasi ---------- */
+
+/* Baris menu merapat ke tepi kartu, dipisah garis seperti daftar. */
+.menu {
+  margin: 0 calc(var(--space-24) * -1) calc(var(--space-24) * -1);
+  border-top: 1px solid var(--line);
+}
+
+.menuLink {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-height: 4rem;
+  padding: var(--space-12) var(--space-24);
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+  color: var(--ink);
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.menuLink:hover {
+  background: var(--surface-2);
+  text-decoration: none;
+}
+
+.menuLink:focus-visible {
+  outline-offset: -2px;
+}
+
+.menuIcon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--size-control);
+  height: var(--size-control);
+  border-radius: var(--radius-input);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.menuText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.menuLabel {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.menuHint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.menuStatus {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+
+.statusSkeleton {
+  width: 6rem;
+  height: var(--space-16);
+}
+
+.chevron {
+  flex: none;
+  color: var(--ink-2);
+}
+
 /* ---------- Miniatur tema ---------- */
 
 .preview {
@@ -195,6 +269,21 @@
 @media (max-width: 640px) {
   .card {
     padding: var(--space-16);
+  }
+
+  .menu {
+    margin: 0 calc(var(--space-16) * -1) calc(var(--space-16) * -1);
+  }
+
+  .menuLink {
+    flex-wrap: wrap;
+    padding: var(--space-12) var(--space-16);
+  }
+
+  .menuStatus {
+    order: 3;
+    flex-basis: 100%;
+    padding-left: calc(var(--size-control) + var(--space-12));
   }
 
   /* Di HP pilihan tema menjadi baris: miniatur · label · radio. */

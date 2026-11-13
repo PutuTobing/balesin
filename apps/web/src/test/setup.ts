@@ -1,10 +1,14 @@
 import '@testing-library/jest-dom/vitest';
+import { configureZodLocale } from '@balesin/shared';
 import { cleanup } from '@testing-library/react';
-import { afterEach, beforeEach } from 'vitest';
+import { afterEach, beforeEach, vi } from 'vitest';
+import { clearLoginNotice } from '../features/auth/login-notice';
+import { api } from '../lib/api/client';
 import { THEME_ATTRIBUTE } from '../theme/theme';
 import { installMatchMedia, resetMatchMedia } from './match-media';
 
 installMatchMedia();
+configureZodLocale();
 
 // jsdom tidak punya ResizeObserver; primitives Radix (menu, tooltip) membutuhkannya.
 class ResizeObserverStub implements ResizeObserver {
@@ -13,6 +17,10 @@ class ResizeObserverStub implements ResizeObserver {
   disconnect(): void {}
 }
 window.ResizeObserver ??= ResizeObserverStub;
+// jsdom tidak punya scrollIntoView (dipakai saat pindah langkah wizard).
+if (!('scrollIntoView' in Element.prototype)) {
+  Object.defineProperty(Element.prototype, 'scrollIntoView', { value: () => undefined });
+}
 
 beforeEach(() => {
   // jsdom tidak mengimplementasikan scrollTo; router memanggilnya saat pindah halaman.
@@ -21,6 +29,9 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
+  api.setCsrfToken(null);
+  clearLoginNotice();
   resetMatchMedia();
   window.localStorage.clear();
   document.documentElement.removeAttribute(THEME_ATTRIBUTE);

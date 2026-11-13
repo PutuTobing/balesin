@@ -1,0 +1,158 @@
+/*
+ * Halaman masuk. Desktop (≥ 1024px): form di kiri, ilustrasi di kanan. Lebih sempit:
+ * hanya form (ilustrasi disembunyikan supaya satu fokus: masuk).
+ */
+.screen {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  height: 100%;
+  overflow-y: auto;
+  background: var(--surface);
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 100%;
+  padding: var(--space-48) var(--space-24);
+}
+
+.inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-32);
+  width: 100%;
+  max-width: 24rem;
+  margin: 0 auto;
+}
+
+.logo {
+  /* Lebar mengikuti logo (bukan direntang kolom flex), jadi rata kiri dengan teks. */
+  align-self: flex-start;
+  height: var(--space-32);
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+/* Logo gambar milik organisasi: dibatasi supaya logo yang sangat lebar tidak mendominasi. */
+img.logo {
+  max-width: 12rem;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.title {
+  font-size: var(--text-24);
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+
+.subtitle {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.submit {
+  width: 100%;
+  margin-top: var(--space-8);
+}
+
+.countdown {
+  margin-top: var(--space-4);
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.footnote {
+  padding-top: var(--space-24);
+  border-top: 1px solid var(--line);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.hero {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .screen {
+    grid-template-columns: minmax(30rem, 2fr) 3fr;
+    overflow: hidden;
+  }
+
+  .pane {
+    overflow-y: auto;
+    border-right: 1px solid var(--line);
+  }
+
+  .hero {
+    position: relative;
+    display: block;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  /* Ruang kosong ilustrasi ada di kiri atas: teks di sana, Kak Sky di kanan bawah. */
+  .heroImage {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: right bottom;
+  }
+
+  .heroText {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-12);
+    max-width: 24rem;
+    padding: var(--space-48);
+  }
+
+  .heroTitle {
+    color: var(--ink);
+    font-size: var(--text-24);
+    font-weight: var(--weight-bold);
+    line-height: var(--leading-title);
+    letter-spacing: var(--tracking-title);
+    text-wrap: balance;
+  }
+
+  .heroBody {
+    color: var(--ink-2);
+    font-size: var(--text-16);
+    text-wrap: pretty;
+  }
+}
+
+@media (max-width: 640px) {
+  .pane {
+    justify-content: flex-start;
+    padding: var(--space-32) var(--space-16) var(--space-24);
+  }
+
+  .inner {
+    gap: var(--space-24);
+  }
+
+  .title {
+    font-size: var(--text-20);
+  }
+}

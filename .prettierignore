@@ -17,3 +17,4 @@ packages/db/drizzle
 e2e/screenshots
 e2e/playwright-report
 e2e/test-results
+e2e/.auth

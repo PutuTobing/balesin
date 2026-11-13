@@ -137,4 +137,288 @@ export const t = {
     body: 'Biasanya karena koneksi terputus. Periksa internetmu, lalu coba lagi.',
     details: 'Detail teknis',
   },
+
+  api: {
+    network: 'Tidak bisa terhubung ke server. Periksa koneksi internetmu, lalu coba lagi.',
+    unreachable: 'Server aplikasi belum bisa dihubungi. Coba lagi beberapa saat lagi.',
+    invalidResponse: 'Jawaban server tidak bisa dibaca. Muat ulang halaman, lalu coba lagi.',
+    retryIn: (wait: string) => `Bisa dicoba lagi dalam ${wait}.`,
+  },
+
+  time: {
+    /** Lama tunggu yang ramah dibaca: "45 detik", "3 menit", "1 menit 20 detik". */
+    wait: (totalSeconds: number) => {
+      const seconds = Math.max(0, Math.ceil(totalSeconds));
+      if (seconds < 60) return `${seconds} detik`;
+      const minutes = Math.floor(seconds / 60);
+      const rest = seconds % 60;
+      return rest === 0 ? `${minutes} menit` : `${minutes} menit ${rest} detik`;
+    },
+  },
+
+  boot: {
+    loading: 'Menyiapkan aplikasi…',
+    failedTitle: 'Server belum bisa dihubungi',
+    failedBody:
+      'Aplikasi tidak bisa memeriksa sesimu. Periksa koneksi internet, atau tunggu sebentar bila server sedang dinyalakan ulang.',
+  },
+
+  form: {
+    optional: 'opsional',
+    required: 'wajib',
+    showPassword: 'Tampilkan password',
+    hidePassword: 'Sembunyikan password',
+    fixErrors: (count: number) =>
+      count === 1
+        ? 'Ada 1 isian yang perlu diperbaiki.'
+        : `Ada ${count} isian yang perlu diperbaiki.`,
+    passwordsDiffer: 'Password tidak sama. Ketik ulang password yang sama.',
+    repeatRequired: 'Ketik ulang password.',
+  },
+
+  auth: {
+    login: {
+      title: 'Masuk',
+      heading: (organization: string | null) =>
+        organization ? `Masuk ke ${organization}` : 'Masuk ke akunmu',
+      subtitle: 'Pakai email dan password yang didaftarkan untukmu.',
+      email: 'Email',
+      emailPlaceholder: 'Contoh: nama@perusahaan.co.id',
+      password: 'Password',
+      submit: 'Masuk',
+      submitting: 'Memeriksa…',
+      noAccount:
+        'Belum punya akun? Akun dibuat lewat undangan. Minta Owner atau Admin timmu mengirim undangan.',
+      lockedTitle: 'Coba lagi sebentar lagi',
+      countdown: (wait: string) => `Tombol Masuk aktif lagi dalam ${wait}.`,
+      sessionEnded: 'Sesimu sudah berakhir. Masuk lagi untuk melanjutkan.',
+      loggedOut: 'Kamu sudah keluar. Sampai jumpa lagi!',
+      heroTitle: 'Semua chat pelanggan, satu inbox untuk seluruh tim.',
+      heroBody: 'Balas lebih cepat, bagi tugas dengan rapi, dan pantau semuanya dari satu tempat.',
+    },
+    userMenu: {
+      open: (name: string) => `Akun ${name}`,
+      signedInAs: 'Masuk sebagai',
+      logout: 'Keluar',
+      loggingOut: 'Keluar…',
+      logoutFailed: 'Gagal keluar. Periksa koneksimu, lalu coba lagi.',
+      account: 'Akun',
+    },
+  },
+
+  setup: {
+    documentTitle: 'Setup awal',
+    eyebrow: 'Setup awal',
+    stepOf: (current: number, total: number) => `Langkah ${current} dari ${total}`,
+    stepsLabel: 'Langkah setup',
+    stepDone: 'selesai',
+    stepCurrent: 'langkah sekarang',
+    optional: 'Opsional',
+    back: 'Kembali',
+    next: 'Lanjut',
+    checking: 'Memeriksa…',
+    skip: 'Lewati',
+    intro: 'Siapkan aplikasi untuk timmu. Butuh sekitar 5 menit; email pengirim bisa diisi nanti.',
+    steps: {
+      token: {
+        nav: 'Token setup',
+        title: 'Masukkan token setup',
+        body: 'Token ini membuktikan kamu yang memasang server. Lihat isian SETUP_TOKEN di berkas .env server, atau di tautan yang dicetak installer.',
+        label: 'Token setup',
+        hint: 'Salin persis, termasuk huruf besar-kecilnya.',
+        fromLink: 'Token dari tautan setup sudah terisi.',
+      },
+      organization: {
+        nav: 'Organisasi',
+        title: 'Tentang organisasimu',
+        body: 'Nama ini tampil di halaman masuk dan di email untuk timmu.',
+        name: 'Nama perusahaan',
+        namePlaceholder: 'Contoh: PT Maju Jaya',
+        timezone: 'Zona waktu',
+        timezoneHint: 'Dipakai untuk jam kerja, laporan, dan waktu di chat.',
+      },
+      owner: {
+        nav: 'Akun Owner',
+        title: 'Buat akun Owner',
+        body: 'Owner memegang semua pengaturan dan bisa mengundang anggota tim lain. Setelah ini kamu langsung masuk dengan akun ini.',
+        name: 'Nama lengkap',
+        email: 'Email',
+        emailHint: 'Untuk masuk dan menerima email penting.',
+        password: 'Password',
+        repeat: 'Ulangi password',
+        strength: {
+          label: 'Kekuatan password',
+          empty: 'Minimal 10 karakter.',
+          tooShort: (missing: number) => `Kurang ${missing} karakter lagi.`,
+          weak: 'Lumayan. Tambah panjang atau campur kata yang tidak umum.',
+          good: 'Bagus.',
+          strong: 'Kuat.',
+          checking: 'Memeriksa ke server…',
+          accepted: 'Diterima server.',
+        },
+      },
+      branding: {
+        nav: 'Tampilan',
+        title: 'Sesuaikan tampilan',
+        body: 'Nama aplikasi, warna, dan logo milikmu tampil di halaman masuk, menu, dan email. Semua bisa dilewati dan diubah nanti.',
+        productName: 'Nama aplikasi',
+        productNameHint: (fallback: string) => `Kosongkan untuk memakai “${fallback}”.`,
+        color: 'Warna utama',
+        colorHint: 'Kode heksadesimal 6 digit, contoh: #1b3557.',
+        colorPick: 'Pilih warna',
+        colorReset: 'Pakai warna bawaan',
+        colorPreview: 'Pratinjau',
+        colorPreviewButton: 'Tombol utama',
+        colorPreviewLink: 'Tautan',
+        contrastOk: (ratio: string) => `Kontras dengan putih ${ratio}:1. Teks mudah dibaca.`,
+        contrastLow: (ratio: string) =>
+          `Kontras dengan putih hanya ${ratio}:1 (minimal 4,5:1). Teks di atas warna ini sulit dibaca. Pilih warna yang lebih gelap.`,
+        logo: 'Logo',
+        logoHint:
+          'PNG, JPG, atau WebP, maksimal 256 KB. Bentuk melebar atau persegi, latar transparan paling rapi.',
+        logoChoose: 'Pilih logo',
+        logoReplace: 'Ganti logo',
+        logoRemove: 'Hapus logo',
+        logoType: 'Logo harus berupa gambar PNG, JPG, atau WebP.',
+        logoTooLarge: (kb: number) =>
+          `Ukuran logo ${kb} KB, maksimal 256 KB. Perkecil gambarnya lalu coba lagi.`,
+        logoUnreadable: 'Berkas logo tidak bisa dibaca. Pilih ulang gambarnya.',
+        logoPreviewAlt: 'Pratinjau logo',
+        logoSelected: (name: string, kb: number) => `${name} · ${kb} KB`,
+      },
+      email: {
+        nav: 'Email pengirim',
+        title: 'Email pengirim',
+        body: 'Dipakai untuk mengirim undangan tim dan reset password. Boleh dilewati dan diisi nanti di Pengaturan → Email pengirim.',
+        skipNote: 'Tanpa email pengirim, undangan tim dan reset password belum bisa dikirim.',
+        skipped: 'Dilewati. Bisa diisi nanti di Pengaturan.',
+        noMasterKeyTitle: 'Email pengirim belum bisa disimpan',
+        noMasterKeyBody:
+          'Server belum punya kunci enkripsi (BALESIN_MASTER_KEY di berkas .env), jadi password email tidak bisa disimpan dengan aman. Lewati langkah ini dulu; setelah kunci diisi dan server dinyalakan ulang, atur email di Pengaturan.',
+      },
+      summary: {
+        nav: 'Ringkasan',
+        title: 'Periksa lalu selesaikan',
+        body: 'Pastikan semuanya sudah benar. Setelah selesai, kamu langsung masuk ke Inbox.',
+        edit: 'Ubah',
+        editSection: (section: string) => `Ubah ${section}`,
+        organization: 'Organisasi',
+        timezone: 'Zona waktu',
+        owner: 'Owner',
+        branding: 'Tampilan',
+        productName: 'Nama aplikasi',
+        color: 'Warna utama',
+        logo: 'Logo',
+        email: 'Email pengirim',
+        defaultValue: 'Bawaan',
+        noLogo: 'Tanpa logo',
+        logoAttached: 'Terpasang',
+        emailSkipped: 'Dilewati, atur nanti',
+        sender: 'Pengirim',
+        server: 'Server',
+        emailTested: 'Tes koneksi berhasil',
+        emailUntested: 'Belum dites',
+        submit: 'Selesai dan masuk',
+        submitting: 'Menyimpan…',
+        errorInStep: (step: string) => `Ada yang perlu diperbaiki di langkah ${step}.`,
+      },
+    },
+    blocked: {
+      noTokenTitle: 'Setup belum bisa dimulai',
+      noTokenBody:
+        'Server belum punya token setup. Isi SETUP_TOKEN di berkas .env server (minimal 32 karakter acak), nyalakan ulang server, lalu muat ulang halaman ini.',
+      noTokenCommand: 'Contoh membuat token acak:',
+      reload: 'Muat ulang',
+      doneTitle: 'Setup sudah selesai',
+      doneBody: 'Akun Owner sudah dibuat sebelumnya. Masuk dengan akun yang sudah ada.',
+      goToLogin: 'Ke halaman masuk',
+      failedTitle: 'Status setup tidak bisa dimuat',
+      failedBody:
+        'Halaman setup belum bisa menghubungi server. Periksa koneksi internet, atau tunggu sebentar bila server sedang dinyalakan ulang.',
+    },
+    timezones: {
+      'Asia/Jakarta': 'WIB · Asia/Jakarta',
+      'Asia/Pontianak': 'WIB · Asia/Pontianak',
+      'Asia/Makassar': 'WITA · Asia/Makassar',
+      'Asia/Jayapura': 'WIT · Asia/Jayapura',
+      'Asia/Singapore': 'Asia/Singapore',
+      'Asia/Kuala_Lumpur': 'Asia/Kuala_Lumpur',
+      UTC: 'UTC',
+    },
+  },
+
+  emailSettings: {
+    title: 'Email pengirim',
+    menuHint: 'Untuk undangan tim, reset password, dan notifikasi.',
+    presetLabel: 'Penyedia email',
+    fromName: 'Nama pengirim',
+    fromNamePlaceholder: 'Contoh: Tim CS Maju Jaya',
+    fromAddress: 'Alamat email pengirim',
+    fromAddressPlaceholder: 'Contoh: cs@perusahaan.co.id',
+    replyTo: 'Alamat balas-ke',
+    replyToHint: 'Balasan penerima diarahkan ke alamat ini.',
+    server: 'Server SMTP',
+    host: 'Host SMTP',
+    hostPlaceholder: 'Contoh: mail.perusahaan.co.id',
+    port: 'Port',
+    security: 'Keamanan',
+    username: 'Username',
+    usernameHint: 'Biasanya sama dengan alamat email pengirim.',
+    password: 'Password',
+    passwordRequired: 'Password wajib diisi.',
+    appPassword: 'App password',
+    passwordKeep: (hint: string) =>
+      `Tersimpan (${hint}). Kosongkan untuk tetap memakai password ini.`,
+    passwordKeepNoHint: 'Tersimpan. Kosongkan untuk tetap memakai password ini.',
+    passwordReenter:
+      'Host, port, keamanan, atau username berubah, jadi password perlu dimasukkan ulang.',
+    detecting: 'Mencari server email untuk domain ini…',
+    suggestionTitle: 'Saran pengaturan',
+    useSuggestion: 'Pakai saran ini',
+    suggestionUsed: 'Saran dipakai',
+    noSuggestion: (domain: string) =>
+      `Tidak ada saran untuk ${domain}. Isi host dan port sesuai petunjuk penyedia emailmu.`,
+    testTitle: 'Tes pengaturan',
+    testBody: 'Tes dulu sebelum disimpan supaya email undangan pasti terkirim.',
+    testConnection: 'Tes koneksi',
+    testingConnection: 'Menguji…',
+    sendTest: 'Kirim email tes',
+    sendingTest: 'Mengirim…',
+    sendTestTo: 'Kirim email tes ke',
+    sendTestOk: (to: string) => `Email tes terkirim ke ${to}. Cek kotak masuk (atau folder spam).`,
+    testedAt: (time: string) => `Dites ${time}`,
+    save: 'Simpan',
+    saving: 'Menyimpan…',
+    saved: 'Pengaturan email tersimpan.',
+    status: 'Status',
+    lastTest: 'Tes terakhir',
+    neverTested: 'Belum pernah dites',
+    source: 'Sumber',
+    sources: {
+      database: 'Diatur di aplikasi',
+      env: 'Berkas .env server (cadangan)',
+      none: 'Belum diatur',
+    },
+    envNotice:
+      'Pengaturan yang berlaku sekarang berasal dari berkas .env server. Simpan form ini supaya pengaturan dikelola dari aplikasi; nilai di .env lalu tidak dipakai lagi.',
+    noMasterKeyTitle: 'Password email belum bisa disimpan',
+    noMasterKeyBody:
+      'Server belum punya kunci enkripsi. Isi BALESIN_MASTER_KEY di berkas .env server (32 byte acak, base64), nyalakan ulang server, lalu kembali ke halaman ini.',
+    guideTitle: 'Panduan singkat',
+    guide: [
+      'Pilih penyedia emailmu. Host, port, dan keamanan terisi otomatis.',
+      'Isi alamat email pengirim. Kami coba tebak server SMTP dari domainnya.',
+      'Masukkan password email. Untuk Gmail dan Microsoft 365, buat app password dulu.',
+      'Tekan “Tes koneksi”. Bila berhasil, kirim email tes ke dirimu sendiri.',
+      'Simpan. Undangan tim dan reset password akan dikirim dari alamat ini.',
+    ],
+    loadFailed: 'Pengaturan email tidak bisa dimuat',
+    unsavedTest:
+      'Tes memakai isian form di atas, termasuk yang belum disimpan. Status tersimpan berubah setelah kamu menyimpan lalu menguji.',
+  },
+
+  settingsMenu: {
+    sectionTitle: 'Pengaturan organisasi',
+    open: (name: string) => `Buka ${name}`,
+  },
 } as const;

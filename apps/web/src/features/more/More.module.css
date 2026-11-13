@@ -52,3 +52,53 @@
   color: var(--ink-2);
   font-size: var(--text-13);
 }
+
+/* Kartu akun: identitas pengguna di atas menu. */
+.account {
+  padding: var(--space-4) var(--space-8);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.nav {
+  margin-top: var(--space-16);
+}
+
+.logoutCard {
+  overflow: hidden;
+  margin-top: var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.logout {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  width: 100%;
+  height: var(--size-bar);
+  padding: 0 var(--space-16);
+  color: var(--danger-ink);
+  font-weight: var(--weight-medium);
+  text-align: left;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.logout:hover {
+  background: var(--surface-2);
+}
+
+.logout:focus-visible {
+  outline-offset: -2px;
+}
+
+.logout:disabled {
+  color: var(--ink-2);
+  cursor: progress;
+}
+
+.logoutError {
+  margin-top: var(--space-12);
+}

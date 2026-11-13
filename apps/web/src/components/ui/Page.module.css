@@ -20,6 +20,26 @@
   display: none;
 }
 
+/* Sub-halaman Pengaturan: tombol kembali juga tampil di desktop. */
+.backAlways {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--size-control);
+  height: var(--size-control);
+  margin-left: calc(var(--space-8) * -1);
+  border-radius: var(--radius-input);
+  color: var(--ink);
+}
+
+.backAlways:hover {
+  background: var(--surface-2);
+}
+
+.header:has(.backAlways) {
+  gap: var(--space-8);
+}
+
 .title {
   flex: 1;
   min-width: 0;

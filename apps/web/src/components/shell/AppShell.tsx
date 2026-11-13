@@ -9,6 +9,7 @@ import { Icon } from '../ui/Icon';
 import { Tooltip } from '../ui/Tooltip';
 import styles from './AppShell.module.css';
 import { ThemeMenu } from './ThemeMenu';
+import { UserMenu } from './UserMenu';
 import { navActiveState, navItems, type NavItem } from './nav-items';
 import { RAIL_POPOVER_OFFSET } from './rail';
 
@@ -66,6 +67,9 @@ function MainNav({ pathname }: { pathname: string }) {
         ))}
         <li className={cx(styles.item, styles.footer)}>
           <ThemeMenu className={styles.link} />
+        </li>
+        <li className={cx(styles.item, styles.footer)}>
+          <UserMenu className={styles.link} />
         </li>
       </ul>
     </nav>

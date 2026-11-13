@@ -2,6 +2,7 @@ import { Link, type LinkProps } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { t } from '../../i18n/id';
+import { cx } from '../../lib/cx';
 import { usePageTitle } from '../../lib/use-page-title';
 import { Icon } from './Icon';
 import styles from './Page.module.css';
@@ -10,14 +11,16 @@ import { usePageMeta, type PageParent } from './page-meta';
 
 const parents: Record<PageParent, { to: NonNullable<LinkProps['to']>; label: string }> = {
   more: { to: '/lainnya', label: t.nav.more },
+  settings: { to: '/pengaturan', label: t.nav.settings },
 };
 
 interface PageHeaderProps {
   /** Kosong = judul belum diketahui; tampil sebagai balok kerangka. */
   title?: string;
   /**
-   * Layar induk di HP. Tombol kembali hanya tampil di HP; di desktop semua menu sudah
-   * terlihat di rail.
+   * Layar induk. Untuk `more`, tombol kembali hanya tampil di HP (di desktop semua menu
+   * sudah terlihat di rail). Halaman di dalam Pengaturan (`settings`) selalu punya tombol
+   * kembali karena rail tidak memuat sub-halaman.
    */
   parent?: PageParent;
   /** Aksi halaman di kanan header. */
@@ -30,7 +33,11 @@ export function PageHeader({ title, parent, actions }: PageHeaderProps) {
   return (
     <header className={styles.header}>
       {back ? (
-        <Link to={back.to} className={styles.back} aria-label={t.common.backTo(back.label)}>
+        <Link
+          to={back.to}
+          className={cx(styles.back, parent === 'settings' && styles.backAlways)}
+          aria-label={t.common.backTo(back.label)}
+        >
           <Icon icon={ArrowLeft} size={20} />
         </Link>
       ) : null}

@@ -14,7 +14,9 @@ for (const screen of screens) {
   if (only && only.length > 0 && !only.includes(screen.name)) continue;
 
   test(`foto ${screen.name}`, async ({ page }, testInfo) => {
-    await page.goto(screen.path, { waitUntil: 'networkidle' });
+    if (screen.before) await screen.before(page);
+    // Layar dengan permintaan yang sengaja tidak dijawab (memuat) tidak pernah "networkidle".
+    await page.goto(screen.path, { waitUntil: screen.waitUntil ?? 'networkidle' });
     if (screen.waitFor) await page.locator(screen.waitFor).first().waitFor({ state: 'visible' });
     if (screen.prepare) await screen.prepare(page);
     // Tunggu font self-host selesai dimuat supaya tipografi di foto akurat.

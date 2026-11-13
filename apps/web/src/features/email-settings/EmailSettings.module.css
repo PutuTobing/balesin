@@ -1,0 +1,462 @@
+/* ---------- Isian (dipakai wizard setup dan halaman Pengaturan) ---------- */
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-24);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.legend {
+  margin-bottom: var(--space-12);
+  padding: 0;
+  color: var(--ink);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-16);
+  align-items: start;
+}
+
+.hostRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 6rem;
+  gap: var(--space-16);
+  align-items: start;
+}
+
+/* Preset: empat pilihan dalam kisi 2 × 2. */
+.presets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-8);
+}
+
+.preset {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-height: var(--size-touch);
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--text-14);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-title);
+  text-align: left;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.preset:hover:not(:disabled) {
+  border-color: var(--ink-2);
+}
+
+.preset[data-state='checked'] {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.preset:disabled {
+  color: var(--ink-2);
+  cursor: not-allowed;
+}
+
+.presetRadio {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--size-icon-sm);
+  height: var(--size-icon-sm);
+  border: 1.5px solid var(--ink-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+}
+
+.preset[data-state='checked'] .presetRadio {
+  border-color: var(--primary);
+}
+
+.presetDot {
+  display: block;
+  width: var(--space-8);
+  height: var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+}
+
+.presetLabel {
+  min-width: 0;
+}
+
+.presetHint {
+  margin-top: var(--space-8);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+/* Saran dari deteksi host. */
+.detect {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin-top: calc(var(--space-8) * -1);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.spin {
+  animation: spin var(--duration-pulse) linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+.suggestion {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  margin-top: calc(var(--space-4) * -1);
+  padding: var(--space-12) var(--space-12) var(--space-12) var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--bg);
+}
+
+.suggestionIcon {
+  align-self: flex-start;
+  margin-top: var(--space-4);
+  color: var(--primary);
+}
+
+.suggestionText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.suggestionTitle {
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.suggestionValue {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  overflow-wrap: anywhere;
+}
+
+.suggestionValue code {
+  color: var(--ink);
+  font-size: var(--text-12);
+}
+
+.suggestionApplied {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--success-ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+/* ---------- Panel tes ---------- */
+
+.testPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding: var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--bg);
+}
+
+.testHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.testTitle {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.testBody {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.testActions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-16);
+}
+
+.sendRow {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-8);
+  width: 100%;
+}
+
+.sendField {
+  flex: 1;
+}
+
+/* Tombol sejajar kolom saat kolom tujuan menampilkan pesan error. */
+.sendField:has([aria-invalid]) + .sendButton {
+  margin-bottom: var(--space-24);
+}
+
+.testedAt {
+  margin-top: var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+@media (max-width: 640px) {
+  .row,
+  .hostRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hostRow {
+    grid-template-columns: minmax(0, 1fr) 5.5rem;
+  }
+
+  .presets {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sendRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .testButton {
+    width: 100%;
+  }
+
+  .sendField:has([aria-invalid]) + .sendButton {
+    margin-bottom: 0;
+  }
+
+  .suggestion {
+    flex-wrap: wrap;
+  }
+
+  .suggestion > button {
+    width: 100%;
+  }
+}
+
+/* ---------- Halaman Pengaturan → Email pengirim ---------- */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18rem;
+  gap: var(--space-24);
+  align-items: start;
+  width: 100%;
+  max-width: 64rem;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  min-width: 0;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-24);
+  padding: var(--space-24);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.statusCard {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-16);
+  margin: 0;
+  padding: var(--space-16) var(--space-24);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.statusItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.statusLabel {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.statusValue {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--text-14);
+  font-weight: var(--weight-medium);
+}
+
+.formFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-12);
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--line);
+}
+
+.savedNote {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin-right: auto;
+  color: var(--success-ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-medium);
+}
+
+.guide {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding: var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.guideTitle {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.guideList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  counter-reset: step;
+}
+
+.guideItem {
+  display: flex;
+  gap: var(--space-12);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  counter-increment: step;
+}
+
+.guideItem::before {
+  content: counter(step);
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--space-24);
+  height: var(--space-24);
+  border-radius: var(--radius-pill);
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-bold);
+}
+
+/* Kerangka memuat. */
+.skeletonLabel {
+  width: 7rem;
+  height: var(--space-12);
+}
+
+.skeletonValue {
+  width: 9rem;
+  height: var(--space-16);
+}
+
+.skeletonField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.skeletonInput {
+  height: var(--size-control);
+}
+
+.skeletonPresets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-8);
+}
+
+.skeletonPreset {
+  height: var(--size-touch);
+}
+
+@media (max-width: 1023px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .guide {
+    order: -1;
+  }
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: var(--space-16);
+  }
+
+  .statusCard {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-12);
+    padding: var(--space-16);
+  }
+
+  .formFooter > button {
+    flex: 1;
+  }
+
+  .skeletonInput {
+    height: var(--size-touch);
+  }
+}

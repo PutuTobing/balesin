@@ -1,0 +1,874 @@
+/*
+ * Wizard setup. Desktop (≥ 1024px): daftar langkah di kiri, kartu langkah di tengah.
+ * Lebih sempit: bilah atas berisi progres, isi selebar layar, tombol menempel di bawah
+ * (aman dari keyboard berkat `interactive-widget=resizes-content` di index.html).
+ */
+.screen {
+  display: grid;
+  grid-template-areas:
+    'topbar'
+    'main';
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  height: 100%;
+  background: var(--bg);
+}
+
+/* ---------- Bilah atas (HP/tablet) ---------- */
+
+.topbar {
+  display: flex;
+  grid-area: topbar;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-16);
+  min-height: var(--size-bar);
+  padding: var(--space-8) var(--space-16);
+  padding-top: max(var(--space-8), env(safe-area-inset-top, 0px));
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.topLogo {
+  height: var(--space-24);
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-4);
+}
+
+.progressText {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.progressBars {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.progressBar {
+  width: var(--space-16);
+  height: var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--line);
+}
+
+.progressBar[data-on] {
+  background: var(--primary);
+}
+
+/* ---------- Daftar langkah (desktop) ---------- */
+
+.sidebar {
+  display: none;
+}
+
+.logo {
+  /* Lebar mengikuti logo (bukan direntang kolom flex), jadi rata kiri dengan teks. */
+  align-self: flex-start;
+  height: var(--space-32);
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+img.logo,
+img.topLogo,
+img.blockedLogo {
+  max-width: 12rem;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.sidebarIntro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.eyebrow {
+  color: var(--ink);
+  font-size: var(--text-16);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-title);
+}
+
+.intro {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.stepItem {
+  position: relative;
+}
+
+/* Garis penghubung antarpenanda. */
+.stepItem:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: calc(var(--size-touch) - var(--space-8));
+  left: calc(var(--space-8) + var(--space-12) - 1px);
+  width: 2px;
+  height: var(--space-12);
+  border-radius: var(--radius-pill);
+  background: var(--line);
+}
+
+.stepItem[data-state='done']:not(:last-child)::after {
+  background: var(--primary);
+}
+
+.stepButton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  width: 100%;
+  min-height: var(--size-touch);
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  font-weight: var(--weight-medium);
+  text-align: left;
+}
+
+button.stepButton {
+  color: var(--ink);
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+button.stepButton:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.stepItemCurrent .stepButton {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+  box-shadow: var(--shadow-1);
+}
+
+.stepMarker {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--space-24);
+  height: var(--space-24);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.stepItem[data-state='current'] .stepMarker {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.stepItem[data-state='done'] .stepMarker {
+  border-color: var(--primary-soft);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.stepLabel {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.stepOptional {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-regular);
+}
+
+/* ---------- Isi langkah ---------- */
+
+.main {
+  grid-area: main;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  background: var(--surface);
+}
+
+.content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-24);
+  width: 100%;
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: var(--space-24) var(--space-16);
+}
+
+.stepHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.stepCount {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.stepCountText {
+  display: none;
+}
+
+.optionalBadge {
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: var(--text-12);
+  line-height: 1;
+}
+
+.stepTitle {
+  font-size: var(--text-20);
+  text-wrap: balance;
+}
+
+.stepTitle:focus {
+  outline: none;
+}
+
+.stepBody {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  text-wrap: pretty;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-24);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-24);
+}
+
+.mono input {
+  font-family: var(--font-mono);
+}
+
+.actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-12) var(--space-16);
+  padding-bottom: max(var(--space-12), env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.back {
+  padding: 0 var(--space-12);
+}
+
+.next {
+  min-width: 8rem;
+}
+
+/* ---------- Password ---------- */
+
+.passwordBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.strength {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.strengthBars {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.strengthBar {
+  height: var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--line);
+  transition: background-color var(--duration-base) var(--ease-out);
+}
+
+.strength[data-tone='fair'] .strengthBar[data-on] {
+  background: var(--warning-ink);
+}
+
+.strength[data-tone='good'] .strengthBar[data-on] {
+  background: var(--success);
+}
+
+.strength[data-tone='bad'] .strengthBar[data-on] {
+  background: var(--danger);
+}
+
+.strengthText {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.strength[data-tone='bad'] .strengthText {
+  color: var(--danger-ink);
+  font-weight: var(--weight-medium);
+}
+
+.strengthAccepted {
+  color: var(--success-ink);
+  font-weight: var(--weight-semibold);
+}
+
+/* ---------- Branding ---------- */
+
+.colorRow {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Hapus warna (kembali ke bawaan), di dalam kolom sebelum pemilih warna. */
+.colorClear {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--size-control);
+  height: 100%;
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+}
+
+.colorClear:hover {
+  color: var(--ink);
+}
+
+.colorClear:focus-visible {
+  outline-offset: -4px;
+}
+
+.colorPicker {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--size-touch);
+  height: 100%;
+  cursor: pointer;
+}
+
+.colorInput {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.colorPicker:has(.colorInput:focus-visible) {
+  border-radius: var(--radius-input);
+  outline: 2px solid var(--primary);
+  outline-offset: -4px;
+}
+
+.colorSwatch {
+  width: var(--space-24);
+  height: var(--space-24);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+}
+
+.colorSwatchEmpty {
+  background: var(--primary);
+}
+
+.colorPreview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  margin-top: calc(var(--space-12) * -1);
+}
+
+/* Pratinjau selalu di atas latar putih (tema terang), sama dengan dasar hitungan kontrasnya. */
+.colorSample {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-16);
+  padding: var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.sampleLabel {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.sampleButton {
+  display: inline-flex;
+  align-items: center;
+  height: var(--size-control);
+  padding: 0 var(--space-16);
+  border-radius: var(--radius-input);
+  color: var(--on-primary);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.sampleLink {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  text-decoration: underline;
+}
+
+.logoField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.fieldLabel {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.optionalTag {
+  color: var(--ink-2);
+  font-weight: var(--weight-regular);
+}
+
+.logoBox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+  padding: var(--space-12);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-card);
+}
+
+.logoPreview {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 10rem;
+  height: 4rem;
+  padding: var(--space-8);
+  border-radius: var(--radius-input);
+  background: var(--bg);
+}
+
+.logoPreview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.logoPlaceholder {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  font-weight: var(--weight-bold);
+}
+
+.logoPlaceholder span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logoPlaceholderMark {
+  width: auto;
+  height: var(--space-24);
+  opacity: 0.6;
+}
+
+.logoMeta {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.logoName {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logoActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.fieldHint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.fieldError {
+  color: var(--danger-ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-medium);
+}
+
+/* ---------- Ringkasan ---------- */
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.summarySection {
+  padding: var(--space-12) var(--space-16) var(--space-16);
+}
+
+.summarySection + .summarySection {
+  border-top: 1px solid var(--line);
+}
+
+.summaryHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.summaryTitle {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.summaryEdit {
+  margin-right: calc(var(--space-8) * -1);
+  color: var(--primary);
+}
+
+.summaryList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin: var(--space-4) 0 0;
+}
+
+.summaryRow {
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 1fr);
+  gap: var(--space-12);
+  font-size: var(--text-14);
+}
+
+.summaryRow dt {
+  color: var(--ink-2);
+}
+
+.summaryRow dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.summaryColor {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.summarySwatch {
+  width: var(--space-16);
+  height: var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius-input) / 2);
+}
+
+/* ---------- Layar terhalang (token belum diatur, setup sudah selesai, gagal) ---------- */
+
+.blockedScreen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-32);
+  height: 100%;
+  padding: var(--space-48) var(--space-16);
+  overflow-y: auto;
+  background: var(--bg);
+}
+
+.blockedLogo {
+  align-self: center;
+  height: var(--space-32);
+  max-width: 12rem;
+  object-fit: contain;
+}
+
+.blockedCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  width: 100%;
+  max-width: 32rem;
+  padding: var(--space-32);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.blockedIllustration {
+  width: 8rem;
+}
+
+.blockedIllustration svg {
+  width: 100%;
+  height: auto;
+}
+
+.blockedTitle {
+  font-size: var(--text-20);
+  text-wrap: balance;
+}
+
+.blockedBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+.blockedHint {
+  color: var(--ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.blockedNotice {
+  color: var(--ink);
+}
+
+.command {
+  margin: 0;
+  padding: var(--space-12);
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: var(--text-12);
+  white-space: pre;
+}
+
+.blockedActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  margin-top: var(--space-8);
+}
+
+/* ---------- Kerangka memuat ---------- */
+
+.skeletonShort {
+  width: 7rem;
+  height: var(--space-12);
+}
+
+.skeletonLine {
+  width: 100%;
+  height: var(--space-12);
+}
+
+.skeletonTitle {
+  width: 60%;
+  height: var(--space-24);
+}
+
+.skeletonStep {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-height: var(--size-touch);
+  padding: 0 var(--space-8);
+}
+
+.skeletonMarker {
+  width: var(--space-24);
+  height: var(--space-24);
+  border-radius: var(--radius-pill);
+}
+
+.skeletonField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.skeletonInput,
+.skeletonButton {
+  height: var(--size-touch);
+}
+
+.skeletonButton {
+  width: 8rem;
+}
+
+/* ---------- Tablet ke atas ---------- */
+
+@media (min-width: 641px) {
+  .content {
+    padding: var(--space-32) var(--space-24);
+  }
+
+  .row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-16);
+  }
+
+  .stepTitle {
+    font-size: var(--text-24);
+  }
+
+  .actions {
+    padding: var(--space-16) var(--space-24);
+  }
+}
+
+@media (min-width: 1024px) {
+  .stepCountText {
+    display: inline;
+  }
+
+  .screen {
+    grid-template-areas: 'sidebar main';
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-columns: 20rem minmax(0, 1fr);
+  }
+
+  .topbar {
+    display: none;
+  }
+
+  .sidebar {
+    display: flex;
+    grid-area: sidebar;
+    flex-direction: column;
+    gap: var(--space-32);
+    min-height: 0;
+    padding: var(--space-32) var(--space-24);
+    overflow-y: auto;
+    border-right: 1px solid var(--line);
+  }
+
+  /* Tanpa padding bawah: bilah tombol yang menempel (sticky) jatuh tepat di tepi bawah layar. */
+  .main {
+    padding: var(--space-48) var(--space-32) 0;
+  }
+
+  /* Kartu langkah di tengah area isi; tombol di dasar kartu. */
+  .form {
+    min-height: 0;
+    max-width: 44rem;
+    margin: 0 auto var(--space-48);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-1);
+  }
+
+  .content {
+    max-width: none;
+    padding: var(--space-32);
+  }
+
+  .actions {
+    padding: var(--space-16) var(--space-32);
+    border-radius: 0 0 var(--radius-card) var(--radius-card);
+    background: var(--surface);
+  }
+}
+
+@media (max-width: 640px) {
+  .summaryRow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .logoBox {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .logoPreview {
+    width: 100%;
+  }
+
+  .blockedCard {
+    padding: var(--space-24) var(--space-16);
+  }
+
+  .next {
+    flex: 1;
+  }
+}

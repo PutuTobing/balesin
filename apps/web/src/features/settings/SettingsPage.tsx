@@ -1,26 +1,39 @@
+import { useQuery } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
+import { ChevronRight, Mail } from 'lucide-react';
 import { RadioGroup } from 'radix-ui';
 import { useBrand } from '../../brand/brand';
+import { Icon } from '../../components/ui/Icon';
 import { Page } from '../../components/ui/Page';
+import { Skeleton } from '../../components/ui/Skeleton';
 import { t } from '../../i18n/id';
 import { cx } from '../../lib/cx';
 import { parsePreference, type ResolvedTheme, type ThemePreference } from '../../theme/theme';
 import { useTheme } from '../../theme/theme-context';
 import { themeOptions } from '../../theme/theme-options';
+import { useSession } from '../auth/session';
+import { EmailStatusBadge } from '../email-settings/EmailStatusBadge';
+import { emailSettingsQuery } from '../../lib/api/queries';
 import styles from './Settings.module.css';
 
 const APPEARANCE_HEADING_ID = 'pengaturan-tampilan';
+const ORGANIZATION_HEADING_ID = 'pengaturan-organisasi';
 
 /**
  * Pengaturan. Bagian lain (channel, peran, jam kerja, dan seterusnya) ditambahkan
- * bersama fiturnya masing-masing; saat ini yang sudah berfungsi adalah Tampilan.
+ * bersama fiturnya masing-masing. Pengaturan organisasi (Email pengirim) hanya untuk Owner;
+ * peran lain tidak melihat menunya.
  */
 export function SettingsPage() {
   const { preference, setPreference } = useTheme();
   const { productName } = useBrand();
+  const session = useSession();
+  const isOwner = session?.user.role === 'owner';
 
   return (
     <Page>
       <div className={styles.content}>
+        {isOwner ? <OrganizationSettings /> : null}
         <section className={styles.card} aria-labelledby={APPEARANCE_HEADING_ID}>
           <div className={styles.cardHead}>
             <h2 id={APPEARANCE_HEADING_ID} className={styles.cardTitle}>
@@ -87,5 +100,40 @@ function Scene({ theme, split = false }: { theme: ResolvedTheme; split?: boolean
         <span className={styles.sceneIn} />
       </span>
     </span>
+  );
+}
+
+/** Menu pengaturan organisasi (khusus Owner), lengkap dengan status tiap koneksi. */
+function OrganizationSettings() {
+  const email = useQuery(emailSettingsQuery);
+  return (
+    <section className={styles.card} aria-labelledby={ORGANIZATION_HEADING_ID}>
+      <div className={styles.cardHead}>
+        <h2 id={ORGANIZATION_HEADING_ID} className={styles.cardTitle}>
+          {t.settingsMenu.sectionTitle}
+        </h2>
+      </div>
+      <ul className={styles.menu}>
+        <li>
+          <Link to="/pengaturan/email" className={styles.menuLink}>
+            <span className={styles.menuIcon}>
+              <Icon icon={Mail} size={20} />
+            </span>
+            <span className={styles.menuText}>
+              <span className={styles.menuLabel}>{t.emailSettings.title}</span>
+              <span className={styles.menuHint}>{t.emailSettings.menuHint}</span>
+            </span>
+            <span className={styles.menuStatus}>
+              {email.data ? (
+                <EmailStatusBadge status={email.data.status} />
+              ) : email.isPending ? (
+                <Skeleton className={styles.statusSkeleton} />
+              ) : null}
+            </span>
+            <Icon icon={ChevronRight} size={16} className={styles.chevron} />
+          </Link>
+        </li>
+      </ul>
+    </section>
   );
 }

@@ -92,6 +92,8 @@ jobs:
       - name: Pasang Chromium
         if: steps.cek.outputs.ada == 'true'
         run: pnpm --filter @balesin/e2e exec playwright install --with-deps chromium
+      # Playwright menyalakan sendiri backend E2E (database `balesin_e2e` dan Redis db 14 direset,
+      # lalu API + worker, lihat e2e/stack/) dan web Vite di port 5180. Tidak butuh build.
       - name: Jalankan E2E
         if: steps.cek.outputs.ada == 'true'
         run: pnpm e2e
