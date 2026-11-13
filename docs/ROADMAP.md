@@ -17,8 +17,8 @@ Orkestrator mengerjakan dari atas ke bawah. Tandai `[x]` saat Definition of Done
 - [x] Riset: masukkan "Usulan tambahan" dari `MOBICHAT-FITUR.md` ke `PRD.md` (catat di `DECISIONS.md`)
 
 ## Fase 1 — Akun, peran, keamanan
-- [ ] Wizard setup pertama (token setup dari env) → Owner + organisasi + branding + SMTP
-- [ ] Login, logout, sesi, CSRF, rate limit, kunci akun
+- [x] Wizard setup pertama (token setup dari env) → Owner + organisasi + branding + SMTP
+- [x] Login, logout, sesi, CSRF, rate limit, kunci akun
 - [ ] 2FA TOTP + kode cadangan; wajib untuk Owner/Admin/Supervisor
 - [ ] Undangan via email, verifikasi email, reset password (template email bermerek)
 - [ ] RBAC 5 peran + tes otorisasi per endpoint

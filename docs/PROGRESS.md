@@ -1,7 +1,7 @@
 # Progress
 
 **Fase aktif:** 1 — Akun, peran, keamanan
-**Terakhir diperbarui:** 2026-11-13 malam (Fase 1 butir 1–2 menunggu penilaian ulang desain)
+**Terakhir diperbarui:** 2026-11-14 (Fase 1 butir 1–2 selesai; butir 3 2FA berjalan)
 
 ## Selesai
 
@@ -25,22 +25,28 @@
 - `pnpm audit`: 2 temuan sedang, hanya di dependensi dev (esbuild lewat drizzle-kit, minimatch
   lewat eslint); `--prod` bersih. Diterima tanpa override.
 
-## Sedang dikerjakan
-- **Fase 1 butir 1–2 (wizard setup + login/sesi/CSRF/rate limit/kunci akun + Pengaturan → Email
-  pengirim): hampir selesai, semua sudah di-commit** (s.d. `4e4044c`, 13 Nov malam). Kontrak API:
+### Fase 1 butir 1–2 — Setup & login (14 Nov 2026)
+- Wizard setup Owner (token setup, organisasi, Owner, nama produk + logo, email pengirim), halaman
+  masuk, menu akun + keluar, Pengaturan → Email pengirim (preset, panduan, tes koneksi, email tes).
+- Sesi ter-hash, CSRF terikat sesi, hook auth bawaan tolak, kunci login per email+asal + cookie
+  perangkat dikenal, audit log hanya-tambah, password SMTP terenkripsi. Kontrak:
   `docs/KONTRAK-API-AUTH.md`.
-  - Lolos: security AMAN (`docs/security-reviews/2026-11-13-fase1-setup-login.md`, temuan S1/R1–R4/I1
-    sudah ditutup), QA (bug QA1–QA6 sudah diperbaiki), 1071 tes Vitest + 161 E2E lulus, build sukses.
-  - **Tinggal:** `kritikus-desain` putaran 2 untuk layar auth (dihentikan sebelum selesai karena
-    Tobing bepergian). Jalankan ulang: nilai ulang kelompok A, B, F, H1, K, L di
-    `docs/design-reviews/2026-11-13-auth-fase1.md` + cek regresi, dan nilai dua penyimpangan yang
-    disengaja frontend: (1) W1 — tombol Masuk turun 53,7 px saat validasi isian kosong; (2) W4 — di
-    390 kerangka Email pengirim 3 baris status sehingga form bergeser 54 px pada keadaan "belum
-    diatur". Bila LOLOS: centang butir 1–2 di ROADMAP, perbarui bagian ini, lanjut butir 3 (2FA).
-- Aset merek sudah terpasang (logo, favicon, ikon PWA, ilustrasi login). Pose Kak Sky & ilustrasi
-  login pengganti menunggu Tobing (BUTUH-TOBING #5, #13).
-- Database dev `balesin` sudah dimigrasi final (0000–0002) dan kosong. E2E memakai database
-  `balesin_e2e`, Redis db 14, port API 3100 / web 5180.
+- Review: security AMAN (`docs/security-reviews/2026-11-13-fase1-setup-login.md`), QA bug QA1–QA6
+  diperbaiki, `kritikus-desain` LOLOS putaran 3 (`docs/design-reviews/2026-11-13-auth-fase1.md`).
+- Aset merek terpasang (logo, favicon, ikon PWA, ilustrasi login).
+
+## Sedang dikerjakan
+- **Fase 1 butir 3 — 2FA TOTP + kode cadangan (14 Nov).** Backend selesai tetapi **BELUM di-commit**
+  (working tree: `apps/api/src/modules/two-factor/`, `packages/core/src/totp.ts`, migrasi `0003`, dsb.)
+  karena mengubah respons `/auth/me`, `/auth/login`, `/setup/complete` sehingga `apps/web` gagal
+  typecheck sampai frontend menyesuaikan. Frontend (langkah kode di halaman masuk, pendaftaran 2FA +
+  QR + kode cadangan, Pengaturan → Keamanan, E2E dengan TOTP) dan review security 2FA sedang
+  berjalan. Commit backend + frontend bersama setelah root hijau, lalu QA + kritikus untuk layar 2FA.
+  Bila sesi terputus: periksa `git status`, jalankan `pnpm typecheck` — sisa pekerjaan ada di
+  `apps/web` dan `e2e`.
+- Pose Kak Sky & ilustrasi login pengganti menunggu Tobing (BUTUH-TOBING #5, #13).
+- Database dev `balesin` dimigrasi s.d. 0002 (0003 belum). E2E memakai database `balesin_e2e`,
+  Redis db 14, port API 3100 / web 5180.
 
 ## Catatan untuk sesi berikutnya
 
