@@ -118,9 +118,15 @@ describe('halaman masuk', () => {
       expect(within(alert).getByText(t.auth.login.lockedTitle)).toBeVisible();
       expect(alert).toHaveTextContent('Coba lagi dalam 2 menit.');
       // Hitung mundur tidak boleh ada di dalam role="alert" (diumumkan berulang).
-      expect(alert.textContent).not.toMatch(/\d\.\d{2}/);
-      const locked = screen.getByRole('button', { name: t.auth.login.countdownButton('1.05') });
+      expect(alert.textContent).not.toMatch(/\d[.:]\d{2}/);
+      const locked = screen.getByRole('button', { name: 'Coba lagi dalam 1:05' });
       expect(locked).toBeDisabled();
+      // Gaya terkunci (tidak dipudarkan) dipasang lewat atribut ini (kritikus W6).
+      expect(locked).toHaveAttribute('data-locked');
+      // N2: fokus tidak jatuh ke <body>; isian password tetap aktif selama terkunci.
+      const password = screen.getByLabelText(t.auth.login.password);
+      await waitFor(() => expect(password).toHaveFocus());
+      expect(password).toBeEnabled();
       const status = screen
         .getAllByRole('status')
         .find((element) => element.classList.contains('sr-only'));
@@ -128,11 +134,16 @@ describe('halaman masuk', () => {
 
       await act(() => vi.advanceTimersByTimeAsync(2_000));
       expect(
-        screen.getByRole('button', { name: t.auth.login.countdownButton('1.03') }),
+        screen.getByRole('button', { name: t.auth.login.countdownButton('1:03') }),
       ).toBeDisabled();
+      // Tes ini mengecek fokus ke password saat kunci habis: pindahkan fokus dulu.
+      password.blur();
 
       await act(() => vi.advanceTimersByTimeAsync(64_000));
-      expect(screen.getByRole('button', { name: t.auth.login.submit })).toBeEnabled();
+      const unlockedButton = screen.getByRole('button', { name: t.auth.login.submit });
+      expect(unlockedButton).toBeEnabled();
+      // Kunci habis: kembali ke gaya tombol utama biasa.
+      expect(unlockedButton).not.toHaveAttribute('data-locked');
       // Pesan kunci yang sudah basi hilang; pembaca layar diberi tahu sekali; fokus ke password.
       expect(screen.queryByRole('alert')).toBeNull();
       expect(status).toHaveTextContent(t.auth.login.unlocked);
@@ -142,7 +153,7 @@ describe('halaman masuk', () => {
     }
   });
 
-  it('503: pesan server ditampilkan', async () => {
+  it('503: pesan server ditampilkan, fokus kembali ke isian password', async () => {
     await renderApp('/masuk', {
       session: null,
       routes: {
@@ -158,5 +169,20 @@ describe('halaman masuk', () => {
     fill('rina@majujaya.co.id', 'apa-saja');
     submit();
     expect(await screen.findByRole('alert')).toHaveTextContent('Layanan sedang tidak tersedia.');
+    await waitFor(() => expect(screen.getByLabelText(t.auth.login.password)).toHaveFocus());
+  });
+
+  it('jaringan putus: pesan jaringan ditampilkan, fokus kembali ke isian password', async () => {
+    await renderApp('/masuk', {
+      session: null,
+      routes: {
+        [`POST ${API_ROUTES.auth.login}`]: () => Promise.reject(new TypeError('Failed to fetch')),
+      },
+    });
+    await screen.findByRole('heading', { level: 1 });
+    fill('rina@majujaya.co.id', 'apa-saja');
+    submit();
+    expect(await screen.findByRole('alert')).toHaveTextContent(t.api.network);
+    await waitFor(() => expect(screen.getByLabelText(t.auth.login.password)).toHaveFocus());
   });
 });

@@ -128,7 +128,13 @@ function OrganizationSettings() {
                 <>
                   <EmailStatusBadge status={email.data.status} />
                   {email.data.status === 'not_configured' ? (
-                    <span className={styles.setUpNow}>· {t.emailSettings.setUpNow}</span>
+                    <>
+                      {/* Titik pemisah sendiri: jarak sama di kedua sisi (gap), warna netral. */}
+                      <span className={styles.statusSeparator} aria-hidden="true">
+                        ·
+                      </span>
+                      <span className={styles.setUpNow}>{t.emailSettings.setUpNow}</span>
+                    </>
                   ) : null}
                 </>
               ) : email.isPending ? (

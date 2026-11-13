@@ -121,11 +121,9 @@ export function EmailSettingsFields({
             </RadioGroup.Item>
           ))}
         </RadioGroup.Root>
-        {preset ? (
-          <p id={id('preset-petunjuk')} className={styles.presetHint}>
-            {preset.hint}
-          </p>
-        ) : null}
+        <p id={id('preset-petunjuk')} className={styles.presetHint}>
+          {t.emailSettings.presetHint[values.preset]}
+        </p>
         {guide}
       </fieldset>
       <div className={styles.divider} aria-hidden="true" />

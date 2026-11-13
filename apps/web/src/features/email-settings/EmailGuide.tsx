@@ -44,26 +44,48 @@ export function EmailGuide({ context, preset, defaultOpen = false, className }: 
         {specific ? (
           <section className={styles.preset} aria-label={specific.title}>
             <h3 className={styles.presetTitle}>{specific.title}</h3>
-            <ol className={styles.presetList}>
-              {specific.steps.map((step) => (
-                <li key={step}>{step}</li>
-              ))}
+            {/* Gaya nomor sama dengan langkah umum (lingkaran), bukan "1." biasa (kritikus N4). */}
+            <ol className={styles.list}>
+              {specific.steps.map((step) => {
+                const link = 'link' in step ? step.link : null;
+                return (
+                  <li key={step.text} className={styles.item}>
+                    <div className={styles.itemBody}>
+                      {step.text}
+                      {/* Tautan tepat di bawah langkah yang menyuruh membuka halamannya. */}
+                      {link ? (
+                        <a
+                          className={styles.link}
+                          href={link.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <LinkLabel label={link.label} />
+                          <span className="sr-only"> {t.emailSettings.newTab}</span>
+                        </a>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
             </ol>
-            {specific.href && specific.link ? (
-              <a
-                className={styles.link}
-                href={specific.href}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {specific.link}
-                <Icon icon={ExternalLink} size={16} />
-                <span className="sr-only"> {t.emailSettings.newTab}</span>
-              </a>
-            ) : null}
           </section>
         ) : null}
       </div>
     </details>
+  );
+}
+
+/** Kata terakhir dan ikon tautan luar tidak dipisah baris (ikon tidak "terdampar" sendiri). */
+function LinkLabel({ label }: { label: string }) {
+  const cut = label.lastIndexOf(' ');
+  return (
+    <>
+      {label.slice(0, cut + 1)}
+      <span className={styles.nowrap}>
+        {label.slice(cut + 1)}
+        <Icon icon={ExternalLink} size={16} className={styles.linkIcon} />
+      </span>
+    </>
   );
 }

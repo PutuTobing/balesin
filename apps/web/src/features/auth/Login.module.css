@@ -75,6 +75,19 @@ img.logo {
   margin-top: var(--space-8);
 }
 
+/*
+ * Terkunci: tombol tetap nonaktif, tetapi labelnya informasi (sisa waktu) → harus terbaca.
+ * Tanpa pudar `opacity` dan bukan lagi biru primer (tidak tampak seperti tombol rusak).
+ * `--ink-2` di `--surface-2`: 6,2:1 (terang), 6,8:1 (gelap). Spesifisitas 0,3,0 supaya menang
+ * atas `.button:disabled` dan `.primary` di Button.module.css apa pun urutan muatnya.
+ */
+.submit[data-locked]:disabled {
+  opacity: 1;
+  border-color: var(--line);
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
 /* Sisa waktu di tombol nonaktif: angka selebar tetap supaya label tidak bergoyang. */
 .countdown {
   font-variant-numeric: tabular-nums;

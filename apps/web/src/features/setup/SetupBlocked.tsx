@@ -1,6 +1,6 @@
 import { Link, useRouter, type ErrorComponentProps } from '@tanstack/react-router';
 import { Check, Copy, LogIn, RotateCw } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { BrandLogo } from '../../brand/BrandLogo';
 import { LoadFailedIllustration } from '../../components/illustrations/illustrations';
 import { Button } from '../../components/ui/Button';
@@ -13,6 +13,25 @@ import { usePageTitle } from '../../lib/use-page-title';
 import styles from './Setup.module.css';
 
 const TOKEN_COMMAND = `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`;
+
+/**
+ * Perintah dengan titik patah (`<wbr />`) setelah setiap `.` dan `(`: baris patah di
+ * `.toString(`, bukan di tengah kata (`randomByte|s`). Teks yang disalin tetap utuh.
+ */
+function BreakableCommand({ text }: { text: string }) {
+  const parts = text.match(/[^.(]*[.(]?/g)?.filter(Boolean) ?? [text];
+  return (
+    <>
+      {parts.map((part, index) => (
+        // Potongan statis dari konstanta: urutannya tidak pernah berubah, indeks aman jadi key.
+        <Fragment key={index}>
+          {part}
+          {index < parts.length - 1 ? <wbr /> : null}
+        </Fragment>
+      ))}
+    </>
+  );
+}
 
 function BlockedFrame({
   title,
@@ -79,7 +98,9 @@ export function SetupBlocked({ kind }: { kind: 'no-token' | 'done' }) {
         <CopyButton text={TOKEN_COMMAND} />
       </div>
       <pre className={styles.command}>
-        <code>{TOKEN_COMMAND}</code>
+        <code>
+          <BreakableCommand text={TOKEN_COMMAND} />
+        </code>
       </pre>
     </BlockedFrame>
   );

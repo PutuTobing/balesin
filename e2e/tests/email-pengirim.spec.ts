@@ -149,9 +149,22 @@ test('HP: form email pengirim muat di 390px dan menandai isian salah sebelum dik
   await expectNoHorizontalScroll(page);
   // Panduan tertutup di HP, bisa dibuka.
   const guide = page.locator('details').filter({ hasText: 'Panduan singkat' });
+  await expect(guide).toHaveCount(1);
   await expect(guide).not.toHaveAttribute('open', '');
   await guide.getByText('Panduan singkat').click();
   await expect(guide.getByText(/Pilih penyedia emailmu/)).toBeVisible();
+  // Panduan ada di dalam form, tepat di bawah pilihan penyedia (seperti wizard), bukan di atas
+  // kartu status: langkah khusus penyedia terlihat saat penyedianya dipilih.
+  await expect(page.locator('form details')).toHaveCount(1);
+  const presets = page.getByRole('radiogroup', { name: 'Penyedia email' });
+  const presetBox = await presets.boundingBox();
+  const guideBox = await guide.boundingBox();
+  expect(presetBox).not.toBeNull();
+  expect(guideBox).not.toBeNull();
+  expect(guideBox!.y).toBeGreaterThan(presetBox!.y + presetBox!.height);
+  expect(guideBox!.y - (presetBox!.y + presetBox!.height)).toBeLessThan(200);
+  await page.getByRole('radio', { name: 'Gmail / Google Workspace' }).click();
+  await expect(guide.getByRole('link', { name: /sandi aplikasi Google/ })).toBeVisible();
 
   await page.getByLabel('Host SMTP').fill('');
   await page.getByLabel('Port').fill('abc');

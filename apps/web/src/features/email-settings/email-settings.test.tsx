@@ -4,10 +4,12 @@ import {
   type EmailSettingsResponse,
   type EmailSettingsView,
 } from '@balesin/shared';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { t } from '../../i18n/id';
+import { media } from '../../lib/media';
 import { apiError, json } from '../../test/fake-api';
+import { setMediaQuery } from '../../test/match-media';
 import { renderApp } from '../../test/render-app';
 import {
   applyPreset,
@@ -201,5 +203,88 @@ describe('Pengaturan → Email pengirim', () => {
     });
     expect(await screen.findByText(t.emailSettings.noMasterKeyTitle)).toBeVisible();
     expect(screen.getByRole('button', { name: t.emailSettings.save })).toBeDisabled();
+  });
+
+  it('N6: sumber .env tanpa master key: tanpa ajakan menyimpan, "Tes terakhir" berisi "—"', async () => {
+    await renderApp('/pengaturan/email', {
+      emailSettings: {
+        ...savedResponse,
+        source: 'env',
+        status: 'untested',
+        lastTest: null,
+        canStoreSecrets: false,
+      },
+    });
+    await screen.findByRole('heading', { level: 1, name: t.emailSettings.title });
+    expect(screen.getByText(/^Pengaturan yang berlaku sekarang berasal dari berkas/)).toBeVisible();
+    expect(screen.queryByText(/Simpan form ini/)).toBeNull();
+
+    const lastTest = screen.getByText(t.emailSettings.lastTest).nextElementSibling;
+    expect(lastTest).toHaveTextContent(`—${t.emailSettings.neverTested}`);
+    // "—" untuk mata; pembaca layar tetap mendengar "Belum pernah dites".
+    expect(within(lastTest as HTMLElement).getByText('—')).toHaveAttribute('aria-hidden', 'true');
+    expect(within(lastTest as HTMLElement).getByText(t.emailSettings.neverTested)).toHaveClass(
+      'sr-only',
+    );
+  });
+
+  it('sumber .env dengan master key: ajakan menyimpan form tetap ada', async () => {
+    await renderApp('/pengaturan/email', {
+      emailSettings: { ...savedResponse, source: 'env' },
+    });
+    await screen.findByRole('heading', { level: 1, name: t.emailSettings.title });
+    expect(screen.getByText(/Simpan form ini/)).toBeVisible();
+  });
+
+  it('belum diatur: "Tes terakhir" tetap berupa kalimat', async () => {
+    await renderApp('/pengaturan/email', {
+      emailSettings: {
+        source: 'none',
+        settings: null,
+        status: 'not_configured',
+        lastTest: null,
+        updatedAt: null,
+        canStoreSecrets: true,
+      },
+    });
+    await screen.findByRole('heading', { level: 1, name: t.emailSettings.title });
+    expect(screen.getByText(t.emailSettings.lastTest).nextElementSibling).toHaveTextContent(
+      new RegExp(`^${t.emailSettings.neverTested}$`),
+    );
+  });
+
+  it('N3 + N4 (HP): panduan di dalam form tepat di bawah pilihan penyedia; tautan di bawah langkahnya', async () => {
+    const { container } = await renderApp('/pengaturan/email', { emailSettings: savedResponse });
+    await screen.findByRole('heading', { level: 1, name: t.emailSettings.title });
+
+    const guides = container.querySelectorAll('details');
+    expect(guides).toHaveLength(1);
+    const guide = guides[0] as HTMLElement;
+    const presetGroup = screen.getByRole('radiogroup', { name: t.emailSettings.presetLabel });
+    // Satu fieldset dengan pilihan penyedia, sesudah pilihan dan petunjuknya.
+    expect(guide.closest('fieldset')).toBe(presetGroup.closest('fieldset'));
+    expect(
+      presetGroup.compareDocumentPosition(guide) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Gmail / Google Workspace' }));
+    // Petunjuk singkat tidak mengulang langkah panduan.
+    const hint = screen.getByText(t.emailSettings.presetHint.gmail);
+    expect(hint).not.toHaveTextContent(/verifikasi 2 langkah/i);
+    const link = within(guide).getByRole('link', { name: /sandi aplikasi Google/ });
+    expect(link.closest('li')).toHaveTextContent(/^Buka halaman Sandi aplikasi/);
+    expect(link).toHaveAttribute('href', 'https://myaccount.google.com/apppasswords');
+    // Langkah umum tidak lagi menunjuk "(lihat di bawah)".
+    expect(within(guide).queryByText(/lihat di bawah/)).toBeNull();
+  });
+
+  it('N3 (desktop): panduan di kolom samping, terbuka, bukan di dalam form', async () => {
+    act(() => setMediaQuery(media.desktop, true));
+    const { container } = await renderApp('/pengaturan/email', { emailSettings: savedResponse });
+    await screen.findByRole('heading', { level: 1, name: t.emailSettings.title });
+    const guides = container.querySelectorAll('details');
+    expect(guides).toHaveLength(1);
+    expect(guides[0]?.closest('form')).toBeNull();
+    expect(guides[0]).toHaveAttribute('open');
   });
 });

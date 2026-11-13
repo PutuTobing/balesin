@@ -26,11 +26,17 @@ export function EmailSettingsSkeleton() {
               ))}
             </div>
             <div className={styles.card}>
-              <div className={styles.skeletonPresets}>
-                {[0, 1, 2, 3].map((index) => (
-                  <Skeleton key={index} className={styles.skeletonPreset} />
-                ))}
+              {/* Judul bagian "Penyedia email" + pilihan: preset mendarat di y yang sama (N5). */}
+              <div>
+                <Skeleton className={styles.skeletonLegend} />
+                <div className={styles.skeletonPresets}>
+                  {[0, 1, 2, 3].map((index) => (
+                    <Skeleton key={index} className={styles.skeletonPreset} />
+                  ))}
+                </div>
               </div>
+              {/* HP/tablet: panduan (tertutup) ada di bawah pilihan penyedia, di dalam form. */}
+              {isDesktop ? null : <Skeleton className={styles.skeletonGuide} />}
               <div className={styles.row}>
                 {[0, 1].map((index) => (
                   <div key={index} className={styles.skeletonField}>
@@ -49,13 +55,11 @@ export function EmailSettingsSkeleton() {
               </div>
             </div>
           </SkeletonRegion>
-          {/* Panduan tidak butuh data: tampil apa adanya di posisi yang sama dengan layar jadi. */}
-          <EmailGuide
-            context="settings"
-            preset="other"
-            defaultOpen={isDesktop}
-            className={styles.aside}
-          />
+          {/* Panduan tidak butuh data: di desktop tampil apa adanya di kolom kanan, sama dengan
+              layar jadi. */}
+          {isDesktop ? (
+            <EmailGuide context="settings" preset="other" defaultOpen className={styles.aside} />
+          ) : null}
         </div>
       </div>
     </div>

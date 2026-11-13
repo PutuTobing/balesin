@@ -67,6 +67,9 @@ function LoginForm() {
   const [lock, setLock] = useState<Deadline | null>(null);
   // Password salah: setelah form aktif lagi, isi password dipilih supaya bisa langsung diketik ulang.
   const [retypePassword, setRetypePassword] = useState(0);
+  // Gagal karena server/jaringan/kunci: fokus kembali ke password (tombol nonaktif selama
+  // memproses, jadi fokus jatuh ke <body> bila dibiarkan).
+  const [refocusPassword, setRefocusPassword] = useState(0);
   const secondsLeft = useCountdown(lock);
   const locked = lock !== null && secondsLeft > 0;
   // Kunci sudah lewat: pesan kunci disembunyikan dan pembaca layar diberi tahu sekali.
@@ -79,6 +82,11 @@ function LoginForm() {
     passwordRef.current?.focus();
     passwordRef.current?.select();
   }, [retypePassword]);
+
+  useEffect(() => {
+    if (refocusPassword === 0) return;
+    passwordRef.current?.focus();
+  }, [refocusPassword]);
 
   useEffect(() => {
     if (unlocked) passwordRef.current?.focus();
@@ -101,16 +109,21 @@ function LoginForm() {
       }
     },
     onError: (error) => {
-      if (!isApiError(error)) return;
-      if (error.status === 429 && error.retryAfterSeconds) {
+      if (isApiError(error) && error.code === 'VALIDATION_ERROR') {
+        setFieldErrors(apiFieldErrors(error.details));
+        setInvalidTick((tick) => tick + 1);
+        return;
+      }
+      if (isApiError(error) && error.code === 'INVALID_CREDENTIALS') {
+        setRetypePassword((count) => count + 1);
+        return;
+      }
+      if (isApiError(error) && error.status === 429 && error.retryAfterSeconds) {
         const startedAt = Date.now();
         setLock({ until: startedAt + error.retryAfterSeconds * 1000, startedAt });
       }
-      if (error.code === 'VALIDATION_ERROR') {
-        setFieldErrors(apiFieldErrors(error.details));
-        setInvalidTick((tick) => tick + 1);
-      }
-      if (error.code === 'INVALID_CREDENTIALS') setRetypePassword((count) => count + 1);
+      // 503, jaringan putus, dikunci: isian password tetap aktif, jadi fokus ke sana.
+      setRefocusPassword((count) => count + 1);
     },
   });
 
@@ -172,6 +185,8 @@ function LoginForm() {
         className={styles.submit}
         loading={login.isPending}
         disabled={locked}
+        // Terkunci: label tombol = sisa waktu, jadi tidak dipudarkan (Login.module.css).
+        data-locked={locked ? '' : undefined}
       >
         {login.isPending ? (
           t.auth.login.submitting

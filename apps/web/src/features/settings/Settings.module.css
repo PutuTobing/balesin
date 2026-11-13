@@ -168,6 +168,11 @@
   gap: var(--space-8);
 }
 
+.statusSeparator {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+}
+
 .setUpNow {
   color: var(--primary);
   font-size: var(--text-14);

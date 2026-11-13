@@ -371,9 +371,9 @@ test('setup dari nol sampai Owner masuk, keluar, masuk lagi, lalu terkunci', asy
   const locked = login.getByRole('alert');
   await expect(locked).toContainText('Masuk dikunci sementara');
   // Sisa waktu ada di label tombol yang nonaktif (bukan di dalam role="alert").
-  await expect(locked).not.toContainText(/\d\.\d{2}/);
+  await expect(locked).not.toContainText(/\d[.:]\d{2}/);
   await expect(
-    login.getByRole('button', { name: /^Coba lagi dalam 1[45]\.\d{2}$/ }),
+    login.getByRole('button', { name: /^Coba lagi dalam 1[45]:[0-5]\d$/ }),
   ).toBeDisabled();
   // Password benar pun ditolak selama terkunci.
   await login.reload();

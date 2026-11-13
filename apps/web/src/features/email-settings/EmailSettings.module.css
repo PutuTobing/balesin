@@ -406,14 +406,24 @@
   height: var(--size-touch);
 }
 
+/* Setinggi baris `.legend` (16px × 1,2) + jaraknya ke pilihan preset. */
+.skeletonLegend {
+  display: block;
+  width: 8rem;
+  height: calc(var(--text-16) * var(--leading-title));
+  margin-bottom: var(--space-12);
+}
+
+/* Panduan tertutup: baris ringkasan + garis tepi 1px atas dan bawah. */
+.card .skeletonGuide {
+  display: block;
+  height: calc(var(--size-control) + 2px);
+  border-radius: var(--radius-card);
+}
+
 @media (max-width: 1023px) {
   .layout {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .aside {
-    position: static;
-    order: -1;
   }
 }
 
@@ -439,5 +449,12 @@
   /* Sama dengan pilihan preset di HP: empat baris. */
   .skeletonPresets {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Ringkasan panduan 44px di HP dan layar sentuh (sama dengan EmailGuide.module.css). */
+@media (max-width: 640px), (pointer: coarse) {
+  .card .skeletonGuide {
+    height: calc(var(--size-touch) + 2px);
   }
 }

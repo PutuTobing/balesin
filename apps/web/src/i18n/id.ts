@@ -395,6 +395,8 @@ export const t = {
     },
     envNotice:
       'Pengaturan yang berlaku sekarang berasal dari berkas `.env` server. Simpan form ini supaya pengaturan dikelola dari aplikasi; nilai di `.env` lalu tidak dipakai lagi.',
+    // Tanpa kunci enkripsi form belum bisa disimpan, jadi tanpa ajakan menyimpan.
+    envNoticeReadOnly: 'Pengaturan yang berlaku sekarang berasal dari berkas `.env` server.',
     noMasterKeyTitle: 'Password email belum bisa disimpan',
     noMasterKeyBody:
       'Server belum punya kunci enkripsi. Isi `BALESIN_MASTER_KEY` di berkas `.env` server (32 byte acak, base64), nyalakan ulang server, lalu kembali ke halaman ini.',
@@ -403,41 +405,67 @@ export const t = {
     guide: (context: 'setup' | 'settings') => [
       'Pilih penyedia emailmu. Host, port, dan keamanan terisi otomatis.',
       'Isi alamat email pengirim. Kami coba tebak server SMTP dari domainnya.',
-      'Masukkan password email. Untuk Gmail dan Microsoft 365, buat app password dulu (lihat di bawah).',
+      'Masukkan password email. Untuk Gmail dan Microsoft 365, buat app password dulu.',
       'Tekan “Tes koneksi”. Bila berhasil, kirim email tes ke dirimu sendiri.',
       context === 'setup'
         ? 'Tekan “Lanjut”. Pengaturan disimpan saat setup selesai.'
         : 'Tekan “Simpan”. Undangan tim dan reset password akan dikirim dari alamat ini.',
     ],
+    /**
+     * Petunjuk singkat di bawah pilihan penyedia. Tidak mengulang langkah panduan; caranya
+     * ada di panduan langkah demi langkah (kritikus N4).
+     */
+    presetHint: {
+      cpanel:
+        'Email dari hosting (cPanel). Host biasanya mail.<domain kamu>, port 465 dengan SSL/TLS. Pakai password akun email itu.',
+      gmail:
+        'Wajib memakai app password (16 karakter), bukan password akun Google. Caranya ada di panduan.',
+      outlook:
+        'Perlu Authenticated SMTP aktif, dan app password bila akun memakai verifikasi 2 langkah. Caranya ada di panduan.',
+      other: 'Isi host, port, dan keamanan sesuai petunjuk penyedia emailmu.',
+    },
+    /** Langkah khusus penyedia; `link` tampil tepat di bawah langkah yang menyebut halamannya. */
     guidePreset: {
       gmail: {
         title: 'Khusus Gmail / Google Workspace',
         steps: [
-          'Buka Akun Google → Keamanan, lalu aktifkan Verifikasi 2 Langkah.',
-          'Buka halaman Sandi aplikasi, beri nama “Balesin”, lalu tekan Buat.',
-          'Salin 16 karakter yang muncul ke isian App password (spasinya boleh ikut).',
+          { text: 'Buka Akun Google → Keamanan, lalu aktifkan Verifikasi 2 Langkah.' },
+          {
+            text: 'Buka halaman Sandi aplikasi, beri nama “Balesin”, lalu tekan Buat.',
+            link: {
+              label: 'Buka halaman sandi aplikasi Google',
+              href: 'https://myaccount.google.com/apppasswords',
+            },
+          },
+          { text: 'Salin 16 karakter yang muncul ke isian App password (spasinya boleh ikut).' },
         ],
-        link: 'Buka halaman sandi aplikasi Google',
-        href: 'https://myaccount.google.com/apppasswords',
       },
       outlook: {
         title: 'Khusus Outlook / Microsoft 365',
         steps: [
-          'Pastikan admin mengaktifkan Authenticated SMTP untuk kotak surat ini (Pusat admin Microsoft 365 → Pengguna → Email → Kelola aplikasi email).',
-          'Bila akun memakai verifikasi 2 langkah, buat app password di Info keamanan.',
+          {
+            text: 'Pastikan admin mengaktifkan Authenticated SMTP untuk kotak surat ini (Pusat admin Microsoft 365 → Pengguna → Email → Kelola aplikasi email).',
+          },
+          {
+            text: 'Bila akun memakai verifikasi 2 langkah, buat app password di Info keamanan.',
+            link: {
+              label: 'Buka Info keamanan Microsoft',
+              href: 'https://mysignins.microsoft.com/security-info',
+            },
+          },
         ],
-        link: 'Buka Info keamanan Microsoft',
-        href: 'https://mysignins.microsoft.com/security-info',
       },
       cpanel: {
         title: 'Khusus cPanel / IDCloudHost',
         steps: [
-          'Masuk cPanel → Email Accounts, pilih alamat pengirim, lalu tekan Connect Devices.',
-          'Salin “Outgoing Server” ke Host SMTP, dan port SMTP-nya (biasanya 465) ke Port.',
-          'Password = password akun email itu.',
+          {
+            text: 'Masuk cPanel → Email Accounts, pilih alamat pengirim, lalu tekan Connect Devices.',
+          },
+          {
+            text: 'Salin “Outgoing Server” ke Host SMTP, dan port SMTP-nya (biasanya 465) ke Port.',
+          },
+          { text: 'Password = password akun email itu.' },
         ],
-        link: null,
-        href: null,
       },
     },
     newTab: '(membuka tab baru)',

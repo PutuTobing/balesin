@@ -146,10 +146,16 @@ test('terkunci: tombol Masuk mati, hitung mundur berjalan, lalu aktif lagi', asy
   const alert = page.getByRole('alert');
   await expect(alert).toContainText('Masuk dikunci sementara');
   // Hitung mundur pindah ke label tombol nonaktif; tidak ada angka berjalan di role="alert".
-  await expect(alert).not.toContainText(/\d\.\d{2}/);
+  await expect(alert).not.toContainText(/\d[.:]\d{2}/);
   const submit = page.locator('form button[type="submit"]');
-  await expect(submit).toHaveAccessibleName(/^Coba lagi dalam 1[45]\.\d{2}$/);
+  // Format `m:ss` (titik dua): "15.00" terbaca sebagai jam.
+  await expect(submit).toHaveAccessibleName(/^Coba lagi dalam 1[45]:[0-5]\d$/);
   await expect(submit).toBeDisabled();
+  // Gaya terkunci: tidak dipudarkan, label sisa waktu tetap terbaca (kritikus W6).
+  await expect(submit).toHaveAttribute('data-locked', '');
+  await expect(submit).toHaveCSS('opacity', '1');
+  // Fokus tidak jatuh ke <body>: kembali ke isian password yang tetap aktif.
+  await expect(page.getByLabel('Password', { exact: true })).toBeFocused();
   // Enter di isian password juga tidak mengirim apa pun selama terkunci.
   let sent = 0;
   page.on('request', (r) => {
@@ -158,11 +164,12 @@ test('terkunci: tombol Masuk mati, hitung mundur berjalan, lalu aktif lagi', asy
   await page.getByLabel('Password', { exact: true }).press('Enter');
 
   await page.clock.fastForward('14:30');
-  await expect(submit).toHaveAccessibleName(/^Coba lagi dalam 0\.\d{2}$/);
+  await expect(submit).toHaveAccessibleName(/^Coba lagi dalam 0:[0-5]\d$/);
   await expect(submit).toBeDisabled();
   await page.clock.fastForward('01:00');
   await expect(submit).toBeEnabled();
   await expect(submit).toHaveAccessibleName('Masuk');
+  await expect(submit).not.toHaveAttribute('data-locked');
   // Pesan kunci yang basi hilang; pembaca layar diberi tahu sekali lewat wilayah status.
   await expect(alert).toHaveCount(0);
   await expect(

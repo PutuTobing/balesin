@@ -125,7 +125,12 @@ function EmailSettingsScreen({ data }: { data: EmailSettingsResponse }) {
         ) : null}
         {data.source === 'env' ? (
           <Notice tone="info">
-            <RichText text={t.emailSettings.envNotice} />
+            <RichText
+              text={
+                // Tanpa kunci enkripsi tombol Simpan nonaktif: jangan ajak menyimpan form.
+                data.canStoreSecrets ? t.emailSettings.envNotice : t.emailSettings.envNoticeReadOnly
+              }
+            />
           </Notice>
         ) : null}
 
@@ -138,6 +143,9 @@ function EmailSettingsScreen({ data }: { data: EmailSettingsResponse }) {
             saved={saved}
             detectHost={endpoints.emailSettings.detectHost}
             disabled={save.isPending}
+            // HP/tablet: panduan tepat di bawah pilihan penyedia (seperti wizard), supaya langkah
+            // khusus penyedia terlihat saat memilihnya. Desktop: kolom kanan.
+            guide={isDesktop ? undefined : <EmailGuide context="settings" preset={values.preset} />}
           />
           <EmailTestPanel
             defaultRecipient={session?.user.email ?? ''}
@@ -179,12 +187,14 @@ function EmailSettingsScreen({ data }: { data: EmailSettingsResponse }) {
         </form>
       </div>
 
-      <EmailGuide
-        context="settings"
-        preset={values.preset}
-        defaultOpen={isDesktop}
-        className={styles.aside}
-      />
+      {isDesktop ? (
+        <EmailGuide
+          context="settings"
+          preset={values.preset}
+          defaultOpen
+          className={styles.aside}
+        />
+      ) : null}
     </div>
   );
 }
@@ -201,7 +211,7 @@ function StatusSummary({ data }: { data: EmailSettingsResponse }) {
       <div className={styles.statusItem}>
         <dt className={styles.statusLabel}>{t.emailSettings.lastTest}</dt>
         <dd className={styles.statusValue}>
-          {data.lastTest ? formatDateTime(data.lastTest.testedAt) : t.emailSettings.neverTested}
+          <LastTestValue data={data} />
         </dd>
       </div>
       {/* Belum diatur sama sekali: "Sumber" hanya mengulang status, jadi tidak ditampilkan. */}
@@ -215,4 +225,18 @@ function StatusSummary({ data }: { data: EmailSettingsResponse }) {
       )}
     </dl>
   );
+}
+
+function LastTestValue({ data }: { data: EmailSettingsResponse }) {
+  if (data.lastTest) return formatDateTime(data.lastTest.testedAt);
+  // Status sudah "Belum dites": cukup tanda kosong, tidak mengulang kalimat yang sama (N6).
+  if (data.status === 'untested') {
+    return (
+      <>
+        <span aria-hidden="true">—</span>
+        <span className="sr-only">{t.emailSettings.neverTested}</span>
+      </>
+    );
+  }
+  return t.emailSettings.neverTested;
 }

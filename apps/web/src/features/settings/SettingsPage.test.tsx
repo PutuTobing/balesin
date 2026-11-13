@@ -50,6 +50,19 @@ describe('Pengaturan → Tampilan', () => {
   });
 });
 
+describe('Pengaturan → menu organisasi', () => {
+  it('email belum diatur: "Belum diatur · Atur sekarang", titik pemisah elemen sendiri', async () => {
+    await renderApp('/pengaturan');
+    const link = await screen.findByRole('link', { name: new RegExp(t.emailSettings.title) });
+    const setUpNow = await within(link).findByText(t.emailSettings.setUpNow);
+    // Teks ajakan tanpa titik di depannya; titik = elemen dekoratif tersendiri (N8).
+    expect(setUpNow.textContent).toBe(t.emailSettings.setUpNow);
+    const separator = setUpNow.previousElementSibling;
+    expect(separator).toHaveTextContent('·');
+    expect(separator).toHaveAttribute('aria-hidden', 'true');
+  });
+});
+
 describe('menu tema di rail', () => {
   it('memilih tema lewat keyboard dan menandai pilihan aktif', async () => {
     await renderApp('/inbox');

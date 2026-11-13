@@ -100,31 +100,45 @@
   font-weight: var(--weight-semibold);
 }
 
-/* `.preset .presetList`: mengalahkan reset `ol[class]` di base.css supaya nomornya tampil. */
-.preset .presetList {
+/* Isi langkah (teks + tautan opsional) di samping lingkaran nomor. */
+.itemBody {
   display: flex;
   flex-direction: column;
-  gap: var(--space-8);
-  margin: 0;
-  padding-left: var(--space-16);
-  list-style: decimal;
-  color: var(--ink-2);
-  font-size: var(--text-13);
+  align-items: flex-start;
+  gap: var(--space-4);
+  min-width: 0;
 }
 
+/*
+ * Tautan sebaris (bukan flex): bila labelnya patah dua baris di kolom sempit, ikon tetap
+ * menempel di kata terakhir. Padding atas-bawah membuat satu baris setinggi kontrol (36px,
+ * 44px di HP) sebagai target sentuh.
+ */
 .link {
-  display: inline-flex;
-  align-items: center;
-  align-self: flex-start;
-  gap: var(--space-4);
-  min-height: var(--size-control);
+  display: inline-block;
+  padding-block: calc((var(--size-control) - var(--text-13) * var(--leading-text)) / 2);
   font-size: var(--text-13);
   font-weight: var(--weight-semibold);
+  line-height: var(--leading-text);
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.linkIcon {
+  /* base.css membuat svg `display: block`; di sini ikon harus sebaris dengan kata terakhir. */
+  display: inline-block;
+  margin-left: var(--space-4);
+  vertical-align: text-bottom;
 }
 
 @media (max-width: 640px), (pointer: coarse) {
-  .summary,
-  .link {
+  .summary {
     min-height: var(--size-touch);
+  }
+
+  .link {
+    padding-block: calc((var(--size-touch) - var(--text-13) * var(--leading-text)) / 2);
   }
 }

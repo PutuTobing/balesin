@@ -219,6 +219,14 @@ describe('wizard setup', () => {
     });
     expect(await heading(t.setup.blocked.noTokenTitle)).toBeVisible();
     expect(screen.getByText(/SETUP_TOKEN/)).toBeVisible();
+    // N7: titik patah setelah "." dan "(" supaya tidak patah di tengah kata; teksnya tetap utuh.
+    const command = document.querySelector('pre code');
+    expect(command?.textContent).toBe(
+      `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`,
+    );
+    const breaks = command?.querySelectorAll('wbr') ?? [];
+    expect(breaks.length).toBe(7);
+    for (const wbr of breaks) expect(wbr.previousSibling?.textContent).toMatch(/[.(]$/);
   });
 
   it('master key belum diisi → langkah Email hanya berisi petunjuk dan bisa langsung lanjut', async () => {
