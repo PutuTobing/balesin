@@ -406,3 +406,171 @@ Hasil setelah perubahan (Postgres + Redis lokal):
 
 ESLint, Prettier, dan `tsc --noEmit` bersih untuk ketiga berkas tes. Tes `apps/web` dan E2E
 tidak dijalankan ulang (milik agent frontend; dev server sedang dipakai).
+
+---
+
+# Putaran 2 — pemeriksaan ulang perbaikan
+
+- **Tanggal:** 2026-11-13
+- **Cakupan:** `git diff c6ed37f..8c2b868` — commit `3b55173` (R9, R10, R12) dan `8c2b868`
+  (T1, S1–S3, R1–R8, R11, ditambah hal baru: rute pelengkap 405, penolakan preflight, pemotongan
+  string log, komentar penanda database tes).
+- **Cara uji:** sama seperti putaran 1 — kode dibaca, lalu dibuktikan terhadap Redis 7 dan
+  Postgres 16 lokal, server HTTP di port acak `127.0.0.1`, dan `app.inject()`. Kode produk dan
+  konfigurasi tidak diubah.
+
+## Putusan putaran 2: AMAN
+
+Tidak ada temuan Kritis maupun Tinggi. T1 tertutup dan sudah dibuktikan terhadap Redis
+sungguhan. Tersisa satu temuan lama berstatus sebagian (R2) dan empat temuan baru, semuanya
+**Rendah**; tidak ada yang memblokir Fase 0.
+
+## H. Status temuan putaran 1
+
+| Kode | Level | Status | Bukti |
+| --- | --- | --- | --- |
+| T1 | Tinggi | **Tertutup** | `redact.ts:438-445` menulis `command` hanya sebagai `{ name }`; `args` masuk `ERROR_DATA_PROPS` (`:74`). Redis lokal dengan password salah: error mentah masih memuat password di `command.args`, baris log hanya memuat `"command":{"name":"hello"}`. `INCRBY`, perintah tak dikenal, dan `AUTH` yang gagal: nama kunci, nilai, dan password tidak ada di log (4 bentuk pemanggilan logger). |
+| S1 | Sedang | **Tertutup** | `logger.ts` `prepareLogArguments` menyensor pesan dan argumen format; `redact.ts:205-278` menyensor pasangan JSON di tingkat escape berapa pun. |
+| S2 | Sedang | **Tertutup** | Regex diganti pemindaian `indexOf` (`redact.ts:161-197`). Terukur: lebih dari 40 masukan jahat berukuran 400 KB, terlama 42 ms; 200 KB → 800 KB tumbuh ±4–5× (linear). Satu baris log dengan string 1 MiB: 38 ms. |
+| S3 | Sedang | **Tertutup** | `config.ts` `parseTrustProxy`: production menolak `true`, angka, dan CIDR `/0`. `.env.example` diperbarui. |
+| R1 | Rendah | **Tertutup** | Awalan `reset_token=`/`new_password=`, password ber-`@` dan berkutip, token Telegram, `?code=`, `sha256=`, baris `Cookie:`/`Authorization:` tersensor. Sisa bentuk lain dicatat sebagai N2 dan N3. |
+| R2 | Rendah | **Sebagian** | `22P02` dan `22007` tertutup (diuji ke Postgres: uuid, date, numeric, boolean). `22003` masih mengulang nilai: `value "99999999999" is out of range for type integer` — nilainya di awal pesan, bukan setelah `: "` (`redact.ts:476-479`). |
+| R3 | Rendah | **Tertutup** | `accessKey`, `licenseKey`, `sessionId`, `sid`, `passcode`, `jwt` disensor; `code`, `key`, `side`, `sessionRef` tetap tampil. |
+| R4 | Rendah | **Tertutup** | `error-handler.ts`: status 4xx hanya dihormati untuk kode `FST_…` dan `AppError`; error upstream 401 → 500 dan tercatat. Lihat catatan I7. |
+| R5 | Rendah | **Tertutup** | `app.ts`: `removeContentTypeParser('text/plain')`; `POST text/plain` → 415. |
+| R6 | Rendah | **Tertutup** | `/%zz` dan parameter terlalu panjang kini membawa `nosniff`, `no-store`, CSP, `x-request-id`. |
+| R7 | Rendah | **Tertutup** | `permissions-policy` ada di semua respons yang diuji (200, 403, 404, 405, 400 framework). |
+| R8 | Rendah | **Tertutup** | `assertTestDatabaseUrl` dipanggil di `withAdminClient` dan `dropStaleTemporaryDatabases`; penghapusan butuh nama berpola penuh + komentar penanda + umur. Database `…_tmp_arsip_…` tidak lagi terhapus. |
+| R9 | Rendah | **Tertutup** | 13 dari 13 impor terlarang (termasuk sub-path, paket ber-scope, re-export) ditandai ESLint; `fastify`/`pg` tidak. `import()` dinamis tidak tertangkap ESLint tetapi tertutup `pnpm check:deps`, yang menolak 5 dari 5 lockfile tiruan berisi paket terlarang. |
+| R10 | Rendah | **Tertutup** | `pnpm config get minimumReleaseAge` → `1440`. |
+| R11 | Rendah | **Tertutup** | `describeMigrationFailure` hanya mencetak baris pertama pesan Postgres + SQLSTATE. |
+| R12 | Rendah | **Tertutup** | `git check-ignore`: `.env`, `.env.staging`, `.env.backup`, `apps/api/.env.test`, `*.pem`, `*.key` diabaikan; `.env.example` tidak. |
+
+**Integritas tes.** Ketiga berkas tes putaran 1 belum pernah ter-commit sebelum `8c2b868`, jadi
+`git diff` tidak bisa membandingkannya; saya bandingkan baris demi baris dengan versi yang saya
+tulis. Hasilnya: hanya `it.fails(` → `it(`; tidak ada asersi yang dihapus, dilonggarkan, atau
+dilewati (`skip`/`todo` tidak ada di `apps/api`, `packages/core`, `packages/db`, `apps/worker`).
+Tes lama `scrubSecretsInText` dipindah ke `redact-text.test.ts` dan diperluas, bukan dilemahkan.
+Satu hal kosmetik: penggantian massal ikut mengubah komentar kepala ketiga berkas itu, sehingga
+kini tertulis "`it(...)` = CELAH YANG MASIH TERBUKA" — komentarnya basi dan sebaiknya dihapus.
+
+## I. Temuan baru putaran 2
+
+### N1 — Rendah — Rute pelengkap 405 berada di luar scope plugin, jadi hook auth milik scope tidak berlaku
+
+**Bukti:** `apps/api/src/http/method-not-allowed.ts:53-60` mendaftarkan rute pelengkap di
+instance root. Diuji dengan modul tiruan yang hook `onRequest`-nya menolak 401 di dalam scope
+plugin: `GET /…/laporan/1` → 401, `DELETE /…/laporan/1` → **405 + `Allow: GET, HEAD`**,
+alamat tak ada → 404.
+
+**Dampak:** tanpa login, orang bisa memetakan alamat dan metode yang ada. Tidak ada data yang
+terbuka, dan peta rute juga bisa dibaca dari bundle web. Belum terjangkau di Fase 0 (belum ada
+auth).
+
+**Perbaikan (saat auth dibangun, Fase 1):** pasang auth sebagai hook `onRequest` di root
+dengan bawaan tolak dan daftar rute publik eksplisit, supaya rute pelengkap ikut terlindungi.
+Aturan "rute tanpa deklarasi izin gagal saat registrasi" (catatan F.9) harus mengecualikan
+rute pelengkap ini secara eksplisit.
+
+### N2 — Rendah — Bentuk `kunci: nilai` di teks bebas hanya disensor untuk daftar nama header tetap
+
+**Bukti:** `packages/core/src/redact.ts:95-96` dan `:126`/`:139` (daftar nama header tetap),
+`:286` (`kunci=nilai` hanya dengan `=`), `:271` (nilai array/objek dilewati). Tidak disensor:
+
+- hasil `util.inspect`: `{ access_token: 'x', password: 'y' }`;
+- gaya YAML/prosa: `password: x`, `sid: x`;
+- header di luar daftar: `x-telegram-bot-api-secret-token: x`, `X-Auth-Token: x`;
+- array di bawah kunci rahasia pada JSON berbentuk teks: `{"password":["x"]}`.
+
+**Dampak:** hanya untuk rahasia yang sudah berupa TEKS (pesan error pustaka, body mentah).
+Objek sungguhan dengan kunci yang sama tetap disensor lewat jalur nama kunci (dijaga tes).
+
+**Perbaikan:** `redactAssignments` menerima juga pemisah `:` (kunci boleh berkutip tunggal)
+untuk kunci sensitif. Akibatnya prosa seperti "Invalid token: expired" ikut tersensor; itu
+sejalan dengan prinsip "lebih baik kelebihan sensor".
+
+### N3 — Rendah — `kunci=nilai` tidak dikenali bila kunci didahului lebih dari 64 karakter kunci bersambung
+
+**Bukti:** `packages/core/src/redact.ts:286` (lookbehind + batas `{1,64}`).
+`https://x/cb?<70 huruf>_token=<nilai>` lolos utuh; dengan 58 huruf tersensor.
+
+**Perbaikan:** hapus lookbehind sehingga yang diperiksa 64 karakter terakhir sebelum `=`.
+Tetap linear (paling banyak 64 langkah per posisi).
+
+### N4 — Rendah — String dipotong SEBELUM disensor: rahasia yang terpotong di batas kehilangan panjang minimum polanya
+
+**Bukti:** `packages/core/src/redact.ts:346-354` (`sanitizeText` = potong, lalu sensor).
+Terbukti: token Meta yang terpotong menyisakan 22 karakter awal di log; `Bearer` menyisakan 7.
+Untuk token bot Telegram sisa terbanyak 29 dari 35 karakter rahasianya.
+
+**Dampak:** butuh rahasia yang kebetulan jatuh tepat di karakter ke-16.384 dari satu string;
+yang lolos hanya awalan. **Perbaikan:** sensor jendela `MAX + 512` karakter, baru potong ke
+`MAX`; atau buang kata terakhir yang terpotong.
+
+### Sisa R2 — Rendah — SQLSTATE `22003` masih mengulang nilai
+
+**Perbaikan:** di `describeError`, untuk kelas 22 ganti setiap bagian berkutip ganda
+(`"…"`) dengan penanda sensor, bukan hanya bagian setelah `: "`.
+
+### Info putaran 2
+
+- **I7 — Efek samping R4:** plugin yang melempar objek ber-`statusCode` tanpa kode `FST_…`
+  kini dijawab 500. Saat memasang rate limit di Fase 1, pastikan penolakannya dilempar sebagai
+  `AppError('RATE_LIMITED')` dan diuji (harus 429, bukan 500).
+- **I8 — Pesan error Redis yang disusun dari data** tetap tampil: skrip Lua yang membalas
+  `error_reply("gagal: " .. ARGV[1])` menulis isi ARGV di PESAN error (terbukti). Itu bukan
+  argumen perintah, jadi tidak bisa dibedakan sensor. Jangan menyusun pesan error Lua dari data.
+- **I9 — `command.args` pada objek biasa** (bukan `Error`) tidak disensor. ioredis selalu
+  melempar `Error`, jadi tidak terjangkau sekarang.
+- **I10 — 403 preflight tanpa `Vary: Origin`.** Aman karena `cache-control: no-store`.
+- **I11 — `TRUST_PROXY` masih menerima CIDR sangat lebar selain `/0`** (mis. `0.0.0.0/1`).
+  Kesalahan operator, bukan celah.
+- **I12 — `sessionId` selalu disensor.** Untuk menghubungkan baris log, pakai kunci lain yang
+  berisi `id` baris sesi (bukan token), mis. `sessionRef`.
+
+## J. Yang diperiksa pada hal baru dan dinilai aman
+
+- **405:** hanya untuk alamat yang terdaftar; `/tidak-ada`, `/health/`, `/HEALTH` tetap 404
+  untuk semua metode. Respons berupa amplop JSON statis dengan header keamanan lengkap, tanpa
+  header CORS untuk origin asing. Body `text/plain` → 415, JSON rusak → 400 (bukan 405); handler
+  asli (pemeriksaan Postgres/Redis) tidak ikut berjalan.
+- **Preflight:** origin asing, `null`, berawalan sama, dan beda huruf besar/kecil → 403 tanpa
+  satu pun header izin; origin tidak dipantulkan di body. Preflight dari origin aplikasi
+  dijawab sama untuk alamat yang ada dan yang tidak ada, jadi tidak membuka daftar rute.
+  `access-control-allow-credentials` tidak lagi dikirim ke origin asing.
+- **Sensor baru:** 40.000 masukan acak (kutip, garis miring terbalik, penanda sensor, pasangan
+  JSON bertingkat, karakter kendali) — setiap baris log tetap JSON sah, kunci tingkat atas
+  tidak berubah, dan sensor idempoten. Tidak ada cara menyelundupkan kunci baru ke baris log.
+- **Biaya di jalur log:** semua pola baru linear (lihat S2). Catatan: batas 16.384 berlaku per
+  string, bukan per baris — satu baris dengan banyak string tetap bisa besar (±850 KB pada uji),
+  tetapi biayanya tetap linear.
+- **Database tes:** nama non-`_test` ditolak sebelum koneksi dibuka di semua fungsi; komentar
+  penanda dipasang dengan teks tetap (tanpa interpolasi masukan).
+- **Rantai pasok:** `pnpm check:deps` dijalankan di CI dan `pnpm check`; gagal bila lockfile
+  tidak terbaca.
+
+## K. `pnpm audit` putaran 2
+
+Tidak berubah: 2 temuan sedang di dependensi dev (`esbuild` 0.18.20 lewat `drizzle-kit`,
+`minimatch` 10.2.6 lewat `eslint`), 0 tinggi/kritis; `pnpm audit --prod` bersih. Tidak ada
+dependensi baru di `c6ed37f..8c2b868`.
+
+## L. Tes putaran 2
+
+| Berkas | Asal | Isi |
+| --- | --- | --- |
+| `packages/core/src/redact.security-putaran2.test.ts` | Baru | N2, N3, N4, sisa R2 sebagai `it.fails` (8 tes); penjaga regresi biaya linear untuk 8 masukan yang menyasar kode perbaikan. |
+| `apps/api/src/security-review-putaran2.test.ts` | Baru | Penjaga regresi 405 dan preflight; satu tes fakta N1. Tanpa `it.fails`. |
+
+Setiap `it.fails` sudah dipastikan gagal karena alasan yang dimaksud.
+
+| Paket | Lulus | Diharapkan gagal (celah Rendah terbuka) |
+| --- | --- | --- |
+| `packages/core` | 237 | 8 (N2 ×5, N3 ×1, N4 ×1, R2 ×1) |
+| `apps/api` | 94 | 0 |
+| `packages/db` | 70 | 0 |
+| `apps/worker` | 16 | 0 |
+| `packages/shared` | 12 | 0 |
+
+ESLint, Prettier, dan `tsc --noEmit` bersih untuk kedua berkas tes baru. Tes `apps/web` dan
+E2E tidak dijalankan (E2E sedang dijalankan orkestrator).
