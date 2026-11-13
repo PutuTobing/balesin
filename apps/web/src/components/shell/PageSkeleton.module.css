@@ -6,29 +6,15 @@
   overflow: hidden;
 }
 
-.header {
-  display: flex;
-  flex: none;
-  align-items: center;
-  height: var(--size-bar);
-  padding: 0 var(--space-24);
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
-}
-
-.title {
-  width: 7rem;
-  height: var(--space-24);
-}
-
 .body {
   flex: 1;
   min-height: 0;
   padding: var(--space-24);
 }
 
+/* Selebar isi halaman satu kolom (Pengaturan, Lainnya). */
 .card {
-  max-width: 60rem;
+  max-width: 42rem;
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--surface);
@@ -78,10 +64,6 @@
 }
 
 @media (max-width: 640px) {
-  .header {
-    padding: 0 var(--space-16);
-  }
-
   .body {
     padding: var(--space-16);
   }

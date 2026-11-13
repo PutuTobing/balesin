@@ -5,7 +5,7 @@ import { t } from '../../i18n/id';
 
 export function BroadcastPage() {
   return (
-    <Page title={t.nav.broadcast}>
+    <Page>
       <EmptyState
         illustration={<BroadcastIllustration />}
         title={t.broadcast.emptyTitle}

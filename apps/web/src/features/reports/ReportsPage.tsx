@@ -5,7 +5,7 @@ import { t } from '../../i18n/id';
 
 export function ReportsPage() {
   return (
-    <Page title={t.nav.reports} parent={{ to: '/lainnya', label: t.nav.more }}>
+    <Page>
       <EmptyState
         illustration={<ReportsIllustration />}
         title={t.reports.emptyTitle}

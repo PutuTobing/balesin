@@ -7,6 +7,7 @@ import { themeOptions } from '../../theme/theme-options';
 import { Icon } from '../ui/Icon';
 import { Tooltip } from '../ui/Tooltip';
 import styles from './ThemeMenu.module.css';
+import { RAIL_POPOVER_OFFSET } from './rail';
 
 /** Tombol di rail desktop untuk memilih Terang / Gelap / Ikuti sistem. */
 export function ThemeMenu({ className }: { className?: string }) {
@@ -16,7 +17,7 @@ export function ThemeMenu({ className }: { className?: string }) {
     // Non-modal: menu kecil ini tidak perlu mengunci scroll halaman. Mode modal Radix
     // menyuntikkan elemen <style> inline, yang ditolak CSP `style-src 'self'`.
     <DropdownMenu.Root modal={false}>
-      <Tooltip label={t.theme.change} side="right">
+      <Tooltip label={t.theme.change} side="right" sideOffset={RAIL_POPOVER_OFFSET}>
         <DropdownMenu.Trigger asChild>
           <button type="button" className={className} aria-label={t.theme.change}>
             <Icon icon={resolved === 'dark' ? Moon : Sun} size={20} />
@@ -27,7 +28,7 @@ export function ThemeMenu({ className }: { className?: string }) {
         <DropdownMenu.Content
           side="right"
           align="end"
-          sideOffset={8}
+          sideOffset={RAIL_POPOVER_OFFSET}
           collisionPadding={8}
           className={styles.menu}
         >

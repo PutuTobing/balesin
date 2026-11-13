@@ -25,8 +25,9 @@ async function clickIfVisible(page: Page, name: string): Promise<boolean> {
  * Daftar layar yang difoto untuk penilaian desain.
  * Tambahkan entri setiap ada layar/keadaan baru (kosong, loading, error).
  *
- * Rute `/pratinjau/*` hanya ada di mode pengembangan: memperlihatkan keadaan memuat
- * dan gagal yang belum bisa dipicu dari UI selama belum ada data.
+ * Rute pratinjau (`/pratinjau/gagal`, `/inbox/pratinjau-memuat`, `/kontak/pratinjau-memuat`)
+ * hanya ada di mode pengembangan: memperlihatkan keadaan memuat dan gagal yang belum bisa
+ * dipicu dari UI selama belum ada data.
  */
 export const screens: Screen[] = [
   // Inbox: kerangka tiga panel (desktop) / daftar chat (HP), semuanya kosong.
@@ -55,7 +56,7 @@ export const screens: Screen[] = [
       await page.getByRole('heading', { name: /Tidak ketemu chat/ }).waitFor();
     },
   },
-  { name: 'inbox-memuat', path: '/pratinjau/memuat-inbox', waitFor: '[role="status"]' },
+  { name: 'inbox-memuat', path: '/inbox/pratinjau-memuat', waitFor: '[role="status"]' },
 
   // Menu lain: keadaan kosong.
   { name: 'kontak', path: '/kontak', waitFor: 'h1' },
@@ -98,7 +99,7 @@ export const screens: Screen[] = [
   },
 
   // Keadaan memuat, gagal, tidak ditemukan.
-  { name: 'halaman-memuat', path: '/pratinjau/memuat-halaman', waitFor: '[role="status"]' },
+  { name: 'halaman-memuat', path: '/kontak/pratinjau-memuat', waitFor: '[role="status"]' },
   { name: 'gagal-dimuat', path: '/pratinjau/gagal', waitFor: '[role="alert"]' },
   { name: 'tidak-ditemukan', path: '/alamat-yang-tidak-ada', waitFor: 'h1' },
 ];

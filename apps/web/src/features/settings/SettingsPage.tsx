@@ -19,7 +19,7 @@ export function SettingsPage() {
   const { productName } = useBrand();
 
   return (
-    <Page title={t.nav.settings} parent={{ to: '/lainnya', label: t.nav.more }}>
+    <Page>
       <div className={styles.content}>
         <section className={styles.card} aria-labelledby={APPEARANCE_HEADING_ID}>
           <div className={styles.cardHead}>

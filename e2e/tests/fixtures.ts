@@ -9,9 +9,6 @@ export const test = base.extend<{ problems: string[] }>({
     async ({ page }, use) => {
       const problems: string[] = [];
       page.on('console', (msg) => {
-        // Hanya dev server: path preload font (/node_modules/...) berbeda dari URL di CSS,
-        // jadi Chrome mengeluh setelah beberapa detik. Build produksi memakai URL yang sama.
-        if (/was preloaded using link preload but not used/.test(msg.text())) return;
         if (msg.type() === 'error' || msg.type() === 'warning') {
           problems.push(`console.${msg.type()}: ${msg.text()}`);
         }

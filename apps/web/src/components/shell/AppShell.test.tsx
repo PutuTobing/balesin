@@ -1,7 +1,9 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { defaultBrand } from '../../brand/brand';
 import { t } from '../../i18n/id';
+import { media } from '../../lib/media';
+import { setMediaQuery } from '../../test/match-media';
 import { renderApp } from '../../test/render-app';
 import { navActiveState, navItems } from './nav-items';
 
@@ -89,6 +91,7 @@ describe('navigasi kerangka aplikasi', () => {
     { path: '/laporan', title: t.nav.reports },
     { path: '/pengaturan', title: t.nav.settings },
   ])('di HP, $title punya tombol kembali ke Lainnya', async ({ path, title }) => {
+    act(() => setMediaQuery(media.hp, true));
     await renderApp(path);
     await screen.findByRole('heading', { level: 1, name: title });
 
@@ -101,7 +104,8 @@ describe('navigasi kerangka aplikasi', () => {
     expect(await screen.findByRole('heading', { level: 1, name: t.nav.more })).toBeVisible();
   });
 
-  it('layar Lainnya menautkan ke Tiket, Laporan, dan Pengaturan', async () => {
+  it('di HP, layar Lainnya menautkan ke Tiket, Laporan, dan Pengaturan', async () => {
+    act(() => setMediaQuery(media.hp, true));
     await renderApp('/lainnya');
 
     const menu = within(await screen.findByRole('navigation', { name: t.more.menuLabel }));
@@ -110,6 +114,26 @@ describe('navigasi kerangka aplikasi', () => {
     expect(menu.getByRole('link', { name: t.nav.settings })).toHaveAttribute('href', '/pengaturan');
     expect(navLink(t.nav.more)).toHaveAttribute('aria-current', 'page');
     expect(screen.getByText(t.common.version(product, __APP_VERSION__))).toBeVisible();
+  });
+
+  it('di layar lebar, /lainnya dialihkan ke Pengaturan (menunya sudah ada di rail)', async () => {
+    const { router } = await renderApp('/lainnya');
+
+    expect(await screen.findByRole('heading', { level: 1, name: t.nav.settings })).toBeVisible();
+    expect(router.state.location.pathname).toBe('/pengaturan');
+    expect(screen.queryByRole('navigation', { name: t.more.menuLabel })).toBeNull();
+    expect(navLink(t.nav.settings)).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('layar Lainnya ikut dialihkan saat jendela dilebarkan', async () => {
+    act(() => setMediaQuery(media.hp, true));
+    const { router } = await renderApp('/lainnya');
+    await screen.findByRole('navigation', { name: t.more.menuLabel });
+
+    act(() => setMediaQuery(media.hp, false));
+
+    expect(await screen.findByRole('heading', { level: 1, name: t.nav.settings })).toBeVisible();
+    expect(router.state.location.pathname).toBe('/pengaturan');
   });
 });
 
@@ -167,17 +191,20 @@ describe('layar gagal', () => {
   });
 });
 
-describe('keadaan memuat', () => {
-  it.each(['/pratinjau/memuat-inbox', '/pratinjau/memuat-halaman'])(
-    '%s memberi tahu pembaca layar bahwa isi sedang dimuat',
-    async (path) => {
-      await renderApp(path);
+describe('keadaan memuat halaman', () => {
+  it('judul dan navigasi sudah tampil; hanya isi halaman yang berupa kerangka', async () => {
+    await renderApp('/kontak/pratinjau-memuat');
 
-      const status = await screen.findByRole('status');
-      expect(status).toHaveAttribute('aria-busy', 'true');
-      expect(status).toHaveTextContent(t.common.loading);
-    },
-  );
+    // Judul diketahui dari rute, jadi tampil sebagai judul asli, bukan balok.
+    expect(await screen.findByRole('heading', { level: 1, name: t.nav.contacts })).toBeVisible();
+    expect(navLink(t.nav.contacts)).toHaveAttribute('aria-current', 'page');
+    expect(document.title).toBe(`${t.nav.contacts} · ${product}`);
+
+    const status = screen.getByRole('status');
+    expect(status).toHaveAttribute('aria-busy', 'true');
+    expect(status).toHaveTextContent(t.common.loading);
+    expect(within(status).queryByRole('heading')).toBeNull();
+  });
 });
 
 describe('navActiveState', () => {

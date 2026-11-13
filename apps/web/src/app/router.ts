@@ -13,11 +13,14 @@ import { RouteErrorScreen } from '../components/shell/RouteErrorScreen';
 import { InboxPage } from '../features/inbox/InboxPage';
 import { InboxSkeleton } from '../features/inbox/InboxSkeleton';
 import { parseInboxSearch } from '../features/inbox/inbox-search';
+import { t } from '../i18n/id';
 import { createPreviewRoutes } from './preview-routes';
 
 /**
  * Peta rute. Alamat halaman memakai bahasa Indonesia karena ikut tampil ke pengguna.
  * Inbox dimuat langsung (layar utama); halaman lain dimuat saat dibutuhkan.
+ * `staticData.page` = judul dan layar induk halaman satu kolom, dipakai `Page` dan
+ * `PageSkeleton` (lihat components/ui/page-meta.ts).
  */
 const rootRoute = createRootRoute({
   component: AppShell,
@@ -46,12 +49,14 @@ const inboxRoute = createRoute({
 const contactsRoute = createRoute({
   getParentRoute,
   path: 'kontak',
+  staticData: { page: { title: t.nav.contacts } },
   component: lazyRouteComponent(() => import('../features/contacts/ContactsPage'), 'ContactsPage'),
 });
 
 const broadcastRoute = createRoute({
   getParentRoute,
   path: 'broadcast',
+  staticData: { page: { title: t.nav.broadcast } },
   component: lazyRouteComponent(
     () => import('../features/broadcast/BroadcastPage'),
     'BroadcastPage',
@@ -61,24 +66,28 @@ const broadcastRoute = createRoute({
 const ticketsRoute = createRoute({
   getParentRoute,
   path: 'tiket',
+  staticData: { page: { title: t.nav.tickets, parent: 'more' } },
   component: lazyRouteComponent(() => import('../features/tickets/TicketsPage'), 'TicketsPage'),
 });
 
 const reportsRoute = createRoute({
   getParentRoute,
   path: 'laporan',
+  staticData: { page: { title: t.nav.reports, parent: 'more' } },
   component: lazyRouteComponent(() => import('../features/reports/ReportsPage'), 'ReportsPage'),
 });
 
 const settingsRoute = createRoute({
   getParentRoute,
   path: 'pengaturan',
+  staticData: { page: { title: t.nav.settings, parent: 'more' } },
   component: lazyRouteComponent(() => import('../features/settings/SettingsPage'), 'SettingsPage'),
 });
 
 const moreRoute = createRoute({
   getParentRoute,
   path: 'lainnya',
+  staticData: { page: { title: t.nav.more } },
   component: lazyRouteComponent(() => import('../features/more/MorePage'), 'MorePage'),
 });
 

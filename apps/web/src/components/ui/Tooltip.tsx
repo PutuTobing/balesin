@@ -5,6 +5,8 @@ import styles from './Tooltip.module.css';
 interface TooltipProps {
   label: string;
   side?: 'top' | 'right' | 'bottom' | 'left';
+  /** Jarak dari elemen (px). Bawaan 8. */
+  sideOffset?: number;
   /** Matikan saat labelnya sudah tampil sebagai teks (mis. navigasi bawah HP). */
   disabled?: boolean;
   /** Satu elemen interaktif (tombol/link) yang diberi keterangan. */
@@ -12,7 +14,13 @@ interface TooltipProps {
 }
 
 /** Keterangan singkat saat hover atau fokus keyboard. Butuh `TooltipProvider` di atasnya. */
-export function Tooltip({ label, side = 'bottom', disabled = false, children }: TooltipProps) {
+export function Tooltip({
+  label,
+  side = 'bottom',
+  sideOffset = 8,
+  disabled = false,
+  children,
+}: TooltipProps) {
   if (disabled) return children;
   return (
     <RadixTooltip.Root>
@@ -20,7 +28,7 @@ export function Tooltip({ label, side = 'bottom', disabled = false, children }: 
       <RadixTooltip.Portal>
         <RadixTooltip.Content
           side={side}
-          sideOffset={8}
+          sideOffset={sideOffset}
           collisionPadding={8}
           className={styles.tooltip}
         >

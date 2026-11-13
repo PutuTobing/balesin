@@ -5,7 +5,7 @@ import { t } from '../../i18n/id';
 
 export function ContactsPage() {
   return (
-    <Page title={t.nav.contacts}>
+    <Page>
       <EmptyState
         illustration={<ContactsIllustration />}
         title={t.contacts.emptyTitle}

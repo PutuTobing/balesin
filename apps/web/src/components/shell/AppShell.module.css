@@ -193,6 +193,7 @@
   }
 
   .link:focus-visible {
+    border-radius: var(--radius-input);
     outline-offset: -2px;
   }
 

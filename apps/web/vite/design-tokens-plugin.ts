@@ -1,4 +1,4 @@
-import type { Plugin } from 'vite';
+import type { Plugin, ResolvedConfig } from 'vite';
 // Impor relatif (bukan `@balesin/shared/...`) supaya ikut ter-bundle saat Vite memuat
 // konfigurasi: impor bare akan dieksternalkan dan Node harus memuat berkas .ts mentah.
 import {
@@ -65,6 +65,50 @@ export function designTokens(): Plugin {
           injectTo: 'head',
         },
       ];
+    },
+  };
+}
+
+/**
+ * `<link rel="preload">` untuk font utama, hanya di build produksi.
+ * URL-nya diambil dari aset yang benar-benar dihasilkan build (nama ber-hash yang sama
+ * dengan yang dipakai CSS), jadi font diunduh satu kali. Di dev server URL font di CSS
+ * berbeda (`/@fs/...`), sehingga preload di sana hanya menghasilkan unduhan ganda dan
+ * peringatan "preloaded but not used".
+ */
+export function fontPreload(fileNamePart: string): Plugin {
+  let config: ResolvedConfig | undefined;
+  return {
+    name: 'balesin:font-preload',
+    apply: 'build',
+    configResolved(resolved) {
+      config = resolved;
+    },
+    transformIndexHtml: {
+      order: 'post',
+      handler(_html, context) {
+        const fileName = Object.keys(context.bundle ?? {}).find(
+          (name) => name.includes(fileNamePart) && name.endsWith('.woff2'),
+        );
+        if (!fileName) {
+          throw new Error(
+            `Font "${fileNamePart}" tidak ada di hasil build. Periksa src/styles/fonts.css.`,
+          );
+        }
+        return [
+          {
+            tag: 'link',
+            attrs: {
+              rel: 'preload',
+              as: 'font',
+              type: 'font/woff2',
+              crossorigin: true,
+              href: `${config?.base ?? '/'}${fileName}`,
+            },
+            injectTo: 'head',
+          },
+        ];
+      },
     },
   };
 }

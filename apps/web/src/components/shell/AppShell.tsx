@@ -10,6 +10,7 @@ import { Tooltip } from '../ui/Tooltip';
 import styles from './AppShell.module.css';
 import { ThemeMenu } from './ThemeMenu';
 import { navActiveState, navItems, type NavItem } from './nav-items';
+import { RAIL_POPOVER_OFFSET } from './rail';
 
 const MAIN_ID = 'konten';
 
@@ -80,7 +81,12 @@ interface NavLinkProps {
 function NavLink({ item, pathname, showTooltip }: NavLinkProps) {
   const active = navActiveState(item, pathname);
   return (
-    <Tooltip label={item.label} side="right" disabled={!showTooltip}>
+    <Tooltip
+      label={item.label}
+      side="right"
+      sideOffset={RAIL_POPOVER_OFFSET}
+      disabled={!showTooltip}
+    >
       <Link
         to={item.to}
         className={styles.link}

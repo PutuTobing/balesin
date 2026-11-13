@@ -92,10 +92,12 @@ export function BroadcastIllustration() {
   const recipients = [22, 60, 98];
   return (
     <Frame>
+      <path d="M74 60h11" className={styles.stem} />
       <path
-        d="M74 60C100 60 98 22 124 22M74 60H124M74 60C100 60 98 98 124 98"
+        d="M90.5 58C104 54 102 22 124 22M92 60h32M90.5 62C104 66 102 98 124 98"
         className={styles.link}
       />
+      <circle cx={88} cy={60} r={3} className={styles.node} />
       <path d={bubblePath(8, 40, 66, 40, 'right')} className={styles.tint} />
       <Bar x={22} y={53} w={38} className={styles.tintBar} />
       <Bar x={22} y={63} w={24} className={styles.tintBar} />
@@ -149,7 +151,7 @@ export function ReportsIllustration() {
           width={16}
           height={height}
           rx={3}
-          className={index === 3 ? styles.primary : styles.soft}
+          className={index === 3 ? styles.primary : styles.bar}
         />
       ))}
       <path d="M26 94.75h108" className={styles.stroke} />

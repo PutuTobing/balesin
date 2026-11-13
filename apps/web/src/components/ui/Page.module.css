@@ -29,6 +29,12 @@
   white-space: nowrap;
 }
 
+/* Judul belum diketahui (rute tanpa keterangan halaman). */
+.titleSkeleton {
+  width: 7rem;
+  height: var(--space-24);
+}
+
 .body {
   display: flex;
   flex: 1;

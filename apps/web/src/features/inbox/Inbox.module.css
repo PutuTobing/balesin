@@ -54,40 +54,64 @@
 
 .tabs {
   display: flex;
-  justify-content: space-between;
-  gap: var(--space-8);
-  padding: 0 var(--space-16);
+  /* 8px di sini + 8px padding tab: teks tab pertama dan terakhir sejajar gutter 16px. */
+  padding: 0 var(--space-8);
   border-bottom: 1px solid var(--line);
   overflow-x: auto;
   scrollbar-width: none;
 }
 
+/*
+ * Sisa lebar dibagi rata ke semua tab sebagai ruang kosong. Tab tengah tumbuh penuh
+ * dengan teks di tengah; tab pertama dan terakhir tumbuh separuh dengan teks menempel
+ * ke tepi luar. Hasilnya jarak antar teks sama rata di semua lebar layar, teks tepi
+ * tetap sejajar gutter, dan kotak tab pendek ("Bot") ikut melebar jadi target sentuh.
+ */
 .tab {
-  flex: none;
+  display: flex;
+  flex: 1 0 auto;
+  justify-content: center;
   height: var(--size-touch);
-  /* Garis aktif menimpa garis bawah deretan tab. */
-  margin-bottom: -1px;
-  border-bottom: 2px solid transparent;
+  /* Ruang 8px di kiri-kanan teks: cincin fokus tidak menabrak huruf. */
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-input);
   color: var(--ink-2);
   font-size: var(--text-13);
   font-weight: var(--weight-semibold);
   white-space: nowrap;
-  transition:
-    color var(--duration-fast) var(--ease-out),
-    border-color var(--duration-fast) var(--ease-out);
+  transition: color var(--duration-fast) var(--ease-out);
 }
 
-.tab:hover {
-  color: var(--ink);
+.tab:first-child {
+  flex-grow: 0.5;
+  justify-content: flex-start;
 }
 
+.tab:last-child {
+  flex-grow: 0.5;
+  justify-content: flex-end;
+}
+
+.tab:hover,
 .tab[data-state='active'] {
-  border-bottom-color: var(--primary);
   color: var(--ink);
 }
 
 .tab:focus-visible {
   outline-offset: -2px;
+}
+
+/* Garis aktif selebar teks, di dasar tab. Garis atas transparan menjaga teks di tengah. */
+.tabLabel {
+  display: flex;
+  align-items: center;
+  border-top: 2px solid transparent;
+  border-bottom: 2px solid transparent;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.tab[data-state='active'] .tabLabel {
+  border-bottom-color: var(--primary);
 }
 
 .listBody {
@@ -142,6 +166,7 @@
 
 .detailTitle {
   font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
 }
 
 .detailEmpty {
@@ -151,30 +176,11 @@
   text-wrap: pretty;
 }
 
-/* ---------- Kerangka memuat ---------- */
+/* ---------- Kerangka memuat: hanya isi daftar yang menunggu data ---------- */
 
-.skeletonRoot {
+.skeletonRows {
   display: flex;
-  flex: 1;
-  min-height: 0;
-}
-
-.skeletonSearch {
-  height: var(--size-control);
-}
-
-.skeletonTabs {
-  display: flex;
-  align-items: center;
-  gap: var(--space-16);
-  height: var(--size-touch);
-  padding: 0 var(--space-16);
-  border-bottom: 1px solid var(--line);
-}
-
-.skeletonTab {
-  width: 3rem;
-  height: var(--space-12);
+  flex-direction: column;
 }
 
 .skeletonRow {
@@ -218,95 +224,6 @@
   margin-top: var(--space-16);
 }
 
-.skeletonThread {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  justify-content: flex-end;
-  gap: var(--space-12);
-  min-height: 0;
-  padding: var(--space-24);
-  overflow: hidden;
-}
-
-.skeletonBubble {
-  height: 2.75rem;
-  border-radius: var(--radius-bubble);
-}
-
-.skeletonBubbleIn {
-  align-self: flex-start;
-}
-
-.skeletonBubbleOut {
-  align-self: flex-end;
-}
-
-.w30 {
-  width: 30%;
-}
-
-.w40 {
-  width: 40%;
-}
-
-.w55 {
-  width: 55%;
-}
-
-.tall {
-  height: 4.5rem;
-}
-
-.skeletonComposer {
-  flex: none;
-  height: var(--size-touch);
-  margin: 0 var(--space-24) var(--space-24);
-  border-radius: var(--radius-card);
-}
-
-.skeletonProfile {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-12);
-  padding: var(--space-24) var(--space-16);
-  border-bottom: 1px solid var(--line);
-}
-
-.skeletonPortrait {
-  width: 4rem;
-  height: 4rem;
-  border-radius: var(--radius-pill);
-}
-
-.skeletonHeading {
-  width: 50%;
-  height: var(--space-16);
-}
-
-.skeletonSub {
-  width: 36%;
-  height: var(--space-8);
-}
-
-.skeletonSection {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-12);
-  padding: var(--space-16);
-}
-
-.skeletonLabel {
-  width: 28%;
-  height: var(--space-8);
-}
-
-.skeletonField {
-  width: 100%;
-  height: var(--space-32);
-}
-
 /* ---------- Tablet: dua kolom, detail melayang ---------- */
 
 @media (max-width: 1023px) {
@@ -341,16 +258,5 @@
   .chat,
   .detail {
     display: none;
-  }
-
-  .skeletonSearch {
-    height: var(--size-touch);
-  }
-}
-
-/* Target sentuh ≥ 44px juga untuk tab berlabel pendek ("Bot"). */
-@media (max-width: 640px), (pointer: coarse) {
-  .tab {
-    min-width: var(--size-touch);
   }
 }

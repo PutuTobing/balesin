@@ -105,7 +105,7 @@ export const t = {
   tickets: {
     emptyTitle: 'Belum ada tiket',
     emptyBody:
-      'Tiket mencatat pekerjaan lanjutan dari chat, misalnya kunjungan teknisi, lengkap dengan penanggung jawab dan tenggatnya.',
+      'Tiket mencatat pekerjaan lanjutan dari chat, misalnya keluhan yang perlu ditindaklanjuti, lengkap dengan penanggung jawab dan tenggatnya.',
   },
 
   reports: {

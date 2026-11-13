@@ -167,11 +167,8 @@ test.describe('ukuran antara dan tata letak', () => {
     await expect(panel).toHaveCount(0);
   });
 
-  // BUG BAWAAN (lihat laporan QA): dibuka dengan mouse/sentuh, fokus tidak masuk ke panel,
-  // jadi Escape tidak menutupnya. test.fail() = tes ini akan merah begitu bug diperbaiki,
-  // saat itu hapus test.fail().
+  // Dibuka dengan mouse/sentuh, fokus tidak masuk ke panel; Escape tetap harus menutupnya.
   test('tablet: Escape menutup panel yang dibuka dengan mouse', async ({ page }) => {
-    test.fail(true, 'Bug: onKeyDown Escape hanya di <aside>; fokus tidak dipindah ke panel');
     test.skip(isHp(page), 'Ukuran diatur sendiri');
     await page.setViewportSize({ width: 800, height: 800 });
     await openApp(page, '/inbox');

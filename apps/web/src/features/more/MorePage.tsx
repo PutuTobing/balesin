@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router';
+import { Link, Navigate } from '@tanstack/react-router';
 import { ChevronRight } from 'lucide-react';
 import { BrandMark } from '../../brand/BrandMark';
 import { useBrand } from '../../brand/brand';
@@ -6,14 +6,22 @@ import { moreMenuItems } from '../../components/shell/nav-items';
 import { Icon } from '../../components/ui/Icon';
 import { Page } from '../../components/ui/Page';
 import { t } from '../../i18n/id';
+import { media, useMediaQuery } from '../../lib/media';
 import styles from './More.module.css';
 
-/** Layar "Lainnya" di HP: pintu ke menu yang tidak muat di navigasi bawah. */
+/**
+ * Layar "Lainnya": pintu HP ke menu yang tidak muat di navigasi bawah.
+ * Di layar lebih lebar semua menu itu sudah ada di rail, jadi layar ini dialihkan ke
+ * Pengaturan. Berlaku juga saat jendela dilebarkan ketika layar ini sedang terbuka.
+ */
 export function MorePage() {
   const { productName } = useBrand();
+  const isHp = useMediaQuery(media.hp);
+
+  if (!isHp) return <Navigate to="/pengaturan" replace />;
 
   return (
-    <Page title={t.nav.more}>
+    <Page>
       <nav aria-label={t.more.menuLabel}>
         <ul className={styles.menu}>
           {moreMenuItems.map((item) => (
@@ -28,7 +36,7 @@ export function MorePage() {
         </ul>
       </nav>
       <div className={styles.about}>
-        <BrandMark className={styles.aboutMark} />
+        <BrandMark />
         <span>{t.common.version(productName, __APP_VERSION__)}</span>
       </div>
     </Page>

@@ -1,8 +1,9 @@
 /*
  * Font self-host dari paket @fontsource-variable (bukan CDN).
  * Hanya subset Latin, cukup untuk bahasa Indonesia. Satu berkas variable per keluarga
- * memuat semua berat yang dipakai (400–700). Berkas sans di-preload di index.html;
- * mono baru diunduh browser saat ada teks yang memakainya.
+ * memuat semua berat yang dipakai (400–700). Berkas sans di-preload di build produksi
+ * (plugin `fontPreload` di vite.config.ts); mono baru diunduh browser saat ada teks yang
+ * memakainya.
  *
  * Nama keluarga harus sama dengan token `font` di packages/shared/src/design-tokens.ts
  * (dijaga oleh tes).
