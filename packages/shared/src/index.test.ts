@@ -46,6 +46,16 @@ describe('amplop error', () => {
     expect(Object.keys(ERROR_MESSAGES).sort()).toEqual([...ERROR_CODES].sort());
   });
 
+  it('pesan memakai sapaan "kamu" atau tanpa kata ganti — tidak pernah "Anda" (DESIGN.md §4)', () => {
+    for (const code of ERROR_CODES) {
+      expect(ERROR_MESSAGES[code], code).not.toMatch(/\banda\b/i);
+      expect(ERROR_MESSAGES[code], code).toMatch(/\.$/);
+    }
+    expect(ERROR_MESSAGES.FORBIDDEN).toBe('Kamu tidak punya izin untuk melakukan tindakan ini.');
+    expect(ERROR_MESSAGES.UNAUTHENTICATED).toBe('Masuk dulu untuk melanjutkan.');
+    expect(ERROR_STATUS.METHOD_NOT_ALLOWED).toBe(405);
+  });
+
   it('menerima amplop dengan dan tanpa rincian', () => {
     const base = { code: 'NOT_FOUND', message: 'Tidak ditemukan.', requestId: 'req-1' };
 

@@ -56,6 +56,12 @@ async function setup(options: Parameters<typeof buildTestApp>[0] = {}): Promise<
   app.get('/__tes/galat-pustaka', () => {
     throw Object.assign(new Error('Too Many Requests from upstream-internal'), { statusCode: 429 });
   });
+  app.get('/__tes/galat-fastify', () => {
+    throw Object.assign(new Error('Payload Too Large: rincian-internal-fastify'), {
+      code: 'FST_ERR_CTP_BODY_TOO_LARGE',
+      statusCode: 413,
+    });
+  });
   app.get(
     '/__tes/respons-rusak',
     { schema: { response: { 200: z.object({ jumlah: z.number() }) } } },
@@ -104,7 +110,7 @@ describe('amplop error', () => {
     expect(response.statusCode).toBe(400);
     const error = parseEnvelope(response.body);
     expect(error.code).toBe('VALIDATION_ERROR');
-    expect(error.message).toBe('Data yang dikirim tidak valid. Periksa kembali isian Anda.');
+    expect(error.message).toBe('Data yang dikirim tidak valid. Periksa lagi isiannya.');
     expect(error.details?.map((detail) => [detail.location, detail.field])).toEqual([
       ['body', 'email'],
       ['body', 'umur'],
@@ -184,7 +190,7 @@ describe('amplop error', () => {
     expect(forbidden.statusCode).toBe(403);
     const error = parseEnvelope(forbidden.body);
     expect(error.code).toBe('FORBIDDEN');
-    expect(error.message).toBe('Anda tidak memiliki izin untuk melakukan tindakan ini.');
+    expect(error.message).toBe('Kamu tidak punya izin untuk melakukan tindakan ini.');
     expect(error.details).toBeUndefined();
   });
 
@@ -219,15 +225,29 @@ describe('amplop error', () => {
     expect(logs.text()).not.toContain('rahasia-baris');
   });
 
-  it('error 4xx dari pustaka memakai pesan umum, bukan pesan aslinya', async () => {
-    const { app } = await setup();
+  it('status 4xx dari pustaka lain tidak dipercaya: dijawab 500 dan penyebabnya tercatat', async () => {
+    const { app, logs } = await setup();
 
     const response = await app.inject({ method: 'GET', url: '/__tes/galat-pustaka' });
 
-    expect(response.statusCode).toBe(429);
-    const error = parseEnvelope(response.body);
-    expect(error.code).toBe('RATE_LIMITED');
+    expect(response.statusCode).toBe(500);
+    expect(parseEnvelope(response.body).code).toBe('INTERNAL_ERROR');
     expect(response.body).not.toContain('upstream-internal');
+    const logged = logs.entries().find((entry) => entry.level === 'error');
+    expect((logged?.err as { message: string }).message).toContain('upstream-internal');
+  });
+
+  it('error 4xx milik Fastify memakai statusnya dengan pesan umum, bukan pesan aslinya', async () => {
+    const { app } = await setup();
+
+    const response = await app.inject({ method: 'GET', url: '/__tes/galat-fastify' });
+
+    expect(response.statusCode).toBe(413);
+    expect(parseEnvelope(response.body)).toMatchObject({
+      code: 'PAYLOAD_TOO_LARGE',
+      message: 'Ukuran data yang dikirim terlalu besar.',
+    });
+    expect(response.body).not.toContain('rincian-internal-fastify');
   });
 
   it('respons yang tidak cocok dengan skemanya jadi 500, bukan data setengah benar', async () => {
@@ -288,16 +308,91 @@ describe('amplop error', () => {
     expect(parseEnvelope(response.body).code).toBe('UNSUPPORTED_MEDIA_TYPE');
   });
 
-  it('400 untuk URL yang rusak', async () => {
+  it('400 untuk URL yang rusak, lengkap dengan header keamanan dan ID request', async () => {
     const { app } = await setup();
 
     const response = await app.inject({ method: 'GET', url: '/__tes/%E0%A4%A' });
 
     expect(response.statusCode).toBe(400);
-    expect(parseEnvelope(response.body)).toMatchObject({
+    const error = parseEnvelope(response.body);
+    expect(error).toMatchObject({
       code: 'BAD_REQUEST',
       message: 'Alamat yang diminta tidak valid.',
     });
+    expect(response.headers).toMatchObject({
+      'x-request-id': error.requestId,
+      'x-content-type-options': 'nosniff',
+      'x-frame-options': 'DENY',
+      'content-security-policy':
+        "default-src 'none';base-uri 'none';form-action 'none';frame-ancestors 'none'",
+      'cache-control': 'no-store',
+    });
+  });
+
+  it('415 untuk body text/plain (tipe yang bisa dikirim lintas situs tanpa preflight)', async () => {
+    const { app } = await setup();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: validUrl,
+      headers: { 'content-type': 'text/plain' },
+      payload: JSON.stringify(validBody),
+    });
+
+    expect(response.statusCode).toBe(415);
+    expect(parseEnvelope(response.body).code).toBe('UNSUPPORTED_MEDIA_TYPE');
+  });
+});
+
+describe('metode yang salah pada alamat yang ada', () => {
+  it('dijawab 405 dengan header Allow, untuk rute mana pun', async () => {
+    const { app } = await setup();
+
+    const health = await app.inject({ method: 'POST', url: '/health' });
+    const ready = await app.inject({ method: 'DELETE', url: '/ready' });
+
+    for (const response of [health, ready]) {
+      expect(response.statusCode).toBe(405);
+      expect(response.headers.allow).toBe('GET, HEAD');
+      const error = parseEnvelope(response.body);
+      expect(error.code).toBe('METHOD_NOT_ALLOWED');
+      expect(error.message).toBe('Metode permintaan ini tidak didukung untuk alamat tersebut.');
+      expect(error.requestId).toBe(response.headers['x-request-id']);
+      expect(response.headers['x-content-type-options']).toBe('nosniff');
+    }
+  });
+
+  it('metode yang benar tidak terganggu, termasuk HEAD untuk rute GET', async () => {
+    const { app } = await setup();
+
+    const get = await app.inject({ method: 'GET', url: '/health' });
+    const head = await app.inject({ method: 'HEAD', url: '/health' });
+
+    expect(get.statusCode).toBe(200);
+    expect(head.statusCode).toBe(200);
+    expect(head.body).toBe('');
+  });
+
+  it('alamat yang memang tidak ada tetap 404 untuk metode apa pun', async () => {
+    const { app } = await setup();
+
+    for (const method of ['GET', 'POST', 'DELETE'] as const) {
+      const response = await app.inject({ method, url: '/tidak-ada' });
+      expect(response.statusCode, method).toBe(404);
+      expect(response.headers.allow, method).toBeUndefined();
+    }
+  });
+
+  it('preflight CORS ke alamat yang ada tetap dijawab plugin CORS, bukan 405', async () => {
+    const { app } = await setup();
+
+    const response = await app.inject({
+      method: 'OPTIONS',
+      url: '/health',
+      headers: { origin: TEST_APP_ORIGIN, 'access-control-request-method': 'GET' },
+    });
+
+    expect(response.statusCode).toBe(204);
   });
 });
 
@@ -334,6 +429,8 @@ describe('header keamanan', () => {
       'cross-origin-opener-policy': 'same-origin',
       'cache-control': 'no-store',
     });
+    expect(response.headers['permissions-policy']).toContain('camera=()');
+    expect(response.headers['permissions-policy']).toContain('geolocation=()');
     expect(response.headers['x-powered-by']).toBeUndefined();
     expect(response.headers['strict-transport-security']).toBeUndefined();
   });
@@ -373,13 +470,37 @@ describe('CORS', () => {
     expect(response.headers['access-control-expose-headers']).toBe('x-request-id');
   });
 
-  it('origin lain tidak mendapat izin CORS', async () => {
+  it('origin lain tidak mendapat satu pun header izin CORS', async () => {
     const { app } = await setup();
 
-    for (const origin of ['https://jahat.example', 'http://localhost:5174', 'null']) {
+    for (const origin of [
+      'https://jahat.example',
+      'http://localhost:5174',
+      `${TEST_APP_ORIGIN}.jahat.example`,
+      'null',
+    ]) {
       const response = await app.inject({ method: 'GET', url: '/health', headers: { origin } });
-      expect(response.headers['access-control-allow-origin']).toBeUndefined();
+
+      expect(response.statusCode, origin).toBe(200);
+      for (const header of [
+        'access-control-allow-origin',
+        'access-control-allow-credentials',
+        'access-control-expose-headers',
+      ]) {
+        expect(response.headers[header], `${origin} → ${header}`).toBeUndefined();
+      }
+      // Tetap wajib: respons bergantung pada Origin, jadi cache tidak boleh mencampurnya.
+      expect(response.headers.vary, origin).toBe('Origin');
     }
+  });
+
+  it('permintaan tanpa Origin (bukan dari browser) tidak mendapat header izin CORS', async () => {
+    const { app } = await setup();
+
+    const response = await app.inject({ method: 'GET', url: '/health' });
+
+    expect(response.headers['access-control-allow-origin']).toBeUndefined();
+    expect(response.headers['access-control-allow-credentials']).toBeUndefined();
   });
 
   it('menjawab preflight dari origin aplikasi', async () => {
@@ -403,7 +524,7 @@ describe('CORS', () => {
     expect(response.headers['access-control-allow-headers']).toBe('content-type, x-csrf-token');
   });
 
-  it('preflight dari origin lain tidak diberi izin', async () => {
+  it('preflight dari origin lain ditolak 403 tanpa header izin', async () => {
     const { app } = await setup();
 
     const response = await app.inject({
@@ -412,7 +533,36 @@ describe('CORS', () => {
       headers: { origin: 'https://jahat.example', 'access-control-request-method': 'POST' },
     });
 
-    expect(response.headers['access-control-allow-origin']).toBeUndefined();
+    expect(response.statusCode).toBe(403);
+    expect(parseEnvelope(response.body).code).toBe('FORBIDDEN');
+    for (const header of [
+      'access-control-allow-origin',
+      'access-control-allow-credentials',
+      'access-control-allow-methods',
+      'access-control-allow-headers',
+    ]) {
+      expect(response.headers[header], header).toBeUndefined();
+    }
+  });
+
+  it('OPTIONS yang bukan preflight lengkap dijawab amplop error JSON, bukan teks polos', async () => {
+    const { app } = await setup();
+
+    const withoutOrigin = await app.inject({ method: 'OPTIONS', url: '/health' });
+    const withoutRequestedMethod = await app.inject({
+      method: 'OPTIONS',
+      url: '/health',
+      headers: { origin: TEST_APP_ORIGIN },
+    });
+
+    for (const response of [withoutOrigin, withoutRequestedMethod]) {
+      expect(response.statusCode).toBe(400);
+      expect(response.headers['content-type']).toContain('application/json');
+      const error = parseEnvelope(response.body);
+      expect(error.code).toBe('BAD_REQUEST');
+      expect(error.requestId).toBe(response.headers['x-request-id']);
+      expect(response.headers['x-content-type-options']).toBe('nosniff');
+    }
   });
 });
 

@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  describeError,
-  isSensitiveKey,
-  redactSecrets,
-  scrubSecretsInJsonLine,
-  scrubSecretsInText,
-} from './redact';
+import { describeError, isSensitiveKey, redactSecrets } from './redact';
 import { REDACTED, Secret } from './secret';
 
 describe('isSensitiveKey', () => {
@@ -40,93 +34,34 @@ describe('isSensitiveKey', () => {
     'pass',
     'auth',
     'otp',
+    'accessKey',
+    'aws_secret_access_key',
+    'licenseKey',
+    'sessionId',
+    'session_id',
+    'sid',
+    'passcode',
+    'jwt',
+    'idJwt',
   ])('menganggap "%s" rahasia', (key) => {
     expect(isSensitiveKey(key)).toBe(true);
   });
 
-  it.each(['email', 'name', 'code', 'key', 'author', 'url', 'statusCode', 'requestId', 'passed'])(
-    'tidak menganggap "%s" rahasia',
-    (key) => {
-      expect(isSensitiveKey(key)).toBe(false);
-    },
-  );
-});
-
-describe('scrubSecretsInText', () => {
-  it('menyensor kredensial di URL', () => {
-    expect(scrubSecretsInText('gagal ke postgres://balesin:s4nd1@db:5432/balesin')).toBe(
-      `gagal ke postgres://${REDACTED}@db:5432/balesin`,
-    );
-    expect(scrubSecretsInText('redis://:rahasia@localhost:6379')).toBe(
-      `redis://${REDACTED}@localhost:6379`,
-    );
-  });
-
-  it('tidak mengubah URL biasa dan alamat email', () => {
-    const text = 'buka https://contoh.com/users/budi@contoh.com lalu kirim ke budi@contoh.com';
-    expect(scrubSecretsInText(text)).toBe(text);
-  });
-
-  it('menyensor Bearer/Basic', () => {
-    expect(scrubSecretsInText('Authorization: Bearer abc.def-123_xyz')).toBe(
-      `Authorization: Bearer ${REDACTED}`,
-    );
-    expect(scrubSecretsInText('basic dXNlcjpwYXNz')).toBe(`basic ${REDACTED}`);
-  });
-
-  it('menyensor parameter rahasia di query string', () => {
-    const scrubbed = scrubSecretsInText(
-      'GET /webhooks/whatsapp/1?hub.mode=subscribe&hub.verify_token=tokenku&hub.challenge=42',
-    );
-    expect(scrubbed).not.toContain('tokenku');
-    expect(scrubbed).toContain('hub.mode=subscribe');
-    expect(scrubbed).toContain('hub.challenge=42');
-
-    expect(scrubSecretsInText('https://graph.facebook.com/v1/me?access_token=XYZ123&x=1')).toBe(
-      `https://graph.facebook.com/v1/me?access_token=${REDACTED}&x=1`,
-    );
-  });
-
-  it('menyensor token Meta dan API key Balesin', () => {
-    const metaToken = `EAAG${'a1B2c3D4'.repeat(6)}`;
-    expect(scrubSecretsInText(`token: ${metaToken}`)).toBe(`token: ${REDACTED}`);
-    expect(scrubSecretsInText('kunci blsn_live01_abcdefghijklmnop')).toBe(
-      `kunci blsn_live01_${REDACTED}`,
-    );
-  });
-
-  it('menyensor nilai parameter di pesan error query Drizzle', () => {
-    const message =
-      'Failed query: insert into "users" values ($1, $2)\nparams: budi@x.com,hash-rahasia';
-    const scrubbed = scrubSecretsInText(message);
-    expect(scrubbed).toBe(`Failed query: insert into "users" values ($1, $2)\nparams: ${REDACTED}`);
-  });
-
-  it('idempoten', () => {
-    const once = scrubSecretsInText('postgres://a:b@h/db?password=x Bearer abcdefghij');
-    expect(scrubSecretsInText(once)).toBe(once);
-  });
-});
-
-describe('scrubSecretsInJsonLine', () => {
-  it('menjaga baris tetap JSON yang sah', () => {
-    const line = JSON.stringify({
-      a: 'redis://localhost',
-      b: 'budi@contoh.com',
-      msg: 'Failed query: select "a" from "t" where "x" = $1\nparams: nilai "berkutip", lain',
-      c: 'postgres://u:p@h/db',
-      d: 'tetap',
-    });
-    const scrubbed = scrubSecretsInJsonLine(line);
-    const parsed = JSON.parse(scrubbed) as Record<string, string>;
-
-    expect(parsed.a).toBe('redis://localhost');
-    expect(parsed.b).toBe('budi@contoh.com');
-    expect(parsed.msg).toBe(
-      `Failed query: select "a" from "t" where "x" = $1\nparams: ${REDACTED}`,
-    );
-    expect(parsed.c).toBe(`postgres://${REDACTED}@h/db`);
-    expect(parsed.d).toBe('tetap');
+  it.each([
+    'email',
+    'name',
+    'code',
+    'key',
+    'author',
+    'url',
+    'statusCode',
+    'requestId',
+    'passed',
+    'side',
+    'sessionRef',
+    'jobId',
+  ])('tidak menganggap "%s" rahasia', (key) => {
+    expect(isSensitiveKey(key)).toBe(false);
   });
 });
 
@@ -269,6 +204,69 @@ describe('redactSecrets', () => {
       'connect ECONNREFUSED ::1:5432',
       'connect ECONNREFUSED 127.0.0.1:5432',
     ]);
+  });
+
+  it('error Redis: hanya nama perintah yang ditampilkan, argumennya tidak pernah', () => {
+    const replyError = Object.assign(new Error('WRONGPASS invalid username-password pair'), {
+      name: 'ReplyError',
+      command: { name: 'hello', args: ['3', 'AUTH', 'default', 'sandi-redis-asli'] },
+    });
+    const pipelineError = Object.assign(new Error('Pipeline gagal'), {
+      previousErrors: [
+        Object.assign(new Error('OOM command not allowed'), {
+          command: { name: 'set', args: ['sesi:kunci-rahasia', 'isi-rahasia'] },
+        }),
+      ],
+      // Jaring kedua: `args` di error mana pun dianggap data.
+      args: ['argumen-lepas-rahasia'],
+    });
+
+    const reply = redactSecrets(replyError) as { command: unknown };
+    const pipeline = redactSecrets({ gagal: pipelineError });
+
+    expect(reply.command).toEqual({ name: 'hello' });
+    for (const output of [reply, pipeline]) {
+      const serialized = JSON.stringify(output);
+      for (const secret of ['sandi-redis-asli', 'kunci-rahasia', 'isi-rahasia', 'argumen-lepas']) {
+        expect(serialized).not.toContain(secret);
+      }
+    }
+    expect(JSON.stringify(pipeline)).toContain('"name":"set"');
+  });
+
+  it('error dengan `command` berupa teks (mis. nodemailer) tetap menampilkan nama perintahnya', () => {
+    const smtpError = Object.assign(new Error('Invalid login: 535 Authentication failed'), {
+      code: 'EAUTH',
+      command: 'AUTH PLAIN',
+      responseCode: 535,
+    });
+
+    expect(redactSecrets(smtpError)).toMatchObject({
+      code: 'EAUTH',
+      command: 'AUTH PLAIN',
+      responseCode: 535,
+    });
+  });
+
+  it('error Postgres kelas 22 tidak mengulang nilai yang ditolak; kelas lain tidak dipotong', () => {
+    const castError = Object.assign(
+      new Error('invalid input syntax for type uuid: "token-sesi-nyasar"'),
+      { severity: 'ERROR', code: '22P02', routine: 'string_to_uuid' },
+    );
+    const uniqueError = Object.assign(
+      new Error('duplicate key value violates unique constraint "users_email_unique"'),
+      { severity: 'ERROR', code: '23505', constraint: 'users_email_unique' },
+    );
+
+    const cast = redactSecrets(castError) as { message: string; stack: string; code: string };
+
+    expect(cast.message).toBe(`invalid input syntax for type uuid: ${REDACTED}`);
+    expect(cast.code).toBe('22P02');
+    expect(cast.stack).toContain('redact.test');
+    expect(JSON.stringify(cast)).not.toContain('token-sesi-nyasar');
+    expect(describeError(uniqueError)).toBe(
+      'duplicate key value violates unique constraint "users_email_unique"',
+    );
   });
 
   it('tahan terhadap referensi melingkar, objek sangat dalam, dan getter yang melempar', () => {

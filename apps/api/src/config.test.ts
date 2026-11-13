@@ -213,6 +213,44 @@ describe('loadConfig', () => {
     }
   });
 
+  describe('TRUST_PROXY', () => {
+    it.each(['true', '0.0.0.0/0', '::/0', '10.0.0.2,0.0.0.0/0'])(
+      'production menolak "%s" (mempercayai semua hop = IP klien bisa dipalsukan)',
+      (value) => {
+        const error = captureError({ ...productionEnv, TRUST_PROXY: value });
+
+        expect(error.problems.map((problem) => problem.variable)).toEqual(['TRUST_PROXY']);
+        expect(error.message).toContain('daftar IP/CIDR proxy tepercaya');
+      },
+    );
+
+    it('production menerima false dan daftar IP/CIDR proxy', () => {
+      expect(loadConfig({ ...productionEnv, TRUST_PROXY: 'false' }).trustProxy).toBe(false);
+      expect(loadConfig({ ...productionEnv, TRUST_PROXY: '' }).trustProxy).toBe(false);
+      expect(loadConfig({ ...productionEnv, TRUST_PROXY: '10.0.0.2' }).trustProxy).toEqual([
+        '10.0.0.2',
+      ]);
+      expect(
+        loadConfig({ ...productionEnv, TRUST_PROXY: '10.0.0.2, 172.18.0.0/16, fd00::/8' })
+          .trustProxy,
+      ).toEqual(['10.0.0.2', '172.18.0.0/16', 'fd00::/8']);
+    });
+
+    it('development boleh true', () => {
+      expect(loadConfig({ ...developmentEnv, TRUST_PROXY: 'true' }).trustProxy).toBe(true);
+    });
+
+    it.each(['1', '0', 'yes', '2'])(
+      'angka dan kata lain ("%s") ditolak di lingkungan mana pun: bukan ya/tidak di Fastify',
+      (value) => {
+        for (const env of [developmentEnv, productionEnv]) {
+          const error = captureError({ ...env, TRUST_PROXY: value });
+          expect(error.problems.map((problem) => problem.variable)).toEqual(['TRUST_PROXY']);
+        }
+      },
+    );
+  });
+
   it('SMTP cadangan: SMTP_FROM wajib bila SMTP_HOST diisi', () => {
     const error = captureError({ ...developmentEnv, SMTP_HOST: 'mail.contoh.co.id' });
 

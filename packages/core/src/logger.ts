@@ -2,7 +2,7 @@ import { createRequire } from 'node:module';
 
 import { pino, type DestinationStream, type LogFn, type Logger, type LoggerOptions } from 'pino';
 
-import { describeError, redactSecrets, scrubSecretsInJsonLine } from './redact';
+import { describeError, redactSecrets, sanitizeText, scrubSecretsInJsonLine } from './redact';
 import { REDACTED } from './secret';
 
 export type { Logger } from 'pino';
@@ -105,6 +105,25 @@ function withSafeErrorMessage(args: unknown[]): unknown[] {
 }
 
 /**
+ * Menyiapkan argumen `log.info(...)` sebelum pino menyusun pesannya.
+ *
+ * pino menyisipkan argumen format (`%s`, `%j`, `%o`) langsung ke teks pesan, melewati
+ * `formatters.log`. Karena itu di sini pesan dan setiap argumen format disensor dulu: teks
+ * lewat `sanitizeText`, objek lewat `redactSecrets` (sensor berbasis nama kunci tetap berlaku
+ * untuk `log.info('payload %j', { password })`).
+ */
+function prepareLogArguments(args: unknown[]): unknown[] {
+  const prepared = withSafeErrorMessage(args);
+  // Sama seperti pino: bila argumen pertama objek (termasuk null), pesan ada di argumen kedua.
+  const messageAt = typeof prepared[0] === 'object' ? 1 : 0;
+  return prepared.map((arg, index) => {
+    if (index < messageAt) return arg;
+    if (typeof arg === 'string') return sanitizeText(arg);
+    return typeof arg === 'object' && arg !== null ? redactSecrets(arg) : arg;
+  });
+}
+
+/**
  * pino tidak menerapkan `formatters.bindings` ke child logger, jadi binding child
  * (`logger.child({ ... })`) disensor di sini. Child dari child ikut tercakup karena
  * setiap child mewarisi method ini dari induknya.
@@ -157,7 +176,7 @@ export function createLogger(options: CreateLoggerOptions): Logger {
     },
     hooks: {
       logMethod(args, method) {
-        method.apply(this, withSafeErrorMessage(args) as Parameters<LogFn>);
+        method.apply(this, prepareLogArguments(args) as Parameters<LogFn>);
       },
       streamWrite: scrubSecretsInJsonLine,
     },

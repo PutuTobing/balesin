@@ -5,7 +5,8 @@ import { z } from 'zod';
  *
  *   { "error": { "code": "VALIDATION_ERROR", "message": "…", "details": [...], "requestId": "…" } }
  *
- * `message` selalu bahasa Indonesia dan aman ditampilkan ke pengguna.
+ * `message` selalu bahasa Indonesia dan aman ditampilkan ke pengguna. Gaya bahasanya mengikuti
+ * docs/DESIGN.md §4: sapaan "kamu/-mu" (bukan "Anda"), dan tanpa kata ganti bila kalimatnya tetap wajar.
  * `requestId` dipakai untuk mencocokkan laporan pengguna dengan log server.
  */
 export const ERROR_CODES = [
@@ -14,6 +15,7 @@ export const ERROR_CODES = [
   'UNAUTHENTICATED',
   'FORBIDDEN',
   'NOT_FOUND',
+  'METHOD_NOT_ALLOWED',
   'CONFLICT',
   'PAYLOAD_TOO_LARGE',
   'UNSUPPORTED_MEDIA_TYPE',
@@ -32,6 +34,7 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
   UNAUTHENTICATED: 401,
   FORBIDDEN: 403,
   NOT_FOUND: 404,
+  METHOD_NOT_ALLOWED: 405,
   CONFLICT: 409,
   PAYLOAD_TOO_LARGE: 413,
   UNSUPPORTED_MEDIA_TYPE: 415,
@@ -42,11 +45,12 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
 
 /** Pesan bawaan (dipakai server bila tidak ada pesan khusus, dan web sebagai cadangan). */
 export const ERROR_MESSAGES: Record<ErrorCode, string> = {
-  VALIDATION_ERROR: 'Data yang dikirim tidak valid. Periksa kembali isian Anda.',
+  VALIDATION_ERROR: 'Data yang dikirim tidak valid. Periksa lagi isiannya.',
   BAD_REQUEST: 'Permintaan tidak dapat diproses.',
-  UNAUTHENTICATED: 'Anda perlu masuk terlebih dahulu.',
-  FORBIDDEN: 'Anda tidak memiliki izin untuk melakukan tindakan ini.',
+  UNAUTHENTICATED: 'Masuk dulu untuk melanjutkan.',
+  FORBIDDEN: 'Kamu tidak punya izin untuk melakukan tindakan ini.',
   NOT_FOUND: 'Data atau alamat yang diminta tidak ditemukan.',
+  METHOD_NOT_ALLOWED: 'Metode permintaan ini tidak didukung untuk alamat tersebut.',
   CONFLICT: 'Data bentrok dengan data yang sudah ada.',
   PAYLOAD_TOO_LARGE: 'Ukuran data yang dikirim terlalu besar.',
   UNSUPPORTED_MEDIA_TYPE: 'Format data yang dikirim tidak didukung.',

@@ -107,6 +107,37 @@ describe('createLogger', () => {
     expect(capture.entries()).toHaveLength(2);
   });
 
+  it('argumen format (%s, %j, %o, %d) disensor sebelum pesan disusun', () => {
+    const capture = createLogCapture();
+
+    capture.logger.info(
+      'ke %s dengan %j (%d kali)',
+      'postgres://u:sandi-arg@db/x',
+      { apiKey: 'kunci-arg', aman: 1 },
+      3,
+    );
+    capture.logger.warn({ jobId: '7' }, 'gagal: %o', { sessionId: 'sesi-arg', langkah: 'kirim' });
+
+    const [first, second] = capture.entries();
+    expect(first?.msg).toBe(
+      `ke postgres://${REDACTED}@db/x dengan {"apiKey":"${REDACTED}","aman":1} (3 kali)`,
+    );
+    expect(second).toMatchObject({ jobId: '7', level: 'warn' });
+    expect(second?.msg).toContain('"langkah":"kirim"');
+    expect(capture.text()).not.toContain('sesi-arg');
+  });
+
+  it('pesan dan argumen yang sangat panjang dipotong', () => {
+    const capture = createLogCapture();
+
+    capture.logger.info('x'.repeat(100_000));
+    capture.logger.info({ a: 1 }, 'isi: %s', 'y'.repeat(100_000));
+    capture.logger.info({ isi: 'z'.repeat(100_000) }, 'nilai panjang');
+
+    for (const line of capture.lines) expect(line.length).toBeLessThan(18_000);
+    expect(capture.entries()).toHaveLength(3);
+  });
+
   it('mencatat error lengkap dengan stack, tanpa rahasianya', () => {
     const capture = createLogCapture();
     const error = Object.assign(new Error('Invalid URL'), {

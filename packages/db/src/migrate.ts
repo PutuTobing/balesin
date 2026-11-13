@@ -2,7 +2,7 @@
  * `pnpm db:migrate` — menerapkan migrasi ke database di `DATABASE_URL`.
  * Skrip CLI: keluaran lewat console; connection string tidak pernah dicetak.
  */
-import { describeDatabaseUrl, runMigrations } from './migrator';
+import { describeDatabaseUrl, describeMigrationFailure, runMigrations } from './migrator';
 
 const databaseUrl = process.env.DATABASE_URL?.trim();
 
@@ -18,12 +18,8 @@ try {
   await runMigrations(databaseUrl);
   console.log('Migrasi selesai.');
 } catch (error) {
-  // Hanya pesan dan kode: objek error lengkap bisa memuat detail koneksi.
-  const message = error instanceof Error ? error.message : 'galat tidak dikenal';
-  const code = (error as { code?: unknown }).code;
-  console.error(
-    `Migrasi gagal di ${target}: ${message}${typeof code === 'string' ? ` (${code})` : ''}`,
-  );
+  // Hanya ringkasan: objek error lengkap bisa memuat detail koneksi dan nilai parameter query.
+  console.error(`Migrasi gagal di ${target}: ${describeMigrationFailure(error)}`);
   console.error('Pastikan Postgres menyala (`pnpm db:up`) dan DATABASE_URL benar.');
   process.exit(1);
 }

@@ -65,8 +65,22 @@ const URL_MESSAGE =
 const IP_LIST_MESSAGE =
   'harus berupa daftar IP atau CIDR dipisah koma, contoh: 10.0.0.5,192.168.1.0/24';
 
-function parseTrustProxy(raw: string): boolean | string[] | undefined {
-  return envParse.boolean(raw) ?? envParse.list(envParse.ipOrCidr)(raw);
+/**
+ * TRUST_PROXY menentukan dari mana alamat IP klien dibaca (batas login per IP, audit log):
+ *  - `false`: header X-Forwarded-* diabaikan (API tidak di belakang proxy).
+ *  - daftar IP/CIDR: hanya proxy dengan alamat itu yang dipercaya. Ini yang benar di production.
+ *  - `true`: percaya SEMUA hop — klien bisa memalsukan IP-nya lewat X-Forwarded-For. Hanya
+ *    diterima di development/test. CIDR `/0` sama artinya, jadi ikut ditolak di production.
+ * Angka (`1`, `0`) tidak diterima: di Fastify angka berarti jumlah hop, bukan ya/tidak.
+ */
+function parseTrustProxy(production: boolean) {
+  return (raw: string): boolean | string[] | undefined => {
+    if (raw === 'false') return false;
+    if (raw === 'true') return production ? undefined : true;
+    const proxies = envParse.list(envParse.ipOrCidr)(raw);
+    if (production && proxies?.some((proxy) => proxy.endsWith('/0'))) return undefined;
+    return proxies;
+  };
 }
 
 function apiEnvSchema(production: boolean) {
@@ -86,9 +100,12 @@ function apiEnvSchema(production: boolean) {
     ),
     API_PORT: envDefault(envParse.integer(1, 65_535), 3000, 'harus berupa angka 1–65535'),
     TRUST_PROXY: envDefault(
-      parseTrustProxy,
+      parseTrustProxy(production),
       false,
-      'harus true, false, atau daftar IP/CIDR proxy dipisah koma',
+      production
+        ? 'di production harus false atau daftar IP/CIDR proxy tepercaya dipisah koma (contoh: 10.0.0.2); ' +
+            'nilai true tidak diterima karena membuat alamat IP klien bisa dipalsukan'
+        : 'harus true, false, atau daftar IP/CIDR proxy dipisah koma (contoh: 10.0.0.2,10.0.1.0/24)',
     ),
     SESSION_SECRET: envRequiredInProduction(
       production,

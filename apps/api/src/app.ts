@@ -11,7 +11,8 @@ import {
 
 import type { ApiConfig } from './config';
 import { handleError, handleNotFound } from './http/error-handler';
-import { securityPlugin } from './http/security';
+import { trackRoutesForMethodNotAllowed } from './http/method-not-allowed';
+import { applyBaselineHeaders, securityPlugin } from './http/security';
 import { HEALTH_PATHS, healthRoutes } from './modules/health/health.routes';
 import { createReadinessService, type ReadinessProbes } from './modules/health/health.service';
 
@@ -56,6 +57,9 @@ export async function buildApp(deps: AppDeps) {
     bodyLimit: DEFAULT_BODY_LIMIT_BYTES,
     requestTimeout: REQUEST_TIMEOUT_MS,
     frameworkErrors: (error, request, reply) => {
+      // Error di tingkat ini (URL rusak, parameter terlalu panjang) dijawab sebelum hook mana
+      // pun berjalan, jadi header keamanan dasarnya dipasang di sini.
+      applyBaselineHeaders(reply, request.id);
       void handleError(error, request, reply);
     },
   }).withTypeProvider<ZodTypeProvider>();
@@ -65,6 +69,12 @@ export async function buildApp(deps: AppDeps) {
   app.setSerializerCompiler(serializerCompiler);
   app.setErrorHandler(handleError);
   app.setNotFoundHandler(handleNotFound);
+
+  // API hanya menerima body JSON. Parser teks bawaan Fastify dibuang: `text/plain` adalah
+  // satu-satunya tipe body yang bisa dikirim lintas situs tanpa preflight CORS.
+  app.removeContentTypeParser('text/plain');
+
+  const registerMethodNotAllowedRoutes = trackRoutesForMethodNotAllowed(app);
 
   await app.register(securityPlugin, {
     appOrigin: deps.config.appOrigin,
@@ -78,6 +88,9 @@ export async function buildApp(deps: AppDeps) {
       timeoutMs: deps.readinessTimeoutMs,
     }),
   });
+
+  // Harus setelah SEMUA rute modul didaftarkan (lihat http/method-not-allowed.ts).
+  registerMethodNotAllowedRoutes();
 
   return app;
 }

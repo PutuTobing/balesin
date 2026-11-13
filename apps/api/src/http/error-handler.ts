@@ -59,6 +59,7 @@ const CODE_BY_STATUS: Record<number, ErrorCode> = {
   401: 'UNAUTHENTICATED',
   403: 'FORBIDDEN',
   404: 'NOT_FOUND',
+  405: 'METHOD_NOT_ALLOWED',
   409: 'CONFLICT',
   413: 'PAYLOAD_TOO_LARGE',
   415: 'UNSUPPORTED_MEDIA_TYPE',
@@ -102,8 +103,13 @@ function toErrorResponse(error: unknown): ErrorResponse {
   // Respons kita sendiri tidak cocok dengan skemanya: bug server, bukan salah klien.
   if (error instanceof ResponseSerializationError) return internalError();
 
-  if (isRecord(error)) {
-    const known = typeof error.code === 'string' ? FASTIFY_ERRORS[error.code] : undefined;
+  // Status 4xx hanya dihormati bila berasal dari Fastify sendiri (kode `FST_…`: body rusak,
+  // tipe konten salah, URL rusak, dsb.). Error pustaka lain yang kebetulan membawa
+  // `statusCode` — mis. klien HTTP saat API luar menjawab 401 — BUKAN kesalahan pengguna kita:
+  // dijawab 500 dan dicatat lengkap, supaya "token Meta kedaluwarsa" tidak tampil sebagai
+  // "kamu belum masuk". Modul yang ingin menjawab 4xx harus melempar `AppError`.
+  if (isRecord(error) && typeof error.code === 'string' && error.code.startsWith('FST_')) {
+    const known = FASTIFY_ERRORS[error.code];
     const statusCode = typeof error.statusCode === 'number' ? error.statusCode : 500;
     if (statusCode >= 400 && statusCode < 500) {
       const code = known?.code ?? CODE_BY_STATUS[statusCode] ?? 'BAD_REQUEST';

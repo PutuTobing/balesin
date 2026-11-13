@@ -22,6 +22,12 @@ const STALE_AFTER_MS = 60 * 60 * 1000;
 
 const TEMPORARY_MARKER = '_tmp_';
 
+/** Komentar yang ditempelkan pada setiap database sementara: bukti bahwa alat ini yang membuatnya. */
+export const TEMPORARY_DATABASE_COMMENT = 'balesin: database sementara untuk tes (aman dihapus)';
+
+/** Bagian nama setelah penanda: <waktu dibuat, basis 36>_<8 heksadesimal acak>. */
+const TEMPORARY_SUFFIX = /^([0-9a-z]{8,9})_[0-9a-f]{8}$/;
+
 export interface TemporaryDatabase {
   name: string;
   url: string;
@@ -48,7 +54,15 @@ function withDatabaseName(databaseUrl: string, name: string): string {
  * `DATABASE_URL_TEST` (mis. menunjuk database pengembangan/produksi) langsung ditolak.
  */
 export function resolveTestDatabaseUrl(env: NodeJS.ProcessEnv = process.env): string {
-  const databaseUrl = env.DATABASE_URL_TEST?.trim() || DEFAULT_TEST_DATABASE_URL;
+  return assertTestDatabaseUrl(env.DATABASE_URL_TEST?.trim() || DEFAULT_TEST_DATABASE_URL);
+}
+
+/**
+ * Melempar error bila `databaseUrl` tidak menunjuk database tes. Dipanggil oleh SETIAP fungsi
+ * di berkas ini sebelum membuka koneksi — bukan hanya oleh pemanggilnya — karena beberapa di
+ * antaranya membuat dan menghapus database.
+ */
+export function assertTestDatabaseUrl(databaseUrl: string): string {
   let name: string;
   try {
     name = databaseNameOf(databaseUrl);
@@ -68,6 +82,7 @@ async function withAdminClient<T>(
   baseUrl: string,
   run: (client: Client) => Promise<T>,
 ): Promise<T> {
+  assertTestDatabaseUrl(baseUrl);
   const client = new Client({ connectionString: baseUrl, connectionTimeoutMillis: 5_000 });
   try {
     await client.connect();
@@ -93,17 +108,36 @@ export async function assertTestDatabaseReachable(baseUrl: string): Promise<void
   });
 }
 
-/** Menghapus database sementara sisa tes yang terhenti di tengah jalan. */
+/**
+ * Waktu pembuatan database sementara, atau `undefined` bila namanya bukan buatan alat ini.
+ * Sengaja ketat: nama harus persis `<nama>_tmp_<waktu basis 36>_<8 heksadesimal>`. Sekadar
+ * berawalan `<nama>_tmp_` tidak cukup — database buatan orang (mis. `…_tmp_arsip_…`) tidak
+ * boleh ikut terhapus.
+ */
+function temporaryDatabaseCreatedAt(name: string, prefix: string): number | undefined {
+  if (!name.startsWith(prefix)) return undefined;
+  const timestamp = TEMPORARY_SUFFIX.exec(name.slice(prefix.length))?.[1];
+  return timestamp === undefined ? undefined : Number.parseInt(timestamp, 36);
+}
+
+/**
+ * Menghapus database sementara sisa tes yang terhenti di tengah jalan. Sebuah database hanya
+ * dihapus bila KETIGA syarat terpenuhi: namanya berpola buatan alat ini, membawa komentar
+ * penanda yang ditempel saat dibuat, dan umurnya sudah lewat batas.
+ */
 export async function dropStaleTemporaryDatabases(baseUrl: string): Promise<void> {
+  assertTestDatabaseUrl(baseUrl);
   const prefix = `${databaseNameOf(baseUrl)}${TEMPORARY_MARKER}`;
   await withAdminClient(baseUrl, async (client) => {
-    const { rows } = await client.query<{ datname: string }>(
-      'select datname from pg_database where starts_with(datname, $1)',
+    const { rows } = await client.query<{ datname: string; comment: string | null }>(
+      `select datname, shobj_description(oid, 'pg_database') as comment
+       from pg_database where starts_with(datname, $1)`,
       [prefix],
     );
-    for (const { datname } of rows) {
-      const createdAt = Number.parseInt(datname.slice(prefix.length).split('_')[0] ?? '', 36);
-      if (Number.isNaN(createdAt) || Date.now() - createdAt < STALE_AFTER_MS) continue;
+    for (const { datname, comment } of rows) {
+      const createdAt = temporaryDatabaseCreatedAt(datname, prefix);
+      if (createdAt === undefined || comment !== TEMPORARY_DATABASE_COMMENT) continue;
+      if (Date.now() - createdAt < STALE_AFTER_MS) continue;
       await client.query(`drop database if exists ${quoteIdentifier(datname)} with (force)`);
     }
   });
@@ -117,12 +151,15 @@ export async function createTemporaryDatabase(
   baseUrl: string,
   options: { migrate?: boolean } = {},
 ): Promise<TemporaryDatabase> {
-  const baseName = databaseNameOf(resolveTestDatabaseUrl({ DATABASE_URL_TEST: baseUrl }));
+  const baseName = databaseNameOf(assertTestDatabaseUrl(baseUrl));
   const name = `${baseName}${TEMPORARY_MARKER}${Date.now().toString(36)}_${randomBytes(4).toString('hex')}`;
   const url = withDatabaseName(baseUrl, name);
 
   await withAdminClient(baseUrl, async (client) => {
     await client.query(`create database ${quoteIdentifier(name)}`);
+    await client.query(
+      `comment on database ${quoteIdentifier(name)} is '${TEMPORARY_DATABASE_COMMENT}'`,
+    );
   });
 
   const drop = async (): Promise<void> => {
