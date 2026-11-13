@@ -16,6 +16,8 @@ export default defineConfig({
   testDir: './capture',
   outputDir: './test-results',
   fullyParallel: true,
+  // Start pertama dev server kadang lambat; ulangi sekali supaya gambar lama tidak tertinggal diam-diam.
+  retries: 1,
   reporter: [['list']],
   use: { baseURL: BASE_URL, locale: 'id-ID', timezoneId: 'Asia/Jakarta' },
   projects: [
