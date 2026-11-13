@@ -1,7 +1,7 @@
 # Progress
 
 **Fase aktif:** 1 — Akun, peran, keamanan
-**Terakhir diperbarui:** 2026-11-13 (Fase 0 selesai, CI hijau; Fase 1 baru dimulai)
+**Terakhir diperbarui:** 2026-11-13 malam (Fase 1 butir 1–2 menunggu penilaian ulang desain)
 
 ## Selesai
 
@@ -26,17 +26,21 @@
   lewat eslint); `--prod` bersih. Diterima tanpa override.
 
 ## Sedang dikerjakan
-- **Fase 1 butir 1–2, sisi backend (BELUM SELESAI, belum di-commit).** Agent `backend` dihentikan
-  di tengah jalan pada 13 Nov karena Tobing istirahat. Perubahan setengah jadi ada di working
-  tree (`git status`): modul `auth`, `audit`, `branding`, `email-settings` di `apps/api`,
-  rate limit, cookie, skema `organizations`/`users`, Mailpit di compose dev dan CI.
-  **Jangan di-commit atau di-push apa adanya**: belum lolos typecheck/tes. Sesi berikutnya:
-  lanjutkan agent backend (atau jalankan agent baru dengan brief yang sama dan minta ia memeriksa
-  `git diff` dulu), baru kemudian frontend (layar wizard + login), QA, kritikus, security.
-- Jangan menjalankan `pnpm db:migrate` ke database dev sampai migrasi Fase 1 final.
-- Gambar merek dari Tobing sudah ada di `assets/brand/` (belum di-commit, nama berkas belum
-  sesuai `BRANDING-PROMPTS.md`): rapikan nama, buat ulang logo sebagai SVG bersih di
-  `apps/web/src/assets/`, ganti placeholder, lalu minta `kritikus-desain` menilai ulang.
+- **Fase 1 butir 1–2 (wizard setup + login/sesi/CSRF/rate limit/kunci akun + Pengaturan → Email
+  pengirim): hampir selesai, semua sudah di-commit** (s.d. `4e4044c`, 13 Nov malam). Kontrak API:
+  `docs/KONTRAK-API-AUTH.md`.
+  - Lolos: security AMAN (`docs/security-reviews/2026-11-13-fase1-setup-login.md`, temuan S1/R1–R4/I1
+    sudah ditutup), QA (bug QA1–QA6 sudah diperbaiki), 1071 tes Vitest + 161 E2E lulus, build sukses.
+  - **Tinggal:** `kritikus-desain` putaran 2 untuk layar auth (dihentikan sebelum selesai karena
+    Tobing bepergian). Jalankan ulang: nilai ulang kelompok A, B, F, H1, K, L di
+    `docs/design-reviews/2026-11-13-auth-fase1.md` + cek regresi, dan nilai dua penyimpangan yang
+    disengaja frontend: (1) W1 — tombol Masuk turun 53,7 px saat validasi isian kosong; (2) W4 — di
+    390 kerangka Email pengirim 3 baris status sehingga form bergeser 54 px pada keadaan "belum
+    diatur". Bila LOLOS: centang butir 1–2 di ROADMAP, perbarui bagian ini, lanjut butir 3 (2FA).
+- Aset merek sudah terpasang (logo, favicon, ikon PWA, ilustrasi login). Pose Kak Sky & ilustrasi
+  login pengganti menunggu Tobing (BUTUH-TOBING #5, #13).
+- Database dev `balesin` sudah dimigrasi final (0000–0002) dan kosong. E2E memakai database
+  `balesin_e2e`, Redis db 14, port API 3100 / web 5180.
 
 ## Catatan untuk sesi berikutnya
 
