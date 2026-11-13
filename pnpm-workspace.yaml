@@ -19,7 +19,11 @@ catalog:
   vitest: 5.1.0
   zod: 4.6.7
 
-# Skrip install pihak ketiga diblokir kecuali yang disetujui di sini (rantai pasok).
+# Rantai pasok: versi yang terbit kurang dari 1 hari (1440 menit) ditolak — pilih versi
+# sebelumnya, jangan menambah pengecualian.
+minimumReleaseAge: 1440
+
+# Skrip install pihak ketiga diblokir kecuali yang disetujui di sini.
 allowBuilds:
   esbuild: true
   msgpackr-extract: false

@@ -5,10 +5,11 @@ coverage/
 .turbo/
 .vite/
 *.log
-.env
-.env.local
-.env.production
+# Semua varian .env diabaikan (rahasia); hanya contoh yang boleh masuk repo.
+.env*
 !.env.example
+*.pem
+*.key
 /data/
 /media/
 playwright-report/

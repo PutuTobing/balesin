@@ -16,13 +16,14 @@
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
+    "check": "pnpm format:check && pnpm lint && pnpm check:deps && pnpm typecheck && pnpm test",
     "db:up": "docker compose -f deploy/docker-compose.dev.yml up -d --wait",
     "db:down": "docker compose -f deploy/docker-compose.dev.yml down",
     "db:generate": "pnpm --filter @balesin/db generate",
     "db:migrate": "pnpm --filter @balesin/db migrate",
     "e2e": "pnpm --filter @balesin/e2e e2e",
-    "screenshots": "pnpm --filter @balesin/e2e screenshots"
+    "screenshots": "pnpm --filter @balesin/e2e screenshots",
+    "check:deps": "node scripts/check-forbidden-deps.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

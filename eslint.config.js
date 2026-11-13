@@ -11,14 +11,14 @@ import tseslint from 'typescript-eslint';
  * Library tidak resmi diblokir di tingkat lint supaya tidak bisa "nyelip".
  */
 const UNOFFICIAL_WHATSAPP_LIBS = [
-  'baileys',
-  '@whiskeysockets/baileys',
-  '@adiwajshing/baileys',
+  '*baileys*',
   'whatsapp-web.js',
+  '*wppconnect*',
+  'venom',
   'venom-bot',
-  '@wppconnect-team/wppconnect',
-  '@open-wa/wa-automate',
-  'wa-automate',
+  '*open-wa*',
+  'wa-automate*',
+  'wa-multi-session',
 ];
 
 export default tseslint.config(
@@ -67,11 +67,14 @@ export default tseslint.config(
       'no-restricted-imports': [
         'error',
         {
-          paths: UNOFFICIAL_WHATSAPP_LIBS.map((name) => ({
-            name,
-            message:
-              'Library WhatsApp tidak resmi dilarang. Pakai WhatsApp Cloud API resmi Meta (CLAUDE.md).',
-          })),
+          // Pola gaya gitignore: mencakup sub-path (baileys/lib/…) dan paket ber-scope.
+          patterns: [
+            {
+              group: UNOFFICIAL_WHATSAPP_LIBS,
+              message:
+                'Library WhatsApp tidak resmi dilarang. Pakai WhatsApp Cloud API resmi Meta (CLAUDE.md).',
+            },
+          ],
         },
       ],
     },

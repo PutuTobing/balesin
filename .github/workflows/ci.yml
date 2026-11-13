@@ -36,6 +36,8 @@ jobs:
       - uses: ./.github/actions/setup
       - run: pnpm format:check
       - run: pnpm lint
+      # Gagalkan bila library WhatsApp tidak resmi masuk lockfile.
+      - run: pnpm check:deps
       - run: pnpm typecheck
       - run: pnpm build
 
