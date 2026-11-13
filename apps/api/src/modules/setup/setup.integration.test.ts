@@ -644,6 +644,32 @@ describe('langkah Email di wizard setup', () => {
     expect(await harness.db.select().from(emailSettings)).toEqual([]);
   });
 
+  it('tes koneksi: port salah dijelaskan, port di luar daftar izin ditolak 400 di settings.port', async () => {
+    const wrongPort = await post(API_ROUTES.setup.testEmailConnection, {
+      setupToken: TEST_SETUP_TOKEN,
+      settings: mailpitSettings({ port: 2525 }),
+    });
+    expect(wrongPort.statusCode).toBe(200);
+    expect(emailTestResultSchema.parse(wrongPort.json())).toMatchObject({
+      ok: false,
+      code: 'connection_refused',
+    });
+
+    // Wizard harus bisa menandai isian Port dari jawaban ini (docs/KONTRAK-API-AUTH.md).
+    const notAllowed = await post(API_ROUTES.setup.testEmailConnection, {
+      setupToken: TEST_SETUP_TOKEN,
+      settings: mailpitSettings({ port: 2526 }),
+    });
+    expect(notAllowed.statusCode).toBe(400);
+    expect(errorOf(notAllowed)).toMatchObject({ code: 'VALIDATION_ERROR' });
+    expect(errorOf(notAllowed).details).toEqual([
+      expect.objectContaining({
+        field: 'settings.port',
+        message: expect.stringContaining('Port ini tidak didukung') as string,
+      }),
+    ]);
+  });
+
   it('kirim email tes sampai ke alamat tujuan', async () => {
     const to = `tujuan-${uniqueSuffix()}@contoh.test`;
 

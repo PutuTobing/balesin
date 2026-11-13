@@ -164,7 +164,7 @@ export const t = {
   },
 
   form: {
-    optional: 'opsional',
+    optional: 'Opsional',
     required: 'wajib',
     showPassword: 'Tampilkan password',
     hidePassword: 'Sembunyikan password',
@@ -189,8 +189,9 @@ export const t = {
       submitting: 'Memeriksa…',
       noAccount:
         'Belum punya akun? Akun dibuat lewat undangan. Minta Owner atau Admin timmu mengirim undangan.',
-      lockedTitle: 'Coba lagi sebentar lagi',
-      countdown: (wait: string) => `Tombol Masuk aktif lagi dalam ${wait}.`,
+      lockedTitle: 'Masuk dikunci sementara',
+      countdownButton: (clock: string) => `Coba lagi dalam ${clock}`,
+      unlocked: 'Kamu sudah bisa mencoba masuk lagi.',
       sessionEnded: 'Sesimu sudah berakhir. Masuk lagi untuk melanjutkan.',
       loggedOut: 'Kamu sudah keluar. Sampai jumpa lagi!',
       heroTitle: 'Semua chat pelanggan, satu inbox untuk seluruh tim.',
@@ -223,7 +224,7 @@ export const t = {
       token: {
         nav: 'Token setup',
         title: 'Masukkan token setup',
-        body: 'Token ini membuktikan kamu yang memasang server. Lihat isian SETUP_TOKEN di berkas .env server, atau di tautan yang dicetak installer.',
+        body: 'Token ini membuktikan kamu yang memasang server. Lihat isian `SETUP_TOKEN` di berkas `.env` server, atau di tautan yang dicetak installer.',
         label: 'Token setup',
         hint: 'Salin persis, termasuk huruf besar-kecilnya.',
         fromLink: 'Token dari tautan setup sudah terisi.',
@@ -254,25 +255,15 @@ export const t = {
           good: 'Bagus.',
           strong: 'Kuat.',
           checking: 'Memeriksa ke server…',
-          accepted: 'Diterima server.',
+          accepted: 'Siap dipakai.',
         },
       },
       branding: {
         nav: 'Tampilan',
         title: 'Sesuaikan tampilan',
-        body: 'Nama aplikasi, warna, dan logo milikmu tampil di halaman masuk, menu, dan email. Semua bisa dilewati dan diubah nanti.',
+        body: 'Nama aplikasi dan logo milikmu tampil di halaman masuk, menu, dan email. Keduanya bisa dilewati dan diubah nanti.',
         productName: 'Nama aplikasi',
         productNameHint: (fallback: string) => `Kosongkan untuk memakai “${fallback}”.`,
-        color: 'Warna utama',
-        colorHint: 'Kode heksadesimal 6 digit, contoh: #1b3557.',
-        colorPick: 'Pilih warna',
-        colorReset: 'Pakai warna bawaan',
-        colorPreview: 'Pratinjau',
-        colorPreviewButton: 'Tombol utama',
-        colorPreviewLink: 'Tautan',
-        contrastOk: (ratio: string) => `Kontras dengan putih ${ratio}:1. Teks mudah dibaca.`,
-        contrastLow: (ratio: string) =>
-          `Kontras dengan putih hanya ${ratio}:1 (minimal 4,5:1). Teks di atas warna ini sulit dibaca. Pilih warna yang lebih gelap.`,
         logo: 'Logo',
         logoHint:
           'PNG, JPG, atau WebP, maksimal 256 KB. Bentuk melebar atau persegi, latar transparan paling rapi.',
@@ -294,7 +285,7 @@ export const t = {
         skipped: 'Dilewati. Bisa diisi nanti di Pengaturan.',
         noMasterKeyTitle: 'Email pengirim belum bisa disimpan',
         noMasterKeyBody:
-          'Server belum punya kunci enkripsi (BALESIN_MASTER_KEY di berkas .env), jadi password email tidak bisa disimpan dengan aman. Lewati langkah ini dulu; setelah kunci diisi dan server dinyalakan ulang, atur email di Pengaturan.',
+          'Server belum punya kunci enkripsi (`BALESIN_MASTER_KEY` di berkas `.env`), jadi password email tidak bisa disimpan dengan aman. Lewati langkah ini dulu; setelah kunci diisi dan server dinyalakan ulang, atur email di Pengaturan.',
       },
       summary: {
         nav: 'Ringkasan',
@@ -307,7 +298,6 @@ export const t = {
         owner: 'Owner',
         branding: 'Tampilan',
         productName: 'Nama aplikasi',
-        color: 'Warna utama',
         logo: 'Logo',
         email: 'Email pengirim',
         defaultValue: 'Bawaan',
@@ -326,8 +316,11 @@ export const t = {
     blocked: {
       noTokenTitle: 'Setup belum bisa dimulai',
       noTokenBody:
-        'Server belum punya token setup. Isi SETUP_TOKEN di berkas .env server (minimal 32 karakter acak), nyalakan ulang server, lalu muat ulang halaman ini.',
+        'Server belum punya token setup. Isi `SETUP_TOKEN` di berkas `.env` server (minimal 32 karakter acak), nyalakan ulang server, lalu muat ulang halaman ini.',
       noTokenCommand: 'Contoh membuat token acak:',
+      copy: 'Salin perintah',
+      copied: 'Tersalin',
+      copiedAnnouncement: 'Perintah tersalin ke clipboard.',
       reload: 'Muat ulang',
       doneTitle: 'Setup sudah selesai',
       doneBody: 'Akun Owner sudah dibuat sebelumnya. Masuk dengan akun yang sudah ada.',
@@ -351,6 +344,7 @@ export const t = {
     title: 'Email pengirim',
     menuHint: 'Untuk undangan tim, reset password, dan notifikasi.',
     presetLabel: 'Penyedia email',
+    senderLegend: 'Pengirim',
     fromName: 'Nama pengirim',
     fromNamePlaceholder: 'Contoh: Tim CS Maju Jaya',
     fromAddress: 'Alamat email pengirim',
@@ -396,22 +390,62 @@ export const t = {
     source: 'Sumber',
     sources: {
       database: 'Diatur di aplikasi',
-      env: 'Berkas .env server (cadangan)',
+      env: 'Berkas `.env` server (cadangan)',
       none: 'Belum diatur',
     },
     envNotice:
-      'Pengaturan yang berlaku sekarang berasal dari berkas .env server. Simpan form ini supaya pengaturan dikelola dari aplikasi; nilai di .env lalu tidak dipakai lagi.',
+      'Pengaturan yang berlaku sekarang berasal dari berkas `.env` server. Simpan form ini supaya pengaturan dikelola dari aplikasi; nilai di `.env` lalu tidak dipakai lagi.',
     noMasterKeyTitle: 'Password email belum bisa disimpan',
     noMasterKeyBody:
-      'Server belum punya kunci enkripsi. Isi BALESIN_MASTER_KEY di berkas .env server (32 byte acak, base64), nyalakan ulang server, lalu kembali ke halaman ini.',
+      'Server belum punya kunci enkripsi. Isi `BALESIN_MASTER_KEY` di berkas `.env` server (32 byte acak, base64), nyalakan ulang server, lalu kembali ke halaman ini.',
     guideTitle: 'Panduan singkat',
-    guide: [
+    guideSetupTitle: 'Lihat panduan langkah demi langkah',
+    guide: (context: 'setup' | 'settings') => [
       'Pilih penyedia emailmu. Host, port, dan keamanan terisi otomatis.',
       'Isi alamat email pengirim. Kami coba tebak server SMTP dari domainnya.',
-      'Masukkan password email. Untuk Gmail dan Microsoft 365, buat app password dulu.',
+      'Masukkan password email. Untuk Gmail dan Microsoft 365, buat app password dulu (lihat di bawah).',
       'Tekan “Tes koneksi”. Bila berhasil, kirim email tes ke dirimu sendiri.',
-      'Simpan. Undangan tim dan reset password akan dikirim dari alamat ini.',
+      context === 'setup'
+        ? 'Tekan “Lanjut”. Pengaturan disimpan saat setup selesai.'
+        : 'Tekan “Simpan”. Undangan tim dan reset password akan dikirim dari alamat ini.',
     ],
+    guidePreset: {
+      gmail: {
+        title: 'Khusus Gmail / Google Workspace',
+        steps: [
+          'Buka Akun Google → Keamanan, lalu aktifkan Verifikasi 2 Langkah.',
+          'Buka halaman Sandi aplikasi, beri nama “Balesin”, lalu tekan Buat.',
+          'Salin 16 karakter yang muncul ke isian App password (spasinya boleh ikut).',
+        ],
+        link: 'Buka halaman sandi aplikasi Google',
+        href: 'https://myaccount.google.com/apppasswords',
+      },
+      outlook: {
+        title: 'Khusus Outlook / Microsoft 365',
+        steps: [
+          'Pastikan admin mengaktifkan Authenticated SMTP untuk kotak surat ini (Pusat admin Microsoft 365 → Pengguna → Email → Kelola aplikasi email).',
+          'Bila akun memakai verifikasi 2 langkah, buat app password di Info keamanan.',
+        ],
+        link: 'Buka Info keamanan Microsoft',
+        href: 'https://mysignins.microsoft.com/security-info',
+      },
+      cpanel: {
+        title: 'Khusus cPanel / IDCloudHost',
+        steps: [
+          'Masuk cPanel → Email Accounts, pilih alamat pengirim, lalu tekan Connect Devices.',
+          'Salin “Outgoing Server” ke Host SMTP, dan port SMTP-nya (biasanya 465) ke Port.',
+          'Password = password akun email itu.',
+        ],
+        link: null,
+        href: null,
+      },
+    },
+    newTab: '(membuka tab baru)',
+    setUpNow: 'Atur sekarang',
+    suggestionSwitch: (provider: string) =>
+      `Domain ini sepertinya memakai ${provider}. Ganti ke pengaturan ini?`,
+    switchSuggestion: 'Ganti',
+
     loadFailed: 'Pengaturan email tidak bisa dimuat',
     unsavedTest:
       'Tes memakai isian form di atas, termasuk yang belum disimpan. Status tersimpan berubah setelah kamu menyimpan lalu menguji.',

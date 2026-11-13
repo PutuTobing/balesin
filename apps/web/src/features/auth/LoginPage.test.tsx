@@ -41,6 +41,8 @@ describe('halaman masuk', () => {
       'Alamat email wajib diisi.',
     );
     expect(api.requests.some((request) => request.path === API_ROUTES.auth.login)).toBe(false);
+    // QA6: fokus pindah ke isian pertama yang salah, bukan tertinggal di tombol.
+    await waitFor(() => expect(email).toHaveFocus());
   });
 
   it('berhasil masuk → ke tujuan awal; token CSRF dari respons dipakai berikutnya', async () => {
@@ -95,7 +97,7 @@ describe('halaman masuk', () => {
     expect(screen.getByLabelText(t.auth.login.password)).toHaveFocus();
   });
 
-  it('429 terkunci: hitung mundur dari Retry-After, tombol aktif lagi setelah habis', async () => {
+  it('429 terkunci: sisa waktu di tombol (bukan di wilayah alert), lalu aktif lagi dan diumumkan sekali', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       await renderApp('/masuk', {
@@ -115,11 +117,26 @@ describe('halaman masuk', () => {
       const alert = await screen.findByRole('alert');
       expect(within(alert).getByText(t.auth.login.lockedTitle)).toBeVisible();
       expect(alert).toHaveTextContent('Coba lagi dalam 2 menit.');
-      expect(alert).toHaveTextContent(t.auth.login.countdown('1 menit 5 detik'));
-      expect(screen.getByRole('button', { name: t.auth.login.submit })).toBeDisabled();
+      // Hitung mundur tidak boleh ada di dalam role="alert" (diumumkan berulang).
+      expect(alert.textContent).not.toMatch(/\d\.\d{2}/);
+      const locked = screen.getByRole('button', { name: t.auth.login.countdownButton('1.05') });
+      expect(locked).toBeDisabled();
+      const status = screen
+        .getAllByRole('status')
+        .find((element) => element.classList.contains('sr-only'));
+      expect(status).toHaveTextContent('');
 
-      await act(() => vi.advanceTimersByTimeAsync(66_000));
+      await act(() => vi.advanceTimersByTimeAsync(2_000));
+      expect(
+        screen.getByRole('button', { name: t.auth.login.countdownButton('1.03') }),
+      ).toBeDisabled();
+
+      await act(() => vi.advanceTimersByTimeAsync(64_000));
       expect(screen.getByRole('button', { name: t.auth.login.submit })).toBeEnabled();
+      // Pesan kunci yang sudah basi hilang; pembaca layar diberi tahu sekali; fokus ke password.
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(status).toHaveTextContent(t.auth.login.unlocked);
+      expect(screen.getByLabelText(t.auth.login.password)).toHaveFocus();
     } finally {
       vi.useRealTimers();
     }

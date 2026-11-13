@@ -1,11 +1,12 @@
 import { Link, useRouter, type ErrorComponentProps } from '@tanstack/react-router';
-import { LogIn, RotateCw } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { Check, Copy, LogIn, RotateCw } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { BrandLogo } from '../../brand/BrandLogo';
 import { LoadFailedIllustration } from '../../components/illustrations/illustrations';
 import { Button } from '../../components/ui/Button';
 import { Icon } from '../../components/ui/Icon';
 import { Notice } from '../../components/ui/Notice';
+import { RichText } from '../../components/ui/RichText';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { usePageTitle } from '../../lib/use-page-title';
@@ -70,8 +71,13 @@ export function SetupBlocked({ kind }: { kind: 'no-token' | 'done' }) {
         </Button>
       }
     >
-      <p>{t.setup.blocked.noTokenBody}</p>
-      <p className={styles.blockedHint}>{t.setup.blocked.noTokenCommand}</p>
+      <p>
+        <RichText text={t.setup.blocked.noTokenBody} />
+      </p>
+      <div className={styles.commandHead}>
+        <p className={styles.blockedHint}>{t.setup.blocked.noTokenCommand}</p>
+        <CopyButton text={TOKEN_COMMAND} />
+      </div>
       <pre className={styles.command}>
         <code>{TOKEN_COMMAND}</code>
       </pre>
@@ -104,5 +110,39 @@ export function SetupStatusError({ error, reset }: ErrorComponentProps) {
         </Notice>
       ) : null}
     </BlockedFrame>
+  );
+}
+
+const COPIED_MS = 2000;
+
+/** "Salin perintah" → "Tersalin" selama 2 detik; pembaca layar diberi tahu lewat wilayah status. */
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), COPIED_MS);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+    } catch {
+      // Clipboard ditolak (mis. bukan https): perintah tetap bisa dipilih dan disalin manual.
+    }
+  };
+
+  return (
+    <>
+      <Button onClick={() => void copy()}>
+        <Icon icon={copied ? Check : Copy} size={16} />
+        {copied ? t.setup.blocked.copied : t.setup.blocked.copy}
+      </Button>
+      <span role="status" className="sr-only">
+        {copied ? t.setup.blocked.copiedAnnouncement : ''}
+      </span>
+    </>
   );
 }

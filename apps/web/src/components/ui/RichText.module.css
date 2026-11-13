@@ -1,0 +1,9 @@
+.code {
+  padding: 0 var(--space-4);
+  border-radius: calc(var(--radius-input) / 2);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+  overflow-wrap: anywhere;
+}

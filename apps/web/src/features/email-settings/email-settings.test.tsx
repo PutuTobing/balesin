@@ -131,7 +131,7 @@ describe('Pengaturan → Email pengirim', () => {
     ).toBeVisible();
     expect(screen.getByText('Terhubung')).toBeVisible();
     expect(screen.getByText(t.emailSettings.sources.database)).toBeVisible();
-    expect(screen.getByText(/pukul \d{2}\.\d{2}/)).toBeVisible();
+    expect(screen.getByText(/^Hari ini, \d{2}\.\d{2}$/)).toBeVisible();
     expect(screen.getByText(t.emailSettings.passwordKeep('••••a123'))).toBeVisible();
     expect(screen.getByLabelText(new RegExp(`^${t.emailSettings.password}`))).toHaveValue('');
   });

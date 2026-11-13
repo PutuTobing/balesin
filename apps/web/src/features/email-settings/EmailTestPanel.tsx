@@ -8,6 +8,7 @@ import { Notice } from '../../components/ui/Notice';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { formatTime } from '../../lib/format';
+import { apiFieldErrors, type FieldErrors } from '../../lib/form';
 import styles from './EmailSettings.module.css';
 
 export type EmailTestKind = 'connection' | 'send';
@@ -32,6 +33,11 @@ interface EmailTestPanelProps {
   size?: 'md' | 'lg';
   /** Dipanggil setiap ada hasil tes (wizard mencatat hasilnya untuk ringkasan). */
   onResult?: (kind: EmailTestKind, result: EmailTestResult) => void;
+  /**
+   * Server menolak isian (400 `VALIDATION_ERROR`, mis. `settings.port`): pesan per isian,
+   * kunci tanpa awalan `settings.` (sama dengan nama isian form). Dipakai wizard dan Pengaturan.
+   */
+  onFieldErrors: (errors: FieldErrors) => void;
 }
 
 /** "Tes koneksi" dan "Kirim email tes" dengan hasil berbahasa Indonesia dari server. */
@@ -42,6 +48,7 @@ export function EmailTestPanel({
   note,
   size = 'md',
   onResult,
+  onFieldErrors,
 }: EmailTestPanelProps) {
   const headingId = useId();
   const [recipient, setRecipient] = useState(defaultRecipient);
@@ -69,6 +76,11 @@ export function EmailTestPanel({
         onResult?.(kind, result);
       }
     } catch (error) {
+      if (isApiError(error) && error.code === 'VALIDATION_ERROR' && error.details.length > 0) {
+        // Pesannya tampil di isian yang ditolak; tidak perlu kotak hasil tes.
+        onFieldErrors(apiFieldErrors(error.details, 'settings.'));
+        return;
+      }
       setOutcome({ kind, error: isApiError(error) ? error.message : t.api.network });
     } finally {
       setPending(null);

@@ -94,12 +94,12 @@ describe('validasi per langkah (skema bersama)', () => {
     });
   });
 
-  it('branding opsional; warna harus heksadesimal 6 digit', () => {
+  it('branding opsional; nama aplikasi yang diisi divalidasi', () => {
     const state = filled();
     expect(validateBranding(state)).toEqual({});
     expect(
-      validateBranding({ ...state, branding: { ...state.branding, primaryColor: 'biru' } }),
-    ).toHaveProperty('branding.primaryColor');
+      validateBranding({ ...state, branding: { ...state.branding, productName: 'A' } }),
+    ).toEqual({ 'branding.productName': 'Nama aplikasi minimal 2 karakter.' });
   });
 
   it('email yang dilewati tidak divalidasi; yang diisi butuh password bila ada username', () => {
@@ -139,13 +139,13 @@ describe('body /setup/complete', () => {
     expect(JSON.stringify(body)).not.toContain('repeat');
   });
 
-  it('branding terisi sebagian: yang kosong dikirim null', () => {
+  it('branding terisi sebagian: yang kosong dikirim null; warna utama tidak pernah dikirim', () => {
     const state = filled();
     const body = buildCompleteRequest(
-      { ...state, branding: { productName: 'CS Maju', primaryColor: '#1B3557', logo: null } },
+      { ...state, branding: { productName: 'CS Maju', logo: null } },
       true,
     );
-    expect(body.branding).toEqual({ productName: 'CS Maju', primaryColor: '#1b3557', logo: null });
+    expect(body.branding).toEqual({ productName: 'CS Maju', logo: null });
   });
 
   it('server tanpa master key: email tidak pernah dikirim', () => {

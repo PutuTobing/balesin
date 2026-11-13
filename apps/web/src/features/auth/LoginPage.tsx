@@ -14,6 +14,7 @@ import { endpoints } from '../../lib/api/endpoints';
 import { storeSession } from '../../lib/api/queries';
 import { apiFieldErrors, zodFieldErrors, type FieldErrors } from '../../lib/form';
 import { safeRedirectTarget } from '../../lib/safe-redirect';
+import { formatClock } from '../../lib/format';
 import { useCountdown, type Deadline } from '../../lib/use-countdown';
 import { usePageTitle } from '../../lib/use-page-title';
 import styles from './Login.module.css';
@@ -55,6 +56,9 @@ function LoginForm() {
   const router = useRouter();
   const search = routeApi.useSearch();
   const passwordRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  // Naik setiap validasi gagal → fokus ke isian pertama yang salah.
+  const [invalidTick, setInvalidTick] = useState(0);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -65,6 +69,8 @@ function LoginForm() {
   const [retypePassword, setRetypePassword] = useState(0);
   const secondsLeft = useCountdown(lock);
   const locked = lock !== null && secondsLeft > 0;
+  // Kunci sudah lewat: pesan kunci disembunyikan dan pembaca layar diberi tahu sekali.
+  const unlocked = lock !== null && secondsLeft === 0;
 
   useEffect(() => clearLoginNotice(), []);
 
@@ -73,6 +79,15 @@ function LoginForm() {
     passwordRef.current?.focus();
     passwordRef.current?.select();
   }, [retypePassword]);
+
+  useEffect(() => {
+    if (unlocked) passwordRef.current?.focus();
+  }, [unlocked]);
+
+  useEffect(() => {
+    if (invalidTick === 0) return;
+    formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [invalidTick]);
 
   const login = useMutation({
     mutationFn: endpoints.auth.login,
@@ -91,7 +106,10 @@ function LoginForm() {
         const startedAt = Date.now();
         setLock({ until: startedAt + error.retryAfterSeconds * 1000, startedAt });
       }
-      if (error.code === 'VALIDATION_ERROR') setFieldErrors(apiFieldErrors(error.details));
+      if (error.code === 'VALIDATION_ERROR') {
+        setFieldErrors(apiFieldErrors(error.details));
+        setInvalidTick((tick) => tick + 1);
+      }
       if (error.code === 'INVALID_CREDENTIALS') setRetypePassword((count) => count + 1);
     },
   });
@@ -102,17 +120,20 @@ function LoginForm() {
     const parsed = loginRequestSchema.safeParse({ email, password });
     if (!parsed.success) {
       setFieldErrors(zodFieldErrors(parsed.error));
+      setInvalidTick((tick) => tick + 1);
       return;
     }
     setFieldErrors({});
+    setLock(null);
     login.mutate(parsed.data);
   };
 
   const error = login.error;
-  const showNotice = notice && !login.isError && !login.isPending;
+  // Pesan "sudah keluar"/"sesi berakhir" tetap tampil: menghilangkannya menggeser form (W1).
+  const showNotice = notice !== null;
 
   return (
-    <form className={styles.form} onSubmit={submit} noValidate>
+    <form ref={formRef} className={styles.form} onSubmit={submit} noValidate>
       {showNotice ? (
         <Notice tone={notice === 'logged-out' ? 'success' : 'info'} role="status">
           {notice === 'logged-out' ? t.auth.login.loggedOut : t.auth.login.sessionEnded}
@@ -144,9 +165,6 @@ function LoginForm() {
         error={fieldErrors.password}
         disabled={login.isPending}
       />
-      {error && !(isApiError(error) && error.code === 'VALIDATION_ERROR') ? (
-        <LoginError error={error} secondsLeft={secondsLeft} />
-      ) : null}
       <Button
         type="submit"
         variant="primary"
@@ -155,21 +173,41 @@ function LoginForm() {
         loading={login.isPending}
         disabled={locked}
       >
-        {login.isPending ? t.auth.login.submitting : t.auth.login.submit}
+        {login.isPending ? (
+          t.auth.login.submitting
+        ) : locked ? (
+          // Sisa waktu di label tombol (bukan di wilayah aria-live): tidak diumumkan tiap detik.
+          <span className={styles.countdown}>
+            {t.auth.login.countdownButton(formatClock(secondsLeft))}
+          </span>
+        ) : (
+          t.auth.login.submit
+        )}
       </Button>
+      {/*
+        Pesan dari server tampil di BAWAH tombol: judul, isian, dan tombol yang baru diklik tidak
+        bergeser saat pesan muncul (kritikus W1).
+      */}
+      {error && !(isApiError(error) && error.code === 'VALIDATION_ERROR') && !unlocked ? (
+        <LoginError error={error} />
+      ) : null}
+      {/* Ada sejak akun dikunci (supaya isinya nanti diumumkan), diisi sekali saat kunci habis. */}
+      {lock ? (
+        <p role="status" className="sr-only">
+          {unlocked ? t.auth.login.unlocked : ''}
+        </p>
+      ) : null}
     </form>
   );
 }
 
-function LoginError({ error, secondsLeft }: { error: Error; secondsLeft: number }) {
+function LoginError({ error }: { error: Error }) {
   const message = isApiError(error) ? error.message : t.api.network;
   if (isApiError(error) && error.status === 429) {
+    // Pesan server tetap jadi isi: membedakan kunci akun dan kunci jaringan.
     return (
       <Notice tone="warning" role="alert" title={t.auth.login.lockedTitle}>
-        <p>{message}</p>
-        {secondsLeft > 0 ? (
-          <p className={styles.countdown}>{t.auth.login.countdown(t.time.wait(secondsLeft))}</p>
-        ) : null}
+        {message}
       </Notice>
     );
   }

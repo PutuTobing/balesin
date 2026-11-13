@@ -14,7 +14,7 @@ import {
 } from '@balesin/shared';
 import { Check, LoaderCircle, Sparkles } from 'lucide-react';
 import { RadioGroup } from 'radix-ui';
-import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
 import { Button } from '../../components/ui/Button';
 import { PasswordField, SelectField, TextField } from '../../components/ui/Field';
 import { Icon } from '../../components/ui/Icon';
@@ -49,6 +49,8 @@ interface EmailSettingsFieldsProps {
   disabled?: boolean;
   /** `lg`: kontrol 44px (wizard setup). */
   size?: 'md' | 'lg';
+  /** Panduan langkah demi langkah di bawah pilihan penyedia (wizard). */
+  guide?: ReactNode;
 }
 
 type Detection =
@@ -66,6 +68,7 @@ export function EmailSettingsFields({
   detectHost,
   disabled = false,
   size = 'md',
+  guide,
 }: EmailSettingsFieldsProps) {
   const set = (patch: Partial<EmailFormValues>) => onChange(updateEmailForm(values, patch));
   const preset = SMTP_PRESETS.find((candidate) => candidate.id === values.preset);
@@ -123,9 +126,12 @@ export function EmailSettingsFields({
             {preset.hint}
           </p>
         ) : null}
+        {guide}
       </fieldset>
+      <div className={styles.divider} aria-hidden="true" />
 
-      <div className={styles.group}>
+      <fieldset className={styles.group} disabled={disabled}>
+        <legend className={styles.legend}>{t.emailSettings.senderLegend}</legend>
         <div className={styles.row}>
           <TextField
             id={id('nama-pengirim')}
@@ -176,7 +182,8 @@ export function EmailSettingsFields({
           spellCheck={false}
           disabled={disabled}
         />
-      </div>
+      </fieldset>
+      <div className={styles.divider} aria-hidden="true" />
 
       <fieldset className={styles.group} disabled={disabled}>
         <legend className={styles.legend}>{t.emailSettings.server}</legend>
@@ -341,11 +348,17 @@ function DetectionNotice({
     );
   }
   const applied = isSuggestionApplied(values, first);
+  // Penyedia lain sudah dipilih (mis. Gmail) tetapi domain menunjuk hosting: tawarkan sebagai
+  // pilihan ganti, bukan saran yang seolah melengkapi pilihan sekarang.
+  const conflicting = values.preset !== 'other' && first.presetId !== values.preset;
+  const provider = SMTP_PRESETS.find((option) => option.id === first.presetId)?.label ?? first.host;
   return (
     <div className={styles.suggestion} role="status">
       <Icon icon={Sparkles} size={16} className={styles.suggestionIcon} />
       <div className={styles.suggestionText}>
-        <p className={styles.suggestionTitle}>{first.description}</p>
+        <p className={styles.suggestionTitle}>
+          {conflicting ? t.emailSettings.suggestionSwitch(provider) : first.description}
+        </p>
         <p className={styles.suggestionValue}>
           <code>
             {first.host}:{first.port}
@@ -360,7 +373,7 @@ function DetectionNotice({
         </span>
       ) : (
         <Button onClick={() => onApply(first)} disabled={disabled}>
-          {t.emailSettings.useSuggestion}
+          {conflicting ? t.emailSettings.switchSuggestion : t.emailSettings.useSuggestion}
         </Button>
       )}
     </div>

@@ -25,12 +25,26 @@ export function formatTime(iso: string, now = new Date()): string {
   return isSameDay(date, now) ? time : `${dateFormat.format(date)} ${time}`;
 }
 
-/** Rasio kontras dengan koma desimal: `4,5`. */
-export function formatRatio(ratio: number): string {
-  return (Math.floor(ratio * 10) / 10).toLocaleString('id-ID', {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  });
+/**
+ * Waktu sebagai nilai yang berdiri sendiri (mis. kolom "Tes terakhir"): "Hari ini, 22.03",
+ * "Kemarin, 09.15", atau "13 Nov 2026, 22.03".
+ */
+export function formatDateTime(iso: string, now = new Date()): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const time = timeFormat.format(date);
+  if (isSameDay(date, now)) return `Hari ini, ${time}`;
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (isSameDay(date, yesterday)) return `Kemarin, ${time}`;
+  return `${dateFormat.format(date)}, ${time}`;
+}
+
+/** Sisa waktu hitung mundur `m.ss` (titik seperti penulisan jam Indonesia): `14.59`, `0.45`. */
+export function formatClock(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.ceil(totalSeconds));
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}.${String(seconds % 60).padStart(2, '0')}`;
 }
 
 /** Ukuran berkas dalam KB (dibulatkan ke atas). */

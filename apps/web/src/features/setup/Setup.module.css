@@ -371,109 +371,6 @@ button.stepButton:hover:not(:disabled) {
 
 /* ---------- Branding ---------- */
 
-.colorRow {
-  display: flex;
-  flex-direction: column;
-}
-
-/* Hapus warna (kembali ke bawaan), di dalam kolom sebelum pemilih warna. */
-.colorClear {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: var(--size-control);
-  height: 100%;
-  border-radius: var(--radius-input);
-  color: var(--ink-2);
-}
-
-.colorClear:hover {
-  color: var(--ink);
-}
-
-.colorClear:focus-visible {
-  outline-offset: -4px;
-}
-
-.colorPicker {
-  position: relative;
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: var(--size-touch);
-  height: 100%;
-  cursor: pointer;
-}
-
-.colorInput {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.colorPicker:has(.colorInput:focus-visible) {
-  border-radius: var(--radius-input);
-  outline: 2px solid var(--primary);
-  outline-offset: -4px;
-}
-
-.colorSwatch {
-  width: var(--space-24);
-  height: var(--space-24);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-input);
-}
-
-.colorSwatchEmpty {
-  background: var(--primary);
-}
-
-.colorPreview {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-12);
-  margin-top: calc(var(--space-12) * -1);
-}
-
-/* Pratinjau selalu di atas latar putih (tema terang), sama dengan dasar hitungan kontrasnya. */
-.colorSample {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-16);
-  padding: var(--space-16);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-input);
-  background: var(--surface);
-  color: var(--ink);
-}
-
-.sampleLabel {
-  color: var(--ink-2);
-  font-size: var(--text-12);
-  font-weight: var(--weight-semibold);
-}
-
-.sampleButton {
-  display: inline-flex;
-  align-items: center;
-  height: var(--size-control);
-  padding: 0 var(--space-16);
-  border-radius: var(--radius-input);
-  color: var(--on-primary);
-  font-size: var(--text-14);
-  font-weight: var(--weight-semibold);
-}
-
-.sampleLink {
-  font-size: var(--text-14);
-  font-weight: var(--weight-semibold);
-  text-decoration: underline;
-}
-
 .logoField {
   display: flex;
   flex-direction: column;
@@ -489,11 +386,6 @@ button.stepButton:hover:not(:disabled) {
   line-height: var(--leading-title);
 }
 
-.optionalTag {
-  color: var(--ink-2);
-  font-weight: var(--weight-regular);
-}
-
 .logoBox {
   display: flex;
   align-items: center;
@@ -507,39 +399,24 @@ button.stepButton:hover:not(:disabled) {
   display: grid;
   flex: none;
   place-items: center;
-  width: 10rem;
+  min-width: 10rem;
+  max-width: 60%;
   height: 4rem;
-  padding: var(--space-8);
+  padding: var(--space-8) var(--space-16);
   border-radius: var(--radius-input);
   background: var(--bg);
+}
+
+.logoPreviewMark {
+  height: var(--space-24);
+  max-width: 100%;
+  white-space: nowrap;
 }
 
 .logoPreview img {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-}
-
-.logoPlaceholder {
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
-  min-width: 0;
-  color: var(--ink-2);
-  font-size: var(--text-14);
-  font-weight: var(--weight-bold);
-}
-
-.logoPlaceholder span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.logoPlaceholderMark {
-  width: auto;
-  height: var(--space-24);
-  opacity: 0.6;
 }
 
 .logoMeta {
@@ -619,6 +496,8 @@ button.stepButton:hover:not(:disabled) {
 
 .summaryRow {
   display: grid;
+  align-items: center;
+  min-height: var(--space-24);
   grid-template-columns: 9rem minmax(0, 1fr);
   gap: var(--space-12);
   font-size: var(--text-14);
@@ -631,19 +510,6 @@ button.stepButton:hover:not(:disabled) {
 .summaryRow dd {
   margin: 0;
   overflow-wrap: anywhere;
-}
-
-.summaryColor {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-8);
-}
-
-.summarySwatch {
-  width: var(--space-16);
-  height: var(--space-16);
-  border: 1px solid var(--line);
-  border-radius: calc(var(--radius-input) / 2);
 }
 
 /* ---------- Layar terhalang (token belum diatur, setup sudah selesai, gagal) ---------- */
@@ -710,16 +576,25 @@ button.stepButton:hover:not(:disabled) {
   color: var(--ink);
 }
 
+/* Label perintah + tombol Salin sebaris. */
+.commandHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+/* Perintah dibungkus (bukan digulir) supaya terbaca utuh di semua lebar. */
 .command {
   margin: 0;
   padding: var(--space-12);
-  overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: var(--radius-input);
   background: var(--bg);
   color: var(--ink);
   font-size: var(--text-12);
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .blockedActions {
@@ -862,6 +737,7 @@ button.stepButton:hover:not(:disabled) {
 
   .logoPreview {
     width: 100%;
+    max-width: none;
   }
 
   .blockedCard {

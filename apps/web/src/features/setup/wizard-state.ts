@@ -1,6 +1,5 @@
 import {
   DEFAULT_TIME_ZONE,
-  brandColorSchema,
   completeSetupRequestSchema,
   productNameSchema,
   setupOrganizationSchema,
@@ -57,7 +56,11 @@ export interface WizardState {
   tokenVerified: boolean;
   organization: { name: string; timezone: string };
   owner: { name: string; email: string; password: string; repeat: string };
-  branding: { productName: string; primaryColor: string; logo: LogoDraft | null };
+  /**
+   * Warna utama sengaja tidak ada di wizard (DECISIONS 2026-11-13): belum diterapkan ke tema,
+   * jadi tidak boleh dijanjikan. Isiannya kembali bersama fitur tema organisasi.
+   */
+  branding: { productName: string; logo: LogoDraft | null };
   email: {
     skipped: boolean;
     values: EmailFormValues;
@@ -79,7 +82,7 @@ export function initialWizardState(token: string | null): WizardState {
     tokenVerified: false,
     organization: { name: '', timezone: DEFAULT_TIME_ZONE },
     owner: { name: '', email: '', password: '', repeat: '' },
-    branding: { productName: '', primaryColor: '', logo: null },
+    branding: { productName: '', logo: null },
     email: { skipped: false, values: emptyEmailForm, lastConnectionTest: null },
     errors: {},
     banner: null,
@@ -153,16 +156,11 @@ export function validateOwner(state: WizardState): FieldErrors {
 
 export function validateBranding(state: WizardState): FieldErrors {
   const errors: FieldErrors = {};
-  const { productName, primaryColor } = state.branding;
+  const { productName } = state.branding;
   if (productName.trim() !== '') {
     const parsed = productNameSchema.safeParse(productName);
     if (!parsed.success)
       Object.assign(errors, zodFieldErrors(parsed.error, 'branding.productName'));
-  }
-  if (primaryColor.trim() !== '') {
-    const parsed = brandColorSchema.safeParse(primaryColor);
-    if (!parsed.success)
-      Object.assign(errors, zodFieldErrors(parsed.error, 'branding.primaryColor'));
   }
   return errors;
 }
@@ -192,10 +190,9 @@ export function buildCompleteRequest(
   canStoreSecrets: boolean,
 ): CompleteSetupRequest {
   const { repeat: _repeat, ...owner } = state.owner;
-  const { productName, primaryColor, logo } = state.branding;
+  const { productName, logo } = state.branding;
   const branding = {
     productName: productName.trim() === '' ? null : productName,
-    primaryColor: primaryColor.trim() === '' ? null : primaryColor,
     logo: logo ? { contentType: logo.contentType, dataBase64: logo.dataBase64 } : null,
   };
   const hasBranding = Object.values(branding).some((value) => value !== null);

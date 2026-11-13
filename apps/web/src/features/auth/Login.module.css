@@ -10,12 +10,17 @@
   background: var(--surface);
 }
 
+/*
+ * Form dijangkarkan di posisi tetap (bukan dipusatkan): pesan yang muncul hanya menambah
+ * tinggi ke bawah, judul dan tombol tidak bergeser. Posisi atas setara form ±480 px yang
+ * terpusat pada keadaan normal.
+ */
 .pane {
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   min-height: 100%;
-  padding: var(--space-48) var(--space-24);
+  padding: max(var(--space-48), calc(50dvh - var(--space-48) * 5)) var(--space-24) var(--space-48);
 }
 
 .inner {
@@ -70,10 +75,8 @@ img.logo {
   margin-top: var(--space-8);
 }
 
+/* Sisa waktu di tombol nonaktif: angka selebar tetap supaya label tidak bergoyang. */
 .countdown {
-  margin-top: var(--space-4);
-  color: var(--ink);
-  font-weight: var(--weight-semibold);
   font-variant-numeric: tabular-nums;
 }
 

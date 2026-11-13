@@ -125,7 +125,12 @@ function OrganizationSettings() {
             </span>
             <span className={styles.menuStatus}>
               {email.data ? (
-                <EmailStatusBadge status={email.data.status} />
+                <>
+                  <EmailStatusBadge status={email.data.status} />
+                  {email.data.status === 'not_configured' ? (
+                    <span className={styles.setUpNow}>· {t.emailSettings.setUpNow}</span>
+                  ) : null}
+                </>
               ) : email.isPending ? (
                 <Skeleton className={styles.statusSkeleton} />
               ) : null}

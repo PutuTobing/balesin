@@ -20,8 +20,15 @@
   margin-bottom: var(--space-12);
   padding: 0;
   color: var(--ink);
-  font-size: var(--text-14);
+  font-size: var(--text-16);
   font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+/* Pemisah antarbagian form (Penyedia · Pengirim · Server), supaya terbaca sebagai bagian. */
+.divider {
+  height: 1px;
+  background: var(--line);
 }
 
 .row {
@@ -356,59 +363,27 @@
   font-weight: var(--weight-medium);
 }
 
-.guide {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-12);
-  padding: var(--space-16);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--surface);
-}
-
-.guideTitle {
-  font-size: var(--text-14);
-  font-weight: var(--weight-semibold);
-}
-
-.guideList {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-12);
-  counter-reset: step;
-}
-
-.guideItem {
-  display: flex;
-  gap: var(--space-12);
-  color: var(--ink-2);
-  font-size: var(--text-13);
-  counter-increment: step;
-}
-
-.guideItem::before {
-  content: counter(step);
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: var(--space-24);
-  height: var(--space-24);
-  border-radius: var(--radius-pill);
-  background: var(--primary-soft);
-  color: var(--ink);
-  font-size: var(--text-12);
-  font-weight: var(--weight-bold);
+/* Panduan di kolom kanan ikut terlihat saat form yang panjang digulir. */
+.aside {
+  position: sticky;
+  top: 0;
 }
 
 /* Kerangka memuat. */
 .skeletonLabel {
   width: 7rem;
+  max-width: 100%;
   height: var(--space-12);
 }
 
+/* Setinggi baris teks nilai status (14px × 1,45), supaya kartu status sama tinggi. */
 .skeletonValue {
   width: 9rem;
-  height: var(--space-16);
+  height: calc(var(--text-14) * var(--leading-text));
+}
+
+.statusItem .skeletonLabel {
+  height: calc(var(--text-12) * var(--leading-text));
 }
 
 .skeletonField {
@@ -436,7 +411,8 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .guide {
+  .aside {
+    position: static;
     order: -1;
   }
 }
@@ -458,5 +434,10 @@
 
   .skeletonInput {
     height: var(--size-touch);
+  }
+
+  /* Sama dengan pilihan preset di HP: empat baris. */
+  .skeletonPresets {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

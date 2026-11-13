@@ -184,7 +184,7 @@ export const screens: Screen[] = [
       await page.getByLabel('Email', { exact: true }).fill('rina@majujaya.co.id');
       await page.getByLabel('Password', { exact: true }).fill('Kopi-Senja-Tenang-42');
       await page.getByLabel('Ulangi password').fill('Kopi-Senja-Tenang-42');
-      await page.getByText('Diterima server.').waitFor();
+      await page.getByText('Siap dipakai.').waitFor();
     },
   },
   {
@@ -194,14 +194,14 @@ export const screens: Screen[] = [
     prepare: (page) => wizardTo(page, 'branding'),
   },
   {
-    name: 'setup-tampilan-kontras-rendah',
+    // Nama aplikasi diisi: pratinjau logo memakai nama itu, persis seperti di halaman masuk.
+    name: 'setup-tampilan-terisi',
     path: '/setup',
     before: (page) => freshInstall(page),
     prepare: async (page) => {
       await wizardTo(page, 'branding');
-      await page.getByLabel('Nama aplikasi').fill('Balesin Maju Jaya');
-      await page.getByLabel('Warna utama').fill('#7fb3ff');
-      await page.getByText(/Kontras dengan putih hanya/).waitFor();
+      await page.getByLabel('Nama aplikasi').fill('CS Maju Jaya');
+      await page.getByText('CS Maju Jaya', { exact: true }).waitFor();
     },
   },
   {
@@ -209,6 +209,34 @@ export const screens: Screen[] = [
     path: '/setup',
     before: (page) => freshInstall(page),
     prepare: (page) => wizardTo(page, 'email'),
+  },
+  {
+    // Panduan langkah demi langkah dibuka, preset Gmail: langkah khusus + tautan resmi.
+    name: 'setup-email-panduan-gmail',
+    path: '/setup',
+    before: (page) => freshInstall(page),
+    prepare: async (page) => {
+      await wizardTo(page, 'email');
+      await page.getByRole('radio', { name: 'Gmail / Google Workspace' }).click();
+      await page.getByText('Lihat panduan langkah demi langkah').click();
+      const link = page.getByRole('link', { name: /sandi aplikasi Google/ });
+      await link.waitFor();
+      await link.scrollIntoViewIfNeeded();
+    },
+  },
+  {
+    // Preset Gmail dipilih, domain menunjuk hosting: saran ditawarkan sebagai pilihan ganti.
+    name: 'setup-email-saran-ganti',
+    path: '/setup',
+    before: (page) => freshInstall(page),
+    prepare: async (page) => {
+      await wizardTo(page, 'email');
+      await page.getByRole('radio', { name: 'Gmail / Google Workspace' }).click();
+      await page.getByLabel('Alamat email pengirim').fill('cs@majujaya.co.id');
+      const offer = page.getByText(/Ganti ke pengaturan ini\?/);
+      await offer.waitFor();
+      await offer.scrollIntoViewIfNeeded();
+    },
   },
   {
     name: 'setup-email-saran-host',
@@ -380,7 +408,7 @@ export const screens: Screen[] = [
       await page.getByLabel('Email').fill('rina@majujaya.co.id');
       await page.getByLabel('Password', { exact: true }).fill('password-yang-salah');
       await page.getByRole('button', { name: 'Masuk', exact: true }).click();
-      await page.getByText('Coba lagi sebentar lagi').waitFor();
+      await page.getByText('Masuk dikunci sementara').waitFor();
     },
   },
   {
@@ -490,6 +518,22 @@ export const screens: Screen[] = [
       const error = page.getByText(/password perlu dimasukkan ulang/).first();
       await error.waitFor();
       await error.scrollIntoViewIfNeeded();
+    },
+  },
+  {
+    // Preset diganti ke Gmail: panduan di kolom kanan menampilkan langkah khusus Gmail.
+    name: 'email-pengirim-panduan-gmail',
+    path: '/pengaturan/email',
+    before: savedEmailSettings,
+    prepare: async (page) => {
+      await page.getByRole('radio', { name: 'Gmail / Google Workspace' }).click();
+      const guide = page.getByText('Panduan singkat');
+      if (!(await page.getByRole('link', { name: /sandi aplikasi Google/ }).isVisible())) {
+        await guide.click();
+      }
+      const link = page.getByRole('link', { name: /sandi aplikasi Google/ });
+      await link.waitFor();
+      await link.scrollIntoViewIfNeeded();
     },
   },
   {

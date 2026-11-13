@@ -130,7 +130,6 @@ export async function wizardTo(
   await page.getByRole('heading', { level: 1, name: 'Sesuaikan tampilan' }).waitFor();
   if (step === 'branding') return;
   await page.getByLabel('Nama aplikasi').fill('Balesin Maju Jaya');
-  await page.getByLabel('Warna utama').fill('#1b3557');
   await next();
   await page.getByRole('heading', { level: 1, name: 'Email pengirim' }).waitFor();
   if (step === 'email') return;

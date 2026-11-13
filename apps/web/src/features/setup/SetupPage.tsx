@@ -14,6 +14,7 @@ import { BrandLogo } from '../../brand/BrandLogo';
 import { Button } from '../../components/ui/Button';
 import { Icon } from '../../components/ui/Icon';
 import { Notice } from '../../components/ui/Notice';
+import { RichText } from '../../components/ui/RichText';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
@@ -56,13 +57,32 @@ import {
 export function SetupPage() {
   usePageTitle(t.setup.documentTitle);
   const { data: status } = useSuspenseQuery(setupStatusQuery);
+  const queryClient = useQueryClient();
   const [conflict, setConflict] = useState(false);
 
-  if (!status.setupTokenConfigured) return <SetupBlocked kind="no-token" />;
+  // 409 = setup sudah selesai (di tab/perangkat lain). Status di cache ikut diperbarui, kalau
+  // tidak penjaga halaman masuk mengira wizard masih perlu dan mengembalikan ke /setup.
+  const onConflict = () => {
+    queryClient.setQueryData(queryKeys.setupStatus, SETUP_DONE_STATUS);
+    setConflict(true);
+  };
+
   if (conflict) return <SetupBlocked kind="done" />;
-  return (
-    <SetupWizard canStoreSecrets={status.canStoreSecrets} onConflict={() => setConflict(true)} />
-  );
+  if (!status.setupTokenConfigured) return <SetupBlocked kind="no-token" />;
+  return <SetupWizard canStoreSecrets={status.canStoreSecrets} onConflict={onConflict} />;
+}
+
+/** Jawaban `/setup/status` setelah setup selesai (docs/KONTRAK-API-AUTH.md). */
+const SETUP_DONE_STATUS = {
+  needsSetup: false,
+  setupTokenConfigured: false,
+  canStoreSecrets: false,
+};
+
+/** Langkah wizard yang tercatat di entri riwayat browser (Back = mundur satu langkah). */
+function stepFromHistoryState(state: unknown): SetupStep {
+  const value = (state as { setupStep?: unknown } | null)?.setupStep;
+  return SETUP_STEPS.find((step) => step === value) ?? 'token';
 }
 
 const STEP_COPY: Record<SetupStep, { nav: string; title: string; body: string }> = {
@@ -95,9 +115,26 @@ function SetupWizard({
       dispatch({ type: 'patch', patch: value }),
     [],
   );
-  const goto = (step: SetupStep) => dispatch({ type: 'goto', step });
-  const fail = (step: SetupStep, errors: FieldErrors, banner: string | null = null) =>
+  const formRef = useRef<HTMLFormElement>(null);
+  // Naik setiap validasi gagal → fokus dipindah ke isian pertama yang salah.
+  const [invalidTick, setInvalidTick] = useState(0);
+
+  /**
+   * Pindah langkah sambil mencatat entri riwayat, supaya tombol/gestur Back browser mundur satu
+   * langkah alih-alih keluar dari wizard (isian hanya ada di memori, jadi keluar = hilang).
+   */
+  const remember = (step: SetupStep) => {
+    if (step !== state.step) router.history.push('/setup', { setupStep: step });
+  };
+  const goto = (step: SetupStep) => {
+    remember(step);
+    dispatch({ type: 'goto', step });
+  };
+  const fail = (step: SetupStep, errors: FieldErrors, banner: string | null = null) => {
+    remember(step);
     dispatch({ type: 'fail', step, errors, banner });
+    if (Object.keys(errors).length > 0) setInvalidTick((tick) => tick + 1);
+  };
 
   // Ganti langkah → fokus ke judul langkah, supaya pembaca layar dan keyboard mulai dari atas.
   useEffect(() => {
@@ -108,6 +145,39 @@ function SetupWizard({
     headingRef.current?.focus();
     headingRef.current?.scrollIntoView({ block: 'nearest' });
   }, [state.step]);
+
+  // Validasi gagal → fokus ke isian pertama yang ditandai (setelah fokus judul di atas).
+  useEffect(() => {
+    if (invalidTick === 0) return;
+    formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [invalidTick]);
+
+  // Back/Forward browser di dalam wizard: buka langkah yang tercatat di entri riwayat. Langkah
+  // yang belum pernah dicapai (mis. setelah muat ulang, isian sudah hilang) tidak bisa dibuka.
+  const onHistoryMove = useEffectEvent((target: SetupStep) => {
+    const index = Math.min(stepIndex(target), state.furthest);
+    dispatch({ type: 'goto', step: SETUP_STEPS[index] ?? 'token' });
+  });
+  useEffect(
+    () =>
+      router.history.subscribe(({ location, action }) => {
+        if (action.type === 'PUSH' || action.type === 'REPLACE') return;
+        if (location.pathname !== '/setup') return;
+        onHistoryMove(stepFromHistoryState(location.state));
+      }),
+    [router],
+  );
+
+  // Ada isian yang belum disimpan: tutup tab / muat ulang / keluar situs minta konfirmasi.
+  const dirty = state.furthest > 0 || state.setupToken !== '';
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
 
   /** Error API di langkah mana pun: 409 = setup sudah selesai, 403 = token tidak berlaku. */
   const handleApiError = (step: SetupStep, error: unknown): void => {
@@ -127,13 +197,13 @@ function SetupWizard({
     fail(step, {}, error.message);
   };
 
-  const verifyToken = async () => {
-    if (validateToken(state).setupToken) return;
+  const verifyToken = async (token = state.setupToken) => {
+    if (validateToken({ ...state, setupToken: token }).setupToken) return;
     setBusy(true);
     try {
-      await endpoints.setup.verifyToken(state.setupToken);
+      await endpoints.setup.verifyToken(token);
       patch({ tokenVerified: true });
-      goto('organization');
+      if (state.step === 'token') goto('organization');
     } catch (error) {
       handleApiError('token', error);
     } finally {
@@ -141,16 +211,32 @@ function SetupWizard({
     }
   };
 
-  // Token dari tautan (`#token=…`): hapus dari alamat, lalu langsung diperiksa (sekali saja).
+  /** Token dari tautan (`#token=…`): hapus dari alamat (dan riwayat), lalu langsung diperiksa. */
+  const takeLinkToken = useEffectEvent((token: string) => {
+    const { location } = router.history;
+    router.history.replace(location.pathname + location.search, location.state);
+    patch({ setupToken: token, tokenFromLink: true, tokenVerified: false, errors: {} });
+    void verifyToken(token);
+  });
+
+  // Saat wizard dibuka (sekali saja, StrictMode menjalankan efek dua kali).
   const linkHandled = useRef(false);
-  const verifyLinkToken = useEffectEvent(() => void verifyToken());
   useEffect(() => {
     if (linkToken === null || linkHandled.current) return;
     linkHandled.current = true;
-    const { location } = router.history;
-    router.history.replace(location.pathname + location.search, location.state);
-    verifyLinkToken();
-  }, [linkToken, router]);
+    takeLinkToken(linkToken);
+  }, [linkToken]);
+
+  // Tautan ditempel di tab yang sudah membuka /setup: hanya fragment yang berubah (tanpa muat
+  // ulang), jadi didengarkan lewat `hashchange`.
+  useEffect(() => {
+    const onHashChange = () => {
+      const token = readSetupTokenFromHash(window.location.hash);
+      if (token) takeLinkToken(token);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
 
   const advance = async (step: SetupStep) => {
     switch (step) {
@@ -231,7 +317,7 @@ function SetupWizard({
 
   const skip = (step: SetupStep) => {
     if (step === 'branding') {
-      patch({ branding: { productName: '', primaryColor: '', logo: null } });
+      patch({ branding: { productName: '', logo: null } });
     }
     if (step === 'email') patch({ email: { ...state.email, skipped: true } });
     goto(nextStep(step));
@@ -279,7 +365,7 @@ function SetupWizard({
       </header>
 
       <main className={styles.main}>
-        <form className={styles.form} onSubmit={submit} noValidate>
+        <form ref={formRef} className={styles.form} onSubmit={submit} noValidate>
           <div className={styles.content}>
             <div className={styles.stepHead}>
               {/* HP/tablet: nomor langkah sudah tampil di bilah atas; di sini cukup label "Opsional". */}
@@ -296,7 +382,9 @@ function SetupWizard({
               <h1 ref={headingRef} tabIndex={-1} className={styles.stepTitle}>
                 {copy.title}
               </h1>
-              <p className={styles.stepBody}>{copy.body}</p>
+              <p className={styles.stepBody}>
+                <RichText text={copy.body} />
+              </p>
             </div>
 
             {state.banner ? (

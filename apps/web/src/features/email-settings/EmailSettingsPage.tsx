@@ -6,16 +6,18 @@ import { useBrand } from '../../brand/brand';
 import { Button } from '../../components/ui/Button';
 import { Icon } from '../../components/ui/Icon';
 import { Notice } from '../../components/ui/Notice';
+import { RichText } from '../../components/ui/RichText';
 import { Page } from '../../components/ui/Page';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
 import { emailSettingsQuery, queryKeys } from '../../lib/api/queries';
-import { formatTime } from '../../lib/format';
+import { formatDateTime } from '../../lib/format';
 import { apiFieldErrors, type FieldErrors } from '../../lib/form';
 import { media, useMediaQuery } from '../../lib/media';
 import { useSession } from '../auth/session';
 import styles from './EmailSettings.module.css';
+import { EmailGuide } from './EmailGuide';
 import { EmailSettingsFields } from './EmailSettingsFields';
 import { EmailStatusBadge } from './EmailStatusBadge';
 import { EmailTestPanel, type RunEmailTest } from './EmailTestPanel';
@@ -99,12 +101,6 @@ function EmailSettingsScreen({ data }: { data: EmailSettingsResponse }) {
       return kind === 'connection'
         ? await endpoints.emailSettings.testConnection(settings)
         : await endpoints.emailSettings.sendTest(to ?? '', settings);
-    } catch (error) {
-      if (isApiError(error) && error.code === 'VALIDATION_ERROR') {
-        setErrors(apiFieldErrors(error.details, 'settings.'));
-        return null;
-      }
-      throw error;
     } finally {
       if (useStored) void queryClient.invalidateQueries({ queryKey: queryKeys.emailSettings });
     }
@@ -124,10 +120,14 @@ function EmailSettingsScreen({ data }: { data: EmailSettingsResponse }) {
         <StatusSummary data={data} />
         {!data.canStoreSecrets ? (
           <Notice tone="warning" title={t.emailSettings.noMasterKeyTitle}>
-            {t.emailSettings.noMasterKeyBody}
+            <RichText text={t.emailSettings.noMasterKeyBody} />
           </Notice>
         ) : null}
-        {data.source === 'env' ? <Notice tone="info">{t.emailSettings.envNotice}</Notice> : null}
+        {data.source === 'env' ? (
+          <Notice tone="info">
+            <RichText text={t.emailSettings.envNotice} />
+          </Notice>
+        ) : null}
 
         <form className={styles.card} onSubmit={submit} noValidate>
           <EmailSettingsFields
@@ -142,6 +142,7 @@ function EmailSettingsScreen({ data }: { data: EmailSettingsResponse }) {
           <EmailTestPanel
             defaultRecipient={session?.user.email ?? ''}
             run={runTest}
+            onFieldErrors={setErrors}
             disabled={save.isPending}
             note={
               data.source === 'database' && isEmailFormDirty(values, saved)
@@ -178,16 +179,12 @@ function EmailSettingsScreen({ data }: { data: EmailSettingsResponse }) {
         </form>
       </div>
 
-      <details className={styles.guide} open={isDesktop} key={isDesktop ? 'lebar' : 'sempit'}>
-        <summary className={styles.guideTitle}>{t.emailSettings.guideTitle}</summary>
-        <ol className={styles.guideList}>
-          {t.emailSettings.guide.map((step) => (
-            <li key={step} className={styles.guideItem}>
-              {step}
-            </li>
-          ))}
-        </ol>
-      </details>
+      <EmailGuide
+        context="settings"
+        preset={values.preset}
+        defaultOpen={isDesktop}
+        className={styles.aside}
+      />
     </div>
   );
 }
@@ -204,13 +201,18 @@ function StatusSummary({ data }: { data: EmailSettingsResponse }) {
       <div className={styles.statusItem}>
         <dt className={styles.statusLabel}>{t.emailSettings.lastTest}</dt>
         <dd className={styles.statusValue}>
-          {data.lastTest ? formatTime(data.lastTest.testedAt) : t.emailSettings.neverTested}
+          {data.lastTest ? formatDateTime(data.lastTest.testedAt) : t.emailSettings.neverTested}
         </dd>
       </div>
-      <div className={styles.statusItem}>
-        <dt className={styles.statusLabel}>{t.emailSettings.source}</dt>
-        <dd className={styles.statusValue}>{t.emailSettings.sources[data.source]}</dd>
-      </div>
+      {/* Belum diatur sama sekali: "Sumber" hanya mengulang status, jadi tidak ditampilkan. */}
+      {data.source === 'none' ? null : (
+        <div className={styles.statusItem}>
+          <dt className={styles.statusLabel}>{t.emailSettings.source}</dt>
+          <dd className={styles.statusValue}>
+            <RichText text={t.emailSettings.sources[data.source]} />
+          </dd>
+        </div>
+      )}
     </dl>
   );
 }

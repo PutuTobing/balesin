@@ -4,27 +4,23 @@ import {
   LOGO_MAX_BYTES,
   PASSWORD_RULES_HINT,
   SMTP_SECURITY_LABELS,
-  brandColorSchema,
   type LogoContentType,
 } from '@balesin/shared';
-import {
-  MIN_TEXT_CONTRAST,
-  color as tokenColor,
-  contrastRatio,
-} from '@balesin/shared/design-tokens';
-import { ImagePlus, Trash2, X } from 'lucide-react';
+import { ImagePlus, Trash2 } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
-import { DefaultSymbol } from '../../brand/BrandMark';
+import { BrandLogo } from '../../brand/BrandLogo';
+import { BrandContext, defaultBrand } from '../../brand/brand';
 import { Button } from '../../components/ui/Button';
 import { PasswordField, SelectField, TextField } from '../../components/ui/Field';
 import { Icon } from '../../components/ui/Icon';
 import { Notice } from '../../components/ui/Notice';
+import { RichText } from '../../components/ui/RichText';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { t } from '../../i18n/id';
 import { endpoints } from '../../lib/api/endpoints';
-import { cx } from '../../lib/cx';
-import { formatRatio, kilobytes } from '../../lib/format';
-import { describedBy, scopeErrors } from '../../lib/form';
+import { kilobytes } from '../../lib/format';
+import { describedBy, scopeErrors, type FieldErrors } from '../../lib/form';
+import { EmailGuide } from '../email-settings/EmailGuide';
 import { EmailSettingsFields } from '../email-settings/EmailSettingsFields';
 import { EmailTestPanel, type RunEmailTest } from '../email-settings/EmailTestPanel';
 import { emailFormFingerprint, toEmailInput } from '../email-settings/email-form';
@@ -43,6 +39,14 @@ interface StepProps {
   state: WizardState;
   patch: Patch;
   disabled: boolean;
+}
+
+/** Error isian yang diubah (dan isian terkait) dihapus, supaya pesan lama tidak tertinggal. */
+function clearErrors(errors: FieldErrors, keys: string[]): FieldErrors {
+  if (!keys.some((key) => key in errors)) return errors;
+  const next = { ...errors };
+  for (const key of keys) delete next[key];
+  return next;
 }
 
 // ── Token ───────────────────────────────────────────────────────────────────
@@ -72,15 +76,18 @@ export function TokenStep({ state, patch, disabled }: StepProps) {
 
 // ── Organisasi ──────────────────────────────────────────────────────────────
 
-/** Warna awal pemilih warna bila isian kosong (warna utama bawaan design system). */
-const DEFAULT_PICKER_COLOR = tokenColor.light.primary.toLowerCase();
-
 const TIME_ZONES = Object.entries(t.setup.timezones).map(([value, label]) => ({ value, label }));
 
 export function OrganizationStep({ state, patch, disabled }: StepProps) {
   const errors = scopeErrors(state.errors, 'organization');
   const set = (organization: Partial<WizardState['organization']>) =>
-    patch({ organization: { ...state.organization, ...organization } });
+    patch({
+      organization: { ...state.organization, ...organization },
+      errors: clearErrors(
+        state.errors,
+        Object.keys(organization).map((key) => `organization.${key}`),
+      ),
+    });
   return (
     <div className={styles.stack}>
       <TextField
@@ -118,8 +125,12 @@ const CHECK_DELAY_MS = 700;
 
 export function OwnerStep({ state, patch, disabled }: StepProps) {
   const errors = scopeErrors(state.errors, 'owner');
-  const set = (owner: Partial<WizardState['owner']>) =>
-    patch({ owner: { ...state.owner, ...owner } });
+  const set = (owner: Partial<WizardState['owner']>) => {
+    const keys = Object.keys(owner).map((key) => `owner.${key}`);
+    // Password berubah → pesan "ulangi password tidak sama" juga tidak berlaku lagi.
+    if ('password' in owner) keys.push('owner.repeat');
+    patch({ owner: { ...state.owner, ...owner }, errors: clearErrors(state.errors, keys) });
+  };
   const strengthId = useId();
   const check = useServerPasswordCheck(state);
 
@@ -250,7 +261,8 @@ function StrengthMeter({
           <span
             key={bar}
             className={styles.strengthBar}
-            data-on={(rejected && password !== '') || bar <= level ? '' : undefined}
+            // Ditolak = satu batang merah (bukan tiga batang yang menyerupai "kuat").
+            data-on={(rejected ? bar === 1 : bar <= level) ? '' : undefined}
           />
         ))}
       </div>
@@ -268,18 +280,20 @@ function StrengthMeter({
 export function BrandingStep({ state, patch, disabled }: StepProps) {
   const errors = scopeErrors(state.errors, 'branding');
   const set = (branding: Partial<WizardState['branding']>) =>
-    patch({ branding: { ...state.branding, ...branding } });
-  const colorParsed = brandColorSchema.safeParse(state.branding.primaryColor);
-  const color = colorParsed.success ? colorParsed.data : null;
-  const ratio = color ? contrastRatio(color, '#ffffff') : null;
-  const colorNoticeId = useId();
+    patch({
+      branding: { ...state.branding, ...branding },
+      errors: clearErrors(
+        state.errors,
+        Object.keys(branding).map((key) => `branding.${key}`),
+      ),
+    });
 
+  // Langkah ini sudah berlabel "Opsional", jadi isiannya tidak diberi penanda lagi.
   return (
     <div className={styles.stack}>
       <TextField
         size="lg"
         label={t.setup.steps.branding.productName}
-        optional
         hint={t.setup.steps.branding.productNameHint(DEFAULT_PRODUCT_NAME)}
         value={state.branding.productName}
         onChange={(event) => set({ productName: event.target.value })}
@@ -287,81 +301,6 @@ export function BrandingStep({ state, patch, disabled }: StepProps) {
         autoComplete="off"
         disabled={disabled}
       />
-
-      <div className={styles.colorRow}>
-        <TextField
-          size="lg"
-          label={t.setup.steps.branding.color}
-          optional
-          hint={t.setup.steps.branding.colorHint}
-          value={state.branding.primaryColor}
-          onChange={(event) => set({ primaryColor: event.target.value })}
-          error={errors.primaryColor}
-          autoComplete="off"
-          autoCapitalize="none"
-          spellCheck={false}
-          maxLength={7}
-          className={styles.mono}
-          aria-describedby={ratio !== null ? colorNoticeId : undefined}
-          disabled={disabled}
-          trailing={
-            <>
-              {state.branding.primaryColor ? (
-                <button
-                  type="button"
-                  className={styles.colorClear}
-                  onClick={() => set({ primaryColor: '' })}
-                  aria-label={t.setup.steps.branding.colorReset}
-                  title={t.setup.steps.branding.colorReset}
-                  disabled={disabled}
-                >
-                  <Icon icon={X} size={16} />
-                </button>
-              ) : null}
-              <label className={styles.colorPicker} title={t.setup.steps.branding.colorPick}>
-                <span className="sr-only">{t.setup.steps.branding.colorPick}</span>
-                <input
-                  type="color"
-                  className={styles.colorInput}
-                  value={color ?? DEFAULT_PICKER_COLOR}
-                  onChange={(event) => set({ primaryColor: event.target.value })}
-                  disabled={disabled}
-                />
-                <span
-                  className={cx(styles.colorSwatch, !color && styles.colorSwatchEmpty)}
-                  // Warna pilihan pengguna (data), bukan warna desain: dipasang lewat CSSOM.
-                  style={color ? { backgroundColor: color } : undefined}
-                  aria-hidden="true"
-                />
-              </label>
-            </>
-          }
-        />
-      </div>
-
-      {color && ratio !== null ? (
-        <div className={styles.colorPreview}>
-          <div className={styles.colorSample} data-theme="light" aria-hidden="true">
-            <span className={styles.sampleLabel}>{t.setup.steps.branding.colorPreview}</span>
-            <span className={styles.sampleButton} style={{ backgroundColor: color }}>
-              {t.setup.steps.branding.colorPreviewButton}
-            </span>
-            <span className={styles.sampleLink} style={{ color }}>
-              {t.setup.steps.branding.colorPreviewLink}
-            </span>
-          </div>
-          <Notice
-            id={colorNoticeId}
-            tone={ratio >= MIN_TEXT_CONTRAST ? 'success' : 'warning'}
-            role="status"
-          >
-            {ratio >= MIN_TEXT_CONTRAST
-              ? t.setup.steps.branding.contrastOk(formatRatio(ratio))
-              : t.setup.steps.branding.contrastLow(formatRatio(ratio))}
-          </Notice>
-        </div>
-      ) : null}
-
       <LogoPicker
         logo={state.branding.logo}
         error={errors.logo ?? errors['logo.dataBase64'] ?? errors['logo.contentType']}
@@ -446,17 +385,16 @@ function LogoPicker({
     <div className={styles.logoField} role="group" aria-labelledby={labelId}>
       <span id={labelId} className={styles.fieldLabel}>
         {t.setup.steps.branding.logo}
-        <span className={styles.optionalTag}>{t.form.optional}</span>
       </span>
       <div className={styles.logoBox}>
         <div className={styles.logoPreview}>
           {logo ? (
             <img src={logo.dataUrl} alt={t.setup.steps.branding.logoPreviewAlt} />
           ) : (
-            <span className={styles.logoPlaceholder} aria-hidden="true">
-              <DefaultSymbol fit="tight" className={styles.logoPlaceholderMark} />
-              <span>{productName}</span>
-            </span>
+            // Pratinjau persis seperti yang tampil di halaman masuk (BrandLogo dengan nama ini).
+            <BrandContext value={{ ...defaultBrand, productName }}>
+              <BrandLogo className={styles.logoPreviewMark} />
+            </BrandContext>
           )}
         </div>
         <div className={styles.logoMeta}>
@@ -516,7 +454,7 @@ export function EmailStep({
   if (!canStoreSecrets) {
     return (
       <Notice tone="warning" title={t.setup.steps.email.noMasterKeyTitle}>
-        {t.setup.steps.email.noMasterKeyBody}
+        <RichText text={t.setup.steps.email.noMasterKeyBody} />
       </Notice>
     );
   }
@@ -555,11 +493,19 @@ export function EmailStep({
           endpoints.setup.detectEmailHost({ setupToken: state.setupToken, emailAddress }, signal)
         }
         disabled={disabled}
+        guide={<EmailGuide context="setup" preset={values.preset} />}
       />
       <EmailTestPanel
         size="lg"
         defaultRecipient={state.owner.email.trim()}
         run={run}
+        onFieldErrors={(errors) =>
+          patch({
+            errors: Object.fromEntries(
+              Object.entries(errors).map(([key, message]) => [`email.${key}`, message]),
+            ),
+          })
+        }
         disabled={disabled}
         onResult={(kind, result) => {
           if (kind === 'connection' || result.ok) {
@@ -594,7 +540,7 @@ export function SummaryStep({
   const timezone =
     t.setup.timezones[state.organization.timezone as keyof typeof t.setup.timezones] ??
     state.organization.timezone;
-  const { productName, primaryColor, logo } = state.branding;
+  const { productName, logo } = state.branding;
   const emailUsed = canStoreSecrets && !state.email.skipped;
   const email = state.email.values;
 
@@ -624,21 +570,6 @@ export function SummaryStep({
       title: copy.branding,
       rows: [
         { label: copy.productName, value: productName.trim() || copy.defaultValue },
-        {
-          label: copy.color,
-          value: primaryColor ? (
-            <span className={styles.summaryColor}>
-              <span
-                className={styles.summarySwatch}
-                style={{ backgroundColor: primaryColor }}
-                aria-hidden="true"
-              />
-              <code>{primaryColor.toLowerCase()}</code>
-            </span>
-          ) : (
-            copy.defaultValue
-          ),
-        },
         { label: copy.logo, value: logo ? copy.logoAttached : copy.noLogo },
       ],
     },

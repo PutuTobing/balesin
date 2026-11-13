@@ -1,5 +1,5 @@
 import { API_ROUTES } from '@balesin/shared';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { t } from '../../i18n/id';
 import { apiError, fakeSession, json, type FakeRequest } from '../../test/fake-api';
@@ -114,20 +114,31 @@ describe('wizard setup', () => {
     expect(screen.getByLabelText(steps.owner.password)).toHaveValue('Kopi-Senja-Tenang-42');
   });
 
-  it('warna dengan kontras rendah memunculkan peringatan, tetapi tidak menghalangi', async () => {
-    await renderApp(`/setup#token=${TOKEN}`, {
+  it('langkah Tampilan tanpa warna utama; pratinjau logo memakai nama aplikasi yang diisi', async () => {
+    const view = await renderApp(`/setup#token=${TOKEN}`, {
       session: null,
       setupStatus: freshInstall,
-      routes: setupRoutes(),
+      routes: setupRoutes({
+        [`POST ${API_ROUTES.setup.complete}`]: () =>
+          apiError(503, 'SERVICE_UNAVAILABLE', 'Layanan sedang tidak tersedia.'),
+      }),
     });
     await fillToBranding();
 
-    type(steps.branding.color, '#7fb3ff');
-    expect(await screen.findByText(/Kontras dengan putih hanya 2,1:1/)).toBeVisible();
-    type(steps.branding.color, '#1b3557');
-    expect(await screen.findByText(/Kontras dengan putih 12,4:1/)).toBeVisible();
+    // Warna utama belum diterapkan ke tema, jadi tidak ditawarkan (DECISIONS 2026-11-13).
+    expect(screen.queryByLabelText(/Warna utama/)).toBeNull();
+    type(steps.branding.productName, 'CS Maju Jaya');
+    expect(await screen.findByText('CS Maju Jaya', { selector: 'span' })).toBeVisible();
+
     next();
-    expect(await heading(steps.email.title)).toBeVisible();
+    await heading(steps.email.title);
+    fireEvent.click(screen.getByRole('button', { name: t.setup.skip }));
+    await heading(steps.summary.title);
+    fireEvent.click(screen.getByRole('button', { name: steps.summary.submit }));
+    await screen.findByText('Layanan sedang tidak tersedia.');
+    const body = view.api.requests.find((r) => r.path === API_ROUTES.setup.complete)?.body;
+    expect(body).toMatchObject({ branding: { productName: 'CS Maju Jaya', logo: null } });
+    expect(JSON.stringify(body)).not.toContain('primaryColor');
   });
 
   it('error dari "Selesai" dipetakan ke langkah yang tepat lewat awalan field', async () => {
@@ -149,7 +160,9 @@ describe('wizard setup', () => {
     await heading(steps.summary.title);
     fireEvent.click(screen.getByRole('button', { name: steps.summary.submit }));
 
-    expect(await heading(steps.owner.title)).toHaveFocus();
+    // Langkah Owner terbuka dan fokus langsung di isian yang ditolak server (QA6).
+    await heading(steps.owner.title);
+    await waitFor(() => expect(screen.getByLabelText(steps.owner.email)).toHaveFocus());
     expect(screen.getByText('Email ini tidak bisa dipakai.')).toBeVisible();
     expect(screen.getByLabelText(steps.owner.email)).toHaveAttribute('aria-invalid', 'true');
     const body = api.requests.find((r) => r.path === API_ROUTES.setup.complete)?.body;
@@ -222,5 +235,72 @@ describe('wizard setup', () => {
     expect(screen.queryByRole('button', { name: t.setup.skip })).toBeNull();
     next();
     expect(await heading(steps.summary.title)).toBeVisible();
+  });
+
+  it('QA1 + QA6: isian salah difokus, lalu errornya hilang begitu isian diperbaiki', async () => {
+    await renderApp(`/setup#token=${TOKEN}`, {
+      session: null,
+      setupStatus: freshInstall,
+      routes: setupRoutes(),
+    });
+    await heading(steps.organization.title);
+
+    next();
+    const name = screen.getByLabelText(steps.organization.name);
+    await waitFor(() => expect(name).toHaveFocus());
+    expect(name).toHaveAttribute('aria-invalid', 'true');
+
+    type(steps.organization.name, 'PT Maju Jaya');
+    expect(name).not.toHaveAttribute('aria-invalid');
+    expect(screen.queryByText('Nama perusahaan wajib diisi.')).toBeNull();
+  });
+
+  it('QA4: Back browser mundur satu langkah di dalam wizard, isian tetap ada', async () => {
+    const { router } = await renderApp(`/setup#token=${TOKEN}`, {
+      session: null,
+      setupStatus: freshInstall,
+      routes: setupRoutes(),
+    });
+    await fillToBranding();
+
+    act(() => router.history.back());
+    expect(await heading(steps.owner.title)).toBeVisible();
+    expect(screen.getByLabelText(steps.owner.name)).toHaveValue('Rina Kartika');
+    expect(router.state.location.pathname).toBe('/setup');
+
+    act(() => router.history.forward());
+    expect(await heading(steps.branding.title)).toBeVisible();
+  });
+
+  it('QA4: ada isian → menutup/memuat ulang tab meminta konfirmasi', async () => {
+    await renderApp(`/setup#token=${TOKEN}`, {
+      session: null,
+      setupStatus: freshInstall,
+      routes: setupRoutes(),
+    });
+    await heading(steps.organization.title);
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('QA5: token yang ditempel di tab /setup yang sudah terbuka (hanya fragment berubah) dipakai', async () => {
+    const { api } = await renderApp('/setup', {
+      session: null,
+      setupStatus: freshInstall,
+      routes: setupRoutes(),
+    });
+    await heading(steps.token.title);
+
+    act(() => {
+      window.location.hash = `#token=${TOKEN}`;
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+
+    expect(await heading(steps.organization.title)).toBeVisible();
+    expect(api.requests.find((r) => r.path === API_ROUTES.setup.verifyToken)?.body).toEqual({
+      setupToken: TOKEN,
+    });
+    window.location.hash = '';
   });
 });
