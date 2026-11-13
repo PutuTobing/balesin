@@ -91,6 +91,24 @@ Error setup:
 - POST `/settings/email/send-test` `{to, settings?}`. Tes koneksi dan kirim tes berbagi jatah
   10×/5 menit per pengguna.
 
+## Perubahan setelah review keamanan Fase 1 (path & bentuk tidak berubah)
+- **Kunci login**: 429 muncul setelah 5 gagal untuk email yang sama **dari asal yang sama** (IP, atau /64
+  untuk IPv6), atau setelah 50 gagal per jam dari banyak asal (hanya untuk perangkat yang belum dikenal).
+  Perangkat yang pernah berhasil masuk hanya terkunci oleh 5 kegagalannya sendiri. Pesan dan
+  `Retry-After` tidak berubah.
+- **Cookie perangkat dikenal**: login dan `/setup/complete` kini memasang dua `Set-Cookie` — sesi dan
+  `balesin_device` (http) / `__Host-balesin_device` (https), HttpOnly, `SameSite=Strict`, 90 hari.
+  Bukan kredensial; tidak dihapus saat logout. Web tidak perlu melakukan apa pun selain
+  `credentials: "include"`.
+- `GET /setup/status` setelah setup selesai → `{needsSetup: false, setupTokenConfigured: false,
+  canStoreSecrets: false}`.
+- **Email "Tanpa enkripsi" + login**: di production ditolak bila host di-resolve ke alamat internet —
+  kode hasil tes `insecure_login`, dan error 400 di field `security` / `email.security` saat menyimpan.
+  Form wajib menampilkan peringatan `SMTP_PLAINTEXT_LOGIN_WARNING` bila `isPlaintextSmtpLogin(input)`
+  (dari `packages/shared/src/email-settings.ts`).
+- API menolak start bila `SETUP_TOKEN`/`SESSION_SECRET` lemah; buat dengan
+  `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`.
+
 ## Pengembangan lokal
 - Mailpit (dari `pnpm db:up`) menangkap semua email: UI http://localhost:8025. Isian SMTP:
   host `localhost`, port `1025`, keamanan "Tanpa enkripsi", username/password `balesin`.

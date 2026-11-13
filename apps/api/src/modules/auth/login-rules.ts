@@ -4,8 +4,22 @@ import { sql } from 'drizzle-orm';
 import type { RateLimitRule } from '../../http/rate-limit';
 
 /**
- * Batas percobaan masuk (SECURITY.md §1): per IP dan per akun; akun dikunci 15 menit setelah
- * 5 kali gagal.
+ * Batas percobaan masuk (SECURITY.md §1: "rate limit login per IP & per akun; kunci 15 menit
+ * setelah 5 gagal; notifikasi email"), dirancang supaya kunci akun tidak bisa dipakai orang lain
+ * untuk mengunci pemilik akun (temuan S1 review keamanan Fase 1):
+ *
+ *  1. Per IP (`LOGIN_IP_RULE`): semua percobaan gagal dari satu alamat, email apa pun.
+ *  2. Per akun + asal (`LOGIN_SOURCE_RULE`): 5 gagal untuk satu email dari satu IP (/64 untuk
+ *     IPv6) → percobaan email itu DARI ASAL ITU dikunci 15 menit. Pemilik akun di jaringan lain
+ *     tidak ikut terkunci.
+ *  3. Per akun dari mana pun (`LOGIN_ACCOUNT_RULE`): ambang tinggi untuk tebakan yang disebar ke
+ *     banyak IP → email itu dikunci 15 menit untuk semua asal, KECUALI perangkat dikenal.
+ *  4. Per perangkat dikenal (`LOGIN_DEVICE_RULE`): browser yang pernah berhasil masuk ke akun itu
+ *     (cookie bertanda tangan, `trusted-device.ts`) memakai embernya sendiri, jadi tidak terkena
+ *     aturan 2 dan 3 yang dipicu orang lain.
+ *
+ * Semua hitungan per email memakai email yang DIKETIK (di-hash), bukan baris pengguna, jadi email
+ * tidak terdaftar diperlakukan sama persis dengan akun sungguhan.
  */
 
 export const LOGIN_LOCK_SECONDS = LOGIN_LOCK_MINUTES * 60;
@@ -21,15 +35,36 @@ export const LOGIN_IP_RULE: RateLimitRule = {
   windowSeconds: LOGIN_LOCK_SECONDS,
 };
 
-/**
- * Percobaan per akun, dihitung per EMAIL yang diketik (di-hash) — bukan per baris pengguna —
- * supaya perilakunya sama persis untuk email terdaftar dan tidak terdaftar.
- */
-export const LOGIN_ACCOUNT_RULE: RateLimitRule = {
-  name: 'login-akun',
+/** 5 gagal untuk satu email dari satu asal → kunci asal itu 15 menit. */
+export const LOGIN_SOURCE_RULE: RateLimitRule = {
+  name: 'login-akun-asal',
   limit: LOGIN_MAX_FAILED_ATTEMPTS,
   windowSeconds: LOGIN_LOCK_SECONDS,
 };
 
-/** Nama penanda Redis "akun sedang dikunci". */
+/** Tebakan tersebar dari banyak asal: 50 per jam untuk satu email → kunci email itu 15 menit. */
+export const LOGIN_ACCOUNT_RULE: RateLimitRule = {
+  name: 'login-akun',
+  limit: 50,
+  windowSeconds: 60 * 60,
+};
+
+/** 5 gagal dari satu perangkat dikenal → kunci perangkat itu 15 menit. */
+export const LOGIN_DEVICE_RULE: RateLimitRule = {
+  name: 'login-perangkat',
+  limit: LOGIN_MAX_FAILED_ATTEMPTS,
+  windowSeconds: LOGIN_LOCK_SECONDS,
+};
+
+/** Nama penanda Redis "email ini dikunci untuk semua asal" (aturan 3). */
 export const ACCOUNT_LOCK_FLAG = 'akun-terkunci';
+/** Nama penanda Redis "email ini dikunci dari asal ini" (aturan 2). */
+export const SOURCE_LOCK_FLAG = 'akun-asal-terkunci';
+/** Nama penanda Redis "perangkat dikenal ini dikunci" (aturan 4). */
+export const DEVICE_LOCK_FLAG = 'perangkat-terkunci';
+/** Penanda "email pemberitahuan kunci sudah dikirim" — paling banyak sekali per jam per akun. */
+export const LOCK_NOTICE_FLAG = 'email-kunci-terkirim';
+export const LOCK_NOTICE_INTERVAL_SECONDS = 60 * 60;
+
+/** Lingkup sebuah kunci (masuk metadata audit dan payload pemberitahuan). */
+export type LockScope = 'source' | 'account' | 'device';

@@ -27,6 +27,8 @@ import {
   SMTP_PRESETS,
   SMTP_SECURITY_LABELS,
   SMTP_SECURITY_MODES,
+  isPlaintextSmtpLogin,
+  SMTP_PLAINTEXT_LOGIN_WARNING,
 } from './index';
 
 const messagesOf = (result: { error?: { issues: Array<{ message: string }> } }) =>
@@ -320,6 +322,15 @@ describe('email pengirim', () => {
       passwordEncrypted: 'v1.bocor',
     });
     expect(JSON.stringify(parsed)).not.toContain('bocor');
+  });
+
+  it('peringatan "Tanpa enkripsi" + login untuk form (temuan R4)', () => {
+    expect(isPlaintextSmtpLogin({ security: 'none', username: 'cs@contoh.test' })).toBe(true);
+    expect(isPlaintextSmtpLogin({ security: 'none', username: null })).toBe(false);
+    expect(isPlaintextSmtpLogin({ security: 'none', username: '  ' })).toBe(false);
+    expect(isPlaintextSmtpLogin({ security: 'starttls', username: 'cs@contoh.test' })).toBe(false);
+    expect(SMTP_PLAINTEXT_LOGIN_WARNING).toContain('jaringan lokal');
+    expect(SMTP_PLAINTEXT_LOGIN_WARNING).not.toMatch(/\bAnda\b/);
   });
 
   it('setiap kode hasil tes punya pesan Indonesia yang menjelaskan langkah berikutnya', () => {

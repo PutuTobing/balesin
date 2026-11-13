@@ -8,6 +8,7 @@ import { commonPasswords } from './common-passwords';
 import { createCsrfProtection } from './csrf';
 import { createPasswordHasher } from './password-hasher';
 import { checkPassword } from './password-policy';
+import { createTrustedDevices } from './trusted-device';
 
 describe('aturan password', () => {
   const context = {
@@ -253,5 +254,43 @@ describe('penyamaran email di audit log', () => {
     expect(maskEmail('a@b.c')).toBe('a***@b.c');
     expect(maskEmail('tanpa-at')).toBe('***');
     expect(maskEmail('@domain.test')).toBe('***');
+  });
+});
+
+describe('perangkat dikenal (cookie bertanda tangan)', () => {
+  const userId = '01a1d52f-c3f5-719c-be13-9e25ee95ff30';
+  const devices = createTrustedDevices(new Secret('rahasia-sesi-uji-perangkat-yang-cukup-panjang'));
+
+  it('nilai yang diterbitkan terverifikasi untuk pengguna yang sama, dengan kunci ember tetap', () => {
+    const token = devices.issue(userId);
+    const first = devices.verify(token);
+    expect(first?.userId).toBe(userId);
+    expect(first?.deviceKey).toMatch(/^[0-9a-f]{40}$/);
+    expect(devices.verify(token)?.deviceKey).toBe(first?.deviceKey);
+    expect(first?.deviceKey).not.toContain(token);
+  });
+
+  it('kedaluwarsa setelah 90 hari, menolak waktu terbit di masa depan', () => {
+    const issuedAt = new Date('2026-01-01T00:00:00Z');
+    const token = devices.issue(userId, issuedAt);
+    const day = 24 * 60 * 60 * 1000;
+    expect(devices.verify(token, new Date(issuedAt.getTime() + 89 * day))).toBeDefined();
+    expect(devices.verify(token, new Date(issuedAt.getTime() + 91 * day))).toBeUndefined();
+    expect(devices.verify(token, new Date(issuedAt.getTime() - 10 * 60 * 1000))).toBeUndefined();
+  });
+
+  it('tanda tangan, ID pengguna, atau kunci server yang berbeda membuatnya tidak sah', () => {
+    const token = devices.issue(userId);
+    const [version, , issued, signature] = token.split('.');
+    const otherUser = `${version}.01a1d52f-c3f5-719c-be13-9e25ee95ff31.${issued}.${signature}`;
+    const other = createTrustedDevices(new Secret('rahasia-sesi-lain-yang-juga-cukup-panjang'));
+
+    expect(devices.verify(otherUser)).toBeUndefined();
+    expect(
+      devices.verify(`${token.slice(0, -1)}${token.endsWith('A') ? 'B' : 'A'}`),
+    ).toBeUndefined();
+    expect(other.verify(token)).toBeUndefined();
+    expect(devices.verify(undefined)).toBeUndefined();
+    expect(devices.verify('v1.bukan.token')).toBeUndefined();
   });
 });

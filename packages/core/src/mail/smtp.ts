@@ -66,9 +66,22 @@ export function allowedSmtpPorts(isProduction: boolean): number[] {
   return isProduction ? [...SMTP_ALLOWED_PORTS] : [...SMTP_ALLOWED_PORTS, LOCAL_MAIL_CATCHER_PORT];
 }
 
+/**
+ * Login lewat sambungan "Tanpa enkripsi" mengirim password polos. `private-only` (dipakai di
+ * production) hanya mengizinkannya ke server di jaringan lokal/loopback; `allow` mengizinkan
+ * ke mana pun (pengembangan lokal).
+ */
+export type PlaintextLoginPolicy = 'allow' | 'private-only';
+
+export function plaintextLoginPolicy(isProduction: boolean): PlaintextLoginPolicy {
+  return isProduction ? 'private-only' : 'allow';
+}
+
 export interface SmtpPolicy {
   /** Port yang boleh dituju. Port lain ditolak sebelum ada sambungan. */
   allowedPorts: readonly number[];
+  /** Bawaan `private-only`. */
+  plaintextLogin?: PlaintextLoginPolicy;
   lookup?: HostLookup;
   timeouts?: Partial<SmtpTimeouts>;
 }
@@ -206,6 +219,31 @@ export function classifySmtpError(error: unknown): {
   return done('unknown');
 }
 
+/** `true` bila sambungan ini akan mengirim username + password tanpa enkripsi. */
+export function sendsPlaintextLogin(
+  config: Pick<SmtpConnectionConfig, 'security' | 'username'>,
+): boolean {
+  return config.security === 'none' && config.username !== null;
+}
+
+/**
+ * Pemeriksaan saat MENYIMPAN pengaturan: `true` bila kombinasi "Tanpa enkripsi" + login
+ * ditolak kebijakan karena host-nya di internet. Host yang belum bisa di-resolve tidak ditolak
+ * di sini (pengiriman tetap memeriksa ulang sebelum menyambung).
+ */
+export async function isPlaintextLoginRejected(
+  config: Pick<SmtpConnectionConfig, 'host' | 'security' | 'username'>,
+  policy: Pick<SmtpPolicy, 'plaintextLogin' | 'lookup' | 'timeouts'>,
+): Promise<boolean> {
+  if (!sendsPlaintextLogin(config)) return false;
+  if ((policy.plaintextLogin ?? 'private-only') === 'allow') return false;
+  const resolved = await resolveMailHost(config.host, {
+    lookup: policy.lookup,
+    timeoutMs: policy.timeouts?.dnsMs ?? DEFAULT_SMTP_TIMEOUTS.dnsMs,
+  });
+  return resolved.ok && resolved.addressClass !== 'private';
+}
+
 type Transport = ReturnType<typeof createTransport>;
 
 async function withTransport(
@@ -224,6 +262,13 @@ async function withTransport(
     timeoutMs: timeouts.dnsMs,
   });
   if (!resolved.ok) return { ok: false, code: resolved.code, diagnostic: { stage: 'dns' } };
+  if (
+    sendsPlaintextLogin(config) &&
+    (policy.plaintextLogin ?? 'private-only') === 'private-only' &&
+    resolved.addressClass !== 'private'
+  ) {
+    return { ok: false, code: 'insecure_login', diagnostic: { stage: 'policy' } };
+  }
 
   const transport = createTransport({
     host: resolved.address,

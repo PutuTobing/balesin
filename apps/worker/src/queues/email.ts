@@ -12,6 +12,7 @@ import {
   type Logger,
   type MailContent,
   type MailTransportSettings,
+  type PlaintextLoginPolicy,
   type SecretBox,
   type SmtpFallbackConfig,
   type SmtpFailureCode,
@@ -53,6 +54,8 @@ export interface EmailJobDeps {
   /** Cadangan `SMTP_*` dari .env. */
   fallback: SmtpFallbackConfig | null;
   allowedPorts: readonly number[];
+  /** Login "Tanpa enkripsi": `private-only` di production. Bawaan `private-only`. */
+  plaintextLogin?: PlaintextLoginPolicy;
   logger: Logger;
   /** Bisa diganti di tes. */
   lookup?: HostLookup;
@@ -65,6 +68,7 @@ const PERMANENT_FAILURES = new Set<SmtpFailureCode>([
   'port_not_allowed',
   'auth_failed',
   'auth_unsupported',
+  'insecure_login',
   'certificate_invalid',
   'sender_rejected',
   'recipient_rejected',
@@ -78,7 +82,11 @@ async function resolveTransport(
   organizationId: string,
   deps: EmailJobDeps,
 ): Promise<ResolvedTransport> {
-  const basePolicy = { lookup: deps.lookup, timeouts: deps.timeouts };
+  const basePolicy = {
+    lookup: deps.lookup,
+    timeouts: deps.timeouts,
+    plaintextLogin: deps.plaintextLogin,
+  };
   const [stored] = await deps.db
     .select()
     .from(emailSettings)
@@ -150,7 +158,7 @@ async function sendAccountLocked(job: EmailJob, deps: EmailJobDeps): Promise<Ema
   if (!payload.success) {
     throw new UnrecoverableError('Payload job email:account-locked tidak valid');
   }
-  const { organizationId, userId, lockedUntil } = payload.data;
+  const { organizationId, userId, lockedUntil, scope } = payload.data;
 
   const [recipient] = await deps.db
     .select({
@@ -175,6 +183,7 @@ async function sendAccountLocked(job: EmailJob, deps: EmailJobDeps): Promise<Ema
     lockMinutes: LOGIN_LOCK_MINUTES,
     lockedUntil: new Date(lockedUntil),
     timeZone: recipient.timezone,
+    scope,
   });
   return deliver(organizationId, { to: recipient.email, ...body }, job, deps);
 }

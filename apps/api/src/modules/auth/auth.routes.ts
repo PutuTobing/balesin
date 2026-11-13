@@ -9,12 +9,19 @@ import {
 import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod';
 
 import { clientInfo } from '../../http/client-info';
-import { clearedSessionCookie, readSessionToken, sessionCookie } from '../../http/cookies';
+import {
+  clearedSessionCookie,
+  deviceCookie,
+  readDeviceToken,
+  readSessionToken,
+  sessionCookie,
+} from '../../http/cookies';
 import { AUTHENTICATED, PUBLIC } from '../../http/route-access';
 import { requireAuth } from './auth.hook';
 import type { AuthService } from './auth.service';
 import { SESSION_ABSOLUTE_SECONDS } from './session.repo';
 import { toAuthenticatedSession } from './session.service';
+import { TRUSTED_DEVICE_MAX_AGE_SECONDS } from './trusted-device';
 
 export interface AuthRoutesOptions {
   auth: AuthService;
@@ -51,11 +58,12 @@ export const authRoutes: FastifyPluginCallbackZod<AuthRoutesOptions> = (app, opt
         client: clientInfo(request),
         log: request.log,
         presentedToken: readSessionToken(request.headers.cookie, cookieSecure),
+        presentedDeviceToken: readDeviceToken(request.headers.cookie, cookieSecure),
       });
-      void reply.header(
-        'set-cookie',
+      void reply.header('set-cookie', [
         sessionCookie(issued.token, cookieSecure, SESSION_ABSOLUTE_SECONDS),
-      );
+        deviceCookie(issued.deviceToken, cookieSecure, TRUSTED_DEVICE_MAX_AGE_SECONDS),
+      ]);
       return reply.send(toAuthenticatedSession(issued.auth));
     },
   );

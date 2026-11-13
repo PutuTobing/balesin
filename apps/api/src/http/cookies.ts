@@ -23,15 +23,16 @@ export function sessionCookieName(secure: boolean): string {
 const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 /**
- * Mengambil token sesi dari header `Cookie`. Bila nama yang sama muncul lebih dari sekali
- * (tanda ada yang mencoba menyisipkan cookie), tidak satu pun dipercaya.
+ * Nilai satu cookie bernama `name` dari header `Cookie`, bila cocok `pattern`. Bila nama yang
+ * sama muncul lebih dari sekali (tanda ada yang mencoba menyisipkan cookie), tidak satu pun
+ * dipercaya.
  */
-export function readSessionToken(
+function readCookie(
   cookieHeader: string | undefined,
-  secure: boolean,
+  name: string,
+  pattern: RegExp,
 ): string | undefined {
   if (!cookieHeader || cookieHeader.length > 8_192) return undefined;
-  const name = sessionCookieName(secure);
 
   let found: string | undefined;
   for (const part of cookieHeader.split(';')) {
@@ -40,11 +41,23 @@ export function readSessionToken(
     if (found !== undefined) return undefined;
     found = part.slice(separator + 1).trim();
   }
-  return found !== undefined && SESSION_TOKEN_PATTERN.test(found) ? found : undefined;
+  return found !== undefined && pattern.test(found) ? found : undefined;
 }
 
-function attributes(secure: boolean, maxAgeSeconds: number): string {
-  return `Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure ? '; Secure' : ''}`;
+/** Mengambil token sesi dari header `Cookie`. */
+export function readSessionToken(
+  cookieHeader: string | undefined,
+  secure: boolean,
+): string | undefined {
+  return readCookie(cookieHeader, sessionCookieName(secure), SESSION_TOKEN_PATTERN);
+}
+
+function attributes(
+  secure: boolean,
+  maxAgeSeconds: number,
+  sameSite: 'Lax' | 'Strict' = 'Lax',
+): string {
+  return `Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=${maxAgeSeconds}${secure ? '; Secure' : ''}`;
 }
 
 /** Nilai header `Set-Cookie` untuk memasang sesi. */
@@ -55,4 +68,28 @@ export function sessionCookie(token: string, secure: boolean, maxAgeSeconds: num
 /** Nilai header `Set-Cookie` untuk menghapus cookie sesi di browser. */
 export function clearedSessionCookie(secure: boolean): string {
   return `${sessionCookieName(secure)}=; ${attributes(secure, 0)}`;
+}
+
+// ── Cookie "perangkat dikenal" (modules/auth/trusted-device.ts) ─────────────
+//
+// Atribut sama dengan cookie sesi, tetapi `SameSite=Strict` (hanya dibaca saat login, yang
+// selalu dipanggil dari halaman aplikasi sendiri) dan TIDAK dihapus saat logout.
+
+const SECURE_DEVICE_COOKIE_NAME = '__Host-balesin_device';
+const PLAIN_DEVICE_COOKIE_NAME = 'balesin_device';
+const DEVICE_TOKEN_PATTERN = /^v1\.[0-9a-f-]{36}\.\d{1,12}\.[A-Za-z0-9_-]{43}$/;
+
+export function deviceCookieName(secure: boolean): string {
+  return secure ? SECURE_DEVICE_COOKIE_NAME : PLAIN_DEVICE_COOKIE_NAME;
+}
+
+export function readDeviceToken(
+  cookieHeader: string | undefined,
+  secure: boolean,
+): string | undefined {
+  return readCookie(cookieHeader, deviceCookieName(secure), DEVICE_TOKEN_PATTERN);
+}
+
+export function deviceCookie(token: string, secure: boolean, maxAgeSeconds: number): string {
+  return `${deviceCookieName(secure)}=${token}; ${attributes(secure, maxAgeSeconds, 'Strict')}`;
 }

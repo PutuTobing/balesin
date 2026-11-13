@@ -1,6 +1,6 @@
 import { AppError, sha256Hex } from '@balesin/core';
 import type { Database } from '@balesin/db';
-import { LOGIN_MAX_FAILED_ATTEMPTS, type LoginRequest } from '@balesin/shared';
+import type { LoginRequest } from '@balesin/shared';
 import type { FastifyBaseLogger } from 'fastify';
 
 import { ipRateLimitKey, type ClientInfo } from '../../http/client-info';
@@ -14,13 +14,21 @@ import {
 import { findUserForLogin, lockUser, markLoginSucceeded, type LoginUser } from './auth.repo';
 import {
   ACCOUNT_LOCK_FLAG,
+  DEVICE_LOCK_FLAG,
+  LOCK_NOTICE_FLAG,
+  LOCK_NOTICE_INTERVAL_SECONDS,
   LOGIN_ACCOUNT_RULE,
+  LOGIN_DEVICE_RULE,
   LOGIN_IP_RULE,
   LOGIN_LOCK_SECONDS,
+  LOGIN_SOURCE_RULE,
+  SOURCE_LOCK_FLAG,
+  type LockScope,
 } from './login-rules';
 import type { PasswordHasher } from './password-hasher';
 import { findActiveSession } from './session.repo';
 import type { AuthContext, IssuedSession, SessionService } from './session.service';
+import type { TrustedDevices } from './trusted-device';
 
 export interface RequestContext {
   client: ClientInfo;
@@ -30,6 +38,13 @@ export interface RequestContext {
 export interface LoginContext extends RequestContext {
   /** Token sesi yang sudah ada di cookie saat login (akan dicabut: rotasi sesi). */
   presentedToken?: string;
+  /** Nilai cookie "perangkat dikenal" (lihat `trusted-device.ts`), bila ada. */
+  presentedDeviceToken?: string;
+}
+
+/** Login berhasil: sesi baru + nilai baru cookie "perangkat dikenal". */
+export interface LoginResult extends IssuedSession {
+  deviceToken: string;
 }
 
 export interface AuthService {
@@ -37,7 +52,7 @@ export interface AuthService {
    * Memeriksa email + password. Berhasil → sesi baru. Gagal → `INVALID_CREDENTIALS` (pesan
    * sama untuk email tidak terdaftar, password salah, dan akun nonaktif) atau `RATE_LIMITED`.
    */
-  login(input: LoginRequest, context: LoginContext): Promise<IssuedSession>;
+  login(input: LoginRequest, context: LoginContext): Promise<LoginResult>;
   logout(auth: AuthContext, context: RequestContext): Promise<void>;
 }
 
@@ -47,7 +62,15 @@ export interface AuthServiceDeps {
   hasher: PasswordHasher;
   limiter: RateLimiter;
   notifier: EmailNotifier;
+  devices: TrustedDevices;
 }
+
+/** Ember batas laju + penanda kunci untuk tiap lingkup kunci. */
+const LOCKS = {
+  source: { flag: SOURCE_LOCK_FLAG, rule: LOGIN_SOURCE_RULE },
+  account: { flag: ACCOUNT_LOCK_FLAG, rule: LOGIN_ACCOUNT_RULE },
+  device: { flag: DEVICE_LOCK_FLAG, rule: LOGIN_DEVICE_RULE },
+} as const;
 
 /** Alasan login gagal di metadata audit (tidak pernah dikirim ke klien). */
 type LoginFailureReason = 'unknown_email' | 'wrong_password' | 'disabled' | 'locked';
@@ -61,7 +84,7 @@ function accountLocked(retryAfterSeconds: number): AppError {
 }
 
 export function createAuthService(deps: AuthServiceDeps): AuthService {
-  const { db, sessions, hasher, limiter, notifier } = deps;
+  const { db, sessions, hasher, limiter, notifier, devices } = deps;
 
   /**
    * Tahap akhir login: mencabut sesi lama di browser ini, membuat sesi baru, mencatat audit.
@@ -74,7 +97,7 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
     organization: InstallationOrganization,
     context: LoginContext,
     newPasswordHash: string | undefined,
-  ): Promise<IssuedSession> {
+  ): Promise<LoginResult> {
     const previous = context.presentedToken
       ? await findActiveSession(db, sha256Hex(context.presentedToken))
       : undefined;
@@ -100,50 +123,79 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
         metadata: { replacedPreviousSession: previous !== undefined },
         client: context.client,
       });
-      return issued;
+      // Cookie perangkat dikenal hanya diterbitkan setelah SEMUA langkah masuk selesai
+      // (nanti termasuk 2FA), dan diperbarui setiap login berhasil.
+      return { ...issued, deviceToken: devices.issue(user.id) };
     });
   }
 
-  /** Mengunci akun: penanda Redis (berlaku untuk email apa pun) + kolom database + audit + email. */
-  async function lockAccount(
+  /**
+   * Memasang kunci untuk satu lingkup, mencatat audit, dan (paling banyak sekali per jam per
+   * akun) mengantre email pemberitahuan.
+   *
+   * Langkah yang sama dijalankan untuk email terdaftar maupun tidak (penanda Redis, satu
+   * transaksi audit, penanda pemberitahuan), supaya waktu jawaban percobaan yang memicu kunci
+   * tidak membuka ada/tidaknya akun (temuan R1). Hanya kunci lingkup `account` yang ikut
+   * menulis `users.locked_until` — kolom itu sekadar catatan untuk tampilan admin, TIDAK dipakai
+   * untuk memutuskan login.
+   */
+  async function lock(
+    scope: LockScope,
+    bucketKey: string,
     accountKey: string,
     organization: InstallationOrganization | undefined,
     user: LoginUser | undefined,
-    context: LoginContext,
+    context: LoginContext & { email: string },
   ): Promise<void> {
-    await limiter.setFlag(ACCOUNT_LOCK_FLAG, accountKey, LOGIN_LOCK_SECONDS);
-    await limiter.reset(LOGIN_ACCOUNT_RULE, accountKey);
-    // Email tidak terdaftar / akun nonaktif: cukup penanda Redis, supaya dari luar terlihat sama.
-    if (!organization || !user || user.disabledAt !== null) return;
+    const { flag, rule } = LOCKS[scope];
+    await limiter.setFlag(flag, bucketKey, LOGIN_LOCK_SECONDS);
+    await limiter.reset(rule, bucketKey);
 
-    const lockedUntil = await db.transaction(async (tx) => {
-      const until = await lockUser(tx, organization.id, user.id);
-      await recordAudit(tx, {
-        organizationId: organization.id,
-        actorUserId: null,
-        action: AUDIT_ACTIONS.accountLocked,
-        targetType: 'user',
-        targetId: user.id,
-        metadata: {
-          failedAttempts: LOGIN_MAX_FAILED_ATTEMPTS,
-          lockedUntil: until?.toISOString() ?? null,
-        },
-        client: context.client,
+    const realUser = user && user.disabledAt === null ? user : undefined;
+    let lockedUntil = new Date(Date.now() + LOGIN_LOCK_SECONDS * 1000);
+    if (organization) {
+      const fallbackUntil = lockedUntil;
+      lockedUntil = await db.transaction(async (tx) => {
+        const until =
+          scope === 'account' && realUser
+            ? ((await lockUser(tx, organization.id, realUser.id)) ?? fallbackUntil)
+            : fallbackUntil;
+        await recordAudit(tx, {
+          organizationId: organization.id,
+          actorUserId: null,
+          action: AUDIT_ACTIONS.accountLocked,
+          ...(user ? { targetType: 'user', targetId: user.id } : {}),
+          metadata: {
+            scope,
+            failedAttempts: rule.limit,
+            lockedUntil: until.toISOString(),
+            ...(user ? {} : { email: maskEmail(context.email) }),
+          },
+          client: context.client,
+        });
+        return until;
       });
-      return until;
-    });
-    if (!lockedUntil) return;
+    }
 
-    // Pemberitahuan diantrekan tanpa ditunggu: Redis lambat, antrian penuh, atau email belum
-    // diatur tidak boleh menggagalkan (atau memperlambat) jawaban login.
+    // Paling banyak satu email per jam per akun: pemicu kunci berulang tidak membanjiri korban.
+    const shouldNotify = await limiter.claimFlag(
+      LOCK_NOTICE_FLAG,
+      accountKey,
+      LOCK_NOTICE_INTERVAL_SECONDS,
+    );
+    if (!shouldNotify || !organization || !realUser) return;
+
+    // Diantrekan tanpa ditunggu: Redis lambat, antrian penuh, atau email belum diatur tidak
+    // boleh menggagalkan (atau memperlambat) jawaban login.
     void notifier
       .accountLocked({
         organizationId: organization.id,
-        userId: user.id,
+        userId: realUser.id,
         lockedUntil: lockedUntil.toISOString(),
+        scope,
       })
       .catch((err: unknown) => {
-        context.log.warn({ err, userId: user.id }, 'Gagal mengantre email kunci akun');
+        context.log.warn({ err, userId: realUser.id }, 'Gagal mengantre email kunci akun');
       });
   }
 
@@ -153,6 +205,8 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       // Dihitung per email yang DIKETIK, bukan per baris pengguna: email tidak terdaftar pun
       // "terkunci" dengan cara yang sama, jadi respons tidak membuka ada/tidaknya akun.
       const accountKey = sha256Hex(`login|${input.email}`).slice(0, 40);
+      const sourceKey = sha256Hex(`login|${input.email}|${ipKey}`).slice(0, 40);
+      const lockContext = { ...context, email: input.email };
 
       await enforceRateLimit(
         limiter,
@@ -166,7 +220,13 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
         ? await findUserForLogin(db, organization.id, input.email)
         : undefined;
 
-      /** Setiap percobaan yang ditolak tercatat di audit — juga yang ditolak karena akun terkunci. */
+      // Perangkat dikenal: cookie bertanda tangan milik AKUN INI (bukan akun lain).
+      const presentedDevice = devices.verify(context.presentedDeviceToken);
+      const device =
+        presentedDevice && user && presentedDevice.userId === user.id ? presentedDevice : undefined;
+      const deviceKey = device ? sha256Hex(`${accountKey}|${device.deviceKey}`).slice(0, 40) : '';
+
+      /** Setiap percobaan yang ditolak tercatat di audit — juga yang ditolak karena terkunci. */
       const recordFailure = async (reason: LoginFailureReason, attemptCount?: number) => {
         if (!organization) return;
         await recordAudit(db, {
@@ -177,29 +237,43 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
           metadata: {
             reason,
             email: maskEmail(input.email),
+            trustedDevice: device !== undefined,
             ...(attemptCount === undefined ? {} : { attempt: attemptCount }),
           },
           client: context.client,
         });
       };
 
-      // Penanda Redis berlaku untuk email apa pun (terdaftar atau tidak). Kolom database adalah
-      // lapis kedua bila penanda itu hilang (Redis dikosongkan/restart tanpa data).
-      const lockedFor = Math.max(
-        await limiter.flagTtl(ACCOUNT_LOCK_FLAG, accountKey),
-        user?.lockedForSeconds ?? 0,
-      );
+      // Kunci yang berlaku: perangkat dikenal hanya terkena kuncinya sendiri; selain itu kunci
+      // asal (email + IP) dan kunci akun (tebakan dari banyak IP). Kolom `users.locked_until`
+      // sengaja TIDAK dipakai di sini (lihat `lock`).
+      const lockedFor = device
+        ? await limiter.flagTtl(DEVICE_LOCK_FLAG, deviceKey)
+        : Math.max(
+            await limiter.flagTtl(SOURCE_LOCK_FLAG, sourceKey),
+            await limiter.flagTtl(ACCOUNT_LOCK_FLAG, accountKey),
+          );
       if (lockedFor > 0) {
         await recordFailure('locked');
         throw accountLocked(lockedFor);
       }
 
       // Jatah diambil SEBELUM password diperiksa, secara atomik: serbuan permintaan bersamaan
-      // tetap hanya mendapat 5 kali pemeriksaan password per jendela.
-      const attempt = await limiter.consume(LOGIN_ACCOUNT_RULE, accountKey);
+      // tetap hanya mendapat 5 kali pemeriksaan password per ember.
+      const primaryRule = device ? LOGIN_DEVICE_RULE : LOGIN_SOURCE_RULE;
+      const primaryKey = device ? deviceKey : sourceKey;
+      const attempt = await limiter.consume(primaryRule, primaryKey);
       if (!attempt.allowed) {
         await recordFailure('locked');
         throw accountLocked(attempt.retryAfterSeconds);
+      }
+      const accountAttempt = device
+        ? undefined
+        : await limiter.consume(LOGIN_ACCOUNT_RULE, accountKey);
+      if (accountAttempt && !accountAttempt.allowed) {
+        await limiter.refund(primaryRule, primaryKey);
+        await recordFailure('locked');
+        throw accountLocked(accountAttempt.retryAfterSeconds);
       }
 
       let passwordValid = false;
@@ -215,16 +289,26 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
           !user ? 'unknown_email' : user.disabledAt ? 'disabled' : 'wrong_password',
           attempt.count,
         );
-        if (attempt.count >= LOGIN_ACCOUNT_RULE.limit) {
-          await lockAccount(accountKey, organization, user, context);
-          throw accountLocked(LOGIN_LOCK_SECONDS);
+        let locked = false;
+        if (attempt.count >= primaryRule.limit) {
+          const scope = device ? 'device' : 'source';
+          await lock(scope, primaryKey, accountKey, organization, user, lockContext);
+          locked = true;
         }
+        if (accountAttempt && accountAttempt.count >= LOGIN_ACCOUNT_RULE.limit) {
+          await lock('account', accountKey, accountKey, organization, user, lockContext);
+          locked = true;
+        }
+        if (locked) throw accountLocked(LOGIN_LOCK_SECONDS);
         throw new AppError('INVALID_CREDENTIALS');
       }
 
-      // Berhasil: bukan percobaan gagal, jadi jatah IP dikembalikan dan hitungan akun dihapus.
+      // Berhasil: bukan percobaan gagal. Jatah IP dan akun dikembalikan; hitungan ember asal /
+      // perangkat dihapus. Hitungan akun TIDAK dihapus — tebakan tersebar dari tempat lain tidak
+      // boleh "diputihkan" oleh login pemilik akun.
       await limiter.refund(LOGIN_IP_RULE, ipKey);
-      await limiter.reset(LOGIN_ACCOUNT_RULE, accountKey);
+      await limiter.reset(primaryRule, primaryKey);
+      if (accountAttempt) await limiter.refund(LOGIN_ACCOUNT_RULE, accountKey);
 
       const newPasswordHash = hasher.needsRehash(user.passwordHash)
         ? await hasher.hash(input.password)

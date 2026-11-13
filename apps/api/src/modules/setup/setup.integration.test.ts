@@ -91,7 +91,12 @@ describe('GET /setup/status', () => {
       setupTokenConfigured: true,
       canStoreSecrets: true,
     });
-    expect(setupStatusResponseSchema.parse(after.json()).needsSetup).toBe(false);
+    // Setelah selesai, konfigurasi server tidak lagi dibuka ke publik (temuan I1 review Fase 1).
+    expect(setupStatusResponseSchema.parse(after.json())).toEqual({
+      needsSetup: false,
+      setupTokenConfigured: false,
+      canStoreSecrets: false,
+    });
   });
 
   it('melaporkan bila SETUP_TOKEN atau BALESIN_MASTER_KEY belum diisi, dan wizard menolak jalan', async () => {

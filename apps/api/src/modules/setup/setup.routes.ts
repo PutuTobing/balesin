@@ -17,11 +17,12 @@ import {
 import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod';
 
 import { clientInfo, ipRateLimitKey } from '../../http/client-info';
-import { sessionCookie } from '../../http/cookies';
+import { deviceCookie, sessionCookie } from '../../http/cookies';
 import { enforceRateLimit, type RateLimiter } from '../../http/rate-limit';
 import { PUBLIC } from '../../http/route-access';
 import { SESSION_ABSOLUTE_SECONDS } from '../auth/session.repo';
 import { toAuthenticatedSession } from '../auth/session.service';
+import { TRUSTED_DEVICE_MAX_AGE_SECONDS } from '../auth/trusted-device';
 import {
   EMAIL_DETECT_RULE,
   EMAIL_TEST_RULE,
@@ -195,10 +196,10 @@ export const setupRoutes: FastifyPluginCallbackZod<SetupRoutesOptions> = (app, o
         client: clientInfo(request),
         log: request.log,
       });
-      void reply.header(
-        'set-cookie',
+      void reply.header('set-cookie', [
         sessionCookie(issued.token, cookieSecure, SESSION_ABSOLUTE_SECONDS),
-      );
+        deviceCookie(issued.deviceToken, cookieSecure, TRUSTED_DEVICE_MAX_AGE_SECONDS),
+      ]);
       return reply.status(201).send(toAuthenticatedSession(issued.auth));
     },
   );

@@ -145,13 +145,14 @@ describe('antrian email — pemberitahuan akun dikunci', () => {
     expect(emailJobResultSchema.parse(job.returnvalue)).toEqual({ status: 'sent' });
 
     const mail = await waitForCapturedMail(user.email);
-    expect(mail.subject).toBe('Akun Balesin Contoh kamu dikunci sementara');
+    expect(mail.subject).toBe('Percobaan masuk ke akun Balesin Contoh kamu dihentikan sementara');
     expect(mail.from).toEqual({ name: 'Balesin Contoh', address: 'cs@contoh.test' });
     expect(mail.to).toEqual([user.email]);
     expect(mail.replyTo).toEqual(['bantuan@contoh.test']);
     expect(mail.text).toContain('Halo Budi <Santoso>,');
+    // Payload tanpa `scope` = kunci akun dari banyak jaringan (bawaan).
     expect(mail.text).toContain('dikunci sementara selama 15 menit');
-    expect(mail.text).toContain('5 kali percobaan masuk');
+    expect(mail.text).toContain('perangkat yang biasa kamu pakai');
     expect(mail.text).toContain('(Asia/Jakarta)');
     expect(mail.text).not.toMatch(/\bAnda\b/i);
     // Nama pengguna di-escape di HTML.

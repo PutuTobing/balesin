@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 
@@ -119,11 +120,39 @@ describe('loadConfig', () => {
     });
   });
 
+  it('SETUP_TOKEN dan SESSION_SECRET wajib acak buatan mesin (temuan R3 review Fase 1)', () => {
+    const generated = randomBytes(32).toString('base64url');
+    expect(loadConfig({ ...productionEnv, SETUP_TOKEN: generated }).setupToken?.reveal()).toBe(
+      generated,
+    );
+    // Nilai base64 standar (dengan + / =) juga diterima, mis. dari installer lama.
+    expect(() =>
+      loadConfig({ ...productionEnv, SESSION_SECRET: randomBytes(32).toString('base64') }),
+    ).not.toThrow();
+
+    for (const weak of [
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      'token-setup-acak-123456',
+      'abcdefghijklmnopqrstuvwxyzABCDEF',
+      'rahasia rahasia rahasia rahasia rahasia',
+      'abababababababababababababababababab',
+    ]) {
+      for (const variable of ['SETUP_TOKEN', 'SESSION_SECRET'] as const) {
+        const error = captureError({ ...productionEnv, [variable]: weak });
+        expect(error.problems, `${variable}=${weak}`).toEqual([
+          expect.objectContaining({ variable }),
+        ]);
+        expect(error.message).toContain('randomBytes(32)');
+        expect(error.message).not.toContain(weak);
+      }
+    }
+  });
+
   it('menerima konfigurasi production yang lengkap', () => {
     const config = loadConfig({
       ...productionEnv,
       TRUST_PROXY: '10.0.0.2, 10.0.1.0/24',
-      SETUP_TOKEN: 'token-setup-acak-123456',
+      SETUP_TOKEN: 'Q9vJ2kLmX4pR7sT1uW8yZ3bC6dF0gH5n',
       META_GRAPH_VERSION: 'v21.0',
       OUTBOUND_PRIVATE_ALLOWLIST: '192.168.10.5,10.10.0.0/16',
     });
@@ -139,7 +168,7 @@ describe('loadConfig', () => {
     });
     expect(config.masterKey?.reveal()).toEqual(Buffer.alloc(32, 9));
     expect(config.sessionSecret?.reveal()).toBe(SESSION_SECRET);
-    expect(config.setupToken?.reveal()).toBe('token-setup-acak-123456');
+    expect(config.setupToken?.reveal()).toBe('Q9vJ2kLmX4pR7sT1uW8yZ3bC6dF0gH5n');
   });
 
   it('rahasia tidak ikut saat konfigurasi di-serialize', () => {

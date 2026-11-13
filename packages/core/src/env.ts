@@ -112,6 +112,30 @@ function decodeBase64Key(raw: string, byteLength: number): Buffer | undefined {
   return key.length === byteLength ? key : undefined;
 }
 
+/** Pesan error variabel rahasia acak, berikut cara membuat nilai yang lolos. */
+export const STRONG_SECRET_HINT =
+  'minimal 32 karakter acak dari huruf, angka, dan + / = _ - dengan minimal 16 karakter berbeda; ' +
+  `buat dengan: node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`;
+
+/**
+ * `true` bila `raw` tampak seperti rahasia ACAK buatan mesin: panjang ≥ `minLength`, hanya
+ * karakter base64/base64url, ≥ 16 karakter berbeda, dan tidak didominasi deret/pengulangan. Nilai
+ * acak 32 byte dalam base64url (43 karakter) praktis selalu lolos (rata-rata ±31 karakter
+ * berbeda); nilai karangan manusia hampir selalu gagal.
+ */
+export function isStrongSecret(raw: string, minLength = 32): boolean {
+  if (raw.length < minLength || !/^[A-Za-z0-9+/=_-]+$/.test(raw)) return false;
+  if (new Set(raw).size < 16) return false;
+  // Deret/pengulangan ("abcdef…", "aabb…"): pada nilai acak, pasangan karakter berurutan yang
+  // selisihnya 0 atau 1 hanya ±3%; di atas sepertiga hampir pasti buatan manusia.
+  let adjacent = 0;
+  for (let index = 1; index < raw.length; index += 1) {
+    if (Math.abs(raw.charCodeAt(index) - raw.charCodeAt(index - 1)) <= 1) adjacent += 1;
+  }
+  if (adjacent * 3 > raw.length - 1) return false;
+  return true;
+}
+
 export const envParse = {
   text: (raw: string): string => raw,
 
@@ -163,6 +187,15 @@ export const envParse = {
     (minLength: number): EnvParser<Secret<string>> =>
     (raw) =>
       raw.length >= minLength ? new Secret(raw) : undefined,
+
+  /**
+   * Rahasia acak buatan mesin (`SETUP_TOKEN`, `SESSION_SECRET`): lihat `isStrongSecret`.
+   * Token yang diketik manusia ("aaaa…", "rahasia123…") ditolak saat start.
+   */
+  strongSecret:
+    (minLength: number): EnvParser<Secret<string>> =>
+    (raw) =>
+      isStrongSecret(raw, minLength) ? new Secret(raw) : undefined,
 
   /** Alamat IP (v4/v6) atau rentang CIDR, mis. `10.0.0.5` atau `192.168.1.0/24`. */
   ipOrCidr: (raw: string): string | undefined => {

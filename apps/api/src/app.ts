@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   createSecretBox,
   deriveKey,
+  plaintextLoginPolicy,
   randomToken,
   Secret,
   type HostLookup,
@@ -31,6 +32,7 @@ import { createAuthService } from './modules/auth/auth.service';
 import { createCsrfProtection } from './modules/auth/csrf';
 import { createPasswordHasher } from './modules/auth/password-hasher';
 import { createSessionService } from './modules/auth/session.service';
+import { createTrustedDevices } from './modules/auth/trusted-device';
 import { brandingRoutes } from './modules/branding/branding.routes';
 import type { MailDns } from './modules/email-settings/email-host-detection';
 import { emailSettingsRoutes } from './modules/email-settings/email-settings.routes';
@@ -144,6 +146,7 @@ export async function buildApp(deps: AppDeps) {
 
   const csrf = createCsrfProtection(sessionSecret);
   const sessions = createSessionService(db, csrf);
+  const devices = createTrustedDevices(sessionSecret);
   const hasher = createPasswordHasher();
   const redisPrefix = deps.overrides?.rateLimitPrefix ?? 'balesin';
   const limiter = createRateLimiter(deps.redis, { prefix: redisPrefix });
@@ -152,17 +155,26 @@ export async function buildApp(deps: AppDeps) {
     secretBox: config.masterKey ? createSecretBox(config.masterKey) : null,
     fallback: config.smtpFallback,
     allowedPorts: config.smtpAllowedPorts,
+    plaintextLogin: plaintextLoginPolicy(config.isProduction),
     lookup: deps.overrides?.mailLookup,
     dns: deps.overrides?.mailDns,
     timeouts: deps.overrides?.smtpTimeouts,
   });
-  const auth = createAuthService({ db, sessions, hasher, limiter, notifier: deps.notifier });
+  const auth = createAuthService({
+    db,
+    sessions,
+    hasher,
+    limiter,
+    notifier: deps.notifier,
+    devices,
+  });
   const setup = createSetupService({
     db,
     setupToken: config.setupToken,
     limiter,
     hasher,
     sessions,
+    devices,
     emailSettings,
     emailTestMemo: createSetupEmailTestMemo({
       redis: deps.redis,

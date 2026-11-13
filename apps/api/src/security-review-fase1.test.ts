@@ -271,44 +271,38 @@ describe('celah terbuka (lihat laporan)', () => {
    * menerus (5 permintaan / 15 menit). Penyerang yang memegang akun CS bisa mengunci Owner/Admin
    * supaya mereka tidak bisa masuk untuk menonaktifkan akun CS yang dibobol.
    */
-  it.fails(
-    'S1: penyerang dari satu IP memicu kunci → pemilik akun dari jaringan lain tetap bisa masuk',
-    async () => {
-      for (let attempt = 0; attempt < 5; attempt += 1) {
-        await tryLogin(OWNER.email, WRONG, '203.0.113.66');
-      }
-      const victim = await tryLogin(OWNER.email, OWNER.password, '198.51.100.20');
-      expect(victim.statusCode).toBe(200);
-    },
-  );
+  it('S1: penyerang dari satu IP memicu kunci → pemilik akun dari jaringan lain tetap bisa masuk', async () => {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await tryLogin(OWNER.email, WRONG, '203.0.113.66');
+    }
+    const victim = await tryLogin(OWNER.email, OWNER.password, '198.51.100.20');
+    expect(victim.statusCode).toBe(200);
+  });
 
   /**
    * R1 — Bila penanda Redis hilang (Redis dijalankan ulang tanpa persistensi) selama kunci
    * berlaku, hanya akun sungguhan yang masih terkunci (kolom `locked_until`): 429 vs 401
    * membuka email mana yang terdaftar.
    */
-  it.fails(
-    'R1: tanpa penanda Redis, akun sungguhan dan email tak terdaftar dijawab sama',
-    async () => {
-      const password = 'sandi-uji-enumerasi-fase1';
-      const real = await addUser('cs', password);
-      const unknown = `tidak-ada-${Math.random().toString(36).slice(2, 8)}@majujaya.test`;
-      for (let attempt = 0; attempt < 5; attempt += 1) {
-        await tryLogin(real.email, WRONG, '203.0.113.71');
-        await tryLogin(unknown, WRONG, '203.0.113.72');
-      }
-      await deleteLockFlag(real.email);
-      await deleteLockFlag(unknown);
+  it('R1: tanpa penanda Redis, akun sungguhan dan email tak terdaftar dijawab sama', async () => {
+    const password = 'sandi-uji-enumerasi-fase1';
+    const real = await addUser('cs', password);
+    const unknown = `tidak-ada-${Math.random().toString(36).slice(2, 8)}@majujaya.test`;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await tryLogin(real.email, WRONG, '203.0.113.71');
+      await tryLogin(unknown, WRONG, '203.0.113.72');
+    }
+    await deleteLockFlag(real.email);
+    await deleteLockFlag(unknown);
 
-      const realResponse = await tryLogin(real.email, WRONG, '203.0.113.73');
-      const unknownResponse = await tryLogin(unknown, WRONG, '203.0.113.74');
+    const realResponse = await tryLogin(real.email, WRONG, '203.0.113.73');
+    const unknownResponse = await tryLogin(unknown, WRONG, '203.0.113.74');
 
-      expect(realResponse.statusCode).toBe(unknownResponse.statusCode);
-    },
-  );
+    expect(realResponse.statusCode).toBe(unknownResponse.statusCode);
+  });
 
   /** R2 — Bentuk IPv6 yang membawa alamat IPv4 di dalamnya (NAT64, 6to4, SIIT) tidak diblokir. */
-  it.fails.each([
+  it.each([
     ['NAT64 well-known prefix', '64:ff9b::a9fe:a9fe'],
     ['NAT64 local-use', '64:ff9b:1::a9fe:a9fe'],
     ['6to4', '2002:a9fe:a9fe::1'],
@@ -318,7 +312,7 @@ describe('celah terbuka (lihat laporan)', () => {
   });
 
   /** R3 — SETUP_TOKEN hanya dicek panjangnya; 16 karakter berulang diterima. */
-  it.fails('R3: SETUP_TOKEN berentropi rendah ditolak saat start', () => {
+  it('R3: SETUP_TOKEN berentropi rendah ditolak saat start', () => {
     const env: EnvSource = {
       NODE_ENV: 'production',
       APP_URL: 'https://balesin.contoh.co.id',

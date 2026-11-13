@@ -36,6 +36,11 @@ export interface RateLimiter {
   reset(rule: RateLimitRule, key: string): Promise<void>;
   /** Memasang penanda berumur `ttlSeconds` (dipakai untuk kunci akun). */
   setFlag(name: string, key: string, ttlSeconds: number): Promise<void>;
+  /**
+   * Memasang penanda HANYA bila belum ada (SET NX). `true` = penanda baru dipasang oleh
+   * pemanggil ini (dipakai untuk "paling banyak sekali per jam").
+   */
+  claimFlag(name: string, key: string, ttlSeconds: number): Promise<boolean>;
   /** Sisa umur penanda dalam detik; 0 bila tidak ada. */
   flagTtl(name: string, key: string): Promise<number>;
   clearFlag(name: string, key: string): Promise<void>;
@@ -120,6 +125,12 @@ export function createRateLimiter(redis: Redis, options: RateLimiterOptions = {}
     setFlag: (name, key, ttlSeconds) =>
       guarded(async () => {
         await redis.set(flagKey(name, key), '1', 'EX', ttlSeconds);
+      }),
+
+    claimFlag: (name, key, ttlSeconds) =>
+      guarded(async () => {
+        const reply = await redis.set(flagKey(name, key), '1', 'EX', ttlSeconds, 'NX');
+        return reply === 'OK';
       }),
 
     flagTtl: (name, key) =>

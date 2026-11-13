@@ -6,10 +6,7 @@ import { LOGIN_LOCK_INTERVAL } from './login-rules';
 export type LoginUser = Pick<
   User,
   'id' | 'organizationId' | 'email' | 'name' | 'role' | 'passwordHash' | 'disabledAt'
-> & {
-  /** Sisa kunci akun dalam detik menurut jam database; 0 bila tidak terkunci. */
-  lockedForSeconds: number;
-};
+>;
 
 /** Pengguna untuk proses login, berdasarkan email BAKU di dalam satu organisasi. */
 export async function findUserForLogin(
@@ -26,16 +23,18 @@ export async function findUserForLogin(
       role: users.role,
       passwordHash: users.passwordHash,
       disabledAt: users.disabledAt,
-      lockedForSeconds: sql<number>`greatest(0, ceil(extract(epoch from (${users.lockedUntil} - now()))))::int`,
     })
     .from(users)
     .where(and(eq(users.organizationId, organizationId), eq(users.email, email)))
     .limit(1);
-  if (!row) return undefined;
-  return { ...row, lockedForSeconds: row.lockedForSeconds ?? 0 };
+  return row;
 }
 
-/** Mengunci akun selama `LOGIN_LOCK_INTERVAL`. Mengembalikan waktu kunci berakhir. */
+/**
+ * Mencatat kunci akun (lingkup `account`) selama `LOGIN_LOCK_INTERVAL` di `users.locked_until`.
+ * Kolom ini hanya CATATAN untuk tampilan admin; keputusan login memakai penanda Redis, supaya
+ * jawaban untuk akun sungguhan dan email tidak terdaftar tetap sama (temuan R1).
+ */
 export async function lockUser(
   db: DbExecutor,
   organizationId: string,
@@ -49,7 +48,10 @@ export async function lockUser(
   return row?.lockedUntil ?? undefined;
 }
 
-/** Login berhasil: catat waktunya, buka kunci, dan (bila diberikan) perbarui hash password. */
+/**
+ * Login berhasil: catat waktunya dan (bila diberikan) perbarui hash password. `locked_until`
+ * tidak disentuh: login dari perangkat dikenal tidak mengakhiri kunci untuk perangkat lain.
+ */
 export async function markLoginSucceeded(
   db: DbExecutor,
   organizationId: string,
@@ -60,7 +62,6 @@ export async function markLoginSucceeded(
     .update(users)
     .set({
       lastLoginAt: sql`now()`,
-      lockedUntil: null,
       ...(newPasswordHash === undefined ? {} : { passwordHash: newPasswordHash }),
     })
     .where(and(eq(users.organizationId, organizationId), eq(users.id, userId)));

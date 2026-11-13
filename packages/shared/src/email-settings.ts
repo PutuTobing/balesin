@@ -42,6 +42,27 @@ export const SMTP_DEFAULT_PORTS: Record<SmtpSecurity, number> = {
  */
 export const SMTP_ALLOWED_PORTS = [25, 465, 587, 2525] as const;
 
+/**
+ * Peringatan untuk form saat pengguna memilih "Tanpa enkripsi" dan mengisi username: password
+ * akan terkirim polos. Di production server menolak kombinasi ini untuk host di internet
+ * (kode hasil `insecure_login`); untuk server di jaringan lokal tetap boleh.
+ */
+export const SMTP_PLAINTEXT_LOGIN_WARNING =
+  'Tanpa enkripsi, password email terkirim tanpa perlindungan. Pakai pilihan ini hanya untuk server email di jaringan lokal kantormu.';
+
+/** `true` bila isian form akan mengirim login tanpa enkripsi (tampilkan `SMTP_PLAINTEXT_LOGIN_WARNING`). */
+export function isPlaintextSmtpLogin(input: {
+  security: SmtpSecurity;
+  username?: string | null;
+}): boolean {
+  return (
+    input.security === 'none' &&
+    input.username !== null &&
+    input.username !== undefined &&
+    input.username.trim() !== ''
+  );
+}
+
 // ── Preset satu klik ────────────────────────────────────────────────────────
 
 export const SMTP_PRESET_IDS = ['cpanel', 'gmail', 'outlook', 'other'] as const;
@@ -213,6 +234,7 @@ export const EMAIL_TEST_CODES = [
   'certificate_invalid',
   'auth_failed',
   'auth_unsupported',
+  'insecure_login',
   'sender_rejected',
   'recipient_rejected',
   'message_rejected',
@@ -247,6 +269,8 @@ export const EMAIL_TEST_MESSAGES: Record<EmailTestCode, string> = {
     'Username atau password ditolak server email. Periksa lagi keduanya. Untuk Gmail dan Microsoft 365, pakai app password, bukan password akun biasa.',
   auth_unsupported:
     'Server email tidak menerima login dengan cara ini. Coba pilihan keamanan lain (SSL/TLS atau STARTTLS), atau hubungi penyedia emailmu.',
+  insecure_login:
+    'Pilihan "Tanpa enkripsi" hanya untuk server email di jaringan lokal, karena password akan terkirim tanpa perlindungan. Pilih SSL/TLS (port 465) atau STARTTLS (port 587).',
   sender_rejected:
     'Server menolak alamat pengirim. Pastikan alamat email pengirim sama dengan akun yang dipakai login.',
   recipient_rejected:

@@ -32,7 +32,9 @@ import {
 import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
 import type { PasswordHasher } from '../auth/password-hasher';
 import { checkPassword } from '../auth/password-policy';
-import type { IssuedSession, SessionService } from '../auth/session.service';
+import type { LoginResult } from '../auth/auth.service';
+import type { SessionService } from '../auth/session.service';
+import type { TrustedDevices } from '../auth/trusted-device';
 import { validateLogoUpload } from '../branding/logo';
 import type { EmailSettingsService } from '../email-settings/email-settings.service';
 import { isSetupCompleted } from '../installation/installation.repo';
@@ -67,7 +69,8 @@ export interface SetupService {
     result: EmailTestResult,
     context: SetupRequestContext,
   ): Promise<void>;
-  complete(input: CompleteSetupRequest, context: SetupRequestContext): Promise<IssuedSession>;
+  /** Membuat organisasi + Owner dan langsung memasukkan Owner (sesi + cookie perangkat dikenal). */
+  complete(input: CompleteSetupRequest, context: SetupRequestContext): Promise<LoginResult>;
 }
 
 export interface SetupServiceDeps {
@@ -76,6 +79,7 @@ export interface SetupServiceDeps {
   limiter: RateLimiter;
   hasher: PasswordHasher;
   sessions: SessionService;
+  devices: TrustedDevices;
   emailSettings: EmailSettingsService;
   emailTestMemo: SetupEmailTestMemo;
 }
@@ -105,7 +109,7 @@ function alreadyCompleted(cause?: unknown): AppError {
 }
 
 export function createSetupService(deps: SetupServiceDeps): SetupService {
-  const { db, setupToken, limiter, hasher, sessions, emailSettings, emailTestMemo } = deps;
+  const { db, setupToken, limiter, hasher, sessions, devices, emailSettings, emailTestMemo } = deps;
 
   async function assertSetupToken(presented: string, context: SetupRequestContext): Promise<void> {
     if (await isSetupCompleted(db)) throw alreadyCompleted();
@@ -153,9 +157,12 @@ export function createSetupService(deps: SetupServiceDeps): SetupService {
 
   return {
     async status() {
-      const completed = await isSetupCompleted(db);
+      // Setelah setup selesai, konfigurasi server tidak perlu (dan tidak boleh) dibuka ke publik.
+      if (await isSetupCompleted(db)) {
+        return { needsSetup: false, setupTokenConfigured: false, canStoreSecrets: false };
+      }
       return {
-        needsSetup: !completed,
+        needsSetup: true,
         setupTokenConfigured: setupToken !== null,
         canStoreSecrets: emailSettings.canStoreSecrets,
       };
@@ -189,6 +196,7 @@ export function createSetupService(deps: SetupServiceDeps): SetupService {
       const preparedEmail = input.email
         ? emailSettings.prepare(input.email, undefined, 'email.')
         : undefined;
+      if (input.email) await emailSettings.assertSecureLogin(input.email, 'email.');
       // Hasil tes terakhir di langkah Email (bila isiannya sama persis) ikut tersimpan sebagai
       // status, jadi Pengaturan → Email pengirim langsung menampilkan "Terhubung" + waktunya.
       const lastEmailTest = input.email
@@ -289,7 +297,7 @@ export function createSetupService(deps: SetupServiceDeps): SetupService {
             metadata: { via: 'setup' },
             client: context.client,
           });
-          return issued;
+          return { ...issued, deviceToken: devices.issue(owner.id) };
         });
       } catch (error) {
         if (isPgError(error, PG_ERROR_CODES.uniqueViolation, 'installation_pkey')) {

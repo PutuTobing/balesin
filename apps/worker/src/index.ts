@@ -4,6 +4,7 @@ import {
   createRedis,
   createSecretBox,
   createShutdown,
+  plaintextLoginPolicy,
   EnvValidationError,
   registerCrashHandlers,
   registerShutdownSignals,
@@ -43,6 +44,7 @@ function main(config: WorkerConfig): void {
       secretBox: config.masterKey ? createSecretBox(config.masterKey) : null,
       fallback: config.smtpFallback,
       allowedPorts: config.smtpAllowedPorts,
+      plaintextLogin: plaintextLoginPolicy(config.isProduction),
     },
   });
 

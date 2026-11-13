@@ -6,6 +6,7 @@ import { auditLogs, emailSettings, organizations } from '@balesin/db';
 import { insertUser, uniqueSuffix } from '@balesin/db/testing';
 import {
   API_ROUTES,
+  EMAIL_TEST_MESSAGES,
   emailSettingsResponseSchema,
   emailTestResultSchema,
   errorEnvelopeSchema,
@@ -24,6 +25,7 @@ import {
   createIntegrationHarness,
   login,
   mailpitSettings,
+  setupBody,
   type IntegrationHarness,
   type SignedIn,
 } from '../../testing/integration';
@@ -415,6 +417,83 @@ describe('tes koneksi dan email tes', () => {
   });
 });
 
+describe('"Tanpa enkripsi" + login ke server di internet (temuan R4)', () => {
+  const publicHost = 'mail.publik.test';
+  const publicLookup = (host: string) =>
+    Promise.resolve(
+      host === publicHost
+        ? [{ address: '203.0.113.25', family: 4 }]
+        : [{ address: '127.0.0.1', family: 4 }],
+    );
+
+  afterAll(async () => {
+    await harness.rebuild();
+  });
+
+  it('production: ditolak saat menyimpan dan saat dites, dengan pesan yang menjelaskan solusinya', async () => {
+    await harness.rebuild({
+      config: { isProduction: true },
+      overrides: { mailLookup: publicLookup },
+    });
+
+    const saved = await save(mailpitSettings({ host: publicHost, port: 25 }));
+    expect(saved.statusCode).toBe(400);
+    expect(errorOf(saved).details).toEqual([
+      { location: 'body', field: 'security', message: EMAIL_TEST_MESSAGES.insecure_login },
+    ]);
+    expect(await storedRow()).toBeUndefined();
+
+    const tested = await testConnection({
+      settings: mailpitSettings({ host: publicHost, port: 25 }),
+    });
+    expect(tested).toMatchObject({ ok: false, code: 'insecure_login' });
+    expect(tested.message).toContain('jaringan lokal');
+
+    // Tanpa login, atau dengan enkripsi, tetap boleh disimpan.
+    const noLogin = await save(
+      mailpitSettings({ host: publicHost, port: 25, username: null, password: undefined }),
+    );
+    const encrypted = await save(
+      mailpitSettings({ host: publicHost, port: 587, security: 'starttls' }),
+    );
+    expect(noLogin.statusCode).toBe(200);
+    expect(encrypted.statusCode).toBe(200);
+  });
+
+  it('production: server di jaringan lokal (mis. relay kantor) tetap boleh tanpa enkripsi', async () => {
+    await harness.rebuild({
+      config: { isProduction: true },
+      overrides: { mailLookup: publicLookup },
+    });
+
+    expect((await save(mailpitSettings())).statusCode).toBe(200);
+    expect(await testConnection()).toMatchObject({ ok: true, code: 'ok' });
+  });
+
+  it('di luar production (pengembangan lokal) diizinkan', async () => {
+    await harness.rebuild({ overrides: { mailLookup: publicLookup } });
+
+    expect((await save(mailpitSettings({ host: publicHost, port: 25 }))).statusCode).toBe(200);
+  });
+
+  it('wizard setup ikut menolak (isian email.security)', async () => {
+    await harness.reset();
+    await harness.rebuild({
+      config: { isProduction: true },
+      overrides: { mailLookup: publicLookup },
+    });
+
+    const response = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.setup.complete,
+      setupBody({ email: mailpitSettings({ host: publicHost, port: 25 }) }),
+    );
+    expect(response.statusCode).toBe(400);
+    expect(errorOf(response).details?.[0]).toMatchObject({ field: 'email.security' });
+  });
+});
+
 describe('tes koneksi sebagai permukaan SSRF', () => {
   let fakeServer: Server | undefined;
 
@@ -429,6 +508,9 @@ describe('tes koneksi sebagai permukaan SSRF', () => {
     ['alamat tak-tentu', '0.0.0.0'],
     ['link-local IPv6', 'fe80::1'],
     ['IPv4 terpetakan ke IPv6', '::ffff:169.254.169.254'],
+    ['NAT64 ke metadata cloud', '64:ff9b::a9fe:a9fe'],
+    ['6to4 ke metadata cloud', '2002:a9fe:a9fe::1'],
+    ['Teredo', '2001:0:4136:e378:8000:63bf:3fff:fdd2'],
   ])('alamat terblokir (%s) ditolak tanpa membuka sambungan', async (_label, host) => {
     const result = await testConnection({ settings: mailpitSettings({ host }) });
 

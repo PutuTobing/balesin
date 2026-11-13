@@ -10,6 +10,7 @@ import {
   parseEnv,
   resolveSmtpFallback,
   smtpFallbackEnvShape,
+  STRONG_SECRET_HINT,
   type EnvSource,
   type LogLevel,
   type NodeEnv,
@@ -117,10 +118,10 @@ function apiEnvSchema(production: boolean) {
     ),
     SESSION_SECRET: envRequiredInProduction(
       production,
-      envParse.secretText(32),
-      'minimal 32 karakter acak',
+      envParse.strongSecret(32),
+      STRONG_SECRET_HINT,
     ),
-    SETUP_TOKEN: envOptional(envParse.secretText(16), 'minimal 16 karakter acak'),
+    SETUP_TOKEN: envOptional(envParse.strongSecret(32), STRONG_SECRET_HINT),
     ...smtpFallbackEnvShape(),
     META_GRAPH_VERSION: envOptional(
       (raw) => (/^v\d{1,3}\.\d{1,2}$/.test(raw) ? raw : undefined),

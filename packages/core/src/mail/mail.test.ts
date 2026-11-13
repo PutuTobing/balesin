@@ -5,11 +5,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { EnvValidationError, parseEnv, resolveSmtpFallback, smtpFallbackEnvShape } from '../env';
 import { Secret } from '../secret';
 import { TimeoutError } from '../timeout';
-import { isBlockedMailAddress, resolveMailHost } from './host-guard';
+import { classifyMailAddress, isBlockedMailAddress, resolveMailHost } from './host-guard';
 import { fallbackEmailSettings, openStoredEmailSettings, SMTP_PASSWORD_PURPOSE } from './settings';
 import {
   allowedSmtpPorts,
   classifySmtpError,
+  isPlaintextLoginRejected,
+  plaintextLoginPolicy,
   sendSmtpMail,
   verifySmtpConnection,
   type SmtpConnectionConfig,
@@ -57,6 +59,51 @@ describe('penjaga alamat SMTP', () => {
     }
   });
 
+  it('IPv6 yang membawa IPv4 terblokir ikut diblokir (NAT64, 6to4, SIIT), juga Teredo dan ::/96', () => {
+    for (const address of [
+      '64:ff9b::a9fe:a9fe',
+      '64:ff9b::169.254.169.254',
+      '64:ff9b:1::a9fe:a9fe',
+      '64:ff9b:1:a9fe:a9:fe00::',
+      '2002:a9fe:a9fe::1',
+      '2002:0000:0001::1',
+      '::ffff:0:a9fe:a9fe',
+      '::ffff:0:169.254.169.254',
+      '2001:0:4136:e378:8000:63bf:3fff:fdd2',
+      '::a9fe:a9fe',
+      '::0.0.0.2',
+      'fe80::1%eth0',
+    ]) {
+      expect(isBlockedMailAddress(address), address).toBe(true);
+    }
+  });
+
+  it('menggolongkan alamat: jaringan lokal vs internet (dasar aturan "Tanpa enkripsi")', () => {
+    for (const address of [
+      '10.0.0.5',
+      '172.16.0.9',
+      '192.168.1.20',
+      '127.0.0.1',
+      '100.64.1.1',
+      '::1',
+      'fd12:3456::25',
+      '::ffff:10.0.0.5',
+      '64:ff9b::a00:5',
+    ]) {
+      expect(classifyMailAddress(address), address).toBe('private');
+    }
+    for (const address of [
+      '203.0.113.10',
+      '8.8.8.8',
+      '2001:db8::25',
+      '64:ff9b::808:808',
+      '2002:cb00:710a::1',
+      '::ffff:203.0.113.10',
+    ]) {
+      expect(classifyMailAddress(address), address).toBe('public');
+    }
+  });
+
   it('nama host di-resolve sekali; IPv4 didahulukan; nama dipakai untuk verifikasi TLS', async () => {
     const result = await resolveMailHost('mail.contoh.test', {
       lookup: () =>
@@ -66,7 +113,21 @@ describe('penjaga alamat SMTP', () => {
         ]),
     });
 
-    expect(result).toEqual({ ok: true, address: '203.0.113.25', servername: 'mail.contoh.test' });
+    expect(result).toEqual({
+      ok: true,
+      address: '203.0.113.25',
+      servername: 'mail.contoh.test',
+      addressClass: 'public',
+    });
+    // Golongan "jaringan lokal" hanya bila SEMUA alamat hasil resolve lokal.
+    const mixed = await resolveMailHost('relay.contoh.test', {
+      lookup: () =>
+        Promise.resolve([
+          { address: '10.0.0.25', family: 4 },
+          { address: '203.0.113.25', family: 4 },
+        ]),
+    });
+    expect(mixed).toMatchObject({ ok: true, address: '10.0.0.25', addressClass: 'public' });
   });
 
   it('alamat IP langsung tidak di-resolve dan tidak punya nama TLS', async () => {
@@ -76,6 +137,7 @@ describe('penjaga alamat SMTP', () => {
       ok: true,
       address: '203.0.113.25',
       servername: undefined,
+      addressClass: 'public',
     });
     expect(await resolveMailHost('[2001:db8::25]', { lookup })).toMatchObject({
       ok: true,
@@ -333,6 +395,50 @@ describe('klien SMTP terhadap server tiruan', () => {
     expect(Date.now() - started).toBeLessThan(3_000);
   });
 
+  it('"Tanpa enkripsi" + login ke host internet ditolak sebelum menyambung (production)', async () => {
+    let connected = false;
+    const trap = createServer((socket) => {
+      connected = true;
+      socket.destroy();
+    });
+    server = trap;
+    await new Promise<void>((resolve) => trap.listen(0, '127.0.0.1', resolve));
+    const { port } = trap.address() as AddressInfo;
+    const publicLookup = () => Promise.resolve([{ address: '203.0.113.25', family: 4 }]);
+    const config: SmtpConnectionConfig = {
+      host: 'mail.publik.test',
+      port,
+      security: 'none',
+      username: 'cs@contoh.test',
+      password: new Secret('sandi-smtp-uji'),
+    };
+
+    const result = await verifySmtpConnection(config, {
+      allowedPorts: [port],
+      lookup: publicLookup,
+      plaintextLogin: 'private-only',
+    });
+    expect(result).toMatchObject({ ok: false, code: 'insecure_login' });
+    expect(connected).toBe(false);
+
+    // Pemeriksaan saat menyimpan: hanya kombinasi tanpa enkripsi + login ke internet yang ditolak.
+    const policy = { lookup: publicLookup, plaintextLogin: 'private-only' as const };
+    expect(await isPlaintextLoginRejected(config, policy)).toBe(true);
+    expect(await isPlaintextLoginRejected({ ...config, username: null }, policy)).toBe(false);
+    expect(await isPlaintextLoginRejected({ ...config, security: 'starttls' }, policy)).toBe(false);
+    expect(
+      await isPlaintextLoginRejected(config, {
+        lookup: () => Promise.resolve([{ address: '192.168.1.5', family: 4 }]),
+        plaintextLogin: 'private-only',
+      }),
+    ).toBe(false);
+    expect(await isPlaintextLoginRejected(config, { ...policy, plaintextLogin: 'allow' })).toBe(
+      false,
+    );
+    expect(plaintextLoginPolicy(true)).toBe('private-only');
+    expect(plaintextLoginPolicy(false)).toBe('allow');
+  });
+
   it('daftar port: production hanya port SMTP baku; di luar itu ditambah penangkap email lokal', () => {
     expect(allowedSmtpPorts(true)).toEqual([25, 465, 587, 2525]);
     expect(allowedSmtpPorts(false)).toEqual([25, 465, 587, 2525, 1025]);
@@ -477,6 +583,26 @@ describe('template email', () => {
     expect(mail.html).toContain('&lt;b&gt;Budi&lt;/b&gt;');
     expect(mail.html).not.toContain('<b>Budi</b>');
     expect(mail.text).not.toMatch(/\bAnda\b/i);
+  });
+
+  it('isi menyesuaikan lingkup kunci: satu jaringan, banyak jaringan, perangkat dikenal', () => {
+    const render = (scope: 'source' | 'account' | 'device') =>
+      renderAccountLockedEmail({
+        productName: 'Balesin',
+        userName: 'Budi',
+        failedAttempts: 5,
+        lockMinutes: 15,
+        lockedUntil: new Date('2026-11-13T03:30:00.000Z'),
+        timeZone: 'Asia/Jakarta',
+        scope,
+      }).text;
+
+    expect(render('source')).toContain('5 kali percobaan masuk ke akunmu');
+    expect(render('source')).toContain('dari satu jaringan');
+    expect(render('source')).toContain('Dari jaringan dan perangkat lain kamu tetap bisa masuk');
+    expect(render('account')).toContain('dari berbagai jaringan');
+    expect(render('account')).toContain('perangkat yang biasa kamu pakai');
+    expect(render('device')).toContain('dari perangkat yang pernah kamu pakai');
   });
 
   it('zona waktu tak dikenal jatuh ke UTC, tidak melempar', () => {

@@ -66,6 +66,8 @@ export interface AccountLockedEmailInput {
   lockedUntil: Date;
   /** Zona waktu IANA organisasi, untuk menampilkan jam setempat. */
   timeZone: string;
+  /** Lingkup kunci; bawaan `account`. */
+  scope?: 'source' | 'account' | 'device';
 }
 
 function formatLocalTime(date: Date, timeZone: string): string {
@@ -82,13 +84,29 @@ function formatLocalTime(date: Date, timeZone: string): string {
   }
 }
 
-/** Pemberitahuan ke pemilik akun saat akunnya dikunci sementara (SECURITY.md §1). */
+/** Pemberitahuan ke pemilik akun saat percobaan masuk ke akunnya dikunci sementara (SECURITY.md §1). */
 export function renderAccountLockedEmail(input: AccountLockedEmailInput): MailBody {
-  return compose(input.productName, `Akun ${input.productName} kamu dikunci sementara`, [
-    `Halo ${singleLine(input.userName)},`,
-    `Akunmu dikunci sementara selama ${input.lockMinutes} menit karena ada ${input.failedAttempts} kali percobaan masuk dengan password yang salah.`,
-    `Kamu bisa mencoba masuk lagi setelah ${formatLocalTime(input.lockedUntil, input.timeZone)}.`,
-    'Kalau itu memang kamu, tunggu sampai kunci berakhir lalu masuk dengan password yang benar.',
-    'Kalau bukan kamu, ada orang lain yang mencoba masuk ke akunmu. Password-mu tetap aman selama belum pernah dibagikan; segera kabari Owner atau Admin di tempatmu supaya bisa diperiksa.',
-  ]);
+  const until = formatLocalTime(input.lockedUntil, input.timeZone);
+  const scope = input.scope ?? 'account';
+  const what =
+    scope === 'source'
+      ? `Ada ${input.failedAttempts} kali percobaan masuk ke akunmu dengan password yang salah dari satu jaringan. Percobaan masuk dari jaringan itu dihentikan sementara selama ${input.lockMinutes} menit.`
+      : scope === 'device'
+        ? `Ada ${input.failedAttempts} kali percobaan masuk ke akunmu dengan password yang salah dari perangkat yang pernah kamu pakai. Percobaan dari perangkat itu dihentikan sementara selama ${input.lockMinutes} menit.`
+        : `Ada banyak percobaan masuk ke akunmu dengan password yang salah dari berbagai jaringan. Akunmu dikunci sementara selama ${input.lockMinutes} menit untuk perangkat yang belum pernah dipakai masuk.`;
+  const access =
+    scope === 'account'
+      ? `Dari perangkat yang biasa kamu pakai untuk masuk, kamu tetap bisa masuk seperti biasa. Dari perangkat lain, coba lagi setelah ${until}.`
+      : `Dari jaringan dan perangkat lain kamu tetap bisa masuk seperti biasa. Dari asal yang dihentikan, coba lagi setelah ${until}.`;
+  return compose(
+    input.productName,
+    `Percobaan masuk ke akun ${input.productName} kamu dihentikan sementara`,
+    [
+      `Halo ${singleLine(input.userName)},`,
+      what,
+      access,
+      'Kalau itu memang kamu, tunggu sampai waktunya lalu masuk dengan password yang benar.',
+      'Kalau bukan kamu, ada orang lain yang mencoba masuk ke akunmu. Password-mu tetap aman selama belum pernah dibagikan. Segera kabari Owner atau Admin di tempatmu, dan ganti password bila kamu ragu.',
+    ],
+  );
 }

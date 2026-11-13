@@ -3,6 +3,7 @@ import {
   SMTP_PASSWORD_PURPOSE,
   Secret,
   fallbackEmailSettings,
+  isPlaintextLoginRejected,
   maskedSecret,
   openStoredEmailSettings,
   renderTestEmail,
@@ -11,6 +12,7 @@ import {
   verifySmtpConnection,
   type HostLookup,
   type MailTransportSettings,
+  type PlaintextLoginPolicy,
   type SecretBox,
   type SmtpFallbackConfig,
   type SmtpPolicy,
@@ -90,6 +92,8 @@ export interface EmailSettingsService {
     prepared: PreparedEmailSettings,
     stored: EmailSettings | undefined,
   ): EmailSettingsValues;
+  /** Pemeriksaan tambahan saat menyimpan (butuh DNS): login tanpa enkripsi ke internet. */
+  assertSecureLogin(input: EmailSettingsInput, fieldPrefix: string): Promise<void>;
   testConnection(
     actor: EmailSettingsActor | null,
     draft: EmailSettingsInput | undefined,
@@ -112,6 +116,8 @@ export interface EmailSettingsServiceDeps {
   fallback: SmtpFallbackConfig | null;
   /** Port SMTP yang boleh dituju. */
   allowedPorts: readonly number[];
+  /** Login "Tanpa enkripsi": `private-only` di production. */
+  plaintextLogin: PlaintextLoginPolicy;
   /** Bisa diganti di tes. */
   lookup?: HostLookup;
   timeouts?: Partial<SmtpTimeouts>;
@@ -154,9 +160,26 @@ export function createEmailSettingsService(deps: EmailSettingsServiceDeps): Emai
 
   const policyFor = (extraPort?: number): SmtpPolicy => ({
     allowedPorts: extraPort === undefined ? allowedPorts : [...allowedPorts, extraPort],
+    plaintextLogin: deps.plaintextLogin,
     lookup: deps.lookup,
     timeouts: deps.timeouts,
   });
+
+  /**
+   * Menolak penyimpanan "Tanpa enkripsi" + login ke server di internet (password akan
+   * terkirim polos) — hanya bila kebijakannya `private-only` (production).
+   */
+  async function assertSecureLogin(input: EmailSettingsInput, fieldPrefix: string) {
+    const rejected = await isPlaintextLoginRejected(
+      { host: input.host, security: input.security, username: input.username ?? null },
+      policyFor(),
+    );
+    if (rejected) {
+      throw validationError([
+        bodyDetail(`${fieldPrefix}security`, EMAIL_TEST_MESSAGES.insecure_login),
+      ]);
+    }
+  }
 
   function prepare(
     input: EmailSettingsInput,
@@ -426,8 +449,10 @@ export function createEmailSettingsService(deps: EmailSettingsServiceDeps): Emai
     view: (organizationId) => view(organizationId),
     prepare,
     toValues,
+    assertSecureLogin,
 
     async save(actor, input, context) {
+      await assertSecureLogin(input, '');
       return db.transaction(async (tx) => {
         const stored = await findEmailSettings(tx, actor.organizationId);
         const prepared = prepare(input, stored, '');

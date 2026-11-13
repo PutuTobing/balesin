@@ -26,7 +26,7 @@ import {
   type SignedIn,
 } from '../../testing/integration';
 import { TEST_APP_ORIGIN } from '../../testing/build-test-app';
-import { LOGIN_IP_RULE } from './login-rules';
+import { LOGIN_ACCOUNT_RULE, LOGIN_IP_RULE } from './login-rules';
 import { createPasswordHasher } from './password-hasher';
 
 let harness: IntegrationHarness;
@@ -173,6 +173,7 @@ describe('POST /auth/login', () => {
       reason: 'unknown_email',
       attempt: 1,
       email: 'o***@contoh.test',
+      trustedDevice: false,
     });
     expect(JSON.stringify(failed)).not.toContain('password-yang-salah');
     expect(JSON.stringify(failed)).not.toContain('orang.asing');
@@ -443,65 +444,86 @@ describe('CSRF dan POST /auth/logout', () => {
   });
 });
 
-describe('brute force: kunci akun dan batas per IP', () => {
+describe('brute force: kunci per asal, per akun, perangkat dikenal, dan batas per IP', () => {
   const WRONG = 'tebakan-password-salah';
+  const LOCKED_MESSAGE =
+    'Akun ini dikunci sementara karena terlalu banyak percobaan masuk yang gagal. Coba lagi dalam 15 menit.';
 
-  it('5 kali gagal → akun dikunci 15 menit, termasuk untuk password yang benar', async () => {
+  /** `nama=nilai` cookie perangkat dikenal dari respons login/setup. */
+  function deviceCookieOf(response: Response): string {
+    const cookie = setCookies(response).find((value) => value.startsWith('balesin_device='));
+    if (!cookie) throw new Error('Respons tidak memasang cookie perangkat');
+    return cookie.split(';')[0] ?? '';
+  }
+
+  it('5 kali gagal dari satu IP → email itu dikunci 15 menit DARI IP ITU, termasuk password benar', async () => {
     const statuses: number[] = [];
     for (let attempt = 0; attempt < 5; attempt += 1) {
       statuses.push((await tryLogin(OWNER.email, `${WRONG}-${attempt}`, '203.0.113.9')).statusCode);
     }
-    const correct = await tryLogin(OWNER.email, OWNER.password, '198.51.100.20');
+    const correct = await tryLogin(OWNER.email, OWNER.password, '203.0.113.9');
 
     expect(statuses).toEqual([401, 401, 401, 401, 429]);
     expect(correct.statusCode).toBe(429);
     expect(errorOf(correct).code).toBe('RATE_LIMITED');
-    expect(errorOf(correct).message).toBe(
-      'Akun ini dikunci sementara karena terlalu banyak percobaan masuk yang gagal. Coba lagi dalam 15 menit.',
-    );
+    expect(errorOf(correct).message).toBe(LOCKED_MESSAGE);
     expect(Number(correct.headers['retry-after'])).toBeGreaterThan(890);
     expect(Number(correct.headers['retry-after'])).toBeLessThanOrEqual(900);
     expect(setCookies(correct)).toEqual([]);
-
-    const [user] = await harness.db.select().from(users);
-    const lockMinutes = ((user?.lockedUntil?.getTime() ?? 0) - Date.now()) / 60_000;
-    expect(lockMinutes).toBeGreaterThan(14.5);
-    expect(lockMinutes).toBeLessThan(15.5);
 
     // Sesi yang sudah ada tidak ikut mati: kunci hanya menahan percobaan masuk baru.
     expect((await me(owner.cookie)).statusCode).toBe(200);
   });
 
-  it('kunci akun tercatat di audit dan pemberitahuan diantrekan SEKALI, hanya berisi ID', async () => {
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      await tryLogin(OWNER.email, `${WRONG}-${attempt}`, `203.0.113.${attempt + 1}`);
+  it('pemilik akun dari jaringan lain TIDAK ikut terkunci oleh percobaan orang lain (S1)', async () => {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await tryLogin(OWNER.email, `${WRONG}-${attempt}`, '203.0.113.66');
+    }
+
+    const elsewhere = await tryLogin(OWNER.email, OWNER.password, '198.51.100.20');
+    expect(elsewhere.statusCode).toBe(200);
+    // Kunci per asal tidak ditulis ke users.locked_until (bukan kunci akun).
+    const [user] = await harness.db.select().from(users);
+    expect(user?.lockedUntil).toBeNull();
+  });
+
+  it('kunci tercatat di audit; email pemberitahuan paling banyak sekali per jam, hanya berisi ID', async () => {
+    for (const ip of ['203.0.113.1', '203.0.113.2']) {
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        await tryLogin(OWNER.email, `${WRONG}-${attempt}`, ip);
+      }
     }
     await expect.poll(() => harness.lockedNotifications.length).toBe(1);
 
-    const actions = await auditActions();
-    // 5 percobaan yang diperiksa passwordnya + 3 yang ditolak karena akun sudah terkunci.
-    expect(await failedLoginReasons()).toEqual([
-      ...Array<string>(5).fill('wrong_password'),
-      ...Array<string>(3).fill('locked'),
-    ]);
-    expect(actions.filter((action) => action === 'auth.account.locked')).toHaveLength(1);
+    // Per asal: 5 percobaan diperiksa passwordnya + 1 ditolak karena sudah terkunci.
+    const perSource = [...Array<string>(5).fill('wrong_password'), 'locked'];
+    expect(await failedLoginReasons()).toEqual([...perSource, ...perSource]);
+    const locks = (await harness.db.select().from(auditLogs)).filter(
+      (row) => row.action === 'auth.account.locked',
+    );
+    expect(locks).toHaveLength(2);
+    for (const row of locks) {
+      expect(row).toMatchObject({
+        targetType: 'user',
+        targetId: owner.session.user.id,
+        metadata: { scope: 'source', failedAttempts: 5 },
+      });
+    }
+
+    // Kunci kedua dalam jam yang sama tidak mengirim email lagi.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(harness.lockedNotifications).toHaveLength(1);
     const [notification] = harness.lockedNotifications;
     expect(Object.keys(notification ?? {}).sort()).toEqual([
       'lockedUntil',
       'organizationId',
+      'scope',
       'userId',
     ]);
     expect(notification).toMatchObject({
       organizationId: owner.session.organization.id,
       userId: owner.session.user.id,
-    });
-    const locked = (await harness.db.select().from(auditLogs)).find(
-      (row) => row.action === 'auth.account.locked',
-    );
-    expect(locked).toMatchObject({
-      targetType: 'user',
-      targetId: owner.session.user.id,
-      metadata: { failedAttempts: 5 },
+      scope: 'source',
     });
   });
 
@@ -525,18 +547,16 @@ describe('brute force: kunci akun dan batas per IP', () => {
   });
 
   it('email tidak terdaftar "terkunci" dengan cara yang sama — tidak bisa dibedakan dari akun sungguhan', async () => {
-    const run = async (email: string, ipPrefix: string) => {
+    const run = async (email: string, ip: string) => {
       const results: Array<ReturnType<typeof comparable>> = [];
       for (let attempt = 0; attempt < 7; attempt += 1) {
-        results.push(
-          comparable(await tryLogin(email, `${WRONG}-${attempt}`, `${ipPrefix}.${attempt + 1}`)),
-        );
+        results.push(comparable(await tryLogin(email, `${WRONG}-${attempt}`, ip)));
       }
       return results;
     };
 
-    const real = await run(OWNER.email, '203.0.113');
-    const ghost = await run('hantu@majujaya.test', '198.51.100');
+    const real = await run(OWNER.email, '203.0.113.40');
+    const ghost = await run('hantu@majujaya.test', '198.51.100.40');
 
     expect(real.map((result) => result.status)).toEqual([401, 401, 401, 401, 429, 429, 429]);
     // Retry-After bisa berbeda satu detik antar-permintaan; sisanya harus identik.
@@ -551,12 +571,17 @@ describe('brute force: kunci akun dan batas per IP', () => {
     expect(normalize(ghost)).toEqual(normalize(real));
     expect(harness.lockedNotifications).toHaveLength(1);
     expect(harness.lockedNotifications[0]?.userId).toBe(owner.session.user.id);
+    // Kunci email tidak terdaftar juga tercatat (tanpa target, email tersamar).
+    const ghostLock = (await harness.db.select().from(auditLogs)).find(
+      (row) => row.action === 'auth.account.locked' && row.targetId === null,
+    );
+    expect(ghostLock?.metadata).toMatchObject({ scope: 'source', email: 'h***@majujaya.test' });
   });
 
-  it('serbuan permintaan bersamaan tetap hanya mendapat 5 kali pemeriksaan password', async () => {
+  it('serbuan bersamaan dari satu asal tetap hanya mendapat 5 kali pemeriksaan password', async () => {
     const responses = await Promise.all(
-      Array.from({ length: 25 }, (_unused, index) =>
-        tryLogin(OWNER.email, `${WRONG}-${index}`, `203.0.113.${index + 1}`),
+      Array.from({ length: 12 }, (_unused, index) =>
+        tryLogin(OWNER.email, `${WRONG}-${index}`, '203.0.113.55'),
       ),
     );
 
@@ -565,11 +590,128 @@ describe('brute force: kunci akun dan batas per IP', () => {
     expect(statuses.every((status) => status === 401 || status === 429)).toBe(true);
     // Setiap percobaan tercatat, tetapi paling banyak 5 yang sampai ke pemeriksaan password.
     const reasons = await failedLoginReasons();
-    expect(reasons).toHaveLength(25);
+    expect(reasons).toHaveLength(12);
     expect(reasons.filter((reason) => reason !== 'locked').length).toBeLessThanOrEqual(5);
   });
 
-  it('login berhasil menghapus hitungan gagal; setelah kunci berakhir bisa masuk lagi', async () => {
+  it('tebakan tersebar dari banyak IP: email dikunci untuk perangkat baru, perangkat dikenal tetap bisa masuk', async () => {
+    const known = await call(harness.app, 'POST', API_ROUTES.auth.login, {
+      email: OWNER.email,
+      password: OWNER.password,
+    });
+    const device = deviceCookieOf(known);
+
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < LOGIN_ACCOUNT_RULE.limit + 3; attempt += 1) {
+      const ip = `198.18.${Math.floor(attempt / 200)}.${(attempt % 200) + 1}`;
+      statuses.push((await tryLogin(OWNER.email, `${WRONG}-${attempt}`, ip)).statusCode);
+    }
+    expect(statuses.slice(0, LOGIN_ACCOUNT_RULE.limit - 1).every((status) => status === 401)).toBe(
+      true,
+    );
+    expect(statuses.slice(LOGIN_ACCOUNT_RULE.limit - 1)).toEqual([429, 429, 429, 429]);
+    const reasons = await failedLoginReasons();
+    expect(reasons.filter((reason) => reason !== 'locked')).toHaveLength(LOGIN_ACCOUNT_RULE.limit);
+
+    // Perangkat baru dari jaringan baru: terkunci. Perangkat dikenal: tetap masuk.
+    const newDevice = await tryLogin(OWNER.email, OWNER.password, '192.0.2.10');
+    const knownDevice = await tryLogin(OWNER.email, OWNER.password, '192.0.2.11', device);
+    expect(newDevice.statusCode).toBe(429);
+    expect(knownDevice.statusCode).toBe(200);
+
+    const accountLock = (await harness.db.select().from(auditLogs)).find(
+      (row) => row.action === 'auth.account.locked',
+    );
+    expect(accountLock?.metadata).toMatchObject({
+      scope: 'account',
+      failedAttempts: LOGIN_ACCOUNT_RULE.limit,
+    });
+    // Kunci lingkup akun dicatat di users.locked_until (untuk tampilan admin).
+    const [user] = await harness.db.select().from(users);
+    const lockMinutes = ((user?.lockedUntil?.getTime() ?? 0) - Date.now()) / 60_000;
+    expect(lockMinutes).toBeGreaterThan(14.5);
+    expect(lockMinutes).toBeLessThan(15.5);
+  }, 60_000);
+
+  it('perangkat dikenal tidak terkena kunci yang dipicu orang lain di jaringan yang sama', async () => {
+    const office = '203.0.113.88';
+    const known = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.auth.login,
+      { email: OWNER.email, password: OWNER.password },
+      { ip: office },
+    );
+    const device = deviceCookieOf(known);
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await tryLogin(OWNER.email, `${WRONG}-${attempt}`, office);
+    }
+    expect((await tryLogin(OWNER.email, OWNER.password, office)).statusCode).toBe(429);
+    expect((await tryLogin(OWNER.email, OWNER.password, office, device)).statusCode).toBe(200);
+  });
+
+  it('perangkat dikenal punya kuncinya sendiri: 5 gagal dari perangkat itu → 429 untuk perangkat itu', async () => {
+    const device = deviceCookieOf(
+      await call(harness.app, 'POST', API_ROUTES.auth.login, {
+        email: OWNER.email,
+        password: OWNER.password,
+      }),
+    );
+
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      statuses.push(
+        (await tryLogin(OWNER.email, `${WRONG}-${attempt}`, '203.0.113.31', device)).statusCode,
+      );
+    }
+    expect(statuses).toEqual([401, 401, 401, 401, 429, 429]);
+    // Tanpa cookie itu (asal yang sama) belum ada kunci asal.
+    expect((await tryLogin(OWNER.email, OWNER.password, '203.0.113.31')).statusCode).toBe(200);
+    const deviceLock = (await harness.db.select().from(auditLogs)).find(
+      (row) => row.action === 'auth.account.locked',
+    );
+    expect(deviceLock?.metadata).toMatchObject({ scope: 'device' });
+  });
+
+  it('cookie perangkat milik akun lain, palsu, atau rusak tidak dianggap perangkat dikenal', async () => {
+    const password = 'sandi-pengguna-cs-panjang';
+    const cs = await addUser('cs', password);
+    const csDevice = deviceCookieOf(
+      await call(harness.app, 'POST', API_ROUTES.auth.login, { email: cs.email, password }),
+    );
+    const [name = '', value = ''] = csDevice.split('=');
+    const forged = `${name}=${value.slice(0, -2)}${value.endsWith('AA') ? 'BB' : 'AA'}`;
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await tryLogin(OWNER.email, `${WRONG}-${attempt}`, '203.0.113.99');
+    }
+    for (const cookie of [csDevice, forged, `${name}=v1.rusak`]) {
+      expect((await tryLogin(OWNER.email, OWNER.password, '203.0.113.99', cookie)).statusCode).toBe(
+        429,
+      );
+    }
+  });
+
+  it('cookie perangkat: HttpOnly, SameSite=Strict, 90 hari, dan tidak dihapus saat logout', async () => {
+    const response = await call(harness.app, 'POST', API_ROUTES.auth.login, {
+      email: OWNER.email,
+      password: OWNER.password,
+    });
+    const cookie = setCookies(response).find((value) => value.startsWith('balesin_device='));
+    expect(cookie).toMatch(
+      /^balesin_device=v1\.[0-9a-f-]{36}\.\d+\.[A-Za-z0-9_-]{43}; Path=\/; HttpOnly; SameSite=Strict; Max-Age=7776000$/,
+    );
+
+    const session = authenticatedSessionSchema.parse(response.json());
+    const logout = await call(harness.app, 'POST', API_ROUTES.auth.logout, undefined, {
+      cookie: sessionCookieOf(response),
+      csrf: session.csrfToken,
+    });
+    expect(setCookies(logout).some((value) => value.startsWith('balesin_device='))).toBe(false);
+  });
+
+  it('login berhasil menghapus hitungan gagal asal itu', async () => {
     for (let attempt = 0; attempt < 4; attempt += 1) await tryLogin(OWNER.email, WRONG);
     await login(harness.app);
     // Hitungan mulai dari nol lagi: 4 kali gagal berikutnya belum mengunci.
@@ -578,26 +720,14 @@ describe('brute force: kunci akun dan batas per IP', () => {
       statuses.push((await tryLogin(OWNER.email, WRONG)).statusCode);
     }
     expect(statuses).toEqual([401, 401, 401, 401]);
-
-    // Kunci, lalu majukan waktu: hapus penanda Redis dan lewatkan locked_until.
     expect((await tryLogin(OWNER.email, WRONG)).statusCode).toBe(429);
-    await harness.reset();
-    owner = await completeSetup(harness.app);
-    await harness.db.update(users).set({ lockedUntil: sql`now() - interval '1 second'` });
-
-    const after = await login(harness.app);
-    expect(after.session.user.email).toBe(OWNER.email);
-    const [user] = await harness.db.select().from(users);
-    expect(user?.lockedUntil).toBeNull();
   });
 
-  it('kunci di database tetap berlaku walau penanda Redis hilang', async () => {
+  it('users.locked_until hanya catatan: tidak memutuskan login (jawaban tidak membuka akun, R1)', async () => {
     await harness.db.update(users).set({ lockedUntil: sql`now() + interval '10 minutes'` });
 
-    const response = await tryLogin(OWNER.email, OWNER.password);
-
-    expect(response.statusCode).toBe(429);
-    expect(errorOf(response).message).toContain('Coba lagi dalam 10 menit.');
+    expect((await tryLogin(OWNER.email, WRONG)).statusCode).toBe(401);
+    expect((await tryLogin(OWNER.email, OWNER.password)).statusCode).toBe(200);
   });
 
   it('batas per IP: banyak email dari satu alamat dihentikan; login berhasil tidak dihitung', async () => {

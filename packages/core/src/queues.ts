@@ -62,6 +62,11 @@ export const accountLockedEmailPayloadSchema = z.strictObject({
   userId: z.uuid(),
   /** Waktu kunci berakhir (ISO 8601). */
   lockedUntil: z.iso.datetime(),
+  /**
+   * `source` = percobaan dari satu jaringan dihentikan; `account` = percobaan dari banyak
+   * jaringan, akun dikunci untuk perangkat yang belum dikenal; `device` = dari perangkat dikenal.
+   */
+  scope: z.enum(['source', 'account', 'device']).default('account'),
 });
 export type AccountLockedEmailPayload = z.infer<typeof accountLockedEmailPayloadSchema>;
 
