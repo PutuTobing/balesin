@@ -8,11 +8,17 @@ import {
   type CssVariables,
   type ThemeName,
 } from '../../../packages/shared/src/design-tokens.ts';
-import { renderBrandMarkSvg } from '../src/brand/brand-mark-shape.ts';
+import { renderFaviconSvg as renderBrandFavicon } from '../src/brand/brand-mark-shape.ts';
 
 const VIRTUAL_ID = 'virtual:design-tokens.css';
 const RESOLVED_ID = `\0${VIRTUAL_ID}`;
 const FAVICON_PATH = '/favicon.svg';
+/**
+ * Ikon raster di `public/` (dibuat sekali dari `brand-mark-shape.ts`, lihat
+ * `src/brand/brand-icons.test.ts`): fallback browser tanpa favicon SVG dan ikon iOS.
+ */
+const FAVICON_ICO_PATH = '/favicon.ico';
+const APPLE_TOUCH_ICON_PATH = '/apple-touch-icon.png';
 
 function block(selector: string, vars: CssVariables, scheme?: ThemeName, indent = ''): string {
   const lines = Object.entries(vars).map(([name, value]) => `${indent}  ${name}: ${value};`);
@@ -41,7 +47,7 @@ export function renderTokensCss(): string {
 
 export function renderFaviconSvg(): string {
   const { primary, onPrimary, accent } = color.light;
-  return renderBrandMarkSvg({ primary, onPrimary, accent });
+  return renderBrandFavicon({ primary, onPrimary, accent });
 }
 
 /**
@@ -137,9 +143,20 @@ export function brandFavicon(): Plugin {
     },
     transformIndexHtml() {
       return [
+        // `sizes` pada .ico membuat browser yang paham SVG tetap memilih favicon SVG.
+        {
+          tag: 'link',
+          attrs: { rel: 'icon', href: FAVICON_ICO_PATH, sizes: '32x32' },
+          injectTo: 'head',
+        },
         {
           tag: 'link',
           attrs: { rel: 'icon', type: 'image/svg+xml', href: FAVICON_PATH },
+          injectTo: 'head',
+        },
+        {
+          tag: 'link',
+          attrs: { rel: 'apple-touch-icon', href: APPLE_TOUCH_ICON_PATH },
           injectTo: 'head',
         },
       ];

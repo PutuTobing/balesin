@@ -5,15 +5,48 @@
   object-fit: contain;
 }
 
-.tile {
-  fill: var(--primary);
+.tight {
+  width: auto;
 }
 
-.bubble {
-  fill: var(--on-primary);
+.symbol {
+  fill: var(--primary);
 }
 
 .dot {
   fill: var(--accent);
-  stroke: var(--primary);
+}
+
+/* Logo lengkap (BrandLogo): simbol + wordmark, tinggi diatur pemakai lewat className. */
+.logo {
+  display: block;
+  width: auto;
+  height: var(--space-32);
+}
+
+.wordmark {
+  fill: none;
+  stroke: var(--ink);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.wordmarkDot {
+  fill: var(--ink);
+}
+
+/* Nama produk organisasi (white-label) di samping simbol bawaan. */
+.lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--ink);
+  font-size: var(--text-20);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-title);
+}
+
+.lockupMark {
+  width: auto;
+  height: var(--space-32);
 }

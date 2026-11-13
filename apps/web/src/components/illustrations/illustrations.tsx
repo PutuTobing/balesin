@@ -4,8 +4,8 @@ import styles from './illustrations.module.css';
 /**
  * Ilustrasi SEMENTARA yang netral untuk keadaan kosong: skema kecil dari isi layar,
  * digambar dengan warna token sehingga ikut tema terang/gelap.
- * Ilustrasi maskot dari assets/brand/ belum tersedia (docs/BUTUH-TOBING.md #5); setelah
- * ada, ganti pemakaian komponen di sini dengan gambar maskot yang sesuai.
+ * Pose satuan Kak Sky (docs/BRANDING-PROMPTS.md Prompt 2: `kak-sky-inbox-empty.png`, dst.)
+ * belum tersedia; setelah ada, ganti pemakaian komponen di sini dengan pose yang sesuai.
  */
 function Frame({ children }: { children: ReactNode }) {
   return (

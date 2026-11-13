@@ -36,7 +36,7 @@ export function MorePage() {
         </ul>
       </nav>
       <div className={styles.about}>
-        <BrandMark />
+        <BrandMark fit="tight" />
         <span>{t.common.version(productName, __APP_VERSION__)}</span>
       </div>
     </Page>
