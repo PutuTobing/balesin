@@ -4,7 +4,7 @@ Tujuan: aplikasi terlihat **dibuat oleh tim produk sungguhan**, bukan template A
 Nuansa: rapi, hangat, percaya diri, sedikit playful (Gen Z) tanpa norak. Maskot Kak Sky
 dipakai di momen tertentu, bukan di semua layar.
 
-## 1. Token (sumber kebenaran: `packages/shared/design-tokens.ts` → CSS variables)
+## 1. Token (sumber kebenaran: `packages/shared/src/design-tokens.ts` → CSS variables)
 
 Warna dasar sementara; disesuaikan dengan logo final di `assets/brand/` (tugas
 `kritikus-desain` setelah logo masuk).
@@ -22,10 +22,26 @@ Warna dasar sementara; disesuaikan dengan logo final di `assets/brand/` (tugas
 | `--success` | `#1F9D6B` | `#3CC48D` | terkirim, selesai |
 | `--warning` | `#D99413` | `#F2B544` | jendela 24 jam hampir habis |
 | `--danger` | `#D64545` | `#F07070` | gagal, hapus |
-| bubble keluar | `#E3EEFF` | `#1B3557` | pesan dari tim |
+| bubble keluar | `#E3EEFF` | `#1A3354` | pesan dari tim |
 | bubble masuk | `--surface` | `--surface` | pesan pelanggan |
 
-Kontras teks minimal **4.5:1** (cek otomatis).
+Kontras teks minimal **4.5:1** (cek otomatis: tes kontras di `apps/web` memeriksa setiap
+pasangan teks/latar yang terdaftar di `contrastPairs`).
+
+**Token turunan** (ditambahkan agar teks lolos kontras; warna dasar di atas tidak diubah):
+
+| Token | Terang | Gelap | Pemakaian |
+|---|---|---|---|
+| `--success-ink` | `#15784F` | `#3CC48D` | teks/ikon status sukses (`--success` sebagai teks hanya 3,45:1 di terang) |
+| `--warning-ink` | `#8F5F00` | `#F2B544` | teks/ikon peringatan (`--warning` hanya 2,56:1 di terang) |
+| `--danger-ink` | `#C03535` | `#F07070` | teks/ikon bahaya; latar tombol destruktif |
+| `--on-primary` | `#FFFFFF` | `#0F1620` | teks di atas `--primary` |
+| `--on-accent` | `#14202E` | `#0F1620` | teks di atas `--accent` |
+| `--primary-soft` | `#E3EEFF` | `#1A3354` | latar item aktif (sama dengan bubble keluar) |
+
+Aturan pakai: `--success`/`--warning`/`--danger` untuk latar, titik, dan garis; untuk **teks**
+pakai varian `-ink`. `--accent` bukan untuk teks. `--primary` di atas `--surface-2` (terang)
+tepat di ambang 4,5:1, jadi jangan dipakai untuk teks kecil di sana.
 
 **Tipografi**: *Plus Jakarta Sans* (UI, dirancang di Indonesia), *JetBrains Mono*
 (ID pelanggan, kode, token terpotong). Self-host font (bukan CDN).
@@ -61,7 +77,8 @@ untuk isi pesan. Line-height 1.45 untuk teks, 1.2 untuk judul.
 Bahasa Indonesia santai-profesional, singkat. "Belum ada chat. Tenang, Kak Sky jaga
 inbox-nya." Tombol: kata kerja jelas ("Kirim", "Ambil chat", "Tandai selesai").
 Pesan error menjelaskan solusi ("Token Meta kedaluwarsa. Buat token baru di Pengaturan →
-Channel").
+Channel"). Sapaan ke pengguna: **"kamu/-mu"**, bukan "Anda" — berlaku untuk UI web dan pesan
+error API; hindari kata ganti bila kalimatnya tetap wajar.
 
 ## 5. RUBRIK `kritikus-desain`
 
