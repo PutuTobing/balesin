@@ -2,11 +2,12 @@
  * Tes keamanan dari review Fase 0 (docs/security-reviews/2026-11-13-fase0-fondasi.md).
  *
  * Cara membaca berkas ini:
- *  - `it(...)` biasa = penjaga regresi: perilaku ini SUDAH aman dan harus tetap begitu.
- *  - `it(...)` = CELAH YANG MASIH TERBUKA. Isi tesnya menyatakan perilaku yang BENAR dan
- *    saat ini memang gagal. Setelah celahnya diperbaiki, Vitest melaporkan tes itu "diharapkan
- *    gagal tetapi lulus" — saat itu hapus `.fails`-nya supaya menjadi penjaga regresi biasa.
- *    Kode temuan (S3, R4, R5, R6) merujuk ke laporan review.
+ *  - Semua tes di sini penjaga regresi: perilakunya SUDAH aman dan harus tetap begitu. Tes
+ *    berlabel kode temuan (S3, R4, R5, R6 — lihat laporan review) ditulis saat celahnya masih
+ *    terbuka dan kini mengunci perbaikannya.
+ *  - Pola untuk temuan baru: tulis tesnya sebagai `it.fails(...)` yang menyatakan perilaku yang
+ *    BENAR; setelah celahnya ditutup, Vitest melaporkan tes itu "diharapkan gagal tetapi
+ *    lulus" — saat itu hapus `.fails`-nya. Saat ini tidak ada `it.fails` di berkas ini.
  */
 import { EnvValidationError, type EnvSource } from '@balesin/core';
 import { errorEnvelopeSchema } from '@balesin/shared';

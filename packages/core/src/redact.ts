@@ -7,16 +7,18 @@ import { REDACTED, Secret } from './secret';
  *  1. `redactSecrets(value)` — menelusuri objek sedalam apa pun dan menyensor nilai dari kunci
  *     yang namanya berbau rahasia (password, token, secret, authorization, cookie, …).
  *  2. `scrubSecretsInText(text)` — menyensor pola rahasia di dalam teks bebas: kredensial di
- *     URL, header (`Authorization: …`, `Cookie: …`), `kunci=nilai`, pasangan JSON
- *     `"kunci":"nilai"`, token Meta/Telegram, API key Balesin, parameter query database.
+ *     URL, penugasan `kunci=nilai` dan `kunci: nilai` (header, YAML, hasil `util.inspect`),
+ *     pasangan JSON `"kunci":"nilai"`, token Meta/Telegram, API key Balesin, parameter query
+ *     database.
  *
- * Aturannya sengaja "lebih baik kelebihan sensor daripada bocor".
+ * Aturannya sengaja "lebih baik kelebihan sensor daripada bocor". Akibat yang perlu diketahui:
+ * prosa seperti "Invalid token: expired" ikut tersensor setelah titik duanya.
  *
  * Semua pemindaian teks di berkas ini LINEAR terhadap panjang teks (teks dari luar — isi pesan
  * pelanggan, payload webhook — bisa ikut ter-log; sensor yang kuadratik berarti satu baris log
  * bisa menahan event loop). Aturan untuk pola baru: awali dengan teks tetap, jangan memakai
  * pengulangan malas (`*?`) yang mencari penanda jauh, dan tambahkan kasusnya ke tes waktu di
- * `redact.test.ts`.
+ * `redact-text.test.ts`.
  */
 
 const MAX_DEPTH = 8;
@@ -73,11 +75,29 @@ const SENSITIVE_KEYS_EXACT = new Set(['pass', 'pwd', 'auth', 'otp', 'pin', 'dsn'
  */
 const ERROR_DATA_PROPS = new Set(['params', 'parameters', 'detail', 'where', 'args']);
 
+/**
+ * Hasil `isSensitiveKey` untuk nama kunci yang sudah pernah diperiksa. Nama kunci di log
+ * berulang terus, dan sensor teks memeriksa setiap `kunci=` / `kunci:` yang ditemuinya.
+ * Dikosongkan saat penuh supaya teks dari luar tidak bisa membuatnya tumbuh tanpa batas.
+ */
+const SENSITIVE_KEY_CACHE = new Map<string, boolean>();
+const SENSITIVE_KEY_CACHE_LIMIT = 2_000;
+
 /** `true` bila nama kunci menandakan isinya rahasia. Tidak peka huruf besar/kecil maupun pemisah. */
 export function isSensitiveKey(key: string): boolean {
+  const cached = SENSITIVE_KEY_CACHE.get(key);
+  if (cached !== undefined) return cached;
+
   const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, '');
-  if (SENSITIVE_KEYS_EXACT.has(normalized)) return true;
-  return SENSITIVE_KEY_PARTS.some((part) => normalized.includes(part));
+  const sensitive =
+    SENSITIVE_KEYS_EXACT.has(normalized) ||
+    SENSITIVE_KEY_PARTS.some((part) => normalized.includes(part));
+
+  if (key.length <= 64) {
+    if (SENSITIVE_KEY_CACHE.size >= SENSITIVE_KEY_CACHE_LIMIT) SENSITIVE_KEY_CACHE.clear();
+    SENSITIVE_KEY_CACHE.set(key, sensitive);
+  }
+  return sensitive;
 }
 
 // ── Sensor teks ─────────────────────────────────────────────────────────────
@@ -212,13 +232,30 @@ function countBackslashes(text: string, from: number): number {
 }
 
 /**
- * Akhir nilai string yang tanda kutip pembukanya didahului `escapeDepth` garis miring terbalik.
- * Tanda kutip di dalam nilai itu sendiri didahului tepat `2 × escapeDepth + 1` garis miring
- * (modulo satu tingkat escape); tanda kutip lain — penutup nilai ini maupun penutup string yang
- * membungkusnya — menghentikan pemindaian.
+ * Tingkat sarang sebuah tanda kutip yang didahului `run` garis miring terbalik:
+ *   0 = tanda kutip sungguhan pada teks ini (jumlah garis miring genap: semuanya berpasangan),
+ *   1 = tanda kutip di dalam string JSON (`\"`), 2 = di dalam string di dalam string (`\\\"`), dst.
+ * Jumlah ganjil berarti tanda kutipnya ter-escape; sisa `(run - 1) / 2` garis miring adalah
+ * isi string itu, yang dinilai lagi dengan cara yang sama.
  */
-function endOfEscapedString(text: string, from: number, escapeDepth: number): number {
-  const modulus = 2 * (escapeDepth + 1);
+function quoteLevel(run: number): number {
+  let level = 0;
+  for (let rest = run; rest % 2 === 1; rest = (rest - 1) / 2) level += 1;
+  return level;
+}
+
+/** Tanda kutip (beserta garis miring terbalik di depannya) untuk tingkat sarang tertentu. */
+function quoteAtLevel(level: number): string {
+  return `${'\\'.repeat(2 ** level - 1)}"`;
+}
+
+/**
+ * Akhir nilai string yang tanda kutip pembukanya berada di tingkat sarang `level`.
+ * Tanda kutip yang lebih dalam adalah isi nilai itu sendiri dan dilewati; tanda kutip
+ * setingkat (penutup nilai ini) atau lebih dangkal (penutup string yang membungkusnya)
+ * menghentikan pemindaian — tepat SEBELUM garis miring terbalik di depannya.
+ */
+function endOfEscapedString(text: string, from: number, level: number): number {
   let index = from;
   while (index < text.length) {
     const char = text.charCodeAt(index);
@@ -229,10 +266,48 @@ function endOfEscapedString(text: string, from: number, escapeDepth: number): nu
     }
     const run = countBackslashes(text, index);
     if (text.charCodeAt(index + run) === 0x22) {
-      if (run % modulus !== modulus - 1) return index;
+      if (quoteLevel(run) <= level) return index;
       index += run + 1;
     } else {
       index += run;
+    }
+  }
+  return text.length;
+}
+
+/**
+ * Akhir isi array JSON yang dibuka tepat sebelum `from`: indeks `]` penutupnya. String di
+ * dalam array (pada tingkat sarang `level`) dilompati utuh supaya `]` di dalam string tidak
+ * dianggap penutup. Bila array tidak tertutup, pemindaian berhenti di tanda kutip milik
+ * struktur di luarnya (atau di akhir teks) — tidak pernah melewatinya.
+ */
+function endOfJsonArray(text: string, from: number, level: number): number {
+  let depth = 1;
+  let index = from;
+  while (index < text.length) {
+    const char = text.charCodeAt(index);
+    if (char === 0x5b) {
+      depth += 1;
+      index += 1;
+    } else if (char === 0x5d) {
+      depth -= 1;
+      if (depth === 0) return index;
+      index += 1;
+    } else if (char === 0x22 || char === 0x5c) {
+      const run = countBackslashes(text, index);
+      if (text.charCodeAt(index + run) !== 0x22) {
+        index += run; // garis miring terbalik yang bukan bagian dari tanda kutip
+        continue;
+      }
+      if (quoteLevel(run) !== level) return index; // tanda kutip milik struktur di luar array ini
+      const stringEnd = endOfEscapedString(text, index + run + 1, level);
+      const closingRun = countBackslashes(text, stringEnd);
+      const closed =
+        text.charCodeAt(stringEnd + closingRun) === 0x22 && quoteLevel(closingRun) === level;
+      if (!closed) return stringEnd;
+      index = stringEnd + closingRun + 1;
+    } else {
+      index += 1;
     }
   }
   return text.length;
@@ -245,7 +320,9 @@ function redactJsonPairs(text: string): string {
   for (let head = JSON_PAIR_HEAD.exec(text); head !== null; head = JSON_PAIR_HEAD.exec(text)) {
     if (!isSensitiveKey(head[1] ?? '')) continue;
 
-    const keyEscape = head[2] ?? '';
+    // Tingkat sarang tanda kutip penutup kunci menentukan tingkat nilainya. (Bukan jumlah
+    // garis miringnya: `"kunci\\"` adalah kunci tingkat 0 yang namanya berakhiran `\`.)
+    const level = quoteLevel((head[2] ?? '').length);
     const valueAt = JSON_PAIR_HEAD.lastIndex;
     const valueEscape = countBackslashes(text, valueAt);
     let redacted: string | undefined;
@@ -255,20 +332,28 @@ function redactJsonPairs(text: string): string {
     if (text.charCodeAt(valueAt + valueEscape) === 0x22) {
       // Tanda kutip pembuka nilai harus setingkat dengan tanda kutip kuncinya. Kalau tidak,
       // itu tanda kutip milik struktur di luarnya (mis. penutup string JSON pembungkus).
-      if (valueEscape !== keyEscape.length) continue;
+      if (quoteLevel(valueEscape) !== level) continue;
       valueStart = valueAt + valueEscape + 1;
-      valueEnd = endOfEscapedString(text, valueStart, valueEscape);
+      valueEnd = endOfEscapedString(text, valueStart, level);
       redacted = REDACTED;
+    } else if (valueEscape === 0 && text.charCodeAt(valueAt) === 0x5b) {
+      // Array di bawah kunci rahasia (`"password":["x","y"]`): seluruh isinya diganti satu
+      // elemen string di tingkat sarang yang sama dengan kuncinya, supaya JSON tetap sah.
+      valueStart = valueAt + 1;
+      valueEnd = endOfJsonArray(text, valueStart, level);
+      if (text.slice(valueStart, valueEnd).trim() !== '') {
+        redacted = `${quoteAtLevel(level)}${REDACTED}${quoteAtLevel(level)}`;
+      }
     } else if (valueEscape === 0) {
       JSON_NUMBER.lastIndex = valueAt;
       const number = JSON_NUMBER.exec(text);
       if (number) {
         valueEnd = valueAt + number[0].length;
-        // Angka diganti STRING (dengan tingkat escape yang sama dengan kuncinya) supaya JSON tetap sah.
-        redacted = `${keyEscape}"${REDACTED}${keyEscape}"`;
+        // Angka diganti STRING di tingkat sarang yang sama dengan kuncinya supaya JSON tetap sah.
+        redacted = `${quoteAtLevel(level)}${REDACTED}${quoteAtLevel(level)}`;
       }
     }
-    if (redacted === undefined) continue; // objek, array, true/false/null: tidak ada yang disensor
+    if (redacted === undefined) continue; // objek, true/false/null: tidak ada yang disensor
 
     result += text.slice(copied, valueStart) + redacted;
     copied = valueEnd;
@@ -278,16 +363,49 @@ function redactJsonPairs(text: string): string {
 }
 
 /**
- * `kunci=nilai` (query string, form-urlencoded, conninfo libpq, atribut) dengan kunci berbau
- * rahasia — termasuk yang berawalan, mis. `reset_token=`, `new_password=`. Nilai boleh
- * diapit tanda kutip. Kunci yang bukan rahasia dilewati TANPA menelan nilainya, supaya
- * `url="…?token=abc"` tetap terperiksa.
+ * Penugasan `kunci=nilai` dan `kunci: nilai` dengan kunci berbau rahasia, di teks bebas:
+ *  - `=`: query string, form-urlencoded, conninfo libpq, atribut — termasuk kunci berawalan
+ *    (`reset_token=`, `new_password=`). Nilai tanpa kutip berakhir di spasi, `&`, atau `#`.
+ *  - `:`: header apa pun (`X-Auth-Token: x`), YAML/prosa (`password: x`), dan hasil
+ *    `util.inspect` (`{ access_token: 'x' }`, `'set-cookie': [ … ]`). Nilai tanpa kutip
+ *    disensor sampai akhir baris, karena isinya boleh memuat spasi dan koma.
+ * Nilai berkutip disensor isinya saja. Kunci yang bukan rahasia dilewati TANPA menelan
+ * nilainya, supaya `url="…?token=abc"` tetap terperiksa.
+ *
+ * Pemindaian manual (bukan regex): cari pemisah, lalu baca kunci MUNDUR paling banyak
+ * `MAX_ASSIGNMENT_KEY_LENGTH` karakter. Jadi biayanya linear dan kunci tetap dikenali walau
+ * didahului deretan karakter kunci yang sangat panjang.
  */
-const ASSIGNMENT_KEY = /(?<![A-Za-z0-9_.-])([A-Za-z0-9_.-]{1,64})=/g;
+const MAX_ASSIGNMENT_KEY_LENGTH = 64;
+
 const ASSIGNMENT_VALUE: Record<TextMode, RegExp> = {
   text: /"[^"\n]*"?|'[^'\n]*'?|[^&\s"'#]+/y,
   json: /\\"(?:[^"\\]|\\\\)*(?:\\")?|'[^'"\\]*'?|(?:[^&\s"'#\\]|\\\\)+/y,
 };
+const COLON_VALUE: Record<TextMode, RegExp> = {
+  text: /"[^"\n]*"?|'[^'\n]*'?|[^\r\n]+/y,
+  // Baris baru di ragam JSON tertulis sebagai `\n` / `\r`; escape lain adalah isi nilai.
+  json: /\\"(?:[^"\\]|\\\\)*(?:\\")?|'[^'"\\]*'?|(?:[^"\\]|\\[^nr])+/y,
+};
+
+/**
+ * `berkas.ts:42:7`, `host:6379`: titik dua yang langsung diikuti angka adalah nomor baris
+ * atau port, bukan penugasan. Tanpa pengecualian ini frame stack dari berkas bernama
+ * `token.ts` atau `password.service.ts` ikut tersensor.
+ */
+const LINE_OR_PORT_NUMBER = /\d{1,7}(?::\d{1,7})?(?![A-Za-z0-9_-])/y;
+
+/** Karakter nama kunci: huruf, angka, `_`, `.`, `-`. */
+function isKeyCharCode(code: number): boolean {
+  return (
+    (code >= 0x61 && code <= 0x7a) ||
+    (code >= 0x41 && code <= 0x5a) ||
+    (code >= 0x30 && code <= 0x39) ||
+    code === 0x5f ||
+    code === 0x2e ||
+    code === 0x2d
+  );
+}
 
 /** Ganti isi nilai, pertahankan tanda kutip pengapitnya (bila ada). */
 function redactAssignmentValue(value: string): string {
@@ -298,21 +416,37 @@ function redactAssignmentValue(value: string): string {
 }
 
 function redactAssignments(text: string, mode: TextMode): string {
-  const valuePattern = ASSIGNMENT_VALUE[mode];
   let result = '';
   let copied = 0;
-  ASSIGNMENT_KEY.lastIndex = 0;
-  for (let key = ASSIGNMENT_KEY.exec(text); key !== null; key = ASSIGNMENT_KEY.exec(text)) {
-    if (!isSensitiveKey(key[1] ?? '')) continue;
+  for (let index = 0; index < text.length; index += 1) {
+    const separator = text.charCodeAt(index);
+    const isColon = separator === 0x3a;
+    if (!isColon && separator !== 0x3d) continue;
 
-    const valueStart = ASSIGNMENT_KEY.lastIndex;
+    // Kunci berada tepat sebelum pemisah; untuk `:` boleh diapit kutip tunggal ('kunci': …).
+    let keyEnd = index;
+    if (isColon && keyEnd - 1 >= copied && text.charCodeAt(keyEnd - 1) === 0x27) keyEnd -= 1;
+    const floor = Math.max(copied, keyEnd - MAX_ASSIGNMENT_KEY_LENGTH);
+    let keyStart = keyEnd;
+    while (keyStart > floor && isKeyCharCode(text.charCodeAt(keyStart - 1))) keyStart -= 1;
+    if (keyStart === keyEnd || !isSensitiveKey(text.slice(keyStart, keyEnd))) continue;
+
+    let valueStart = index + 1;
+    if (isColon) {
+      LINE_OR_PORT_NUMBER.lastIndex = valueStart;
+      if (LINE_OR_PORT_NUMBER.test(text)) continue;
+      while (text.charCodeAt(valueStart) === 0x20 || text.charCodeAt(valueStart) === 0x09) {
+        valueStart += 1;
+      }
+    }
+    const valuePattern = (isColon ? COLON_VALUE : ASSIGNMENT_VALUE)[mode];
     valuePattern.lastIndex = valueStart;
     const value = valuePattern.exec(text);
     if (!value) continue;
 
     result += text.slice(copied, valueStart) + redactAssignmentValue(value[0]);
     copied = valueStart + value[0].length;
-    ASSIGNMENT_KEY.lastIndex = copied;
+    index = copied - 1;
   }
   return copied === 0 ? text : result + text.slice(copied);
 }
@@ -348,9 +482,34 @@ export function clipForLog(text: string): string {
   return `${text.slice(0, MAX_LOGGED_STRING_LENGTH)}… [dipotong dari ${text.length} karakter]`;
 }
 
-/** Teks yang aman untuk log: dipotong bila terlalu panjang, lalu disensor. */
+/**
+ * Ekor jendela sensor yang selalu dibuang. Rahasia yang terpotong oleh ujung jendela tinggal
+ * sepotong awalan, bisa terlalu pendek untuk dikenali polanya (token Telegram butuh ±46
+ * karakter; kredensial URL butuh `@`-nya). Awalan seperti itu selalu berada di ekor ini.
+ */
+const CLIP_GUARD = 512;
+
+/** Jendela yang disensor untuk teks panjang: batas potong + ruang pandang + ekor yang dibuang. */
+const CLIP_WINDOW = MAX_LOGGED_STRING_LENGTH + 2 * CLIP_GUARD;
+
+/**
+ * Teks yang aman untuk log: disensor, lalu dipotong bila terlalu panjang.
+ *
+ * Urutannya penting. Kalau dipotong dulu, rahasia yang kebetulan melintasi batas potong
+ * tinggal sepotong awalan yang tidak dikenali polanya, lalu lolos ke log. Karena itu yang
+ * disensor adalah jendela yang LEBIH panjang dari batas, dan ekor jendela itu dibuang:
+ *  - rahasia yang melintasi batas potong terlihat utuh oleh sensor (ada ruang `CLIP_GUARD`);
+ *  - rahasia yang terpotong ujung jendela berada di ekor yang dibuang — juga bila sensor di
+ *    bagian depan memendekkan teks sehingga ekor itu bergeser ke dalam batas potong.
+ * (Seluruh teks tidak disensor supaya biaya untuk teks raksasa tetap terbatas.)
+ */
 export function sanitizeText(text: string): string {
-  return scrubSecretsInText(clipForLog(text));
+  if (text.length <= MAX_LOGGED_STRING_LENGTH) return scrubSecretsInText(text);
+
+  const scrubbed = scrubSecretsInText(text.slice(0, CLIP_WINDOW));
+  const safeLength = text.length > CLIP_WINDOW ? scrubbed.length - CLIP_GUARD : scrubbed.length;
+  const visible = scrubbed.slice(0, Math.max(0, Math.min(MAX_LOGGED_STRING_LENGTH, safeLength)));
+  return `${visible}… [dipotong dari ${text.length} karakter]`;
 }
 
 // ── Sensor objek ────────────────────────────────────────────────────────────
@@ -465,8 +624,10 @@ function sqlStateOf(error: Error): string | undefined {
  *  - Error query Drizzle menulis seluruh nilai parameter di pesannya ("Failed query: …" lalu
  *    "params: nilai1,nilai2"), jadi pesannya disusun ulang hanya dari teks SQL (yang memakai
  *    placeholder `$1`, bukan nilai).
- *  - Error Postgres kelas 22 (data exception, mis. 22P02) mengulang nilai yang ditolak:
- *    `invalid input syntax for type uuid: "<nilai>"`. Bagian setelah `: "` dibuang.
+ *  - Error Postgres kelas 22 (data exception) mengulang nilai yang ditolak di dalam tanda
+ *    kutip ganda, di akhir pesan (22P02: `invalid input syntax for type uuid: "<nilai>"`)
+ *    maupun di awal (22003: `value "<nilai>" is out of range for type integer`). Semua dari
+ *    tanda kutip pertama sampai yang terakhir diganti — nilainya sendiri bisa memuat kutip.
  */
 export function describeError(error: Error): string {
   const candidate = error as Error & { query?: unknown; params?: unknown };
@@ -474,8 +635,14 @@ export function describeError(error: Error): string {
     return sanitizeText(`${QUERY_HEAD}${candidate.query}`);
   }
   if (sqlStateOf(error)?.startsWith('22')) {
-    const valueAt = error.message.indexOf(': "');
-    if (valueAt !== -1) return sanitizeText(`${error.message.slice(0, valueAt)}: ${REDACTED}`);
+    const { message } = error;
+    const firstQuote = message.indexOf('"');
+    if (firstQuote !== -1) {
+      const lastQuote = message.lastIndexOf('"');
+      // Hanya satu tanda kutip (pesan terpotong): buang sampai akhir.
+      const tail = lastQuote > firstQuote ? message.slice(lastQuote + 1) : '';
+      return sanitizeText(`${message.slice(0, firstQuote)}${REDACTED}${tail}`);
+    }
   }
   return sanitizeText(error.message);
 }

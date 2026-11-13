@@ -296,6 +296,137 @@ describe('pasangan JSON di dalam teks', () => {
 
     expect(JSON.parse(scrubbed)).toEqual({ credentials: { user: 'u', pass: REDACTED }, a: 1 });
   });
+
+  it('array di bawah kunci rahasia diganti satu elemen tersensor, di tingkat escape berapa pun', () => {
+    const payload = {
+      password: ['satu-rahasia', 'dua "kutip" ] kurung', 3],
+      tokens: [{ nilai: 'objek-rahasia' }, ['bersarang-rahasia']],
+      daftar: ['bukan', 'sensitif'],
+      kosong: { token: [] },
+    };
+    const expected = {
+      password: [REDACTED],
+      tokens: [REDACTED],
+      daftar: ['bukan', 'sensitif'],
+      kosong: { token: [] },
+    };
+    const raw = JSON.stringify(payload);
+    const once = JSON.stringify({ body: raw });
+
+    expect(JSON.parse(scrubSecretsInText(raw))).toEqual(expected);
+    const scrubbedOnce = JSON.parse(scrubSecretsInText(once)) as { body: string };
+    expect(JSON.parse(scrubbedOnce.body)).toEqual(expected);
+    const inLine = JSON.parse(scrubSecretsInJsonLine(JSON.stringify({ msg: raw }))) as {
+      msg: string;
+    };
+    expect(JSON.parse(inLine.msg)).toEqual(expected);
+    for (const text of [scrubSecretsInText(raw), scrubSecretsInText(once)]) {
+      expect(text).not.toMatch(/rahasia|kutip|bersarang/);
+    }
+  });
+
+  it('array yang tidak tertutup disensor sampai batas string pembungkusnya saja', () => {
+    const line = JSON.stringify({ msg: '{"password":["rahasia-terpotong', next: 'tetap' });
+
+    const parsed = JSON.parse(scrubSecretsInJsonLine(line)) as { msg: string; next: string };
+
+    expect(parsed.msg).toBe(`{"password":["${REDACTED}"`);
+    expect(parsed.next).toBe('tetap');
+  });
+
+  it('kunci struktural yang namanya berakhiran garis miring terbalik tidak merusak baris log', () => {
+    for (const value of [1234, ['a', 2], 'teks', [1, 'x']]) {
+      for (const slashes of [1, 2, 3]) {
+        const key = `password${'\\'.repeat(slashes)}`;
+        const line = JSON.stringify({ level: 'info', [key]: value, next: 'tetap' });
+
+        const scrubbed = scrubSecretsInJsonLine(line);
+
+        const parsed = JSON.parse(scrubbed) as Record<string, unknown>;
+        expect(Object.keys(parsed), line).toEqual(['level', key, 'next']);
+        expect(parsed.next).toBe('tetap');
+      }
+    }
+  });
+});
+
+describe('kunci: nilai', () => {
+  it('menyensor header apa pun yang namanya berbau rahasia, sampai akhir baris', () => {
+    expectScrubbed(
+      'X-Auth-Token: nilai rahasia berspasi\nHost: contoh.id',
+      `X-Auth-Token: ${REDACTED}\nHost: contoh.id`,
+    );
+    expectScrubbed(
+      'x-telegram-bot-api-secret-token: abc123',
+      `x-telegram-bot-api-secret-token: ${REDACTED}`,
+    );
+  });
+
+  it('menyensor gaya YAML/prosa, dengan atau tanpa spasi setelah titik dua', () => {
+    expectScrubbed('password: dua kata, tiga\nuser: budi', `password: ${REDACTED}\nuser: budi`);
+    expectScrubbed('gagal karena token:abc123def', `gagal karena token:${REDACTED}`);
+    expectScrubbed('sid:   nilai-sesi', `sid:   ${REDACTED}`);
+  });
+
+  it('hasil util.inspect: hanya isi nilai berkutip yang diganti, sisanya tetap terbaca', () => {
+    expectScrubbed(
+      "{ access_token: 'nilai-rahasia', expires_in: 3600, scope: 'baca' }",
+      `{ access_token: '${REDACTED}', expires_in: 3600, scope: 'baca' }`,
+    );
+    expectScrubbed(
+      `{ 'client-secret': 'kunci-rahasia', refreshToken: "token rahasia", id: 7 }`,
+      `{ 'client-secret': '${REDACTED}', refreshToken: "${REDACTED}", id: 7 }`,
+    );
+    expectScrubbed(
+      "{ password: [ 'a-rahasia', 'b-rahasia' ], user: 'budi' }",
+      `{ password: ${REDACTED}`,
+    );
+  });
+
+  it('nomor baris, port, dan jam bukan penugasan: stack dan alamat tidak dirusak', () => {
+    for (const text of [
+      '    at verifyToken (/app/src/auth/token.service.ts:42:7)',
+      '    at hash (C:\\app\\src\\password.ts:12:3)',
+      'menyambung ke secret-store.internal:8443/v1 dan cookie-cache:6379',
+      'file:///app/dist/session-token.repo.js:101',
+    ]) {
+      expectScrubbed(text, text);
+    }
+    // Pembanding: kunci yang sama diikuti teks (bukan angka) tetap disensor.
+    expectScrubbed('jadwal reset-password: besok pagi', `jadwal reset-password: ${REDACTED}`);
+    expectScrubbed('kode pin:1234a', `kode pin:${REDACTED}`);
+  });
+
+  it('kunci yang bukan rahasia tidak disentuh', () => {
+    for (const text of [
+      'status: aktif, pengguna: budi, percobaan: 3',
+      "{ user: 'budi', role: 'cs', side: 'kiri' }",
+      'Catatan: pelanggan minta dihubungi pukul 10:30',
+    ]) {
+      expectScrubbed(text, text);
+    }
+  });
+
+  it('pasangan JSON struktural tidak terpengaruh aturan titik dua', () => {
+    const line = JSON.stringify({ level: 'info', author: 'x', note: 'isi: biasa', count: 3 });
+
+    expect(scrubSecretsInJsonLine(line)).toBe(line);
+  });
+});
+
+describe('kunci panjang', () => {
+  it('kunci rahasia tetap dikenali walau didahului deretan karakter kunci yang sangat panjang', () => {
+    const prefix = 'a'.repeat(500);
+
+    expectScrubbed(`${prefix}_token=nilai-rahasia&x=1`, `${prefix}_token=${REDACTED}&x=1`);
+    expectScrubbed(`${prefix}-password: nilai rahasia`, `${prefix}-password: ${REDACTED}`);
+  });
+
+  it('yang dinilai hanya 64 karakter terakhir sebelum pemisah', () => {
+    const text = `token${'a'.repeat(64)}=bukan-rahasia`;
+
+    expectScrubbed(text, text);
+  });
 });
 
 describe('sifat umum', () => {
@@ -358,6 +489,13 @@ describe('sifat umum', () => {
     'abc',
     '42',
     '\u2028',
+    '[',
+    ']',
+    'token: ',
+    "password: '",
+    'sid:',
+    '\r',
+    '\t',
   ];
 
   it('baris log SELALU tetap JSON yang sah dengan kunci tingkat atas yang sama (2.000 masukan acak)', () => {
@@ -368,7 +506,7 @@ describe('sifat umum', () => {
       for (let part = 0; part < length; part += 1) {
         text += FRAGMENTS[Math.floor(random() * FRAGMENTS.length)] ?? '';
       }
-      const nested = JSON.stringify({ k: text, password: text });
+      const nested = JSON.stringify({ k: text, password: [text, 5], pin: 1234, token: text });
       const line = JSON.stringify({ level: 'info', a: text, n: [text, 7], raw: nested, msg: text });
 
       const scrubbed = scrubSecretsInJsonLine(line);
@@ -404,6 +542,63 @@ describe('batas panjang', () => {
     expect(sanitizeText(`${long} token=rahasia-di-ekor`)).not.toContain('rahasia-di-ekor');
   });
 
+  /** Teks pengisi tanpa pola rahasia dan tanpa huruf (batas kata tetap ada), tepat `length` karakter. */
+  const filler = (length: number): string => '. '.repeat(Math.ceil(length / 2)).slice(0, length);
+  const metaToken = `EAAG${'a1B2c3D4'.repeat(6)}`;
+  const telegramToken = '123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw';
+
+  it('rahasia yang melintasi batas potong tidak menyisakan awalan, di posisi mana pun', () => {
+    for (const secret of [
+      metaToken,
+      telegramToken,
+      'Bearer abcdefghijklmnop',
+      'blsn_live_abcdefgh',
+    ]) {
+      for (let before = 1; before < secret.length; before += 1) {
+        const text = `${filler(MAX_LOGGED_STRING_LENGTH - before)}${secret} ${filler(3_000)}`;
+
+        const output = sanitizeText(text);
+
+        // 8 karakter terakhir rahasia tidak pernah berada di sisi yang terlihat…
+        expect(output, `${secret} / ${before}`).not.toContain(secret.slice(-8));
+        // …dan bagian yang terlihat tidak memuat awalan rahasianya (≥ 12 karakter).
+        const visibleSecret = secret.slice(secret.indexOf(':') + 1).slice(0, 12);
+        if (visibleSecret.length === 12 && !secret.startsWith('Bearer')) {
+          expect(output, `${secret} / ${before}`).not.toContain(visibleSecret);
+        }
+        expect(output).toContain('dipotong dari');
+      }
+    }
+  });
+
+  it('rahasia di ujung jendela sensor tidak bergeser masuk saat teks di depannya memendek', () => {
+    // Nilai berkutip 3.000 karakter disensor jadi belasan karakter, sehingga semua teks
+    // sesudahnya bergeser ±3.000 karakter ke depan — termasuk ekor jendela sensor.
+    const shrinking = `password="${'p'.repeat(3_000)}" `;
+    for (const secret of [metaToken, telegramToken, 'postgres://balesin:sandi-di-ujung-jendela']) {
+      for (const cutAt of [1, 5, 10, 21, 29, 40]) {
+        const windowLength = MAX_LOGGED_STRING_LENGTH + 1_024;
+        const before = filler(windowLength - shrinking.length - cutAt);
+        // `cutAt` karakter pertama rahasia berada di dalam jendela, sisanya di luar.
+        const text = `${shrinking}${before}${secret}@db ${filler(2_000)}`;
+
+        const output = sanitizeText(text);
+
+        expect(output, `${secret} / ${cutAt}`).not.toContain(secret.slice(0, Math.max(cutAt, 4)));
+        expect(output).not.toContain('ppp');
+      }
+    }
+  });
+
+  it('teks sedikit di atas batas (seluruhnya masuk jendela) tetap disensor utuh lalu dipotong', () => {
+    const text = `${filler(MAX_LOGGED_STRING_LENGTH - 5)}${metaToken} ekor`;
+
+    const output = sanitizeText(text);
+
+    expect(output).not.toContain('EAAG');
+    expect(output).toContain(`dipotong dari ${text.length} karakter`);
+  });
+
   it('redactSecrets memotong nilai string di kedalaman berapa pun', () => {
     const long = 'isi pesan pelanggan '.repeat(5_000);
 
@@ -425,6 +620,17 @@ describe('waktu sensor linear terhadap panjang teks', () => {
   const LIMIT_MS = 1_000;
 
   const repeatTo = (unit: string): string => unit.repeat(Math.ceil(SIZE / unit.length));
+
+  /** Puluhan ribu nama kunci yang semuanya berbeda: cache hasil pemeriksaan kunci tidak membantu. */
+  function hostileDistinctKeys(): string {
+    const parts: string[] = [];
+    for (let index = 0, length = 0; length < SIZE; index += 1) {
+      const part = `k${index.toString(36)}: v${index.toString(36)}=x `;
+      parts.push(part);
+      length += part.length;
+    }
+    return parts.join('');
+  }
 
   const hostile: Array<[label: string, text: string]> = [
     ['"Failed query: " berulang', repeatTo('Failed query: ')],
@@ -460,6 +666,19 @@ describe('waktu sensor linear terhadap panjang teks', () => {
     ['awalan token Meta berulang', repeatTo('EAA')],
     ['awalan API key berulang', repeatTo('blsn_a_')],
     ['sha256= berulang', repeatTo('sha256=')],
+    ['titik dua berulang', repeatTo(':')],
+    ['kunci pendek + titik dua berulang', repeatTo('ab:')],
+    ['kunci 64 karakter + titik dua berulang', repeatTo(`${'k'.repeat(64)}:`)],
+    ['token: berulang (satu baris)', repeatTo('token: ')],
+    ['token: berulang (banyak baris)', repeatTo('token:\n')],
+    ['token: diikuti spasi panjang', `token:${repeatTo(' ')}`],
+    ["token: ' berulang", repeatTo("token: '")],
+    ['token:123 berulang (mirip nomor baris)', repeatTo('token:123 ')],
+    ['banyak kunci berbeda (cache kunci penuh)', hostileDistinctKeys()],
+    ['array rahasia terbuka berulang', repeatTo('"password":[')],
+    ['array rahasia berisi string terbuka', repeatTo('"password":["')],
+    ['array rahasia bersarang dalam', `"password":${repeatTo('[')}`],
+    ['array rahasia + garis miring terbalik', `"password":["${repeatTo('\\')}`],
     ['spasi saja', repeatTo(' ')],
     ['teks biasa', repeatTo('pelanggan bertanya soal tagihan bulan ini. ')],
   ];

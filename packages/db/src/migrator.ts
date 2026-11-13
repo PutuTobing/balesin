@@ -77,10 +77,20 @@ export function describeMigrationFailure(error: unknown): string {
   return typeof code === 'string' && !message.includes(code) ? `${message} (${code})` : message;
 }
 
-/** Baris pertama pesan; untuk error data (kelas 22) nilai yang diulang Postgres ikut dibuang. */
+/**
+ * Baris pertama pesan. Untuk error data (kelas 22) nilai yang diulang Postgres ikut dibuang,
+ * baik di akhir pesan (`…for type uuid: "<nilai>"`) maupun di tengah
+ * (`value "<nilai>" is out of range…`).
+ */
 function firstLine(message: unknown, sqlState = ''): string {
   if (typeof message !== 'string') return '';
   const [line = ''] = message.split('\n');
-  const valueAt = sqlState.startsWith('22') ? line.indexOf(': "') : -1;
-  return valueAt === -1 ? line : line.slice(0, valueAt);
+  if (!sqlState.startsWith('22')) return line;
+
+  const trailingValueAt = line.indexOf(': "');
+  if (trailingValueAt !== -1) return line.slice(0, trailingValueAt);
+  const firstQuote = line.indexOf('"');
+  if (firstQuote === -1) return line;
+  const lastQuote = line.lastIndexOf('"');
+  return `${line.slice(0, firstQuote)}…${lastQuote > firstQuote ? line.slice(lastQuote + 1) : ''}`;
 }

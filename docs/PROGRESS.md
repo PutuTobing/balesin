@@ -15,7 +15,7 @@
 - Worker: kerangka BullMQ (antrian `system`).
 - Web: shell desktop (rail 64px) / HP (navigasi bawah), design token → CSS variables, font
   self-host, tema Terang/Gelap/Ikuti sistem tanpa inline script, keadaan kosong/memuat/gagal/404.
-- Tes: Vitest (572 tes unit + integrasi terhadap Postgres/Redis sungguhan) dan Playwright
+- Tes: Vitest (628 tes unit + integrasi terhadap Postgres/Redis sungguhan) dan Playwright
   (123 tes E2E di 390px dan 1440px). Skrip screenshot: `pnpm screenshots`.
 - CI GitHub Actions + Dependabot; penjaga library WhatsApp tidak resmi (`pnpm check:deps`).
 - Hook Claude Code: Prettier + typecheck otomatis setelah setiap edit.

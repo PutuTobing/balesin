@@ -141,6 +141,14 @@ describe('describeMigrationFailure', () => {
     expect(describeMigrationFailure(new Error('gagal', { cause: pgError }))).toBe(
       'invalid input syntax for type uuid (SQLSTATE 22P02)',
     );
+
+    const rangeError = Object.assign(
+      new Error('value "99999999999-nilai-rahasia" is out of range for type integer'),
+      { severity: 'ERROR', code: '22003' },
+    );
+    expect(describeMigrationFailure(rangeError)).toBe(
+      'value … is out of range for type integer (SQLSTATE 22003)',
+    );
   });
 
   it('error query tanpa penyebab Postgres tidak mencetak pesannya sama sekali', () => {

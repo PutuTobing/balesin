@@ -269,6 +269,23 @@ describe('redactSecrets', () => {
     );
   });
 
+  it('error Postgres kelas 22: nilai di awal/tengah pesan dan nilai yang memuat kutip ikut hilang', () => {
+    const dataError = (message: string, code: string) =>
+      Object.assign(new Error(message), { severity: 'ERROR', code });
+
+    expect(
+      describeError(dataError('value "99999999999" is out of range for type integer', '22003')),
+    ).toBe(`value ${REDACTED} is out of range for type integer`);
+    expect(
+      describeError(dataError('invalid input syntax for type integer: "12"rahasia"34"', '22P02')),
+    ).toBe(`invalid input syntax for type integer: ${REDACTED}`);
+    expect(
+      describeError(dataError('date/time field value out of range: "2026-13-45', '22008')),
+    ).toBe(`date/time field value out of range: ${REDACTED}`);
+    // Tanpa tanda kutip tidak ada nilai yang diulang: pesan dibiarkan.
+    expect(describeError(dataError('division by zero', '22012'))).toBe('division by zero');
+  });
+
   it('tahan terhadap referensi melingkar, objek sangat dalam, dan getter yang melempar', () => {
     const circular: Record<string, unknown> = { name: 'a' };
     circular.self = circular;

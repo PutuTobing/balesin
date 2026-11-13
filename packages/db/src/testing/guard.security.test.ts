@@ -3,9 +3,10 @@
  * alat bantu tes yang MENGHAPUS database tidak boleh bisa mengenai database non-tes.
  *
  * Cara membaca berkas ini:
- *  - `it(...)` biasa = penjaga regresi: perilaku ini SUDAH aman dan harus tetap begitu.
- *  - `it(...)` = CELAH YANG MASIH TERBUKA. Isi tesnya menyatakan perilaku yang BENAR dan
- *    saat ini memang gagal. Setelah celahnya diperbaiki, hapus `.fails`-nya.
+ *  - Semua tes di sini penjaga regresi: perilakunya SUDAH aman dan harus tetap begitu. Tes R8
+ *    ditulis saat celahnya masih terbuka dan kini mengunci perbaikannya.
+ *  - Pola untuk temuan baru: tulis tesnya sebagai `it.fails(...)` yang menyatakan perilaku yang
+ *    BENAR; setelah celahnya ditutup, hapus `.fails`-nya. Saat ini tidak ada `it.fails` di sini.
  *
  * Semua tes hanya menyentuh server Postgres tes lokal (`DATABASE_URL_TEST`) atau alamat yang
  * sengaja tidak bisa dihubungi (127.0.0.1:1).
