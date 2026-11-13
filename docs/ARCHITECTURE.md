@@ -29,7 +29,9 @@ balesin/
 │  ├─ worker/     Proses antrian BullMQ
 │  └─ web/        React + Vite PWA
 ├─ packages/
-│  └─ shared/     Skema Zod, tipe, konstanta (dipakai api & web)
+│  ├─ shared/     Skema Zod, tipe, konstanta, design token (dipakai api, worker & web)
+│  ├─ core/       Khusus server: logger + redaksi, env, AppError, util Redis/antrian
+│  └─ db/         Skema Drizzle, migrasi, klien Postgres (dipakai api & worker)
 ├─ deploy/
 │  ├─ docker-compose.yml
 │  ├─ Caddyfile           (mode Caddy bawaan)
