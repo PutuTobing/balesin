@@ -1,6 +1,7 @@
 import { healthResponseSchema, readyResponseSchema } from '@balesin/shared';
 import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod';
 
+import { PUBLIC } from '../../http/route-access';
 import type { ReadinessService } from './health.service';
 
 export interface HealthRoutesOptions {
@@ -18,13 +19,20 @@ export const HEALTH_PATHS = ['/health', '/ready'] as const;
  * status `ok`/`down` per dependensi.
  */
 export const healthRoutes: FastifyPluginCallbackZod<HealthRoutesOptions> = (app, options, done) => {
-  app.get('/health', { schema: { response: { 200: healthResponseSchema } } }, (_request, reply) => {
-    void reply.send({ status: 'ok' });
-  });
+  app.get(
+    '/health',
+    { config: { access: PUBLIC }, schema: { response: { 200: healthResponseSchema } } },
+    (_request, reply) => {
+      void reply.send({ status: 'ok' });
+    },
+  );
 
   app.get(
     '/ready',
-    { schema: { response: { 200: readyResponseSchema, 503: readyResponseSchema } } },
+    {
+      config: { access: PUBLIC },
+      schema: { response: { 200: readyResponseSchema, 503: readyResponseSchema } },
+    },
     async (_request, reply) => {
       const result = await options.readiness.check();
       return reply.status(result.status === 'ok' ? 200 : 503).send(result);

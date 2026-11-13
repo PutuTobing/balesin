@@ -24,6 +24,12 @@ export const users = pgTable(
     emailVerifiedAt: timestamptz('email_verified_at'),
     /** Terisi = akun dinonaktifkan (tidak bisa masuk). Pengguna tidak dihapus agar audit utuh. */
     disabledAt: timestamptz('disabled_at'),
+    /**
+     * Terisi dan belum lewat = akun dikunci sementara karena gagal masuk berulang
+     * (SECURITY.md §1: 15 menit setelah 5 kali gagal). Hitungan gagalnya ada di Redis.
+     */
+    lockedUntil: timestamptz('locked_until'),
+    lastLoginAt: timestamptz('last_login_at'),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },

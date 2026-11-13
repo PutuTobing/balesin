@@ -4,6 +4,9 @@
  * secara manual.
  */
 export * from './audit-logs';
+export * from './email-settings';
+export * from './installation';
+export * from './organization-logos';
 export * from './organizations';
 export * from './user-sessions';
 export * from './users';

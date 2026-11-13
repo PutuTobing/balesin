@@ -9,6 +9,8 @@ export interface AppErrorOptions {
   details?: ErrorDetail[];
   /** Penyebab asli — hanya masuk log, tidak pernah dikirim ke klien. */
   cause?: unknown;
+  /** Untuk `RATE_LIMITED`: berapa detik lagi boleh mencoba (dikirim sebagai header `Retry-After`). */
+  retryAfterSeconds?: number;
 }
 
 /**
@@ -22,6 +24,7 @@ export class AppError extends Error {
   readonly code: ErrorCode;
   readonly statusCode: number;
   readonly details?: ErrorDetail[];
+  readonly retryAfterSeconds?: number;
 
   constructor(code: ErrorCode, options: AppErrorOptions = {}) {
     super(options.message ?? ERROR_MESSAGES[code], { cause: options.cause });
@@ -29,5 +32,8 @@ export class AppError extends Error {
     this.code = code;
     this.statusCode = options.statusCode ?? ERROR_STATUS[code];
     if (options.details) this.details = options.details;
+    if (options.retryAfterSeconds !== undefined) {
+      this.retryAfterSeconds = Math.max(1, Math.ceil(options.retryAfterSeconds));
+    }
   }
 }

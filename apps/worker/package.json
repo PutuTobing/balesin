@@ -15,8 +15,12 @@
     "@balesin/db": "workspace:*",
     "@balesin/shared": "workspace:*",
     "bullmq": "6.7.2",
+    "drizzle-orm": "catalog:",
     "ioredis": "catalog:",
+    "nodemailer": "10.5.0",
+    "pg": "catalog:",
     "pino": "catalog:",
+    "uuid": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {

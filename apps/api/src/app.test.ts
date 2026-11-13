@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { DEFAULT_BODY_LIMIT_BYTES } from './app';
-import { buildTestApp, TEST_APP_ORIGIN, type TestApp } from './testing/build-test-app';
+import { buildTestApp, TEST_APP_ORIGIN, TEST_ROUTE, type TestApp } from './testing/build-test-app';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -18,6 +18,7 @@ async function setup(options: Parameters<typeof buildTestApp>[0] = {}): Promise<
   app.post(
     '/__tes/pengguna/:id',
     {
+      ...TEST_ROUTE,
       schema: {
         params: z.object({ id: z.uuid() }),
         querystring: z.object({ halaman: z.coerce.number().int().min(1).default(1) }),
@@ -37,26 +38,26 @@ async function setup(options: Parameters<typeof buildTestApp>[0] = {}): Promise<
         passwordHash: 'hash-yang-tidak-boleh-bocor',
       }),
   );
-  app.get('/__tes/galat-internal', () => {
+  app.get('/__tes/galat-internal', TEST_ROUTE, () => {
     throw Object.assign(
       new Error('query gagal ke postgres://balesin:sandi-internal@db:5432/balesin'),
       { detail: 'Failing row contains (rahasia-baris)' },
     );
   });
-  app.get('/__tes/galat-aplikasi', () => {
+  app.get('/__tes/galat-aplikasi', TEST_ROUTE, () => {
     throw new AppError('CONFLICT', {
       message: 'Email sudah dipakai pengguna lain.',
       details: [{ location: 'body', field: 'email', message: 'Email sudah dipakai.' }],
       cause: new Error('duplicate key (penyebab-internal)'),
     });
   });
-  app.get('/__tes/terlarang', () => {
+  app.get('/__tes/terlarang', TEST_ROUTE, () => {
     throw new AppError('FORBIDDEN');
   });
-  app.get('/__tes/galat-pustaka', () => {
+  app.get('/__tes/galat-pustaka', TEST_ROUTE, () => {
     throw Object.assign(new Error('Too Many Requests from upstream-internal'), { statusCode: 429 });
   });
-  app.get('/__tes/galat-fastify', () => {
+  app.get('/__tes/galat-fastify', TEST_ROUTE, () => {
     throw Object.assign(new Error('Payload Too Large: rincian-internal-fastify'), {
       code: 'FST_ERR_CTP_BODY_TOO_LARGE',
       statusCode: 413,
@@ -64,10 +65,10 @@ async function setup(options: Parameters<typeof buildTestApp>[0] = {}): Promise<
   });
   app.get(
     '/__tes/respons-rusak',
-    { schema: { response: { 200: z.object({ jumlah: z.number() }) } } },
+    { ...TEST_ROUTE, schema: { response: { 200: z.object({ jumlah: z.number() }) } } },
     () => Promise.resolve({ jumlah: 'bukan angka' } as unknown as { jumlah: number }),
   );
-  app.get('/__tes/ip', (request) => Promise.resolve({ ip: request.ip }));
+  app.get('/__tes/ip', TEST_ROUTE, (request) => Promise.resolve({ ip: request.ip }));
 
   return current;
 }
@@ -467,7 +468,7 @@ describe('CORS', () => {
 
     expect(response.headers['access-control-allow-origin']).toBe(TEST_APP_ORIGIN);
     expect(response.headers['access-control-allow-credentials']).toBe('true');
-    expect(response.headers['access-control-expose-headers']).toBe('x-request-id');
+    expect(response.headers['access-control-expose-headers']).toBe('x-request-id, retry-after');
   });
 
   it('origin lain tidak mendapat satu pun header izin CORS', async () => {

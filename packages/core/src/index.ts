@@ -1,11 +1,14 @@
 /**
  * @balesin/core — kode bersama KHUSUS SERVER (api dan worker): logger + redaksi rahasia,
- * validasi env, error aplikasi, Redis, penutupan rapi, definisi antrian.
+ * validasi env, error aplikasi, kriptografi (kotak rahasia AES-256-GCM), klien SMTP, Redis,
+ * penutupan rapi, definisi antrian.
  * Boleh memakai modul Node; JANGAN diimpor dari web (pakai `@balesin/shared`).
  */
+export * from './crypto';
 export * from './env';
 export * from './errors';
 export * from './logger';
+export * from './mail';
 export * from './queues';
 export * from './redact';
 export * from './redis';

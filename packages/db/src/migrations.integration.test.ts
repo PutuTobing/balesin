@@ -32,10 +32,18 @@ describe('migrasi dari nol', () => {
     expect(await publicTables()).toEqual([]);
   });
 
-  it('membuat keempat tabel fondasi dan enum peran', async () => {
+  it('membuat semua tabel dan enum peran', async () => {
     await runMigrations(database.url);
 
-    expect(await publicTables()).toEqual(['audit_logs', 'organizations', 'user_sessions', 'users']);
+    expect(await publicTables()).toEqual([
+      'audit_logs',
+      'email_settings',
+      'installation',
+      'organization_logos',
+      'organizations',
+      'user_sessions',
+      'users',
+    ]);
 
     const { rows: roles } = await client.query<{ enumlabel: string }>(
       `select e.enumlabel from pg_enum e
@@ -60,14 +68,15 @@ describe('migrasi dari nol', () => {
       rows.filter((row) => row.table_name === table).map((row) => row.column_name);
 
     // `organizations` adalah akar tenant: `id`-nya adalah organization_id tabel lain.
-    for (const table of ['users', 'user_sessions', 'audit_logs']) {
-      expect(columnsOf(table)).toContain('organization_id');
+    const tables = [...new Set(rows.map((row) => row.table_name))];
+    for (const table of tables.filter((name) => name !== 'organizations')) {
+      expect(columnsOf(table), table).toContain('organization_id');
     }
-    for (const table of ['organizations', 'users', 'user_sessions', 'audit_logs']) {
-      expect(columnsOf(table)).toContain('created_at');
+    for (const table of tables) {
+      expect(columnsOf(table), table).toContain('created_at');
     }
-    for (const table of ['organizations', 'users', 'user_sessions']) {
-      expect(columnsOf(table)).toContain('updated_at');
+    for (const table of tables.filter((name) => name !== 'audit_logs')) {
+      expect(columnsOf(table), table).toContain('updated_at');
     }
     // Audit log hanya-tambah: tidak pernah diubah, jadi tidak punya updated_at.
     expect(columnsOf('audit_logs')).not.toContain('updated_at');

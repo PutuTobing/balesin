@@ -14,6 +14,7 @@
   "dependencies": {
     "@balesin/shared": "workspace:*",
     "ioredis": "catalog:",
+    "nodemailer": "10.5.0",
     "pino": "catalog:",
     "zod": "catalog:"
   },

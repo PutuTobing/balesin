@@ -28,9 +28,23 @@ export const TEMPORARY_DATABASE_COMMENT = 'balesin: database sementara untuk tes
 /** Bagian nama setelah penanda: <waktu dibuat, basis 36>_<8 heksadesimal acak>. */
 const TEMPORARY_SUFFIX = /^([0-9a-z]{8,9})_[0-9a-f]{8}$/;
 
+declare module 'vitest' {
+  export interface ProvidedContext {
+    /** Database sementara yang sudah dimigrasi (dibuat `global-setup.ts`). */
+    testDatabaseUrl: string;
+    /** Server Postgres tes — untuk membuat database sementara tambahan. */
+    testDatabaseBaseUrl: string;
+  }
+}
+
 export interface TemporaryDatabase {
   name: string;
   url: string;
+  /**
+   * Mengosongkan SEMUA tabel database sementara ini (struktur dan migrasi tetap). Untuk tes
+   * yang butuh keadaan "instalasi baru" berulang kali tanpa membuat database baru.
+   */
+  reset(): Promise<void>;
   /** Hapus database (memutus koneksi yang masih terbuka). */
   drop(): Promise<void>;
 }
@@ -168,6 +182,35 @@ export async function createTemporaryDatabase(
     });
   };
 
+  // Hanya menyentuh database sementara INI (URL-nya dibuat di atas, tidak berasal dari luar).
+  const reset = async (): Promise<void> => {
+    const client = new Client({ connectionString: url, connectionTimeoutMillis: 5_000 });
+    await client.connect();
+    try {
+      const { rows } = await client.query<{ tablename: string }>(
+        `select tablename from pg_tables where schemaname = 'public'`,
+      );
+      if (rows.length === 0) return;
+      const tables = rows.map((row) => quoteIdentifier(row.tablename)).join(', ');
+      const hasAuditLogs = rows.some((row) => row.tablename === 'audit_logs');
+      await client.query('begin');
+      // `audit_logs` hanya-tambah (trigger menolak TRUNCATE); dimatikan sebentar khusus di sini.
+      if (hasAuditLogs) {
+        await client.query('alter table audit_logs disable trigger audit_logs_no_truncate');
+      }
+      await client.query(`truncate table ${tables} cascade`);
+      if (hasAuditLogs) {
+        await client.query('alter table audit_logs enable trigger audit_logs_no_truncate');
+      }
+      await client.query('commit');
+    } catch (error) {
+      await client.query('rollback').catch(() => undefined);
+      throw error;
+    } finally {
+      await client.end();
+    }
+  };
+
   if (options.migrate ?? true) {
     try {
       await runMigrations(url);
@@ -177,7 +220,7 @@ export async function createTemporaryDatabase(
     }
   }
 
-  return { name, url, drop };
+  return { name, url, reset, drop };
 }
 
 export * from './expect-pg-error';

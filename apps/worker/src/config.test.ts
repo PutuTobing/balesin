@@ -25,6 +25,40 @@ describe('loadConfig (worker)', () => {
     expect(JSON.stringify(config)).not.toContain('sandi-');
   });
 
+  it('membaca cadangan SMTP yang sama dengan api, tanpa membocorkan passwordnya', () => {
+    const none = loadConfig(developmentEnv);
+    const config = loadConfig({
+      ...developmentEnv,
+      SMTP_HOST: 'mail.contoh.co.id',
+      SMTP_FROM: 'Balesin Contoh <cs@contoh.co.id>',
+      SMTP_USER: 'cs@contoh.co.id',
+      SMTP_PASSWORD: 'sandi-smtp-env',
+    });
+
+    expect(none.smtpFallback).toBeNull();
+    expect(config.smtpFallback).toMatchObject({
+      host: 'mail.contoh.co.id',
+      port: 465,
+      security: 'ssl',
+      username: 'cs@contoh.co.id',
+      fromName: 'Balesin Contoh',
+      fromAddress: 'cs@contoh.co.id',
+    });
+    expect(config.smtpFallback?.password?.reveal()).toBe('sandi-smtp-env');
+    expect(JSON.stringify(config)).not.toContain('sandi-smtp-env');
+  });
+
+  it('port penangkap email lokal (1025) hanya diizinkan di luar production', () => {
+    const production = loadConfig({
+      ...developmentEnv,
+      NODE_ENV: 'production',
+      BALESIN_MASTER_KEY: Buffer.alloc(32, 1).toString('base64'),
+    });
+
+    expect(loadConfig(developmentEnv).smtpAllowedPorts).toEqual([25, 465, 587, 2525, 1025]);
+    expect(production.smtpAllowedPorts).toEqual([25, 465, 587, 2525]);
+  });
+
   it('mengabaikan variabel yang hanya dipakai api', () => {
     const config = loadConfig({ ...developmentEnv, APP_URL: 'bukan url', API_PORT: 'abc' });
     expect(config.env).toBe('development');

@@ -1,5 +1,7 @@
 /** Kode SQLSTATE Postgres yang sering perlu ditangani aplikasi. */
 export const PG_ERROR_CODES = {
+  /** Juga dipakai trigger hanya-tambah `audit_logs`. */
+  restrictViolation: '23001',
   uniqueViolation: '23505',
   foreignKeyViolation: '23503',
   checkViolation: '23514',

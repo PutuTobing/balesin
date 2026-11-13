@@ -14,15 +14,6 @@ import {
   resolveTestDatabaseUrl,
 } from './index';
 
-declare module 'vitest' {
-  export interface ProvidedContext {
-    /** Database sementara yang sudah dimigrasi. */
-    testDatabaseUrl: string;
-    /** Server Postgres tes — untuk membuat database sementara tambahan. */
-    testDatabaseBaseUrl: string;
-  }
-}
-
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
   const baseUrl = resolveTestDatabaseUrl();
   await assertTestDatabaseReachable(baseUrl);

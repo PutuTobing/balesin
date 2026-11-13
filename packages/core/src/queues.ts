@@ -11,6 +11,8 @@ export const QUEUE_PREFIX = 'balesin';
 export const QUEUE_NAMES = {
   /** Pekerjaan internal: uji antrian, nanti pembersihan sesi kedaluwarsa, dsb. */
   system: 'system',
+  /** Email sistem (notifikasi akun; nanti undangan dan reset password). */
+  email: 'email',
 } as const;
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
@@ -42,3 +44,33 @@ export const systemPingResultSchema = z.object({
   waitedMs: z.number(),
 });
 export type SystemPingResult = z.infer<typeof systemPingResultSchema>;
+
+// ── Antrian `email` ─────────────────────────────────────────────────────────
+//
+// Payload HANYA memuat ID dan waktu — tidak pernah token, password SMTP, atau rahasia lain.
+// BullMQ menyimpan payload, `failedReason`, dan stack di Redis. Worker mengambil sendiri alamat
+// penerima dan pengaturan SMTP dari database, lalu membuka password-nya tepat saat mengirim.
+
+export const EMAIL_JOBS = {
+  /** Pemberitahuan ke pemilik akun: akunnya dikunci sementara karena gagal masuk berulang. */
+  accountLocked: 'account-locked',
+} as const;
+export type EmailJobName = (typeof EMAIL_JOBS)[keyof typeof EMAIL_JOBS];
+
+export const accountLockedEmailPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  userId: z.uuid(),
+  /** Waktu kunci berakhir (ISO 8601). */
+  lockedUntil: z.iso.datetime(),
+});
+export type AccountLockedEmailPayload = z.infer<typeof accountLockedEmailPayloadSchema>;
+
+export const emailJobResultSchema = z.object({
+  /**
+   * `sent` = terkirim; `skipped` = sengaja tidak dikirim (lihat `reason`) — bukan kegagalan,
+   * jadi tidak diulang.
+   */
+  status: z.enum(['sent', 'skipped']),
+  reason: z.enum(['email_not_configured', 'recipient_unavailable']).optional(),
+});
+export type EmailJobResult = z.infer<typeof emailJobResultSchema>;

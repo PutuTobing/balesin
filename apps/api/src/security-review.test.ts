@@ -14,7 +14,7 @@ import { errorEnvelopeSchema } from '@balesin/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { loadConfig } from './config';
-import { buildTestApp, type TestApp } from './testing/build-test-app';
+import { buildTestApp, TEST_ROUTE, type TestApp } from './testing/build-test-app';
 
 let current: TestApp | undefined;
 
@@ -22,19 +22,21 @@ async function setup(options: Parameters<typeof buildTestApp>[0] = {}): Promise<
   current = await buildTestApp(options);
   const { app } = current;
 
-  app.get('/__tes/klien', (request) =>
+  app.get('/__tes/klien', TEST_ROUTE, (request) =>
     Promise.resolve({ ip: request.ip, host: request.host, protocol: request.protocol }),
   );
-  app.post('/__tes/aksi', (request) => Promise.resolve({ bodyType: typeof request.body }));
-  app.get('/__tes/lempar-teks', () => {
+  app.post('/__tes/aksi', TEST_ROUTE, (request) =>
+    Promise.resolve({ bodyType: typeof request.body }),
+  );
+  app.get('/__tes/lempar-teks', TEST_ROUTE, () => {
     // eslint-disable-next-line @typescript-eslint/only-throw-error -- sengaja: pustaka pihak ketiga kadang melempar bukan-Error
     throw 'gagal ke postgres://balesin:sandi-teks@db:5432/balesin';
   });
-  app.get('/__tes/lempar-objek', () => {
+  app.get('/__tes/lempar-objek', TEST_ROUTE, () => {
     // eslint-disable-next-line @typescript-eslint/only-throw-error -- sengaja: pustaka pihak ketiga kadang melempar bukan-Error
     throw { message: 'ditolak upstream', password: 'sandi-objek', token: 'token-objek' };
   });
-  app.get('/__tes/upstream-401', () => {
+  app.get('/__tes/upstream-401', TEST_ROUTE, () => {
     // Bentuk error klien HTTP pihak ketiga saat API luar (mis. Graph API Meta) menjawab 401.
     throw Object.assign(new Error('token Meta kedaluwarsa (penyebab-upstream)'), {
       statusCode: 401,
@@ -192,7 +194,7 @@ describe('R6 — respons error dari tingkat framework (sebelum hook berjalan)', 
 
   it('tetap berbentuk amplop JSON umum dan tidak memantulkan alamat yang diminta', async () => {
     const { app } = await setup();
-    app.get('/__tes/barang/:id', () => Promise.resolve({ ok: true }));
+    app.get('/__tes/barang/:id', TEST_ROUTE, () => Promise.resolve({ ok: true }));
 
     for (const url of urls) {
       const response = await app.inject({ method: 'GET', url });
@@ -208,7 +210,7 @@ describe('R6 — respons error dari tingkat framework (sebelum hook berjalan)', 
 
   it('tetap membawa header keamanan, larangan cache, dan x-request-id', async () => {
     const { app } = await setup();
-    app.get('/__tes/barang/:id', () => Promise.resolve({ ok: true }));
+    app.get('/__tes/barang/:id', TEST_ROUTE, () => Promise.resolve({ ok: true }));
 
     for (const url of urls) {
       const response = await app.inject({ method: 'GET', url });
@@ -234,37 +236,54 @@ describe('R5 — permintaan lintas-situs "sederhana" (tanpa preflight CORS)', ()
     expect(response.headers['access-control-allow-origin']).toBeUndefined();
   });
 
-  it('form lintas-situs (urlencoded / multipart) ditolak 415', async () => {
+  // Sejak Fase 1 permintaan pengubah data dari origin asing ditolak 403 oleh hook auth
+  // (pemeriksaan Origin) SEBELUM body dibaca. Penolakan 415 tetap berlaku sebagai lapis kedua
+  // untuk klien yang tidak mengirim Origin.
+  it('form (urlencoded / multipart): 403 dari origin asing, 415 tanpa Origin', async () => {
     const { app } = await setup();
 
     for (const contentType of [
       'application/x-www-form-urlencoded',
       'multipart/form-data; boundary=x',
     ]) {
-      const response = await app.inject({
+      const crossSite = await app.inject({
         method: 'POST',
         url: '/__tes/aksi',
         headers: { origin: 'https://jahat.example', 'content-type': contentType },
         payload: 'a=1',
       });
-      expect(response.statusCode, contentType).toBe(415);
+      const withoutOrigin = await app.inject({
+        method: 'POST',
+        url: '/__tes/aksi',
+        headers: { 'content-type': contentType },
+        payload: 'a=1',
+      });
+      expect(crossSite.statusCode, contentType).toBe(403);
+      expect(withoutOrigin.statusCode, contentType).toBe(415);
     }
   });
 
-  it('body text/plain ditolak 415 (satu-satunya tipe body lintas-situs yang masih diterima)', async () => {
+  it('body text/plain: 403 dari origin asing, 415 tanpa Origin (parser teks tetap dibuang)', async () => {
     const { app } = await setup();
 
-    const response = await app.inject({
+    const crossSite = await app.inject({
       method: 'POST',
       url: '/__tes/aksi',
       headers: { origin: 'https://jahat.example', 'content-type': 'text/plain' },
       payload: '{"aksi":"hapus"}',
     });
+    const withoutOrigin = await app.inject({
+      method: 'POST',
+      url: '/__tes/aksi',
+      headers: { 'content-type': 'text/plain' },
+      payload: '{"aksi":"hapus"}',
+    });
 
-    expect(response.statusCode).toBe(415);
+    expect(crossSite.statusCode).toBe(403);
+    expect(withoutOrigin.statusCode).toBe(415);
   });
 
-  it('fakta: POST tanpa body dari origin asing tetap sampai ke handler', async () => {
+  it('POST tanpa body dari origin asing TIDAK lagi sampai ke handler (celah Fase 0 tertutup)', async () => {
     const { app } = await setup();
 
     const response = await app.inject({
@@ -273,8 +292,10 @@ describe('R5 — permintaan lintas-situs "sederhana" (tanpa preflight CORS)', ()
       headers: { origin: 'https://jahat.example' },
     });
 
-    // CORS bukan pelindung CSRF. Fase 1 WAJIB: cookie SameSite=Lax + token CSRF
-    // (SECURITY.md §1) pada semua rute yang mengubah data.
-    expect(response.statusCode).toBe(200);
+    // CORS bukan pelindung CSRF; yang menolak di sini adalah pemeriksaan Origin di hook auth.
+    // Rute bersesi juga menuntut token CSRF (lihat modules/auth/auth.integration.test.ts).
+    expect(response.statusCode).toBe(403);
+    expect(errorEnvelopeSchema.parse(response.json()).error.code).toBe('FORBIDDEN');
+    expect(response.headers['access-control-allow-origin']).toBeUndefined();
   });
 });

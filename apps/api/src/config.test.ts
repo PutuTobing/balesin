@@ -79,6 +79,27 @@ describe('loadConfig', () => {
     expect(config.redisUrl.reveal()).toBe(developmentEnv.REDIS_URL);
   });
 
+  it('cookie sesi: Secure/__Host- mengikuti skema APP_URL (http hanya untuk localhost)', () => {
+    expect(loadConfig(developmentEnv).cookieSecure).toBe(false);
+    expect(loadConfig(productionEnv).cookieSecure).toBe(true);
+    expect(
+      loadConfig({ ...developmentEnv, APP_URL: 'https://balesin.contoh.co.id' }).cookieSecure,
+    ).toBe(true);
+    // Di production http hanya lolos validasi untuk localhost, jadi cookie tanpa Secure tidak
+    // mungkin dipakai di alamat publik.
+    expect(loadConfig({ ...productionEnv, APP_URL: 'http://localhost:5173' }).cookieSecure).toBe(
+      false,
+    );
+    expect(
+      captureError({ ...productionEnv, APP_URL: 'http://balesin.contoh.co.id' }).problems,
+    ).toEqual([expect.objectContaining({ variable: 'APP_URL' })]);
+  });
+
+  it('port SMTP yang boleh dituju: production hanya port baku; development menambah 1025 (Mailpit)', () => {
+    expect(loadConfig(productionEnv).smtpAllowedPorts).toEqual([25, 465, 587, 2525]);
+    expect(loadConfig(developmentEnv).smtpAllowedPorts).toEqual([25, 465, 587, 2525, 1025]);
+  });
+
   it('mengisi nilai bawaan bila variabel opsional tidak ada', () => {
     const config = loadConfig({
       NODE_ENV: 'test',
@@ -138,9 +159,10 @@ describe('loadConfig', () => {
     expect(config.smtpFallback).toMatchObject({
       host: 'mail.contoh.co.id',
       port: 465,
-      secure: true,
-      user: null,
-      from: 'CS <cs@contoh.co.id>',
+      security: 'ssl',
+      username: null,
+      fromName: 'CS',
+      fromAddress: 'cs@contoh.co.id',
     });
     expect(config.smtpFallback?.password?.reveal()).toBe('sandi-smtp');
   });

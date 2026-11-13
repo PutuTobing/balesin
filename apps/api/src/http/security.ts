@@ -104,7 +104,7 @@ export const securityPlugin = fp<SecurityOptions>(
       credentials: true,
       methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
       allowedHeaders: ['content-type', 'x-csrf-token'],
-      exposedHeaders: ['x-request-id'],
+      exposedHeaders: ['x-request-id', 'retry-after'],
       maxAge: 600,
     });
 

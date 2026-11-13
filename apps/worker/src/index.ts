@@ -2,17 +2,19 @@ import {
   closeRedis,
   createLogger,
   createRedis,
+  createSecretBox,
   createShutdown,
   EnvValidationError,
   registerCrashHandlers,
   registerShutdownSignals,
   scrubSecretsInText,
 } from '@balesin/core';
+import { closeDb, createDb } from '@balesin/db';
 
 import { loadConfig, type WorkerConfig } from './config';
 import { startWorkers } from './runtime';
 
-/** Titik masuk proses worker: baca konfigurasi → sambungkan Redis → proses antrian. */
+/** Titik masuk proses worker: baca konfigurasi → sambungkan Redis dan Postgres → proses antrian. */
 function main(config: WorkerConfig): void {
   const logger = createLogger({
     service: 'worker',
@@ -20,19 +22,37 @@ function main(config: WorkerConfig): void {
     pretty: config.env === 'development',
   });
 
+  if (!config.masterKey) {
+    logger.warn(
+      'BALESIN_MASTER_KEY kosong: kredensial tersimpan (mis. password SMTP) tidak bisa dibuka, email yang membutuhkannya akan gagal.',
+    );
+  }
+
   const redis = createRedis(config.redisUrl.reveal(), {
     role: 'queue',
     name: 'balesin-worker',
     logger,
   });
-  const runtime = startWorkers({ connection: redis }, logger);
+  const db = createDb(config.databaseUrl.reveal(), {
+    applicationName: 'balesin-worker',
+    onPoolError: (err) => logger.error({ err }, 'Koneksi Postgres yang menganggur terputus'),
+  });
+  const runtime = startWorkers({ connection: redis }, logger, {
+    email: {
+      db,
+      secretBox: config.masterKey ? createSecretBox(config.masterKey) : null,
+      fallback: config.smtpFallback,
+      allowedPorts: config.smtpAllowedPorts,
+    },
+  });
 
   const shutdown = createShutdown({
     logger,
-    // Job yang sedang berjalan diberi waktu selesai sebelum koneksi Redis ditutup.
+    // Job yang sedang berjalan diberi waktu selesai sebelum koneksi ditutup.
     timeoutMs: 30_000,
     steps: [
       { name: 'workers', run: () => runtime.close() },
+      { name: 'postgres', run: () => closeDb(db) },
       { name: 'redis', run: () => closeRedis(redis) },
     ],
   });

@@ -1,6 +1,7 @@
 import type { Logger } from '@balesin/core';
 import type { Worker } from 'bullmq';
 
+import { createEmailWorker, type EmailJobDeps } from './queues/email';
 import { createSystemWorker, type QueueConnectionOptions } from './queues/system';
 
 export interface WorkerRuntime {
@@ -9,14 +10,27 @@ export interface WorkerRuntime {
   close(): Promise<void>;
 }
 
+/** Dependensi pemroses job selain koneksi antrian. */
+export interface WorkerServices {
+  /** Untuk antrian `email` (database, kotak rahasia, cadangan SMTP). */
+  email: Omit<EmailJobDeps, 'logger'>;
+}
+
 const ERROR_LOG_INTERVAL_MS = 30_000;
 
 /**
  * Menyalakan semua pemroses antrian. Setiap antrian baru didaftarkan di sini.
  * Tidak melempar bila Redis mati: BullMQ menunggu koneksi pulih lalu lanjut memproses.
  */
-export function startWorkers(options: QueueConnectionOptions, logger: Logger): WorkerRuntime {
-  const workers = [createSystemWorker(options, { logger })];
+export function startWorkers(
+  options: QueueConnectionOptions,
+  logger: Logger,
+  services: WorkerServices,
+): WorkerRuntime {
+  const workers = [
+    createSystemWorker(options, { logger }),
+    createEmailWorker(options, { ...services.email, logger }),
+  ];
 
   for (const worker of workers) {
     const queue = worker.name;

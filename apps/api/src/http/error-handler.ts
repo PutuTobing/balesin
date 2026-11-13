@@ -154,6 +154,9 @@ export function handleError(error: unknown, request: FastifyRequest, reply: Fast
     );
   }
 
+  if (error instanceof AppError && error.retryAfterSeconds !== undefined) {
+    void reply.header('retry-after', String(error.retryAfterSeconds));
+  }
   return reply.status(response.statusCode).send(envelope(response, request.id));
 }
 

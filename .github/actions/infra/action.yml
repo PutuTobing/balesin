@@ -1,11 +1,11 @@
-# Menyalakan Postgres 16 + Redis 7 untuk tes, meniru deploy/docker-compose.dev.yml.
-# Kredensial "balesin" hanya untuk CI lokal, bukan rahasia produksi.
+# Menyalakan Postgres 16 + Redis 7 + penangkap email (Mailpit) untuk tes, meniru
+# deploy/docker-compose.dev.yml. Kredensial "balesin" hanya untuk CI lokal, bukan rahasia produksi.
 name: Infrastruktur tes
-description: Postgres 16 (database balesin + balesin_test) dan Redis 7 dengan password
+description: Postgres 16 (database balesin + balesin_test), Redis 7 dengan password, dan Mailpit
 runs:
   using: composite
   steps:
-    - name: Nyalakan Postgres dan Redis
+    - name: Nyalakan Postgres, Redis, dan Mailpit
       shell: bash
       run: |
         docker run -d --name pg -p 127.0.0.1:5432:5432 \
@@ -14,19 +14,26 @@ runs:
           postgres:16-alpine
         docker run -d --name redis -p 127.0.0.1:6379:6379 \
           redis:7-alpine redis-server --requirepass balesin --appendonly no
+        # SMTP 1025 (login balesin/balesin, sama dengan compose dev) dan API HTTP 8025.
+        docker run -d --name mailpit -p 127.0.0.1:1025:1025 -p 127.0.0.1:8025:8025 \
+          -e MP_SMTP_AUTH=balesin:balesin -e MP_SMTP_AUTH_ALLOW_INSECURE=true \
+          -e MP_DISABLE_VERSION_CHECK=true -e TZ=UTC \
+          axllent/mailpit:v1.33.1
     - name: Tunggu layanan siap
       shell: bash
       run: |
         for i in $(seq 1 30); do
           if docker exec pg pg_isready -U balesin -d balesin >/dev/null 2>&1 \
             && docker exec pg psql -U balesin -d balesin_test -c 'select 1' >/dev/null 2>&1 \
-            && docker exec redis redis-cli -a balesin --no-auth-warning ping 2>/dev/null | grep -q PONG; then
-            echo "Postgres (balesin, balesin_test) dan Redis siap."
+            && docker exec redis redis-cli -a balesin --no-auth-warning ping 2>/dev/null | grep -q PONG \
+            && docker exec mailpit /mailpit readyz >/dev/null 2>&1; then
+            echo "Postgres (balesin, balesin_test), Redis, dan Mailpit siap."
             exit 0
           fi
           sleep 2
         done
-        echo "::error::Postgres/Redis tidak siap dalam 60 detik"
+        echo "::error::Postgres/Redis/Mailpit tidak siap dalam 60 detik"
         docker logs pg || true
         docker logs redis || true
+        docker logs mailpit || true
         exit 1

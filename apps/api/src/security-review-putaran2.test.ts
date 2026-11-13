@@ -11,7 +11,7 @@ import { errorEnvelopeSchema } from '@balesin/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { trackRoutesForMethodNotAllowed } from './http/method-not-allowed';
-import { buildTestApp, TEST_APP_ORIGIN, type TestApp } from './testing/build-test-app';
+import { buildTestApp, TEST_APP_ORIGIN, TEST_ROUTE, type TestApp } from './testing/build-test-app';
 
 let current: TestApp | undefined;
 
@@ -26,14 +26,21 @@ afterEach(async () => {
 });
 
 describe('405 — metode salah pada alamat yang ada', () => {
-  it('menjawab amplop JSON umum dengan header keamanan, tanpa izin CORS untuk origin asing', async () => {
+  it('menjawab amplop JSON umum dengan header keamanan; origin asing ditolak 403 tanpa izin CORS', async () => {
     const { app } = await setup();
 
-    const response = await app.inject({
+    // Sejak Fase 1 permintaan pengubah data dari origin asing berhenti di pemeriksaan Origin.
+    const crossSite = await app.inject({
       method: 'DELETE',
       url: '/ready',
       headers: { origin: 'https://jahat.example' },
     });
+    expect(crossSite.statusCode).toBe(403);
+    expect(crossSite.headers.allow).toBeUndefined();
+    expect(crossSite.headers['access-control-allow-origin']).toBeUndefined();
+    expect(crossSite.headers['access-control-allow-credentials']).toBeUndefined();
+
+    const response = await app.inject({ method: 'DELETE', url: '/ready' });
 
     expect(response.statusCode).toBe(405);
     expect(response.headers.allow).toBe('GET, HEAD');
@@ -94,7 +101,7 @@ describe('405 — metode salah pada alamat yang ada', () => {
       scope.addHook('onRequest', (_request, _reply, next) => {
         next(new AppError('UNAUTHENTICATED'));
       });
-      scope.get('/__tes/laporan/:id', () => Promise.resolve({ ok: true }));
+      scope.get('/__tes/laporan/:id', TEST_ROUTE, () => Promise.resolve({ ok: true }));
       done();
     });
     registerMethodNotAllowedRoutes();

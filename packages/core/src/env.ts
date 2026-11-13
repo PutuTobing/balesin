@@ -281,3 +281,78 @@ export function baseEnvShape(production: boolean) {
     ),
   };
 }
+
+// ── Cadangan email pengirim dari .env ───────────────────────────────────────
+
+/**
+ * Cadangan OPSIONAL email pengirim dari `SMTP_*` (docs/PENGATURAN-UI.md): hanya dipakai bila
+ * organisasi belum mengisi Pengaturan → Email pengirim. Sumber utama tetap database.
+ */
+export interface SmtpFallbackConfig {
+  host: string;
+  port: number;
+  /** `SMTP_SECURE=true` → `ssl` (SSL/TLS, lazimnya 465); `false` → `starttls` (lazimnya 587). */
+  security: 'ssl' | 'starttls';
+  username: string | null;
+  password: Secret<string> | null;
+  fromName: string;
+  fromAddress: string;
+}
+
+const SMTP_FROM_MESSAGE =
+  'harus berupa alamat email, boleh dengan nama: "Nama Pengirim <alamat@perusahaan.co.id>"';
+
+/** `Nama <alamat@host>` atau `alamat@host` → nama + alamat (huruf kecil). */
+function parseMailFrom(input: string): { fromName: string; fromAddress: string } | undefined {
+  // Sebagian pemuat .env (mis. `env_file` Docker) tidak membuang tanda kutip pembungkus nilai.
+  const raw = /^"[^"]*"$|^'[^']*'$/.test(input) ? input.slice(1, -1).trim() : input;
+  const named = /^([^<>]*)<([^<>\s]+)>$/.exec(raw);
+  const address = (named?.[2] ?? raw).trim().toLowerCase();
+  if (!/^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(address)) return undefined;
+  const fromName = (named?.[1] ?? '')
+    .trim()
+    .replace(/^"(.*)"$/, '$1')
+    .trim();
+  if (/[\r\n]/.test(fromName)) return undefined;
+  return { fromName: fromName || address, fromAddress: address };
+}
+
+/** Variabel `SMTP_*`, dipakai api dan worker. */
+export function smtpFallbackEnvShape() {
+  return {
+    SMTP_HOST: envOptional(
+      (raw) => (/^[A-Za-z0-9.:-]+$/.test(raw) ? raw.toLowerCase() : undefined),
+      'harus berupa nama host, contoh: mail.perusahaan.co.id',
+    ),
+    SMTP_PORT: envDefault(envParse.integer(1, 65_535), 465, 'harus berupa angka 1–65535'),
+    SMTP_SECURE: envDefault(envParse.boolean, true, 'harus true atau false'),
+    SMTP_USER: envOptional(envParse.text, 'harus berupa teks'),
+    SMTP_PASSWORD: envOptional(envParse.secretText(1), 'harus berupa teks'),
+    SMTP_FROM: envOptional(parseMailFrom, SMTP_FROM_MESSAGE),
+  };
+}
+
+type SmtpFallbackEnv = {
+  [Key in keyof ReturnType<typeof smtpFallbackEnvShape>]: z.output<
+    ReturnType<typeof smtpFallbackEnvShape>[Key]
+  >;
+};
+
+/** `null` bila `SMTP_HOST` kosong. Melempar `EnvValidationError` bila host diisi tanpa pengirim. */
+export function resolveSmtpFallback(env: SmtpFallbackEnv): SmtpFallbackConfig | null {
+  if (env.SMTP_HOST === null) return null;
+  if (env.SMTP_FROM === null) {
+    throw new EnvValidationError([
+      { variable: 'SMTP_FROM', message: 'wajib diisi bila SMTP_HOST diisi' },
+    ]);
+  }
+  return {
+    host: env.SMTP_HOST,
+    port: env.SMTP_PORT,
+    security: env.SMTP_SECURE ? 'ssl' : 'starttls',
+    username: env.SMTP_USER,
+    password: env.SMTP_PASSWORD,
+    fromName: env.SMTP_FROM.fromName,
+    fromAddress: env.SMTP_FROM.fromAddress,
+  };
+}

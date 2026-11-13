@@ -2,6 +2,7 @@ import { createServer, type AddressInfo } from 'node:net';
 
 import { closeRedis, createRedis, systemPingResultSchema } from '@balesin/core';
 import { createLogCapture } from '@balesin/core/testing';
+import { closeDb, createDb } from '@balesin/db';
 import { UnrecoverableError } from 'bullmq';
 import { describe, expect, it } from 'vitest';
 
@@ -73,8 +74,12 @@ describe('startWorkers saat Redis tidak bisa dihubungi', () => {
       logger: logs.logger,
     });
 
-    const runtime = startWorkers({ connection: redis, prefix: 'balesin-tes' }, logs.logger);
-    expect(runtime.workers.map((worker) => worker.name)).toEqual(['system']);
+    // Database tidak pernah disentuh di tes ini (tidak ada job yang diproses).
+    const db = createDb('postgres://tidak-dipakai:tidak-dipakai@127.0.0.1:1/tidak_dipakai');
+    const runtime = startWorkers({ connection: redis, prefix: 'balesin-tes' }, logs.logger, {
+      email: { db, secretBox: null, fallback: null, allowedPorts: [] },
+    });
+    expect(runtime.workers.map((worker) => worker.name)).toEqual(['system', 'email']);
 
     // Beri waktu beberapa percobaan sambung gagal — proses tidak boleh jatuh.
     await new Promise((resolve) => setTimeout(resolve, 400));
@@ -82,6 +87,7 @@ describe('startWorkers saat Redis tidak bisa dihubungi', () => {
 
     await runtime.close();
     await closeRedis(redis);
+    await closeDb(db);
 
     expect(logs.text()).not.toContain('sandi-antrian');
   }, 20_000);

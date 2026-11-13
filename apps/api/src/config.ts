@@ -1,17 +1,20 @@
 import {
+  allowedSmtpPorts,
   baseEnvShape,
   envDefault,
   envOptional,
   envParse,
   envRequired,
   envRequiredInProduction,
-  EnvValidationError,
   isProductionLike,
   parseEnv,
+  resolveSmtpFallback,
+  smtpFallbackEnvShape,
   type EnvSource,
   type LogLevel,
   type NodeEnv,
   type Secret,
+  type SmtpFallbackConfig,
 } from '@balesin/core';
 import { z } from 'zod';
 
@@ -38,26 +41,31 @@ export interface ApiConfig {
   redisUrl: Secret<string>;
   /** Kunci AES-256-GCM (32 byte) untuk mengenkripsi kredensial di database. Wajib di production. */
   masterKey: Secret<Buffer> | null;
-  /** Wajib di production. */
+  /**
+   * Kunci token CSRF. Wajib di production; di development/test boleh kosong (aplikasi membuat
+   * kunci acak sementara yang berganti setiap start).
+   */
   sessionSecret: Secret<string> | null;
+  /**
+   * `true` = cookie sesi `__Host-` + `Secure`. Mengikuti skema `APP_URL`: https → true.
+   * Hanya `false` untuk http://localhost (pengembangan lokal), karena di production `APP_URL`
+   * wajib https kecuali localhost.
+   */
+  cookieSecure: boolean;
   /** Token sekali pakai untuk wizard setup Owner pertama. */
   setupToken: Secret<string> | null;
   /** Cadangan opsional sebelum SMTP diatur lewat UI. `null` bila `SMTP_HOST` kosong. */
   smtpFallback: SmtpFallbackConfig | null;
+  /**
+   * Port SMTP yang boleh dituju tes koneksi/pengiriman (permukaan SSRF). Di luar production
+   * ditambah 1025, port penangkap email lokal (Mailpit) dari `pnpm db:up`.
+   */
+  smtpAllowedPorts: number[];
   /** Versi Graph API Meta yang dikunci, mis. `v21.0`. */
   metaGraphVersion: string | null;
   mediaDir: string;
   /** IP/CIDR privat yang boleh dituju webhook keluar (SECURITY.md §6). */
   outboundPrivateAllowlist: string[];
-}
-
-export interface SmtpFallbackConfig {
-  host: string;
-  port: number;
-  secure: boolean;
-  user: string | null;
-  password: Secret<string> | null;
-  from: string;
 }
 
 const URL_MESSAGE =
@@ -113,12 +121,7 @@ function apiEnvSchema(production: boolean) {
       'minimal 32 karakter acak',
     ),
     SETUP_TOKEN: envOptional(envParse.secretText(16), 'minimal 16 karakter acak'),
-    SMTP_HOST: envOptional(envParse.text, 'harus berupa nama host'),
-    SMTP_PORT: envDefault(envParse.integer(1, 65_535), 465, 'harus berupa angka 1–65535'),
-    SMTP_SECURE: envDefault(envParse.boolean, true, 'harus true atau false'),
-    SMTP_USER: envOptional(envParse.text, 'harus berupa teks'),
-    SMTP_PASSWORD: envOptional(envParse.secretText(1), 'harus berupa teks'),
-    SMTP_FROM: envOptional(envParse.text, 'harus berupa teks'),
+    ...smtpFallbackEnvShape(),
     META_GRAPH_VERSION: envOptional(
       (raw) => (/^v\d{1,3}\.\d{1,2}$/.test(raw) ? raw : undefined),
       'harus berformat vNN.0, contoh: v21.0',
@@ -135,15 +138,12 @@ function apiEnvSchema(production: boolean) {
 export function loadConfig(source: EnvSource): ApiConfig {
   const env = parseEnv(apiEnvSchema(isProductionLike(source)), source);
 
-  if (env.SMTP_HOST !== null && env.SMTP_FROM === null) {
-    throw new EnvValidationError([
-      { variable: 'SMTP_FROM', message: 'wajib diisi bila SMTP_HOST diisi' },
-    ]);
-  }
+  const smtpFallback = resolveSmtpFallback(env);
+  const isProduction = env.NODE_ENV === 'production';
 
   return {
     env: env.NODE_ENV,
-    isProduction: env.NODE_ENV === 'production',
+    isProduction,
     logLevel: env.LOG_LEVEL,
     appUrl: env.APP_URL,
     appOrigin: new URL(env.APP_URL).origin,
@@ -155,18 +155,10 @@ export function loadConfig(source: EnvSource): ApiConfig {
     redisUrl: env.REDIS_URL,
     masterKey: env.BALESIN_MASTER_KEY,
     sessionSecret: env.SESSION_SECRET,
+    cookieSecure: new URL(env.APP_URL).protocol === 'https:',
     setupToken: env.SETUP_TOKEN,
-    smtpFallback:
-      env.SMTP_HOST !== null && env.SMTP_FROM !== null
-        ? {
-            host: env.SMTP_HOST,
-            port: env.SMTP_PORT,
-            secure: env.SMTP_SECURE,
-            user: env.SMTP_USER,
-            password: env.SMTP_PASSWORD,
-            from: env.SMTP_FROM,
-          }
-        : null,
+    smtpFallback,
+    smtpAllowedPorts: allowedSmtpPorts(isProduction),
     metaGraphVersion: env.META_GRAPH_VERSION,
     mediaDir: env.MEDIA_DIR,
     outboundPrivateAllowlist: env.OUTBOUND_PRIVATE_ALLOWLIST,

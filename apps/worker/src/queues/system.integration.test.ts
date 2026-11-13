@@ -19,7 +19,10 @@ import {
 } from '@balesin/core';
 import { createLogCapture, type LogCapture } from '@balesin/core/testing';
 import type { Queue } from 'bullmq';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { closeDb, createDb, type Database } from '@balesin/db';
+// Membawa tipe `inject('testDatabaseUrl')` (deklarasi ProvidedContext ada di paket db).
+import type {} from '@balesin/db/testing';
+import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 
 import { startWorkers, type WorkerRuntime } from '../runtime';
 import { createSystemQueue } from './system';
@@ -30,6 +33,7 @@ let logs: LogCapture;
 let redis: Redis;
 let queue: Queue;
 let runtime: WorkerRuntime;
+let db: Database;
 
 beforeAll(async () => {
   const redisUrl = process.env.REDIS_URL_TEST?.trim() || DEFAULT_TEST_REDIS_URL;
@@ -50,7 +54,10 @@ beforeAll(async () => {
   }
 
   queue = createSystemQueue({ connection: redis, prefix });
-  runtime = startWorkers({ connection: redis, prefix }, logs.logger);
+  db = createDb(inject('testDatabaseUrl'), { applicationName: 'balesin-test-worker' });
+  runtime = startWorkers({ connection: redis, prefix }, logs.logger, {
+    email: { db, secretBox: null, fallback: null, allowedPorts: [] },
+  });
 }, 30_000);
 
 afterAll(async () => {
@@ -58,6 +65,7 @@ afterAll(async () => {
   await queue?.obliterate({ force: true });
   await queue?.close();
   if (redis) await closeRedis(redis);
+  if (db) await closeDb(db);
 }, 30_000);
 
 async function waitUntilFinished(jobId: string | undefined) {
