@@ -331,7 +331,9 @@ function AddAccount({ enrollment }: { enrollment: StartTwoFactorEnrollmentRespon
             <code className={styles.secret}>{enrollment.secretGrouped}</code>
           ) : (
             // Bukan <code>: kerangka tidak boleh terbaca sebagai kunci (tes dan pembaca layar).
-            <span className={cx(styles.secret, styles.secretSkeleton)}>{SECRET_PLACEHOLDER}</span>
+            <span className={cx(styles.secret, styles.secretSkeleton)} aria-hidden="true">
+              {SECRET_PLACEHOLDER}
+            </span>
           )}
           <div>
             {enrollment ? (

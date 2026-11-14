@@ -90,6 +90,16 @@ img.topLogo {
   text-wrap: balance;
 }
 
+/*
+ * Judul diberi fokus secara terprogram (pengumuman pembaca layar saat layar/langkah berganti),
+ * bukan untuk diklik. Tanpa ini, datang dari halaman masuk lewat Enter membuat :focus-visible
+ * aktif dan judul terbungkus cincin fokus seperti isian. Sama dengan `.stepTitle` di wizard setup.
+ */
+.title:focus,
+.stepTitle:focus {
+  outline: none;
+}
+
 .introBody {
   color: var(--ink-2);
   font-size: var(--text-14);
