@@ -230,6 +230,17 @@ describe('halaman masuk: langkah kedua (2FA)', () => {
     expect(screen.getByLabelText(t.auth.login.email)).toHaveValue(EMAIL);
   });
 
+  // BUG QA-2FA-3 (terbuka): kembali tanpa pesan → fokus jatuh ke <body> (tombol yang diklik
+  // hilang). Kembali DENGAN pesan sudah memfokuskan password (LoginPage.tsx, efek
+  // `returnMessage`). Hapus `.fails` setelah diperbaiki.
+  it.fails('BUG QA-2FA-3: "Kembali ke email dan password" memfokuskan isian password', async () => {
+    await passwordStep();
+    await screen.findByRole('heading', { level: 1, name: copy.totpTitle });
+    fireEvent.click(screen.getByRole('button', { name: copy.back }));
+    await screen.findByRole('heading', { level: 1, name: t.auth.login.heading('PT Maju Jaya') });
+    await waitFor(() => expect(screen.getByLabelText(t.auth.login.password)).toHaveFocus());
+  });
+
   it('429 terkunci: hitung mundur di tombol bergaya terkunci, pesan server di bawahnya', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {

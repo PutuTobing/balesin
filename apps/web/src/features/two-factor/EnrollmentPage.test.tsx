@@ -225,6 +225,24 @@ describe('pendaftaran 2FA wajib', () => {
     }
   });
 
+  // BUG QA-2FA-4 (terbuka): tombol "Buat kode QR baru" hilang setelah diklik dan fokus jatuh ke
+  // <body>; pengguna keyboard/pembaca layar kehilangan posisi. Hapus `.fails` setelah diperbaiki.
+  it.fails('BUG QA-2FA-4: setelah "Buat kode QR baru", fokus tidak jatuh ke <body>', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await openEnrollment();
+      await screen.findByRole('img', { name: copy.add.qrLabel });
+      await act(() => vi.advanceTimersByTimeAsync(15 * 60_000 + 500));
+      const restart = await screen.findByRole('button', { name: copy.restart });
+      restart.focus();
+      fireEvent.click(restart);
+      await screen.findByRole('img', { name: copy.add.qrLabel });
+      await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('server menjawab 409 saat konfirmasi (QR kedaluwarsa) → layar kedaluwarsa', async () => {
     await openEnrollment({
       routes: {
