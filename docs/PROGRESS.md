@@ -1,7 +1,7 @@
 # Progress
 
 **Fase aktif:** 1 — Akun, peran, keamanan
-**Terakhir diperbarui:** 2026-11-14 (Fase 1 butir 1–3 selesai)
+**Terakhir diperbarui:** 2026-11-14 (Fase 1 butir 1–3 selesai; butir 4 berjalan, dihentikan sementara)
 
 ## Selesai
 
@@ -45,10 +45,27 @@
 - Tes: 1.238 Vitest + 176 E2E lulus.
 
 ## Sedang dikerjakan
-- Berikutnya: Fase 1 butir 4 — undangan via email, verifikasi email, reset password (template
-  email bermerek). Ingat: mitigasi trust-on-first-use 2FA (review 2FA R5/R7) dibangun di sini —
-  pendaftaran 2FA menyatu dengan penerimaan undangan, email "2FA aktif" untuk peran wajib juga ke
-  Owner/Admin, simpan `totp_pending_issued_at` terpisah bila sesi pendaftaran lebih panjang.
+- **Fase 1 butir 4 — undangan, reset password, verifikasi email, template bermerek** (dihentikan
+  14 Nov karena Tobing istirahat; lanjut pukul 11.00).
+  - **Backend selesai & di-commit** (`5affb46`); kontrak di `docs/KONTRAK-API-AUTH.md`. Review
+    security **AMAN** (`docs/security-reviews/2026-11-14-fase1-undangan-reset.md`, commit `2f6ec07`).
+  - **Belum di-commit, ada di working tree (setengah jadi — JANGAN commit apa adanya):**
+    1. `apps/api`, `apps/worker`, `docs/KONTRAK-API-AUTH.md`: perbaikan temuan security R1, R2
+       (sisi terima), R4, R5 + kegagalan diam-diam `BackgroundTasks`. Hampir selesai (tes lulus,
+       sedang memperbarui kontrak). Lanjutkan: periksa `git diff`, pastikan 2 `it.fails` di
+       `apps/api/src/security-review-fase1-undangan-reset.test.ts` sudah lulus tanpa `.fails`,
+       kontrak diperbarui, lalu jalankan pemeriksaan backend.
+    2. `apps/web`, `e2e`: layar Pengaturan → Tim, `/undangan`, `/lupa-password`,
+       `/atur-ulang-password`, `/verifikasi-email`, pratinjau template, perbaikan flake
+       `TwoFactorLogin.test.tsx`. Baru sebagian (sedang mengerjakan kartu email di halaman
+       Keamanan). Lanjutkan dengan agent frontend: periksa `git diff` dulu, selesaikan sisa daftar,
+       tes unit + E2E + screenshot.
+  - Setelah itu: commit, QA, kritikus-desain, lalu centang butir 4.
+  - R3 (batas 72 jam akun peran wajib yang belum daftar 2FA) dan pembatalan massal undangan saat
+    pengundang dinonaktifkan → butir 6 (manajemen pengguna).
+  - Owner lupa password tanpa SMTP butuh perintah CLI pemulihan → Fase 7 (`balesin` CLI).
+- Catatan alat: sesi Claude Code saat ini tidak memuat `/lanjut` dan subagent proyek; orkestrator
+  memakai subagent umum (Opus) dengan instruksi membaca `.claude/agents/<peran>.md`.
 - Pose Kak Sky menunggu Tobing (BUTUH-TOBING #5).
 - Database dev `balesin` dimigrasi s.d. 0002 (jalankan `pnpm db:migrate` untuk 0003). E2E memakai
   database `balesin_e2e`, Redis db 14, port API 3100 / web 5180.
