@@ -145,17 +145,23 @@ describe('kunci=nilai', () => {
   });
 });
 
+/**
+ * Rahasia token bot Telegram palsu (35 karakter). Disusun saat tes berjalan supaya tidak ada
+ * literal berbentuk token di repo — pemindai rahasia GitHub melaporkannya sebagai kebocoran.
+ */
+const FAKE_TELEGRAM_SECRET = ['AA', 'Palsu', 'x'.repeat(28)].join('');
+
 describe('token berpola', () => {
   it('menyensor token Meta, API key Balesin, dan token bot Telegram', () => {
     const metaToken = `EAAG${'a1B2c3D4'.repeat(6)}`;
     expectScrubbed(`akses ${metaToken} ditolak`, `akses ${REDACTED} ditolak`);
     expectScrubbed('kunci blsn_live01_abcdefghijklmnop', `kunci blsn_live01_${REDACTED}`);
     expectScrubbed(
-      'https://api.telegram.org/bot123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw/sendMessage',
+      `https://api.telegram.org/bot123456789:${FAKE_TELEGRAM_SECRET}/sendMessage`,
       `https://api.telegram.org/bot123456789:${REDACTED}/sendMessage`,
     );
     expectScrubbed(
-      'token 123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw salah',
+      `token 123456789:${FAKE_TELEGRAM_SECRET} salah`,
       `token 123456789:${REDACTED} salah`,
     );
   });
@@ -545,7 +551,7 @@ describe('batas panjang', () => {
   /** Teks pengisi tanpa pola rahasia dan tanpa huruf (batas kata tetap ada), tepat `length` karakter. */
   const filler = (length: number): string => '. '.repeat(Math.ceil(length / 2)).slice(0, length);
   const metaToken = `EAAG${'a1B2c3D4'.repeat(6)}`;
-  const telegramToken = '123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw';
+  const telegramToken = `123456789:${FAKE_TELEGRAM_SECRET}`;
 
   it('rahasia yang melintasi batas potong tidak menyisakan awalan, di posisi mana pun', () => {
     for (const secret of [

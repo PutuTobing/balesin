@@ -202,6 +202,11 @@ describe('S2 — lama sensor tidak boleh kuadratik terhadap panjang teks', () =>
 });
 
 describe('R1 — pola rahasia di teks bebas', () => {
+  /**
+   * Rahasia token bot Telegram palsu (35 karakter), disusun saat tes berjalan supaya tidak ada
+   * literal berbentuk token di repo — pemindai rahasia GitHub melaporkannya sebagai kebocoran.
+   */
+  const FAKE_TELEGRAM_SECRET = ['AA', 'Palsu', 'x'.repeat(28)].join('');
   const leaking: Array<[label: string, text: string, secret: string]> = [
     [
       'reset_token di query',
@@ -226,8 +231,8 @@ describe('R1 — pola rahasia di teks bebas', () => {
     ],
     [
       'token bot Telegram di path URL',
-      'fetch https://api.telegram.org/bot123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw/sendMessage gagal',
-      'AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw',
+      `fetch https://api.telegram.org/bot123456789:${FAKE_TELEGRAM_SECRET}/sendMessage gagal`,
+      FAKE_TELEGRAM_SECRET,
     ],
   ];
 
