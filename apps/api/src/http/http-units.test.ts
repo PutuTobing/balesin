@@ -231,6 +231,7 @@ describe('deklarasi akses rute (bawaan tolak)', () => {
     // Daftar rute publik EKSPLISIT. Menambah rute publik baru harus disengaja: ubah daftar ini
     // dan minta review keamanan.
     expect(publicUrls).toEqual([
+      '/api/v1/auth/2fa/verify',
       '/api/v1/auth/login',
       '/api/v1/branding',
       '/api/v1/branding/logo',
@@ -260,6 +261,28 @@ describe('deklarasi akses rute (bawaan tolak)', () => {
     expect(declarations.find((route) => route.url === '/api/v1/auth/me')?.access.kind).toBe(
       'authenticated',
     );
+
+    // Sesi terbatas "wajib mendaftar 2FA" hanya boleh ke daftar EKSPLISIT ini (termasuk rute
+    // pelengkap 405 di alamat yang sama, yang memakai AUTHENTICATED biasa = ditolak).
+    const enrollmentUrls = [
+      ...new Set(
+        declarations
+          .filter(
+            (route) =>
+              route.access.kind === 'authenticated' && route.access.allowTwoFactorEnrollment,
+          )
+          .map((route) => `${route.method} ${route.url}`),
+      ),
+    ].sort();
+    expect(enrollmentUrls).toEqual([
+      'GET /api/v1/auth/2fa',
+      'GET /api/v1/auth/me',
+      'HEAD /api/v1/auth/2fa',
+      'HEAD /api/v1/auth/me',
+      'POST /api/v1/auth/2fa/enroll',
+      'POST /api/v1/auth/2fa/enroll/confirm',
+      'POST /api/v1/auth/logout',
+    ]);
     expect(
       declarations.find((route) => route.method === 'POST' && route.url === '/api/v1/auth/logout')
         ?.access.kind,

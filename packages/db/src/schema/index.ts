@@ -8,5 +8,6 @@ export * from './email-settings';
 export * from './installation';
 export * from './organization-logos';
 export * from './organizations';
+export * from './two-factor';
 export * from './user-sessions';
 export * from './users';

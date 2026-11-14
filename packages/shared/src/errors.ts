@@ -16,6 +16,8 @@ export const ERROR_CODES = [
   'INVALID_CREDENTIALS',
   'FORBIDDEN',
   'CSRF_INVALID',
+  'TWO_FACTOR_ENROLLMENT_REQUIRED',
+  'TWO_FACTOR_CHALLENGE_INVALID',
   'NOT_FOUND',
   'METHOD_NOT_ALLOWED',
   'CONFLICT',
@@ -37,6 +39,8 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
   INVALID_CREDENTIALS: 401,
   FORBIDDEN: 403,
   CSRF_INVALID: 403,
+  TWO_FACTOR_ENROLLMENT_REQUIRED: 403,
+  TWO_FACTOR_CHALLENGE_INVALID: 401,
   NOT_FOUND: 404,
   METHOD_NOT_ALLOWED: 405,
   CONFLICT: 409,
@@ -56,6 +60,12 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   INVALID_CREDENTIALS: 'Email atau password salah. Periksa lagi lalu coba masuk kembali.',
   FORBIDDEN: 'Kamu tidak punya izin untuk melakukan tindakan ini.',
   CSRF_INVALID: 'Halaman ini sudah terlalu lama terbuka. Muat ulang halaman, lalu coba lagi.',
+  // Owner/Admin/Supervisor tanpa 2FA aktif: hanya pendaftaran 2FA, "siapa saya", dan keluar.
+  TWO_FACTOR_ENROLLMENT_REQUIRED:
+    'Aktifkan verifikasi dua langkah dulu. Peranmu wajib memakainya sebelum bisa memakai aplikasi.',
+  // Tantangan langkah kedua tidak dikenal, kedaluwarsa, sudah dipakai, atau hangus.
+  TWO_FACTOR_CHALLENGE_INVALID:
+    'Langkah verifikasi ini sudah tidak berlaku. Masuk lagi dengan email dan password-mu.',
   NOT_FOUND: 'Data atau alamat yang diminta tidak ditemukan.',
   METHOD_NOT_ALLOWED: 'Metode permintaan ini tidak didukung untuk alamat tersebut.',
   CONFLICT: 'Data bentrok dengan data yang sudah ada.',

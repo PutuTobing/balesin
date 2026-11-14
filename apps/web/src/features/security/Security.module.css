@@ -1,0 +1,190 @@
+/* Pengaturan → Keamanan akun. Kartu mengikuti halaman Pengaturan (lebar, garis, jarak). */
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  width: 100%;
+  max-width: 42rem;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding: var(--space-24);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.cardHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.titleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8) var(--space-16);
+}
+
+.cardTitle {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+}
+
+.cardTitle:focus-visible {
+  outline-offset: var(--space-4);
+}
+
+.text {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  text-wrap: pretty;
+}
+
+.cardHead .text {
+  font-size: var(--text-13);
+}
+
+.meta {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.explain {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-16);
+  border-radius: var(--radius-input);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: var(--text-14);
+  text-wrap: pretty;
+}
+
+.explainIcon {
+  flex: none;
+  color: var(--success-ink);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.stat {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4) var(--space-12);
+}
+
+.statValue {
+  color: var(--ink);
+  font-size: var(--text-20);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-title);
+  font-variant-numeric: tabular-nums;
+}
+
+.statValue[data-low] {
+  color: var(--warning-ink);
+}
+
+/* ---------- Konfirmasi ulang (password + kode) ---------- */
+
+.reauth {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--line);
+}
+
+.reauthHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.reauthTitle {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.reauthFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--space-16);
+}
+
+.reauthActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+/* ---------- Kerangka memuat ---------- */
+
+.skeletonTitle {
+  display: block;
+  width: 12rem;
+  height: var(--space-16);
+}
+
+.skeletonBadge {
+  display: block;
+  width: 4rem;
+  height: var(--space-16);
+}
+
+.skeletonLine {
+  display: block;
+  width: 100%;
+  height: var(--space-12);
+}
+
+.skeletonShort {
+  display: block;
+  width: 60%;
+  height: var(--space-12);
+}
+
+.skeletonStat {
+  display: block;
+  width: 10rem;
+  height: var(--space-24);
+}
+
+.skeletonButton {
+  display: block;
+  width: 8rem;
+  height: var(--size-control);
+  border-radius: var(--radius-input);
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: var(--space-16);
+  }
+
+  .reauthFields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .reauthActions > :first-child {
+    flex: 1;
+  }
+
+  .skeletonButton {
+    height: var(--size-touch);
+  }
+}

@@ -1,4 +1,4 @@
-# Kontrak API — Setup, Login, Branding, Email pengirim (Fase 1)
+# Kontrak API — Setup, Login, 2FA, Branding, Email pengirim (Fase 1)
 
 Sumber kebenaran tipe: skema Zod di `packages/shared/src/auth.ts` dan konstanta path di
 `packages/shared/src/api-routes.ts` (`API_ROUTES`). Dokumen ini menjelaskan perilaku yang
@@ -31,7 +31,7 @@ tidak terlihat dari skema. Semua path diawali `/api/v1`.
 | POST `/setup/email/detect-host` | `setupDetectEmailHostRequestSchema` (`emailAddress`) | `detectEmailHostResponseSchema` |
 | POST `/setup/email/test-connection` | `{setupToken, settings: emailSettingsInputSchema}` | `emailTestResultSchema` `{ok, code, message, testedAt}` |
 | POST `/setup/email/send-test` | `{setupToken, to, settings}` | `emailTestResultSchema` |
-| POST `/setup/complete` | `completeSetupRequestSchema` | **201** `authenticatedSessionSchema` + Set-Cookie |
+| POST `/setup/complete` | `completeSetupRequestSchema` | **201** `completeSetupResponseSchema` (sesi terbatas `two_factor_enrollment_required`) + Set-Cookie sesi saja |
 
 Error setup:
 - 400 `VALIDATION_ERROR`: field Zod, plus `owner.password` (kebijakan password),
@@ -61,19 +61,123 @@ Error setup:
    diisi panggil `detect-host` dan tampilkan sarannya; username bawaan = alamat pengirim; tombol
    "Tes koneksi" dan "Kirim email tes" (tujuan bawaan = email Owner); label keamanan
    `SMTP_SECURITY_LABELS`.
-7. **Selesai**: `complete` 201 → Owner langsung masuk. Error dipetakan ke langkah lewat awalan
+7. **Selesai**: `complete` 201 → Owner masuk dengan **sesi terbatas** dan wajib langsung mendaftarkan
+   2FA (lihat bagian 2FA, "Wajib daftar"). Belum ada cookie perangkat dikenal. Error dipetakan ke langkah lewat awalan
    field (`owner.`, `organization.`, `branding.`, `email.`). 409 → halaman masuk.
 
 ## Auth
-- POST `/auth/login` (publik, `loginRequestSchema`) → 200 `loginResponseSchema`. Periksa
-  `status` (sekarang hanya `authenticated`; langkah 2FA nanti menambah varian).
+- POST `/auth/login` (publik, `loginRequestSchema`) → 200 `loginResponseSchema`. WAJIB periksa
+  `status`: `authenticated` | `two_factor_required` | `two_factor_enrollment_required` (bagian 2FA).
   - 401 `INVALID_CREDENTIALS`: pesan sama untuk email tak terdaftar, password salah, akun
     nonaktif. Jangan diperlakukan seperti 401 sesi habis.
   - 429: per IP (20 gagal/15 menit, "…dari jaringanmu…") atau akun dikunci 15 menit setelah
     5 gagal.
   - 503: Redis mati / server sibuk. 400: validasi.
 - POST `/auth/logout` (sesi + CSRF) → `{status: 'logged_out'}`, cookie dihapus.
-- GET `/auth/me` (sesi) → `meResponseSchema` atau 401.
+- POST `/auth/logout` dan GET `/auth/me` juga berlaku untuk sesi terbatas.
+- GET `/auth/me` (sesi) → `meResponseSchema` (`authenticated` | `two_factor_enrollment_required`) atau 401.
+
+## Verifikasi dua langkah (2FA)
+
+Skema di `packages/shared/src/two-factor.ts` dan `auth.ts`; path di `API_ROUTES.twoFactor`. TOTP
+RFC 6238: SHA-1, 6 digit, 30 detik (Google Authenticator, Microsoft Authenticator, Authy, 1Password).
+**Wajib** untuk Owner, Admin, Supervisor (`TWO_FACTOR_REQUIRED_ROLES`, `isTwoFactorRequired`); CS dan
+Teknisi boleh mengaktifkannya sendiri. Setelah 2FA aktif, setiap login butuh langkah kedua.
+
+### Tiga keadaan setelah password benar (`POST /auth/login`)
+
+| `status` | Cookie | Arti / langkah web |
+|---|---|---|
+| `authenticated` | sesi + perangkat | Selesai (akun tanpa 2FA yang perannya tidak wajib). |
+| `two_factor_required` | **tidak ada** | 2FA aktif. Body: `challengeToken`, `expiresAt` (5 menit), `attemptsRemaining` (3), `methods` (`totp`, plus `backup_code` bila masih ada kode cadangan). Tampilkan isian kode → `POST /auth/2fa/verify`. |
+| `two_factor_enrollment_required` | sesi terbatas (30 menit) | Peran wajib 2FA tapi belum mendaftar. Bentuk body sama dengan sesi (`user`, `organization`, `csrfToken`, `session`). Arahkan ke layar pendaftaran 2FA. |
+
+`GET /auth/me` dengan sesi terbatas mengembalikan `status: two_factor_enrollment_required` — web memakai
+ini untuk memaksa layar pendaftaran (mis. setelah muat ulang). Sesi terbatas hanya boleh memanggil
+`GET /auth/2fa`, `POST /auth/2fa/enroll`, `POST /auth/2fa/enroll/confirm`, `GET /auth/me`, dan
+`POST /auth/logout`. Rute lain → **403 `TWO_FACTOR_ENROLLMENT_REQUIRED`** (ditegakkan di hook auth
+server). Web: saat menerima kode ini dari rute mana pun, muat ulang `/auth/me` lalu arahkan ke layar
+pendaftaran.
+
+**Jenis sesi ditetapkan saat sesi dibuat.** Bila peran pengguna berubah sehingga jenis sesinya tidak
+cocok lagi — sesi biasa milik pengguna yang perannya dinaikkan menjadi Owner/Admin/Supervisor (belum
+ber-2FA), atau sesi terbatas milik pengguna yang perannya diturunkan — sesi itu **dicabut**: permintaan
+berikutnya dijawab **401 `UNAUTHENTICATED`** "Sesi kamu sudah berakhir. Masuk lagi untuk melanjutkan."
+dan cookie dihapus (perlakuan sama dengan sesi habis). Setelah masuk ulang dengan password, pengguna
+mendapat sesi yang sesuai. Hanya sesi terbatas yang boleh mulai mendaftar 2FA tanpa password.
+
+### Langkah kedua: `POST /auth/2fa/verify` (publik, tanpa CSRF)
+
+- Request `verifyTwoFactorRequestSchema`: `{ challengeToken, code }`. `code` = 6 digit TOTP **atau**
+  kode cadangan; spasi, tanda hubung, dan huruf besar diabaikan (`normalizeTwoFactorCode`). Kirim dari
+  browser yang sama (tantangan terikat user agent + jaringan saat password dimasukkan).
+- 200 `verifyTwoFactorResponseSchema` = sesi penuh + `twoFactor: { method, backupCodesRemaining }`.
+  503 bila data 2FA di server tidak bisa dibuka (master key berubah) — tampilkan pesannya.
+  Memasang cookie sesi + cookie perangkat dikenal; sesi lama di browser itu dicabut (rotasi). Bila
+  `method` = `backup_code`, tampilkan sisa kode dan sarankan membuat ulang bila tinggal sedikit.
+- Simpan `challengeToken` di memori saja (bukan URL/localStorage). Sekali pakai.
+
+| Kasus | Respons |
+|---|---|
+| Kode salah, kode TOTP yang sudah pernah dipakai (replay), atau kode cadangan terpakai | 400 `VALIDATION_ERROR`, `details[0].field = "code"`, pesan memuat "Sisa N percobaan." |
+| Kode salah ke-3 pada tantangan yang sama | 401 `TWO_FACTOR_CHALLENGE_INVALID` "Kode salah 3 kali. Masuk lagi…" |
+| Tantangan tidak dikenal, kedaluwarsa, sudah dipakai, dari browser/jaringan lain, atau akun dinonaktifkan | 401 `TWO_FACTOR_CHALLENGE_INVALID` → kembali ke langkah email + password dengan pesannya. **Bukan** sesi habis. |
+| 5 kode salah per akun (dari tantangan mana pun) dalam 15 menit | 429 + `Retry-After` 900: langkah kedua dikunci 15 menit; `POST /auth/login` dengan password benar juga 429 selama kunci. Perangkat dikenal punya satu ember bersama per akun (hanya cookie perangkat yang terbit SETELAH 2FA aktif yang dihitung sebagai perangkat dikenal). Email pemberitahuan ke pemilik akun. |
+| Lebih dari 30 permintaan verify per IP / 15 menit (yang berhasil tidak dihitung) | 429 |
+| Kode bukan 6 digit dan bukan bentuk kode cadangan | 400 `VALIDATION_ERROR` (tidak dihitung sebagai percobaan) |
+
+Toleransi jam ponsel ±1 langkah (±30 detik). Kode yang sama tidak bisa dipakai dua kali.
+
+### Wajib daftar / mendaftar sendiri
+
+1. (Opsional) `GET /auth/2fa` → `twoFactorStatusResponseSchema`
+   `{ enabled, required, enabledAt, backupCodesRemaining, backupCodesGeneratedAt, enrollmentPending }`.
+2. `POST /auth/2fa/enroll` (sesi + CSRF), body `startTwoFactorEnrollmentRequestSchema`:
+   - dari sesi terbatas: `{}` (password baru saja dimasukkan saat masuk/setup);
+   - dari sesi penuh (CS/Teknisi di halaman keamanan): `{ password }` **wajib** (400 field `password`
+     bila kosong/salah).
+   - 200 `startTwoFactorEnrollmentResponseSchema`: `otpauthUri`, `secret` (base32, 32 karakter),
+     `secretGrouped` (per 4 karakter, untuk diketik manual), `issuer` (nama produk dari branding, atau
+     nama organisasi), `accountName` (email), `expiresAt` (15 menit), `digits` 6, `periodSeconds` 30.
+   - **Buat QR di browser dari `otpauthUri`** (pustaka QR lokal, jangan layanan luar); tampilkan juga
+     `secretGrouped`. Jangan simpan rahasia di mana pun. Memanggil lagi = rahasia baru (yang lama batal).
+   - 409 bila 2FA sudah aktif; 503 bila `BALESIN_MASTER_KEY` server kosong; 429 setelah 10 percobaan
+     mulai/konfirmasi per 15 menit.
+3. `POST /auth/2fa/enroll/confirm` (sesi + CSRF) `{ code }` (6 digit, `totpCodeSchema`):
+   - 400 field `code` bila tidak cocok; 409 bila QR kedaluwarsa/belum dibuat ("Mulai lagi").
+   - 200 `confirmTwoFactorEnrollmentResponseSchema` = sesi penuh **baru** + `backupCodes:
+     { codes: string[10] "xxxxx-xxxxx", generatedAt }`. Cookie sesi baru + cookie perangkat dikenal
+     dipasang; **semua** sesi lama pengguna (termasuk sesi terbatas ini) dicabut — ganti `csrfToken`
+     di memori dengan yang baru. Kode cadangan **hanya ditampilkan sekali**: tampilkan dengan tombol
+     salin/unduh dan minta konfirmasi "sudah disimpan" sebelum lanjut ke aplikasi.
+
+### Mengelola 2FA sendiri (sesi penuh + CSRF)
+
+- `POST /auth/2fa/backup-codes` `twoFactorReauthRequestSchema` `{ password, code }` → 200
+  `{ codes, generatedAt }` (10 kode baru, semua kode lama batal). `code` boleh TOTP atau kode cadangan.
+- `POST /auth/2fa/disable` `{ password, code }` → 200 `{ status: "disabled" }`. Hanya peran yang tidak
+  wajib; Owner/Admin/Supervisor → 403 `FORBIDDEN` ("Peranmu wajib memakai verifikasi dua langkah…").
+- Error keduanya: 400 field `password` (password salah; kode tidak diperiksa) atau field `code`;
+  409 bila 2FA belum aktif; 429 setelah 5 konfirmasi gagal per 15 menit per pengguna.
+- Kode salah di sini dihitung di ember yang SAMA dengan langkah kedua saat masuk: kode salah ke-5
+  (gabungan dengan percobaan masuk) → 429 "Terlalu banyak kode verifikasi yang salah…", langkah
+  kedua akun dikunci 15 menit (login juga 429) dan email kunci dikirim.
+- Mereset 2FA pengguna lain (Owner/Admin, mis. ponsel hilang) menyusul di manajemen pengguna.
+
+### Email pemberitahuan (lewat worker, bila email pengirim sudah diatur)
+
+2FA diaktifkan, 2FA dinonaktifkan, kode cadangan dipakai (dengan sisa kode), kode cadangan dibuat
+ulang, dan kunci langkah kedua
+(5 kode salah — tanda password-nya sudah diketahui orang lain). Email kunci tetap paling banyak satu
+per jam per akun (berbagi jatah dengan kunci password).
+
+### Catatan untuk tes E2E
+
+Rahasia (`secret`) tampil di layar pendaftaran (teks untuk ketik manual). Tes bisa membacanya lalu
+menghitung kode dengan `generateTotp(secret)` dari `@balesin/core` (atau HMAC-SHA1 RFC 6238 ±15 baris
+di helper tes). Kode yang sama tidak bisa dipakai dua kali dalam 30 detik: untuk login berulang dalam
+satu tes, pakai kode langkah berikutnya (`generateTotp(secret, Date.now() + 30_000)`), kode cadangan,
+atau tunggu langkah berganti.
 
 ## Branding (publik)
 - GET `/branding` → `brandingResponseSchema`.
@@ -96,8 +200,10 @@ Error setup:
   untuk IPv6), atau setelah 50 gagal per jam dari banyak asal (hanya untuk perangkat yang belum dikenal).
   Perangkat yang pernah berhasil masuk hanya terkunci oleh 5 kegagalannya sendiri. Pesan dan
   `Retry-After` tidak berubah.
-- **Cookie perangkat dikenal**: login dan `/setup/complete` kini memasang dua `Set-Cookie` — sesi dan
+- **Cookie perangkat dikenal**: respons yang MENYELESAIKAN login (login akun tanpa 2FA,
+  `POST /auth/2fa/verify`, `POST /auth/2fa/enroll/confirm`) memasang dua `Set-Cookie` — sesi dan
   `balesin_device` (http) / `__Host-balesin_device` (https), HttpOnly, `SameSite=Strict`, 90 hari.
+  Sesi terbatas (setup, login peran wajib 2FA yang belum mendaftar) hanya memasang cookie sesi.
   Bukan kredensial; tidak dihapus saat logout. Web tidak perlu melakukan apa pun selain
   `credentials: "include"`.
 - `GET /setup/status` setelah setup selesai → `{needsSetup: false, setupTokenConfigured: false,

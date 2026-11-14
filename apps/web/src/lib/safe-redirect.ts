@@ -1,8 +1,11 @@
 /** Tujuan bawaan setelah masuk. */
 export const DEFAULT_AFTER_LOGIN = '/inbox';
 
-/** Halaman publik yang tidak masuk akal dijadikan tujuan setelah masuk. */
-const PUBLIC_PREFIXES = ['/masuk', '/setup'];
+/**
+ * Halaman di luar aplikasi yang tidak masuk akal dijadikan tujuan setelah masuk (termasuk
+ * layar pendaftaran 2FA wajib, yang hanya untuk sesi terbatas).
+ */
+const PUBLIC_PREFIXES = ['/masuk', '/setup', '/verifikasi-dua-langkah'];
 
 /**
  * Tujuan setelah masuk yang aman: hanya path internal aplikasi (diawali satu `/`).

@@ -12,6 +12,7 @@ import { usePageMeta, type PageParent } from './page-meta';
 const parents: Record<PageParent, { to: NonNullable<LinkProps['to']>; label: string }> = {
   more: { to: '/lainnya', label: t.nav.more },
   settings: { to: '/pengaturan', label: t.nav.settings },
+  security: { to: '/pengaturan/keamanan', label: t.security.title },
 };
 
 interface PageHeaderProps {
@@ -20,7 +21,7 @@ interface PageHeaderProps {
   /**
    * Layar induk. Untuk `more`, tombol kembali hanya tampil di HP (di desktop semua menu
    * sudah terlihat di rail). Halaman di dalam Pengaturan (`settings`) selalu punya tombol
-   * kembali karena rail tidak memuat sub-halaman.
+   * kembali karena rail tidak memuat sub-halaman (begitu juga sub-halaman Keamanan akun).
    */
   parent?: PageParent;
   /** Aksi halaman di kanan header. */
@@ -35,7 +36,7 @@ export function PageHeader({ title, parent, actions }: PageHeaderProps) {
       {back ? (
         <Link
           to={back.to}
-          className={cx(styles.back, parent === 'settings' && styles.backAlways)}
+          className={cx(styles.back, parent !== 'more' && styles.backAlways)}
           aria-label={t.common.backTo(back.label)}
         >
           <Icon icon={ArrowLeft} size={20} />

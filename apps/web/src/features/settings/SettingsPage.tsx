@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ChevronRight, Mail } from 'lucide-react';
+import { ChevronRight, Mail, ShieldCheck } from 'lucide-react';
 import { RadioGroup } from 'radix-ui';
 import { useBrand } from '../../brand/brand';
 import { Icon } from '../../components/ui/Icon';
@@ -13,16 +13,18 @@ import { useTheme } from '../../theme/theme-context';
 import { themeOptions } from '../../theme/theme-options';
 import { useSession } from '../auth/session';
 import { EmailStatusBadge } from '../email-settings/EmailStatusBadge';
-import { emailSettingsQuery } from '../../lib/api/queries';
+import { emailSettingsQuery, twoFactorStatusQuery } from '../../lib/api/queries';
+import { TwoFactorBadge } from '../security/TwoFactorBadge';
 import styles from './Settings.module.css';
 
 const APPEARANCE_HEADING_ID = 'pengaturan-tampilan';
 const ORGANIZATION_HEADING_ID = 'pengaturan-organisasi';
+const ACCOUNT_HEADING_ID = 'pengaturan-akun';
 
 /**
  * Pengaturan. Bagian lain (channel, peran, jam kerja, dan seterusnya) ditambahkan
  * bersama fiturnya masing-masing. Pengaturan organisasi (Email pengirim) hanya untuk Owner;
- * peran lain tidak melihat menunya.
+ * peran lain tidak melihat menunya. Keamanan akun untuk semua peran.
  */
 export function SettingsPage() {
   const { preference, setPreference } = useTheme();
@@ -34,6 +36,7 @@ export function SettingsPage() {
     <Page>
       <div className={styles.content}>
         {isOwner ? <OrganizationSettings /> : null}
+        <AccountSettings />
         <section className={styles.card} aria-labelledby={APPEARANCE_HEADING_ID}>
           <div className={styles.cardHead}>
             <h2 id={APPEARANCE_HEADING_ID} className={styles.cardTitle}>
@@ -138,6 +141,41 @@ function OrganizationSettings() {
                   ) : null}
                 </>
               ) : email.isPending ? (
+                <Skeleton className={styles.statusSkeleton} />
+              ) : null}
+            </span>
+            <Icon icon={ChevronRight} size={16} className={styles.chevron} />
+          </Link>
+        </li>
+      </ul>
+    </section>
+  );
+}
+
+/** Menu akun pengguna sendiri (semua peran): Keamanan akun dengan status 2FA. */
+function AccountSettings() {
+  const status = useQuery(twoFactorStatusQuery);
+  return (
+    <section className={styles.card} aria-labelledby={ACCOUNT_HEADING_ID}>
+      <div className={styles.cardHead}>
+        <h2 id={ACCOUNT_HEADING_ID} className={styles.cardTitle}>
+          {t.security.sectionTitle}
+        </h2>
+      </div>
+      <ul className={styles.menu}>
+        <li>
+          <Link to="/pengaturan/keamanan" className={styles.menuLink}>
+            <span className={styles.menuIcon}>
+              <Icon icon={ShieldCheck} size={20} />
+            </span>
+            <span className={styles.menuText}>
+              <span className={styles.menuLabel}>{t.security.title}</span>
+              <span className={styles.menuHint}>{t.security.menuHint}</span>
+            </span>
+            <span className={styles.menuStatus}>
+              {status.data ? (
+                <TwoFactorBadge enabled={status.data.enabled} />
+              ) : status.isPending ? (
                 <Skeleton className={styles.statusSkeleton} />
               ) : null}
             </span>

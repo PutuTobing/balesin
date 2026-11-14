@@ -78,6 +78,8 @@ export interface TextFieldProps extends FieldFrameProps, InputProps {
   trailing?: ReactNode;
   /** Teks tetap di kiri kolom (mis. `#`). */
   leading?: ReactNode;
+  /** Kelas tambahan untuk elemen `<input>` (mis. huruf monospace untuk kode). */
+  inputClassName?: string;
 }
 
 export function TextField({
@@ -89,6 +91,7 @@ export function TextField({
   className,
   trailing,
   leading,
+  inputClassName,
   id,
   'aria-describedby': extraDescribedBy,
   ...input
@@ -114,7 +117,7 @@ export function TextField({
         ) : null}
         <input
           id={ids.inputId}
-          className={styles.input}
+          className={cx(styles.input, inputClassName)}
           {...input}
           aria-invalid={error ? true : input['aria-invalid']}
           aria-describedby={describedBy(ids.errorId, ids.hintId, extraDescribedBy)}

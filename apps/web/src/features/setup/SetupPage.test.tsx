@@ -1,8 +1,14 @@
-import { API_ROUTES } from '@balesin/shared';
+import { API_ROUTES, CSRF_HEADER_NAME } from '@balesin/shared';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { t } from '../../i18n/id';
-import { apiError, fakeSession, json, type FakeRequest } from '../../test/fake-api';
+import {
+  apiError,
+  fakeEnrollment,
+  fakeEnrollmentSession,
+  json,
+  type FakeRequest,
+} from '../../test/fake-api';
 import { renderApp } from '../../test/render-app';
 
 const TOKEN = 'token-setup-yang-panjang-1234567890';
@@ -169,15 +175,16 @@ describe('wizard setup', () => {
     expect(body).toMatchObject({ email: null, organization: { name: 'PT Maju Jaya' } });
   });
 
-  it('setup selesai → Owner langsung masuk ke Inbox', async () => {
+  it('setup selesai → Owner masuk dengan sesi terbatas dan langsung ke pendaftaran 2FA', async () => {
     const view = await renderApp(`/setup#token=${TOKEN}`, {
       session: null,
       setupStatus: freshInstall,
       routes: setupRoutes({
         [`POST ${API_ROUTES.setup.complete}`]: () => {
-          view.api.setSession(fakeSession());
-          return json(fakeSession(), { status: 201 });
+          view.api.setSession(fakeEnrollmentSession());
+          return json(fakeEnrollmentSession(), { status: 201 });
         },
+        [`POST ${API_ROUTES.twoFactor.enroll}`]: () => json(fakeEnrollment()),
       }),
     });
     await fillToBranding();
@@ -188,8 +195,15 @@ describe('wizard setup', () => {
     expect(screen.getByText(steps.summary.emailSkipped)).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: steps.summary.submit }));
 
-    await waitFor(() => expect(view.router.state.location.pathname).toBe('/inbox'));
-    expect(await screen.findByRole('heading', { level: 1, name: t.inbox.title })).toBeVisible();
+    await waitFor(() =>
+      expect(view.router.state.location.pathname).toBe('/verifikasi-dua-langkah'),
+    );
+    expect(await heading(t.twoFactor.enroll.title)).toBeVisible();
+    // Token CSRF sesi terbatas dipakai untuk memulai pendaftaran.
+    await screen.findByRole('img', { name: t.twoFactor.enroll.add.qrLabel });
+    const enroll = view.api.requests.find((r) => r.path === API_ROUTES.twoFactor.enroll);
+    expect(enroll?.headers[CSRF_HEADER_NAME]).toBe('csrf-terbatas');
+    expect(enroll?.body).toEqual({});
   });
 
   it('409 di tengah wizard → layar "Setup sudah selesai" dengan jalan ke halaman masuk', async () => {

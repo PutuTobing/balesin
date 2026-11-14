@@ -3,6 +3,7 @@ import { CSRF_HEADER_NAME } from '@balesin/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import { clearedSessionCookie, readSessionToken } from '../../http/cookies';
+import { allowsTwoFactorEnrollment } from '../../http/route-access';
 import type { CsrfProtection } from './csrf';
 import type { AuthContext, SessionService } from './session.service';
 
@@ -37,7 +38,10 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  *  2. Rute publik (`config.access = PUBLIC`): lanjut tanpa sesi.
  *  3. Selain itu wajib ada sesi yang sah → 401 bila tidak.
  *  4. Permintaan pengubah data wajib membawa `Origin` aplikasi dan token CSRF sesi itu → 403.
- *  5. Rute `allowRoles(...)`: peran pengguna harus termasuk → 403.
+ *  5. Sesi terbatas (Owner/Admin/Supervisor yang 2FA-nya belum aktif) hanya boleh ke rute
+ *     `AUTHENTICATED_OR_ENROLLING` → selain itu 403 `TWO_FACTOR_ENROLLMENT_REQUIRED`. Keadaan 2FA
+ *     dibaca dari database setiap permintaan, jadi peran yang baru dinaikkan langsung ikut.
+ *  6. Rute `allowRoles(...)`: peran pengguna harus termasuk → 403.
  *
  * Rute tanpa `config.access` ditolak 403 (seharusnya tidak pernah ada: pendaftarannya sudah
  * digagalkan `enforceRouteDeclarations`). Alamat yang tidak cocok dengan rute mana pun tetap
@@ -88,6 +92,10 @@ export function registerAuthHook(app: FastifyInstance, options: AuthHookOptions)
       ) {
         throw new AppError('CSRF_INVALID');
       }
+    }
+
+    if (auth.twoFactor.enrollmentRequired && !allowsTwoFactorEnrollment(access)) {
+      throw new AppError('TWO_FACTOR_ENROLLMENT_REQUIRED');
     }
 
     if (access.kind === 'roles' && !access.roles.includes(auth.user.role)) {

@@ -54,3 +54,10 @@ export function formatClock(totalSeconds: number): string {
 export function kilobytes(bytes: number): number {
   return Math.ceil(bytes / 1024);
 }
+
+/** Tanggal saja: "14 Nov 2026". */
+export function formatDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return dateFormat.format(date);
+}

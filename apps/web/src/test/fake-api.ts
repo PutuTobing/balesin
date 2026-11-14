@@ -1,9 +1,14 @@
 import {
   API_ROUTES,
+  isTwoFactorRequired,
   type AuthenticatedSession,
   type BrandingResponse,
   type EmailSettingsResponse,
+  type MeResponse,
   type SetupStatusResponse,
+  type StartTwoFactorEnrollmentResponse,
+  type TwoFactorEnrollmentSession,
+  type TwoFactorStatusResponse,
   type UserRole,
 } from '@balesin/shared';
 import { vi } from 'vitest';
@@ -66,6 +71,64 @@ export function fakeSession(role: UserRole = 'owner', name = 'Rina Kartika'): Au
   };
 }
 
+/** Sesi terbatas: peran wajib 2FA yang belum mendaftar. */
+export function fakeEnrollmentSession(
+  role: UserRole = 'owner',
+  csrfToken = 'csrf-terbatas',
+): TwoFactorEnrollmentSession {
+  return { ...fakeSession(role), status: 'two_factor_enrollment_required', csrfToken };
+}
+
+/** Status 2FA bawaan: peran wajib sudah aktif dengan 10 kode; peran lain belum aktif. */
+export function fakeTwoFactorStatus(
+  role: UserRole = 'owner',
+  overrides: Partial<TwoFactorStatusResponse> = {},
+): TwoFactorStatusResponse {
+  const required = isTwoFactorRequired(role);
+  return {
+    enabled: required,
+    required,
+    enabledAt: required ? '2026-11-13T03:00:00.000Z' : null,
+    backupCodesRemaining: required ? 10 : 0,
+    backupCodesGeneratedAt: required ? '2026-11-13T03:00:00.000Z' : null,
+    enrollmentPending: false,
+    ...overrides,
+  };
+}
+
+/** Rahasia contoh (base32, 32 karakter) — hanya untuk tes. */
+export const FAKE_TOTP_SECRET = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
+
+export function fakeEnrollment(
+  overrides: Partial<StartTwoFactorEnrollmentResponse> = {},
+): StartTwoFactorEnrollmentResponse {
+  return {
+    otpauthUri: `otpauth://totp/Balesin:rina%40majujaya.co.id?secret=${FAKE_TOTP_SECRET}&issuer=Balesin&algorithm=SHA1&digits=6&period=30`,
+    secret: FAKE_TOTP_SECRET,
+    secretGrouped: 'JBSW Y3DP EHPK 3PXP JBSW Y3DP EHPK 3PXP',
+    issuer: 'Balesin',
+    accountName: 'rina@majujaya.co.id',
+    expiresAt: '2026-11-14T00:15:00.000Z',
+    digits: 6,
+    periodSeconds: 30,
+    ...overrides,
+  };
+}
+
+/** 10 kode cadangan contoh (bentuk tampilan `xxxxx-xxxxx`). */
+export const FAKE_BACKUP_CODES = [
+  'k7m2p-x9q4r',
+  'a3b4c-d5e6f',
+  'g7h8j-k9m2n',
+  'p3q4r-s5t6u',
+  'v7w8x-y9z2a',
+  'b3c4d-e5f6g',
+  'h7j8k-m9n2p',
+  'q3r4s-t5u6v',
+  'w7x8y-z9a2b',
+  'c3d4e-f5g6h',
+];
+
 export const defaultBranding: BrandingResponse = {
   productName: 'Balesin',
   organizationName: 'PT Maju Jaya',
@@ -83,8 +146,10 @@ export const emptyEmailSettings: EmailSettingsResponse = {
 };
 
 export interface FakeApiOptions {
-  /** `null` = belum masuk (401). */
-  session?: AuthenticatedSession | null;
+  /** `null` = belum masuk (401). Sesi terbatas (`two_factor_enrollment_required`) juga bisa. */
+  session?: MeResponse | null;
+  /** Bawaan: `fakeTwoFactorStatus(peran sesi)`. */
+  twoFactorStatus?: TwoFactorStatusResponse;
   branding?: BrandingResponse;
   setupStatus?: SetupStatusResponse;
   emailSettings?: EmailSettingsResponse;
@@ -96,7 +161,7 @@ export interface FakeApi {
   requests: FakeRequest[];
   /** Ganti/tambah penangan setelah dipasang. */
   on(key: string, handler: FakeHandler): void;
-  setSession(session: AuthenticatedSession | null): void;
+  setSession(session: MeResponse | null): void;
 }
 
 export function installFakeApi(options: FakeApiOptions = {}): FakeApi {
@@ -105,8 +170,22 @@ export function installFakeApi(options: FakeApiOptions = {}): FakeApi {
   const requests: FakeRequest[] = [];
 
   const unauthenticated = () => apiError(401, 'UNAUTHENTICATED', 'Masuk dulu untuk melanjutkan.');
+  const enrollmentRequired = () =>
+    apiError(403, 'TWO_FACTOR_ENROLLMENT_REQUIRED', 'Aktifkan verifikasi dua langkah dulu.');
+  /** Seperti hook auth server: sesi terbatas hanya boleh ke rute pendaftaran 2FA. */
+  const fullSessionOnly =
+    (handler: FakeHandler): FakeHandler =>
+    (request) => {
+      if (!session) return unauthenticated();
+      if (session.status !== 'authenticated') return enrollmentRequired();
+      return handler(request);
+    };
   const defaults: Record<string, FakeHandler> = {
     [`GET ${API_ROUTES.auth.me}`]: () => (session ? json(session) : unauthenticated()),
+    [`GET ${API_ROUTES.twoFactor.status}`]: () =>
+      session
+        ? json(options.twoFactorStatus ?? fakeTwoFactorStatus(session.user.role))
+        : unauthenticated(),
     [`GET ${API_ROUTES.branding.get}`]: () => json(options.branding ?? defaultBranding),
     [`GET ${API_ROUTES.setup.status}`]: () =>
       json(
@@ -116,8 +195,9 @@ export function installFakeApi(options: FakeApiOptions = {}): FakeApi {
           canStoreSecrets: true,
         },
       ),
-    [`GET ${API_ROUTES.settings.email}`]: () =>
-      session ? json(options.emailSettings ?? emptyEmailSettings) : unauthenticated(),
+    [`GET ${API_ROUTES.settings.email}`]: fullSessionOnly(() =>
+      json(options.emailSettings ?? emptyEmailSettings),
+    ),
     [`POST ${API_ROUTES.auth.logout}`]: () => {
       session = null;
       return json({ status: 'logged_out' });

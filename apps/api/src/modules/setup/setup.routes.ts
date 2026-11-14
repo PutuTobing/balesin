@@ -1,8 +1,8 @@
 import {
   API_ROUTES,
-  authenticatedSessionSchema,
   checkSetupPasswordRequestSchema,
   completeSetupRequestSchema,
+  completeSetupResponseSchema,
   detectEmailHostResponseSchema,
   emailTestResultSchema,
   errorEnvelopeSchema,
@@ -17,12 +17,10 @@ import {
 import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod';
 
 import { clientInfo, ipRateLimitKey } from '../../http/client-info';
-import { deviceCookie, sessionCookie } from '../../http/cookies';
 import { enforceRateLimit, type RateLimiter } from '../../http/rate-limit';
 import { PUBLIC } from '../../http/route-access';
-import { SESSION_ABSOLUTE_SECONDS } from '../auth/session.repo';
-import { toAuthenticatedSession } from '../auth/session.service';
-import { TRUSTED_DEVICE_MAX_AGE_SECONDS } from '../auth/trusted-device';
+import { setSessionCookies } from '../auth/auth.routes';
+import { toSessionResponse } from '../auth/session.service';
 import {
   EMAIL_DETECT_RULE,
   EMAIL_TEST_RULE,
@@ -58,7 +56,8 @@ const errors = {
  * - `POST /setup/email/detect-host`      saran host SMTP dari domain email
  * - `POST /setup/email/test-connection`  tes koneksi SMTP (isi form)
  * - `POST /setup/email/send-test`        kirim email tes (isi form)
- * - `POST /setup/complete`               buat organisasi + Owner, langsung masuk
+ * - `POST /setup/complete`               buat organisasi + Owner, masuk dengan sesi terbatas
+ *                                         (Owner wajib mendaftarkan 2FA dulu)
  */
 export const setupRoutes: FastifyPluginCallbackZod<SetupRoutesOptions> = (app, options, done) => {
   const { setup, emailSettings, limiter, cookieSecure } = options;
@@ -188,7 +187,7 @@ export const setupRoutes: FastifyPluginCallbackZod<SetupRoutesOptions> = (app, o
       config: { access: PUBLIC },
       schema: {
         body: completeSetupRequestSchema,
-        response: { 201: authenticatedSessionSchema, ...errors },
+        response: { 201: completeSetupResponseSchema, ...errors },
       },
     },
     async (request, reply) => {
@@ -196,11 +195,8 @@ export const setupRoutes: FastifyPluginCallbackZod<SetupRoutesOptions> = (app, o
         client: clientInfo(request),
         log: request.log,
       });
-      void reply.header('set-cookie', [
-        sessionCookie(issued.token, cookieSecure, SESSION_ABSOLUTE_SECONDS),
-        deviceCookie(issued.deviceToken, cookieSecure, TRUSTED_DEVICE_MAX_AGE_SECONDS),
-      ]);
-      return reply.status(201).send(toAuthenticatedSession(issued.auth));
+      setSessionCookies(reply, { ...issued, deviceToken: undefined }, cookieSecure);
+      return reply.status(201).send(toSessionResponse(issued.auth));
     },
   );
 

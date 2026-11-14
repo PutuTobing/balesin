@@ -303,9 +303,13 @@ function SetupWizard({
         setupTokenConfigured: false,
         canStoreSecrets: false,
       });
-      // Merek baru (nama, logo) dimuat dulu supaya Inbox langsung tampil dengan merek itu.
+      // Merek baru (nama, logo) dimuat dulu supaya layar berikutnya langsung memakai merek itu.
       await queryClient.fetchQuery({ ...brandingQuery, staleTime: 0 }).catch(() => undefined);
-      await router.navigate({ to: '/inbox', replace: true });
+      // Owner wajib 2FA: sesi dari setup selalu terbatas, jadi lanjut ke pendaftaran 2FA dulu.
+      await router.navigate({
+        to: session.status === 'authenticated' ? '/inbox' : '/verifikasi-dua-langkah',
+        replace: true,
+      });
     } catch (error) {
       setBusy(false);
       if (!isApiError(error)) return fail('summary', {}, t.api.network);

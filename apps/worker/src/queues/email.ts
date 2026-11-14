@@ -6,6 +6,8 @@ import {
   fallbackEmailSettings,
   openStoredEmailSettings,
   renderAccountLockedEmail,
+  renderSecurityNoticeEmail,
+  securityNoticeEmailPayloadSchema,
   sendSmtpMail,
   type EmailJobResult,
   type HostLookup,
@@ -153,13 +155,8 @@ async function deliver(
   throw PERMANENT_FAILURES.has(result.code) ? new UnrecoverableError(message) : new Error(message);
 }
 
-async function sendAccountLocked(job: EmailJob, deps: EmailJobDeps): Promise<EmailJobResult> {
-  const payload = accountLockedEmailPayloadSchema.safeParse(job.data);
-  if (!payload.success) {
-    throw new UnrecoverableError('Payload job email:account-locked tidak valid');
-  }
-  const { organizationId, userId, lockedUntil, scope } = payload.data;
-
+/** Penerima email akun: diambil dari database (payload hanya berisi ID). */
+async function findRecipient(organizationId: string, userId: string, deps: EmailJobDeps) {
   const [recipient] = await deps.db
     .select({
       email: users.email,
@@ -172,9 +169,18 @@ async function sendAccountLocked(job: EmailJob, deps: EmailJobDeps): Promise<Ema
     .innerJoin(organizations, eq(organizations.id, users.organizationId))
     .where(and(eq(users.organizationId, organizationId), eq(users.id, userId)))
     .limit(1);
-  if (!recipient || recipient.disabledAt !== null) {
-    return { status: 'skipped', reason: 'recipient_unavailable' };
+  return recipient && recipient.disabledAt === null ? recipient : undefined;
+}
+
+async function sendAccountLocked(job: EmailJob, deps: EmailJobDeps): Promise<EmailJobResult> {
+  const payload = accountLockedEmailPayloadSchema.safeParse(job.data);
+  if (!payload.success) {
+    throw new UnrecoverableError('Payload job email:account-locked tidak valid');
   }
+  const { organizationId, userId, lockedUntil, scope } = payload.data;
+
+  const recipient = await findRecipient(organizationId, userId, deps);
+  if (!recipient) return { status: 'skipped', reason: 'recipient_unavailable' };
 
   const body = renderAccountLockedEmail({
     productName: recipient.productName ?? DEFAULT_PRODUCT_NAME,
@@ -188,6 +194,28 @@ async function sendAccountLocked(job: EmailJob, deps: EmailJobDeps): Promise<Ema
   return deliver(organizationId, { to: recipient.email, ...body }, job, deps);
 }
 
+/** 2FA diaktifkan/dinonaktifkan, kode cadangan dipakai — selalu ke pemilik akun sendiri. */
+async function sendSecurityNotice(job: EmailJob, deps: EmailJobDeps): Promise<EmailJobResult> {
+  const payload = securityNoticeEmailPayloadSchema.safeParse(job.data);
+  if (!payload.success) {
+    throw new UnrecoverableError('Payload job email:security-notice tidak valid');
+  }
+  const { organizationId, userId, event, occurredAt, backupCodesRemaining } = payload.data;
+
+  const recipient = await findRecipient(organizationId, userId, deps);
+  if (!recipient) return { status: 'skipped', reason: 'recipient_unavailable' };
+
+  const body = renderSecurityNoticeEmail({
+    productName: recipient.productName ?? DEFAULT_PRODUCT_NAME,
+    userName: recipient.name,
+    event,
+    occurredAt: new Date(occurredAt),
+    timeZone: recipient.timezone,
+    ...(backupCodesRemaining === undefined ? {} : { backupCodesRemaining }),
+  });
+  return deliver(organizationId, { to: recipient.email, ...body }, job, deps);
+}
+
 /**
  * Memproses satu job email. Payload SELALU divalidasi; job tak dikenal atau payload rusak
  * gagal permanen. Kegagalan sementara (server tidak merespons, sambungan ditolak) dilempar
@@ -195,6 +223,7 @@ async function sendAccountLocked(job: EmailJob, deps: EmailJobDeps): Promise<Ema
  */
 export function processEmailJob(job: EmailJob, deps: EmailJobDeps): Promise<EmailJobResult> {
   if (job.name === EMAIL_JOBS.accountLocked) return sendAccountLocked(job, deps);
+  if (job.name === EMAIL_JOBS.securityNotice) return sendSecurityNotice(job, deps);
   return Promise.reject(new UnrecoverableError(`Job "${job.name}" tidak dikenal di antrian email`));
 }
 

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { meResponseSchema, type MeResponse } from './auth';
 import { brandingInputSchema, organizationNameSchema } from './branding';
 import {
   detectEmailHostRequestSchema,
@@ -103,3 +104,11 @@ export const completeSetupRequestSchema = z.object({
   email: emailSettingsInputSchema.nullish(),
 });
 export type CompleteSetupRequest = z.infer<typeof completeSetupRequestSchema>;
+
+/**
+ * Respons 201 `POST /setup/complete`. Owner wajib 2FA, jadi saat ini SELALU sesi terbatas
+ * `two_factor_enrollment_required` (lanjutkan ke pendaftaran 2FA); bentuknya sama dengan
+ * `meResponseSchema` supaya web bisa menyimpannya sebagai sesi apa adanya.
+ */
+export const completeSetupResponseSchema = meResponseSchema;
+export type CompleteSetupResponse = MeResponse;

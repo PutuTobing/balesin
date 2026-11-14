@@ -32,9 +32,7 @@ import {
 import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
 import type { PasswordHasher } from '../auth/password-hasher';
 import { checkPassword } from '../auth/password-policy';
-import type { LoginResult } from '../auth/auth.service';
-import type { SessionService } from '../auth/session.service';
-import type { TrustedDevices } from '../auth/trusted-device';
+import type { IssuedSession, SessionService } from '../auth/session.service';
 import { validateLogoUpload } from '../branding/logo';
 import type { EmailSettingsService } from '../email-settings/email-settings.service';
 import { isSetupCompleted } from '../installation/installation.repo';
@@ -69,8 +67,12 @@ export interface SetupService {
     result: EmailTestResult,
     context: SetupRequestContext,
   ): Promise<void>;
-  /** Membuat organisasi + Owner dan langsung memasukkan Owner (sesi + cookie perangkat dikenal). */
-  complete(input: CompleteSetupRequest, context: SetupRequestContext): Promise<LoginResult>;
+  /**
+   * Membuat organisasi + Owner dan memasukkan Owner dengan sesi TERBATAS: Owner wajib 2FA,
+   * jadi sesi ini hanya bisa dipakai untuk mendaftarkan 2FA (lalu diganti sesi penuh). Cookie
+   * perangkat dikenal belum diterbitkan — baru setelah 2FA aktif.
+   */
+  complete(input: CompleteSetupRequest, context: SetupRequestContext): Promise<IssuedSession>;
 }
 
 export interface SetupServiceDeps {
@@ -79,7 +81,6 @@ export interface SetupServiceDeps {
   limiter: RateLimiter;
   hasher: PasswordHasher;
   sessions: SessionService;
-  devices: TrustedDevices;
   emailSettings: EmailSettingsService;
   emailTestMemo: SetupEmailTestMemo;
 }
@@ -109,7 +110,7 @@ function alreadyCompleted(cause?: unknown): AppError {
 }
 
 export function createSetupService(deps: SetupServiceDeps): SetupService {
-  const { db, setupToken, limiter, hasher, sessions, devices, emailSettings, emailTestMemo } = deps;
+  const { db, setupToken, limiter, hasher, sessions, emailSettings, emailTestMemo } = deps;
 
   async function assertSetupToken(presented: string, context: SetupRequestContext): Promise<void> {
     if (await isSetupCompleted(db)) throw alreadyCompleted();
@@ -287,6 +288,9 @@ export function createSetupService(deps: SetupServiceDeps): SetupService {
               timezone: organization.timezone,
             },
             client: context.client,
+            // Owner baru belum punya 2FA → sesi terbatas "wajib mendaftar 2FA".
+            twoFactorEnabled: false,
+            twoFactorVerified: false,
           });
           await recordAudit(tx, {
             organizationId: organization.id,
@@ -294,10 +298,13 @@ export function createSetupService(deps: SetupServiceDeps): SetupService {
             action: AUDIT_ACTIONS.loginSucceeded,
             targetType: 'session',
             targetId: issued.auth.sessionRef,
-            metadata: { via: 'setup' },
+            metadata: {
+              via: 'setup',
+              twoFactorEnrollmentRequired: issued.auth.twoFactor.enrollmentRequired,
+            },
             client: context.client,
           });
-          return { ...issued, deviceToken: devices.issue(owner.id) };
+          return issued;
         });
       } catch (error) {
         if (isPgError(error, PG_ERROR_CODES.uniqueViolation, 'installation_pkey')) {

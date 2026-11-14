@@ -1,31 +1,90 @@
-import { loginRequestSchema } from '@balesin/shared';
+import {
+  loginRequestSchema,
+  type TwoFactorChallengeResponse,
+  type TwoFactorMethod,
+  type VerifyTwoFactorResponse,
+} from '@balesin/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { getRouteApi, useRouter } from '@tanstack/react-router';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { BrandLogo } from '../../brand/BrandLogo';
 import { useBrand } from '../../brand/brand';
 import { LoginHero } from '../../components/illustrations/LoginHero';
-import { Button } from '../../components/ui/Button';
 import { PasswordField, TextField } from '../../components/ui/Field';
-import { Notice } from '../../components/ui/Notice';
+import { Notice, type NoticeTone } from '../../components/ui/Notice';
+import { SubmitButton } from '../../components/ui/SubmitButton';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
 import { storeSession } from '../../lib/api/queries';
 import { apiFieldErrors, zodFieldErrors, type FieldErrors } from '../../lib/form';
 import { safeRedirectTarget } from '../../lib/safe-redirect';
-import { formatClock } from '../../lib/format';
-import { useCountdown, type Deadline } from '../../lib/use-countdown';
+import { useLock } from '../../lib/use-lock';
 import { usePageTitle } from '../../lib/use-page-title';
 import styles from './Login.module.css';
 import { clearLoginNotice, peekLoginNotice, type LoginNotice } from './login-notice';
+import { BackupCodeUsed, TwoFactorLoginForm } from './TwoFactorLogin';
+import { twoFactorLoginCopy } from './two-factor-copy';
 
 const routeApi = getRouteApi('/masuk');
 
-/** Halaman masuk. Tidak ada tautan "Daftar": akun baru hanya lewat undangan. */
+/** Pesan yang dibawa saat kembali ke langkah password (tantangan 2FA kedaluwarsa/hangus). */
+export interface ReturnMessage {
+  tone: NoticeTone;
+  message: string;
+  /** `status`: diumumkan sopan (mis. "sudah bisa mencoba lagi"); bawaan `alert`. */
+  role?: 'alert' | 'status';
+}
+
+type Stage =
+  | { kind: 'password'; message: ReturnMessage | null }
+  | {
+      kind: 'code';
+      challenge: TwoFactorChallengeResponse;
+      method: TwoFactorMethod;
+      email: string;
+      receivedAt: number;
+    }
+  | { kind: 'backup-used'; remaining: number };
+
+/**
+ * Halaman masuk, dua langkah bila akun memakai 2FA: email + password, lalu kode dari aplikasi
+ * autentikator (atau kode cadangan). Tidak ada tautan "Daftar": akun baru hanya lewat undangan.
+ */
 export function LoginPage() {
   usePageTitle(t.auth.login.title);
   const { organizationName } = useBrand();
+  const queryClient = useQueryClient();
+  const router = useRouter();
+  const search = routeApi.useSearch();
+  const [stage, setStage] = useState<Stage>({ kind: 'password', message: null });
+  // Email tetap terisi saat kembali dari langkah kode.
+  const [email, setEmail] = useState('');
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const target = safeRedirectTarget(search.redirect);
+
+  useEffect(() => {
+    if (stage.kind === 'backup-used') headingRef.current?.focus();
+  }, [stage.kind]);
+
+  const onVerified = async (response: VerifyTwoFactorResponse) => {
+    storeSession(queryClient, response);
+    if (response.twoFactor.method === 'backup_code') {
+      setStage({ kind: 'backup-used', remaining: response.twoFactor.backupCodesRemaining });
+      return;
+    }
+    await router.navigate({ href: target, replace: true });
+  };
+
+  const head =
+    stage.kind === 'code'
+      ? twoFactorLoginCopy(stage.method, stage.email)
+      : stage.kind === 'backup-used'
+        ? {
+            title: t.twoFactor.login.backupUsed.title,
+            subtitle: t.twoFactor.login.backupUsed.body(stage.remaining),
+          }
+        : { title: t.auth.login.heading(organizationName), subtitle: t.auth.login.subtitle };
 
   return (
     <div className={styles.screen}>
@@ -33,11 +92,46 @@ export function LoginPage() {
         <div className={styles.inner}>
           <BrandLogo className={styles.logo} />
           <div className={styles.head}>
-            <h1 className={styles.title}>{t.auth.login.heading(organizationName)}</h1>
-            <p className={styles.subtitle}>{t.auth.login.subtitle}</p>
+            <h1
+              ref={headingRef}
+              tabIndex={stage.kind === 'backup-used' ? -1 : undefined}
+              className={styles.title}
+            >
+              {head.title}
+            </h1>
+            <p className={styles.subtitle}>{head.subtitle}</p>
           </div>
-          <LoginForm />
-          <p className={styles.footnote}>{t.auth.login.noAccount}</p>
+          {stage.kind === 'password' ? (
+            <>
+              <LoginForm
+                email={email}
+                onEmailChange={setEmail}
+                returnMessage={stage.message}
+                onChallenge={(challenge, receivedAt) =>
+                  setStage({ kind: 'code', challenge, method: 'totp', email, receivedAt })
+                }
+                target={target}
+                redirect={search.redirect}
+              />
+              <p className={styles.footnote}>{t.auth.login.noAccount}</p>
+            </>
+          ) : stage.kind === 'code' ? (
+            <TwoFactorLoginForm
+              key={stage.challenge.challengeToken}
+              challenge={stage.challenge}
+              method={stage.method}
+              onMethodChange={(method) => setStage({ ...stage, method })}
+              receivedAt={stage.receivedAt}
+              onVerified={onVerified}
+              onRestart={(message) => setStage({ kind: 'password', message })}
+            />
+          ) : (
+            <BackupCodeUsed
+              remaining={stage.remaining}
+              onContinue={() => void router.navigate({ href: target, replace: true })}
+              onMakeNew={() => void router.navigate({ to: '/pengaturan/keamanan', replace: true })}
+            />
+          )}
         </div>
       </main>
       <aside className={styles.hero} aria-hidden="true">
@@ -51,31 +145,51 @@ export function LoginPage() {
   );
 }
 
-function LoginForm() {
+interface LoginFormProps {
+  email: string;
+  onEmailChange: (email: string) => void;
+  /** Pesan dari langkah kode (mis. waktu habis), tampil di bawah tombol sampai dikirim lagi. */
+  returnMessage: ReturnMessage | null;
+  onChallenge: (challenge: TwoFactorChallengeResponse, receivedAt: number) => void;
+  /** Tujuan setelah masuk (sudah divalidasi). */
+  target: string;
+  /** `?redirect=` mentah, dibawa ke layar pendaftaran 2FA. */
+  redirect: string | undefined;
+}
+
+function LoginForm({
+  email,
+  onEmailChange,
+  returnMessage,
+  onChallenge,
+  target,
+  redirect,
+}: LoginFormProps) {
   const queryClient = useQueryClient();
   const router = useRouter();
-  const search = routeApi.useSearch();
   const passwordRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   // Naik setiap validasi gagal → fokus ke isian pertama yang salah.
   const [invalidTick, setInvalidTick] = useState(0);
 
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [notice] = useState<LoginNotice | null>(peekLoginNotice);
-  const [lock, setLock] = useState<Deadline | null>(null);
+  const [message, setMessage] = useState<ReturnMessage | null>(returnMessage);
+  const lock = useLock();
   // Password salah: setelah form aktif lagi, isi password dipilih supaya bisa langsung diketik ulang.
   const [retypePassword, setRetypePassword] = useState(0);
   // Gagal karena server/jaringan/kunci: fokus kembali ke password (tombol nonaktif selama
   // memproses, jadi fokus jatuh ke <body> bila dibiarkan).
   const [refocusPassword, setRefocusPassword] = useState(0);
-  const secondsLeft = useCountdown(lock);
-  const locked = lock !== null && secondsLeft > 0;
-  // Kunci sudah lewat: pesan kunci disembunyikan dan pembaca layar diberi tahu sekali.
-  const unlocked = lock !== null && secondsLeft === 0;
+  const { locked, unlocked } = lock;
 
   useEffect(() => clearLoginNotice(), []);
+
+  // Kembali dari langkah kode: email sudah terisi, jadi langsung ke password.
+  useEffect(() => {
+    if (returnMessage) passwordRef.current?.focus();
+  }, [returnMessage]);
 
   useEffect(() => {
     if (retypePassword === 0) return;
@@ -103,7 +217,21 @@ function LoginForm() {
       switch (response.status) {
         case 'authenticated': {
           storeSession(queryClient, response);
-          await router.navigate({ href: safeRedirectTarget(search.redirect), replace: true });
+          await router.navigate({ href: target, replace: true });
+          return;
+        }
+        case 'two_factor_required': {
+          onChallenge(response, Date.now());
+          return;
+        }
+        case 'two_factor_enrollment_required': {
+          // Sesi terbatas: hanya layar pendaftaran 2FA yang bisa dibuka.
+          storeSession(queryClient, response);
+          await router.navigate({
+            to: '/verifikasi-dua-langkah',
+            search: { redirect },
+            replace: true,
+          });
           return;
         }
       }
@@ -119,8 +247,7 @@ function LoginForm() {
         return;
       }
       if (isApiError(error) && error.status === 429 && error.retryAfterSeconds) {
-        const startedAt = Date.now();
-        setLock({ until: startedAt + error.retryAfterSeconds * 1000, startedAt });
+        lock.lockFor(error.retryAfterSeconds);
       }
       // 503, jaringan putus, dikunci: isian password tetap aktif, jadi fokus ke sana.
       setRefocusPassword((count) => count + 1);
@@ -137,13 +264,14 @@ function LoginForm() {
       return;
     }
     setFieldErrors({});
-    setLock(null);
+    setMessage(null);
+    lock.clear();
     login.mutate(parsed.data);
   };
 
   const error = login.error;
   // Pesan "sudah keluar"/"sesi berakhir" tetap tampil: menghilangkannya menggeser form (W1).
-  const showNotice = notice !== null;
+  const showNotice = notice !== null && returnMessage === null;
 
   return (
     <form ref={formRef} className={styles.form} onSubmit={submit} noValidate>
@@ -163,7 +291,7 @@ function LoginForm() {
         spellCheck={false}
         placeholder={t.auth.login.emailPlaceholder}
         value={email}
-        onChange={(event) => setEmail(event.target.value)}
+        onChange={(event) => onEmailChange(event.target.value)}
         error={fieldErrors.email}
         disabled={login.isPending}
       />
@@ -178,36 +306,27 @@ function LoginForm() {
         error={fieldErrors.password}
         disabled={login.isPending}
       />
-      <Button
-        type="submit"
-        variant="primary"
-        size="lg"
+      <SubmitButton
         className={styles.submit}
-        loading={login.isPending}
-        disabled={locked}
-        // Terkunci: label tombol = sisa waktu, jadi tidak dipudarkan (Login.module.css).
-        data-locked={locked ? '' : undefined}
+        pending={login.isPending}
+        pendingLabel={t.auth.login.submitting}
+        lock={lock}
       >
-        {login.isPending ? (
-          t.auth.login.submitting
-        ) : locked ? (
-          // Sisa waktu di label tombol (bukan di wilayah aria-live): tidak diumumkan tiap detik.
-          <span className={styles.countdown}>
-            {t.auth.login.countdownButton(formatClock(secondsLeft))}
-          </span>
-        ) : (
-          t.auth.login.submit
-        )}
-      </Button>
+        {t.auth.login.submit}
+      </SubmitButton>
       {/*
         Pesan dari server tampil di BAWAH tombol: judul, isian, dan tombol yang baru diklik tidak
         bergeser saat pesan muncul (kritikus W1).
       */}
       {error && !(isApiError(error) && error.code === 'VALIDATION_ERROR') && !unlocked ? (
         <LoginError error={error} />
+      ) : message && !error ? (
+        <Notice tone={message.tone} role={message.role ?? 'alert'}>
+          {message.message}
+        </Notice>
       ) : null}
       {/* Ada sejak akun dikunci (supaya isinya nanti diumumkan), diisi sekali saat kunci habis. */}
-      {lock ? (
+      {lock.locked || lock.unlocked ? (
         <p role="status" className="sr-only">
           {unlocked ? t.auth.login.unlocked : ''}
         </p>

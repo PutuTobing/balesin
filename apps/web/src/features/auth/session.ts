@@ -1,4 +1,4 @@
-import type { AuthenticatedSession } from '@balesin/shared';
+import type { AuthenticatedSession, MeResponse } from '@balesin/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from '@tanstack/react-router';
 import { isApiError } from '../../lib/api/client';
@@ -7,10 +7,17 @@ import { clearSessionData, sessionQuery } from '../../lib/api/queries';
 import { setLoginNotice } from './login-notice';
 
 /**
- * Sesi yang sedang aktif. Hanya dipakai di bawah rute aplikasi: penjaga rute sudah memastikan
- * sesi ada sebelum layar dirender, jadi `null` di sini berarti sesi baru saja berakhir.
+ * Sesi PENUH yang sedang aktif. Hanya dipakai di bawah rute aplikasi: penjaga rute sudah
+ * memastikan sesi penuh ada sebelum layar dirender, jadi `null` di sini berarti sesi baru saja
+ * berakhir (atau berubah menjadi sesi terbatas).
  */
 export function useSession(): AuthenticatedSession | null {
+  const session = useQuery(sessionQuery).data;
+  return session?.status === 'authenticated' ? session : null;
+}
+
+/** Sesi apa pun, termasuk sesi terbatas "wajib mendaftar 2FA" (layar pendaftaran 2FA). */
+export function useAnySession(): MeResponse | null {
   return useQuery(sessionQuery).data ?? null;
 }
 

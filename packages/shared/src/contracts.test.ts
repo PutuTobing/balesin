@@ -29,6 +29,18 @@ import {
   SMTP_SECURITY_MODES,
   isPlaintextSmtpLogin,
   SMTP_PLAINTEXT_LOGIN_WARNING,
+  completeSetupResponseSchema,
+  confirmTwoFactorEnrollmentRequestSchema,
+  formatBackupCode,
+  isTwoFactorRequired,
+  meResponseSchema,
+  startTwoFactorEnrollmentRequestSchema,
+  totpCodeSchema,
+  twoFactorCodeKind,
+  twoFactorCodeSchema,
+  twoFactorReauthRequestSchema,
+  USER_ROLES,
+  verifyTwoFactorRequestSchema,
 } from './index';
 
 const messagesOf = (result: { error?: { issues: Array<{ message: string }> } }) =>
@@ -141,7 +153,7 @@ describe('kontrak autentikasi', () => {
 
     expect(urls.length).toBeGreaterThanOrEqual(15);
     expect(new Set(urls).size).toBe(urls.length);
-    for (const url of urls) expect(url).toMatch(/^\/api\/v1\/[a-z/-]+$/);
+    for (const url of urls) expect(url).toMatch(/^\/api\/v1\/[a-z0-9/-]+$/);
   });
 });
 
@@ -395,5 +407,77 @@ describe('wizard setup', () => {
     expect(completeSetupRequestSchema.safeParse({ ...body, setupToken: undefined }).success).toBe(
       false,
     );
+  });
+});
+
+describe('verifikasi dua langkah', () => {
+  const sessionFixture = () => ({
+    user: {
+      id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b',
+      name: 'Sari',
+      email: 'sari@contoh.test',
+      role: 'owner',
+    },
+    organization: {
+      id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5c',
+      name: 'PT Maju Jaya',
+      timezone: 'Asia/Jakarta',
+    },
+    csrfToken: 'token',
+    session: {
+      idleExpiresAt: '2026-11-13T12:30:00.000Z',
+      absoluteExpiresAt: '2026-11-13T12:30:00.000Z',
+    },
+  });
+
+  it('peran wajib 2FA: Owner, Admin, Supervisor', () => {
+    expect(USER_ROLES.filter(isTwoFactorRequired)).toEqual(['owner', 'admin', 'supervisor']);
+  });
+
+  it('isian kode dibakukan: spasi/tanda hubung dibuang, huruf dikecilkan, jenisnya dikenali', () => {
+    expect(twoFactorCodeSchema.parse(' 123 456 ')).toBe('123456');
+    expect(twoFactorCodeSchema.parse('ABCDE-FGHJK')).toBe('abcdefghjk');
+    expect(twoFactorCodeKind('123456')).toBe('totp');
+    expect(twoFactorCodeKind('abcdefghjk')).toBe('backup_code');
+    // Karakter yang tidak ada di alfabet kode cadangan (0, 1, i, l, o) dan panjang lain ditolak.
+    for (const code of ['12345', '1234567', 'abcdefghjo', 'abcde-fghj']) {
+      expect(twoFactorCodeSchema.safeParse(code).success, code).toBe(false);
+    }
+    expect(messagesOf(twoFactorCodeSchema.safeParse(''))).toEqual(['Kode wajib diisi.']);
+    expect(messagesOf(totpCodeSchema.safeParse('abcdefghjk'))).toEqual([
+      'Masukkan 6 digit kode dari aplikasi autentikatormu.',
+    ]);
+    expect(formatBackupCode('ABCDEFGHJK')).toBe('abcde-fghjk');
+  });
+
+  it('respons login: tiga varian; tantangan tidak memuat data sesi', () => {
+    const challenge = {
+      status: 'two_factor_required',
+      challengeToken: 'tantangan',
+      expiresAt: '2026-11-13T12:05:00.000Z',
+      attemptsRemaining: 3,
+      methods: ['totp', 'backup_code'],
+    };
+    expect(loginResponseSchema.parse({ ...challenge, csrfToken: 'bocor' })).toEqual(challenge);
+    const enrollment = { ...sessionFixture(), status: 'two_factor_enrollment_required' };
+    expect(loginResponseSchema.parse(enrollment)).toEqual(enrollment);
+    expect(meResponseSchema.parse(enrollment)).toEqual(enrollment);
+    expect(completeSetupResponseSchema.parse(enrollment)).toEqual(enrollment);
+    // `me` tidak pernah berupa tantangan.
+    expect(meResponseSchema.safeParse(challenge).success).toBe(false);
+    expect(authenticatedSessionSchema.safeParse(enrollment).success).toBe(false);
+  });
+
+  it('verifikasi dan pendaftaran: kontrak permintaan', () => {
+    expect(verifyTwoFactorRequestSchema.parse({ challengeToken: 't', code: '123 456' })).toEqual({
+      challengeToken: 't',
+      code: '123456',
+    });
+    expect(verifyTwoFactorRequestSchema.safeParse({ code: '123456' }).success).toBe(false);
+    expect(startTwoFactorEnrollmentRequestSchema.parse({})).toEqual({});
+    expect(twoFactorReauthRequestSchema.safeParse({ code: '123456' }).success).toBe(false);
+    expect(confirmTwoFactorEnrollmentRequestSchema.parse({ code: '654321' })).toEqual({
+      code: '654321',
+    });
   });
 });

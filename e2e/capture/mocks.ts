@@ -174,3 +174,157 @@ export async function savedEmailSettings(page: Page): Promise<void> {
     });
   });
 }
+
+// ── Verifikasi dua langkah ──────────────────────────────────────────────────
+
+type Role = 'owner' | 'admin' | 'supervisor' | 'cs' | 'teknisi';
+
+function sessionBody(status: 'authenticated' | 'two_factor_enrollment_required', role: Role) {
+  const now = Date.now();
+  return {
+    status,
+    user: {
+      id: '0b0e2d8c-6d3f-4b8a-9d55-5e2f8a1c0001',
+      name: role === 'owner' ? 'Rina Kartika' : 'Dimas Pratama',
+      email: role === 'owner' ? 'rina@majujaya.co.id' : 'dimas@majujaya.co.id',
+      role,
+    },
+    organization: {
+      id: '0b0e2d8c-6d3f-4b8a-9d55-5e2f8a1c0002',
+      name: 'PT Maju Jaya',
+      timezone: 'Asia/Jakarta',
+    },
+    csrfToken: 'csrf-foto',
+    session: {
+      idleExpiresAt: new Date(now + 30 * 60_000).toISOString(),
+      absoluteExpiresAt: new Date(now + 30 * 86_400_000).toISOString(),
+    },
+  };
+}
+
+/** Sesi tiruan (menggantikan `/auth/me`): penuh dengan peran tertentu, atau terbatas. */
+export async function sessionAs(
+  page: Page,
+  role: Role,
+  status: 'authenticated' | 'two_factor_enrollment_required' = 'authenticated',
+): Promise<void> {
+  await page.route(`${API}/auth/me`, (route) => json(route, sessionBody(status, role)));
+}
+
+/** Contoh rahasia (base32) — hanya untuk foto. */
+const PHOTO_SECRET = 'K5ZGQ3TBMVSWC4DFOJXW6YLSMR4XI2LQ';
+
+export const PHOTO_BACKUP_CODES = [
+  'k7m2p-x9q4r',
+  'a3b4c-d5e6f',
+  'g7h8j-k9m2n',
+  'p3q4r-s5t6u',
+  'v7w8x-y9z2a',
+  'b3c4d-e5f6g',
+  'h7j8k-m9n2p',
+  'q3r4s-t5u6v',
+  'w7x8y-z9a2b',
+  'c3d4e-f5g6h',
+];
+
+/** `POST /auth/2fa/enroll` tiruan (rahasia contoh, berlaku 15 menit). */
+export async function mockEnroll(page: Page): Promise<void> {
+  await page.route(`${API}/auth/2fa/enroll`, (route) =>
+    json(route, {
+      otpauthUri: `otpauth://totp/Balesin%20Maju%20Jaya:rina%40majujaya.co.id?secret=${PHOTO_SECRET}&issuer=Balesin%20Maju%20Jaya&algorithm=SHA1&digits=6&period=30`,
+      secret: PHOTO_SECRET,
+      secretGrouped: PHOTO_SECRET.replace(/(.{4})/g, '$1 ').trim(),
+      issuer: 'Balesin Maju Jaya',
+      accountName: 'rina@majujaya.co.id',
+      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+      digits: 6,
+      periodSeconds: 30,
+    }),
+  );
+}
+
+/** Layar pendaftaran 2FA wajib: sesi terbatas + rahasia contoh. */
+export async function enrollmentScreen(page: Page): Promise<void> {
+  await sessionAs(page, 'owner', 'two_factor_enrollment_required');
+  await mockEnroll(page);
+}
+
+/** Konfirmasi pendaftaran berhasil → sesi penuh + 10 kode cadangan contoh. */
+export async function mockConfirmEnrollment(page: Page): Promise<void> {
+  await page.route(`${API}/auth/2fa/enroll/confirm`, (route) =>
+    json(route, {
+      ...sessionBody('authenticated', 'owner'),
+      backupCodes: { codes: PHOTO_BACKUP_CODES, generatedAt: new Date().toISOString() },
+    }),
+  );
+}
+
+/** Halaman masuk: password benar, akun memakai 2FA → langkah kode. */
+export async function twoFactorChallenge(page: Page): Promise<void> {
+  await asGuest(page);
+  await page.route(`${API}/auth/login`, (route) =>
+    json(route, {
+      status: 'two_factor_required',
+      challengeToken: 'tantangan-foto',
+      expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+      attemptsRemaining: 3,
+      methods: ['totp', 'backup_code'],
+    }),
+  );
+}
+
+/** Isi email + password lalu kirim, sampai langkah kode tampil. */
+export async function toCodeStep(page: Page): Promise<void> {
+  await page.getByLabel('Email').fill('rina@majujaya.co.id');
+  await page.getByLabel('Password', { exact: true }).fill('Kopi-Senja-Tenang-42');
+  await page.getByRole('button', { name: 'Masuk', exact: true }).click();
+  await page.getByRole('heading', { level: 1, name: 'Masukkan kode verifikasi' }).waitFor();
+}
+
+/** Status 2FA tiruan untuk Keamanan akun. */
+export async function twoFactorStatus(
+  page: Page,
+  status: {
+    enabled: boolean;
+    required: boolean;
+    backupCodesRemaining?: number;
+  },
+): Promise<void> {
+  const at = new Date(Date.now() - 2 * 86_400_000).toISOString();
+  await page.route(`${API}/auth/2fa`, (route) =>
+    json(route, {
+      enabled: status.enabled,
+      required: status.required,
+      enabledAt: status.enabled ? at : null,
+      backupCodesRemaining: status.backupCodesRemaining ?? (status.enabled ? 10 : 0),
+      backupCodesGeneratedAt: status.enabled ? at : null,
+      enrollmentPending: false,
+    }),
+  );
+}
+
+/** 400 VALIDATION_ERROR dengan pesan di satu isian. */
+export function validationError(route: Route, field: string, message: string) {
+  return json(
+    route,
+    {
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Data yang dikirim tidak valid. Periksa lagi isiannya.',
+        details: [{ location: 'body', field, message }],
+        requestId: 'req-foto',
+      },
+    },
+    400,
+  );
+}
+
+/** Langkah kedua berhasil dengan kode cadangan (sisa kode tertentu). */
+export async function mockVerifyWithBackupCode(page: Page, remaining: number): Promise<void> {
+  await page.route(`${API}/auth/2fa/verify`, (route) =>
+    json(route, {
+      ...sessionBody('authenticated', 'owner'),
+      twoFactor: { method: 'backup_code', backupCodesRemaining: remaining },
+    }),
+  );
+}

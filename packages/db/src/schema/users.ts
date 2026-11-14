@@ -1,6 +1,6 @@
 import { USER_ROLES } from '@balesin/shared';
 import { sql } from 'drizzle-orm';
-import { check, pgEnum, pgTable, text, unique, uuid } from 'drizzle-orm/pg-core';
+import { bigint, check, pgEnum, pgTable, text, unique, uuid } from 'drizzle-orm/pg-core';
 
 import { createdAtColumn, idColumn, timestamptz, updatedAtColumn } from './columns';
 import { organizations } from './organizations';
@@ -30,6 +30,25 @@ export const users = pgTable(
      */
     lockedUntil: timestamptz('locked_until'),
     lastLoginAt: timestamptz('last_login_at'),
+    /**
+     * Verifikasi dua langkah (TOTP, SECURITY.md §1). Rahasia hanya disimpan TERENKRIPSI
+     * (`SecretBox`, AES-256-GCM) dengan konteks organisasi + `users.totp_secret` + ID pengguna.
+     * Terisi bersama `totp_enabled_at` = 2FA aktif.
+     */
+    totpSecretEncrypted: text('totp_secret_encrypted'),
+    totpEnabledAt: timestamptz('totp_enabled_at'),
+    /**
+     * Langkah waktu TOTP (detik/30) terakhir yang berhasil dipakai. Kode untuk langkah ini atau
+     * sebelumnya ditolak, jadi satu kode tidak bisa dipakai dua kali (cegah replay).
+     */
+    totpLastUsedStep: bigint('totp_last_used_step', { mode: 'number' }),
+    /**
+     * Rahasia yang sedang didaftarkan (QR sudah ditampilkan, kode pertama belum dikonfirmasi).
+     * Terenkripsi dengan konteks `users.totp_pending_secret`. Kosong = tidak ada pendaftaran
+     * berjalan. Dipisah dari rahasia aktif supaya mendaftar ulang tidak mematikan 2FA lama.
+     */
+    totpPendingSecretEncrypted: text('totp_pending_secret_encrypted'),
+    totpPendingCreatedAt: timestamptz('totp_pending_created_at'),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
@@ -41,6 +60,15 @@ export const users = pgTable(
     // organisasi yang sama dengan pengguna yang dirujuknya.
     unique('users_organization_id_id_unique').on(table.organizationId, table.id),
     check('users_email_normalized', sql`${table.email} = lower(btrim(${table.email}))`),
+    // Rahasia aktif dan waktu aktifnya selalu berpasangan; begitu juga rahasia pendaftaran.
+    check(
+      'users_totp_enabled_paired',
+      sql`(${table.totpSecretEncrypted} is null) = (${table.totpEnabledAt} is null)`,
+    ),
+    check(
+      'users_totp_pending_paired',
+      sql`(${table.totpPendingSecretEncrypted} is null) = (${table.totpPendingCreatedAt} is null)`,
+    ),
   ],
 );
 

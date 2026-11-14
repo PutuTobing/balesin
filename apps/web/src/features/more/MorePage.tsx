@@ -1,5 +1,5 @@
 import { Link, Navigate } from '@tanstack/react-router';
-import { ChevronRight, LogOut } from 'lucide-react';
+import { ChevronRight, LogOut, ShieldCheck } from 'lucide-react';
 import { BrandMark } from '../../brand/BrandMark';
 import { useBrand } from '../../brand/brand';
 import { moreMenuItems } from '../../components/shell/nav-items';
@@ -30,6 +30,11 @@ export function MorePage() {
       {session ? (
         <section className={styles.account} aria-label={t.auth.userMenu.account}>
           <UserIdentity user={session.user} />
+          <Link to="/pengaturan/keamanan" className={styles.accountLink}>
+            <Icon icon={ShieldCheck} size={20} className={styles.menuIcon} />
+            <span className={styles.menuLabel}>{t.auth.userMenu.security}</span>
+            <Icon icon={ChevronRight} size={16} className={styles.chevron} />
+          </Link>
         </section>
       ) : null}
       <nav aria-label={t.more.menuLabel} className={styles.nav}>

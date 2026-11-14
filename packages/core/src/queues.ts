@@ -54,8 +54,17 @@ export type SystemPingResult = z.infer<typeof systemPingResultSchema>;
 export const EMAIL_JOBS = {
   /** Pemberitahuan ke pemilik akun: akunnya dikunci sementara karena gagal masuk berulang. */
   accountLocked: 'account-locked',
+  /**
+   * Pemberitahuan keamanan akun: 2FA diaktifkan/dinonaktifkan, kode cadangan dipakai. Selalu
+   * dikirim ke pemilik akun supaya perubahan yang bukan olehnya segera ketahuan.
+   */
+  securityNotice: 'security-notice',
 } as const;
 export type EmailJobName = (typeof EMAIL_JOBS)[keyof typeof EMAIL_JOBS];
+
+/** Lingkup kunci percobaan masuk (lihat `apps/api/src/modules/auth/login-rules.ts`). */
+export const LOCK_SCOPES = ['source', 'account', 'device', 'two_factor'] as const;
+export type LockScope = (typeof LOCK_SCOPES)[number];
 
 export const accountLockedEmailPayloadSchema = z.strictObject({
   organizationId: z.uuid(),
@@ -64,11 +73,32 @@ export const accountLockedEmailPayloadSchema = z.strictObject({
   lockedUntil: z.iso.datetime(),
   /**
    * `source` = percobaan dari satu jaringan dihentikan; `account` = percobaan dari banyak
-   * jaringan, akun dikunci untuk perangkat yang belum dikenal; `device` = dari perangkat dikenal.
+   * jaringan, akun dikunci untuk perangkat yang belum dikenal; `device` = dari perangkat dikenal;
+   * `two_factor` = password benar tetapi kode verifikasi dua langkah salah berulang kali.
    */
-  scope: z.enum(['source', 'account', 'device']).default('account'),
+  scope: z.enum(LOCK_SCOPES).default('account'),
 });
 export type AccountLockedEmailPayload = z.infer<typeof accountLockedEmailPayloadSchema>;
+
+/** Kejadian yang memicu email pemberitahuan keamanan akun. */
+export const SECURITY_NOTICE_EVENTS = [
+  'two_factor_enabled',
+  'two_factor_disabled',
+  'backup_code_used',
+  'backup_codes_regenerated',
+] as const;
+export type SecurityNoticeEvent = (typeof SECURITY_NOTICE_EVENTS)[number];
+
+export const securityNoticeEmailPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  userId: z.uuid(),
+  event: z.enum(SECURITY_NOTICE_EVENTS),
+  /** Waktu kejadian (ISO 8601). */
+  occurredAt: z.iso.datetime(),
+  /** Untuk `backup_code_used`: sisa kode cadangan yang belum dipakai. */
+  backupCodesRemaining: z.number().int().nonnegative().optional(),
+});
+export type SecurityNoticeEmailPayload = z.infer<typeof securityNoticeEmailPayloadSchema>;
 
 export const emailJobResultSchema = z.object({
   /**

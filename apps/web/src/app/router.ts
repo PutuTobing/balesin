@@ -19,12 +19,22 @@ import { EmailSettingsSkeleton } from '../features/email-settings/EmailSettingsS
 import { InboxPage } from '../features/inbox/InboxPage';
 import { InboxSkeleton } from '../features/inbox/InboxSkeleton';
 import { parseInboxSearch } from '../features/inbox/inbox-search';
+import { SecuritySkeleton } from '../features/security/SecuritySkeleton';
 import { SetupSkeleton } from '../features/setup/SetupSkeleton';
 import { SetupStatusError } from '../features/setup/SetupStatusError';
+import { EnrollmentSkeleton } from '../features/two-factor/EnrollmentSkeleton';
 import { t } from '../i18n/id';
-import { emailSettingsQuery } from '../lib/api/queries';
+import { emailSettingsQuery, twoFactorStatusQuery } from '../lib/api/queries';
 import { createPreviewRoutes } from './preview-routes';
-import { guardLogin, guardOwner, guardSetup, prepareApp, requireSession } from './guards';
+import {
+  guardEnrollment,
+  guardLogin,
+  guardOwner,
+  guardSetup,
+  guardVoluntaryEnrollment,
+  prepareApp,
+  requireSession,
+} from './guards';
 
 export interface RouterContext {
   queryClient: QueryClient;
@@ -34,7 +44,9 @@ export interface RouterContext {
  * Peta rute. Alamat halaman memakai bahasa Indonesia karena ikut tampil ke pengguna.
  *
  * - Publik: `/setup` (wizard pertama kali) dan `/masuk`.
- * - Semua rute lain ada di bawah layout `app`, yang mewajibkan sesi (lihat `guards.ts`).
+ * - `/verifikasi-dua-langkah`: pendaftaran 2FA wajib, HANYA untuk sesi terbatas (Owner/Admin/
+ *   Supervisor yang belum mengaktifkan 2FA). Sesi terbatas tidak bisa membuka rute lain.
+ * - Semua rute lain ada di bawah layout `app`, yang mewajibkan sesi penuh (lihat `guards.ts`).
  *   Penjaga menunggu jawaban `/auth/me` SEBELUM merender apa pun, jadi tidak ada kedipan
  *   layar aplikasi untuk tamu atau layar masuk untuk pengguna yang sudah masuk.
  *
@@ -66,6 +78,20 @@ const loginRoute = createRoute({
   beforeLoad: ({ context, search }) => guardLogin(context.queryClient, search.redirect),
   component: lazyRouteComponent(() => import('../features/auth/LoginPage'), 'LoginPage'),
   pendingComponent: LoginSkeleton,
+});
+
+/** Pendaftaran 2FA wajib (sesi terbatas): setelah setup, atau setelah masuk tanpa 2FA aktif. */
+const enrollmentRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'verifikasi-dua-langkah',
+  validateSearch: parseLoginSearch,
+  beforeLoad: ({ context, search }) => guardEnrollment(context.queryClient, search.redirect),
+  component: lazyRouteComponent(
+    () => import('../features/two-factor/EnrollmentPage'),
+    'EnrollmentPage',
+  ),
+  pendingComponent: EnrollmentSkeleton,
+  errorComponent: BootErrorScreen,
 });
 
 /** Layout aplikasi (rail/navigasi bawah). Hanya untuk pengguna yang sudah masuk. */
@@ -150,6 +176,28 @@ const emailSettingsRoute = createRoute({
   pendingComponent: EmailSettingsSkeleton,
 });
 
+/** Pengaturan → Keamanan akun: semua peran. */
+const securityRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/keamanan',
+  staticData: { page: { title: t.security.title, parent: 'settings' } },
+  loader: ({ context }) => context.queryClient.ensureQueryData(twoFactorStatusQuery),
+  component: lazyRouteComponent(() => import('../features/security/SecurityPage'), 'SecurityPage'),
+  pendingComponent: SecuritySkeleton,
+});
+
+/** Keamanan akun → Aktifkan 2FA (peran yang tidak wajib; yang wajib sudah aktif). */
+const securityEnrollRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/keamanan/aktifkan',
+  staticData: { page: { title: t.twoFactor.enroll.title, parent: 'security' } },
+  beforeLoad: ({ context }) => guardVoluntaryEnrollment(context.queryClient),
+  component: lazyRouteComponent(
+    () => import('../features/two-factor/VoluntaryEnrollmentPage'),
+    'VoluntaryEnrollmentPage',
+  ),
+});
+
 const moreRoute = createRoute({
   getParentRoute,
   path: 'lainnya',
@@ -173,6 +221,8 @@ const appChildren = [
   reportsRoute,
   settingsRoute,
   emailSettingsRoute,
+  securityRoute,
+  securityEnrollRoute,
   moreRoute,
   notFoundRoute,
 ] as const;
@@ -180,6 +230,7 @@ const appChildren = [
 const routeTree = rootRoute.addChildren([
   setupRoute,
   loginRoute,
+  enrollmentRoute,
   appRoute.addChildren(appChildren),
 ]);
 
@@ -191,6 +242,7 @@ function routeTreeWithPreviews(): typeof routeTree {
   return rootRoute.addChildren([
     setupRoute,
     loginRoute,
+    enrollmentRoute,
     appRoute.addChildren([...appChildren, ...createPreviewRoutes(appRoute)]),
   ]) as unknown as typeof routeTree;
 }

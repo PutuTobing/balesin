@@ -1,13 +1,23 @@
 import type { Page } from '@playwright/test';
 import {
+  PHOTO_BACKUP_CODES,
   apiError,
   asGuest,
   emailTestResult,
+  enrollmentScreen,
   fillEmailStep,
   freshInstall,
   hang,
   json,
+  mockConfirmEnrollment,
+  mockEnroll,
+  mockVerifyWithBackupCode,
   savedEmailSettings,
+  sessionAs,
+  toCodeStep,
+  twoFactorChallenge,
+  twoFactorStatus,
+  validationError,
   wizardTo,
 } from './mocks';
 
@@ -568,5 +578,343 @@ export const screens: Screen[] = [
         }),
       ),
     waitFor: 'h1',
+  },
+  // ── Masuk: langkah kedua (2FA) ──
+  {
+    name: 'masuk-kode',
+    path: '/masuk',
+    before: twoFactorChallenge,
+    prepare: toCodeStep,
+  },
+  {
+    name: 'masuk-kode-salah',
+    path: '/masuk',
+    before: async (page) => {
+      await twoFactorChallenge(page);
+      await page.route('**/api/v1/auth/2fa/verify', (route) =>
+        validationError(
+          route,
+          'code',
+          'Kode salah. Pastikan jam ponselmu tepat, lalu masukkan kode yang sedang tampil. Sisa 2 percobaan.',
+        ),
+      );
+    },
+    prepare: async (page) => {
+      await toCodeStep(page);
+      await page.getByLabel('Kode verifikasi').fill('123456');
+      await page.getByRole('button', { name: 'Verifikasi', exact: true }).click();
+      await page.getByText(/Sisa 2 percobaan/).waitFor();
+    },
+  },
+  {
+    name: 'masuk-kode-terkunci',
+    path: '/masuk',
+    before: async (page) => {
+      await twoFactorChallenge(page);
+      await page.route('**/api/v1/auth/2fa/verify', (route) =>
+        apiError(
+          route,
+          429,
+          'RATE_LIMITED',
+          'Terlalu banyak kode verifikasi yang salah. Langkah kedua akun ini dikunci sementara. Coba lagi dalam 15 menit.',
+          { 'retry-after': '900' },
+        ),
+      );
+    },
+    prepare: async (page) => {
+      await toCodeStep(page);
+      await page.getByLabel('Kode verifikasi').fill('123456');
+      await page.getByRole('button', { name: 'Verifikasi', exact: true }).click();
+      await page.getByText('Verifikasi dikunci sementara').waitFor();
+    },
+  },
+  {
+    name: 'masuk-kode-cadangan',
+    path: '/masuk',
+    before: twoFactorChallenge,
+    prepare: async (page) => {
+      await toCodeStep(page);
+      await page.getByRole('button', { name: 'Pakai kode cadangan' }).click();
+      await page.getByRole('heading', { level: 1, name: 'Masukkan kode cadangan' }).waitFor();
+    },
+  },
+  {
+    name: 'masuk-kode-cadangan-dipakai',
+    path: '/masuk',
+    before: async (page) => {
+      await twoFactorChallenge(page);
+      await mockVerifyWithBackupCode(page, 2);
+    },
+    prepare: async (page) => {
+      await toCodeStep(page);
+      await page.getByRole('button', { name: 'Pakai kode cadangan' }).click();
+      await page.getByLabel('Kode cadangan').fill('k7m2p-x9q4r');
+      await page.getByRole('button', { name: 'Verifikasi', exact: true }).click();
+      await page
+        .getByRole('heading', { level: 1, name: 'Kamu masuk dengan kode cadangan' })
+        .waitFor();
+      await page.mouse.move(0, 0);
+    },
+  },
+  {
+    // Tantangan hangus (3 kode salah / kedaluwarsa) → kembali ke password dengan pesannya.
+    name: 'masuk-kode-hangus',
+    path: '/masuk',
+    before: async (page) => {
+      await twoFactorChallenge(page);
+      await page.route('**/api/v1/auth/2fa/verify', (route) =>
+        apiError(
+          route,
+          401,
+          'TWO_FACTOR_CHALLENGE_INVALID',
+          'Kode salah 3 kali. Masuk lagi dengan email dan password-mu.',
+        ),
+      );
+    },
+    prepare: async (page) => {
+      await toCodeStep(page);
+      await page.getByLabel('Kode verifikasi').fill('123456');
+      await page.getByRole('button', { name: 'Verifikasi', exact: true }).click();
+      await page.getByText('Kode salah 3 kali.', { exact: false }).waitFor();
+    },
+  },
+  {
+    // 5 menit berlalu tanpa kode (jam halaman dimajukan) → kembali ke password.
+    name: 'masuk-kode-kedaluwarsa',
+    path: '/masuk',
+    before: async (page) => {
+      await page.clock.install();
+      await twoFactorChallenge(page);
+    },
+    prepare: async (page) => {
+      await toCodeStep(page);
+      await page.clock.fastForward('05:01');
+      await page.getByText('Waktu memasukkan kode sudah habis.', { exact: false }).waitFor();
+    },
+  },
+
+  // ── Pendaftaran 2FA wajib (sesi terbatas tiruan) ──
+  {
+    name: 'daftar-2fa',
+    path: '/verifikasi-dua-langkah',
+    before: enrollmentScreen,
+    waitFor: 'svg[role="img"]',
+  },
+  {
+    name: 'daftar-2fa-penuh',
+    path: '/verifikasi-dua-langkah',
+    before: enrollmentScreen,
+    waitFor: 'svg[role="img"]',
+    fullPage: true,
+  },
+  {
+    name: 'daftar-2fa-memuat',
+    path: '/verifikasi-dua-langkah',
+    waitUntil: 'domcontentloaded',
+    before: async (page) => {
+      await sessionAs(page, 'owner', 'two_factor_enrollment_required');
+      await hang(page, '/auth/2fa/enroll');
+    },
+    waitFor: 'h1',
+  },
+  {
+    name: 'daftar-2fa-kode-salah',
+    path: '/verifikasi-dua-langkah',
+    before: async (page) => {
+      await enrollmentScreen(page);
+      await page.route('**/api/v1/auth/2fa/enroll/confirm', (route) =>
+        validationError(
+          route,
+          'code',
+          'Kode tidak cocok. Pastikan jam ponselmu tepat, lalu masukkan kode yang sedang tampil.',
+        ),
+      );
+    },
+    waitFor: 'svg[role="img"]',
+    prepare: async (page) => {
+      await page.getByLabel('Kode 6 digit').fill('123456');
+      await page.getByRole('button', { name: 'Aktifkan', exact: true }).click();
+      const error = page.getByText(/Kode tidak cocok/);
+      await error.waitFor();
+      await error.scrollIntoViewIfNeeded();
+    },
+  },
+  {
+    name: 'daftar-2fa-kedaluwarsa',
+    path: '/verifikasi-dua-langkah',
+    before: async (page) => {
+      await enrollmentScreen(page);
+      await page.route('**/api/v1/auth/2fa/enroll/confirm', (route) =>
+        apiError(route, 409, 'CONFLICT', 'Kode QR sudah kedaluwarsa. Mulai lagi.'),
+      );
+    },
+    waitFor: 'svg[role="img"]',
+    prepare: async (page) => {
+      await page.getByLabel('Kode 6 digit').fill('123456');
+      await page.getByRole('button', { name: 'Aktifkan', exact: true }).click();
+      const notice = page.getByText('Kode QR sudah kedaluwarsa');
+      await notice.waitFor();
+      await notice.scrollIntoViewIfNeeded();
+    },
+  },
+  {
+    name: 'daftar-2fa-gagal',
+    path: '/verifikasi-dua-langkah',
+    before: async (page) => {
+      await sessionAs(page, 'owner', 'two_factor_enrollment_required');
+      await page.route('**/api/v1/auth/2fa/enroll', (route) =>
+        apiError(
+          route,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Verifikasi dua langkah belum bisa diaktifkan karena kunci enkripsi server belum diisi. Hubungi pengelola server.',
+        ),
+      );
+    },
+    waitFor: '[role="alert"]',
+  },
+  {
+    name: 'kode-cadangan',
+    path: '/verifikasi-dua-langkah',
+    before: async (page) => {
+      await enrollmentScreen(page);
+      await mockConfirmEnrollment(page);
+    },
+    waitFor: 'svg[role="img"]',
+    prepare: async (page) => {
+      await page.getByLabel('Kode 6 digit').fill('123456');
+      await page.getByRole('button', { name: 'Aktifkan', exact: true }).click();
+      await page.getByText(PHOTO_BACKUP_CODES[0] ?? '').waitFor();
+    },
+  },
+  {
+    name: 'kode-cadangan-belum-dicentang',
+    path: '/verifikasi-dua-langkah',
+    before: async (page) => {
+      await enrollmentScreen(page);
+      await mockConfirmEnrollment(page);
+    },
+    waitFor: 'svg[role="img"]',
+    prepare: async (page) => {
+      await page.getByLabel('Kode 6 digit').fill('123456');
+      await page.getByRole('button', { name: 'Aktifkan', exact: true }).click();
+      await page.getByRole('button', { name: 'Lanjut ke Inbox' }).click();
+      const error = page.getByText('Centang dulu setelah kode cadangan tersimpan.');
+      await error.waitFor();
+      await error.scrollIntoViewIfNeeded();
+    },
+  },
+
+  // ── Pengaturan → Keamanan akun ──
+  { name: 'keamanan', path: '/pengaturan/keamanan', waitFor: 'h1' },
+  {
+    name: 'keamanan-kode-sedikit',
+    path: '/pengaturan/keamanan',
+    before: (page) =>
+      twoFactorStatus(page, { enabled: true, required: true, backupCodesRemaining: 2 }),
+    waitFor: 'h1',
+  },
+  {
+    name: 'keamanan-buat-ulang',
+    path: '/pengaturan/keamanan',
+    waitFor: 'h1',
+    prepare: async (page) => {
+      await page.getByRole('button', { name: 'Buat kode baru' }).click();
+      await page.getByLabel('Password', { exact: true }).fill('Kopi-Senja-Tenang-42');
+      await page.getByRole('button', { name: 'Batal' }).scrollIntoViewIfNeeded();
+    },
+  },
+  {
+    name: 'keamanan-kode-baru',
+    path: '/pengaturan/keamanan',
+    before: (page) =>
+      page.route('**/api/v1/auth/2fa/backup-codes', (route) =>
+        json(route, { codes: PHOTO_BACKUP_CODES, generatedAt: new Date().toISOString() }),
+      ),
+    waitFor: 'h1',
+    prepare: async (page) => {
+      await page.getByRole('button', { name: 'Buat kode baru' }).click();
+      await page.getByLabel('Password', { exact: true }).fill('Kopi-Senja-Tenang-42');
+      await page.getByLabel('Kode verifikasi').fill('123456');
+      await page.getByRole('button', { name: 'Buat kode baru' }).click();
+      await page.getByRole('heading', { level: 2, name: 'Kode cadangan baru' }).waitFor();
+    },
+  },
+  {
+    name: 'keamanan-terkunci',
+    path: '/pengaturan/keamanan',
+    before: (page) =>
+      page.route('**/api/v1/auth/2fa/backup-codes', (route) =>
+        apiError(
+          route,
+          429,
+          'RATE_LIMITED',
+          'Terlalu banyak kode verifikasi yang salah. Coba lagi dalam 15 menit.',
+          { 'retry-after': '900' },
+        ),
+      ),
+    waitFor: 'h1',
+    prepare: async (page) => {
+      await page.getByRole('button', { name: 'Buat kode baru' }).click();
+      await page.getByLabel('Password', { exact: true }).fill('Kopi-Senja-Tenang-42');
+      await page.getByLabel('Kode verifikasi').fill('123456');
+      await page.getByRole('button', { name: 'Buat kode baru' }).click();
+      const alert = page.getByText('Konfirmasi dikunci sementara');
+      await alert.waitFor();
+      await alert.scrollIntoViewIfNeeded();
+    },
+  },
+  {
+    name: 'keamanan-memuat',
+    path: '/pengaturan/keamanan',
+    waitUntil: 'domcontentloaded',
+    before: (page) => hang(page, '/auth/2fa'),
+    waitFor: '[role="status"]',
+  },
+  {
+    name: 'keamanan-cs-belum-aktif',
+    path: '/pengaturan/keamanan',
+    before: async (page) => {
+      await sessionAs(page, 'cs');
+      await twoFactorStatus(page, { enabled: false, required: false });
+    },
+    waitFor: 'h1',
+  },
+  {
+    name: 'keamanan-cs-nonaktifkan',
+    path: '/pengaturan/keamanan',
+    before: async (page) => {
+      await sessionAs(page, 'cs');
+      await twoFactorStatus(page, { enabled: true, required: false, backupCodesRemaining: 7 });
+    },
+    waitFor: 'h1',
+    prepare: async (page) => {
+      await page.getByRole('button', { name: 'Nonaktifkan verifikasi dua langkah' }).click();
+      await page.getByRole('button', { name: 'Batal' }).scrollIntoViewIfNeeded();
+    },
+  },
+  {
+    name: 'aktifkan-2fa-password',
+    path: '/pengaturan/keamanan/aktifkan',
+    before: async (page) => {
+      await sessionAs(page, 'cs');
+      await twoFactorStatus(page, { enabled: false, required: false });
+    },
+    waitFor: 'h1',
+  },
+  {
+    name: 'aktifkan-2fa',
+    path: '/pengaturan/keamanan/aktifkan',
+    before: async (page) => {
+      await sessionAs(page, 'cs');
+      await twoFactorStatus(page, { enabled: false, required: false });
+      await mockEnroll(page);
+    },
+    waitFor: 'h1',
+    prepare: async (page) => {
+      await page.getByLabel('Password', { exact: true }).fill('Teh-Manis-Hangat-77');
+      await page.getByRole('button', { name: 'Lanjut', exact: true }).click();
+      await page.locator('svg[role="img"]').waitFor();
+    },
   },
 ];

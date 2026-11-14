@@ -33,6 +33,7 @@ describe('safeRedirectTarget (cegah open redirect)', () => {
     expect(safeRedirectTarget(['/inbox'])).toBe(DEFAULT_AFTER_LOGIN);
     expect(safeRedirectTarget('/masuk')).toBe(DEFAULT_AFTER_LOGIN);
     expect(safeRedirectTarget('/setup#token=x')).toBe(DEFAULT_AFTER_LOGIN);
+    expect(safeRedirectTarget('/verifikasi-dua-langkah')).toBe(DEFAULT_AFTER_LOGIN);
   });
 
   it('path yang dinormalkan keluar ke origin lain tetap ditolak', () => {

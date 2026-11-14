@@ -15,3 +15,4 @@ export * from './redis';
 export * from './secret';
 export * from './shutdown';
 export * from './timeout';
+export * from './totp';

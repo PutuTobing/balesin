@@ -18,13 +18,32 @@ import type { FastifyInstance } from 'fastify';
 export type RouteAccess =
   /** Tanpa sesi: health, setup, login, branding halaman masuk. */
   | { readonly kind: 'public' }
-  /** Siapa pun yang sudah masuk. */
-  | { readonly kind: 'authenticated' }
+  /**
+   * Siapa pun yang sudah masuk dengan sesi PENUH. `allowTwoFactorEnrollment: true` = juga sesi
+   * terbatas Owner/Admin/Supervisor yang belum mengaktifkan 2FA (lihat `AUTHENTICATED_OR_ENROLLING`).
+   */
+  | { readonly kind: 'authenticated'; readonly allowTwoFactorEnrollment?: boolean }
   /** Hanya peran tertentu (matriks PRD §4). */
   | { readonly kind: 'roles'; readonly roles: readonly UserRole[] };
 
 export const PUBLIC: RouteAccess = { kind: 'public' };
 export const AUTHENTICATED: RouteAccess = { kind: 'authenticated' };
+
+/**
+ * Sesi penuh ATAU sesi terbatas "wajib mendaftar 2FA" (SECURITY.md §1: 2FA wajib untuk
+ * Owner/Admin/Supervisor). HANYA untuk rute yang dibutuhkan supaya pengguna bisa menyelesaikan
+ * pendaftaran: status & pendaftaran 2FA, `GET /auth/me`, dan `POST /auth/logout`. Semua rute lain
+ * (termasuk `allowRoles`) menolak sesi terbatas dengan 403 `TWO_FACTOR_ENROLLMENT_REQUIRED`.
+ */
+export const AUTHENTICATED_OR_ENROLLING: RouteAccess = {
+  kind: 'authenticated',
+  allowTwoFactorEnrollment: true,
+};
+
+/** `true` bila rute ini boleh dipakai sesi terbatas yang wajib mendaftar 2FA. */
+export function allowsTwoFactorEnrollment(access: RouteAccess): boolean {
+  return access.kind === 'authenticated' && access.allowTwoFactorEnrollment === true;
+}
 
 export function allowRoles(...roles: [UserRole, ...UserRole[]]): RouteAccess {
   return { kind: 'roles', roles };

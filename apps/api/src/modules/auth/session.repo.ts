@@ -1,6 +1,6 @@
-import type { UserRole } from '@balesin/shared';
-import { organizations, userSessions, users, type DbExecutor } from '@balesin/db';
-import { and, eq, isNull, ne, sql } from 'drizzle-orm';
+import { TWO_FACTOR_ENROLLMENT_SESSION_MINUTES, type UserRole } from '@balesin/shared';
+import { organizations, userSessions, users, type DbExecutor, type SessionKind } from '@balesin/db';
+import { and, eq, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 
 import type { ClientInfo } from '../../http/client-info';
 
@@ -18,6 +18,18 @@ export const SESSION_ABSOLUTE_INTERVAL = sql`interval '30 days'`;
 /** Umur cookie = batas mutlak sesi. */
 export const SESSION_ABSOLUTE_SECONDS = 30 * 24 * 60 * 60;
 
+/**
+ * Sesi terbatas "wajib mendaftar 2FA" (Owner/Admin/Supervisor tanpa 2FA aktif): batas idle
+ * dan mutlaknya sama-sama pendek. Setelah 2FA aktif, sesi penuh yang baru diterbitkan.
+ */
+export const ENROLLMENT_SESSION_INTERVAL = sql.raw(
+  `interval '${TWO_FACTOR_ENROLLMENT_SESSION_MINUTES} minutes'`,
+);
+export const ENROLLMENT_SESSION_SECONDS = TWO_FACTOR_ENROLLMENT_SESSION_MINUTES * 60;
+
+/** `standard` = sesi biasa; `two_factor_enrollment` = sesi terbatas berumur pendek. */
+export type { SessionKind };
+
 /** `last_seen_at`/`idle_expires_at` paling sering diperbarui sekali per menit per sesi. */
 const TOUCH_INTERVAL = sql`interval '1 minute'`;
 
@@ -31,12 +43,19 @@ export interface ActiveSession {
   needsTouch: boolean;
   user: { id: string; name: string; email: string; role: UserRole };
   organization: { id: string; name: string; timezone: string };
+  /** 2FA pengguna sedang aktif. */
+  twoFactorEnabled: boolean;
+  /** Sesi ini dibuat setelah langkah kedua berhasil. */
+  twoFactorVerified: boolean;
+  /** Jenis sesi saat dibuat (tidak pernah berubah). */
+  kind: SessionKind;
 }
 
 /**
  * Sesi yang masih berlaku untuk hash token ini: belum dicabut, belum lewat batas idle maupun
- * batas mutlak, DAN penggunanya tidak dinonaktifkan (menonaktifkan akun langsung mematikan
- * semua sesinya).
+ * batas mutlak, penggunanya tidak dinonaktifkan (menonaktifkan akun langsung mematikan semua
+ * sesinya), DAN — bila 2FA pengguna aktif — sesi itu dibuat setelah langkah kedua berhasil.
+ * Syarat terakhir menutup sesi "hanya password" yang tersisa dari sebelum 2FA diaktifkan.
  */
 export async function findActiveSession(
   db: DbExecutor,
@@ -56,6 +75,9 @@ export async function findActiveSession(
       userRole: users.role,
       organizationName: organizations.name,
       organizationTimezone: organizations.timezone,
+      twoFactorEnabled: sql<boolean>`${users.totpEnabledAt} is not null`,
+      twoFactorVerified: sql<boolean>`${userSessions.twoFactorVerifiedAt} is not null`,
+      kind: userSessions.kind,
     })
     .from(userSessions)
     .innerJoin(
@@ -70,6 +92,7 @@ export async function findActiveSession(
         sql`${userSessions.idleExpiresAt} > now()`,
         sql`${userSessions.absoluteExpiresAt} > now()`,
         isNull(users.disabledAt),
+        or(isNull(users.totpEnabledAt), isNotNull(userSessions.twoFactorVerifiedAt)),
       ),
     )
     .limit(1);
@@ -88,6 +111,9 @@ export async function findActiveSession(
       name: row.organizationName,
       timezone: row.organizationTimezone,
     },
+    twoFactorEnabled: row.twoFactorEnabled,
+    twoFactorVerified: row.twoFactorVerified,
+    kind: row.kind,
   };
 }
 
@@ -119,6 +145,9 @@ export interface NewSessionInput {
   userId: string;
   tokenHash: string;
   client: ClientInfo;
+  kind: SessionKind;
+  /** `true` = langkah kedua (2FA) baru saja berhasil untuk sesi ini. */
+  twoFactorVerified: boolean;
 }
 
 export async function insertSession(
@@ -133,8 +162,16 @@ export async function insertSession(
       tokenHash: input.tokenHash,
       ipAddress: input.client.ip,
       userAgent: input.client.userAgent,
-      idleExpiresAt: sql`now() + ${SESSION_IDLE_INTERVAL}`,
-      absoluteExpiresAt: sql`now() + ${SESSION_ABSOLUTE_INTERVAL}`,
+      kind: input.kind,
+      idleExpiresAt:
+        input.kind === 'two_factor_enrollment'
+          ? sql`now() + ${ENROLLMENT_SESSION_INTERVAL}`
+          : sql`now() + ${SESSION_IDLE_INTERVAL}`,
+      absoluteExpiresAt:
+        input.kind === 'two_factor_enrollment'
+          ? sql`now() + ${ENROLLMENT_SESSION_INTERVAL}`
+          : sql`now() + ${SESSION_ABSOLUTE_INTERVAL}`,
+      twoFactorVerifiedAt: input.twoFactorVerified ? sql`now()` : null,
     })
     .returning({
       id: userSessions.id,

@@ -1,6 +1,11 @@
 import { AppError, sha256Hex } from '@balesin/core';
 import type { Database } from '@balesin/db';
-import type { LoginRequest } from '@balesin/shared';
+import {
+  isTwoFactorRequired,
+  type LoginRequest,
+  type TwoFactorChallengeResponse,
+  type TwoFactorMethod,
+} from '@balesin/shared';
 import type { FastifyBaseLogger } from 'fastify';
 
 import { ipRateLimitKey, type ClientInfo } from '../../http/client-info';
@@ -11,7 +16,14 @@ import {
   findInstallationOrganization,
   type InstallationOrganization,
 } from '../installation/installation.repo';
-import { findUserForLogin, lockUser, markLoginSucceeded, type LoginUser } from './auth.repo';
+import type { TwoFactorService, VerifiedChallenge } from '../two-factor/two-factor.service';
+import {
+  findUserForLogin,
+  lockUser,
+  markLoginSucceeded,
+  updatePasswordHash,
+  type LoginUser,
+} from './auth.repo';
 import {
   ACCOUNT_LOCK_FLAG,
   DEVICE_LOCK_FLAG,
@@ -23,12 +35,13 @@ import {
   LOGIN_LOCK_SECONDS,
   LOGIN_SOURCE_RULE,
   SOURCE_LOCK_FLAG,
+  loginAccountKey,
   type LockScope,
 } from './login-rules';
 import type { PasswordHasher } from './password-hasher';
 import { findActiveSession } from './session.repo';
 import type { AuthContext, IssuedSession, SessionService } from './session.service';
-import type { TrustedDevices } from './trusted-device';
+import { deviceIssueTime, type TrustedDevices } from './trusted-device';
 
 export interface RequestContext {
   client: ClientInfo;
@@ -42,17 +55,39 @@ export interface LoginContext extends RequestContext {
   presentedDeviceToken?: string;
 }
 
-/** Login berhasil: sesi baru + nilai baru cookie "perangkat dikenal". */
+/**
+ * Sesi baru hasil login. `deviceToken` (nilai baru cookie "perangkat dikenal") hanya ada bila
+ * SEMUA langkah masuk sudah selesai — tidak untuk sesi terbatas "wajib mendaftar 2FA".
+ */
 export interface LoginResult extends IssuedSession {
+  deviceToken: string | undefined;
+}
+
+/** Hasil `POST /auth/login`: sesi (penuh atau terbatas), atau tantangan langkah kedua. */
+export type LoginOutcome =
+  | { kind: 'session'; result: LoginResult }
+  | { kind: 'two_factor_challenge'; challenge: TwoFactorChallengeResponse };
+
+/** Langkah kedua berhasil: sesi penuh + keterangan kode yang dipakai. */
+export interface TwoFactorLoginResult extends LoginResult {
   deviceToken: string;
+  method: TwoFactorMethod;
+  backupCodesRemaining: number;
 }
 
 export interface AuthService {
   /**
-   * Memeriksa email + password. Berhasil → sesi baru. Gagal → `INVALID_CREDENTIALS` (pesan
-   * sama untuk email tidak terdaftar, password salah, dan akun nonaktif) atau `RATE_LIMITED`.
+   * Memeriksa email + password. Berhasil → sesi penuh, sesi terbatas (peran wajib 2FA yang
+   * belum mendaftar), atau tantangan langkah kedua (2FA aktif; BELUM ada sesi). Gagal →
+   * `INVALID_CREDENTIALS` (pesan sama untuk email tidak terdaftar, password salah, dan akun
+   * nonaktif) atau `RATE_LIMITED`.
    */
-  login(input: LoginRequest, context: LoginContext): Promise<LoginResult>;
+  login(input: LoginRequest, context: LoginContext): Promise<LoginOutcome>;
+  /** Langkah kedua: tantangan + kode TOTP/kode cadangan → sesi penuh (rotasi sesi). */
+  verifyTwoFactor(
+    input: { challengeToken: string; code: string },
+    context: LoginContext,
+  ): Promise<TwoFactorLoginResult>;
   logout(auth: AuthContext, context: RequestContext): Promise<void>;
 }
 
@@ -63,6 +98,7 @@ export interface AuthServiceDeps {
   limiter: RateLimiter;
   notifier: EmailNotifier;
   devices: TrustedDevices;
+  twoFactor: TwoFactorService;
 }
 
 /** Ember batas laju + penanda kunci untuk tiap lingkup kunci. */
@@ -84,28 +120,36 @@ function accountLocked(retryAfterSeconds: number): AppError {
 }
 
 export function createAuthService(deps: AuthServiceDeps): AuthService {
-  const { db, sessions, hasher, limiter, notifier, devices } = deps;
+  const { db, sessions, hasher, limiter, notifier, devices, twoFactor } = deps;
 
   /**
-   * Tahap akhir login: mencabut sesi lama di browser ini, membuat sesi baru, mencatat audit.
-   * Dipisah dari pemeriksaan password supaya langkah 2FA (butir roadmap berikutnya) bisa
-   * disisipkan di antaranya: setelah password benar, pengguna yang wajib 2FA baru sampai ke
-   * sini setelah kode TOTP-nya diverifikasi.
+   * Tahap akhir login: mencabut sesi lama di browser ini (rotasi), membuat sesi baru, mencatat
+   * audit. Dipanggil setelah password benar (akun tanpa 2FA), atau setelah langkah kedua 2FA
+   * berhasil (`twoFactorLogin` terisi: tantangan ditutup — dan kode cadangan, bila itu yang
+   * dipakai, ditandai terpakai — di transaksi yang sama, sehingga dua permintaan bersamaan dengan
+   * kode benar hanya menghasilkan satu sesi dan tidak membakar kode cadangan).
    */
   async function completeLogin(
     user: LoginUser,
-    organization: InstallationOrganization,
+    organization: { id: string; name: string; timezone: string },
     context: LoginContext,
-    newPasswordHash: string | undefined,
-  ): Promise<LoginResult> {
+    options: {
+      newPasswordHash?: string | undefined;
+      twoFactorLogin?: VerifiedChallenge;
+    } = {},
+  ): Promise<LoginResult & { backupCodesRemaining: number }> {
     const previous = context.presentedToken
       ? await findActiveSession(db, sha256Hex(context.presentedToken))
       : undefined;
+    const twoFactorEnabled = user.totpEnabledAt !== null;
 
-    return db.transaction(async (tx) => {
+    const { session: issued, backupCodesRemaining } = await db.transaction(async (tx) => {
+      const remaining = options.twoFactorLogin
+        ? await twoFactor.completeChallenge(tx, options.twoFactorLogin, context)
+        : 0;
       if (previous) await sessions.revoke(tx, previous.organizationId, previous.id);
-      await markLoginSucceeded(tx, organization.id, user.id, newPasswordHash);
-      const issued = await sessions.issue(tx, {
+      await markLoginSucceeded(tx, organization.id, user.id, options.newPasswordHash);
+      const session = await sessions.issue(tx, {
         user: { id: user.id, name: user.name, email: user.email, role: user.role },
         organization: {
           id: organization.id,
@@ -113,20 +157,38 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
           timezone: organization.timezone,
         },
         client: context.client,
+        twoFactorEnabled,
+        twoFactorVerified: options.twoFactorLogin !== undefined,
       });
       await recordAudit(tx, {
         organizationId: organization.id,
         actorUserId: user.id,
         action: AUDIT_ACTIONS.loginSucceeded,
         targetType: 'session',
-        targetId: issued.auth.sessionRef,
-        metadata: { replacedPreviousSession: previous !== undefined },
+        targetId: session.auth.sessionRef,
+        metadata: {
+          replacedPreviousSession: previous !== undefined,
+          twoFactor: options.twoFactorLogin?.method ?? null,
+          ...(session.auth.twoFactor.enrollmentRequired
+            ? { twoFactorEnrollmentRequired: true }
+            : {}),
+        },
         client: context.client,
       });
-      // Cookie perangkat dikenal hanya diterbitkan setelah SEMUA langkah masuk selesai
-      // (nanti termasuk 2FA), dan diperbarui setiap login berhasil.
-      return { ...issued, deviceToken: devices.issue(user.id) };
+      return { session, backupCodesRemaining: remaining };
     });
+    if (options.twoFactorLogin) {
+      twoFactor.afterLogin(options.twoFactorLogin, backupCodesRemaining, context);
+    }
+    // Cookie perangkat dikenal hanya diterbitkan setelah SEMUA langkah masuk selesai: tidak untuk
+    // sesi terbatas yang masih wajib mendaftar 2FA (diterbitkan saat 2FA-nya aktif).
+    return {
+      ...issued,
+      deviceToken: issued.auth.twoFactor.enrollmentRequired
+        ? undefined
+        : devices.issue(user.id, deviceIssueTime(user.totpEnabledAt)),
+      backupCodesRemaining,
+    };
   }
 
   /**
@@ -140,7 +202,7 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
    * untuk memutuskan login.
    */
   async function lock(
-    scope: LockScope,
+    scope: Exclude<LockScope, 'two_factor'>,
     bucketKey: string,
     accountKey: string,
     organization: InstallationOrganization | undefined,
@@ -204,7 +266,7 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       const ipKey = ipRateLimitKey(context.client);
       // Dihitung per email yang DIKETIK, bukan per baris pengguna: email tidak terdaftar pun
       // "terkunci" dengan cara yang sama, jadi respons tidak membuka ada/tidaknya akun.
-      const accountKey = sha256Hex(`login|${input.email}`).slice(0, 40);
+      const accountKey = loginAccountKey(input.email);
       const sourceKey = sha256Hex(`login|${input.email}|${ipKey}`).slice(0, 40);
       const lockContext = { ...context, email: input.email };
 
@@ -313,7 +375,46 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       const newPasswordHash = hasher.needsRehash(user.passwordHash)
         ? await hasher.hash(input.password)
         : undefined;
-      return completeLogin(user, organization, context, newPasswordHash);
+
+      // 2FA aktif: password benar belum berarti masuk. Belum ada sesi; yang diberikan hanya
+      // tantangan sekali pakai untuk langkah kedua (`verifyTwoFactor`).
+      if (user.totpEnabledAt !== null) {
+        await twoFactor.assertNotLocked(user, context);
+        if (newPasswordHash) {
+          await updatePasswordHash(db, organization.id, user.id, newPasswordHash);
+        }
+        return {
+          kind: 'two_factor_challenge',
+          challenge: await twoFactor.issueChallenge(user, organization.id, context),
+        };
+      }
+
+      // Tanpa 2FA aktif. Peran wajib 2FA mendapat sesi TERBATAS (hanya untuk mendaftar 2FA,
+      // lihat `SessionService.issue`); peran lain mendapat sesi penuh.
+      if (isTwoFactorRequired(user.role) && !twoFactor.available) {
+        context.log.warn(
+          { userId: user.id },
+          'Peran wajib 2FA masuk tanpa BALESIN_MASTER_KEY: pendaftaran 2FA tidak bisa dilakukan',
+        );
+      }
+      return {
+        kind: 'session',
+        result: await completeLogin(user, organization, context, { newPasswordHash }),
+      };
+    },
+
+    async verifyTwoFactor(input, context) {
+      const verified = await twoFactor.verifyChallenge(input, context);
+      const result = await completeLogin(verified.user, verified.organization, context, {
+        twoFactorLogin: verified,
+      });
+      if (!result.deviceToken) throw new Error('Login 2FA selesai tanpa cookie perangkat');
+      return {
+        ...result,
+        deviceToken: result.deviceToken,
+        method: verified.method,
+        backupCodesRemaining: result.backupCodesRemaining,
+      };
     },
 
     async logout(auth, context) {

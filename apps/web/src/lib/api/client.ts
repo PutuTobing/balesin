@@ -18,8 +18,11 @@ import { t } from '../../i18n/id';
  *   Dipasang otomatis di header `X-CSRF-Token` untuk POST/PUT/PATCH/DELETE.
  * - 403 `CSRF_INVALID` → ambil token baru dari `/auth/me`, ulangi permintaan SEKALI.
  * - 401 `UNAUTHENTICATED` → sesi habis: pendengar `onSessionExpired` dipanggil (aplikasi
- *   membersihkan data dan membuka halaman masuk). 401 `INVALID_CREDENTIALS` dari login bukan
- *   sesi habis dan tidak memicunya.
+ *   membersihkan data dan membuka halaman masuk). 401 `INVALID_CREDENTIALS` dari login dan
+ *   401 `TWO_FACTOR_CHALLENGE_INVALID` dari langkah kedua bukan sesi habis dan tidak memicunya.
+ * - 403 `TWO_FACTOR_ENROLLMENT_REQUIRED` → sesi terbatas (wajib mendaftar 2FA dulu): pendengar
+ *   `onTwoFactorEnrollmentRequired` dipanggil (aplikasi memuat ulang sesi lalu membuka layar
+ *   pendaftaran 2FA).
  * - 429 → `retryAfterSeconds` dari header `Retry-After`.
  * - Respons sukses divalidasi dengan skema Zod dari `@balesin/shared`.
  */
@@ -90,11 +93,14 @@ export interface ApiClient {
   getCsrfToken(): string | null;
   /** Dipanggil saat API menjawab 401 `UNAUTHENTICATED` (sesi habis/dicabut). */
   onSessionExpired(listener: (error: ApiError) => void): () => void;
+  /** Dipanggil saat API menjawab 403 `TWO_FACTOR_ENROLLMENT_REQUIRED` (sesi terbatas). */
+  onTwoFactorEnrollmentRequired(listener: (error: ApiError) => void): () => void;
 }
 
 export function createApiClient(options: ApiClientOptions = {}): ApiClient {
   let csrfToken: string | null = null;
   const expiredListeners = new Set<(error: ApiError) => void>();
+  const enrollmentListeners = new Set<(error: ApiError) => void>();
   const doFetch: typeof fetch = (...args) => (options.fetch ?? globalThis.fetch)(...args);
 
   async function send(path: string, method: HttpMethod, body: unknown, signal?: AbortSignal) {
@@ -196,6 +202,9 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       csrfToken = null;
       for (const listener of expiredListeners) listener(error);
     }
+    if (error.status === 403 && error.code === 'TWO_FACTOR_ENROLLMENT_REQUIRED') {
+      for (const listener of enrollmentListeners) listener(error);
+    }
     return error;
   }
 
@@ -210,6 +219,10 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     onSessionExpired(listener) {
       expiredListeners.add(listener);
       return () => expiredListeners.delete(listener);
+    },
+    onTwoFactorEnrollmentRequired(listener) {
+      enrollmentListeners.add(listener);
+      return () => enrollmentListeners.delete(listener);
     },
   };
 }

@@ -300,6 +300,71 @@ describe('antrian email — pemberitahuan akun dikunci', () => {
     expect(jobs[0]?.failedReason).toBe('Payload job email:account-locked tidak valid');
   }, 60_000);
 
+  it('pemberitahuan keamanan (2FA aktif/nonaktif, kode cadangan dipakai) terkirim ke pemilik akun', async () => {
+    const { organization, user } = await recipient();
+    await configureEmail(organization.id);
+    const occurredAt = new Date().toISOString();
+
+    const jobs = [
+      await runJob(EMAIL_JOBS.securityNotice, {
+        organizationId: organization.id,
+        userId: user.id,
+        event: 'two_factor_enabled',
+        occurredAt,
+      }),
+      await runJob(EMAIL_JOBS.securityNotice, {
+        organizationId: organization.id,
+        userId: user.id,
+        event: 'backup_code_used',
+        occurredAt,
+        backupCodesRemaining: 4,
+      }),
+      await runJob(EMAIL_JOBS.securityNotice, {
+        organizationId: organization.id,
+        userId: user.id,
+        event: 'two_factor_disabled',
+        occurredAt,
+      }),
+    ];
+    for (const job of jobs) {
+      expect(emailJobResultSchema.parse(job.returnvalue)).toEqual({ status: 'sent' });
+    }
+
+    await expect.poll(async () => (await capturedMailFor(user.email)).length).toBe(3);
+    const subjects = (await capturedMailFor(user.email)).map((mail) => mail.subject).sort();
+    expect(subjects).toEqual([
+      'Kode cadangan akun Balesin Contoh kamu dipakai',
+      'Verifikasi dua langkah akun Balesin Contoh kamu dinonaktifkan',
+      'Verifikasi dua langkah akun Balesin Contoh kamu sudah aktif',
+    ]);
+    const backup = (await capturedMailFor(user.email)).find((mail) =>
+      mail.subject.startsWith('Kode cadangan'),
+    );
+    expect(backup?.text).toContain('Sisa kode cadangan yang masih berlaku: 4');
+    expect(backup?.text).not.toMatch(/\bAnda\b/i);
+  }, 60_000);
+
+  it('pemberitahuan keamanan: email belum diatur dilewati; payload asing gagal permanen', async () => {
+    const { organization, user } = await recipient();
+    const payload = {
+      organizationId: organization.id,
+      userId: user.id,
+      event: 'two_factor_enabled',
+      occurredAt: new Date().toISOString(),
+    };
+
+    const skipped = await runJob(EMAIL_JOBS.securityNotice, payload);
+    const smuggled = await runJob(EMAIL_JOBS.securityNotice, { ...payload, secret: 'JBSWY3DP' });
+    const unknownEvent = await runJob(EMAIL_JOBS.securityNotice, { ...payload, event: 'lain' });
+
+    expect(skipped.returnvalue).toEqual({ status: 'skipped', reason: 'email_not_configured' });
+    for (const job of [smuggled, unknownEvent]) {
+      expect(await job.getState()).toBe('failed');
+      expect(job.attemptsMade).toBe(1);
+      expect(job.failedReason).toBe('Payload job email:security-notice tidak valid');
+    }
+  }, 60_000);
+
   it('log worker tidak pernah memuat password SMTP', () => {
     // `balesin` juga awalan kunci tes dan nama koneksi, jadi yang diperiksa adalah bentuk
     // penugasan rahasia, bukan sekadar kemunculan katanya.

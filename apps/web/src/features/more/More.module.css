@@ -53,12 +53,36 @@
   font-size: var(--text-13);
 }
 
-/* Kartu akun: identitas pengguna di atas menu. */
+/* Kartu akun: identitas pengguna di atas menu, lalu tautan Keamanan akun. */
 .account {
-  padding: var(--space-4) var(--space-8);
+  overflow: hidden;
+  padding: var(--space-4) var(--space-8) 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--surface);
+}
+
+/* Merapat ke tepi kartu (menembus padding kartu), dipisah garis dari identitas. */
+.accountLink {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  height: var(--size-bar);
+  margin: var(--space-4) calc(var(--space-8) * -1) 0;
+  padding: 0 var(--space-16);
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  font-weight: var(--weight-medium);
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.accountLink:hover {
+  background: var(--surface-2);
+  text-decoration: none;
+}
+
+.accountLink:focus-visible {
+  outline-offset: -2px;
 }
 
 .nav {

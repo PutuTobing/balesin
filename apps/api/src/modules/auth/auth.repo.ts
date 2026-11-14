@@ -5,7 +5,14 @@ import { LOGIN_LOCK_INTERVAL } from './login-rules';
 
 export type LoginUser = Pick<
   User,
-  'id' | 'organizationId' | 'email' | 'name' | 'role' | 'passwordHash' | 'disabledAt'
+  | 'id'
+  | 'organizationId'
+  | 'email'
+  | 'name'
+  | 'role'
+  | 'passwordHash'
+  | 'disabledAt'
+  | 'totpEnabledAt'
 >;
 
 /** Pengguna untuk proses login, berdasarkan email BAKU di dalam satu organisasi. */
@@ -23,6 +30,7 @@ export async function findUserForLogin(
       role: users.role,
       passwordHash: users.passwordHash,
       disabledAt: users.disabledAt,
+      totpEnabledAt: users.totpEnabledAt,
     })
     .from(users)
     .where(and(eq(users.organizationId, organizationId), eq(users.email, email)))
@@ -64,5 +72,18 @@ export async function markLoginSucceeded(
       lastLoginAt: sql`now()`,
       ...(newPasswordHash === undefined ? {} : { passwordHash: newPasswordHash }),
     })
+    .where(and(eq(users.organizationId, organizationId), eq(users.id, userId)));
+}
+
+/** Memperbarui hash password (parameter argon2 lama) tanpa menandai login selesai. */
+export async function updatePasswordHash(
+  db: DbExecutor,
+  organizationId: string,
+  userId: string,
+  passwordHash: string,
+): Promise<void> {
+  await db
+    .update(users)
+    .set({ passwordHash })
     .where(and(eq(users.organizationId, organizationId), eq(users.id, userId)));
 }

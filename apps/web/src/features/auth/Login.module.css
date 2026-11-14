@@ -75,24 +75,6 @@ img.logo {
   margin-top: var(--space-8);
 }
 
-/*
- * Terkunci: tombol tetap nonaktif, tetapi labelnya informasi (sisa waktu) → harus terbaca.
- * Tanpa pudar `opacity` dan bukan lagi biru primer (tidak tampak seperti tombol rusak).
- * `--ink-2` di `--surface-2`: 6,2:1 (terang), 6,8:1 (gelap). Spesifisitas 0,3,0 supaya menang
- * atas `.button:disabled` dan `.primary` di Button.module.css apa pun urutan muatnya.
- */
-.submit[data-locked]:disabled {
-  opacity: 1;
-  border-color: var(--line);
-  background: var(--surface-2);
-  color: var(--ink-2);
-}
-
-/* Sisa waktu di tombol nonaktif: angka selebar tetap supaya label tidak bergoyang. */
-.countdown {
-  font-variant-numeric: tabular-nums;
-}
-
 .footnote {
   padding-top: var(--space-24);
   border-top: 1px solid var(--line);
@@ -171,4 +153,30 @@ img.logo {
   .title {
     font-size: var(--text-20);
   }
+}
+
+/* ---------- Langkah kode 2FA ---------- */
+
+/* Jalan lain (kode cadangan, kembali): di tempat catatan kaki, di bawah form. */
+.alternatives {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.alternatives p {
+  margin-bottom: var(--space-4);
+}
+
+/* Tombol teks rata kiri dengan teks di atasnya; latar hover menjorok keluar. */
+.alternatives .flushButton {
+  margin-left: calc(var(--space-12) * -1);
+  padding: 0 var(--space-12);
+  color: var(--primary);
+}
+
+/* Kembali: jalan keluar, bukan aksi yang ditawarkan → warna teks biasa. */
+.alternatives .backLink {
+  color: var(--ink);
 }

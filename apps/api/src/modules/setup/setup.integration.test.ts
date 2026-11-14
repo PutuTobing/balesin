@@ -13,6 +13,8 @@ import { uniqueSuffix } from '@balesin/db/testing';
 import {
   API_ROUTES,
   authenticatedSessionSchema,
+  meResponseSchema,
+  twoFactorEnrollmentSessionSchema,
   brandingResponseSchema,
   detectEmailHostResponseSchema,
   emailSettingsResponseSchema,
@@ -210,7 +212,7 @@ describe('token setup', () => {
 });
 
 describe('POST /setup/complete', () => {
-  it('membuat organisasi + Owner, mengunci setup, dan langsung memasukkan Owner', async () => {
+  it('membuat organisasi + Owner, mengunci setup, dan memasukkan Owner dengan sesi wajib-daftar-2FA', async () => {
     const response = await post(
       API_ROUTES.setup.complete,
       setupBody({
@@ -220,7 +222,10 @@ describe('POST /setup/complete', () => {
     );
 
     expect(response.statusCode).toBe(201);
-    const session = authenticatedSessionSchema.parse(response.json());
+    const session = twoFactorEnrollmentSessionSchema.parse(response.json());
+    // Owner wajib 2FA: sesi TERBATAS, hanya untuk mendaftar 2FA (lihat two-factor.integration).
+    expect(session.status).toBe('two_factor_enrollment_required');
+    expect(authenticatedSessionSchema.safeParse(response.json()).success).toBe(false);
     expect(session.user).toMatchObject({ name: OWNER.name, email: OWNER.email, role: 'owner' });
     expect(session.organization).toMatchObject({
       name: 'PT Maju Jaya Abadi',
@@ -228,11 +233,18 @@ describe('POST /setup/complete', () => {
     });
     expect(session.csrfToken.length).toBeGreaterThan(20);
 
-    // Cookie sesi (mode http://localhost: tanpa awalan __Host- dan tanpa Secure).
-    const [cookie] = setCookies(response);
+    // Cookie sesi (mode http://localhost: tanpa awalan __Host- dan tanpa Secure). Sesi terbatas
+    // berumur 30 menit; cookie perangkat dikenal BELUM dipasang (login belum selesai).
+    const cookies = setCookies(response);
+    const [cookie] = cookies;
+    expect(cookies).toHaveLength(1);
     expect(cookie).toMatch(
-      /^balesin_session=[A-Za-z0-9_-]{43}; Path=\/; HttpOnly; SameSite=Lax; Max-Age=2592000$/,
+      /^balesin_session=[A-Za-z0-9_-]{43}; Path=\/; HttpOnly; SameSite=Lax; Max-Age=1800$/,
     );
+    const lifetimeMinutes = (Date.parse(session.session.absoluteExpiresAt) - Date.now()) / 60_000;
+    expect(lifetimeMinutes).toBeGreaterThan(29.5);
+    expect(lifetimeMinutes).toBeLessThanOrEqual(30.05); // jam database vs jam proses
+    expect(session.session.idleExpiresAt).toBe(session.session.absoluteExpiresAt);
 
     const [organization] = await harness.db.select().from(organizations);
     const [owner] = await harness.db.select().from(users);
@@ -263,11 +275,18 @@ describe('POST /setup/complete', () => {
     expect(JSON.stringify(audit)).not.toContain(OWNER.password);
     expect(JSON.stringify(audit)).not.toContain(TEST_SETUP_TOKEN);
 
-    // Sesi langsung bisa dipakai.
+    // Sesi langsung bisa dipakai untuk "siapa saya" (yang memberi tahu langkah berikutnya),
+    // tetapi rute aplikasi lain ditolak sampai 2FA aktif.
     const me = await call(harness.app, 'GET', API_ROUTES.auth.me, undefined, {
       cookie: cookie?.split(';')[0],
     });
     expect(me.statusCode).toBe(200);
+    expect(meResponseSchema.parse(me.json()).status).toBe('two_factor_enrollment_required');
+    const settings = await call(harness.app, 'GET', API_ROUTES.settings.email, undefined, {
+      cookie: cookie?.split(';')[0],
+    });
+    expect(settings.statusCode).toBe(403);
+    expect(settings.json()).toMatchObject({ error: { code: 'TWO_FACTOR_ENROLLMENT_REQUIRED' } });
   });
 
   it('setup kedua ditolak 409 walau tokennya benar, dan semua rute setup ikut terkunci', async () => {

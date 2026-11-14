@@ -15,4 +15,5 @@ export * from './health';
 export * from './password';
 export * from './roles';
 export * from './setup';
+export * from './two-factor';
 export * from './zod-locale';

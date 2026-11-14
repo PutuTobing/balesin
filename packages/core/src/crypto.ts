@@ -65,6 +65,12 @@ export interface SecretContext {
   organizationId: string;
   /** `tabel.kolom`, mis. `email_settings.smtp_password`. */
   purpose: string;
+  /**
+   * Baris pemilik rahasia (mis. ID pengguna untuk rahasia TOTP), bila rahasia itu milik satu
+   * baris tertentu. Ikut AAD: teks sandi milik pengguna A yang disalin ke baris pengguna B tidak
+   * bisa dibuka.
+   */
+  subjectId?: string;
 }
 
 export interface SecretBox {
@@ -87,7 +93,12 @@ const NONCE_BYTES = 12;
 const TAG_BYTES = 16;
 
 function associatedData(context: SecretContext): Buffer {
-  return Buffer.from(`${SECRET_BOX_VERSION}|${context.organizationId}|${context.purpose}`, 'utf8');
+  const base = `${SECRET_BOX_VERSION}|${context.organizationId}|${context.purpose}`;
+  // Tanpa `subjectId` bentuknya sama persis seperti sebelumnya (data lama tetap terbuka).
+  return Buffer.from(
+    context.subjectId === undefined ? base : `${base}|${context.subjectId}`,
+    'utf8',
+  );
 }
 
 /**
@@ -95,7 +106,7 @@ function associatedData(context: SecretContext): Buffer {
  *
  * - AES-256-GCM dengan nonce acak 96-bit per enkripsi.
  * - Kunci enkripsi diturunkan per `purpose` lewat HKDF; master key tidak pernah dipakai langsung.
- * - AAD = versi + organisasi + purpose.
+ * - AAD = versi + organisasi + purpose (+ `subjectId` bila diberikan).
  * - Awalan versi (`v1.`) supaya skema/kunci bisa diganti nanti tanpa menebak format data lama.
  */
 export function createSecretBox(masterKey: Secret<Buffer>): SecretBox {

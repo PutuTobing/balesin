@@ -4,9 +4,11 @@ import {
   QUEUE_NAMES,
   QUEUE_PREFIX,
   accountLockedEmailPayloadSchema,
+  securityNoticeEmailPayloadSchema,
   withTimeout,
   type AccountLockedEmailPayload,
   type Redis,
+  type SecurityNoticeEmailPayload,
 } from '@balesin/core';
 import { Queue } from 'bullmq';
 
@@ -17,6 +19,8 @@ import { Queue } from 'bullmq';
 export interface EmailNotifier {
   /** Antrekan pemberitahuan "akun dikunci sementara". */
   accountLocked(payload: AccountLockedEmailPayload): Promise<void>;
+  /** Antrekan pemberitahuan keamanan akun (2FA diaktifkan/dinonaktifkan, kode cadangan dipakai). */
+  securityNotice(payload: SecurityNoticeEmailPayload): Promise<void>;
 }
 
 export interface EmailQueue {
@@ -50,6 +54,14 @@ export function createEmailQueue(options: EmailQueueOptions): EmailQueue {
         const data = accountLockedEmailPayloadSchema.parse(payload);
         await withTimeout(
           queue.add(EMAIL_JOBS.accountLocked, data),
+          ENQUEUE_TIMEOUT_MS,
+          'Mengantre email',
+        );
+      },
+      async securityNotice(payload) {
+        const data = securityNoticeEmailPayloadSchema.parse(payload);
+        await withTimeout(
+          queue.add(EMAIL_JOBS.securityNotice, data),
           ENQUEUE_TIMEOUT_MS,
           'Mengantre email',
         );

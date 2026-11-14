@@ -5,26 +5,45 @@
  *   login bergantung pada "organisasi milik instalasi", yang hanya boleh ada satu per database.
  * - Kunci Redis memakai awalan acak per berkas dan dihapus di akhir.
  * - Bila Postgres/Redis mati, tes GAGAL dengan pesan jelas (tidak dilewati diam-diam).
+ * - Owner/Admin/Supervisor wajib 2FA: `completeSetup` dan `login` otomatis mendaftarkan 2FA
+ *   (atau menjawab langkah kedua dengan kode TOTP yang dihitung dari rahasia yang tercatat),
+ *   jadi tes yang tidak sedang menguji 2FA tetap mendapat sesi penuh. Tes 2FA memakai
+ *   `completeSetupWithoutTwoFactor`, `startLogin`, dan panggilan langsung.
  */
 import { randomBytes } from 'node:crypto';
 
-import { closeRedis, Secret, type AccountLockedEmailPayload, type Redis } from '@balesin/core';
+import {
+  closeRedis,
+  generateTotp,
+  Secret,
+  type AccountLockedEmailPayload,
+  type Redis,
+  type SecurityNoticeEmailPayload,
+} from '@balesin/core';
 import {
   connectTestRedis,
   createLogCapture,
   deleteRedisKeys,
   TEST_MAIL,
 } from '@balesin/core/testing';
-import { closeDb, createDb, type Database } from '@balesin/db';
+import { closeDb, createDb, users, type Database } from '@balesin/db';
 import { createTemporaryDatabase, type TemporaryDatabase } from '@balesin/db/testing';
 import {
   API_ROUTES,
   CSRF_HEADER_NAME,
   authenticatedSessionSchema,
+  confirmTwoFactorEnrollmentResponseSchema,
+  loginResponseSchema,
+  meResponseSchema,
+  startTwoFactorEnrollmentResponseSchema,
+  verifyTwoFactorResponseSchema,
   type AuthenticatedSession,
   type CompleteSetupRequest,
   type EmailSettingsInput,
+  type LoginResponse,
+  type MeResponse,
 } from '@balesin/shared';
+import { eq } from 'drizzle-orm';
 import { inject } from 'vitest';
 
 import type { App, AppConfig, AppDeps } from '../app';
@@ -45,6 +64,8 @@ export interface IntegrationHarness extends TestApp {
   db: Database;
   redis: Redis;
   database: TemporaryDatabase;
+  /** Pemberitahuan keamanan (2FA, kode cadangan) yang diantrekan. */
+  readonly securityNotices: SecurityNoticeEmailPayload[];
   /** Mengosongkan database, kunci batas laju, antrean notifikasi, dan log. */
   reset(): Promise<void>;
   /** Membangun ulang aplikasi di atas database/Redis yang sama dengan konfigurasi lain. */
@@ -79,6 +100,7 @@ export async function createIntegrationHarness(
   let built: TestApp | undefined;
   let redis: Redis | undefined;
 
+  activeDb = db;
   const harness = {
     db,
     database,
@@ -103,8 +125,10 @@ export async function createIntegrationHarness(
     async reset() {
       await database.reset();
       if (redis) await deleteRedisKeys(redis, rateLimitPrefix);
+      totpSecrets.clear();
       if (built) {
         built.lockedNotifications.length = 0;
+        built.securityNotices.length = 0;
         built.logs.lines.length = 0;
       }
     },
@@ -128,6 +152,10 @@ export async function createIntegrationHarness(
     get lockedNotifications(): AccountLockedEmailPayload[] {
       if (!built) throw new Error('Aplikasi tes belum dibangun');
       return built.lockedNotifications;
+    },
+    get securityNotices(): SecurityNoticeEmailPayload[] {
+      if (!built) throw new Error('Aplikasi tes belum dibangun');
+      return built.securityNotices;
     },
     get redis(): Redis {
       if (!redis) throw new Error('Redis tes belum tersambung');
@@ -207,9 +235,88 @@ export interface SignedIn {
   session: AuthenticatedSession;
 }
 
-function signedIn(response: InjectResponse): SignedIn {
-  const session = authenticatedSessionSchema.parse(response.json());
+/** Sesi TERBATAS "wajib mendaftar 2FA" (setup, atau login peran wajib 2FA yang belum mendaftar). */
+export interface EnrollmentSignedIn {
+  cookie: string;
+  csrf: string;
+  session: MeResponse;
+}
+
+/** Sesi penuh setelah 2FA baru diaktifkan: + rahasia TOTP dan kode cadangan. */
+export interface SignedInWithTwoFactor extends SignedIn {
+  totpSecret: string;
+  backupCodes: string[];
+}
+
+// ── 2FA di tes ──────────────────────────────────────────────────────────────
+//
+// Rahasia TOTP pengguna yang didaftarkan lewat helper dicatat di sini (per berkas tes; dihapus
+// `reset`) supaya `login` bisa menjawab langkah kedua. Kode yang sama tidak boleh dipakai dua kali
+// dalam 30 detik (cegah replay), sedangkan tes sering masuk berkali-kali dalam hitungan detik:
+// sebelum menjawab, helper mengosongkan `totp_last_used_step` pengguna itu. Perilaku replay yang
+// sesungguhnya diuji langsung di `two-factor.integration.test.ts` tanpa helper ini.
+
+const totpSecrets = new Map<string, string>();
+let activeDb: Database | undefined;
+
+/** Rahasia TOTP yang tercatat untuk email ini (didaftarkan lewat helper). */
+export function totpSecretOf(email: string): string {
+  const secret = totpSecrets.get(email);
+  if (!secret) throw new Error(`Belum ada rahasia TOTP tercatat untuk ${email}`);
+  return secret;
+}
+
+/** Kode TOTP saat ini untuk pengguna yang didaftarkan lewat helper, siap dipakai ulang di tes. */
+export async function freshTotpCode(email: string): Promise<string> {
+  const secret = totpSecretOf(email);
+  if (activeDb) {
+    await activeDb.update(users).set({ totpLastUsedStep: null }).where(eq(users.email, email));
+  }
+  return generateTotp(secret);
+}
+
+function enrollmentSignedIn(response: InjectResponse): EnrollmentSignedIn {
+  const session = meResponseSchema.parse(response.json());
   return { cookie: sessionCookieOf(response), csrf: session.csrfToken, session };
+}
+
+/** Mendaftarkan 2FA dari sebuah sesi (terbatas atau penuh) dan mengembalikan sesi penuh baru. */
+export async function enrollTwoFactor(
+  app: App,
+  signed: { cookie: string; csrf: string; session: { user: { email: string } } },
+  options: CallOptions & { password?: string } = {},
+): Promise<SignedInWithTwoFactor> {
+  const { password, ...callOptions } = options;
+  const start = await call(
+    app,
+    'POST',
+    API_ROUTES.twoFactor.enroll,
+    password === undefined ? {} : { password },
+    { ...callOptions, cookie: signed.cookie, csrf: signed.csrf },
+  );
+  if (start.statusCode !== 200) {
+    throw new Error(`Mulai daftar 2FA gagal (${start.statusCode}): ${start.body}`);
+  }
+  const { secret } = startTwoFactorEnrollmentResponseSchema.parse(start.json());
+  const confirm = await call(
+    app,
+    'POST',
+    API_ROUTES.twoFactor.confirmEnrollment,
+    { code: generateTotp(secret) },
+    { ...callOptions, cookie: signed.cookie, csrf: signed.csrf },
+  );
+  if (confirm.statusCode !== 200) {
+    throw new Error(`Konfirmasi 2FA gagal (${confirm.statusCode}): ${confirm.body}`);
+  }
+  const body = confirmTwoFactorEnrollmentResponseSchema.parse(confirm.json());
+  totpSecrets.set(signed.session.user.email, secret);
+  return {
+    cookie: sessionCookieOf(confirm),
+    csrf: body.csrfToken,
+    session: authenticatedSessionSchema.parse(body),
+    totpSecret: secret,
+    backupCodes: body.backupCodes.codes,
+  };
 }
 
 export function setupBody(overrides: Partial<CompleteSetupRequest> = {}): CompleteSetupRequest {
@@ -221,23 +328,32 @@ export function setupBody(overrides: Partial<CompleteSetupRequest> = {}): Comple
   };
 }
 
-/** Menyelesaikan wizard setup dan mengembalikan sesi Owner. */
-export async function completeSetup(
+/** Menyelesaikan wizard setup TANPA mendaftar 2FA: sesi terbatas Owner. */
+export async function completeSetupWithoutTwoFactor(
   app: App,
   overrides: Partial<CompleteSetupRequest> = {},
-): Promise<SignedIn> {
+): Promise<EnrollmentSignedIn> {
   const response = await call(app, 'POST', API_ROUTES.setup.complete, setupBody(overrides));
   if (response.statusCode !== 201) {
     throw new Error(`Setup gagal (${response.statusCode}): ${response.body}`);
   }
-  return signedIn(response);
+  return enrollmentSignedIn(response);
 }
 
-export async function login(
+/** Menyelesaikan wizard setup lalu mendaftarkan 2FA Owner: sesi penuh Owner. */
+export async function completeSetup(
+  app: App,
+  overrides: Partial<CompleteSetupRequest> = {},
+): Promise<SignedInWithTwoFactor> {
+  return enrollTwoFactor(app, await completeSetupWithoutTwoFactor(app, overrides));
+}
+
+/** Hanya langkah password (`POST /auth/login`) — untuk tes yang memeriksa langkah berikutnya. */
+export async function startLogin(
   app: App,
   credentials: { email: string; password: string } = OWNER,
   options: CallOptions = {},
-): Promise<SignedIn> {
+): Promise<{ response: InjectResponse; body: LoginResponse }> {
   const response = await call(
     app,
     'POST',
@@ -248,7 +364,62 @@ export async function login(
   if (response.statusCode !== 200) {
     throw new Error(`Login gagal (${response.statusCode}): ${response.body}`);
   }
-  return signedIn(response);
+  return { response, body: loginResponseSchema.parse(response.json()) };
+}
+
+/**
+ * Masuk sebagai pengguna yang 2FA-nya aktif (rahasia tercatat): password lalu langkah kedua.
+ * Mengembalikan respons TERAKHIR (`POST /auth/2fa/verify`), yang memasang cookie sesi dan cookie
+ * perangkat dikenal. Untuk pengguna tanpa 2FA, respons login itu sendiri.
+ */
+export async function loginResponse(
+  app: App,
+  credentials: { email: string; password: string } = OWNER,
+  options: CallOptions = {},
+): Promise<InjectResponse> {
+  const { response, body } = await startLogin(app, credentials, options);
+  if (body.status !== 'two_factor_required') return response;
+  const verify = await call(
+    app,
+    'POST',
+    API_ROUTES.twoFactor.verify,
+    { challengeToken: body.challengeToken, code: await freshTotpCode(credentials.email) },
+    options,
+  );
+  if (verify.statusCode !== 200) {
+    throw new Error(`Langkah kedua gagal (${verify.statusCode}): ${verify.body}`);
+  }
+  return verify;
+}
+
+/**
+ * Masuk sampai mendapat sesi PENUH: menjawab langkah kedua dengan kode TOTP pengguna (rahasia
+ * yang tercatat), atau mendaftarkan 2FA bila perannya wajib dan belum punya.
+ */
+export async function login(
+  app: App,
+  credentials: { email: string; password: string } = OWNER,
+  options: CallOptions = {},
+): Promise<SignedIn> {
+  const response = await loginResponse(app, credentials, options);
+  const body = loginResponseSchema.or(verifyTwoFactorResponseSchema).parse(response.json());
+  if (body.status === 'two_factor_enrollment_required') {
+    return enrollTwoFactor(app, enrollmentSignedIn(response), options);
+  }
+  if (body.status !== 'authenticated') throw new Error('Login tidak selesai');
+  return {
+    cookie: sessionCookieOf(response),
+    csrf: body.csrfToken,
+    session: authenticatedSessionSchema.parse(body),
+  };
+}
+
+/** `nama=nilai` cookie perangkat dikenal dari respons yang menyelesaikan login. */
+export function deviceCookieOf(response: InjectResponse, secure = false): string {
+  const name = secure ? '__Host-balesin_device' : 'balesin_device';
+  const cookie = setCookies(response).find((value) => value.startsWith(`${name}=`));
+  if (!cookie) throw new Error('Respons tidak memasang cookie perangkat');
+  return cookie.split(';')[0] ?? '';
 }
 
 /** Pengaturan email yang menunjuk penangkap email lokal (Mailpit). */

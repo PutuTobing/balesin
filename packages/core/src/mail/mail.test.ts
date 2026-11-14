@@ -16,7 +16,12 @@ import {
   verifySmtpConnection,
   type SmtpConnectionConfig,
 } from './smtp';
-import { escapeHtml, renderAccountLockedEmail, renderTestEmail } from './templates';
+import {
+  escapeHtml,
+  renderAccountLockedEmail,
+  renderSecurityNoticeEmail,
+  renderTestEmail,
+} from './templates';
 import { createSecretBox } from '../crypto';
 import { z } from 'zod';
 
@@ -586,7 +591,7 @@ describe('template email', () => {
   });
 
   it('isi menyesuaikan lingkup kunci: satu jaringan, banyak jaringan, perangkat dikenal', () => {
-    const render = (scope: 'source' | 'account' | 'device') =>
+    const render = (scope: 'source' | 'account' | 'device' | 'two_factor') =>
       renderAccountLockedEmail({
         productName: 'Balesin',
         userName: 'Budi',
@@ -603,6 +608,54 @@ describe('template email', () => {
     expect(render('account')).toContain('dari berbagai jaringan');
     expect(render('account')).toContain('perangkat yang biasa kamu pakai');
     expect(render('device')).toContain('dari perangkat yang pernah kamu pakai');
+    expect(render('two_factor')).toContain('password yang BENAR, tetapi kode verifikasi');
+    expect(render('two_factor')).toContain('password-mu sudah diketahui orang lain');
+  });
+
+  it('pemberitahuan keamanan: 2FA aktif, 2FA nonaktif, kode cadangan dipakai', () => {
+    const render = (
+      event:
+        | 'two_factor_enabled'
+        | 'two_factor_disabled'
+        | 'backup_code_used'
+        | 'backup_codes_regenerated',
+      backupCodesRemaining?: number,
+    ) =>
+      renderSecurityNoticeEmail({
+        productName: 'Balesin\r\nBcc: korban@contoh.test',
+        userName: '<b>Budi</b>',
+        event,
+        occurredAt: new Date('2026-11-13T03:30:00.000Z'),
+        timeZone: 'Asia/Jakarta',
+        ...(backupCodesRemaining === undefined ? {} : { backupCodesRemaining }),
+      });
+
+    const enabled = render('two_factor_enabled');
+    expect(enabled.subject).not.toMatch(/[\r\n]/);
+    expect(enabled.subject).toContain('Verifikasi dua langkah');
+    expect(enabled.text).toContain('diaktifkan pada 13 November 2026');
+    expect(enabled.text).toContain('(Asia/Jakarta)');
+    expect(enabled.html).toContain('&lt;b&gt;Budi&lt;/b&gt;');
+    expect(enabled.html).not.toContain('<b>Budi</b>');
+    expect(render('two_factor_disabled').text).toContain('dinonaktifkan pada');
+    expect(render('backup_code_used', 3).text).toContain(
+      'Sisa kode cadangan yang masih berlaku: 3',
+    );
+    expect(render('backup_code_used', 0).text).toContain('sudah habis');
+    const regenerated = render('backup_codes_regenerated');
+    expect(regenerated.subject).toContain('dibuat ulang');
+    expect(regenerated.text).toContain('Semua kode cadangan lama tidak berlaku lagi');
+    for (const event of [
+      'two_factor_enabled',
+      'two_factor_disabled',
+      'backup_code_used',
+      'backup_codes_regenerated',
+    ] as const) {
+      const mail = render(event, 1);
+      expect(mail.text).toContain('Kalau bukan kamu');
+      expect(mail.text).not.toMatch(/\bAnda\b/i);
+      expect(mail.html).not.toMatch(/<img|<a |<script|https?:\/\//i);
+    }
   });
 
   it('zona waktu tak dikenal jatuh ke UTC, tidak melempar', () => {

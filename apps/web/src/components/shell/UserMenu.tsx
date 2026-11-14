@@ -1,5 +1,6 @@
 import { USER_ROLE_LABELS, type SessionUser } from '@balesin/shared';
-import { LogOut } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
+import { LogOut, ShieldCheck } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
 import { useLogout, useSession } from '../../features/auth/session';
 import { t } from '../../i18n/id';
@@ -32,7 +33,7 @@ export function UserIdentity({ user }: { user: SessionUser }) {
   );
 }
 
-/** Menu akun di dasar rail desktop: identitas + Keluar. */
+/** Menu akun di dasar rail desktop: identitas, Keamanan akun, Keluar. */
 export function UserMenu({ className }: { className?: string }) {
   const session = useSession();
   const logout = useLogout();
@@ -64,6 +65,12 @@ export function UserMenu({ className }: { className?: string }) {
           </DropdownMenu.Label>
           <UserIdentity user={user} />
           <DropdownMenu.Separator className={styles.separator} />
+          <DropdownMenu.Item asChild className={styles.item}>
+            <Link to="/pengaturan/keamanan">
+              <Icon icon={ShieldCheck} size={16} className={styles.itemIcon} />
+              {t.auth.userMenu.security}
+            </Link>
+          </DropdownMenu.Item>
           <DropdownMenu.Item
             className={styles.item}
             disabled={logout.isPending}

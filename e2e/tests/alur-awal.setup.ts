@@ -1,20 +1,30 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import type { Page } from '@playwright/test';
 import { E2E_SETUP_TOKEN, MAILPIT_SMTP, OWNER_STATE_PATH } from '../stack/env';
 import { expect, mainNav, owner, submitLogin, test } from './fixtures';
 import { findMail } from './mailpit';
+import {
+  replaceOwnerBackupCodes,
+  saveOwnerTwoFactor,
+  withOwnerCode,
+  wrongTotp,
+} from './two-factor';
 
 /**
  * Alur utama Fase 1 melawan API sungguhan, dari instalasi kosong (database & Redis direset
  * oleh `stack/start-backend.mjs`):
- *   setup dari nol → masuk otomatis → keluar → masuk lagi (kembali ke tujuan awal) →
- *   open redirect ditolak → password salah → akun terkunci setelah 5 kali.
+ *   setup dari nol → sesi terbatas → pendaftaran 2FA Owner (rahasia dibaca dari layar, kode TOTP
+ *   dihitung `two-factor.ts`) → kode cadangan → keluar → masuk dua langkah (kode salah lalu benar)
+ *   → open redirect ditolak (masuk dengan kode cadangan) → kode cadangan sekali pakai → buat
+ *   ulang kode cadangan → password salah → akun terkunci setelah 5 kali.
  *
  * Sesi Owner disimpan ke `OWNER_STATE_PATH` SEBELUM akun dikunci, lalu dipakai proyek
  * `desktop-1440` dan `hp-390` (sesi yang sudah ada tetap berlaku saat akun terkunci).
  */
 const ME = '/api/v1/auth/me';
 const LOGIN = '/api/v1/auth/login';
+const VERIFY = '/api/v1/auth/2fa/verify';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -196,13 +206,14 @@ test('wizard: token lewat tautan, lalu pesan error per isian salah di setiap lan
   expect(stored).not.toContain(owner.password);
 });
 
-test('setup dari nol sampai Owner masuk, keluar, masuk lagi, lalu terkunci', async ({
+test('setup dari nol sampai Owner mendaftar 2FA, masuk dua langkah, lalu terkunci', async ({
   page,
   browser,
   expectHttpError,
   baseURL,
 }) => {
-  test.setTimeout(180_000);
+  // Tiga kode TOTP berturut-turut: tiap kode menunggu langkah 30 detik berikutnya.
+  test.setTimeout(300_000);
   // Belum ada sesi (401 dari /auth/me), token salah (403), password salah (401), terkunci (429).
   expectHttpError(ME, 401);
   expectHttpError('/api/v1/setup/verify-token', 403);
@@ -304,14 +315,87 @@ test('setup dari nol sampai Owner masuk, keluar, masuk lagi, lalu terkunci', asy
 
   await page.getByRole('button', { name: 'Selesai dan masuk' }).click();
 
-  // Langsung masuk ke Inbox dengan merek baru.
-  await expect(page).toHaveURL(/\/inbox$/, { timeout: 20_000 });
-  await expect(page.getByRole('heading', { level: 1, name: 'Inbox' })).toBeVisible();
-  await expect(page).toHaveTitle('Inbox · Balesin Maju Jaya');
+  // ── Owner wajib 2FA: sesi terbatas, langsung ke pendaftaran ───────────────
+  await expect(page).toHaveURL(/\/verifikasi-dua-langkah$/, { timeout: 20_000 });
+  const enrollHeading = page.getByRole('heading', {
+    level: 1,
+    name: 'Aktifkan verifikasi dua langkah',
+  });
+  await expect(enrollHeading).toBeVisible();
+  await expect(page).toHaveTitle('Aktifkan verifikasi dua langkah · Balesin Maju Jaya');
   // Token dan password tidak pernah disimpan di penyimpanan browser.
-  const stored = await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }));
+  let stored = await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }));
   expect(stored).not.toContain(E2E_SETUP_TOKEN);
   expect(stored).not.toContain(owner.password);
+
+  // Sesi terbatas tidak bisa membuka halaman aplikasi: diarahkan kembali ke pendaftaran
+  // (tujuan awal dibawa), dan API menolak dengan 403 TWO_FACTOR_ENROLLMENT_REQUIRED.
+  await page.goto('/kontak');
+  await expect(page).toHaveURL(/\/verifikasi-dua-langkah\?redirect=%2Fkontak$/);
+  await expect(enrollHeading).toBeVisible();
+  await expect(mainNav(page)).toHaveCount(0);
+  const blocked = await page.request.get('/api/v1/settings/email');
+  expect(blocked.status()).toBe(403);
+  expect(((await blocked.json()) as { error: { code: string } }).error.code).toBe(
+    'TWO_FACTOR_ENROLLMENT_REQUIRED',
+  );
+  await page.goto('/verifikasi-dua-langkah');
+
+  // QR dibuat di browser; rahasia dibaca dari kunci untuk diketik manual.
+  await expect(
+    page.getByRole('img', { name: 'Kode QR untuk ditambahkan ke aplikasi autentikator' }),
+  ).toBeVisible();
+  const addStep = page
+    .getByRole('listitem')
+    .filter({ has: page.getByRole('heading', { name: 'Tambahkan akunmu ke aplikasi' }) });
+  const secret = ((await addStep.locator('code').textContent()) ?? '').replace(/\s/g, '');
+  expect(secret).toMatch(/^[A-Z2-7]{32}$/);
+  saveOwnerTwoFactor({ secret, backupCodes: [], lastStep: null });
+  await withOwnerCode(
+    async ({ code }) => {
+      await page.getByLabel('Kode 6 digit').fill(code);
+      await page.getByRole('button', { name: 'Aktifkan', exact: true }).click();
+      await expect(
+        page.getByRole('heading', { level: 1, name: 'Simpan kode cadangan' }),
+      ).toBeFocused();
+    },
+    { allowBackup: false },
+  );
+
+  // ── Kode cadangan: tampil sekali, unduh .txt, wajib dicentang sebelum lanjut ──
+  const codes = await page
+    .getByRole('list', { name: 'Daftar kode cadangan' })
+    .locator('code')
+    .allTextContents();
+  expect(codes).toHaveLength(10);
+  for (const code of codes) expect(code).toMatch(/^[a-z2-9]{5}-[a-z2-9]{5}$/);
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Unduh .txt' }).click(),
+  ]);
+  expect(download.suggestedFilename()).toBe('kode-cadangan-balesin-maju-jaya.txt');
+  const file = readFileSync(await download.path(), 'utf8');
+  for (const code of codes) expect(file).toContain(code);
+  expect(file).toContain(owner.email);
+
+  const saved = page.getByRole('checkbox', {
+    name: 'Saya sudah menyimpan kode ini di tempat yang aman',
+  });
+  await page.getByRole('button', { name: 'Lanjut ke Inbox' }).click();
+  await expect(page.getByText('Centang dulu setelah kode cadangan tersimpan.')).toBeVisible();
+  await expect(saved).toBeFocused();
+  await expect(page).toHaveURL(/\/verifikasi-dua-langkah$/);
+  await saved.check();
+  await page.getByRole('button', { name: 'Lanjut ke Inbox' }).click();
+
+  // Masuk ke Inbox dengan merek baru.
+  await expect(page).toHaveURL(/\/inbox$/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Inbox' })).toBeVisible();
+  await expect(page).toHaveTitle('Inbox · Balesin Maju Jaya');
+  // Rahasia dan kode cadangan tidak tertinggal di penyimpanan browser.
+  stored = await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }));
+  expect(stored).not.toContain(secret);
+  expect(stored).not.toContain(codes[0]);
 
   // Tab kedua melanjutkan wizard setelah setup selesai di tab pertama → layar "sudah selesai",
   // tidak ada Owner kedua. (Tombol "Ke halaman masuk" di layar itu: lihat setup-wizard.spec.ts.)
@@ -339,23 +423,118 @@ test('setup dari nol sampai Owner masuk, keluar, masuk lagi, lalu terkunci', asy
     page.getByRole('heading', { level: 1, name: `Masuk ke ${owner.organization}` }),
   ).toBeVisible();
 
+  // ── Masuk dua langkah: password, lalu kode (salah sekali, lalu benar) ──────
   // Halaman aplikasi tanpa sesi → halaman masuk, tujuan disimpan dan dipakai setelah masuk.
+  expectHttpError(VERIFY, 400);
   await page.goto('/pengaturan');
   await expect(page).toHaveURL(/\/masuk\?redirect=%2Fpengaturan$/);
   await submitLogin(page, owner.email, owner.password);
-  await expect(page).toHaveURL(/\/pengaturan$/);
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'Masukkan kode verifikasi' }),
+  ).toBeVisible();
+  const totpField = page.getByLabel('Kode verifikasi');
+  await expect(totpField).toBeFocused();
+  await totpField.fill(wrongTotp(secret));
+  await page.getByRole('button', { name: 'Verifikasi', exact: true }).click();
+  await expect(page.getByText(/Sisa 2 percobaan/)).toBeVisible();
+  await expect(totpField).toHaveAttribute('aria-invalid', 'true');
+  await withOwnerCode(
+    async ({ code }) => {
+      await totpField.fill(code);
+      await page.getByRole('button', { name: 'Verifikasi', exact: true }).click();
+      await expect(page).toHaveURL(/\/pengaturan$/);
+    },
+    { allowBackup: false },
+  );
   await expect(page.getByRole('heading', { level: 1, name: 'Pengaturan' })).toBeVisible();
 
   mkdirSync(path.dirname(OWNER_STATE_PATH), { recursive: true });
   await page.context().storageState({ path: OWNER_STATE_PATH });
 
-  // ── Open redirect ditolak: tujuan luar diganti Inbox ──────────────────────
-  const guest = await browser.newContext({ baseURL });
-  const guestPage = await guest.newPage();
-  await guestPage.goto('/masuk?redirect=%2F%2Fcontoh-jahat.test%2Fcuri');
-  await submitLogin(guestPage, owner.email, owner.password);
-  await expect(guestPage).toHaveURL(/\/inbox$/);
-  await guest.close();
+  /** Masuk dari browser baru sampai langkah kode cadangan. */
+  const signInWithBackup = async (redirect = '') => {
+    const context = await browser.newContext({ baseURL });
+    const guestPage = await context.newPage();
+    await guestPage.goto(`/masuk${redirect}`);
+    await submitLogin(guestPage, owner.email, owner.password);
+    await guestPage.getByRole('button', { name: 'Pakai kode cadangan' }).click();
+    await expect(
+      guestPage.getByRole('heading', { level: 1, name: 'Masukkan kode cadangan' }),
+    ).toBeVisible();
+    const useCode = async (code: string) => {
+      // Huruf besar diabaikan server (bentuk baku huruf kecil).
+      await guestPage.getByLabel('Kode cadangan').fill(code.toUpperCase());
+      await guestPage.getByRole('button', { name: 'Verifikasi', exact: true }).click();
+    };
+    return { context, guestPage, useCode };
+  };
+  const expectBackupUsed = async (guestPage: Page, remaining: number) => {
+    await expect(
+      guestPage.getByRole('heading', { level: 1, name: 'Kamu masuk dengan kode cadangan' }),
+    ).toBeVisible();
+    await expect(
+      guestPage.getByText(`Sisa ${remaining} kode cadangan.`, { exact: false }),
+    ).toBeVisible();
+    await guestPage.getByRole('button', { name: 'Lanjut', exact: true }).click();
+  };
+
+  // ── Open redirect ditolak: tujuan luar diganti Inbox (masuk dengan kode cadangan) ──
+  const first = await signInWithBackup('?redirect=%2F%2Fcontoh-jahat.test%2Fcuri');
+  await first.useCode(codes[0] ?? '');
+  await expectBackupUsed(first.guestPage, 9);
+  await expect(first.guestPage).toHaveURL(/\/inbox$/);
+  await first.context.close();
+
+  // ── Kode cadangan sekali pakai: kode yang sama ditolak, kode lain diterima ──
+  const second = await signInWithBackup();
+  await second.useCode(codes[0] ?? '');
+  await expect(second.guestPage.getByText(/Sisa 2 percobaan/)).toBeVisible();
+  await second.useCode(codes[1] ?? '');
+  await expectBackupUsed(second.guestPage, 8);
+  await expect(second.guestPage).toHaveURL(/\/inbox$/);
+  await second.context.close();
+
+  // ── Buat ulang kode cadangan (password + kode) → semua kode lama batal ─────
+  await page.goto('/pengaturan/keamanan');
+  await expect(page.getByRole('heading', { level: 1, name: 'Keamanan akun' })).toBeVisible();
+  await expect(page.getByText('8 dari 10 kode tersisa')).toBeVisible();
+  // Owner wajib 2FA: penjelasan, tanpa tombol menonaktifkan.
+  await expect(
+    page.getByText(/Peranmu sebagai Owner wajib memakai verifikasi dua langkah/),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: /Nonaktifkan/ })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Buat kode baru' }).click();
+  await page.getByLabel('Password', { exact: true }).fill(owner.password);
+  await withOwnerCode(
+    async ({ code }) => {
+      await page.getByLabel('Kode verifikasi').fill(code);
+      await page.getByRole('button', { name: 'Buat kode baru' }).click();
+      await expect(
+        page.getByRole('heading', { level: 2, name: 'Kode cadangan baru' }),
+      ).toBeFocused();
+    },
+    { allowBackup: false },
+  );
+  const newCodes = await page
+    .getByRole('list', { name: 'Daftar kode cadangan' })
+    .locator('code')
+    .allTextContents();
+  expect(newCodes).toHaveLength(10);
+  expect(newCodes).not.toContain(codes[2]);
+  await page
+    .getByRole('checkbox', { name: 'Saya sudah menyimpan kode ini di tempat yang aman' })
+    .check();
+  await page.getByRole('button', { name: 'Selesai' }).click();
+  await expect(page.getByText('10 dari 10 kode tersisa')).toBeVisible();
+
+  const third = await signInWithBackup();
+  await third.useCode(codes[2] ?? '');
+  await expect(third.guestPage.getByText(/Sisa 2 percobaan/)).toBeVisible();
+  await third.useCode(newCodes[0] ?? '');
+  await expectBackupUsed(third.guestPage, 9);
+  await third.context.close();
+  // Sisa kode baru dipakai tes paralel yang perlu masuk ulang sebagai Owner.
+  replaceOwnerBackupCodes(newCodes.slice(1));
 
   // ── Password salah → terkunci setelah 5 kali ──────────────────────────────
   expectHttpError(LOGIN, 401);

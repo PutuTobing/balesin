@@ -5,7 +5,14 @@ import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 import { closeDb, createDb, pingDb, type Database } from './client';
 import { PG_ERROR_CODES, isPgError } from './errors';
 import { newId } from './ids';
-import { auditLogs, organizations, userSessions, users } from './schema';
+import {
+  auditLogs,
+  organizations,
+  twoFactorChallenges,
+  userBackupCodes,
+  userSessions,
+  users,
+} from './schema';
 import {
   insertOrganization,
   insertUser,
@@ -282,5 +289,75 @@ describe('audit_logs', () => {
       db.insert(auditLogs).values({ organizationId: newId(), action: 'x' }),
     );
     expect(error.code).toBe(PG_ERROR_CODES.foreignKeyViolation);
+  });
+});
+
+describe('verifikasi dua langkah', () => {
+  it('rahasia TOTP aktif dan waktu aktifnya selalu berpasangan; begitu juga rahasia pendaftaran', async () => {
+    const organization = await insertOrganization(db);
+
+    const halfEnabled = await pgErrorOf(
+      insertUser(db, organization.id, { totpSecretEncrypted: 'v1.x.y' }),
+    );
+    const halfPending = await pgErrorOf(
+      insertUser(db, organization.id, { totpPendingCreatedAt: new Date() }),
+    );
+
+    expect(halfEnabled.code).toBe(PG_ERROR_CODES.checkViolation);
+    expect(halfEnabled.constraint).toBe('users_totp_enabled_paired');
+    expect(halfPending.constraint).toBe('users_totp_pending_paired');
+  });
+
+  it('kode cadangan dan tantangan tidak bisa merujuk pengguna organisasi lain; ikut terhapus bersama pengguna', async () => {
+    const organization = await insertOrganization(db);
+    const other = await insertOrganization(db);
+    const user = await insertUser(db, organization.id);
+
+    const crossCode = await pgErrorOf(
+      db
+        .insert(userBackupCodes)
+        .values({ organizationId: other.id, userId: user.id, codeHash: 'h' }),
+    );
+    const crossChallenge = await pgErrorOf(
+      db.insert(twoFactorChallenges).values({
+        organizationId: other.id,
+        userId: user.id,
+        tokenHash: `t-${uniqueSuffix()}`,
+        bindingHash: 'b',
+        expiresAt: new Date(Date.now() + 60_000),
+      }),
+    );
+    expect(crossCode.constraint).toBe('user_backup_codes_organization_id_user_id_fk');
+    expect(crossChallenge.constraint).toBe('two_factor_challenges_organization_id_user_id_fk');
+
+    await db
+      .insert(userBackupCodes)
+      .values({ organizationId: organization.id, userId: user.id, codeHash: 'h' });
+    const tokenHash = `t-${uniqueSuffix()}`;
+    await db.insert(twoFactorChallenges).values({
+      organizationId: organization.id,
+      userId: user.id,
+      tokenHash,
+      bindingHash: 'b',
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const duplicate = await pgErrorOf(
+      db.insert(twoFactorChallenges).values({
+        organizationId: organization.id,
+        userId: user.id,
+        tokenHash,
+        bindingHash: 'b',
+        expiresAt: new Date(Date.now() + 60_000),
+      }),
+    );
+    expect(duplicate.constraint).toBe('two_factor_challenges_token_hash_unique');
+
+    await db.delete(users).where(eq(users.id, user.id));
+    expect(
+      await db.select().from(userBackupCodes).where(eq(userBackupCodes.userId, user.id)),
+    ).toEqual([]);
+    expect(
+      await db.select().from(twoFactorChallenges).where(eq(twoFactorChallenges.userId, user.id)),
+    ).toEqual([]);
   });
 });

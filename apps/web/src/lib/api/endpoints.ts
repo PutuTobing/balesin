@@ -1,16 +1,22 @@
 import {
   API_ROUTES,
-  authenticatedSessionSchema,
   brandingResponseSchema,
+  completeSetupResponseSchema,
+  confirmTwoFactorEnrollmentResponseSchema,
   detectEmailHostResponseSchema,
+  disableTwoFactorResponseSchema,
   emailSettingsResponseSchema,
   emailTestResultSchema,
   loginResponseSchema,
   logoutResponseSchema,
   meResponseSchema,
   passwordCheckResponseSchema,
+  regenerateBackupCodesResponseSchema,
   setupStatusResponseSchema,
+  startTwoFactorEnrollmentResponseSchema,
+  twoFactorStatusResponseSchema,
   verifySetupTokenResponseSchema,
+  verifyTwoFactorResponseSchema,
   type CheckSetupPasswordRequest,
   type CompleteSetupRequest,
   type EmailSettingsInput,
@@ -18,6 +24,8 @@ import {
   type SetupDetectEmailHostRequest,
   type SetupSendTestEmailRequest,
   type SetupTestEmailConnectionRequest,
+  type TwoFactorReauthRequest,
+  type VerifyTwoFactorRequest,
 } from '@balesin/shared';
 import { api, type ApiClient } from './client';
 
@@ -66,7 +74,7 @@ export function createEndpoints(client: ApiClient) {
         client.request(API_ROUTES.setup.complete, {
           method: 'POST',
           body,
-          schema: authenticatedSessionSchema,
+          schema: completeSetupResponseSchema,
         }),
     },
     auth: {
@@ -80,6 +88,46 @@ export function createEndpoints(client: ApiClient) {
         client.request(API_ROUTES.auth.logout, { method: 'POST', schema: logoutResponseSchema }),
       me: (signal?: AbortSignal) =>
         client.request(API_ROUTES.auth.me, { schema: meResponseSchema, signal }),
+    },
+    /** Verifikasi dua langkah (docs/KONTRAK-API-AUTH.md bagian 2FA). */
+    twoFactor: {
+      status: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.twoFactor.status, {
+          schema: twoFactorStatusResponseSchema,
+          signal,
+        }),
+      /** Langkah kedua saat masuk (publik, tanpa CSRF). */
+      verify: (body: VerifyTwoFactorRequest) =>
+        client.request(API_ROUTES.twoFactor.verify, {
+          method: 'POST',
+          body,
+          schema: verifyTwoFactorResponseSchema,
+        }),
+      /** Sesi terbatas: tanpa password. Sesi penuh: password wajib. */
+      enroll: (password?: string) =>
+        client.request(API_ROUTES.twoFactor.enroll, {
+          method: 'POST',
+          body: password === undefined ? {} : { password },
+          schema: startTwoFactorEnrollmentResponseSchema,
+        }),
+      confirmEnrollment: (code: string) =>
+        client.request(API_ROUTES.twoFactor.confirmEnrollment, {
+          method: 'POST',
+          body: { code },
+          schema: confirmTwoFactorEnrollmentResponseSchema,
+        }),
+      regenerateBackupCodes: (body: TwoFactorReauthRequest) =>
+        client.request(API_ROUTES.twoFactor.regenerateBackupCodes, {
+          method: 'POST',
+          body,
+          schema: regenerateBackupCodesResponseSchema,
+        }),
+      disable: (body: TwoFactorReauthRequest) =>
+        client.request(API_ROUTES.twoFactor.disable, {
+          method: 'POST',
+          body,
+          schema: disableTwoFactorResponseSchema,
+        }),
     },
     branding: {
       get: (signal?: AbortSignal) =>

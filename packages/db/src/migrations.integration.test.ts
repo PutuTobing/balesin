@@ -41,6 +41,8 @@ describe('migrasi dari nol', () => {
       'installation',
       'organization_logos',
       'organizations',
+      'two_factor_challenges',
+      'user_backup_codes',
       'user_sessions',
       'users',
     ]);

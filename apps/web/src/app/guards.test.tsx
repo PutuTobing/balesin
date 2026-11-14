@@ -2,7 +2,7 @@ import { API_ROUTES } from '@balesin/shared';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { t } from '../i18n/id';
-import { apiError, fakeSession, json } from '../test/fake-api';
+import { apiError, fakeEnrollmentSession, fakeSession, json } from '../test/fake-api';
 import { renderApp } from '../test/render-app';
 
 describe('penjaga rute', () => {
@@ -107,5 +107,89 @@ describe('penjaga rute', () => {
         name: t.nav.home('CS Nusantara'),
       }),
     ).toBeInTheDocument();
+  });
+
+  describe('sesi terbatas (wajib mendaftar 2FA)', () => {
+    it('halaman aplikasi mana pun → layar pendaftaran 2FA, tujuan awal ikut dibawa', async () => {
+      const { router, api } = await renderApp('/pengaturan?x=1', {
+        session: fakeEnrollmentSession('admin'),
+        routes: {
+          [`POST ${API_ROUTES.twoFactor.enroll}`]: () => new Promise<Response>(() => undefined),
+        },
+      });
+
+      await waitFor(() => expect(router.state.location.pathname).toBe('/verifikasi-dua-langkah'));
+      expect(router.state.location.search).toEqual({ redirect: '/pengaturan?x=1' });
+      expect(
+        await screen.findByRole('heading', { level: 1, name: t.twoFactor.enroll.title }),
+      ).toBeVisible();
+      // Kerangka aplikasi (navigasi, data aplikasi) tidak pernah dirender untuk sesi terbatas.
+      expect(screen.queryByRole('navigation', { name: t.nav.label })).toBeNull();
+      expect(api.requests.some((request) => request.path === API_ROUTES.settings.email)).toBe(
+        false,
+      );
+      // Hanya Keluar yang bisa dipakai selain pendaftaran.
+      expect(screen.getByRole('button', { name: t.auth.userMenu.logout })).toBeVisible();
+    });
+
+    it('halaman masuk dan /setup juga diteruskan ke pendaftaran 2FA', async () => {
+      const login = await renderApp('/masuk?redirect=%2Fkontak', {
+        session: fakeEnrollmentSession(),
+        routes: {
+          [`POST ${API_ROUTES.twoFactor.enroll}`]: () => new Promise<Response>(() => undefined),
+        },
+      });
+      await waitFor(() =>
+        expect(login.router.state.location.pathname).toBe('/verifikasi-dua-langkah'),
+      );
+      expect(login.router.state.location.search).toEqual({ redirect: '/kontak' });
+      login.unmount();
+
+      const setup = await renderApp('/setup', {
+        session: fakeEnrollmentSession(),
+        routes: {
+          [`POST ${API_ROUTES.twoFactor.enroll}`]: () => new Promise<Response>(() => undefined),
+        },
+      });
+      await waitFor(() =>
+        expect(setup.router.state.location.pathname).toBe('/verifikasi-dua-langkah'),
+      );
+    });
+
+    it('layar pendaftaran wajib: sesi penuh → Keamanan akun, tamu → halaman masuk', async () => {
+      const full = await renderApp('/verifikasi-dua-langkah');
+      await waitFor(() => expect(full.router.state.location.pathname).toBe('/pengaturan/keamanan'));
+      full.unmount();
+
+      const guest = await renderApp('/verifikasi-dua-langkah', { session: null });
+      await waitFor(() => expect(guest.router.state.location.pathname).toBe('/masuk'));
+      // Layar pendaftaran bukan tujuan setelah masuk.
+      expect(guest.router.state.location.search).toEqual({});
+    });
+
+    it('403 TWO_FACTOR_ENROLLMENT_REQUIRED di tengah pemakaian → sesi dimuat ulang, lalu pendaftaran', async () => {
+      const { router, api, queryClient } = await renderApp('/pengaturan', {
+        routes: {
+          [`POST ${API_ROUTES.twoFactor.enroll}`]: () => new Promise<Response>(() => undefined),
+        },
+      });
+      await screen.findByRole('heading', { level: 1, name: t.nav.settings });
+      // Data lama di cache sudah basi: halaman berikutnya memuatnya ulang dari server.
+      queryClient.removeQueries({ queryKey: ['settings', 'email'] });
+
+      // Server menganggap sesi ini terbatas (kontrak: muat ulang /auth/me lalu ke pendaftaran).
+      api.setSession(fakeEnrollmentSession('admin'));
+      api.on(`GET ${API_ROUTES.settings.email}`, () =>
+        apiError(403, 'TWO_FACTOR_ENROLLMENT_REQUIRED', 'Aktifkan verifikasi dua langkah dulu.'),
+      );
+      await router.navigate({ to: '/pengaturan/email' });
+
+      await waitFor(() => expect(router.state.location.pathname).toBe('/verifikasi-dua-langkah'));
+      expect(
+        await screen.findByRole('heading', { level: 1, name: t.twoFactor.enroll.title }),
+      ).toBeVisible();
+      const meCalls = api.requests.filter((request) => request.path === API_ROUTES.auth.me);
+      expect(meCalls.length).toBeGreaterThanOrEqual(2);
+    });
   });
 });

@@ -18,12 +18,33 @@ import { constantTimeEqual, deriveKey, hmacSha256, sha256Hex, type Secret } from
 
 export const TRUSTED_DEVICE_MAX_AGE_SECONDS = 90 * 24 * 60 * 60;
 
+/**
+ * Untuk langkah kedua 2FA, cookie perangkat dikenal hanya diakui bila terbit pada/sesudah waktu
+ * ini (temuan S1 review 2FA): waktu aktif 2FA dibulatkan KE ATAS ke detik berikutnya. Waktu terbit
+ * cookie beresolusi detik, jadi tanpa pembulatan ke atas cookie "hanya password" yang terbit di
+ * detik yang sama dengan aktivasi ikut diakui.
+ */
+export function trustedDeviceThreshold(totpEnabledAt: Date): number {
+  return Math.ceil(totpEnabledAt.getTime() / 1000) * 1000;
+}
+
+/**
+ * Waktu terbit cookie baru untuk pengguna ber-2FA: tidak lebih awal dari ambang di atas, supaya
+ * cookie yang terbit tepat setelah aktivasi/langkah kedua (detik yang sama) tetap diakui.
+ */
+export function deviceIssueTime(totpEnabledAt: Date | null, now = new Date()): Date {
+  if (totpEnabledAt === null) return now;
+  return new Date(Math.max(now.getTime(), trustedDeviceThreshold(totpEnabledAt)));
+}
+
 const VERSION = 'v1';
 const TOKEN_PATTERN =
   /^v1\.([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.(\d{1,12})\.([A-Za-z0-9_-]{43})$/;
 
 export interface TrustedDevice {
   userId: string;
+  /** Waktu cookie diterbitkan (detik, dibulatkan ke bawah). */
+  issuedAt: Date;
   /** Pengenal ember batas laju perangkat ini (hash nilai cookie; bukan rahasia). */
   deviceKey: string;
 }
@@ -55,7 +76,11 @@ export function createTrustedDevices(sessionSecret: Secret<string>): TrustedDevi
       const age = Math.floor(now.getTime() / 1000) - issuedAt;
       if (age < -60 || age > TRUSTED_DEVICE_MAX_AGE_SECONDS) return undefined;
       if (!constantTimeEqual(signature, sign(userId, issuedAt))) return undefined;
-      return { userId, deviceKey: sha256Hex(`device|${token}`).slice(0, 40) };
+      return {
+        userId,
+        issuedAt: new Date(issuedAt * 1000),
+        deviceKey: sha256Hex(`device|${token}`).slice(0, 40),
+      };
     },
   };
 }

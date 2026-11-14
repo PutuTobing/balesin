@@ -1,4 +1,8 @@
-import { Secret, type AccountLockedEmailPayload } from '@balesin/core';
+import {
+  Secret,
+  type AccountLockedEmailPayload,
+  type SecurityNoticeEmailPayload,
+} from '@balesin/core';
 import { createLogCapture, type LogCapture } from '@balesin/core/testing';
 import { createDb, type Database } from '@balesin/db';
 import { SMTP_ALLOWED_PORTS } from '@balesin/shared';
@@ -29,6 +33,8 @@ export interface TestApp {
   logs: LogCapture;
   /** Pemberitahuan "akun dikunci" yang diantrekan (bila `notifier` tidak diganti). */
   lockedNotifications: AccountLockedEmailPayload[];
+  /** Pemberitahuan keamanan (2FA, kode cadangan) yang diantrekan (bila `notifier` tidak diganti). */
+  securityNotices: SecurityNoticeEmailPayload[];
 }
 
 const healthy = () => Promise.resolve();
@@ -75,6 +81,7 @@ function unreachableRedis(): Redis {
 export async function buildTestApp(options: TestAppOptions = {}): Promise<TestApp> {
   const logs = createLogCapture();
   const lockedNotifications: AccountLockedEmailPayload[] = [];
+  const securityNotices: SecurityNoticeEmailPayload[] = [];
   const redis = options.redis ?? unreachableRedis();
   // ioredis memancarkan `error` saat gagal tersambung; tanpa listener itu menjadi galat tak tertangani.
   if (!options.redis) redis.on('error', () => undefined);
@@ -91,10 +98,14 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<TestAp
         lockedNotifications.push(payload);
         return Promise.resolve();
       },
+      securityNotice: (payload) => {
+        securityNotices.push(payload);
+        return Promise.resolve();
+      },
     },
     overrides: options.overrides,
   });
-  return { app, logs, lockedNotifications };
+  return { app, logs, lockedNotifications, securityNotices };
 }
 
 /**

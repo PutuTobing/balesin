@@ -213,7 +213,14 @@ describe('login: bentuk permintaan lintas situs', () => {
   });
 
   it('cookie sesi dari login: HttpOnly, SameSite=Lax, Path=/, tanpa Domain', async () => {
-    const response = await tryLogin(OWNER.email, OWNER.password);
+    // Pengguna CS (tidak wajib 2FA): cookie sesi langsung dipasang oleh langkah password.
+    const password = 'sandi-cs-untuk-cek-cookie';
+    const cs = await insertUser(harness.db, owner.session.organization.id, {
+      role: 'cs',
+      email: 'cs-cookie@majujaya.test',
+      passwordHash: await createPasswordHasher().hash(password),
+    });
+    const response = await tryLogin(cs.email, password);
     const cookie = setCookies(response).find((value) => value.startsWith('balesin_session='));
     expect(cookie).toBeDefined();
     expect(cookie).toContain('HttpOnly');

@@ -204,6 +204,176 @@ export const t = {
       loggingOut: 'Keluar…',
       logoutFailed: 'Gagal keluar. Periksa koneksimu, lalu coba lagi.',
       account: 'Akun',
+      security: 'Keamanan akun',
+    },
+  },
+
+  /** Verifikasi dua langkah (2FA): langkah kedua saat masuk, pendaftaran, kode cadangan. */
+  twoFactor: {
+    login: {
+      totpTitle: 'Masukkan kode verifikasi',
+      totpSubtitle: (email: string) =>
+        `Buka aplikasi autentikator di ponselmu, lalu masukkan 6 digit kode untuk ${email}.`,
+      backupTitle: 'Masukkan kode cadangan',
+      backupSubtitle: (email: string) =>
+        `Pakai salah satu kode cadangan yang kamu simpan untuk ${email}. Setiap kode hanya berlaku sekali.`,
+      totpLabel: 'Kode verifikasi',
+      totpHint: 'Kode di aplikasi berganti setiap 30 detik.',
+      backupLabel: 'Kode cadangan',
+      backupHint: 'Contoh: k7m2p-x9q4r. Huruf besar-kecil dan tanda hubung tidak berpengaruh.',
+      submit: 'Verifikasi',
+      submitting: 'Memeriksa…',
+      useBackupPrompt: 'Tidak bisa membuka aplikasi autentikator?',
+      useBackup: 'Pakai kode cadangan',
+      useTotpPrompt: 'Aplikasi autentikator sudah bisa dibuka?',
+      useTotp: 'Pakai kode dari aplikasi',
+      noBackupCodes:
+        'Kode cadanganmu sudah habis. Bila aplikasi autentikator tidak bisa dibuka, minta Owner atau Admin timmu mereset verifikasi dua langkahmu.',
+      back: 'Kembali ke email dan password',
+      expired: 'Waktu memasukkan kode sudah habis. Masukkan password-mu lagi untuk melanjutkan.',
+      lockedTitle: 'Verifikasi dikunci sementara',
+      unlocked: 'Kamu sudah bisa mencoba masuk lagi. Masukkan password-mu.',
+      backupUsed: {
+        title: 'Kamu masuk dengan kode cadangan',
+        body: (remaining: number) =>
+          remaining === 0
+            ? 'Kode yang baru dipakai sudah tidak berlaku, dan kode cadanganmu kini habis.'
+            : `Kode yang baru dipakai sudah tidak berlaku. Sisa ${remaining} kode cadangan.`,
+        low: 'Buat kode cadangan baru sekarang supaya kamu tetap bisa masuk bila ponselmu hilang.',
+        makeNew: 'Buat kode baru',
+        later: 'Nanti saja',
+        continue: 'Lanjut',
+      },
+    },
+    enroll: {
+      eyebrow: 'Satu langkah lagi',
+      title: 'Aktifkan verifikasi dua langkah',
+      requiredBody: (role: string) =>
+        `Sebagai ${role}, kamu wajib memakai verifikasi dua langkah. Selain password, setiap kali masuk kamu memasukkan kode dari aplikasi di ponselmu, jadi akunmu tetap aman walau password-nya bocor.`,
+      voluntaryBody:
+        'Selain password, setiap kali masuk kamu memasukkan kode dari aplikasi di ponselmu, jadi akunmu tetap aman walau password-nya bocor.',
+      signedInAs: (email: string) => `Masuk sebagai ${email}`,
+      stepsLabel: 'Langkah mengaktifkan',
+      install: {
+        title: 'Pasang aplikasi autentikator',
+        body: 'Misalnya Google Authenticator, Microsoft Authenticator, Authy, atau 1Password. Sudah punya? Lanjut ke langkah berikutnya.',
+      },
+      add: {
+        title: 'Tambahkan akunmu ke aplikasi',
+        bodyQr: 'Di aplikasi, pilih tambah akun, lalu pindai kode QR ini.',
+        bodyHp:
+          'Ketuk tombol di bawah untuk menambahkan akun langsung di aplikasi autentikator. Aplikasinya ada di perangkat lain? Pindai kode QR ini.',
+        openApp: 'Buka aplikasi autentikator',
+        qrLabel: 'Kode QR untuk ditambahkan ke aplikasi autentikator',
+        manualTitle: 'Tidak bisa memindai? Ketik kunci ini di aplikasi',
+        manualLabel: 'Kunci pengaturan',
+        entryName: (issuer: string, account: string) =>
+          `Tampil di aplikasi sebagai ${issuer} (${account}).`,
+        copy: 'Salin kunci',
+        copied: 'Tersalin',
+        copiedAnnouncement: 'Kunci pengaturan tersalin ke clipboard.',
+        validity: (minutes: number) => `Kode QR dan kunci ini berlaku ${minutes} menit.`,
+      },
+      confirm: {
+        title: 'Masukkan kode dari aplikasi',
+        body: 'Aplikasi langsung menampilkan kode 6 digit untuk akun ini. Masukkan kode yang sedang tampil.',
+        label: 'Kode 6 digit',
+        submit: 'Aktifkan',
+        submitting: 'Mengaktifkan…',
+      },
+      preparing: 'Menyiapkan kode QR…',
+      expiredTitle: 'Kode QR sudah kedaluwarsa',
+      expiredBody: (minutes: number) =>
+        `Demi keamanan, kode QR hanya berlaku ${minutes} menit. Buat yang baru, lalu tambahkan ulang akunmu di aplikasi (hapus dulu entri lama bila sudah sempat ditambahkan).`,
+      restart: 'Buat kode QR baru',
+      restarting: 'Membuat…',
+      startFailedTitle: 'Kode QR belum bisa dibuat',
+      lockedTitle: 'Pendaftaran dikunci sementara',
+      password: {
+        title: 'Konfirmasi password',
+        body: 'Masukkan password-mu dulu untuk mulai mengaktifkan verifikasi dua langkah.',
+        label: 'Password',
+        submit: 'Lanjut',
+        submitting: 'Memeriksa…',
+      },
+    },
+    backupCodes: {
+      eyebrow: 'Verifikasi dua langkah aktif',
+      title: 'Simpan kode cadangan',
+      newTitle: 'Kode cadangan baru',
+      body: 'Pakai salah satu kode ini untuk masuk bila ponselmu hilang atau aplikasi autentikator tidak bisa dibuka. Setiap kode hanya berlaku sekali.',
+      onlyOnce: 'Kode ini hanya ditampilkan sekarang',
+      onlyOnceBody:
+        'Setelah layar ini ditutup, kode tidak bisa dilihat lagi. Salin atau unduh, lalu simpan di tempat aman seperti pengelola password.',
+      replacedBody:
+        'Kode cadangan lama sudah tidak berlaku. Setelah layar ini ditutup, kode baru tidak bisa dilihat lagi.',
+      listLabel: 'Daftar kode cadangan',
+      copyAll: 'Salin semua',
+      copied: 'Tersalin',
+      copiedAnnouncement: 'Semua kode cadangan tersalin ke clipboard.',
+      download: 'Unduh .txt',
+      confirm: 'Saya sudah menyimpan kode ini di tempat yang aman',
+      confirmRequired: 'Centang dulu setelah kode cadangan tersimpan.',
+      continueTo: (page: string) => `Lanjut ke ${page}`,
+      done: 'Selesai',
+      fileName: (product: string) => `kode-cadangan-${product}.txt`,
+      file: {
+        heading: (product: string) => `Kode cadangan verifikasi dua langkah ${product}`,
+        account: (email: string) => `Akun: ${email}`,
+        generated: (time: string) => `Dibuat: ${time}`,
+        usage:
+          'Setiap kode hanya bisa dipakai sekali, untuk masuk saat aplikasi autentikator tidak bisa dibuka.',
+        keepSafe:
+          'Simpan berkas ini di tempat aman, misalnya pengelola password. Jangan bagikan ke siapa pun.',
+      },
+    },
+  },
+
+  /** Pengaturan → Keamanan akun (semua peran). */
+  security: {
+    title: 'Keamanan akun',
+    menuHint: 'Verifikasi dua langkah dan kode cadangan',
+    sectionTitle: 'Akunmu',
+    twoFactor: {
+      title: 'Verifikasi dua langkah',
+      body: 'Selain password, setiap kali masuk kamu memasukkan kode 6 digit dari aplikasi autentikator di ponselmu.',
+      on: 'Aktif',
+      off: 'Belum aktif',
+      since: (date: string) => `Sejak ${date}`,
+      required: (role: string) =>
+        `Peranmu sebagai ${role} wajib memakai verifikasi dua langkah, jadi tidak bisa dinonaktifkan. Simpan kode cadangan di tempat aman untuk berjaga-jaga bila ponselmu hilang.`,
+      recommended:
+        'Tidak wajib untuk peranmu, tetapi sangat disarankan: akunmu tetap aman walau password-nya bocor.',
+      enable: 'Aktifkan',
+      enabledNotice: 'Verifikasi dua langkah sudah aktif.',
+    },
+    backupCodes: {
+      title: 'Kode cadangan',
+      body: 'Untuk masuk saat aplikasi autentikator tidak bisa dibuka. Setiap kode berlaku sekali.',
+      remaining: (count: number, total: number) => `${count} dari ${total} kode tersisa`,
+      generated: (date: string) => `Dibuat ${date}`,
+      emptyTitle: 'Kode cadangan sudah habis',
+      lowBody:
+        'Kode cadangan tinggal sedikit. Buat kode baru supaya kamu tetap bisa masuk bila ponselmu hilang.',
+      regenerate: 'Buat kode baru',
+      regenerateTitle: 'Buat kode cadangan baru',
+      regenerateBody:
+        'Semua kode cadangan lama langsung tidak berlaku. Konfirmasi dulu dengan password dan kode verifikasi.',
+      regenerating: 'Membuat…',
+    },
+    disable: {
+      action: 'Nonaktifkan',
+      title: 'Nonaktifkan verifikasi dua langkah',
+      body: 'Setelah dinonaktifkan, akunmu hanya dilindungi password dan semua kode cadangan dihapus. Konfirmasi dulu dengan password dan kode verifikasi.',
+      submitting: 'Menonaktifkan…',
+      done: 'Verifikasi dua langkah sudah dinonaktifkan.',
+    },
+    reauth: {
+      password: 'Password',
+      code: 'Kode verifikasi',
+      codeHint: '6 digit dari aplikasi autentikator, atau salah satu kode cadangan.',
+      cancel: 'Batal',
+      lockedTitle: 'Konfirmasi dikunci sementara',
     },
   },
 
@@ -290,7 +460,7 @@ export const t = {
       summary: {
         nav: 'Ringkasan',
         title: 'Periksa lalu selesaikan',
-        body: 'Pastikan semuanya sudah benar. Setelah selesai, kamu langsung masuk ke Inbox.',
+        body: 'Pastikan semuanya sudah benar. Setelah selesai, kamu langsung mengaktifkan verifikasi dua langkah untuk akun Owner, lalu masuk ke Inbox.',
         edit: 'Ubah',
         editSection: (section: string) => `Ubah ${section}`,
         organization: 'Organisasi',

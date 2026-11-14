@@ -18,7 +18,9 @@ import {
   call,
   completeSetup,
   createIntegrationHarness,
+  deviceCookieOf,
   login,
+  loginResponse,
   OWNER,
   sessionCookieOf,
   setCookies,
@@ -70,6 +72,17 @@ async function sessionRows() {
   return harness.db.select().from(userSessions).orderBy(userSessions.createdAt);
 }
 
+/** Baris sesi milik cookie ini (`nama=token`). */
+async function sessionRowOf(cookie: string) {
+  const token = cookie.split('=')[1] ?? '';
+  const rows = await sessionRows();
+  return rows.find((row) => row.tokenHash === sha256Hex(token));
+}
+
+/** Pengguna CS (tidak wajib 2FA) untuk menguji langkah password apa adanya. */
+const CS_PASSWORD = 'sandi-pengguna-cs-panjang';
+const addCs = () => addUser('cs', CS_PASSWORD);
+
 async function auditActions(): Promise<string[]> {
   const rows = await harness.db.select().from(auditLogs).orderBy(auditLogs.createdAt);
   return rows.map((row) => row.action);
@@ -91,18 +104,14 @@ function comparable(response: Response) {
 }
 
 describe('POST /auth/login', () => {
-  it('email + password benar: sesi baru, cookie HttpOnly, dan token CSRF', async () => {
-    const response = await tryLogin('  SARI@majujaya.test', OWNER.password, '203.0.113.5');
+  it('email + password benar (akun tanpa 2FA): sesi baru, cookie HttpOnly, dan token CSRF', async () => {
+    const cs = await addCs();
+    const response = await tryLogin(`  ${cs.email.toUpperCase()}`, CS_PASSWORD, '203.0.113.5');
 
     expect(response.statusCode).toBe(200);
     const session = authenticatedSessionSchema.parse(response.json());
     expect(session.status).toBe('authenticated');
-    expect(session.user).toEqual({
-      id: owner.session.user.id,
-      name: OWNER.name,
-      email: OWNER.email,
-      role: 'owner',
-    });
+    expect(session.user).toEqual({ id: cs.id, name: cs.name, email: cs.email, role: 'cs' });
     const [cookie] = setCookies(response);
     expect(cookie).toMatch(
       /^balesin_session=[A-Za-z0-9_-]{43}; Path=\/; HttpOnly; SameSite=Lax; Max-Age=2592000$/,
@@ -125,7 +134,7 @@ describe('POST /auth/login', () => {
 
     expect(await auditActions()).toContain('auth.login.success');
     expect(response.body).not.toContain('argon2');
-    expect(harness.logs.text()).not.toContain(OWNER.password);
+    expect(harness.logs.text()).not.toContain(CS_PASSWORD);
     expect(harness.logs.text()).not.toContain(token);
     expect(harness.logs.text()).not.toContain(session.csrfToken);
   });
@@ -223,18 +232,18 @@ describe('POST /auth/login', () => {
   it('IP yang bukan alamat sah (lewat proxy tepercaya) tidak membuat login gagal', async () => {
     await harness.rebuild({ config: { trustProxy: true } });
 
+    const cs = await addCs();
     const response = await call(
       harness.app,
       'POST',
       API_ROUTES.auth.login,
-      { email: OWNER.email, password: OWNER.password },
+      { email: cs.email, password: CS_PASSWORD },
       { headers: { 'x-forwarded-for': 'bukan-alamat-ip' } },
     );
+    await harness.rebuild();
 
     expect(response.statusCode).toBe(200);
-    const rows = await sessionRows();
-    expect(rows.at(-1)?.ipAddress).toBeNull();
-    await harness.rebuild();
+    expect((await sessionRowOf(sessionCookieOf(response)))?.ipAddress).toBeNull();
   });
 });
 
@@ -244,12 +253,13 @@ describe('cookie sesi lewat HTTPS', () => {
       config: { cookieSecure: true, appOrigin: 'https://balesin.contoh.test' },
     });
     const origin = 'https://balesin.contoh.test';
+    const cs = await addCs();
 
     const response = await call(
       harness.app,
       'POST',
       API_ROUTES.auth.login,
-      { email: OWNER.email, password: OWNER.password },
+      { email: cs.email, password: CS_PASSWORD },
       { origin },
     );
     const [cookie] = setCookies(response);
@@ -339,7 +349,7 @@ describe('GET /auth/me dan masa berlaku sesi', () => {
     });
 
     expect((await me(owner.cookie)).statusCode).toBe(200);
-    const [row] = await sessionRows();
+    const row = await sessionRowOf(owner.cookie);
     expect(row?.idleExpiresAt.getTime()).toBe(row?.absoluteExpiresAt.getTime());
 
     await new Promise((resolve) => setTimeout(resolve, 1_200));
@@ -353,7 +363,7 @@ describe('GET /auth/me dan masa berlaku sesi', () => {
     });
 
     const response = await me(owner.cookie);
-    const [touched] = await sessionRows();
+    const touched = await sessionRowOf(owner.cookie);
     const idleHours = ((touched?.idleExpiresAt.getTime() ?? 0) - Date.now()) / 3_600_000;
 
     expect(idleHours).toBeGreaterThan(11.9);
@@ -363,7 +373,7 @@ describe('GET /auth/me dan masa berlaku sesi', () => {
 
     // Permintaan berikutnya (baru saja terlihat) tidak menulis ulang.
     await me(owner.cookie);
-    const [again] = await sessionRows();
+    const again = await sessionRowOf(owner.cookie);
     expect(again?.updatedAt.getTime()).toBe(touched?.updatedAt.getTime());
   });
 
@@ -435,7 +445,7 @@ describe('CSRF dan POST /auth/logout', () => {
       'balesin_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
     ]);
     expect((await me(owner.cookie)).statusCode).toBe(401);
-    const [row] = await sessionRows();
+    const row = await sessionRowOf(owner.cookie);
     expect(row?.revokedAt).toBeInstanceOf(Date);
     expect(await auditActions()).toContain('auth.logout');
 
@@ -448,13 +458,6 @@ describe('brute force: kunci per asal, per akun, perangkat dikenal, dan batas pe
   const WRONG = 'tebakan-password-salah';
   const LOCKED_MESSAGE =
     'Akun ini dikunci sementara karena terlalu banyak percobaan masuk yang gagal. Coba lagi dalam 15 menit.';
-
-  /** `nama=nilai` cookie perangkat dikenal dari respons login/setup. */
-  function deviceCookieOf(response: Response): string {
-    const cookie = setCookies(response).find((value) => value.startsWith('balesin_device='));
-    if (!cookie) throw new Error('Respons tidak memasang cookie perangkat');
-    return cookie.split(';')[0] ?? '';
-  }
 
   it('5 kali gagal dari satu IP → email itu dikunci 15 menit DARI IP ITU, termasuk password benar', async () => {
     const statuses: number[] = [];
@@ -529,7 +532,10 @@ describe('brute force: kunci per asal, per akun, perangkat dikenal, dan batas pe
 
   it('pengantre notifikasi yang gagal tidak menggagalkan jawaban login', async () => {
     await harness.rebuild({
-      notifier: { accountLocked: () => Promise.reject(new Error('antrian tidak tersedia')) },
+      notifier: {
+        accountLocked: () => Promise.reject(new Error('antrian tidak tersedia')),
+        securityNotice: () => Promise.reject(new Error('antrian tidak tersedia')),
+      },
     });
 
     const statuses: number[] = [];
@@ -595,11 +601,7 @@ describe('brute force: kunci per asal, per akun, perangkat dikenal, dan batas pe
   });
 
   it('tebakan tersebar dari banyak IP: email dikunci untuk perangkat baru, perangkat dikenal tetap bisa masuk', async () => {
-    const known = await call(harness.app, 'POST', API_ROUTES.auth.login, {
-      email: OWNER.email,
-      password: OWNER.password,
-    });
-    const device = deviceCookieOf(known);
+    const device = deviceCookieOf(await loginResponse(harness.app));
 
     const statuses: number[] = [];
     for (let attempt = 0; attempt < LOGIN_ACCOUNT_RULE.limit + 3; attempt += 1) {
@@ -635,14 +637,7 @@ describe('brute force: kunci per asal, per akun, perangkat dikenal, dan batas pe
 
   it('perangkat dikenal tidak terkena kunci yang dipicu orang lain di jaringan yang sama', async () => {
     const office = '203.0.113.88';
-    const known = await call(
-      harness.app,
-      'POST',
-      API_ROUTES.auth.login,
-      { email: OWNER.email, password: OWNER.password },
-      { ip: office },
-    );
-    const device = deviceCookieOf(known);
+    const device = deviceCookieOf(await loginResponse(harness.app, OWNER, { ip: office }));
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       await tryLogin(OWNER.email, `${WRONG}-${attempt}`, office);
@@ -652,12 +647,7 @@ describe('brute force: kunci per asal, per akun, perangkat dikenal, dan batas pe
   });
 
   it('perangkat dikenal punya kuncinya sendiri: 5 gagal dari perangkat itu → 429 untuk perangkat itu', async () => {
-    const device = deviceCookieOf(
-      await call(harness.app, 'POST', API_ROUTES.auth.login, {
-        email: OWNER.email,
-        password: OWNER.password,
-      }),
-    );
+    const device = deviceCookieOf(await loginResponse(harness.app));
 
     const statuses: number[] = [];
     for (let attempt = 0; attempt < 6; attempt += 1) {
@@ -694,10 +684,7 @@ describe('brute force: kunci per asal, per akun, perangkat dikenal, dan batas pe
   });
 
   it('cookie perangkat: HttpOnly, SameSite=Strict, 90 hari, dan tidak dihapus saat logout', async () => {
-    const response = await call(harness.app, 'POST', API_ROUTES.auth.login, {
-      email: OWNER.email,
-      password: OWNER.password,
-    });
+    const response = await loginResponse(harness.app);
     const cookie = setCookies(response).find((value) => value.startsWith('balesin_device='));
     expect(cookie).toMatch(
       /^balesin_device=v1\.[0-9a-f-]{36}\.\d+\.[A-Za-z0-9_-]{43}; Path=\/; HttpOnly; SameSite=Strict; Max-Age=7776000$/,

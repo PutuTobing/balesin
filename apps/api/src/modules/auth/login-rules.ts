@@ -1,3 +1,4 @@
+import { sha256Hex, type LockScope } from '@balesin/core';
 import { LOGIN_LOCK_MINUTES, LOGIN_MAX_FAILED_ATTEMPTS } from '@balesin/shared';
 import { sql } from 'drizzle-orm';
 
@@ -67,4 +68,13 @@ export const LOCK_NOTICE_FLAG = 'email-kunci-terkirim';
 export const LOCK_NOTICE_INTERVAL_SECONDS = 60 * 60;
 
 /** Lingkup sebuah kunci (masuk metadata audit dan payload pemberitahuan). */
-export type LockScope = 'source' | 'account' | 'device';
+export type { LockScope };
+
+/**
+ * Kunci batas laju "per akun" untuk email yang DIKETIK (di-hash). Juga dipakai sebagai kunci
+ * penanda "email pemberitahuan kunci sudah dikirim", jadi kunci password dan kunci kode 2FA
+ * berbagi jatah satu email per jam.
+ */
+export function loginAccountKey(email: string): string {
+  return sha256Hex(`login|${email}`).slice(0, 40);
+}

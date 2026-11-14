@@ -33,6 +33,8 @@ import { createCsrfProtection } from './modules/auth/csrf';
 import { createPasswordHasher } from './modules/auth/password-hasher';
 import { createSessionService } from './modules/auth/session.service';
 import { createTrustedDevices } from './modules/auth/trusted-device';
+import { twoFactorRoutes } from './modules/two-factor/two-factor.routes';
+import { createTwoFactorService } from './modules/two-factor/two-factor.service';
 import { brandingRoutes } from './modules/branding/branding.routes';
 import type { MailDns } from './modules/email-settings/email-host-detection';
 import { emailSettingsRoutes } from './modules/email-settings/email-settings.routes';
@@ -150,15 +152,25 @@ export async function buildApp(deps: AppDeps) {
   const hasher = createPasswordHasher();
   const redisPrefix = deps.overrides?.rateLimitPrefix ?? 'balesin';
   const limiter = createRateLimiter(deps.redis, { prefix: redisPrefix });
+  const secretBox = config.masterKey ? createSecretBox(config.masterKey) : null;
   const emailSettings = createEmailSettingsService({
     db,
-    secretBox: config.masterKey ? createSecretBox(config.masterKey) : null,
+    secretBox,
     fallback: config.smtpFallback,
     allowedPorts: config.smtpAllowedPorts,
     plaintextLogin: plaintextLoginPolicy(config.isProduction),
     lookup: deps.overrides?.mailLookup,
     dns: deps.overrides?.mailDns,
     timeouts: deps.overrides?.smtpTimeouts,
+  });
+  const twoFactor = createTwoFactorService({
+    db,
+    secretBox,
+    hasher,
+    limiter,
+    notifier: deps.notifier,
+    sessions,
+    devices,
   });
   const auth = createAuthService({
     db,
@@ -167,6 +179,7 @@ export async function buildApp(deps: AppDeps) {
     limiter,
     notifier: deps.notifier,
     devices,
+    twoFactor,
   });
   const setup = createSetupService({
     db,
@@ -174,7 +187,6 @@ export async function buildApp(deps: AppDeps) {
     limiter,
     hasher,
     sessions,
-    devices,
     emailSettings,
     emailTestMemo: createSetupEmailTestMemo({
       redis: deps.redis,
@@ -213,6 +225,7 @@ export async function buildApp(deps: AppDeps) {
     cookieSecure: config.cookieSecure,
   });
   await app.register(authRoutes, { auth, cookieSecure: config.cookieSecure });
+  await app.register(twoFactorRoutes, { twoFactor, cookieSecure: config.cookieSecure });
   await app.register(brandingRoutes, { db });
   await app.register(emailSettingsRoutes, { emailSettings, limiter });
 

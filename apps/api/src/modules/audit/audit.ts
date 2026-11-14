@@ -22,6 +22,13 @@ export const AUDIT_ACTIONS = {
   loginFailed: 'auth.login.failed',
   accountLocked: 'auth.account.locked',
   logout: 'auth.logout',
+  twoFactorChallengeIssued: 'auth.2fa.challenge_issued',
+  twoFactorFailed: 'auth.2fa.failed',
+  twoFactorEnrollmentStarted: 'auth.2fa.enrollment_started',
+  twoFactorEnabled: 'auth.2fa.enabled',
+  twoFactorDisabled: 'auth.2fa.disabled',
+  twoFactorBackupCodesRegenerated: 'auth.2fa.backup_codes_regenerated',
+  twoFactorBackupCodeUsed: 'auth.2fa.backup_code_used',
   emailSettingsUpdated: 'settings.email.updated',
   emailSettingsTested: 'settings.email.tested',
 } as const;

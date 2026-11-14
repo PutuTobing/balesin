@@ -64,6 +64,24 @@ describe('kotak rahasia AES-256-GCM', () => {
     ).toThrow(SecretDecryptionError);
   });
 
+  it('subjectId ikut dikunci: rahasia milik satu baris tidak bisa dibuka untuk baris lain', () => {
+    const secretBox = box();
+    const totp = { organizationId: ORG_A, purpose: 'users.totp_secret' };
+    const sealed = secretBox.encrypt('JBSWY3DPEHPK3PXP', { ...totp, subjectId: 'pengguna-a' });
+
+    expect(secretBox.decrypt(sealed, { ...totp, subjectId: 'pengguna-a' })).toBe(
+      'JBSWY3DPEHPK3PXP',
+    );
+    expect(() => secretBox.decrypt(sealed, { ...totp, subjectId: 'pengguna-b' })).toThrow(
+      SecretDecryptionError,
+    );
+    expect(() => secretBox.decrypt(sealed, totp)).toThrow(SecretDecryptionError);
+    // Tanpa subjectId, data lama (format sebelum subjectId ada) tetap terbuka seperti biasa.
+    expect(() =>
+      secretBox.decrypt(secretBox.encrypt('x', SMTP), { ...SMTP, subjectId: 'apa-saja' }),
+    ).toThrow(SecretDecryptionError);
+  });
+
   it('master key lain tidak bisa membuka', () => {
     const sealed = box().encrypt('rahasia', SMTP);
 

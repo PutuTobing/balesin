@@ -19,6 +19,21 @@ export const API_ROUTES = {
     logout: `${API_PREFIX}/auth/logout`,
     me: `${API_PREFIX}/auth/me`,
   },
+  /** Verifikasi dua langkah (docs/KONTRAK-API-AUTH.md bagian 2FA). */
+  twoFactor: {
+    /** GET — status 2FA pengguna yang sedang masuk. */
+    status: `${API_PREFIX}/auth/2fa`,
+    /** POST (publik) — langkah kedua saat masuk: tantangan + kode. */
+    verify: `${API_PREFIX}/auth/2fa/verify`,
+    /** POST — mulai pendaftaran: rahasia baru + URI `otpauth://`. */
+    enroll: `${API_PREFIX}/auth/2fa/enroll`,
+    /** POST — konfirmasi pendaftaran dengan kode pertama; 2FA aktif + kode cadangan. */
+    confirmEnrollment: `${API_PREFIX}/auth/2fa/enroll/confirm`,
+    /** POST — buat ulang kode cadangan (password + kode). */
+    regenerateBackupCodes: `${API_PREFIX}/auth/2fa/backup-codes`,
+    /** POST — nonaktifkan 2FA (hanya peran yang tidak wajib; password + kode). */
+    disable: `${API_PREFIX}/auth/2fa/disable`,
+  },
   branding: {
     get: `${API_PREFIX}/branding`,
     logo: `${API_PREFIX}/branding/logo`,
