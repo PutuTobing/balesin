@@ -26,6 +26,7 @@ import { trackRoutesForMethodNotAllowed } from './http/method-not-allowed';
 import { createRateLimiter } from './http/rate-limit';
 import { enforceRouteDeclarations } from './http/route-access';
 import { applyBaselineHeaders, securityPlugin } from './http/security';
+import { createAccessDeniedRecorder } from './modules/auth/access-denied';
 import { registerAuthHook } from './modules/auth/auth.hook';
 import { authRoutes } from './modules/auth/auth.routes';
 import { createAuthService } from './modules/auth/auth.service';
@@ -252,6 +253,7 @@ export async function buildApp(deps: AppDeps) {
     cookieSecure: config.cookieSecure,
     sessions,
     csrf,
+    accessDenied: createAccessDeniedRecorder({ db, limiter, logger: app.log }),
   });
 
   // ── Rute ──────────────────────────────────────────────────────────────────

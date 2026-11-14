@@ -79,8 +79,10 @@ async function deleteLockFlag(email: string): Promise<void> {
 
 // ── RBAC: Pengaturan → Email pengirim ───────────────────────────────────────
 
-describe('RBAC email pengirim: peran selain Owner ditolak di server (model ancaman: akun CS dibobol)', () => {
-  it('Admin/Supervisor/CS/Teknisi dengan sesi + CSRF sah: 403 di SEMUA endpoint, tanpa efek samping', async () => {
+// Fase 1 butir 5 (RBAC): Admin kini boleh (`settings.email.manage`, PENGATURAN-UI.md "Owner/Admin");
+// penjaga ini tetap untuk peran di bawahnya.
+describe('RBAC email pengirim: peran selain Owner/Admin ditolak di server (model ancaman: akun CS dibobol)', () => {
+  it('Supervisor/CS/Teknisi dengan sesi + CSRF sah: 403 di SEMUA endpoint, tanpa efek samping', async () => {
     const password = 'sandi-uji-peran-lain-fase1';
     const endpoints: Array<['GET' | 'PUT' | 'POST', string, unknown]> = [
       ['GET', API_ROUTES.settings.email, undefined],
@@ -94,7 +96,7 @@ describe('RBAC email pengirim: peran selain Owner ditolak di server (model ancam
       ],
     ];
 
-    for (const role of ['admin', 'supervisor', 'cs', 'teknisi'] as const) {
+    for (const role of ['supervisor', 'cs', 'teknisi'] as const) {
       const user = await addUser(role, password);
       const session = await login(harness.app, { email: user.email, password });
       for (const [method, url, body] of endpoints) {

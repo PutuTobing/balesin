@@ -95,8 +95,8 @@ describe('otorisasi Pengaturan → Email pengirim', () => {
     }
   });
 
-  it.each<UserRole>(['admin', 'supervisor', 'cs', 'teknisi'])(
-    'peran %s: 403 di semua endpoint (hanya Owner)',
+  it.each<UserRole>(['supervisor', 'cs', 'teknisi'])(
+    'peran %s: 403 di semua endpoint (hanya Owner/Admin, settings.email.manage)',
     async (role) => {
       const password = 'sandi-uji-otorisasi-email-1';
       const user = await insertUser(harness.db, owner.session.organization.id, {
@@ -114,6 +114,26 @@ describe('otorisasi Pengaturan → Email pengirim', () => {
       expect(await storedRow()).toBeUndefined();
     },
   );
+
+  it('Admin boleh melihat, menyimpan, dan menguji (PENGATURAN-UI: Owner/Admin); tercatat atas namanya', async () => {
+    const password = 'sandi-uji-otorisasi-email-1';
+    const user = await insertUser(harness.db, owner.session.organization.id, {
+      role: 'admin',
+      email: 'admin@majujaya.test',
+      passwordHash: await hasher.hash(password),
+    });
+    const admin = await login(harness.app, { email: user.email, password });
+
+    expect((await view(admin)).status).toBe('not_configured');
+    const saved = await save(mailpitSettings(), admin);
+    expect(saved.statusCode).toBe(200);
+    expect(await storedRow()).toBeDefined();
+    const [audit] = await harness.db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.action, 'settings.email.updated'));
+    expect(audit?.actorUserId).toBe(user.id);
+  });
 
   it('Owner tanpa token CSRF tidak bisa menyimpan maupun menjalankan tes', async () => {
     for (const [method, url, body] of ENDPOINTS.filter(([verb]) => verb !== 'GET')) {

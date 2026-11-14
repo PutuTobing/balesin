@@ -4,6 +4,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { handleError, handleNotFound } from './error-handler';
 import { trackRoutesForMethodNotAllowed } from './method-not-allowed';
+import {
+  AUTHENTICATED,
+  AUTHENTICATED_OR_ENROLLING,
+  PUBLIC,
+  requirePermission,
+  type RouteAccess,
+} from './route-access';
 
 let app: FastifyInstance | undefined;
 
@@ -101,5 +108,38 @@ describe('trackRoutesForMethodNotAllowed', () => {
     for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const) {
       expect((await instance.inject({ method, url: '/semua' })).statusCode, method).toBe(200);
     }
+  });
+
+  it('akses rute pelengkap: publik bila semua publik, izin yang sama bila semua sama, selain itu cukup sesi', async () => {
+    const complements = new Map<string, RouteAccess | undefined>();
+    const instance = Fastify();
+    app = instance;
+    instance.addHook('onRoute', (route) => {
+      if (route.config?.methodNotAllowed) complements.set(route.url, route.config.access);
+    });
+    const registerMethodNotAllowedRoutes = trackRoutesForMethodNotAllowed(instance);
+    const email = requirePermission('settings.email.manage');
+    instance.get('/publik', { config: { access: PUBLIC } }, ok);
+    instance.get('/email', { config: { access: email } }, ok);
+    instance.put('/email', { config: { access: email } }, ok);
+    instance.get('/campur-izin', { config: { access: email } }, ok);
+    instance.put('/campur-izin', { config: { access: requirePermission('team.invite') } }, ok);
+    instance.get('/izin-dan-sesi', { config: { access: email } }, ok);
+    instance.put('/izin-dan-sesi', { config: { access: AUTHENTICATED } }, ok);
+    instance.get('/pendaftaran', { config: { access: AUTHENTICATED_OR_ENROLLING } }, ok);
+    instance.get('/publik-dan-izin', { config: { access: PUBLIC } }, ok);
+    instance.put('/publik-dan-izin', { config: { access: email } }, ok);
+    instance.get('/tanpa-deklarasi', ok);
+    registerMethodNotAllowedRoutes();
+    await instance.ready();
+
+    expect(complements.get('/publik')).toEqual(PUBLIC);
+    expect(complements.get('/email')).toEqual(email);
+    expect(complements.get('/campur-izin')).toEqual(AUTHENTICATED);
+    expect(complements.get('/izin-dan-sesi')).toEqual(AUTHENTICATED);
+    // Pelengkap rute pendaftaran 2FA TIDAK ikut boleh dipakai sesi terbatas.
+    expect(complements.get('/pendaftaran')).toEqual(AUTHENTICATED);
+    expect(complements.get('/publik-dan-izin')).toEqual(AUTHENTICATED);
+    expect(complements.get('/tanpa-deklarasi')).toEqual(AUTHENTICATED);
   });
 });

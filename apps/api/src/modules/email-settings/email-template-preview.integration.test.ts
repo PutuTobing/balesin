@@ -77,23 +77,32 @@ describe('pratinjau template email', () => {
     expect(invitation.html).toContain('background:#0b5394');
   });
 
-  it('template tidak dikenal 400; Admin 403 (khusus Owner); tanpa sesi 401', async () => {
+  it('template tidak dikenal 400; Admin boleh (settings.email.manage), Supervisor 403; tanpa sesi 401', async () => {
     const owner = await completeSetup(harness.app);
     const unknown = await call(harness.app, 'GET', previewUrl('rahasia'), undefined, {
       cookie: owner.cookie,
     });
     expect(unknown.statusCode).toBe(400);
     const password = 'sandi-admin-pratinjau-01';
-    const admin = await insertUser(harness.db, owner.session.organization.id, {
-      role: 'admin',
-      email: 'admin.pratinjau@majujaya.test',
-      name: 'Admin Pratinjau',
-      passwordHash: await createPasswordHasher().hash(password),
+    const hasher = createPasswordHasher();
+    const signIn = async (role: 'admin' | 'supervisor') => {
+      const user = await insertUser(harness.db, owner.session.organization.id, {
+        role,
+        email: `${role}.pratinjau@majujaya.test`,
+        name: `Pengguna Pratinjau ${role}`,
+        passwordHash: await hasher.hash(password),
+      });
+      return login(harness.app, { email: user.email, password });
+    };
+    const admin = await signIn('admin');
+    const supervisor = await signIn('supervisor');
+    const allowed = await call(harness.app, 'GET', previewUrl('invitation'), undefined, {
+      cookie: admin.cookie,
     });
-    const signed = await login(harness.app, { email: admin.email, password });
     const forbidden = await call(harness.app, 'GET', previewUrl('invitation'), undefined, {
-      cookie: signed.cookie,
+      cookie: supervisor.cookie,
     });
+    expect(allowed.statusCode).toBe(200);
     expect(forbidden.statusCode).toBe(403);
     expect((await call(harness.app, 'GET', previewUrl('invitation'))).statusCode).toBe(401);
   });

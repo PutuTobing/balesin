@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { emailAddressSchema, isoDateTimeSchema } from './fields';
 import { loginPasswordSchema } from './password';
+import { permissionSchema } from './permissions';
 import { userRoleSchema } from './roles';
 
 /**
@@ -61,6 +62,16 @@ const sessionFields = {
   /** Kirim di header `X-CSRF-Token`. Berubah setiap kali masuk; simpan di memori saja. */
   csrfToken: z.string(),
   session: sessionInfoSchema,
+  /**
+   * Izin pengguna untuk sesi INI (`PERMISSIONS` di `permissions.ts`), berurutan seperti
+   * `PERMISSIONS`. Dipakai web untuk menyembunyikan menu/tombol; server tetap memeriksa setiap
+   * permintaan. Sesi terbatas (`two_factor_enrollment_required`) selalu `[]`. Cakupan izin
+   * bercakupan: `permissionScope(user.role, izin)`.
+   *
+   * Server SELALU mengirimnya. Opsional di tipe hanya supaya klien yang belum memakainya tetap
+   * terkompilasi (tambahan Fase 1 butir 5) — perlakukan "tidak ada" sebagai `[]`.
+   */
+  permissions: z.array(permissionSchema).optional(),
 };
 
 /** Sesi penuh: login selesai (termasuk langkah 2FA bila ada), atau `GET /auth/me`. */

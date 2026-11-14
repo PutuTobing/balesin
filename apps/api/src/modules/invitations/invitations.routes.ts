@@ -15,7 +15,7 @@ import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod';
 
 import { clientInfo } from '../../http/client-info';
 import { readSessionToken } from '../../http/cookies';
-import { PUBLIC, allowRoles } from '../../http/route-access';
+import { PUBLIC, requirePermission } from '../../http/route-access';
 import { requireAuth } from '../auth/auth.hook';
 import { setSessionCookies } from '../auth/auth.routes';
 import { toSessionResponse } from '../auth/session.service';
@@ -26,8 +26,8 @@ export interface InvitationRoutesOptions {
   cookieSecure: boolean;
 }
 
-/** PRD §4: undang/nonaktifkan pengguna = Owner dan Admin. Rincian per peran di service. */
-const MANAGE = allowRoles('owner', 'admin');
+/** PRD §4: undang pengguna = `team.invite` (Owner, Admin). Peran yang boleh diundang: service. */
+const MANAGE = requirePermission('team.invite');
 
 /** Body kecil (email + peran, atau token + nama + password). */
 const BODY_LIMIT_BYTES = 16 * 1024;

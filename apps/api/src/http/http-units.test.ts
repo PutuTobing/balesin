@@ -13,7 +13,13 @@ import {
   sessionCookieName,
 } from './cookies';
 import { formatWait, rateLimited } from './rate-limit';
-import { allowRoles, AUTHENTICATED, enforceRouteDeclarations, PUBLIC } from './route-access';
+import {
+  AUTHENTICATED,
+  enforceRouteDeclarations,
+  PUBLIC,
+  requirePermission,
+  type RouteAccess,
+} from './route-access';
 
 const TOKEN = 'A'.repeat(43);
 const OTHER = 'B'.repeat(43);
@@ -180,7 +186,7 @@ describe('deklarasi akses rute (bawaan tolak)', () => {
     app.get('/masuk', { config: { access: AUTHENTICATED }, schema: { response } }, ok);
     app.put(
       '/admin',
-      { config: { access: allowRoles('owner', 'admin') }, schema: { response } },
+      { config: { access: requirePermission('settings.email.manage') }, schema: { response } },
       ok,
     );
     app.options('*', ok);
@@ -188,12 +194,41 @@ describe('deklarasi akses rute (bawaan tolak)', () => {
     await expect(app.ready()).resolves.toBeDefined();
     expect(declarations).toEqual(
       expect.arrayContaining([
-        { method: 'GET', url: '/publik', access: { kind: 'public' } },
-        { method: 'GET', url: '/masuk', access: { kind: 'authenticated' } },
-        { method: 'PUT', url: '/admin', access: { kind: 'roles', roles: ['owner', 'admin'] } },
+        { method: 'GET', url: '/publik', access: { kind: 'public' }, methodNotAllowed: false },
+        {
+          method: 'GET',
+          url: '/masuk',
+          access: { kind: 'authenticated' },
+          methodNotAllowed: false,
+        },
+        {
+          method: 'PUT',
+          url: '/admin',
+          access: { kind: 'permission', permission: 'settings.email.manage' },
+          methodNotAllowed: false,
+        },
       ]),
     );
     expect(declarations.some((route) => route.method === 'OPTIONS')).toBe(false);
+  });
+
+  it('izin yang tidak ada di matriks (mis. lewat `as`) atau jenis akses asing: menolak start', async () => {
+    const app = guarded();
+    const unknownPermission = {
+      kind: 'permission',
+      permission: 'superuser',
+    } as unknown as RouteAccess;
+    const rolesKind = { kind: 'roles', roles: ['owner'] } as unknown as RouteAccess;
+    app.get('/izin-asing', { config: { access: unknownPermission }, schema: { response } }, ok);
+    app.get('/peran-langsung', { config: { access: rolesKind }, schema: { response } }, ok);
+
+    const failure = await app.ready().then(
+      () => undefined,
+      (error: unknown) => error as Error,
+    );
+
+    expect(failure?.message).toContain('GET /izin-asing menyatakan akses yang tidak dikenal');
+    expect(failure?.message).toContain('GET /peran-langsung menyatakan akses yang tidak dikenal');
   });
 
   it('berlaku juga untuk rute di dalam plugin ber-prefix', async () => {
@@ -253,16 +288,16 @@ describe('deklarasi akses rute (bawaan tolak)', () => {
       '/ready',
     ]);
 
-    // Semua rute lain menuntut sesi, dan rute pengaturan email hanya untuk Owner.
-    const emailRoutes = declarations.filter(
-      (route) =>
-        route.url.startsWith('/api/v1/settings/email') && route.access.kind !== 'authenticated',
+    // Semua rute lain menuntut sesi, dan rute pengaturan email (termasuk pelengkap 405-nya)
+    // butuh izin `settings.email.manage`. Matriks lengkap rute × peran: rbac-matrix.integration.test.ts.
+    const emailRoutes = declarations.filter((route) =>
+      route.url.startsWith('/api/v1/settings/email'),
     );
     expect(emailRoutes.length).toBeGreaterThanOrEqual(5);
     for (const route of emailRoutes) {
       expect(route.access, `${route.method} ${route.url}`).toEqual({
-        kind: 'roles',
-        roles: ['owner'],
+        kind: 'permission',
+        permission: 'settings.email.manage',
       });
     }
     expect(declarations.find((route) => route.url === '/api/v1/auth/me')?.access.kind).toBe(

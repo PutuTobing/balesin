@@ -45,6 +45,8 @@ export const AUDIT_ACTIONS = {
   emailVerificationSent: 'auth.email.verification_sent',
   emailVerified: 'auth.email.verified',
   emailVerificationFailed: 'auth.email.verification_failed',
+  /** Permintaan ditolak 403 karena peran tidak punya izinnya (dibatasi, lihat `access-denied.ts`). */
+  accessDenied: 'auth.access.denied',
 } as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
 

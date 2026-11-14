@@ -1,4 +1,4 @@
-import type { UserRole } from '@balesin/shared';
+import { PERMISSIONS, type Permission } from '@balesin/shared';
 import type { FastifyInstance } from 'fastify';
 
 /**
@@ -7,7 +7,13 @@ import type { FastifyInstance } from 'fastify';
  * Setiap rute WAJIB menyatakan siapa yang boleh memanggilnya lewat `config.access`:
  *
  *   app.get(path, { config: { access: PUBLIC }, schema: {...} }, handler)
- *   app.put(path, { config: { access: allowRoles('owner', 'admin') }, schema: {...} }, handler)
+ *   app.put(path, { config: { access: requirePermission('settings.email.manage') }, ... }, handler)
+ *   app.get(path, { config: { access: AUTHENTICATED }, ... }, handler)   // "cukup sesi"
+ *
+ * Izin diambil dari matriks di `@balesin/shared` (`permissions.ts`, PRD §4) — TIDAK ADA
+ * pemeriksaan peran langsung di rute. `AUTHENTICATED` ("cukup sesi") hanya untuk data milik
+ * pengguna itu sendiri (profil, 2FA sendiri, sesi sendiri). Setiap rute terdaftar juga harus punya
+ * entri di tes matriks `rbac-matrix.integration.test.ts` — rute baru tanpa entri membuat tes gagal.
  *
  * Dua lapis:
  *  1. Saat start: aplikasi MENOLAK siap (`ready`/`listen` gagal) bila ada rute tanpa deklarasi
@@ -16,15 +22,16 @@ import type { FastifyInstance } from 'fastify';
  *     yang tidak punya deklarasi dan menegakkan deklarasi yang ada.
  */
 export type RouteAccess =
-  /** Tanpa sesi: health, setup, login, branding halaman masuk. */
+  /** Tanpa sesi: health, setup, login, branding halaman masuk. Daftarnya dijaga tes. */
   | { readonly kind: 'public' }
   /**
-   * Siapa pun yang sudah masuk dengan sesi PENUH. `allowTwoFactorEnrollment: true` = juga sesi
-   * terbatas Owner/Admin/Supervisor yang belum mengaktifkan 2FA (lihat `AUTHENTICATED_OR_ENROLLING`).
+   * "Cukup sesi": siapa pun yang sudah masuk dengan sesi PENUH, untuk data milik dirinya sendiri.
+   * `allowTwoFactorEnrollment: true` = juga sesi terbatas Owner/Admin/Supervisor yang belum
+   * mengaktifkan 2FA (lihat `AUTHENTICATED_OR_ENROLLING`).
    */
   | { readonly kind: 'authenticated'; readonly allowTwoFactorEnrollment?: boolean }
-  /** Hanya peran tertentu (matriks PRD §4). */
-  | { readonly kind: 'roles'; readonly roles: readonly UserRole[] };
+  /** Sesi penuh + izin dari matriks (`ROLE_PERMISSIONS`). Cakupan diperiksa handler/service. */
+  | { readonly kind: 'permission'; readonly permission: Permission };
 
 export const PUBLIC: RouteAccess = { kind: 'public' };
 export const AUTHENTICATED: RouteAccess = { kind: 'authenticated' };
@@ -33,7 +40,7 @@ export const AUTHENTICATED: RouteAccess = { kind: 'authenticated' };
  * Sesi penuh ATAU sesi terbatas "wajib mendaftar 2FA" (SECURITY.md §1: 2FA wajib untuk
  * Owner/Admin/Supervisor). HANYA untuk rute yang dibutuhkan supaya pengguna bisa menyelesaikan
  * pendaftaran: status & pendaftaran 2FA, `GET /auth/me`, dan `POST /auth/logout`. Semua rute lain
- * (termasuk `allowRoles`) menolak sesi terbatas dengan 403 `TWO_FACTOR_ENROLLMENT_REQUIRED`.
+ * (termasuk `requirePermission`) menolak sesi terbatas dengan 403 `TWO_FACTOR_ENROLLMENT_REQUIRED`.
  */
 export const AUTHENTICATED_OR_ENROLLING: RouteAccess = {
   kind: 'authenticated',
@@ -45,8 +52,13 @@ export function allowsTwoFactorEnrollment(access: RouteAccess): boolean {
   return access.kind === 'authenticated' && access.allowTwoFactorEnrollment === true;
 }
 
-export function allowRoles(...roles: [UserRole, ...UserRole[]]): RouteAccess {
-  return { kind: 'roles', roles };
+/**
+ * Rute ini butuh izin `permission` (PRD §4). Peran tanpa izin itu → 403 `FORBIDDEN` + audit
+ * `auth.access.denied`. Peran dengan cakupan terbatas (mis. Teknisi `inbox.view` = `assigned`)
+ * LOLOS di sini; handler wajib menyaring data lewat `permissionGrant` (`modules/auth/permission-grant.ts`).
+ */
+export function requirePermission(permission: Permission): RouteAccess {
+  return { kind: 'permission', permission };
 }
 
 /** Satu rute terdaftar beserta aksesnya — untuk tes matriks peran × endpoint. */
@@ -54,6 +66,8 @@ export interface RouteDeclaration {
   method: string;
   url: string;
   access: RouteAccess;
+  /** Rute pelengkap 405 (`http/method-not-allowed.ts`), bukan rute modul. */
+  methodNotAllowed: boolean;
 }
 
 declare module 'fastify' {
@@ -65,6 +79,8 @@ declare module 'fastify' {
      * lewat amplop error). Tanpa ini, rute tanpa skema respons membuat aplikasi menolak start.
      */
     rawResponse?: boolean;
+    /** Dipasang `http/method-not-allowed.ts` pada rute pelengkap 405. Jangan dipakai modul. */
+    methodNotAllowed?: boolean;
   }
   interface FastifyInstance {
     /** Semua rute terdaftar beserta aksesnya (diisi `enforceRouteDeclarations`). */
@@ -75,8 +91,21 @@ declare module 'fastify' {
 interface RouteDefinition {
   method: string | string[];
   url: string;
-  config?: { access?: RouteAccess; rawResponse?: boolean };
+  config?: { access?: RouteAccess; rawResponse?: boolean; methodNotAllowed?: boolean };
   schema?: { response?: unknown };
+}
+
+/** Jaga-jaga untuk nilai yang lolos dari pemeriksaan tipe (mis. `as` atau JavaScript polos). */
+function isKnownAccess(access: RouteAccess): boolean {
+  switch (access.kind) {
+    case 'public':
+    case 'authenticated':
+      return true;
+    case 'permission':
+      return (PERMISSIONS as readonly string[]).includes(access.permission);
+    default:
+      return false;
+  }
 }
 
 function hasResponseSchema(route: RouteDefinition): boolean {
@@ -113,8 +142,12 @@ export function enforceRouteDeclarations(
     const access = route.config?.access;
     if (!access) {
       problems.push(
-        `${label} belum menyatakan akses: tambahkan config.access (PUBLIC, AUTHENTICATED, atau allowRoles(...))`,
+        `${label} belum menyatakan akses: tambahkan config.access (requirePermission(...), AUTHENTICATED untuk data milik sendiri, atau PUBLIC)`,
       );
+      return;
+    }
+    if (!isKnownAccess(access)) {
+      problems.push(`${label} menyatakan akses yang tidak dikenal (izin harus ada di PERMISSIONS)`);
       return;
     }
     if (!route.config?.rawResponse && !hasResponseSchema(route)) {
@@ -123,7 +156,10 @@ export function enforceRouteDeclarations(
       );
       return;
     }
-    for (const method of methods) declarations.push({ method, url: route.url, access });
+    const methodNotAllowed = route.config?.methodNotAllowed === true;
+    for (const method of methods) {
+      declarations.push({ method, url: route.url, access, methodNotAllowed });
+    }
   });
 
   app.addHook('onReady', (done) => {

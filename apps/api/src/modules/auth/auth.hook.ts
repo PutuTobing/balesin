@@ -1,9 +1,11 @@
 import { AppError } from '@balesin/core';
-import { CSRF_HEADER_NAME } from '@balesin/shared';
+import { CSRF_HEADER_NAME, hasPermission } from '@balesin/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
+import { clientInfo } from '../../http/client-info';
 import { clearedSessionCookie, readSessionToken } from '../../http/cookies';
 import { allowsTwoFactorEnrollment } from '../../http/route-access';
+import type { AccessDeniedRecorder } from './access-denied';
 import type { CsrfProtection } from './csrf';
 import type { AuthContext, SessionService } from './session.service';
 
@@ -15,6 +17,10 @@ declare module 'fastify' {
      */
     auth: AuthContext | null;
   }
+  interface FastifyInstance {
+    /** Pencatat audit penolakan izin (dipakai hook auth dan `permissionGrant`). */
+    accessDenied: AccessDeniedRecorder;
+  }
 }
 
 export interface AuthHookOptions {
@@ -24,6 +30,7 @@ export interface AuthHookOptions {
   cookieSecure: boolean;
   sessions: SessionService;
   csrf: CsrfProtection;
+  accessDenied: AccessDeniedRecorder;
 }
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -41,19 +48,23 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  *  5. Sesi terbatas (Owner/Admin/Supervisor yang 2FA-nya belum aktif) hanya boleh ke rute
  *     `AUTHENTICATED_OR_ENROLLING` → selain itu 403 `TWO_FACTOR_ENROLLMENT_REQUIRED`. Keadaan 2FA
  *     dibaca dari database setiap permintaan, jadi peran yang baru dinaikkan langsung ikut.
- *  6. Rute `allowRoles(...)`: peran pengguna harus termasuk → 403.
+ *  6. Rute `requirePermission(izin)`: peran pengguna harus memegang izin itu di matriks
+ *     (`@balesin/shared` `ROLE_PERMISSIONS`, cakupan apa pun) → selain itu 403 `FORBIDDEN` dan
+ *     audit `auth.access.denied` (dibatasi, lihat `access-denied.ts`).
  *
  * Rute tanpa `config.access` ditolak 403 (seharusnya tidak pernah ada: pendaftarannya sudah
  * digagalkan `enforceRouteDeclarations`). Alamat yang tidak cocok dengan rute mana pun tetap
  * dijawab 404 — tidak ada handler yang perlu dilindungi di sana.
  *
- * Pemeriksaan izin yang lebih rinci (kepemilikan data, departemen) dilakukan handler/service
- * memakai `request.auth`; hook ini hanya memutuskan "boleh masuk ke rute ini atau tidak".
+ * Pemeriksaan CAKUPAN (Teknisi hanya data yang di-assign kepadanya, kepemilikan, departemen)
+ * dilakukan handler/service lewat `permissionGrant` (`permission-grant.ts`); hook ini hanya
+ * memutuskan "boleh masuk ke rute ini atau tidak".
  */
 export function registerAuthHook(app: FastifyInstance, options: AuthHookOptions): void {
-  const { appOrigin, cookieSecure, sessions, csrf } = options;
+  const { appOrigin, cookieSecure, sessions, csrf, accessDenied } = options;
 
   app.decorateRequest('auth', null);
+  app.decorate('accessDenied', accessDenied);
 
   app.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
     // Preflight CORS sudah ditangani plugin keamanan dan tidak pernah membawa kredensial.
@@ -70,6 +81,10 @@ export function registerAuthHook(app: FastifyInstance, options: AuthHookOptions)
     const access = request.routeOptions.config.access;
     if (!access) throw new AppError('FORBIDDEN');
     if (access.kind === 'public') return;
+    // Jenis yang tidak dikenal (seharusnya sudah digagalkan saat start) tidak pernah diloloskan.
+    if (access.kind !== 'authenticated' && access.kind !== 'permission') {
+      throw new AppError('FORBIDDEN');
+    }
 
     const token = readSessionToken(request.headers.cookie, cookieSecure);
     if (!token) throw new AppError('UNAUTHENTICATED');
@@ -98,7 +113,14 @@ export function registerAuthHook(app: FastifyInstance, options: AuthHookOptions)
       throw new AppError('TWO_FACTOR_ENROLLMENT_REQUIRED');
     }
 
-    if (access.kind === 'roles' && !access.roles.includes(auth.user.role)) {
+    if (access.kind === 'permission' && !hasPermission(auth.user.role, access.permission)) {
+      await accessDenied.record({
+        auth,
+        permission: access.permission,
+        method: request.method,
+        route: request.routeOptions.url ?? '',
+        client: clientInfo(request),
+      });
       throw new AppError('FORBIDDEN');
     }
 

@@ -6,7 +6,7 @@ import {
   users,
   type DbExecutor,
 } from '@balesin/db';
-import type { UserRole } from '@balesin/shared';
+import { rolesWithPermission, type UserRole } from '@balesin/shared';
 import { and, eq, inArray, isNull, lt, max, ne, or, sql } from 'drizzle-orm';
 
 import type { ClientInfo } from '../../http/client-info';
@@ -227,7 +227,10 @@ export async function findSessionClient(
   return row;
 }
 
-/** Owner/Admin aktif LAIN di organisasi (penerima pemberitahuan 2FA peran wajib). */
+/**
+ * Pengelola tim aktif LAIN di organisasi (`team.manage`: Owner/Admin) — penerima pemberitahuan
+ * 2FA peran wajib.
+ */
 export async function findOtherAdministrators(
   db: DbExecutor,
   organizationId: string,
@@ -241,7 +244,7 @@ export async function findOtherAdministrators(
         eq(users.organizationId, organizationId),
         ne(users.id, exceptUserId),
         isNull(users.disabledAt),
-        inArray(users.role, ['owner', 'admin']),
+        inArray(users.role, rolesWithPermission('team.manage')),
       ),
     );
   return rows.map((row) => row.id);

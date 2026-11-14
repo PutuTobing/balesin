@@ -13,7 +13,7 @@ import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { allowRoles, AUTHENTICATED } from '../../http/route-access';
+import { AUTHENTICATED, requirePermission } from '../../http/route-access';
 import {
   call,
   completeSetup,
@@ -290,6 +290,7 @@ describe('GET /auth/me dan masa berlaku sesi', () => {
     expect(Object.keys(response.json<object>()).sort()).toEqual([
       'csrfToken',
       'organization',
+      'permissions',
       'session',
       'status',
       'user',
@@ -788,12 +789,13 @@ describe('hook auth: bawaan tolak, peran, dan rute pelengkap 405', () => {
     expect(missing.statusCode).toBe(404);
   });
 
-  it('rute khusus peran: peran lain 403, tanpa sesi 401; identitas datang dari sesi, bukan input', async () => {
+  it('rute ber-izin: peran tanpa izin 403, tanpa sesi 401; identitas datang dari sesi, bukan input', async () => {
     const reply = { 200: z.object({ role: z.string(), organizationId: z.string() }) };
     await harness.rebuild();
     harness.app.get(
-      '/__tes/khusus-admin',
-      { config: { access: allowRoles('admin', 'supervisor') }, schema: { response: reply } },
+      '/__tes/ber-izin',
+      // broadcast.send: Owner, Admin, Supervisor (PRD §4) — CS dan Teknisi tidak.
+      { config: { access: requirePermission('broadcast.send') }, schema: { response: reply } },
       (request, response) => {
         void response.send({
           role: request.auth?.user.role ?? '',
@@ -823,17 +825,17 @@ describe('hook auth: bawaan tolak, peran, dan rute pelengkap 405', () => {
     const get = (url: string, cookie?: string) =>
       call(harness.app, 'GET', url, undefined, { cookie });
 
-    expect((await get('/__tes/khusus-admin')).statusCode).toBe(401);
-    expect((await get('/__tes/khusus-admin', owner.cookie)).statusCode).toBe(403);
-    expect((await get('/__tes/khusus-admin', cs.cookie)).statusCode).toBe(403);
-    expect((await get('/__tes/khusus-admin', teknisi.cookie)).statusCode).toBe(403);
-    expect((await get('/__tes/khusus-admin', admin.cookie)).json()).toEqual({
+    expect((await get('/__tes/ber-izin')).statusCode).toBe(401);
+    expect((await get('/__tes/ber-izin', owner.cookie)).statusCode).toBe(200);
+    expect((await get('/__tes/ber-izin', cs.cookie)).statusCode).toBe(403);
+    expect((await get('/__tes/ber-izin', teknisi.cookie)).statusCode).toBe(403);
+    expect((await get('/__tes/ber-izin', admin.cookie)).json()).toEqual({
       role: 'admin',
       organizationId: owner.session.organization.id,
     });
-    expect((await get('/__tes/khusus-admin', supervisor.cookie)).statusCode).toBe(200);
+    expect((await get('/__tes/ber-izin', supervisor.cookie)).statusCode).toBe(200);
     expect((await get('/__tes/siapa-saja', teknisi.cookie)).statusCode).toBe(200);
-    expect(errorOf(await get('/__tes/khusus-admin', cs.cookie)).message).toBe(
+    expect(errorOf(await get('/__tes/ber-izin', cs.cookie)).message).toBe(
       'Kamu tidak punya izin untuk melakukan tindakan ini.',
     );
   });

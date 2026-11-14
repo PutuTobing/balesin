@@ -18,6 +18,7 @@ export * from './invitations';
 export * from './links';
 export * from './password';
 export * from './password-reset';
+export * from './permissions';
 export * from './roles';
 export * from './setup';
 export * from './two-factor';

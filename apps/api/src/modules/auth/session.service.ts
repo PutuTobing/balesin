@@ -2,8 +2,10 @@ import { randomToken, sha256Hex } from '@balesin/core';
 import type { Database, DbExecutor } from '@balesin/db';
 import {
   isTwoFactorRequired,
+  permissionsForRole,
   type AuthenticatedSession,
   type MeResponse,
+  type Permission,
   type UserRole,
 } from '@balesin/shared';
 
@@ -179,6 +181,14 @@ export function createSessionService(db: Database, csrf: CsrfProtection): Sessio
 }
 
 /**
+ * Izin sesi ini untuk respons sesi (dipakai web menyembunyikan menu). Sesi terbatas "wajib
+ * mendaftar 2FA" tidak memegang izin apa pun — server menolak semua rute selain pendaftaran.
+ */
+export function sessionPermissions(auth: AuthContext): Permission[] {
+  return auth.twoFactor.enrollmentRequired ? [] : permissionsForRole(auth.user.role);
+}
+
+/**
  * Bentuk respons sesi PENUH (login selesai, langkah kedua berhasil, 2FA baru aktif). Melempar
  * bila sesinya ternyata terbatas — pemanggil seharusnya memakai `toSessionResponse`.
  */
@@ -195,6 +205,7 @@ export function toAuthenticatedSession(auth: AuthContext): AuthenticatedSession 
       idleExpiresAt: auth.idleExpiresAt.toISOString(),
       absoluteExpiresAt: auth.absoluteExpiresAt.toISOString(),
     },
+    permissions: sessionPermissions(auth),
   };
 }
 
@@ -209,6 +220,7 @@ export function toSessionResponse(auth: AuthContext): MeResponse {
       idleExpiresAt: auth.idleExpiresAt.toISOString(),
       absoluteExpiresAt: auth.absoluteExpiresAt.toISOString(),
     },
+    permissions: sessionPermissions(auth),
   };
 }
 

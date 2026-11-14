@@ -2,7 +2,7 @@ import { AppError } from '@balesin/core';
 import type { FastifyInstance, HTTPMethods } from 'fastify';
 
 import { handleError } from './error-handler';
-import { AUTHENTICATED, PUBLIC, type RouteAccess } from './route-access';
+import { AUTHENTICATED, PUBLIC, requirePermission, type RouteAccess } from './route-access';
 
 /** Metode yang dijawab 405 bila alamatnya ada tetapi metodenya tidak. OPTIONS milik CORS. */
 const COVERED_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
@@ -14,8 +14,25 @@ type RouteRegistry = Pick<FastifyInstance, 'addHook' | 'route'>;
 
 interface KnownRoute {
   methods: Set<string>;
-  /** `true` selama SEMUA rute asli di alamat ini publik. */
-  allPublic: boolean;
+  /** Akses semua rute asli di alamat ini (yang tanpa deklarasi dicatat `undefined`). */
+  accesses: (RouteAccess | undefined)[];
+}
+
+/**
+ * Akses rute pelengkap = yang PALING ketat yang masih jujur untuk alamat itu:
+ *  - semua rute asli publik → publik (405 + `Allow` untuk siapa pun);
+ *  - semua rute asli butuh izin yang SAMA → izin itu (peran tanpa izin mendapat 403 + audit,
+ *    bukan 405 + `Allow` yang memetakan metode rute yang tidak boleh ia pakai);
+ *  - selain itu → cukup sesi.
+ */
+function complementAccess(accesses: readonly (RouteAccess | undefined)[]): RouteAccess {
+  if (accesses.every((access) => access?.kind === 'public')) return PUBLIC;
+  const permissions = new Set(
+    accesses.map((access) => (access?.kind === 'permission' ? access.permission : undefined)),
+  );
+  const [only] = permissions;
+  if (permissions.size === 1 && only !== undefined) return requirePermission(only);
+  return AUTHENTICATED;
 }
 
 /**
@@ -27,9 +44,10 @@ interface KnownRoute {
  * sama, metode yang belum ada) yang menjawab 405. Pencocokan alamat tetap dilakukan router
  * Fastify sendiri, jadi parameter (`/users/:id`) dan wildcard berperilaku persis sama.
  *
- * Akses rute pelengkap mengikuti rute aslinya (temuan N1 review Fase 0): bila ada satu saja
- * rute non-publik di alamat itu, pelengkapnya menuntut sesi — orang yang belum masuk mendapat
- * 401, bukan 405 + `Allow`, sehingga tidak bisa memetakan metode rute yang terlindungi.
+ * Akses rute pelengkap mengikuti rute aslinya (temuan N1 review Fase 0, `complementAccess`): bila
+ * ada satu saja rute non-publik di alamat itu, pelengkapnya menuntut sesi — orang yang belum masuk
+ * mendapat 401, bukan 405 + `Allow`, sehingga tidak bisa memetakan metode rute yang terlindungi.
+ * Bila semua rute di alamat itu butuh izin yang sama, pelengkapnya juga butuh izin itu.
  *
  * Panggil `trackRoutes` SEBELUM rute pertama didaftarkan dan fungsi yang dikembalikannya
  * SETELAH rute terakhir (rute yang didaftarkan sesudahnya tetap dijawab 404 untuk metode salah).
@@ -43,11 +61,10 @@ export function trackRoutesForMethodNotAllowed(app: RouteRegistry): () => void {
     // Rute dengan constraint (host/versi) dilewati: pelengkapnya bisa menutupi rute lain.
     if (route.constraints && Object.keys(route.constraints).length > 0) return;
 
-    const known = routesByUrl.get(route.url) ?? { methods: new Set<string>(), allPublic: true };
+    const known = routesByUrl.get(route.url) ?? { methods: new Set<string>(), accesses: [] };
     for (const method of [route.method].flat()) known.methods.add(method.toUpperCase());
-    const access: RouteAccess | undefined = route.config?.access;
-    // Rute tanpa deklarasi dianggap tidak publik (bawaan tolak).
-    if (access?.kind !== 'public') known.allPublic = false;
+    // Rute tanpa deklarasi dicatat `undefined` = tidak publik (bawaan tolak).
+    known.accesses.push(route.config?.access);
     routesByUrl.set(route.url, known);
   });
 
@@ -68,7 +85,11 @@ export function trackRoutesForMethodNotAllowed(app: RouteRegistry): () => void {
           method: missing,
           url,
           // Selalu menjawab lewat amplop error, jadi tidak butuh skema respons.
-          config: { access: known.allPublic ? PUBLIC : AUTHENTICATED, rawResponse: true },
+          config: {
+            access: complementAccess(known.accesses),
+            rawResponse: true,
+            methodNotAllowed: true,
+          },
           handler: (request, reply) => {
             void reply.header('allow', allow);
             return handleError(new AppError('METHOD_NOT_ALLOWED'), request, reply);

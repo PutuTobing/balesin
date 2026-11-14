@@ -15,7 +15,7 @@ import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod';
 
 import { clientInfo } from '../../http/client-info';
 import { enforceRateLimit, type RateLimitRule, type RateLimiter } from '../../http/rate-limit';
-import { allowRoles } from '../../http/route-access';
+import { requirePermission } from '../../http/route-access';
 import { requireAuth } from '../auth/auth.hook';
 import type { EmailSettingsService } from './email-settings.service';
 import type { EmailTemplatePreview } from './email-template-preview';
@@ -27,11 +27,11 @@ export interface EmailSettingsRoutesOptions {
 }
 
 /**
- * Hanya Owner. Email pengirim adalah pengaturan organisasi (PRD §4), dan tes koneksi membuat
- * server menyambung ke host pilihan pengguna (permukaan SSRF) — jadi dibatasi seketat mungkin.
- * Bila matriks RBAC nanti mengizinkan Admin, cukup tambahkan perannya di sini.
+ * Owner dan Admin (`settings.email.manage`; PENGATURAN-UI.md: "Hanya Owner/Admin yang bisa
+ * mengubah" — sebelum RBAC sementara khusus Owner). Tes koneksi membuat server menyambung ke host
+ * pilihan pengguna (permukaan SSRF): penjaga host/port dan batas laju per pengguna tetap berlaku.
  */
-const ACCESS = allowRoles('owner');
+const ACCESS = requirePermission('settings.email.manage');
 
 /** Tes koneksi / kirim email tes: permintaan keluar yang mahal dan bisa disalahgunakan. */
 export const EMAIL_TEST_RULE: RateLimitRule = { name: 'email-tes', limit: 10, windowSeconds: 300 };

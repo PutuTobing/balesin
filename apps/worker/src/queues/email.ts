@@ -49,6 +49,7 @@ import {
   LOGIN_LOCK_MINUTES,
   LOGIN_MAX_FAILED_ATTEMPTS,
   buildTokenLink,
+  hasPermission,
   invitationIssuerAuthorized,
   isTwoFactorRequired,
   type EmailDeliveryStatus,
@@ -398,12 +399,13 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
   const recipient = await findActiveUser(organizationId, recipientUserId, deps);
   const subject = await findActiveUser(organizationId, subjectUserId, deps);
   const branding = await loadOrganizationBrand(deps.db, organizationId);
-  // Penerima diperiksa ulang saat mengirim: yang perannya sudah bukan Owner/Admin dilewati.
+  // Penerima diperiksa ulang saat mengirim: yang perannya sudah tidak memegang `team.manage`
+  // (Owner/Admin, matriks izin di @balesin/shared) dilewati.
   if (
     !recipient ||
     !subject ||
     !branding ||
-    (recipient.role !== 'owner' && recipient.role !== 'admin') ||
+    !hasPermission(recipient.role, 'team.manage') ||
     !isTwoFactorRequired(subject.role)
   ) {
     return { status: 'skipped', reason: 'recipient_unavailable' };

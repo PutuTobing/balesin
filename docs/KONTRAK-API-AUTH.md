@@ -1,7 +1,7 @@
-# Kontrak API — Setup, Login, 2FA, Undangan, Atur ulang password, Verifikasi email, Branding, Email pengirim (Fase 1)
+# Kontrak API — Setup, Login, 2FA, Undangan, Atur ulang password, Verifikasi email, Branding, Email pengirim, Peran & izin (Fase 1)
 
 Sumber kebenaran tipe: skema Zod di `packages/shared/src/` (`auth.ts`, `two-factor.ts`, `invitations.ts`,
-`password-reset.ts`, `email-verification.ts`, `email-templates.ts`, `links.ts`) dan konstanta path di
+`password-reset.ts`, `email-verification.ts`, `email-templates.ts`, `links.ts`, `permissions.ts`) dan konstanta path di
 `packages/shared/src/api-routes.ts` (`API_ROUTES`). Dokumen ini menjelaskan perilaku yang
 tidak terlihat dari skema. Semua path diawali `/api/v1`.
 
@@ -77,6 +77,9 @@ Error setup:
 - POST `/auth/logout` (sesi + CSRF) → `{status: 'logged_out'}`, cookie dihapus.
 - POST `/auth/logout` dan GET `/auth/me` juga berlaku untuk sesi terbatas.
 - GET `/auth/me` (sesi) → `meResponseSchema` (`authenticated` | `two_factor_enrollment_required`) atau 401.
+- Semua respons yang membawa sesi (login `authenticated`/`two_factor_enrollment_required`, `/auth/me`,
+  `/auth/2fa/verify`, `/auth/2fa/enroll/confirm`, `/setup/complete`, `/auth/invitation/accept`) memuat
+  `permissions` — lihat bagian **Peran & izin (RBAC)**.
 
 ## Verifikasi dua langkah (2FA)
 
@@ -190,7 +193,7 @@ atau tunggu langkah berganti.
 - GET `/branding` → `brandingResponseSchema`.
 - GET `/branding/logo?v=…` → berkas biner, atau 404 bila belum ada logo.
 
-## Pengaturan → Email pengirim (khusus Owner untuk sementara; tulis butuh CSRF)
+## Pengaturan → Email pengirim (izin `settings.email.manage` = Owner/Admin; tulis butuh CSRF)
 - GET `/settings/email` → `emailSettingsResponseSchema`: `source` database/env/none, `status`
   connected/failed/untested/not_configured, `lastTest`, `passwordHint`, `canStoreSecrets`.
 - PUT `/settings/email` (`saveEmailSettingsRequestSchema`): `password` boleh tidak dikirim untuk
@@ -284,10 +287,10 @@ terbatas) → 403 `TWO_FACTOR_ENROLLMENT_REQUIRED`.
 
 | Metode & path | Akses | Request | Respons 2xx |
 |---|---|---|---|
-| GET `/invitations` | Owner/Admin | – | `invitationListResponseSchema` `{ invitations, invitableRoles, emailDelivery }` |
-| POST `/invitations` | Owner/Admin + CSRF | `createInvitationRequestSchema` `{ email, role }` | **201** `invitationIssuedResponseSchema` `{ invitation, link }` |
-| POST `/invitations/:invitationId/resend` | Owner/Admin + CSRF | – | 200 `invitationIssuedResponseSchema` |
-| DELETE `/invitations/:invitationId` | Owner/Admin + CSRF | – | 200 `{ status: "revoked" }` |
+| GET `/invitations` | `team.invite` (Owner/Admin) | – | `invitationListResponseSchema` `{ invitations, invitableRoles, emailDelivery }` |
+| POST `/invitations` | `team.invite` + CSRF | `createInvitationRequestSchema` `{ email, role }` | **201** `invitationIssuedResponseSchema` `{ invitation, link }` |
+| POST `/invitations/:invitationId/resend` | `team.invite` + CSRF | – | 200 `invitationIssuedResponseSchema` |
+| DELETE `/invitations/:invitationId` | `team.invite` + CSRF | – | 200 `{ status: "revoked" }` |
 | POST `/auth/invitation/inspect` | publik | `{ token }` | 200 `inspectInvitationResponseSchema` |
 | POST `/auth/invitation/accept` | publik | `acceptInvitationRequestSchema` `{ token, name, password }` | **201** `acceptInvitationResponseSchema` (= `meResponseSchema`) + cookie |
 
@@ -327,7 +330,7 @@ Error membuat/mengirim ulang/membatalkan:
 |---|---|
 | Email tidak valid / memuat baris baru, peran bukan Admin/Supervisor/CS/Teknisi (termasuk `owner`) | 400 `VALIDATION_ERROR` field `email` / `role` |
 | Admin mengundang/mengelola undangan Admin — termasuk membuat undangan untuk email yang masih punya undangan Admin terbuka (berlaku atau kedaluwarsa) | 403 `FORBIDDEN` "Admin hanya bisa mengundang dan mengelola undangan Supervisor, CS, dan Teknisi…" (tidak memakai kuota) |
-| Supervisor/CS/Teknisi | 403 `FORBIDDEN` (deklarasi rute) |
+| Supervisor/CS/Teknisi | 403 `FORBIDDEN` pesan bawaan (izin `team.invite`, dicatat `auth.access.denied`) |
 | Email sudah dipakai pengguna organisasi (aktif atau nonaktif) | 409 `CONFLICT` field `email` "Email ini sudah terdaftar sebagai pengguna di organisasimu." |
 | Masih ada undangan berlaku untuk email itu | 409 `CONFLICT` field `email` "…Kirim ulang dari daftar undangan bila perlu." (Undangan yang sudah kedaluwarsa otomatis diganti yang baru.) |
 | Undangan tidak ada / sudah diterima / dibatalkan / milik organisasi lain | 404 `NOT_FOUND` |
@@ -426,7 +429,8 @@ tetap butuh kode 2FA bila aktif.
   lewat email, dan akun yang pernah menyelesaikan atur ulang password, otomatis terverifikasi.
 - Status ini **tidak membatasi** apa pun (tidak ada fitur yang diblokir) — hanya petunjuk. Saran tampilan:
   di Pengaturan → Akun/Keamanan, "Email belum diverifikasi" + tombol "Kirim email verifikasi" (sembunyikan
-  bila `canSend: false`, ganti dengan "Atur email pengirim dulu" untuk Owner).
+  bila `canSend: false`, ganti dengan "Atur email pengirim dulu" untuk pengguna yang memegang izin
+  `settings.email.manage`).
 - Tautan berlaku 24 jam, sekali pakai; meminta lagi membatalkan yang lama. Halaman `/verifikasi-email`:
   baca + buang fragment → `POST /auth/email/verify` → "Email {email} sudah terverifikasi." (tidak perlu
   sedang masuk).
@@ -440,7 +444,7 @@ tetap butuh kode 2FA bila aktif.
 | Sesi terbatas (wajib 2FA) | 403 `TWO_FACTOR_ENROLLMENT_REQUIRED` |
 | Token tidak dikenal/dibatalkan, kedaluwarsa, sudah dipakai, email akun sudah berubah | 410 `TOKEN_INVALID` (pesan per kasus) |
 
-## Pratinjau template email (Pengaturan → Email pengirim; khusus Owner, sama dengan modul itu)
+## Pratinjau template email (Pengaturan → Email pengirim; izin `settings.email.manage`, sama dengan modul itu)
 
 - GET `/settings/email/templates/:template/preview` (`apiPath(API_ROUTES.settings.emailTemplatePreview,
   { template })`), `template` ∈ `EMAIL_TEMPLATE_IDS` (label `EMAIL_TEMPLATE_LABELS`): `invitation`,
@@ -496,3 +500,73 @@ perkiraan perangkat ("Chrome di Windows") dari audit log.
 - Tanpa email pengirim, tautan undangan ada di respons `POST /invitations` (`link`) dan di dialog salin.
 - Tes "lupa password" harus mengatur email pengirim dulu (`available: false` tanpa itu).
 - Akun Admin/Supervisor dari undangan langsung ke layar pendaftaran 2FA; pakai `generateTotp(secret)`.
+
+## Peran & izin (RBAC, Fase 1 butir 5)
+
+Sumber tunggal: `packages/shared/src/permissions.ts` (`PERMISSIONS`, `ROLE_PERMISSIONS`,
+`hasPermission`, `permissionScope`, `PERMISSION_LABELS`, `PERMISSION_SCOPE_LABELS`). Server menegakkan
+setiap permintaan; web hanya menyembunyikan menu/tombol.
+
+### Field baru `permissions` di respons sesi (tambahan, bentuk lain tidak berubah)
+
+- `permissions: Permission[]` — izin pengguna untuk sesi INI, berurutan seperti `PERMISSIONS`.
+  Sesi terbatas `two_factor_enrollment_required` selalu `[]`.
+- Server selalu mengirimnya. Di skema Zod field ini **opsional** hanya supaya klien lama tetap
+  terkompilasi; perlakukan "tidak ada" sebagai `[]`. Saat menyimpan sesi di memori/cache, **ikut simpan
+  `permissions`** (jangan disaring keluar).
+- Cara pakai di web: `session.permissions.includes('team.invite')` → tampilkan menu Undang anggota.
+  Untuk izin bercakupan, cakupan: `permissionScope(session.user.role, 'inbox.view')` (`all` | `assigned` |
+  `own`), label `PERMISSION_SCOPE_LABELS`. Jangan menulis ulang matriks di web.
+- Izin bisa berubah saat peran berubah; setelah 403 `FORBIDDEN` yang tidak diduga, muat ulang `/auth/me`.
+
+### Matriks (PRD §4)
+
+| Izin | Owner | Admin | Supervisor | CS | Teknisi | Dipakai |
+|---|:-:|:-:|:-:|:-:|:-:|---|
+| `organization.manage` | ✅ | – | – | – | – | Fase 7/Pengaturan Organisasi |
+| `backup.manage` | ✅ | – | – | – | – | Fase 7 |
+| `channels.manage` | ✅ | ✅ | – | – | – | Fase 2 |
+| `settings.email.manage` | ✅ | ✅ | – | – | – | **sekarang**: `/settings/email*` |
+| `settings.workspace.manage` | ✅ | ✅ | – | – | – | Fase 4–5 |
+| `api_keys.manage` | ✅ | ✅ | – | – | – | Fase 3 |
+| `integrations.manage` | ✅ | ✅ | – | – | – | Fase 3–4 |
+| `team.invite` | ✅ | ✅ | – | – | – | **sekarang**: `/invitations*` |
+| `team.manage` | ✅ | ✅ | – | – | – | Fase 1 butir 6 (manajemen pengguna) |
+| `audit.view` | ✅ | ✅ | – | – | – | Fase 1 butir 6 |
+| `broadcast.send` | ✅ | ✅ | ✅ | – | – | Fase 4 |
+| `broadcast.approve` | ✅ | ✅ | – | – | – | Fase 4 |
+| `sending.resume` | ✅ | ✅ | – | – | – | Fase 4 (rem darurat) |
+| `templates.manage` | ✅ | ✅ | ✅ | – | – | Fase 4 |
+| `quick_replies.manage` | ✅ | ✅ | ✅ | – | – | Fase 2 |
+| `inbox.view` | ✅ | ✅ | ✅ | ✅ | di-assign/tiketnya | Fase 2 |
+| `inbox.reply` | ✅ | ✅ | ✅ | ✅ | di-assign/tiketnya | Fase 2 |
+| `inbox.assign` | ✅ | ✅ | ✅ | ✅ | – | Fase 2 |
+| `contacts.view` | ✅ | ✅ | ✅ | ✅ | di-assign/tiketnya | Fase 2/5 |
+| `contacts.manage` | ✅ | ✅ | ✅ | ✅ | – | Fase 5 |
+| `contacts.export` | ✅ | ✅ | ✅ | – | – | Fase 5 |
+| `contacts.delete` | ✅ | ✅ | – | – | – | Fase 5 |
+| `tickets.manage` | ✅ | ✅ | ✅ | ✅ | miliknya | Fase 5 |
+| `tickets.configure` | ✅ | ✅ | ✅ | – | – | Fase 5 |
+| `reports.view` | ✅ | ✅ | ✅ | milik sendiri | milik sendiri | Fase 5 |
+
+Rute yang cukup dengan sesi (data milik sendiri, tanpa izin): `/auth/me`, `/auth/logout`, `/auth/2fa*`,
+`/auth/email/verification`.
+
+### Perilaku
+
+- Peran tanpa izin rute → **403 `FORBIDDEN`** dengan pesan bawaan "Kamu tidak punya izin untuk melakukan
+  tindakan ini." (403 dari aturan rinci modul, mis. Admin mengelola undangan Admin, memakai pesan khusus).
+  Diperiksa SETELAH sesi (401) dan CSRF/Origin (403 `CSRF_INVALID`/`FORBIDDEN`), dan setelah sesi
+  terbatas 2FA (403 `TWO_FACTOR_ENROLLMENT_REQUIRED`).
+- Data di luar cakupan (mis. Teknisi membuka percakapan yang tidak di-assign kepadanya) → **404
+  `NOT_FOUND`**, bukan 403; daftar hanya memuat data dalam cakupan.
+- Metode salah (405): rute pelengkap di alamat yang semua rutenya butuh izin yang sama kini juga butuh
+  izin itu — peran tanpa izin mendapat 403, bukan 405 + `Allow` (mis. CS `DELETE /settings/email`).
+- Setiap penolakan izin dicatat di audit log `auth.access.denied` (izin, metode, pola rute, peran, sesi;
+  tanpa body/query/parameter), paling banyak satu entri per pengguna × izin per menit.
+
+### Perubahan perilaku pada bagian yang sudah ada
+
+- **Pengaturan → Email pengirim + pratinjau template**: kini **Owner dan Admin** (sebelumnya khusus Owner;
+  `PENGATURAN-UI.md` menyebut Owner/Admin). Supervisor/CS/Teknisi tetap 403.
+- Penerima email "2FA aktif" peran wajib = pemegang `team.manage` (tetap Owner/Admin).

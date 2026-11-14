@@ -157,18 +157,27 @@ Reviews (tidak dibuat).
 
 | Kemampuan | Owner | Admin | Supervisor | CS | Teknisi |
 |---|:-:|:-:|:-:|:-:|:-:|
-| Pengaturan organisasi, billing, lisensi | ✅ | – | – | – | – |
+| Pengaturan organisasi, billing, lisensi, backup/restore | ✅ | – | – | – | – |
 | Kelola channel & kredensial Meta | ✅ | ✅ | – | – | – |
 | Undang/nonaktifkan pengguna | ✅ | ✅ | – | – | – |
 | API key & webhook | ✅ | ✅ | – | – | – |
+| Email pengirim & template email (PENGATURAN-UI) | ✅ | ✅ | – | – | – |
+| Lanjutkan pengiriman setelah rem darurat | ✅ | ✅ | – | – | – |
 | Buat broadcast | ✅ | ✅ | ✅ | – | – |
 | Setujui broadcast > ambang | ✅ | ✅ | – | – | – |
-| Kelola template | ✅ | ✅ | ✅ | – | – |
+| Kelola template (template Meta & template percakapan/quick reply) | ✅ | ✅ | ✅ | – | – |
 | Lihat semua percakapan | ✅ | ✅ | ✅ | ✅ | – |
 | Balas percakapan | ✅ | ✅ | ✅ | ✅ | hanya yang di-assign / terkait tiketnya |
+| Assign / alihkan / ambil chat | ✅ | ✅ | ✅ | ✅ | hanya mengembalikan chat miliknya ke antrian |
+| Lihat & ubah kontak | ✅ | ✅ | ✅ | ✅ | lihat kontak terkait tugasnya |
+| Impor/ekspor kontak massal | ✅ | ✅ | ✅ | – | – |
+| Hapus kontak (UU PDP) | ✅ | ✅ | – | – | – |
 | Kelola tiket | ✅ | ✅ | ✅ | ✅ | tiket miliknya |
-| Lihat laporan | ✅ | ✅ | ✅ | milik sendiri | milik sendiri |
+| Atur board/kolom/atribut tiket | ✅ | ✅ | ✅ | – | – |
+| Lihat laporan (termasuk biaya pesan Meta tingkat organisasi) | ✅ | ✅ | ✅ | milik sendiri | milik sendiri |
 | Audit log | ✅ | ✅ | – | – | – |
+
+Sumber kebenaran teknisnya: `packages/shared/src/permissions.ts` (izin bernama + cakupan all/assigned/own), ditegakkan di server untuk setiap rute. "Akses departemen sendiri" (§3.6) adalah penyempitan cakupan per pengguna, bukan peran baru.
 
 Teknisi membalas **dari nomor perusahaan yang sama**; pesan diberi penanda nama
 pengirim internal (opsional ditampilkan ke pelanggan sebagai "— Teknisi Arya").
