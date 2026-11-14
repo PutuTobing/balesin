@@ -72,8 +72,11 @@ Error setup:
   `status`: `authenticated` | `two_factor_required` | `two_factor_enrollment_required` (bagian 2FA).
   - 401 `INVALID_CREDENTIALS`: pesan sama untuk email tak terdaftar, password salah, akun
     nonaktif. Jangan diperlakukan seperti 401 sesi habis.
-  - 429: per IP (20 gagal/15 menit, "…dari jaringanmu…") atau akun dikunci 15 menit setelah
-    5 gagal.
+  - 429: per IP (20 **gagal**/15 menit, "…dari jaringanmu…") atau akun dikunci 15 menit setelah
+    5 gagal. Hanya percobaan gagal (termasuk yang ditolak karena terkunci) yang menghabiskan jatah
+    per IP — login berhasil tidak pernah menyentuhnya, jadi banyak anggota tim yang masuk serentak
+    dari satu IP kantor (NAT) tidak kena 429. Pemeriksaan password yang berjalan bersamaan dari satu
+    IP dibatasi 30 (pesan 429 yang sama); dalam pemakaian wajar tidak pernah tercapai.
   - 503: Redis mati / server sibuk. 400: validasi.
 - POST `/auth/logout` (sesi + CSRF) → `{status: 'logged_out'}`, cookie dihapus.
 - POST `/auth/logout` dan GET `/auth/me` juga berlaku untuk sesi terbatas.
@@ -771,11 +774,14 @@ token di URL).
 Ringkasan kejadian keamanan (banner peringatan Owner/Admin): `{ since, events, counts, latestWarningAt }`,
 rentang 7 hari (`SECURITY_SUMMARY_DAYS`), `events` terbaru dulu maks. 20. `event`: `id` (baris audit),
 `kind` (`SECURITY_EVENT_KINDS`, label `SECURITY_EVENT_LABELS`), `severity` (`warning` → banner; `info` →
-cukup di daftar), `occurredAt`, `actor`, `subject` `{ id, name, role }` (pengguna yang terkena), `details`
+cukup di daftar), `occurredAt`, `actor` (`{ id, name, email, role }` pelaku, atau `null`; `actor.id` = ID
+pengguna pelaku — web bisa menyembunyikan kejadian yang pelakunya pengguna yang sedang masuk), `subject`
+`{ id, name, role }` (pengguna yang terkena), `details`
 (mis. `email_sender_changed`: `previousHost`, `host`, `port`, `fromAddress`; `role_changed`: `from`, `to`;
 `account_locked`: `scope`, `lockedUntil`). Jenis: `email_sender_changed` (server/alamat email pengirim diubah
 oleh selain Owner — review RBAC S1), `two_factor_reset`, `two_factor_enrollment_reopened`,
-`password_reset_without_two_factor`, `account_locked`, `role_changed`, `user_disabled`. Saran web: tampilkan
+`password_reset_without_two_factor`, `account_locked`, `role_changed`, `user_disabled`, serta
+`channel_changed` dan `business_profile_changed` (lihat `KONTRAK-API-CHANNEL.md`). Saran web: tampilkan
 banner bila `latestWarningAt` lebih baru dari "terakhir ditutup" (simpan waktu itu di `localStorage` per
 pengguna — kenyamanan saja; server tidak menyimpan status "sudah dibaca"), tautan ke Audit log tersaring.
 

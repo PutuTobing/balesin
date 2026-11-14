@@ -450,6 +450,7 @@ async function sendSecurityNotice(job: EmailJob, deps: EmailJobDeps): Promise<Em
     ...(backupCodesRemaining === undefined ? {} : { backupCodesRemaining }),
     ...(origin ? { origin } : {}),
     ...(actor ? { actor: { name: actor.name, role: actor.role } } : {}),
+    role: recipient.role,
   });
   return deliver(
     organizationId,

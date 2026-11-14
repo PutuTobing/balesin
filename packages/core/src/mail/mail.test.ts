@@ -810,6 +810,47 @@ describe('template email', () => {
     );
     expect(toOwner.text).toContain('Alamat IP: 198.51.100.7');
     expect(toOwner.html).toContain('Adi &lt;Admin&gt;');
+    expect(toOwner.text).toContain(
+      'saat masuk berikutnya Adi <Admin> harus mendaftarkan aplikasi autentikator lagi (peran Admin wajib',
+    );
+
+    // Peran yang 2FA-nya TIDAK wajib (CS/Teknisi): tidak "harus mendaftarkan lagi".
+    for (const role of ['cs', 'teknisi'] as const) {
+      const optional = renderAdminAccountNoticeEmail({
+        brand: brand(),
+        timeZone: 'Asia/Jakarta',
+        recipientName: 'Rina',
+        event: 'two_factor_reset',
+        subject: { name: 'Tono', email: 'tono@contoh.test', role },
+        actor: { name: 'Sari', role: 'owner' },
+        occurredAt: at,
+      });
+      expect(optional.text).not.toContain('harus mendaftarkan');
+      expect(optional.text).toContain('sekarang Tono masuk dengan password saja');
+      expect(optional.text).toContain('tidak wajib untuk peran');
+
+      const self = renderSecurityNoticeEmail({
+        brand: brand(),
+        userName: 'Tono',
+        event: 'two_factor_reset',
+        occurredAt: at,
+        timeZone: 'Asia/Jakarta',
+        role,
+      });
+      expect(self.text).toContain('Untuk sementara akunmu masuk dengan password saja');
+      expect(self.text).not.toContain('kamu langsung diminta');
+    }
+    const requiredSelf = renderSecurityNoticeEmail({
+      brand: brand(),
+      userName: 'Dewi',
+      event: 'two_factor_reset',
+      occurredAt: at,
+      timeZone: 'Asia/Jakarta',
+      role: 'supervisor',
+    });
+    expect(requiredSelf.text).toContain(
+      'Peranmu (Supervisor) wajib memakai verifikasi dua langkah: saat masuk berikutnya, kamu langsung diminta',
+    );
 
     const reset = renderAdminAccountNoticeEmail({
       brand: brand(),

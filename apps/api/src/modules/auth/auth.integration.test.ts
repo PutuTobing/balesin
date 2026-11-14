@@ -28,7 +28,7 @@ import {
   type SignedIn,
 } from '../../testing/integration';
 import { TEST_APP_ORIGIN } from '../../testing/build-test-app';
-import { LOGIN_ACCOUNT_RULE, LOGIN_IP_RULE } from './login-rules';
+import { LOGIN_ACCOUNT_RULE, LOGIN_IP_CONCURRENCY_RULE, LOGIN_IP_RULE } from './login-rules';
 import { createPasswordHasher } from './password-hasher';
 
 let harness: IntegrationHarness;
@@ -762,6 +762,57 @@ describe('brute force: kunci per asal, per akun, perangkat dikenal, dan batas pe
     expect((await tryLogin(OWNER.email, OWNER.password, '2001:db8:abcd:13::1')).statusCode).toBe(
       200,
     );
+  });
+
+  it('banyak login sah serentak dari satu IP kantor (NAT) tidak kena 429 dan tidak menghabiskan jatah gagal', async () => {
+    const ip = '203.0.113.150';
+    const passwordHash = await hasher.hash('sandi-tim-kantor-bersama');
+    const team = await Promise.all(
+      Array.from({ length: LOGIN_IP_RULE.limit + 5 }, (_, index) =>
+        insertUser(harness.db, owner.session.organization.id, {
+          role: 'cs',
+          email: `kantor-${index}@majujaya.test`,
+          name: `CS Kantor ${index}`,
+          passwordHash,
+        }),
+      ),
+    );
+
+    const responses = await Promise.all(
+      team.map((member) => tryLogin(member.email, 'sandi-tim-kantor-bersama', ip)),
+    );
+    expect(responses.map((response) => response.statusCode)).toEqual(
+      Array<number>(team.length).fill(200),
+    );
+
+    // Jatah gagal per IP masih utuh: tepat `limit` kali gagal, lalu 429.
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < LOGIN_IP_RULE.limit + 1; attempt += 1) {
+      statuses.push((await tryLogin(`tebak-${attempt}@majujaya.test`, WRONG, ip)).statusCode);
+    }
+    expect(statuses.slice(0, LOGIN_IP_RULE.limit)).toEqual(
+      Array<number>(LOGIN_IP_RULE.limit).fill(401),
+    );
+    expect(statuses.at(-1)).toBe(429);
+  });
+
+  it('serbuan tebakan paralel dari satu IP tetap terbatas (slot serentak + jatah gagal)', async () => {
+    const ip = '203.0.113.151';
+    const burst = await Promise.all(
+      Array.from({ length: LOGIN_IP_CONCURRENCY_RULE.limit + 15 }, (_, index) =>
+        tryLogin(`serbu-${index}@majujaya.test`, WRONG, ip),
+      ),
+    );
+    const checked = burst.filter((response) => response.statusCode === 401).length;
+    expect(checked).toBeLessThanOrEqual(LOGIN_IP_CONCURRENCY_RULE.limit);
+    expect(burst.every((response) => [401, 429].includes(response.statusCode))).toBe(true);
+
+    // Setelah serbuan: jatah gagal habis, password benar pun ditolak dari IP itu.
+    if (checked >= LOGIN_IP_RULE.limit) {
+      expect((await tryLogin(OWNER.email, OWNER.password, ip)).statusCode).toBe(429);
+    }
+    // Slot serentak dikembalikan: IP lain dan percobaan berikutnya tidak tertahan slot.
+    expect((await tryLogin(OWNER.email, OWNER.password, '203.0.113.152')).statusCode).toBe(200);
   });
 });
 

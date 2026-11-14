@@ -3,6 +3,7 @@ import {
   CHANNEL_CHANGE_LABELS,
   CHANNEL_CREDENTIAL_FIELD_LABELS,
   USER_ROLE_LABELS,
+  isTwoFactorRequired,
   type BusinessProfileField,
   type ChannelChangeKind,
   type ChannelCredentialField,
@@ -506,6 +507,8 @@ export interface SecurityNoticeEmailInput {
   origin?: EventOrigin;
   /** Untuk `two_factor_reset`: nama + peran Owner/Admin yang mengatur ulang. */
   actor?: { name: string; role: UserRole };
+  /** Untuk `two_factor_reset`: peran pemilik akun (wajib 2FA atau tidak menentukan langkah berikutnya). */
+  role?: UserRole;
 }
 
 /**
@@ -601,7 +604,11 @@ export function renderSecurityNoticeEmail(input: SecurityNoticeEmailInput): Mail
         paragraphs: [
           greeting,
           `${by} mengatur ulang verifikasi dua langkah akunmu pada ${when}. Entri akun ini di aplikasi autentikatormu dan semua kode cadangan lama tidak berlaku lagi, dan semua perangkat yang sedang masuk sudah dikeluarkan.`,
-          'Saat masuk berikutnya, daftarkan lagi aplikasi autentikator. Kalau peranmu wajib memakai verifikasi dua langkah, kamu langsung diminta mendaftarkannya setelah memasukkan password.',
+          input.role === undefined
+            ? 'Saat masuk berikutnya, daftarkan lagi aplikasi autentikator. Kalau peranmu wajib memakai verifikasi dua langkah, kamu langsung diminta mendaftarkannya setelah memasukkan password.'
+            : isTwoFactorRequired(input.role)
+              ? `Peranmu (${USER_ROLE_LABELS[input.role]}) wajib memakai verifikasi dua langkah: saat masuk berikutnya, kamu langsung diminta mendaftarkan lagi aplikasi autentikator setelah memasukkan password.`
+              : `Untuk sementara akunmu masuk dengan password saja. Verifikasi dua langkah tidak wajib untuk peranmu (${USER_ROLE_LABELS[input.role]}), tetapi disarankan: aktifkan lagi dari halaman Keamanan akun.`,
         ],
         details,
         notes: [
@@ -720,7 +727,11 @@ export function renderAdminAccountNoticeEmail(input: AdminAccountNoticeEmailInpu
       heading: `Verifikasi dua langkah ${name} diatur ulang`,
       paragraphs: [
         hello(input.recipientName),
-        `${by} mengatur ulang verifikasi dua langkah ${account}. Semua sesi akun itu sudah dikeluarkan; saat masuk berikutnya ${name} harus mendaftarkan aplikasi autentikator lagi.`,
+        `${by} mengatur ulang verifikasi dua langkah ${account}. Semua sesi akun itu sudah dikeluarkan; ${
+          isTwoFactorRequired(input.subject.role)
+            ? `saat masuk berikutnya ${name} harus mendaftarkan aplikasi autentikator lagi (peran ${role} wajib memakai verifikasi dua langkah).`
+            : `sekarang ${name} masuk dengan password saja sampai ia mengaktifkan lagi verifikasi dua langkah (tidak wajib untuk peran ${role}).`
+        }`,
         'Kamu menerima email ini karena kamu Owner.',
       ],
       details,

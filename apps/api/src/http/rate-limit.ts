@@ -30,6 +30,11 @@ export interface RateLimitState {
 export interface RateLimiter {
   /** Menaikkan hitungan lalu melaporkan apakah masih di dalam batas. */
   consume(rule: RateLimitRule, key: string): Promise<RateLimitState>;
+  /**
+   * Membaca hitungan TANPA menaikkannya. `allowed` = masih ada jatah untuk satu lagi
+   * (`count < limit`). Untuk ember yang hanya diisi oleh hasil gagal (lihat login per IP).
+   */
+  peek(rule: RateLimitRule, key: string): Promise<RateLimitState>;
   /** Mengembalikan satu jatah (mis. login berhasil tidak dihitung sebagai percobaan gagal). */
   refund(rule: RateLimitRule, key: string): Promise<void>;
   /** Menghapus hitungan. */
@@ -57,6 +62,12 @@ if ttl < 0 then
   redis.call('PEXPIRE', KEYS[1], ARGV[1])
   ttl = tonumber(ARGV[1])
 end
+return {current, ttl}
+`;
+
+const PEEK_SCRIPT = `
+local current = tonumber(redis.call('GET', KEYS[1]) or '0')
+local ttl = redis.call('PTTL', KEYS[1])
 return {current, ttl}
 `;
 
@@ -109,6 +120,17 @@ export function createRateLimiter(redis: Redis, options: RateLimiterOptions = {}
           allowed: count <= rule.limit,
           count,
           retryAfterSeconds: Math.max(1, Math.ceil(ttlMs / 1000)),
+        };
+      }),
+
+    peek: (rule, key) =>
+      guarded(async () => {
+        const reply = (await redis.eval(PEEK_SCRIPT, 1, counterKey(rule, key))) as [number, number];
+        const [count, ttlMs] = reply;
+        return {
+          allowed: count < rule.limit,
+          count,
+          retryAfterSeconds: Math.max(1, Math.ceil((ttlMs > 0 ? ttlMs : 1000) / 1000)),
         };
       }),
 
