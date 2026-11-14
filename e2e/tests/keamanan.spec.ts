@@ -22,7 +22,7 @@ test('Keamanan akun terbuka dari menu akun; Owner wajib 2FA tanpa tombol menonak
   await expect(page.getByRole('heading', { level: 1, name: 'Keamanan akun' })).toBeVisible();
   const twoFactor = page.getByRole('region', { name: 'Verifikasi dua langkah' });
   await expect(twoFactor.getByText('Aktif', { exact: true })).toBeVisible();
-  await expect(twoFactor.getByText(/Peranmu sebagai Owner wajib/)).toBeVisible();
+  await expect(twoFactor.getByText(/^Sebagai Owner, kamu wajib/)).toBeVisible();
   await expect(page.getByRole('button', { name: /Nonaktifkan/ })).toHaveCount(0);
   await expect(page.getByText(/dari 10 kode tersisa/)).toBeVisible();
   await expectNoHorizontalScroll(page);
@@ -30,9 +30,9 @@ test('Keamanan akun terbuka dari menu akun; Owner wajib 2FA tanpa tombol menonak
   // Form konfirmasi terbuka dengan fokus di password; Batal menutupnya tanpa mengirim apa pun.
   await page.getByRole('button', { name: 'Buat kode baru' }).click();
   await expect(page.getByLabel('Password', { exact: true })).toBeFocused();
-  // Kotak isian (bingkai 44 px; elemen <input> di dalamnya dikurangi garis tepi).
+  // Bingkai isian: 44 px di HP (target sentuh), 36 px di desktop (sama dengan tombol halaman ini).
   const box = await page.getByLabel('Kode verifikasi').locator('..').boundingBox();
-  expect(box?.height).toBeGreaterThanOrEqual(44);
+  expect(box?.height).toBe(isHp(page) ? 44 : 36);
   await expectNoHorizontalScroll(page);
   await page.getByRole('button', { name: 'Batal' }).click();
   await expect(page.getByLabel('Password', { exact: true })).toHaveCount(0);

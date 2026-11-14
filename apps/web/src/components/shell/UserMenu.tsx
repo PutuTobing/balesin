@@ -1,9 +1,11 @@
 import { USER_ROLE_LABELS, type SessionUser } from '@balesin/shared';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { LogOut, ShieldCheck } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
 import { useLogout, useSession } from '../../features/auth/session';
 import { t } from '../../i18n/id';
+import { twoFactorStatusQuery } from '../../lib/api/queries';
 import { cx } from '../../lib/cx';
 import { Icon } from '../ui/Icon';
 import { Tooltip } from '../ui/Tooltip';
@@ -37,13 +39,21 @@ export function UserIdentity({ user }: { user: SessionUser }) {
 export function UserMenu({ className }: { className?: string }) {
   const session = useSession();
   const logout = useLogout();
+  const queryClient = useQueryClient();
   if (!session) return null;
   const { user } = session;
   const label = t.auth.userMenu.open(user.name);
 
   return (
     // Non-modal: mode modal Radix menyuntikkan <style> inline (ditolak CSP `style-src 'self'`).
-    <DropdownMenu.Root modal={false} onOpenChange={(open) => !open && logout.reset()}>
+    <DropdownMenu.Root
+      modal={false}
+      onOpenChange={(open) => {
+        // Status 2FA dimuat lebih dulu: Keamanan akun langsung tampil tanpa kerangka.
+        if (open) void queryClient.prefetchQuery(twoFactorStatusQuery);
+        else logout.reset();
+      }}
+    >
       <Tooltip label={label} side="right" sideOffset={RAIL_POPOVER_OFFSET}>
         <DropdownMenu.Trigger asChild>
           <button type="button" className={className} aria-label={label}>

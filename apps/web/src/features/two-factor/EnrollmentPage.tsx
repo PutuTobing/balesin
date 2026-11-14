@@ -6,7 +6,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { getRouteApi, useRouter } from '@tanstack/react-router';
 import { LogOut } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { BrandLogo } from '../../brand/BrandLogo';
 import { Button } from '../../components/ui/Button';
 import { Icon } from '../../components/ui/Icon';
@@ -39,6 +39,11 @@ export function EnrollmentPage() {
   const [codes, setCodes] = useState<BackupCodes | null>(null);
   // Email dipegang terpisah: sesi di cache berganti (terbatas → penuh) saat 2FA aktif.
   const [email] = useState(() => session?.user.email ?? '');
+  // Layar dibuka (setelah setup atau masuk): fokus ke judul, seperti langkah wizard.
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    titleRef.current?.focus();
+  }, []);
 
   const onConfirmed = (response: ConfirmTwoFactorEnrollmentResponse) => {
     // Sesi penuh baru + token CSRF baru (sesi terbatas sudah dicabut server). `storeSession`
@@ -76,7 +81,9 @@ export function EnrollmentPage() {
         <>
           <div className={styles.intro}>
             <p className={styles.eyebrow}>{copy.eyebrow}</p>
-            <h1 className={styles.title}>{copy.title}</h1>
+            <h1 ref={titleRef} tabIndex={-1} className={styles.title}>
+              {copy.title}
+            </h1>
             <p className={styles.introBody}>
               {copy.requiredBody(session ? USER_ROLE_LABELS[session.user.role] : '')}
             </p>

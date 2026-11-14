@@ -231,10 +231,11 @@ export const PHOTO_BACKUP_CODES = [
 export async function mockEnroll(page: Page): Promise<void> {
   await page.route(`${API}/auth/2fa/enroll`, (route) =>
     json(route, {
-      otpauthUri: `otpauth://totp/Balesin%20Maju%20Jaya:rina%40majujaya.co.id?secret=${PHOTO_SECRET}&issuer=Balesin%20Maju%20Jaya&algorithm=SHA1&digits=6&period=30`,
+      otpauthUri: `otpauth://totp/PT%20Maju%20Jaya:rina%40majujaya.co.id?secret=${PHOTO_SECRET}&issuer=PT%20Maju%20Jaya&algorithm=SHA1&digits=6&period=30`,
       secret: PHOTO_SECRET,
       secretGrouped: PHOTO_SECRET.replace(/(.{4})/g, '$1 ').trim(),
-      issuer: 'Balesin Maju Jaya',
+      // Backend foto: nama produk belum diatur → server memakai nama organisasi.
+      issuer: 'PT Maju Jaya',
       accountName: 'rina@majujaya.co.id',
       expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
       digits: 6,

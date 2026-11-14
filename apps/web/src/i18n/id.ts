@@ -249,9 +249,9 @@ export const t = {
       eyebrow: 'Satu langkah lagi',
       title: 'Aktifkan verifikasi dua langkah',
       requiredBody: (role: string) =>
-        `Sebagai ${role}, kamu wajib memakai verifikasi dua langkah. Selain password, setiap kali masuk kamu memasukkan kode dari aplikasi di ponselmu, jadi akunmu tetap aman walau password-nya bocor.`,
+        `Sebagai ${role}, kamu wajib memakai verifikasi dua langkah. Setiap kali masuk, selain password kamu juga memasukkan kode dari aplikasi di ponselmu. Jadi akunmu tetap aman walau password-nya bocor.`,
       voluntaryBody:
-        'Selain password, setiap kali masuk kamu memasukkan kode dari aplikasi di ponselmu, jadi akunmu tetap aman walau password-nya bocor.',
+        'Setiap kali masuk, selain password kamu juga memasukkan kode dari aplikasi di ponselmu. Jadi akunmu tetap aman walau password-nya bocor.',
       signedInAs: (email: string) => `Masuk sebagai ${email}`,
       stepsLabel: 'Langkah mengaktifkan',
       install: {
@@ -280,6 +280,7 @@ export const t = {
         label: 'Kode 6 digit',
         submit: 'Aktifkan',
         submitting: 'Mengaktifkan…',
+        waiting: 'Isian kode muncul lagi setelah kode QR baru siap.',
       },
       preparing: 'Menyiapkan kode QR…',
       expiredTitle: 'Kode QR sudah kedaluwarsa',
@@ -313,7 +314,15 @@ export const t = {
       copiedAnnouncement: 'Semua kode cadangan tersalin ke clipboard.',
       download: 'Unduh .txt',
       confirm: 'Saya sudah menyimpan kode ini di tempat yang aman',
-      confirmRequired: 'Centang dulu setelah kode cadangan tersimpan.',
+      confirmRequired: 'Simpan kode cadangan dulu, lalu centang kotak ini.',
+      leave: {
+        title: 'Tinggalkan kode cadangan?',
+        body: 'Kode ini hanya ditampilkan sekali. Kalau kamu pergi sekarang sebelum menyimpannya, kode tidak bisa dilihat lagi.',
+        bodyRegenerated:
+          'Kode ini hanya ditampilkan sekali, dan kode lama sudah tidak berlaku. Kalau kamu pergi sekarang sebelum menyimpannya, kamu harus membuat kode baru lagi.',
+        stay: 'Tetap di sini',
+        leave: 'Tinggalkan',
+      },
       continueTo: (page: string) => `Lanjut ke ${page}`,
       done: 'Selesai',
       fileName: (product: string) => `kode-cadangan-${product}.txt`,
@@ -336,12 +345,12 @@ export const t = {
     sectionTitle: 'Akunmu',
     twoFactor: {
       title: 'Verifikasi dua langkah',
-      body: 'Selain password, setiap kali masuk kamu memasukkan kode 6 digit dari aplikasi autentikator di ponselmu.',
+      body: 'Setiap kali masuk, selain password kamu juga memasukkan kode 6 digit dari aplikasi autentikator di ponselmu.',
       on: 'Aktif',
       off: 'Belum aktif',
       since: (date: string) => `Sejak ${date}`,
       required: (role: string) =>
-        `Peranmu sebagai ${role} wajib memakai verifikasi dua langkah, jadi tidak bisa dinonaktifkan. Simpan kode cadangan di tempat aman untuk berjaga-jaga bila ponselmu hilang.`,
+        `Sebagai ${role}, kamu wajib memakai verifikasi dua langkah, jadi fitur ini tidak bisa dinonaktifkan. Simpan kode cadangan di tempat aman untuk berjaga-jaga bila ponselmu hilang.`,
       recommended:
         'Tidak wajib untuk peranmu, tetapi sangat disarankan: akunmu tetap aman walau password-nya bocor.',
       enable: 'Aktifkan',

@@ -230,10 +230,8 @@ describe('halaman masuk: langkah kedua (2FA)', () => {
     expect(screen.getByLabelText(t.auth.login.email)).toHaveValue(EMAIL);
   });
 
-  // BUG QA-2FA-3 (terbuka): kembali tanpa pesan → fokus jatuh ke <body> (tombol yang diklik
-  // hilang). Kembali DENGAN pesan sudah memfokuskan password (LoginPage.tsx, efek
-  // `returnMessage`). Hapus `.fails` setelah diperbaiki.
-  it.fails('BUG QA-2FA-3: "Kembali ke email dan password" memfokuskan isian password', async () => {
+  // BUG QA-2FA-3 (sudah diperbaiki): kembali tanpa pesan sempat menjatuhkan fokus ke <body>.
+  it('BUG QA-2FA-3: "Kembali ke email dan password" memfokuskan isian password', async () => {
     await passwordStep();
     await screen.findByRole('heading', { level: 1, name: copy.totpTitle });
     fireEvent.click(screen.getByRole('button', { name: copy.back }));

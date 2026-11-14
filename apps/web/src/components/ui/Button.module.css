@@ -54,10 +54,6 @@
   color: var(--on-primary);
 }
 
-.primary:hover:not(:disabled) {
-  filter: brightness(0.93);
-}
-
 .primary:active:not(:disabled) {
   filter: brightness(0.87);
 }
@@ -68,16 +64,34 @@
   color: var(--ink);
 }
 
-.secondary:hover:not(:disabled) {
-  background: var(--surface-2);
-}
-
 .ghost {
   color: var(--ink);
 }
 
-.ghost:hover:not(:disabled) {
-  background: var(--surface-2);
+/* Destruktif (mis. menonaktifkan 2FA): latar `--danger-ink`, 5,5:1 terang / 6,3:1 gelap. */
+.danger {
+  background: var(--danger-ink);
+  color: var(--on-primary);
+}
+
+.danger:active:not(:disabled) {
+  filter: brightness(0.87);
+}
+
+/*
+ * Hover hanya untuk perangkat yang benar-benar punya hover: di layar sentuh, tombol yang baru
+ * diketuk tidak tertinggal dalam keadaan hover (sticky hover).
+ */
+@media (hover: hover) {
+  .primary:hover:not(:disabled),
+  .danger:hover:not(:disabled) {
+    filter: brightness(0.93);
+  }
+
+  .secondary:hover:not(:disabled),
+  .ghost:hover:not(:disabled) {
+    background: var(--surface-2);
+  }
 }
 
 /* Target sentuh ≥ 44px di HP dan layar sentuh. */

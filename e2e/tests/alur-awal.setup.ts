@@ -382,7 +382,7 @@ test('setup dari nol sampai Owner mendaftar 2FA, masuk dua langkah, lalu terkunc
     name: 'Saya sudah menyimpan kode ini di tempat yang aman',
   });
   await page.getByRole('button', { name: 'Lanjut ke Inbox' }).click();
-  await expect(page.getByText('Centang dulu setelah kode cadangan tersimpan.')).toBeVisible();
+  await expect(page.getByText('Simpan kode cadangan dulu, lalu centang kotak ini.')).toBeVisible();
   await expect(saved).toBeFocused();
   await expect(page).toHaveURL(/\/verifikasi-dua-langkah$/);
   await saved.check();
@@ -500,7 +500,7 @@ test('setup dari nol sampai Owner mendaftar 2FA, masuk dua langkah, lalu terkunc
   await expect(page.getByText('8 dari 10 kode tersisa')).toBeVisible();
   // Owner wajib 2FA: penjelasan, tanpa tombol menonaktifkan.
   await expect(
-    page.getByText(/Peranmu sebagai Owner wajib memakai verifikasi dua langkah/),
+    page.getByText(/^Sebagai Owner, kamu wajib memakai verifikasi dua langkah, jadi fitur ini/),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: /Nonaktifkan/ })).toHaveCount(0);
   await page.getByRole('button', { name: 'Buat kode baru' }).click();

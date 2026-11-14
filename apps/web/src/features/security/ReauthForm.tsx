@@ -18,6 +18,8 @@ interface ReauthFormProps {
   body: string;
   submitLabel: string;
   pendingLabel: string;
+  /** `danger` untuk tindakan yang menurunkan keamanan akun (menonaktifkan 2FA). */
+  submitVariant?: 'primary' | 'danger';
   /** Kirim ke server; error API dilempar kembali ke form ini untuk ditampilkan. */
   onSubmit: (body: TwoFactorReauthRequest) => Promise<void>;
   onCancel: () => void;
@@ -29,12 +31,16 @@ interface ReauthFormProps {
  *
  * Sengaja tanpa useMutation: respons "buat ulang" berisi kode cadangan baru yang tidak boleh
  * tertinggal di cache mutasi Query; pemanggil menyimpannya di state layarnya sendiri.
+ *
+ * Kontrol berukuran `md` (36 px di desktop, 44 px di HP/layar sentuh lewat CSS bawaan), sama
+ * dengan tombol lain di halaman Pengaturan.
  */
 export function ReauthForm({
   title,
   body,
   submitLabel,
   pendingLabel,
+  submitVariant = 'primary',
   onSubmit,
   onCancel,
 }: ReauthFormProps) {
@@ -46,8 +52,13 @@ export function ReauthForm({
   const lock = useLock();
   const formRef = useRef<HTMLFormElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
+  const codeRef = useRef<HTMLInputElement>(null);
+  const noticeRef = useRef<HTMLDivElement>(null);
   // Naik setiap validasi gagal → fokus ke isian pertama yang salah (dan teksnya dipilih).
   const [invalidTick, setInvalidTick] = useState(0);
+  // Naik setiap server menolak tanpa isian tertentu (429, 503, jaringan) → fokus ke isian kode,
+  // SETELAH isian aktif lagi (selama memproses isian nonaktif, fokus akan gagal ke <body>).
+  const [failedTick, setFailedTick] = useState(0);
 
   // Dibuka atas permintaan pengguna: langsung siap diketik.
   useEffect(() => {
@@ -60,6 +71,14 @@ export function ReauthForm({
     field?.focus();
     field?.select();
   }, [invalidTick]);
+
+  useEffect(() => {
+    if (failedTick === 0) return;
+    codeRef.current?.focus();
+    codeRef.current?.select();
+    // Di HP pesan bisa jatuh di bawah navigasi bawah: gulir sampai terlihat.
+    noticeRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [failedTick]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -86,7 +105,7 @@ export function ReauthForm({
         lock.lockFor(caught.retryAfterSeconds);
       }
       setError(caught);
-      passwordRef.current?.focus();
+      setFailedTick((tick) => tick + 1);
     }
   };
 
@@ -104,7 +123,6 @@ export function ReauthForm({
       <div className={styles.reauthFields}>
         <PasswordField
           ref={passwordRef}
-          size="lg"
           label={copy.password}
           name="password"
           autoComplete="current-password"
@@ -114,7 +132,9 @@ export function ReauthForm({
           disabled={pending}
         />
         <CodeField
+          ref={codeRef}
           kind="any"
+          size="md"
           label={copy.code}
           hint={copy.codeHint}
           name="kode"
@@ -125,21 +145,29 @@ export function ReauthForm({
         />
       </div>
       <div className={styles.reauthActions}>
-        <SubmitButton pending={pending} pendingLabel={pendingLabel} lock={lock}>
+        <SubmitButton
+          size="md"
+          variant={submitVariant}
+          pending={pending}
+          pendingLabel={pendingLabel}
+          lock={lock}
+        >
           {submitLabel}
         </SubmitButton>
-        <Button size="lg" variant="ghost" onClick={onCancel} disabled={pending}>
+        <Button variant="ghost" onClick={onCancel} disabled={pending}>
           {copy.cancel}
         </Button>
       </div>
       {error ? (
-        <Notice
-          tone={lock.locked ? 'warning' : 'danger'}
-          role="alert"
-          title={lock.locked ? copy.lockedTitle : undefined}
-        >
-          {isApiError(error) ? error.message : t.api.network}
-        </Notice>
+        <div ref={noticeRef} className={styles.reauthNotice}>
+          <Notice
+            tone={lock.locked ? 'warning' : 'danger'}
+            role="alert"
+            title={lock.locked ? copy.lockedTitle : undefined}
+          >
+            {isApiError(error) ? error.message : t.api.network}
+          </Notice>
+        </div>
       ) : null}
     </form>
   );

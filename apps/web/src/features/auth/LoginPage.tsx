@@ -37,7 +37,12 @@ export interface ReturnMessage {
 }
 
 type Stage =
-  | { kind: 'password'; message: ReturnMessage | null }
+  | {
+      kind: 'password';
+      message: ReturnMessage | null;
+      /** Kembali dari langkah kode: email sudah terisi, fokus langsung ke password. */
+      returning: boolean;
+    }
   | {
       kind: 'code';
       challenge: TwoFactorChallengeResponse;
@@ -57,7 +62,11 @@ export function LoginPage() {
   const queryClient = useQueryClient();
   const router = useRouter();
   const search = routeApi.useSearch();
-  const [stage, setStage] = useState<Stage>({ kind: 'password', message: null });
+  const [stage, setStage] = useState<Stage>({
+    kind: 'password',
+    message: null,
+    returning: false,
+  });
   // Email tetap terisi saat kembali dari langkah kode.
   const [email, setEmail] = useState('');
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -107,6 +116,7 @@ export function LoginPage() {
                 email={email}
                 onEmailChange={setEmail}
                 returnMessage={stage.message}
+                returning={stage.returning}
                 onChallenge={(challenge, receivedAt) =>
                   setStage({ kind: 'code', challenge, method: 'totp', email, receivedAt })
                 }
@@ -123,7 +133,7 @@ export function LoginPage() {
               onMethodChange={(method) => setStage({ ...stage, method })}
               receivedAt={stage.receivedAt}
               onVerified={onVerified}
-              onRestart={(message) => setStage({ kind: 'password', message })}
+              onRestart={(message) => setStage({ kind: 'password', message, returning: true })}
             />
           ) : (
             <BackupCodeUsed
@@ -150,6 +160,8 @@ interface LoginFormProps {
   onEmailChange: (email: string) => void;
   /** Pesan dari langkah kode (mis. waktu habis), tampil di bawah tombol sampai dikirim lagi. */
   returnMessage: ReturnMessage | null;
+  /** Kembali dari langkah kode (dengan atau tanpa pesan): fokus ke isian password. */
+  returning: boolean;
   onChallenge: (challenge: TwoFactorChallengeResponse, receivedAt: number) => void;
   /** Tujuan setelah masuk (sudah divalidasi). */
   target: string;
@@ -161,6 +173,7 @@ function LoginForm({
   email,
   onEmailChange,
   returnMessage,
+  returning,
   onChallenge,
   target,
   redirect,
@@ -188,8 +201,8 @@ function LoginForm({
 
   // Kembali dari langkah kode: email sudah terisi, jadi langsung ke password.
   useEffect(() => {
-    if (returnMessage) passwordRef.current?.focus();
-  }, [returnMessage]);
+    if (returning) passwordRef.current?.focus();
+  }, [returning]);
 
   useEffect(() => {
     if (retypePassword === 0) return;

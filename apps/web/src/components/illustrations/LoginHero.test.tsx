@@ -42,3 +42,21 @@ describe('LoginHero', () => {
     expect(container.querySelector('source')).toHaveAttribute('sizes', '50vw');
   });
 });
+
+const heroFiles = import.meta.glob<string>('../../assets/illustrations/login-hero*.{avif,webp}', {
+  query: '?inline',
+  import: 'default',
+  eager: true,
+});
+
+describe('berkas ilustrasi masuk (dari assets/brand/login-hero*.png)', () => {
+  it('lengkap: terang & gelap, AVIF & WebP, 768 & 1536', () => {
+    expect(Object.keys(heroFiles)).toHaveLength(8);
+  });
+
+  it.each(Object.entries(heroFiles))('%s ringan (anggaran ukuran)', (file, dataUrl) => {
+    const bytes = Math.floor(((dataUrl.split(',')[1] ?? '').length * 3) / 4);
+    // 1536 px ≤ 100 KB, 768 px ≤ 40 KB: ilustrasi dekoratif tidak boleh memperlambat halaman masuk.
+    expect(bytes, file).toBeLessThan((file.includes('1536') ? 100 : 40) * 1024);
+  });
+});

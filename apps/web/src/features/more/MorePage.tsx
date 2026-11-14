@@ -1,4 +1,6 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, Navigate } from '@tanstack/react-router';
+import { useEffect } from 'react';
 import { ChevronRight, LogOut, ShieldCheck } from 'lucide-react';
 import { BrandMark } from '../../brand/BrandMark';
 import { useBrand } from '../../brand/brand';
@@ -9,6 +11,7 @@ import { Notice } from '../../components/ui/Notice';
 import { Page } from '../../components/ui/Page';
 import { useLogout, useSession } from '../auth/session';
 import { t } from '../../i18n/id';
+import { twoFactorStatusQuery } from '../../lib/api/queries';
 import { media, useMediaQuery } from '../../lib/media';
 import styles from './More.module.css';
 
@@ -22,6 +25,12 @@ export function MorePage() {
   const isHp = useMediaQuery(media.hp);
   const session = useSession();
   const logout = useLogout();
+  const queryClient = useQueryClient();
+
+  // Status 2FA dimuat lebih dulu: Keamanan akun langsung tampil tanpa kerangka.
+  useEffect(() => {
+    void queryClient.prefetchQuery(twoFactorStatusQuery);
+  }, [queryClient]);
 
   if (!isHp) return <Navigate to="/pengaturan" replace />;
 

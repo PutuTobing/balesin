@@ -143,6 +143,87 @@ describe('Pengaturan → Keamanan akun', () => {
     const locked = screen.getByRole('button', { name: t.auth.login.countdownButton('15:00') });
     expect(locked).toBeDisabled();
     expect(locked).toHaveAttribute('data-locked');
+    // Fokus tidak jatuh ke <body>: kembali ke isian kode setelah isian aktif lagi.
+    await waitFor(() => expect(screen.getByLabelText(copy.reauth.code)).toHaveFocus());
+  });
+
+  it('"Batal" menutup form dan mengembalikan fokus ke tombol pembukanya', async () => {
+    await openSecurity('owner');
+    fireEvent.click(screen.getByRole('button', { name: copy.backupCodes.regenerate }));
+    expect(screen.getByLabelText(copy.reauth.password)).toHaveFocus();
+    fireEvent.click(screen.getByRole('button', { name: copy.reauth.cancel }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: copy.backupCodes.regenerate })).toHaveFocus(),
+    );
+  });
+
+  it('kode cadangan baru belum dicentang → pindah halaman ditahan dialog; "Tetap di sini" menyimpannya', async () => {
+    const view = await openSecurity(
+      'owner',
+      {},
+      {
+        [`POST ${API_ROUTES.twoFactor.regenerateBackupCodes}`]: () =>
+          json({ codes: FAKE_BACKUP_CODES, generatedAt: '2026-11-14T02:00:00.000Z' }),
+      },
+    );
+    fireEvent.click(screen.getByRole('button', { name: copy.backupCodes.regenerate }));
+    fireEvent.change(screen.getByLabelText(copy.reauth.password), { target: { value: 'apa' } });
+    fireEvent.change(screen.getByLabelText(copy.reauth.code), { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: copy.backupCodes.regenerate }));
+    await screen.findByRole('heading', { level: 2, name: t.twoFactor.backupCodes.newTitle });
+
+    // Tombol kembali di header (navigasi di dalam aplikasi) → dialog, halaman tidak berpindah.
+    fireEvent.click(screen.getByRole('link', { name: t.common.backTo(t.nav.settings) }));
+    const leave = t.twoFactor.backupCodes.leave;
+    expect(await screen.findByRole('heading', { name: leave.title })).toBeInTheDocument();
+    expect(view.router.state.location.pathname).toBe('/pengaturan/keamanan');
+    fireEvent.click(screen.getByRole('button', { name: leave.stay }));
+    await waitFor(() => expect(screen.queryByRole('heading', { name: leave.title })).toBeNull());
+    expect(screen.getByText(FAKE_BACKUP_CODES[0] ?? '')).toBeVisible();
+
+    // "Tinggalkan" → pindah, kode dibuang.
+    fireEvent.click(screen.getByRole('link', { name: t.common.backTo(t.nav.settings) }));
+    fireEvent.click(await screen.findByRole('button', { name: leave.leave }));
+    await waitFor(() => expect(view.router.state.location.pathname).toBe('/pengaturan'));
+    await waitFor(() => expect(screen.queryByText(FAKE_BACKUP_CODES[0] ?? '')).toBeNull());
+  });
+
+  it('kode baru sudah dicentang → "Selesai" lalu pindah halaman tanpa dialog', async () => {
+    const view = await openSecurity(
+      'owner',
+      {},
+      {
+        [`POST ${API_ROUTES.twoFactor.regenerateBackupCodes}`]: () =>
+          json({ codes: FAKE_BACKUP_CODES, generatedAt: '2026-11-14T02:00:00.000Z' }),
+      },
+    );
+    fireEvent.click(screen.getByRole('button', { name: copy.backupCodes.regenerate }));
+    fireEvent.change(screen.getByLabelText(copy.reauth.password), { target: { value: 'apa' } });
+    fireEvent.change(screen.getByLabelText(copy.reauth.code), { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: copy.backupCodes.regenerate }));
+    await screen.findByRole('heading', { level: 2, name: t.twoFactor.backupCodes.newTitle });
+    fireEvent.click(screen.getByRole('checkbox', { name: t.twoFactor.backupCodes.confirm }));
+    fireEvent.click(screen.getByRole('button', { name: t.twoFactor.backupCodes.done }));
+    fireEvent.click(screen.getByRole('link', { name: t.common.backTo(t.nav.settings) }));
+    await waitFor(() => expect(view.router.state.location.pathname).toBe('/pengaturan'));
+    expect(screen.queryByRole('heading', { name: t.twoFactor.backupCodes.leave.title })).toBeNull();
+  });
+
+  it('BUG QA-2FA-5: keluar dari Keamanan akun tidak memuat ulang status 2FA setelah sesi dicabut', async () => {
+    const view = await openSecurity('cs');
+    const before = view.api.requests.filter(
+      (request) => request.path === API_ROUTES.twoFactor.status,
+    ).length;
+    fireEvent.keyDown(screen.getByRole('button', { name: t.auth.userMenu.open('Rina Kartika') }), {
+      key: 'Enter',
+    });
+    fireEvent.click(await screen.findByRole('menuitem', { name: t.auth.userMenu.logout }));
+    await waitFor(() => expect(view.router.state.location.pathname).toBe('/masuk'));
+    await screen.findByText(t.auth.login.loggedOut);
+    expect(
+      view.api.requests.filter((request) => request.path === API_ROUTES.twoFactor.status),
+    ).toHaveLength(before);
+    expect(view.queryClient.getQueryData(['auth', 'two-factor'])).toBeUndefined();
   });
 
   it('CS dengan 2FA aktif: bisa menonaktifkan setelah konfirmasi password + kode', async () => {

@@ -5,10 +5,10 @@ import { cx } from '../../lib/cx';
 import styles from './Button.module.css';
 import { Icon } from './Icon';
 
-type ButtonVariant = 'primary' | 'secondary' | 'ghost';
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 
 interface ButtonProps extends ComponentPropsWithRef<'button'> {
-  /** `primary` hanya untuk satu aksi utama per layar. */
+  /** `primary` hanya untuk satu aksi utama per layar. `danger` untuk konfirmasi destruktif. */
   variant?: ButtonVariant;
   /** `lg`: 44px di semua ukuran layar (form utama seperti masuk dan setup). */
   size?: 'md' | 'lg';

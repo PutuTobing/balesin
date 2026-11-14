@@ -1,0 +1,56 @@
+/*
+ * Dialog konfirmasi bawaan browser (`<dialog>` + `showModal()`): fokus terkurung, Escape menutup,
+ * latar di belakangnya tidak bisa diklik. Tanpa `<style>` sisipan (CSP `style-src 'self'`).
+ */
+.dialog {
+  width: min(28rem, calc(100vw - var(--space-32)));
+  max-width: none;
+  margin: auto;
+  padding: var(--space-24);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-2);
+}
+
+/* `--on-accent` gelap di kedua tema (#14202E / #0F1620): tirai tetap gelap di mode gelap. */
+.dialog::backdrop {
+  background: var(--on-accent);
+  opacity: 0.5;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.title {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+}
+
+.body {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  text-wrap: pretty;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-8);
+  margin-top: var(--space-8);
+}
+
+@media (max-width: 640px) {
+  .actions {
+    flex-direction: column-reverse;
+  }
+
+  .actions > * {
+    width: 100%;
+  }
+}

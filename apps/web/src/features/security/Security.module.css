@@ -132,42 +132,45 @@
   gap: var(--space-8);
 }
 
-/* ---------- Kerangka memuat ---------- */
-
-.skeletonTitle {
-  display: block;
-  width: 12rem;
-  height: var(--space-16);
+/* Pesan error/kunci tidak menempel di tepi bawah area gulir (navigasi bawah HP). */
+.reauthNotice {
+  scroll-margin-bottom: var(--space-16);
 }
 
+/* ---------- Kerangka memuat (ukuran = elemen jadi) ---------- */
+
+/* Lencana "Aktif": teks 14px, tinggi baris 1.2. */
 .skeletonBadge {
   display: block;
   width: 4rem;
-  height: var(--space-16);
+  height: calc(var(--text-14) * var(--leading-title));
 }
 
-.skeletonLine {
+/* "Sejak …" / "Dibuat …": teks 13px, tinggi baris 1.45. */
+.skeletonMeta {
   display: block;
-  width: 100%;
-  height: var(--space-12);
+  width: 7rem;
+  height: calc(var(--text-13) * var(--leading-text));
 }
 
-.skeletonShort {
-  display: block;
-  width: 60%;
-  height: var(--space-12);
-}
-
+/* "10 dari 10 kode tersisa": teks 20px tebal (±15rem), tinggi baris 1.2. */
 .skeletonStat {
   display: block;
-  width: 10rem;
-  height: var(--space-24);
+  width: 15rem;
+  height: calc(var(--text-20) * var(--leading-title));
 }
 
 .skeletonButton {
   display: block;
   width: 8rem;
   height: var(--size-control);
+  border-radius: var(--radius-input);
+}
+
+.skeletonButtonLg {
+  display: block;
+  width: 6.5rem;
+  height: var(--size-touch);
   border-radius: var(--radius-input);
 }
 

@@ -8,7 +8,8 @@ import { totpAtStep, totpStep, wrongTotp } from './two-factor';
  * sungguhan. Setiap tes membuat penggunanya sendiri (lihat `pengguna.ts`), jadi tidak berbagi
  * akun dengan tes lain dan aman dijalankan paralel:
  *  - CS mengaktifkan 2FA sendiri, masuk dua langkah dengan kode tempelan, lalu menonaktifkannya;
- *  - Admin wajib mendaftar: sesi terbatas, URL langsung ditolak, muat ulang = QR baru;
+ *  - Admin wajib mendaftar: sesi terbatas, URL langsung ditolak, muat ulang = QR yang SAMA (entri
+ *    yang sudah dipindai tetap berlaku), lalu kode cadangan dijaga sebelum lanjut;
  *  - Teknisi ber-2FA: 3 kode salah, tantangan kedaluwarsa, lalu kunci 15 menit (429).
  *
  * Email pemberitahuan 2FA TIDAK diperiksa di sini: email pengirim organisasi E2E baru diatur
@@ -120,7 +121,6 @@ test('CS mengaktifkan 2FA sendiri, masuk dua langkah dengan kode tempelan, lalu 
   await expect(page).toHaveURL(/\/pengaturan\/keamanan$/);
 
   // ── Keluar → masuk dua langkah; kode ditempel dengan spasi ("123 456") ──
-  // Keluar dari Inbox: keluar langsung dari Keamanan akun memicu BUG QA-2FA-5 (dikunci di bawah).
   await page.goto('/inbox');
   await signOut(page);
   await submitLogin(page, cs.email, cs.password);
@@ -161,7 +161,7 @@ test('CS mengaktifkan 2FA sendiri, masuk dua langkah dengan kode tempelan, lalu 
   await expect(page).toHaveURL(/\/inbox$/);
 });
 
-test('Admin wajib mendaftar 2FA: sesi terbatas, URL langsung ditolak, muat ulang membuat QR baru', async ({
+test('Admin wajib mendaftar 2FA: sesi terbatas, URL langsung ditolak, muat ulang memakai QR yang sama', async ({
   page,
   expectHttpError,
 }) => {
@@ -194,20 +194,18 @@ test('Admin wajib mendaftar 2FA: sesi terbatas, URL langsung ditolak, muat ulang
   );
   await page.goto('/verifikasi-dua-langkah?redirect=%2Fkontak');
 
-  // Muat ulang di tengah pendaftaran: rahasia baru, kode dari rahasia lama tidak berlaku.
+  // Muat ulang di tengah pendaftaran (kontrak putaran QA): sesi yang sama mendapat rahasia yang
+  // SAMA selama belum kedaluwarsa, jadi entri yang sudah dipindai sebelum muat ulang tetap
+  // berlaku. Kode salah tetap ditolak; kode dari entri yang dipindai sebelum muat ulang diterima.
   const first = await readSecret(page);
   await page.reload();
   const second = await readSecret(page);
-  expect(second).not.toBe(first);
+  expect(second).toBe(first);
   const codeField = page.getByLabel('Kode 6 digit');
-  const step = totpStep();
-  const stale = totpAtStep(first, step);
-  // (Peluang kode rahasia lama kebetulan sama dengan kode rahasia baru: diabaikan.)
-  expect(stale).not.toBe(totpAtStep(second, step));
-  await codeField.fill(stale);
+  await codeField.fill(wrongTotp(first));
   await page.getByRole('button', { name: 'Aktifkan', exact: true }).click();
   await expect(page.getByText(/^Kode tidak cocok\./)).toBeVisible();
-  await codeField.fill(totpAtStep(second, totpStep()));
+  await codeField.fill(totpAtStep(first, totpStep()));
   await page.getByRole('button', { name: 'Aktifkan', exact: true }).click();
 
   // Kode cadangan: wajib dicentang sebelum lanjut ke tujuan awal (/kontak).
@@ -222,7 +220,7 @@ test('Admin wajib mendaftar 2FA: sesi terbatas, URL langsung ditolak, muat ulang
     name: 'Saya sudah menyimpan kode ini di tempat yang aman',
   });
   await page.getByRole('button', { name: 'Lanjut', exact: true }).click();
-  await expect(page.getByText('Centang dulu setelah kode cadangan tersimpan.')).toBeVisible();
+  await expect(page.getByText('Simpan kode cadangan dulu, lalu centang kotak ini.')).toBeVisible();
   await expect(saved).toBeFocused();
   await saved.check();
   await page.getByRole('button', { name: 'Lanjut', exact: true }).click();
@@ -306,11 +304,10 @@ test('Teknisi ber-2FA: 3 kode salah, tantangan kedaluwarsa, lalu langkah kedua d
 });
 
 /**
- * Bug terbuka (dilaporkan QA, belum diperbaiki). Tes ditandai `test.fail`: lulus selama bug masih
- * ada, dan langsung ketahuan bila sudah diperbaiki (hapus tandanya). Pemeriksaan yang memastikan
- * bug-nya diletakkan PALING AKHIR; langkah sebelumnya sudah dijaga tes lain di berkas ini.
+ * Bug yang dilaporkan QA, sudah diperbaiki; tes ini menjaga supaya tidak muncul lagi. Pemeriksaan
+ * yang memastikan bug-nya diletakkan PALING AKHIR; langkah sebelumnya dijaga tes lain di berkas ini.
  */
-test.describe('bug QA 2FA (terbuka)', () => {
+test.describe('bug QA 2FA (sudah diperbaiki)', () => {
   /** Teknisi tanpa 2FA → Keamanan akun → Aktifkan → layar kode cadangan (belum dicentang). */
   async function openFreshBackupCodes(page: Page, name: string): Promise<void> {
     const teknisi = await createUser('teknisi', `${label(page)}-${name}`);
@@ -344,64 +341,61 @@ test.describe('bug QA 2FA (terbuka)', () => {
   // di dalam aplikasi sebelum "sudah disimpan" dicentang (peringatan hanya untuk tutup tab/muat
   // ulang lewat `beforeunload`). Sama untuk layar setelah wizard setup (Back → /setup → Inbox)
   // dan "Kode cadangan baru" di Keamanan akun — keduanya diperiksa manual oleh QA.
-  test.fail(
-    'BUG QA-2FA-1: tombol Back browser di layar kode cadangan membuang kode tanpa peringatan',
-    async ({ page, expectHttpError }) => {
-      expectHttpError(ME, 401);
-      await openFreshBackupCodes(page, 'back');
-      let warned = false;
-      page.on('dialog', (dialog) => {
-        warned = true;
-        void dialog.dismiss();
-      });
-      await page.goBack();
-      // Kenyataan: kembali ke /pengaturan/keamanan, kode hilang tanpa peringatan.
-      await expectCodesKeptOrWarned(page, () => warned);
-    },
-  );
+  test('BUG QA-2FA-1: tombol Back browser di layar kode cadangan membuang kode tanpa peringatan', async ({
+    page,
+    expectHttpError,
+  }) => {
+    expectHttpError(ME, 401);
+    await openFreshBackupCodes(page, 'back');
+    let warned = false;
+    page.on('dialog', (dialog) => {
+      warned = true;
+      void dialog.dismiss();
+    });
+    await page.goBack();
+    await expectCodesKeptOrWarned(page, () => warned);
+  });
 
-  test.fail(
-    'BUG QA-2FA-2: pindah lewat menu navigasi di layar kode cadangan membuang kode tanpa peringatan',
-    async ({ page, expectHttpError }) => {
-      expectHttpError(ME, 401);
-      await openFreshBackupCodes(page, 'nav');
-      let warned = false;
-      page.on('dialog', (dialog) => {
-        warned = true;
-        void dialog.dismiss();
-      });
-      await mainNav(page).getByRole('link', { name: 'Inbox', exact: true }).click();
-      // Kenyataan: pindah ke Inbox, kode hilang tanpa peringatan.
-      await expectCodesKeptOrWarned(page, () => warned);
-    },
-  );
+  test('BUG QA-2FA-2: pindah lewat menu navigasi di layar kode cadangan membuang kode tanpa peringatan', async ({
+    page,
+    expectHttpError,
+  }) => {
+    expectHttpError(ME, 401);
+    await openFreshBackupCodes(page, 'nav');
+    let warned = false;
+    page.on('dialog', (dialog) => {
+      warned = true;
+      void dialog.dismiss();
+    });
+    await mainNav(page).getByRole('link', { name: 'Inbox', exact: true }).click();
+    await expectCodesKeptOrWarned(page, () => warned);
+  });
 
   // Keluar dari halaman Keamanan akun (menu akun di desktop): `clearSessionData` membuang query
   // status 2FA yang masih dipakai halaman itu, sehingga `GET /auth/2fa` dikirim ulang SETELAH
   // sesi dicabut → 401 + error console.
-  test.fail(
-    'BUG QA-2FA-5: keluar dari Keamanan akun tidak memicu permintaan status 2FA yang gagal (401)',
-    async ({ page, expectHttpError }) => {
-      test.skip(isHp(page), 'Menu akun dengan Keluar hanya ada di halaman ini pada desktop');
-      expectHttpError(ME, 401);
-      // Diizinkan di fixture supaya kegagalan tes datang dari pemeriksaan eksplisit di bawah.
-      expectHttpError('/api/v1/auth/2fa', 401);
-      const cs = await createUser('cs', `${label(page)}-keluar`);
-      await page.goto('/masuk');
-      await submitLogin(page, cs.email, cs.password);
-      await expect(page).toHaveURL(/\/inbox$/);
-      await page.goto('/pengaturan/keamanan');
-      await expect(page.getByRole('heading', { level: 1, name: 'Keamanan akun' })).toBeVisible();
-      const failed: string[] = [];
-      page.on('response', (response) => {
-        if (response.status() === 401 && response.url().endsWith('/api/v1/auth/2fa'))
-          failed.push(response.url());
-      });
-      await signOut(page);
-      await expect(page.getByText('Kamu sudah keluar. Sampai jumpa lagi!')).toBeVisible();
-      await page.waitForLoadState('networkidle');
-      // Kenyataan: GET /api/v1/auth/2fa → 401 setelah keluar.
-      expect(failed).toEqual([]);
-    },
-  );
+  test('BUG QA-2FA-5: keluar dari Keamanan akun tidak memicu permintaan status 2FA yang gagal (401)', async ({
+    page,
+    expectHttpError,
+  }) => {
+    test.skip(isHp(page), 'Menu akun dengan Keluar hanya ada di halaman ini pada desktop');
+    expectHttpError(ME, 401);
+    // Diizinkan di fixture supaya kegagalan tes datang dari pemeriksaan eksplisit di bawah.
+    expectHttpError('/api/v1/auth/2fa', 401);
+    const cs = await createUser('cs', `${label(page)}-keluar`);
+    await page.goto('/masuk');
+    await submitLogin(page, cs.email, cs.password);
+    await expect(page).toHaveURL(/\/inbox$/);
+    await page.goto('/pengaturan/keamanan');
+    await expect(page.getByRole('heading', { level: 1, name: 'Keamanan akun' })).toBeVisible();
+    const failed: string[] = [];
+    page.on('response', (response) => {
+      if (response.status() === 401 && response.url().endsWith('/api/v1/auth/2fa'))
+        failed.push(response.url());
+    });
+    await signOut(page);
+    await expect(page.getByText('Kamu sudah keluar. Sampai jumpa lagi!')).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    expect(failed).toEqual([]);
+  });
 });

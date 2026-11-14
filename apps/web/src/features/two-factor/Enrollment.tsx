@@ -1,12 +1,22 @@
 import {
+  DEFAULT_PRODUCT_NAME,
   TWO_FACTOR_ENROLLMENT_PENDING_MINUTES,
   loginPasswordSchema,
   totpCodeSchema,
   type ConfirmTwoFactorEnrollmentResponse,
   type StartTwoFactorEnrollmentResponse,
 } from '@balesin/shared';
-import { ExternalLink, RotateCw } from 'lucide-react';
-import { useEffect, useEffectEvent, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { Copy, ExternalLink, RotateCw } from 'lucide-react';
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+  type Ref,
+} from 'react';
+import { useBrand } from '../../brand/brand';
 import { Button } from '../../components/ui/Button';
 import { CopyButton } from '../../components/ui/CopyButton';
 import { PasswordField } from '../../components/ui/Field';
@@ -17,13 +27,21 @@ import { SubmitButton } from '../../components/ui/SubmitButton';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
+import { cx } from '../../lib/cx';
 import { media, useMediaQuery } from '../../lib/media';
 import { useLock, type Lock } from '../../lib/use-lock';
+import { useAnySession } from '../auth/session';
 import { CodeField } from './CodeField';
 import { QrCode } from './QrCode';
 import styles from './TwoFactor.module.css';
 
 const copy = t.twoFactor.enroll;
+
+/**
+ * Teks pengganti sepanjang kunci asli (32 karakter, 8 kelompok) untuk kerangka. Angka 0 bukan
+ * huruf base32, jadi tidak mungkin tertukar dengan kunci sungguhan.
+ */
+const SECRET_PLACEHOLDER = Array.from({ length: 8 }, () => '0000').join(' ');
 
 /** Pesan di langkah password (mode `voluntary`). */
 interface PasswordStepMessage {
@@ -60,6 +78,9 @@ interface EnrollmentStepsProps {
  * dibuat di browser dari `otpauthUri`, atau kunci untuk diketik), lalu masukkan kode pertama.
  * Rahasia hanya ada di state komponen ini: tidak di cache Query, URL, atau penyimpanan browser,
  * dan hilang begitu komponen ditutup. Kode QR berlaku 15 menit; setelah itu dibuat ulang.
+ *
+ * Fokus: setelah pengguna sendiri memulai (Lanjut, Coba lagi, Buat kode QR baru) → judul langkah
+ * 2; saat QR kedaluwarsa atau pembuatannya gagal → satu-satunya tombol aksi (tidak ke `<body>`).
  */
 export function EnrollmentSteps({ mode, onConfirmed, onAlreadyEnabled }: EnrollmentStepsProps) {
   const [state, setState] = useState<EnrollmentState>(
@@ -68,21 +89,42 @@ export function EnrollmentSteps({ mode, onConfirmed, onAlreadyEnabled }: Enrollm
       : { kind: 'password', message: null, pending: false },
   );
   const startLock = useLock();
-  // Mode `voluntary`: rahasia kedaluwarsa → minta password lagi (password tidak disimpan).
-  const expiredState = (): EnrollmentState =>
-    mode === 'voluntary'
-      ? { kind: 'password', message: { expired: true }, pending: false }
-      : { kind: 'expired' };
+  const addHeadingRef = useRef<HTMLHeadingElement>(null);
+  const actionRef = useRef<HTMLButtonElement>(null);
+  const [focus, setFocus] = useState<{ tick: number; target: 'add' | 'action' }>({
+    tick: 0,
+    target: 'add',
+  });
+  const focusLater = (target: 'add' | 'action') =>
+    setFocus((value) => ({ tick: value.tick + 1, target }));
+  useEffect(() => {
+    if (focus.tick === 0) return;
+    (focus.target === 'add' ? addHeadingRef : actionRef).current?.focus();
+  }, [focus]);
 
-  const start = async (password?: string) => {
+  // Mode `voluntary`: rahasia kedaluwarsa → minta password lagi (password tidak disimpan).
+  const expire = () => {
+    if (mode === 'voluntary') {
+      setState({ kind: 'password', message: { expired: true }, pending: false });
+      return;
+    }
+    setState({ kind: 'expired' });
+    focusLater('action');
+  };
+
+  /** `byUser`: dipicu tombol (bukan saat layar dibuka), jadi fokus ikut dipindah. */
+  const start = async (password?: string, byUser = false) => {
     setState(
       password === undefined
         ? { kind: 'starting' }
         : { kind: 'password', message: null, pending: true },
     );
+    // Tombol yang diklik hilang selama memuat: fokus pindah ke judul langkah 2 (tetap ada).
+    if (byUser && password === undefined) focusLater('add');
     try {
       const enrollment = await endpoints.twoFactor.enroll(password);
       setState({ kind: 'ready', enrollment, receivedAt: Date.now() });
+      if (byUser) focusLater('add');
     } catch (error) {
       if (isApiError(error) && error.status === 409) {
         onAlreadyEnabled();
@@ -103,6 +145,7 @@ export function EnrollmentSteps({ mode, onConfirmed, onAlreadyEnabled }: Enrollm
         return;
       }
       setState({ kind: 'start-failed', error });
+      if (byUser) focusLater('action');
     }
   };
 
@@ -118,11 +161,11 @@ export function EnrollmentSteps({ mode, onConfirmed, onAlreadyEnabled }: Enrollm
 
   // Kedaluwarsa dihitung dari saat rahasia diterima (bukan dari jam perangkat vs `expiresAt`).
   const receivedAt = state.kind === 'ready' ? state.receivedAt : null;
-  const expire = useEffectEvent(() => setState(expiredState()));
+  const onTimeout = useEffectEvent(expire);
   useEffect(() => {
     if (receivedAt === null) return;
     const timer = window.setTimeout(
-      expire,
+      onTimeout,
       Math.max(0, receivedAt + TWO_FACTOR_ENROLLMENT_PENDING_MINUTES * 60_000 - Date.now()),
     );
     return () => window.clearTimeout(timer);
@@ -135,28 +178,34 @@ export function EnrollmentSteps({ mode, onConfirmed, onAlreadyEnabled }: Enrollm
         message={state.message}
         pending={state.pending}
         lock={startLock}
-        onSubmit={(password) => void start(password)}
+        onSubmit={(password) => void start(password, true)}
       />
     );
   }
+
+  // QR gagal dibuat atau kedaluwarsa: satu-satunya aksi ada di langkah 2; langkah 3 hanya
+  // menjelaskan kapan isian kode kembali (tidak ada tombol "Aktifkan" yang tak berfungsi).
+  const waiting = state.kind === 'start-failed' || state.kind === 'expired';
 
   return (
     <ol className={styles.steps} aria-label={copy.stepsLabel}>
       <Step number={1} title={copy.install.title}>
         <p className={styles.stepText}>{copy.install.body}</p>
       </Step>
-      <Step number={2} title={copy.add.title}>
+      <Step number={2} title={copy.add.title} headingRef={addHeadingRef}>
         {state.kind === 'ready' ? (
           <AddAccount enrollment={state.enrollment} />
         ) : state.kind === 'starting' ? (
-          <AddAccountSkeleton />
+          <SkeletonRegion>
+            <AddAccount enrollment={null} />
+          </SkeletonRegion>
         ) : state.kind === 'expired' ? (
           <Notice
             tone="warning"
             role="alert"
             title={copy.expiredTitle}
             actions={
-              <Button variant="primary" onClick={() => void start()}>
+              <Button ref={actionRef} variant="primary" onClick={() => void start(undefined, true)}>
                 <Icon icon={RotateCw} size={16} />
                 {copy.restart}
               </Button>
@@ -170,13 +219,14 @@ export function EnrollmentSteps({ mode, onConfirmed, onAlreadyEnabled }: Enrollm
             locked={startLock.locked}
             retry={
               <SubmitButton
+                ref={actionRef}
                 type="button"
-                variant="secondary"
+                variant="primary"
                 size="md"
                 pending={false}
                 pendingLabel={t.common.retry}
                 lock={startLock}
-                onClick={() => void start()}
+                onClick={() => void start(undefined, true)}
               >
                 <Icon icon={RotateCw} size={16} />
                 {t.common.retry}
@@ -186,91 +236,125 @@ export function EnrollmentSteps({ mode, onConfirmed, onAlreadyEnabled }: Enrollm
         )}
       </Step>
       <Step number={3} title={copy.confirm.title}>
-        <p className={styles.stepText}>{copy.confirm.body}</p>
-        <ConfirmForm
-          // Rahasia baru = form baru (isian dan error lama dibuang).
-          key={state.kind === 'ready' ? `ready-${state.receivedAt}` : state.kind}
-          ready={state.kind === 'ready'}
-          onExpired={() => setState(expiredState())}
-          onConfirmed={(response) => {
-            // Rahasia dibuang dari memori sebelum kode cadangan ditampilkan.
-            setState({ kind: 'done' });
-            onConfirmed(response);
-          }}
-        />
+        {waiting ? (
+          <p className={styles.stepText}>{copy.confirm.waiting}</p>
+        ) : (
+          <>
+            <p className={styles.stepText}>{copy.confirm.body}</p>
+            <ConfirmForm
+              // Rahasia baru = form baru (isian dan error lama dibuang).
+              key={state.kind === 'ready' ? `ready-${state.receivedAt}` : state.kind}
+              ready={state.kind === 'ready'}
+              onExpired={expire}
+              onConfirmed={(response) => {
+                // Rahasia dibuang dari memori sebelum kode cadangan ditampilkan.
+                setState({ kind: 'done' });
+                onConfirmed(response);
+              }}
+            />
+          </>
+        )}
       </Step>
     </ol>
   );
 }
 
-function Step({ number, title, children }: { number: number; title: string; children: ReactNode }) {
+function Step({
+  number,
+  title,
+  headingRef,
+  children,
+}: {
+  number: number;
+  title: string;
+  headingRef?: Ref<HTMLHeadingElement>;
+  children: ReactNode;
+}) {
   return (
     <li className={styles.step}>
-      <span className={styles.marker} aria-hidden="true">
-        {number}
-      </span>
-      <div className={styles.stepBody}>
-        <h2 className={styles.stepTitle}>{title}</h2>
-        {children}
-      </div>
+      <h2 ref={headingRef} tabIndex={headingRef ? -1 : undefined} className={styles.stepTitle}>
+        <span className={styles.marker} aria-hidden="true">
+          {number}
+        </span>
+        {title}
+      </h2>
+      <div className={styles.stepBody}>{children}</div>
     </li>
   );
 }
 
-/** QR + kunci untuk diketik. Di HP ada tombol yang membuka aplikasi autentikator langsung. */
-function AddAccount({ enrollment }: { enrollment: StartTwoFactorEnrollmentResponse }) {
+/**
+ * QR + kunci untuk diketik. Di HP ada tombol yang membuka aplikasi autentikator langsung.
+ * `enrollment: null` = kerangka selama rahasia dibuat: teks dan tombol yang tidak butuh data
+ * tampil asli (nonaktif), hanya QR dan kunci yang berupa balok, jadi langkah 3 tidak bergeser.
+ */
+function AddAccount({ enrollment }: { enrollment: StartTwoFactorEnrollmentResponse | null }) {
   const isHp = useMediaQuery(media.hp);
+  const session = useAnySession();
+  const brand = useBrand();
+  // Perkiraan nama entri selama memuat. Server memakai nama produk organisasi, atau nama
+  // organisasi bila nama produk belum diatur (branding lalu melaporkan nama produk bawaan).
+  const issuer =
+    enrollment?.issuer ??
+    (brand.productName === DEFAULT_PRODUCT_NAME && brand.organizationName
+      ? brand.organizationName
+      : brand.productName);
+  const account = enrollment?.accountName ?? session?.user.email ?? '';
   return (
     <div className={styles.add}>
       <p className={styles.stepText}>{isHp ? copy.add.bodyHp : copy.add.bodyQr}</p>
       {isHp ? (
-        <Button asChild size="lg" className={styles.openApp}>
-          {/* Tautan `otpauth://` dibuka aplikasi autentikator di ponsel yang sama. */}
-          <a href={enrollment.otpauthUri}>
+        enrollment ? (
+          <Button asChild size="lg" className={styles.openApp}>
+            {/* Tautan `otpauth://` dibuka aplikasi autentikator di ponsel yang sama. */}
+            <a href={enrollment.otpauthUri}>
+              <Icon icon={ExternalLink} size={16} />
+              {copy.add.openApp}
+            </a>
+          </Button>
+        ) : (
+          <Button size="lg" className={styles.openApp} disabled>
             <Icon icon={ExternalLink} size={16} />
             {copy.add.openApp}
-          </a>
-        </Button>
+          </Button>
+        )
       ) : null}
       <div className={styles.addGrid}>
-        <QrCode value={enrollment.otpauthUri} label={copy.add.qrLabel} />
+        {enrollment ? (
+          <QrCode value={enrollment.otpauthUri} label={copy.add.qrLabel} />
+        ) : (
+          <Skeleton className={styles.qrSkeleton} />
+        )}
         <div className={styles.manual}>
           <p className={styles.manualTitle}>{copy.add.manualTitle}</p>
-          <code className={styles.secret}>{enrollment.secretGrouped}</code>
+          {enrollment ? (
+            <code className={styles.secret}>{enrollment.secretGrouped}</code>
+          ) : (
+            // Bukan <code>: kerangka tidak boleh terbaca sebagai kunci (tes dan pembaca layar).
+            <span className={cx(styles.secret, styles.secretSkeleton)}>{SECRET_PLACEHOLDER}</span>
+          )}
           <div>
-            <CopyButton
-              text={enrollment.secret}
-              label={copy.add.copy}
-              copiedLabel={copy.add.copied}
-              announcement={copy.add.copiedAnnouncement}
-            />
+            {enrollment ? (
+              <CopyButton
+                text={enrollment.secret}
+                label={copy.add.copy}
+                copiedLabel={copy.add.copied}
+                announcement={copy.add.copiedAnnouncement}
+              />
+            ) : (
+              <Button disabled>
+                <Icon icon={Copy} size={16} />
+                {copy.add.copy}
+              </Button>
+            )}
           </div>
           <p className={styles.meta}>
-            {copy.add.entryName(enrollment.issuer, enrollment.accountName)}{' '}
+            {copy.add.entryName(issuer, account)}{' '}
             {copy.add.validity(TWO_FACTOR_ENROLLMENT_PENDING_MINUTES)}
           </p>
         </div>
       </div>
     </div>
-  );
-}
-
-/** Kerangka langkah 2 selama rahasia dibuat: ukuran QR dan kunci sama dengan layar jadi. */
-function AddAccountSkeleton() {
-  return (
-    <SkeletonRegion className={styles.add}>
-      <span className="sr-only">{copy.preparing}</span>
-      <Skeleton className={styles.skeletonLine} />
-      <div className={styles.addGrid}>
-        <Skeleton className={styles.qrSkeleton} />
-        <div className={styles.manual}>
-          <Skeleton className={styles.skeletonLabel} />
-          <Skeleton className={styles.skeletonSecret} />
-          <Skeleton className={styles.skeletonButton} />
-          <Skeleton className={styles.skeletonLine} />
-        </div>
-      </div>
-    </SkeletonRegion>
   );
 }
 
@@ -379,6 +463,7 @@ function ConfirmForm({
         pending={pending}
         pendingLabel={copy.confirm.submitting}
         lock={lock}
+        disabled={!ready}
       >
         {copy.confirm.submit}
       </SubmitButton>

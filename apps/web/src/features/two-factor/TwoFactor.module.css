@@ -106,10 +106,11 @@ img.topLogo {
   list-style: none;
 }
 
+/* Penanda ada di dalam judul; isi menjorok sejajar teks judul di layar lebar saja. */
 .step {
-  display: grid;
-  grid-template-columns: var(--space-24) minmax(0, 1fr);
-  column-gap: var(--space-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
 }
 
 .step + .step {
@@ -119,6 +120,7 @@ img.topLogo {
 
 .marker {
   display: grid;
+  flex: none;
   place-items: center;
   width: var(--space-24);
   height: var(--space-24);
@@ -135,12 +137,14 @@ img.topLogo {
   flex-direction: column;
   gap: var(--space-8);
   min-width: 0;
+  padding-left: calc(var(--space-24) + var(--space-16));
 }
 
 /* Judul setinggi penanda (24px) supaya teksnya sebaris dengan angka. */
 .stepTitle {
   display: flex;
   align-items: center;
+  gap: var(--space-16);
   min-height: var(--space-24);
   font-size: var(--text-16);
   font-weight: var(--weight-semibold);
@@ -228,7 +232,17 @@ img.topLogo {
   font-family: var(--font-mono);
   font-size: var(--text-14);
   line-height: var(--leading-text);
+  /* Patah rata: 4 + 4 kelompok, bukan 7 + 1. */
+  text-wrap: balance;
   user-select: all;
+}
+
+/* Kerangka kunci: teks pengganti tak terlihat sepanjang kunci asli → tinggi sama persis. */
+.secretSkeleton {
+  border-color: transparent;
+  background: var(--line);
+  color: transparent;
+  user-select: none;
 }
 
 .meta {
@@ -291,14 +305,6 @@ input.codeInput {
   display: block;
   width: 12rem;
   height: var(--space-12);
-}
-
-.skeletonSecret {
-  display: block;
-  width: 100%;
-  max-width: 22rem;
-  height: calc(var(--space-24) + var(--space-16) + 2px);
-  border-radius: var(--radius-input);
 }
 
 .skeletonButton {
@@ -387,55 +393,6 @@ input.codeInput {
   gap: var(--space-8);
 }
 
-.check {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
-}
-
-/* Seluruh baris bisa diklik; tinggi minimal = target sentuh. */
-.checkLabel {
-  display: flex;
-  align-items: center;
-  gap: var(--space-12);
-  min-height: var(--size-touch);
-  padding: var(--space-8) var(--space-12);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-input);
-  color: var(--ink);
-  font-size: var(--text-14);
-  font-weight: var(--weight-medium);
-  cursor: pointer;
-}
-
-.checkLabel:hover {
-  background: var(--surface-2);
-}
-
-.checkLabel[data-invalid] {
-  border-color: var(--danger);
-}
-
-.checkLabel:has(.checkbox:checked) {
-  border-color: var(--primary);
-  background: var(--primary-soft);
-}
-
-.checkbox {
-  flex: none;
-  width: var(--size-icon-md);
-  height: var(--size-icon-md);
-  margin: 0;
-  accent-color: var(--primary);
-  cursor: pointer;
-}
-
-.checkError {
-  color: var(--danger-ink);
-  font-size: var(--text-13);
-  font-weight: var(--weight-medium);
-}
-
 .codesSubmit {
   align-self: flex-start;
 }
@@ -475,8 +432,12 @@ input.codeInput {
     font-size: var(--text-16);
   }
 
-  .step {
-    column-gap: var(--space-12);
+  .stepTitle {
+    gap: var(--space-12);
+  }
+
+  .stepBody {
+    padding-left: 0;
   }
 
   .addGrid {

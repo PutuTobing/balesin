@@ -23,9 +23,11 @@ export function EnrollmentSkeleton() {
           <div className={styles.steps}>
             {[0, 1, 2].map((index) => (
               <div key={index} className={styles.step}>
-                <Skeleton className={styles.marker} />
-                <div className={styles.stepBody}>
+                <div className={styles.stepTitle}>
+                  <Skeleton className={styles.marker} />
                   <Skeleton className={styles.skeletonLabel} />
+                </div>
+                <div className={styles.stepBody}>
                   <Skeleton className={styles.skeletonLine} />
                   {index === 1 ? <Skeleton className={styles.qrSkeleton} /> : null}
                 </div>

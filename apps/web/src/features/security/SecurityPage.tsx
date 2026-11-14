@@ -1,6 +1,7 @@
 import {
   BACKUP_CODE_COUNT,
   USER_ROLE_LABELS,
+  isTwoFactorRequired,
   type BackupCodes,
   type TwoFactorStatusResponse,
 } from '@balesin/shared';
@@ -12,6 +13,7 @@ import { Button } from '../../components/ui/Button';
 import { Icon } from '../../components/ui/Icon';
 import { Notice } from '../../components/ui/Notice';
 import { Page } from '../../components/ui/Page';
+import { Skeleton } from '../../components/ui/Skeleton';
 import { t } from '../../i18n/id';
 import { endpoints } from '../../lib/api/endpoints';
 import { queryKeys, twoFactorStatusQuery } from '../../lib/api/queries';
@@ -29,7 +31,8 @@ const BACKUP_HEADING_ID = 'keamanan-kode-cadangan';
 
 /**
  * Pengaturan → Keamanan akun (semua peran): status 2FA, sisa kode cadangan, buat ulang kode
- * cadangan, dan menonaktifkan 2FA bagi peran yang tidak wajib. Status sudah dimuat loader rute.
+ * cadangan, dan menonaktifkan 2FA bagi peran yang tidak wajib. Status sudah dimuat loader rute
+ * (dan biasanya sudah lebih dulu dari menu akun / Lainnya / Pengaturan).
  */
 export function SecurityPage() {
   const session = useSession();
@@ -69,17 +72,45 @@ export function SecurityPage() {
   );
 }
 
+/**
+ * Isi kerangka memuat: kartu yang sama dengan layar jadi, sesuai peran (peran wajib = 2FA aktif,
+ * dua kartu; peran lain = keadaan paling umum, belum aktif, satu kartu). Teks yang tidak butuh
+ * data tampil asli; hanya lencana, tanggal, angka, dan tombol yang berupa balok.
+ */
+export function SecurityCardsSkeleton() {
+  const session = useSession();
+  const role = session?.user.role ?? 'owner';
+  const required = isTwoFactorRequired(role);
+  return (
+    <div className={styles.content}>
+      <TwoFactorCard status={null} required={required} roleLabel={USER_ROLE_LABELS[role]} />
+      {required ? <BackupCodesCard status={null} email="" /> : null}
+    </div>
+  );
+}
+
 function TwoFactorCard({
   status,
+  required = status?.required ?? false,
   roleLabel,
   onDisabled,
 }: {
-  status: TwoFactorStatusResponse;
+  /** `null` = kerangka memuat. */
+  status: TwoFactorStatusResponse | null;
+  required?: boolean;
   roleLabel: string;
-  onDisabled: () => void;
+  onDisabled?: () => void;
 }) {
   const [disabling, setDisabling] = useState(false);
-  const canDisable = status.enabled && !status.required;
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  // "Batal" → fokus kembali ke tombol yang membuka form (bukan ke <body>).
+  const [returnFocus, setReturnFocus] = useState(0);
+  useEffect(() => {
+    if (returnFocus > 0) triggerRef.current?.focus();
+  }, [returnFocus]);
+  const loading = status === null;
+  const enabled = loading ? required : status.enabled;
+  const canDisable = !loading && status.enabled && !status.required;
 
   return (
     <section className={styles.card} aria-labelledby={TWO_FACTOR_HEADING_ID}>
@@ -88,27 +119,37 @@ function TwoFactorCard({
           <h2 id={TWO_FACTOR_HEADING_ID} className={styles.cardTitle}>
             {copy.twoFactor.title}
           </h2>
-          <TwoFactorBadge enabled={status.enabled} />
+          {loading ? (
+            <Skeleton className={styles.skeletonBadge} />
+          ) : (
+            <TwoFactorBadge enabled={status.enabled} />
+          )}
         </div>
         <p className={styles.text}>{copy.twoFactor.body}</p>
-        {status.enabled && status.enabledAt ? (
+        {loading && enabled ? (
+          <Skeleton className={styles.skeletonMeta} />
+        ) : status?.enabled && status.enabledAt ? (
           <p className={styles.meta}>{copy.twoFactor.since(formatDate(status.enabledAt))}</p>
         ) : null}
       </div>
 
-      {status.required ? (
+      {required ? (
         // Peran wajib: penjelasan, bukan tombol mati.
         <p className={styles.explain}>
           <Icon icon={ShieldCheck} size={20} className={styles.explainIcon} />
           <span>{copy.twoFactor.required(roleLabel)}</span>
         </p>
-      ) : !status.enabled ? (
+      ) : !enabled ? (
         <>
           <p className={styles.text}>{copy.twoFactor.recommended}</p>
           <div className={styles.actions}>
-            <Button asChild variant="primary" size="lg">
-              <Link to="/pengaturan/keamanan/aktifkan">{copy.twoFactor.enable}</Link>
-            </Button>
+            {loading ? (
+              <Skeleton className={styles.skeletonButtonLg} />
+            ) : (
+              <Button asChild variant="primary" size="lg">
+                <Link to="/pengaturan/keamanan/aktifkan">{copy.twoFactor.enable}</Link>
+              </Button>
+            )}
           </div>
         </>
       ) : null}
@@ -120,16 +161,22 @@ function TwoFactorCard({
             body={copy.disable.body}
             submitLabel={copy.disable.action}
             pendingLabel={copy.disable.submitting}
+            submitVariant="danger"
             onSubmit={async (body) => {
               await endpoints.twoFactor.disable(body);
               setDisabling(false);
-              onDisabled();
+              onDisabled?.();
             }}
-            onCancel={() => setDisabling(false)}
+            onCancel={() => {
+              setDisabling(false);
+              setReturnFocus((tick) => tick + 1);
+            }}
           />
         ) : (
           <div className={styles.actions}>
-            <Button onClick={() => setDisabling(true)}>{copy.disable.title}</Button>
+            <Button ref={triggerRef} onClick={() => setDisabling(true)}>
+              {copy.disable.title}
+            </Button>
           </div>
         )
       ) : null}
@@ -142,20 +189,26 @@ function BackupCodesCard({
   email,
   onRegenerated,
 }: {
-  status: TwoFactorStatusResponse;
+  /** `null` = kerangka memuat. */
+  status: TwoFactorStatusResponse | null;
   email: string;
-  onRegenerated: () => void;
+  onRegenerated?: () => void;
 }) {
   const [regenerating, setRegenerating] = useState(false);
   // Kode baru hanya di state kartu ini; hilang begitu panel ditutup atau halaman ditinggalkan.
   const [codes, setCodes] = useState<BackupCodes | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const [returnFocus, setReturnFocus] = useState(0);
-  const remaining = status.backupCodesRemaining;
-  const low = remaining <= BACKUP_CODES_LOW;
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [returnFocus, setReturnFocus] = useState<{ tick: number; to: 'heading' | 'trigger' }>({
+    tick: 0,
+    to: 'heading',
+  });
+  const remaining = status?.backupCodesRemaining ?? BACKUP_CODE_COUNT;
+  const low = status !== null && remaining <= BACKUP_CODES_LOW;
 
   useEffect(() => {
-    if (returnFocus > 0) headingRef.current?.focus();
+    if (returnFocus.tick === 0) return;
+    (returnFocus.to === 'heading' ? headingRef : triggerRef).current?.focus();
   }, [returnFocus]);
 
   if (codes) {
@@ -169,7 +222,7 @@ function BackupCodesCard({
           continueLabel={t.twoFactor.backupCodes.done}
           onDone={() => {
             setCodes(null);
-            setReturnFocus((tick) => tick + 1);
+            setReturnFocus((value) => ({ tick: value.tick + 1, to: 'heading' }));
           }}
         />
       </section>
@@ -185,14 +238,23 @@ function BackupCodesCard({
         <p className={styles.text}>{copy.backupCodes.body}</p>
       </div>
       <div className={styles.stat}>
-        <span className={styles.statValue} data-low={low ? '' : undefined}>
-          {copy.backupCodes.remaining(remaining, BACKUP_CODE_COUNT)}
-        </span>
-        {status.backupCodesGeneratedAt ? (
-          <span className={styles.meta}>
-            {copy.backupCodes.generated(formatDate(status.backupCodesGeneratedAt))}
-          </span>
-        ) : null}
+        {status === null ? (
+          <>
+            <Skeleton className={styles.skeletonStat} />
+            <Skeleton className={styles.skeletonMeta} />
+          </>
+        ) : (
+          <>
+            <span className={styles.statValue} data-low={low ? '' : undefined}>
+              {copy.backupCodes.remaining(remaining, BACKUP_CODE_COUNT)}
+            </span>
+            {status.backupCodesGeneratedAt ? (
+              <span className={styles.meta}>
+                {copy.backupCodes.generated(formatDate(status.backupCodesGeneratedAt))}
+              </span>
+            ) : null}
+          </>
+        )}
       </div>
       {low ? (
         // Angkanya sudah tampil besar di atas; judul hanya bila sudah habis.
@@ -203,7 +265,11 @@ function BackupCodesCard({
           {copy.backupCodes.lowBody}
         </Notice>
       ) : null}
-      {regenerating ? (
+      {status === null ? (
+        <div className={styles.actions}>
+          <Skeleton className={styles.skeletonButton} />
+        </div>
+      ) : regenerating ? (
         <ReauthForm
           title={copy.backupCodes.regenerateTitle}
           body={copy.backupCodes.regenerateBody}
@@ -213,13 +279,20 @@ function BackupCodesCard({
             const result = await endpoints.twoFactor.regenerateBackupCodes(body);
             setRegenerating(false);
             setCodes(result);
-            onRegenerated();
+            onRegenerated?.();
           }}
-          onCancel={() => setRegenerating(false)}
+          onCancel={() => {
+            setRegenerating(false);
+            setReturnFocus((value) => ({ tick: value.tick + 1, to: 'trigger' }));
+          }}
         />
       ) : (
         <div className={styles.actions}>
-          <Button variant={low ? 'primary' : 'secondary'} onClick={() => setRegenerating(true)}>
+          <Button
+            ref={triggerRef}
+            variant={low ? 'primary' : 'secondary'}
+            onClick={() => setRegenerating(true)}
+          >
             {copy.backupCodes.regenerate}
           </Button>
         </div>

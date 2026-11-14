@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from '@tanstack/react-router';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
-import { clearSessionData, sessionQuery } from '../../lib/api/queries';
+import { clearAppData, endSession, sessionQuery } from '../../lib/api/queries';
 import { setLoginNotice } from './login-notice';
 
 /**
@@ -36,9 +36,12 @@ export function useLogout() {
       }
     },
     onSuccess: async () => {
-      clearSessionData(queryClient);
+      // Urutan penting: sesi dikosongkan, pindah ke halaman masuk, BARU data aplikasi dibuang
+      // (kalau dibuang lebih dulu, layar yang masih terbuka memuat ulang datanya → 401).
+      endSession(queryClient);
       setLoginNotice('logged-out');
       await router.navigate({ to: '/masuk', replace: true });
+      clearAppData(queryClient);
     },
   });
 }

@@ -409,7 +409,7 @@ export const screens: Screen[] = [
           route,
           429,
           'RATE_LIMITED',
-          'Akun ini dikunci sementara karena terlalu banyak percobaan masuk yang gagal. Coba lagi dalam 15 menit.',
+          'Akun ini dikunci sementara karena terlalu banyak percobaan masuk yang gagal.',
           { 'retry-after': '900' },
         ),
       );
@@ -595,7 +595,7 @@ export const screens: Screen[] = [
         validationError(
           route,
           'code',
-          'Kode salah. Pastikan jam ponselmu tepat, lalu masukkan kode yang sedang tampil. Sisa 2 percobaan.',
+          'Kode salah. Periksa kode terbaru di aplikasi autentikatormu (kode berganti tiap 30 detik), atau pakai kode cadangan. Sisa 2 percobaan.',
         ),
       );
     },
@@ -616,7 +616,7 @@ export const screens: Screen[] = [
           route,
           429,
           'RATE_LIMITED',
-          'Terlalu banyak kode verifikasi yang salah. Langkah kedua akun ini dikunci sementara. Coba lagi dalam 15 menit.',
+          'Terlalu banyak kode verifikasi yang salah untuk akun ini.',
           { 'retry-after': '900' },
         ),
       );
@@ -726,7 +726,7 @@ export const screens: Screen[] = [
         validationError(
           route,
           'code',
-          'Kode tidak cocok. Pastikan jam ponselmu tepat, lalu masukkan kode yang sedang tampil.',
+          'Kode tidak cocok. Masukkan kode terbaru dari entri akun ini di aplikasi autentikator. Kalau kamu pernah memindai kode QR lain untuk akun ini, hapus entri lamanya. Pastikan juga jam di ponselmu tepat.',
         ),
       );
     },
@@ -785,6 +785,7 @@ export const screens: Screen[] = [
       await page.getByLabel('Kode 6 digit').fill('123456');
       await page.getByRole('button', { name: 'Aktifkan', exact: true }).click();
       await page.getByText(PHOTO_BACKUP_CODES[0] ?? '').waitFor();
+      await page.mouse.move(1, 1);
     },
   },
   {
@@ -799,7 +800,7 @@ export const screens: Screen[] = [
       await page.getByLabel('Kode 6 digit').fill('123456');
       await page.getByRole('button', { name: 'Aktifkan', exact: true }).click();
       await page.getByRole('button', { name: 'Lanjut ke Inbox' }).click();
-      const error = page.getByText('Centang dulu setelah kode cadangan tersimpan.');
+      const error = page.getByText('Simpan kode cadangan dulu, lalu centang kotak ini.');
       await error.waitFor();
       await error.scrollIntoViewIfNeeded();
     },
@@ -838,6 +839,7 @@ export const screens: Screen[] = [
       await page.getByLabel('Kode verifikasi').fill('123456');
       await page.getByRole('button', { name: 'Buat kode baru' }).click();
       await page.getByRole('heading', { level: 2, name: 'Kode cadangan baru' }).waitFor();
+      await page.mouse.move(1, 1);
     },
   },
   {
@@ -845,13 +847,9 @@ export const screens: Screen[] = [
     path: '/pengaturan/keamanan',
     before: (page) =>
       page.route('**/api/v1/auth/2fa/backup-codes', (route) =>
-        apiError(
-          route,
-          429,
-          'RATE_LIMITED',
-          'Terlalu banyak kode verifikasi yang salah. Coba lagi dalam 15 menit.',
-          { 'retry-after': '900' },
-        ),
+        apiError(route, 429, 'RATE_LIMITED', 'Terlalu banyak percobaan konfirmasi yang salah.', {
+          'retry-after': '900',
+        }),
       ),
     waitFor: 'h1',
     prepare: async (page) => {
@@ -915,6 +913,45 @@ export const screens: Screen[] = [
       await page.getByLabel('Password', { exact: true }).fill('Teh-Manis-Hangat-77');
       await page.getByRole('button', { name: 'Lanjut', exact: true }).click();
       await page.locator('svg[role="img"]').waitFor();
+    },
+  },
+  {
+    // Pindah halaman sebelum kode cadangan baru dinyatakan tersimpan → dialog konfirmasi.
+    name: 'keamanan-kode-baru-tinggalkan',
+    path: '/pengaturan/keamanan',
+    before: (page) =>
+      page.route('**/api/v1/auth/2fa/backup-codes', (route) =>
+        json(route, { codes: PHOTO_BACKUP_CODES, generatedAt: new Date().toISOString() }),
+      ),
+    waitFor: 'h1',
+    prepare: async (page) => {
+      await page.getByRole('button', { name: 'Buat kode baru' }).click();
+      await page.getByLabel('Password', { exact: true }).fill('Kopi-Senja-Tenang-42');
+      await page.getByLabel('Kode verifikasi').fill('123456');
+      await page.getByRole('button', { name: 'Buat kode baru' }).click();
+      await page.getByRole('heading', { level: 2, name: 'Kode cadangan baru' }).waitFor();
+      await page.getByRole('link', { name: 'Kembali ke Pengaturan' }).click();
+      await page.getByRole('heading', { name: 'Tinggalkan kode cadangan?' }).waitFor();
+      await page.mouse.move(1, 1);
+    },
+  },
+  {
+    name: 'kode-cadangan-dicentang',
+    path: '/verifikasi-dua-langkah',
+    before: async (page) => {
+      await enrollmentScreen(page);
+      await mockConfirmEnrollment(page);
+    },
+    waitFor: 'svg[role="img"]',
+    prepare: async (page) => {
+      await page.getByLabel('Kode 6 digit').fill('123456');
+      await page.getByRole('button', { name: 'Aktifkan', exact: true }).click();
+      const saved = page.getByRole('checkbox', {
+        name: 'Saya sudah menyimpan kode ini di tempat yang aman',
+      });
+      await saved.check();
+      await saved.scrollIntoViewIfNeeded();
+      await page.mouse.move(1, 1);
     },
   },
 ];

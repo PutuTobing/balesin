@@ -3,7 +3,7 @@ import { Outlet, useRouter } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { setLoginNotice } from '../../features/auth/login-notice';
 import { api } from '../../lib/api/client';
-import { clearAppData, clearSessionData, refetchSession } from '../../lib/api/queries';
+import { clearAppData, endSession, refetchSession } from '../../lib/api/queries';
 import { safeRedirectTarget } from '../../lib/safe-redirect';
 
 const ENROLLMENT_PATH = '/verifikasi-dua-langkah';
@@ -32,16 +32,19 @@ export function RootLayout() {
       api.onSessionExpired(() => {
         const { pathname, href, search } = router.state.location;
         if (pathname === '/masuk' || pathname === '/setup') return;
-        clearSessionData(queryClient);
+        // Sesi dikosongkan dulu, data aplikasi dibuang SETELAH pindah halaman (lihat useLogout).
+        endSession(queryClient);
         setLoginNotice('session-ended');
-        void router.navigate({
-          to: '/masuk',
-          search: {
-            redirect:
-              pathname === ENROLLMENT_PATH ? carriedRedirect(search) : safeRedirectTarget(href),
-          },
-          replace: true,
-        });
+        void router
+          .navigate({
+            to: '/masuk',
+            search: {
+              redirect:
+                pathname === ENROLLMENT_PATH ? carriedRedirect(search) : safeRedirectTarget(href),
+            },
+            replace: true,
+          })
+          .finally(() => clearAppData(queryClient));
       }),
     [queryClient, router],
   );

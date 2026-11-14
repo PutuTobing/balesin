@@ -1,14 +1,16 @@
 import type { BackupCodes } from '@balesin/shared';
 import { CircleCheck, Download } from 'lucide-react';
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useBlocker } from '@tanstack/react-router';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useBrand } from '../../brand/brand';
 import { Button } from '../../components/ui/Button';
+import { Checkbox } from '../../components/ui/Checkbox';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { CopyButton } from '../../components/ui/CopyButton';
 import { Icon } from '../../components/ui/Icon';
 import { Notice } from '../../components/ui/Notice';
 import { t } from '../../i18n/id';
 import { cx } from '../../lib/cx';
-import { describedBy } from '../../lib/form';
 import { backupCodesFileContent, backupCodesFileName, downloadTextFile } from './backup-file';
 import styles from './TwoFactor.module.css';
 
@@ -31,8 +33,9 @@ interface BackupCodesPanelProps {
 /**
  * Kode cadangan yang hanya ditampilkan SEKALI. Kode hanya ada di props/state (tidak di cache
  * Query atau penyimpanan browser) dan hilang begitu panel ditutup. Pengguna diminta menyalin
- * atau mengunduhnya dan mencentang "sudah disimpan" sebelum lanjut; menutup/memuat ulang tab
- * sebelum itu meminta konfirmasi browser.
+ * atau mengunduhnya dan mencentang "sudah disimpan" sebelum lanjut. Sebelum itu, meninggalkan
+ * layar di dalam aplikasi meminta konfirmasi (dialog), menutup/memuat ulang tab meminta
+ * konfirmasi browser.
  */
 export function BackupCodesPanel({
   codes,
@@ -46,15 +49,24 @@ export function BackupCodesPanel({
   const headingRef = useRef<HTMLHeadingElement>(null);
   const checkboxRef = useRef<HTMLInputElement>(null);
   const [saved, setSaved] = useState(false);
+  // Dibaca penghalang navigasi secara sinkron (navigasi `onDone` terjadi di event yang sama).
+  const savedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
-  const checkboxId = useId();
-  const errorId = `${checkboxId}-galat`;
   const Heading = headingLevel === 1 ? 'h1' : 'h2';
 
   // Layar baru: fokus ke judul supaya pembaca layar mulai dari atas.
   useEffect(() => {
     headingRef.current?.focus();
   }, []);
+
+  // Kode belum dinyatakan tersimpan: pindah halaman di dalam aplikasi (Back browser, menu,
+  // tautan) ditahan dengan dialog konfirmasi. Ke halaman masuk (keluar / sesi habis) tidak
+  // ditahan: sesinya memang sudah berakhir.
+  const blocker = useBlocker({
+    shouldBlockFn: ({ next }) => !savedRef.current && next.pathname !== '/masuk',
+    enableBeforeUnload: false,
+    withResolver: true,
+  });
 
   // Kode belum dinyatakan tersimpan: tutup tab / muat ulang minta konfirmasi.
   useEffect(() => {
@@ -131,36 +143,30 @@ export function BackupCodesPanel({
           {copy.download}
         </Button>
       </div>
-      <div className={styles.check}>
-        <label
-          htmlFor={checkboxId}
-          className={styles.checkLabel}
-          data-invalid={error ? '' : undefined}
-        >
-          <input
-            ref={checkboxRef}
-            id={checkboxId}
-            type="checkbox"
-            className={styles.checkbox}
-            checked={saved}
-            onChange={(event) => {
-              setSaved(event.target.checked);
-              if (event.target.checked) setError(null);
-            }}
-            aria-invalid={error ? true : undefined}
-            aria-describedby={describedBy(error ? errorId : undefined)}
-          />
-          <span>{copy.confirm}</span>
-        </label>
-        {error ? (
-          <p id={errorId} className={styles.checkError}>
-            {error}
-          </p>
-        ) : null}
-      </div>
+      <Checkbox
+        ref={checkboxRef}
+        checked={saved}
+        onChange={(event) => {
+          savedRef.current = event.target.checked;
+          setSaved(event.target.checked);
+          if (event.target.checked) setError(null);
+        }}
+        error={error}
+      >
+        {copy.confirm}
+      </Checkbox>
       <Button type="submit" variant="primary" size="lg" className={styles.codesSubmit}>
         {continueLabel}
       </Button>
+      <ConfirmDialog
+        open={blocker.status === 'blocked'}
+        title={copy.leave.title}
+        body={variant === 'enrolled' ? copy.leave.body : copy.leave.bodyRegenerated}
+        cancelLabel={copy.leave.stay}
+        confirmLabel={copy.leave.leave}
+        onCancel={() => blocker.reset?.()}
+        onConfirm={() => blocker.proceed?.()}
+      />
     </form>
   );
 }

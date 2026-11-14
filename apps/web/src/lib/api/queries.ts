@@ -87,8 +87,18 @@ export function refetchSession(queryClient: QueryClient): Promise<MeResponse | n
  * status setup) dibiarkan supaya halaman masuk tetap tampil dengan merek yang benar.
  */
 export function clearSessionData(queryClient: QueryClient): void {
-  api.setCsrfToken(null);
+  endSession(queryClient);
   clearAppData(queryClient);
+}
+
+/**
+ * Tandai sesi berakhir (token CSRF dan sesi di cache dikosongkan) TANPA membuang data lain.
+ * Dipakai sebelum pindah ke halaman masuk: data yang masih dipakai layar sekarang tidak boleh
+ * dibuang dulu, karena query yang masih terpasang akan langsung memuat ulang dan ditolak 401.
+ * Panggil `clearAppData` setelah layar itu ditutup.
+ */
+export function endSession(queryClient: QueryClient): void {
+  api.setCsrfToken(null);
   queryClient.setQueryData(queryKeys.session, null);
 }
 

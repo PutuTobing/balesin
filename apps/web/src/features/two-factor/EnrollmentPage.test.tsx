@@ -214,7 +214,10 @@ describe('pendaftaran 2FA wajib', () => {
 
       expect(await screen.findByText(copy.expiredTitle)).toBeVisible();
       expect(screen.queryByRole('img', { name: copy.add.qrLabel })).toBeNull();
-      expect(codeInput()).toBeDisabled();
+      // Satu aksi utama: isian kode dan "Aktifkan" disembunyikan sampai QR baru siap.
+      expect(screen.queryByLabelText(copy.confirm.label)).toBeNull();
+      expect(screen.queryByRole('button', { name: copy.confirm.submit })).toBeNull();
+      expect(screen.getByText(copy.confirm.waiting)).toBeVisible();
       fireEvent.click(screen.getByRole('button', { name: copy.restart }));
       expect(await screen.findByRole('img', { name: copy.add.qrLabel })).toBeVisible();
       expect(
@@ -225,9 +228,9 @@ describe('pendaftaran 2FA wajib', () => {
     }
   });
 
-  // BUG QA-2FA-4 (terbuka): tombol "Buat kode QR baru" hilang setelah diklik dan fokus jatuh ke
-  // <body>; pengguna keyboard/pembaca layar kehilangan posisi. Hapus `.fails` setelah diperbaiki.
-  it.fails('BUG QA-2FA-4: setelah "Buat kode QR baru", fokus tidak jatuh ke <body>', async () => {
+  // BUG QA-2FA-4 (sudah diperbaiki): tombol "Buat kode QR baru" hilang setelah diklik dan fokus
+  // sempat jatuh ke <body>; kini fokus pindah ke judul langkah 2.
+  it('BUG QA-2FA-4: setelah "Buat kode QR baru", fokus tidak jatuh ke <body>', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       await openEnrollment();
@@ -254,6 +257,28 @@ describe('pendaftaran 2FA wajib', () => {
     fireEvent.change(codeInput(), { target: { value: '654321' } });
     fireEvent.click(screen.getByRole('button', { name: copy.confirm.submit }));
     expect(await screen.findByText(copy.expiredTitle)).toBeVisible();
+    // Isian yang tadi difokus hilang: fokus pindah ke satu-satunya aksi.
+    await waitFor(() => expect(screen.getByRole('button', { name: copy.restart })).toHaveFocus());
+    expect(screen.queryByRole('button', { name: copy.confirm.submit })).toBeNull();
+  });
+
+  it('selama QR dibuat: kerangka langkah 2 berisi teks asli, "Aktifkan" nonaktif', async () => {
+    await openEnrollment({
+      routes: {
+        [`POST ${API_ROUTES.twoFactor.enroll}`]: () => new Promise<Response>(() => undefined),
+      },
+    });
+    expect(screen.getByText(copy.add.bodyQr)).toBeInTheDocument();
+    expect(screen.getByText(copy.add.manualTitle)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: copy.confirm.submit })).toBeDisabled();
+    expect(codeInput()).toBeDisabled();
+  });
+
+  it('layar dibuka → fokus ke judul halaman (bukan <body>)', async () => {
+    await openEnrollment();
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 1, name: copy.title })).toHaveFocus(),
+    );
   });
 
   it('rahasia gagal dibuat (503) → pesan server dengan Coba lagi', async () => {
@@ -270,6 +295,7 @@ describe('pendaftaran 2FA wajib', () => {
       'Kunci enkripsi server belum diisi.',
     );
     expect(screen.getByText(copy.startFailedTitle)).toBeVisible();
+    expect(screen.queryByRole('button', { name: copy.confirm.submit })).toBeNull();
     fail = false;
     fireEvent.click(screen.getByRole('button', { name: t.common.retry }));
     expect(await screen.findByRole('img', { name: copy.add.qrLabel })).toBeVisible();
