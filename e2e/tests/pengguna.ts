@@ -6,7 +6,8 @@ import { BASE_URL } from '../viewports';
 import { totpAtStep, totpStep } from './two-factor';
 
 /**
- * Pengguna tambahan untuk E2E (Admin, Supervisor, CS, Teknisi) selama fitur undangan belum ada.
+ * Pengguna tambahan untuk E2E (Admin, Supervisor, CS, Teknisi) bagi tes yang tidak menguji alur
+ * undangan itu sendiri (alur undangan lewat UI: `tim-tanpa-email` / `tim-dengan-email`).
  *
  * Dibuat langsung di database E2E (`balesin_e2e`, direset tiap run) di organisasi Owner hasil
  * `alur-awal`. Hash password-nya disalin dari Owner, jadi password semua pengguna ini sama dengan
@@ -78,6 +79,9 @@ export async function enableTwoFactorViaApi(
   const api = await request.newContext({
     baseURL: BASE_URL,
     extraHTTPHeaders: { origin: BASE_URL },
+    // WAJIB kosong: di dalam tes, `request.newContext` memakai `storageState` proyek (sesi Owner),
+    // dan masuk sebagai pengguna lain dengan cookie itu mencabut sesi Owner (rotasi sesi).
+    storageState: { cookies: [], origins: [] },
   });
   try {
     const loginResponse = await api.post('/api/v1/auth/login', {

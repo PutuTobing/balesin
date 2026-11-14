@@ -80,7 +80,8 @@ describe('halaman masuk: langkah kedua (2FA)', () => {
     expect(await screen.findByRole('heading', { level: 1, name: copy.totpTitle })).toBeVisible();
     expect(screen.getByText(copy.totpSubtitle(EMAIL))).toBeVisible();
     const input = codeInput();
-    expect(input).toHaveFocus();
+    // Fokus dipasang efek setelah render: tunggu, jangan anggap sinkron (flake saat beban tinggi).
+    await waitFor(() => expect(input).toHaveFocus());
     expect(input).toHaveAttribute('autocomplete', 'one-time-code');
     expect(input).toHaveAttribute('inputmode', 'numeric');
     // Tantangan tidak pernah masuk ke URL atau penyimpanan browser.
@@ -162,15 +163,17 @@ describe('halaman masuk: langkah kedua (2FA)', () => {
     fireEvent.click(screen.getByRole('button', { name: copy.useBackup }));
     expect(await screen.findByRole('heading', { level: 1, name: copy.backupTitle })).toBeVisible();
     const input = screen.getByLabelText(copy.backupLabel);
-    expect(input).toHaveFocus();
+    await waitFor(() => expect(input).toHaveFocus());
     expect(input).toHaveAttribute('inputmode', 'text');
     expect(input).toHaveAttribute('autocomplete', 'off');
     fireEvent.change(input, { target: { value: 'K7M2P-X9Q4R' } });
     fireEvent.click(verifyButton());
 
-    expect(
-      await screen.findByRole('heading', { level: 1, name: copy.backupUsed.title }),
-    ).toHaveFocus();
+    const backupUsedHeading = await screen.findByRole('heading', {
+      level: 1,
+      name: copy.backupUsed.title,
+    });
+    await waitFor(() => expect(backupUsedHeading).toHaveFocus());
     expect(screen.getByText(copy.backupUsed.body(2))).toBeVisible();
     expect(screen.getByText(copy.backupUsed.low)).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: copy.backupUsed.makeNew }));
@@ -200,7 +203,7 @@ describe('halaman masuk: langkah kedua (2FA)', () => {
     ).toBeVisible();
     expect(screen.getByLabelText(t.auth.login.email)).toHaveValue(EMAIL);
     expect(screen.getByLabelText(t.auth.login.password)).toHaveValue('');
-    expect(screen.getByLabelText(t.auth.login.password)).toHaveFocus();
+    await waitFor(() => expect(screen.getByLabelText(t.auth.login.password)).toHaveFocus());
     // Bukan sesi habis: tidak ada pesan "Sesimu sudah berakhir".
     expect(screen.queryByText(t.auth.login.sessionEnded)).toBeNull();
   });
@@ -213,7 +216,7 @@ describe('halaman masuk: langkah kedua (2FA)', () => {
       await act(() => vi.advanceTimersByTimeAsync(5 * 60_000 + 500));
 
       expect(await screen.findByRole('status')).toHaveTextContent(copy.expired);
-      expect(screen.getByLabelText(t.auth.login.password)).toHaveFocus();
+      await waitFor(() => expect(screen.getByLabelText(t.auth.login.password)).toHaveFocus());
     } finally {
       vi.useRealTimers();
     }

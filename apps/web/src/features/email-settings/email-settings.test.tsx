@@ -8,7 +8,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest';
 import { t } from '../../i18n/id';
 import { media } from '../../lib/media';
-import { apiError, json } from '../../test/fake-api';
+import { apiError, fakeSession, json } from '../../test/fake-api';
 import { setMediaQuery } from '../../test/match-media';
 import { renderApp } from '../../test/render-app';
 import {
@@ -184,6 +184,33 @@ describe('Pengaturan → Email pengirim', () => {
 
     expect(await screen.findByText('Port ini tidak didukung.')).toBeVisible();
     expect(screen.getByLabelText(t.emailSettings.port)).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('Admin: catatan "Owner akan diberi tahu"; 503 dari server tampil dan isian tetap', async () => {
+    const message =
+      'Perubahan email pengirim belum disimpan karena pemberitahuan ke Owner tidak bisa dikirim sekarang. Coba lagi sebentar.';
+    await renderApp('/pengaturan/email', {
+      session: fakeSession('admin'),
+      emailSettings: savedResponse,
+      routes: {
+        [`PUT ${API_ROUTES.settings.email}`]: () => apiError(503, 'SERVICE_UNAVAILABLE', message),
+      },
+    });
+    await screen.findByRole('heading', { level: 1, name: t.emailSettings.title });
+    expect(screen.getByText(t.emailSettings.ownersNotified)).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText(t.emailSettings.fromName), {
+      target: { value: 'CS Maju Jaya Baru' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: t.emailSettings.save }));
+    expect(await screen.findByText(message)).toBeVisible();
+    expect(screen.getByLabelText(t.emailSettings.fromName)).toHaveValue('CS Maju Jaya Baru');
+  });
+
+  it('Owner tidak melihat catatan pemberitahuan ke Owner', async () => {
+    await renderApp('/pengaturan/email', { emailSettings: savedResponse });
+    await screen.findByRole('heading', { level: 1, name: t.emailSettings.title });
+    expect(screen.queryByText(t.emailSettings.ownersNotified)).toBeNull();
   });
 
   it('"Tanpa enkripsi" dengan login memunculkan peringatan', async () => {

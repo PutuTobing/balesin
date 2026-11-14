@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ChevronRight, Mail, ShieldCheck } from 'lucide-react';
+import { ChevronRight, Mail, ShieldCheck, UsersRound } from 'lucide-react';
 import { RadioGroup } from 'radix-ui';
 import { useBrand } from '../../brand/brand';
 import { Icon } from '../../components/ui/Icon';
@@ -11,9 +11,9 @@ import { cx } from '../../lib/cx';
 import { parsePreference, type ResolvedTheme, type ThemePreference } from '../../theme/theme';
 import { useTheme } from '../../theme/theme-context';
 import { themeOptions } from '../../theme/theme-options';
-import { useSession } from '../auth/session';
+import { useCan } from '../auth/session';
 import { EmailStatusBadge } from '../email-settings/EmailStatusBadge';
-import { emailSettingsQuery, twoFactorStatusQuery } from '../../lib/api/queries';
+import { emailSettingsQuery, invitationsQuery, twoFactorStatusQuery } from '../../lib/api/queries';
 import { TwoFactorBadge } from '../security/TwoFactorBadge';
 import styles from './Settings.module.css';
 
@@ -23,19 +23,22 @@ const ACCOUNT_HEADING_ID = 'pengaturan-akun';
 
 /**
  * Pengaturan. Bagian lain (channel, peran, jam kerja, dan seterusnya) ditambahkan
- * bersama fiturnya masing-masing. Pengaturan organisasi (Email pengirim) hanya untuk Owner;
- * peran lain tidak melihat menunya. Keamanan akun untuk semua peran.
+ * bersama fiturnya masing-masing. Pengaturan organisasi tampil sesuai izin sesi (`permissions`):
+ * Tim = `team.invite`, Email pengirim = `settings.email.manage` (keduanya Owner dan Admin); peran
+ * lain tidak melihat menunya. Keamanan akun untuk semua peran.
  */
 export function SettingsPage() {
   const { preference, setPreference } = useTheme();
   const { productName } = useBrand();
-  const session = useSession();
-  const isOwner = session?.user.role === 'owner';
+  const canTeam = useCan('team.invite');
+  const canEmail = useCan('settings.email.manage');
 
   return (
     <Page>
       <div className={styles.content}>
-        {isOwner ? <OrganizationSettings /> : null}
+        {canTeam || canEmail ? (
+          <OrganizationSettings showTeam={canTeam} showEmail={canEmail} />
+        ) : null}
         <AccountSettings />
         <section className={styles.card} aria-labelledby={APPEARANCE_HEADING_ID}>
           <div className={styles.cardHead}>
@@ -106,9 +109,10 @@ function Scene({ theme, split = false }: { theme: ResolvedTheme; split?: boolean
   );
 }
 
-/** Menu pengaturan organisasi (khusus Owner), lengkap dengan status tiap koneksi. */
-function OrganizationSettings() {
-  const email = useQuery(emailSettingsQuery);
+/**
+ * Menu pengaturan organisasi sesuai izin (Tim, Email pengirim), lengkap dengan status tiap baris.
+ */
+function OrganizationSettings({ showTeam, showEmail }: { showTeam: boolean; showEmail: boolean }) {
   return (
     <section className={styles.card} aria-labelledby={ORGANIZATION_HEADING_ID}>
       <div className={styles.cardHead}>
@@ -117,38 +121,73 @@ function OrganizationSettings() {
         </h2>
       </div>
       <ul className={styles.menu}>
-        <li>
-          <Link to="/pengaturan/email" className={styles.menuLink}>
-            <span className={styles.menuIcon}>
-              <Icon icon={Mail} size={20} />
-            </span>
-            <span className={styles.menuText}>
-              <span className={styles.menuLabel}>{t.emailSettings.title}</span>
-              <span className={styles.menuHint}>{t.emailSettings.menuHint}</span>
-            </span>
-            <span className={styles.menuStatus}>
-              {email.data ? (
-                <>
-                  <EmailStatusBadge status={email.data.status} />
-                  {email.data.status === 'not_configured' ? (
-                    <>
-                      {/* Titik pemisah sendiri: jarak sama di kedua sisi (gap), warna netral. */}
-                      <span className={styles.statusSeparator} aria-hidden="true">
-                        ·
-                      </span>
-                      <span className={styles.setUpNow}>{t.emailSettings.setUpNow}</span>
-                    </>
-                  ) : null}
-                </>
-              ) : email.isPending ? (
-                <Skeleton className={styles.statusSkeleton} />
-              ) : null}
-            </span>
-            <Icon icon={ChevronRight} size={16} className={styles.chevron} />
-          </Link>
-        </li>
+        {showTeam ? <TeamMenuItem /> : null}
+        {showEmail ? <EmailMenuItem /> : null}
       </ul>
     </section>
+  );
+}
+
+function TeamMenuItem() {
+  const team = useQuery(invitationsQuery);
+  return (
+    <li>
+      <Link to="/pengaturan/tim" className={styles.menuLink}>
+        <span className={styles.menuIcon}>
+          <Icon icon={UsersRound} size={20} />
+        </span>
+        <span className={styles.menuText}>
+          <span className={styles.menuLabel}>{t.team.title}</span>
+          <span className={styles.menuHint}>{t.team.menuHint}</span>
+        </span>
+        <span className={styles.menuStatus}>
+          {team.data ? (
+            <span className={styles.menuCount}>
+              {t.team.menuStatus(team.data.invitations.length)}
+            </span>
+          ) : team.isPending ? (
+            <Skeleton className={styles.statusSkeleton} />
+          ) : null}
+        </span>
+        <Icon icon={ChevronRight} size={16} className={styles.chevron} />
+      </Link>
+    </li>
+  );
+}
+
+function EmailMenuItem() {
+  const email = useQuery(emailSettingsQuery);
+  return (
+    <li>
+      <Link to="/pengaturan/email" className={styles.menuLink}>
+        <span className={styles.menuIcon}>
+          <Icon icon={Mail} size={20} />
+        </span>
+        <span className={styles.menuText}>
+          <span className={styles.menuLabel}>{t.emailSettings.title}</span>
+          <span className={styles.menuHint}>{t.emailSettings.menuHint}</span>
+        </span>
+        <span className={styles.menuStatus}>
+          {email.data ? (
+            <>
+              <EmailStatusBadge status={email.data.status} />
+              {email.data.status === 'not_configured' ? (
+                <>
+                  {/* Titik pemisah sendiri: jarak sama di kedua sisi (gap), warna netral. */}
+                  <span className={styles.statusSeparator} aria-hidden="true">
+                    ·
+                  </span>
+                  <span className={styles.setUpNow}>{t.emailSettings.setUpNow}</span>
+                </>
+              ) : null}
+            </>
+          ) : email.isPending ? (
+            <Skeleton className={styles.statusSkeleton} />
+          ) : null}
+        </span>
+        <Icon icon={ChevronRight} size={16} className={styles.chevron} />
+      </Link>
+    </li>
   );
 }
 

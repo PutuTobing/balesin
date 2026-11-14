@@ -20,6 +20,7 @@ import {
   validationError,
   wizardTo,
 } from './mocks';
+import { accountScreens } from './screens-akun';
 
 export interface Screen {
   /** Nama berkas: e2e/screenshots/<name>--<viewport>-<tema>.png */
@@ -954,4 +955,7 @@ export const screens: Screen[] = [
       await page.mouse.move(1, 1);
     },
   },
+
+  // Fase 1 butir 4: Tim, undangan, lupa/atur ulang password, verifikasi email, pratinjau.
+  ...accountScreens,
 ];

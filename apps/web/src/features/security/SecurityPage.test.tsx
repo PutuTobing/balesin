@@ -87,9 +87,11 @@ describe('Pengaturan → Keamanan akun', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: copy.backupCodes.regenerate }));
 
-    expect(
-      await screen.findByRole('heading', { level: 2, name: t.twoFactor.backupCodes.newTitle }),
-    ).toHaveFocus();
+    const newCodesHeading = await screen.findByRole('heading', {
+      level: 2,
+      name: t.twoFactor.backupCodes.newTitle,
+    });
+    await waitFor(() => expect(newCodesHeading).toHaveFocus());
     for (const code of FAKE_BACKUP_CODES) expect(screen.getByText(code)).toBeVisible();
     const request = view.api.requests.findLast(
       (item) => item.path === API_ROUTES.twoFactor.regenerateBackupCodes,
@@ -100,9 +102,11 @@ describe('Pengaturan → Keamanan akun', () => {
     // Selesai wajib dicentang dulu; setelah ditutup, kode tidak ada di cache Query.
     fireEvent.click(screen.getByRole('checkbox', { name: t.twoFactor.backupCodes.confirm }));
     fireEvent.click(screen.getByRole('button', { name: t.twoFactor.backupCodes.done }));
-    expect(
-      await screen.findByRole('heading', { level: 2, name: copy.backupCodes.title }),
-    ).toHaveFocus();
+    const backupHeading = await screen.findByRole('heading', {
+      level: 2,
+      name: copy.backupCodes.title,
+    });
+    await waitFor(() => expect(backupHeading).toHaveFocus());
     expect(screen.queryByText(FAKE_BACKUP_CODES[0] ?? '')).toBeNull();
     const cached = JSON.stringify([
       view.queryClient

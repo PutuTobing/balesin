@@ -47,7 +47,18 @@ export const test = base.extend<{
         // Browser mencatat setiap respons ≥ 400 sebagai error console; yang diharapkan diabaikan.
         const failed = /status of (\d{3})/.exec(msg.text());
         if (failed && isExpected(msg.location().url, Number(failed[1]))) return;
-        problems.push(`console.${msg.type()}: ${msg.text()}`);
+        const at = msg.location();
+        // Pratinjau email di `<iframe sandbox="">` (tanpa allow-scripts): skrip Playwright sendiri
+        // (rekaman trace, `frameLocator`) yang disisipkan ke frame itu ditolak sandbox — tandanya
+        // sandbox bekerja. Lokasinya sisipan (baris 0 dokumen, atau tanpa URL), bukan isi email;
+        // skrip di dalam dokumen email sendiri tetap tertangkap (URL about:srcdoc, baris > 0).
+        if (
+          msg.text().startsWith("Blocked script execution in 'about:srcdoc'") &&
+          (at.url === '' || (at.url === 'about:srcdoc' && at.lineNumber === 0))
+        ) {
+          return;
+        }
+        problems.push(`console.${msg.type()}: ${msg.text()} (${at.url}:${at.lineNumber})`);
       });
       page.on('pageerror', (error) => problems.push(`pageerror: ${error.message}`));
       page.on('requestfailed', (request) => {

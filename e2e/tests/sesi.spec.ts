@@ -56,6 +56,8 @@ test('sesi dicabut di tengah pemakaian → halaman masuk dengan pesan, tanpa lay
   expectHttpError(ME, 401);
   expectHttpError('/api/v1/settings/email', 401);
   expectHttpError('/api/v1/settings/email/detect-host', 401);
+  // Pratinjau template di halaman yang sama ikut dimuat (dan ikut ditolak) setelah sesi dicabut.
+  expectHttpError('/api/v1/settings/email/templates/invitation/preview', 401);
   await signInFresh(context, page, '/pengaturan');
   // Catat setiap judul halaman yang sempat tampil, untuk menangkap kedipan layar error.
   await page.evaluate(() => {
@@ -68,10 +70,13 @@ test('sesi dicabut di tengah pemakaian → halaman masuk dengan pesan, tanpa lay
 
   await revokeFromElsewhere(context, baseURL ?? '');
   // Data yang masih segar (< 30 detik) boleh tampil dari cache; permintaan berikutnya ke API
-  // (di sini deteksi server email saat alamat pengirim diketik) yang menemukan sesi berakhir.
+  // yang menemukan sesi berakhir: pratinjau template email yang dimuat halaman itu, atau deteksi
+  // server email saat alamat pengirim diketik (mana yang lebih dulu).
   await page.getByRole('link', { name: /Email pengirim/ }).click();
-  await expect(page.getByRole('heading', { level: 1, name: 'Email pengirim' })).toBeVisible();
-  await page.getByLabel('Alamat email pengirim').fill(`sesi-${Date.now()}@contoh-sesi.test`);
+  const sender = page.getByLabel('Alamat email pengirim');
+  await sender
+    .fill(`sesi-${Date.now()}@contoh-sesi.test`, { timeout: 3_000 })
+    .catch(() => undefined);
 
   await expect(page).toHaveURL(/\/masuk\?redirect=%2Fpengaturan%2Femail$/);
   await expect(page.getByRole('status')).toContainText(

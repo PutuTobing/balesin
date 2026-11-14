@@ -2,7 +2,8 @@ import { PASSWORD_MIN_LENGTH } from '@balesin/shared';
 
 /**
  * Perkiraan kekuatan password di browser, hanya sebagai umpan balik saat mengetik. Keputusan
- * akhir (daftar password umum, data pribadi) tetap di server lewat `/setup/check-password`.
+ * akhir (daftar password umum, data pribadi) tetap di server: `/setup/check-password` saat setup,
+ * dan saat dikirim untuk undangan dan atur ulang password.
  *
  * Sesuai kebijakan server (DECISIONS: tanpa aturan komposisi), panjang adalah faktor utama;
  * variasi karakter hanya menambah sedikit, dan pengulangan menguranginya.

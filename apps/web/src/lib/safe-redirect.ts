@@ -1,11 +1,33 @@
 /** Tujuan bawaan setelah masuk. */
 export const DEFAULT_AFTER_LOGIN = '/inbox';
 
+/** Halaman publik yang bisa dibuka tanpa sesi (tamu): masuk, setup, dan halaman tautan email. */
+const GUEST_PAGES = [
+  '/masuk',
+  '/setup',
+  '/undangan',
+  '/lupa-password',
+  '/atur-ulang-password',
+  '/verifikasi-email',
+];
+
 /**
  * Halaman di luar aplikasi yang tidak masuk akal dijadikan tujuan setelah masuk (termasuk
- * layar pendaftaran 2FA wajib, yang hanya untuk sesi terbatas).
+ * layar pendaftaran 2FA wajib, yang hanya untuk sesi terbatas, dan halaman tautan email).
  */
-const PUBLIC_PREFIXES = ['/masuk', '/setup', '/verifikasi-dua-langkah'];
+const PUBLIC_PREFIXES = [...GUEST_PAGES, '/verifikasi-dua-langkah'];
+
+function matchesPrefix(pathname: string, prefixes: readonly string[]): boolean {
+  return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+/**
+ * Halaman untuk tamu: 401 dari API di sini (mis. pemeriksaan sesi latar `/auth/me` untuk tamu)
+ * bukan "sesi berakhir" dan tidak boleh memindahkan pengguna ke halaman masuk.
+ */
+export function isGuestPage(pathname: string): boolean {
+  return matchesPrefix(pathname, GUEST_PAGES);
+}
 
 /**
  * Tujuan setelah masuk yang aman: hanya path internal aplikasi (diawali satu `/`).
@@ -35,12 +57,6 @@ export function safeRedirectTarget(raw: unknown): string {
   const target = `${url.pathname}${url.search}${url.hash}`;
   // `/..//host` dinormalkan menjadi `//host` (alamat luar tanpa skema).
   if (target.startsWith('//')) return DEFAULT_AFTER_LOGIN;
-  if (
-    PUBLIC_PREFIXES.some(
-      (prefix) => url.pathname === prefix || url.pathname.startsWith(`${prefix}/`),
-    )
-  ) {
-    return DEFAULT_AFTER_LOGIN;
-  }
+  if (matchesPrefix(url.pathname, PUBLIC_PREFIXES)) return DEFAULT_AFTER_LOGIN;
   return target;
 }

@@ -1,4 +1,4 @@
-import type { AuthenticatedSession, TwoFactorEnrollmentSession } from '@balesin/shared';
+import type { AuthenticatedSession, Permission, TwoFactorEnrollmentSession } from '@balesin/shared';
 import type { QueryClient } from '@tanstack/react-query';
 import { redirect } from '@tanstack/react-router';
 import {
@@ -8,6 +8,7 @@ import {
   twoFactorStatusQuery,
 } from '../lib/api/queries';
 import { DEFAULT_AFTER_LOGIN, safeRedirectTarget } from '../lib/safe-redirect';
+import { sessionCan } from '../features/auth/session';
 
 /*
  * Penjaga rute (dipanggil dari `beforeLoad` di router.ts). Semuanya MENUNGGU jawaban server
@@ -115,12 +116,23 @@ export async function guardSetup(queryClient: QueryClient): Promise<void> {
   }
 }
 
-/** Halaman khusus Owner. Peran lain dialihkan ke Pengaturan (menunya pun tidak tampil). */
-export function guardOwner(session: AuthenticatedSession): void {
-  if (session.user.role !== 'owner') {
+/**
+ * Halaman ber-izin (mis. Email pengirim = `settings.email.manage`, Tim = `team.invite`). Peran tanpa
+ * izin dialihkan ke Pengaturan (menunya pun tidak tampil). Server tetap menegakkan izinnya.
+ */
+export function guardPermission(session: AuthenticatedSession, permission: Permission): void {
+  if (!sessionCan(session, permission)) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error -- pola resmi TanStack Router
     throw redirect({ to: '/pengaturan', replace: true });
   }
+}
+
+/**
+ * Halaman publik dari tautan email: sesi (bila ada) dimuat lebih dulu supaya peringatan "sedang
+ * masuk sebagai …" langsung tampil tanpa kedipan. Gagal memuat sesi tidak menghalangi halaman.
+ */
+export async function preparePublicLink(queryClient: QueryClient): Promise<void> {
+  await queryClient.ensureQueryData(sessionQuery).catch(() => null);
 }
 
 /**

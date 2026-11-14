@@ -1,0 +1,328 @@
+/* Pengaturan → Tim. Kartu mengikuti halaman Pengaturan (lebar, garis, jarak). */
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  width: 100%;
+  max-width: 42rem;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding: var(--space-24);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.cardHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.cardTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+}
+
+/* Judul difokus secara terprogram setelah baris dibatalkan; bukan kontrol. */
+.cardTitle:focus {
+  outline: none;
+}
+
+.cardHint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.inlineLink {
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+/* Jumlah undangan di samping judul: angka kecil di pil netral. */
+.count {
+  display: inline-grid;
+  place-items: center;
+  min-width: var(--space-24);
+  height: var(--space-24);
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Form undangan ---------- */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.inviteRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 14rem;
+  align-items: start;
+  gap: var(--space-16);
+}
+
+.formFooter {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ---------- Daftar undangan ---------- */
+
+/* Baris merapat ke tepi kartu seperti menu Pengaturan. `.card .list` mengalahkan reset `ul`. */
+.card .list {
+  margin: 0 calc(var(--space-24) * -1) calc(var(--space-24) * -1);
+  border-top: 1px solid var(--line);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-8) var(--space-16);
+  padding: var(--space-16) var(--space-24);
+}
+
+.row + .row {
+  border-top: 1px solid var(--line);
+}
+
+.rowMain {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.rowEmail {
+  color: var(--ink);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+  overflow-wrap: anywhere;
+}
+
+.rowMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-8);
+  min-height: var(--space-24);
+}
+
+.role {
+  color: var(--ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-medium);
+}
+
+.separator {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.badge {
+  font-size: var(--text-13);
+}
+
+.rowDetail,
+.rowHint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.rowDetail .separator {
+  white-space: pre;
+}
+
+/* Tiap bagian keterangan patah sebagai satu kesatuan bila muat (bukan "… Dimas / Pratama"). */
+.segment {
+  display: inline-block;
+}
+
+.rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-8);
+}
+
+/* Batalkan: jalan keluar yang merusak, tapi bukan aksi utama → teks bahaya tanpa latar. */
+.revoke {
+  color: var(--danger-ink);
+}
+
+.rowError {
+  grid-column: 1 / -1;
+}
+
+.empty {
+  padding-top: var(--space-8);
+  padding-bottom: var(--space-8);
+}
+
+/* ---------- Dialog tautan sekali tampil ---------- */
+
+.linkBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.linkLabel {
+  color: var(--ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.link {
+  display: block;
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+  line-height: var(--leading-text);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+/* ---------- Kerangka memuat (ukuran = elemen jadi) ---------- */
+
+.skeletonField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+/* Label asli (sama dengan label isian), kotaknya balok. */
+.skeletonLabel {
+  color: var(--ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.skeletonControl {
+  display: block;
+  height: var(--size-control);
+  border-radius: var(--radius-input);
+}
+
+/* Petunjuk kartu 13 px: balok per baris, celah di dalam tinggi baris (sama dengan teks jadi). */
+.skeletonLines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: calc(var(--space-4) / 2) 0;
+}
+
+.skeletonHint,
+.skeletonHintHp,
+.skeletonHintShort {
+  display: block;
+  width: 90%;
+  height: calc(var(--text-13) * var(--leading-text) - var(--space-4));
+}
+
+.skeletonHintShort {
+  width: 40%;
+}
+
+.skeletonHintHp {
+  display: none;
+}
+
+.skeletonFieldHint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.skeletonEmail {
+  display: block;
+  width: 14rem;
+  max-width: 100%;
+  height: calc(var(--text-14) * var(--leading-title));
+}
+
+.skeletonMeta {
+  display: block;
+  width: 10rem;
+  height: var(--space-24);
+}
+
+.skeletonDetail {
+  display: block;
+  width: 18rem;
+  max-width: 100%;
+  height: calc(var(--text-13) * var(--leading-text));
+}
+
+.skeletonButtons {
+  display: block;
+  width: 11rem;
+  height: var(--size-control);
+  border-radius: var(--radius-input);
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: var(--space-16);
+  }
+
+  .inviteRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .formFooter > * {
+    flex: 1;
+  }
+
+  .card .list {
+    margin: 0 calc(var(--space-16) * -1) calc(var(--space-16) * -1);
+  }
+
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--space-16);
+  }
+
+  .rowActions {
+    justify-content: flex-start;
+  }
+
+  .rowActions > * {
+    flex: 1;
+  }
+
+  .skeletonHintHp {
+    display: block;
+  }
+
+  .skeletonButtons,
+  .skeletonControl {
+    width: 100%;
+    height: var(--size-touch);
+  }
+}

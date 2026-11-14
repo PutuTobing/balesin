@@ -1,4 +1,6 @@
 import type { Page, Route } from '@playwright/test';
+// Matriks izin dari sumber tunggalnya (paket shared; E2E tidak bergantung pada paketnya).
+import { permissionsForRole } from '../../packages/shared/src/permissions';
 import { E2E_SETUP_TOKEN } from '../stack/env';
 
 /**
@@ -195,6 +197,8 @@ function sessionBody(status: 'authenticated' | 'two_factor_enrollment_required',
       timezone: 'Asia/Jakarta',
     },
     csrfToken: 'csrf-foto',
+    // Izin dari server (docs/KONTRAK-API-AUTH.md "Peran & izin"); sesi terbatas tidak punya izin.
+    permissions: status === 'authenticated' ? permissionsForRole(role) : [],
     session: {
       idleExpiresAt: new Date(now + 30 * 60_000).toISOString(),
       absoluteExpiresAt: new Date(now + 30 * 86_400_000).toISOString(),
@@ -328,4 +332,165 @@ export async function mockVerifyWithBackupCode(page: Page, remaining: number): P
       twoFactor: { method: 'backup_code', backupCodesRemaining: remaining },
     }),
   );
+}
+
+// ── Undangan, atur ulang password, verifikasi email ─────────────────────────
+
+/** Token contoh untuk tautan email di foto (43 karakter base64url, bukan token sungguhan). */
+export const PHOTO_LINK_TOKEN = 'Q2FrU2t5LUZvdG8tVG9rZW4tQ29udG9oLVR1anVhbi0';
+
+const HOUR = 3_600_000;
+
+type InvitationRole = 'admin' | 'supervisor' | 'cs' | 'teknisi';
+
+/** Satu undangan contoh (bentuk `invitationSchema`). */
+export function photoInvitation(
+  index: number,
+  overrides: {
+    email: string;
+    role: InvitationRole;
+    status?: 'pending' | 'expired';
+    deliveryStatus?: 'queued' | 'sent' | 'failed' | 'skipped' | 'link';
+    canManage?: boolean;
+    invitedBy?: string;
+    ageHours?: number;
+  },
+) {
+  const age = overrides.ageHours ?? index * 5 + 1;
+  const created = Date.now() - age * HOUR;
+  const expired = overrides.status === 'expired';
+  return {
+    id: `7d1c4f8e-2b3a-4c5d-8e9f-0a1b2c3d4e${String(index).padStart(2, '0')}`,
+    email: overrides.email,
+    role: overrides.role,
+    status: overrides.status ?? 'pending',
+    invitedBy: {
+      id: '0b0e2d8c-6d3f-4b8a-9d55-5e2f8a1c0001',
+      name: overrides.invitedBy ?? 'Rina Kartika',
+    },
+    createdAt: new Date(created).toISOString(),
+    lastSentAt: new Date(created).toISOString(),
+    expiresAt: new Date(expired ? Date.now() - 6 * HOUR : created + 72 * HOUR).toISOString(),
+    sendCount: 1,
+    deliveryStatus: overrides.deliveryStatus ?? 'sent',
+    canManage: overrides.canManage ?? true,
+  };
+}
+
+/** Daftar undangan berisi semua status yang mungkin (dilihat Owner). */
+export const PHOTO_INVITATIONS = [
+  photoInvitation(1, { email: 'citra@majujaya.co.id', role: 'cs', deliveryStatus: 'queued' }),
+  photoInvitation(2, { email: 'agus.pratama@majujaya.co.id', role: 'admin' }),
+  photoInvitation(3, { email: 'tono@majujaya.co.id', role: 'teknisi', deliveryStatus: 'failed' }),
+  photoInvitation(4, {
+    email: 'sari.wulandari@majujaya.co.id',
+    role: 'supervisor',
+    status: 'expired',
+    ageHours: 80,
+  }),
+];
+
+/** `GET /invitations` tiruan. */
+export async function invitationList(
+  page: Page,
+  body: {
+    invitations?: unknown[];
+    invitableRoles?: InvitationRole[];
+    emailDelivery?: boolean;
+  } = {},
+): Promise<void> {
+  await page.route(`${API}/invitations`, (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return json(route, {
+      invitations: body.invitations ?? [],
+      invitableRoles: body.invitableRoles ?? ['admin', 'supervisor', 'cs', 'teknisi'],
+      emailDelivery: body.emailDelivery ?? true,
+    });
+  });
+}
+
+/** `POST /invitations` tiruan: undangan baru, dengan tautan sekali tampil bila tanpa email. */
+export async function mockCreateInvitation(page: Page, withLink: boolean): Promise<void> {
+  await page.route(`${API}/invitations`, (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    const body = route.request().postDataJSON() as { email: string; role: InvitationRole };
+    return json(
+      route,
+      {
+        invitation: photoInvitation(9, {
+          email: body.email,
+          role: body.role,
+          deliveryStatus: withLink ? 'link' : 'queued',
+          ageHours: 0,
+        }),
+        link: withLink ? `http://localhost:5180/undangan#token=${PHOTO_LINK_TOKEN}` : null,
+      },
+      201,
+    );
+  });
+}
+
+/** Isi form undangan lalu kirim. */
+export async function submitInvitation(page: Page, email: string, role: string): Promise<void> {
+  await page.getByLabel('Email', { exact: true }).fill(email);
+  await page.getByLabel('Peran').selectOption({ label: role });
+  await page.getByRole('button', { name: /^(Kirim undangan|Buat tautan undangan)$/ }).click();
+}
+
+/** `POST /auth/invitation/inspect` tiruan. */
+export async function inspectInvitation(
+  page: Page,
+  role: InvitationRole = 'cs',
+  overrides: Record<string, unknown> = {},
+): Promise<void> {
+  await page.route(`${API}/auth/invitation/inspect`, (route) =>
+    json(route, {
+      email: role === 'cs' ? 'citra@majujaya.co.id' : 'agus.pratama@majujaya.co.id',
+      role,
+      organizationName: 'PT Maju Jaya',
+      productName: 'Balesin',
+      invitedByName: 'Rina Kartika',
+      expiresAt: new Date(Date.now() + 70 * HOUR).toISOString(),
+      twoFactorRequired: role === 'admin' || role === 'supervisor',
+      ...overrides,
+    }),
+  );
+}
+
+/** Tautan undangan untuk foto (fragment berisi token contoh). */
+export const INVITATION_PATH = `/undangan#token=${PHOTO_LINK_TOKEN}`;
+export const RESET_PATH = `/atur-ulang-password#token=${PHOTO_LINK_TOKEN}`;
+export const VERIFY_PATH = `/verifikasi-email#token=${PHOTO_LINK_TOKEN}`;
+
+/** `GET /auth/password-reset` tiruan. */
+export async function passwordResetAvailable(page: Page, available: boolean): Promise<void> {
+  await page.route(`${API}/auth/password-reset`, (route) => json(route, { available }));
+}
+
+/** `POST /auth/password-reset/inspect` tiruan. */
+export async function inspectPasswordReset(page: Page, twoFactor: boolean): Promise<void> {
+  await page.route(`${API}/auth/password-reset/inspect`, (route) =>
+    json(route, {
+      email: 'citra@majujaya.co.id',
+      expiresAt: new Date(Date.now() + 28 * 60_000).toISOString(),
+      twoFactorRequired: twoFactor,
+      methods: twoFactor ? ['totp', 'backup_code'] : [],
+    }),
+  );
+}
+
+/** `GET /auth/email/verification` tiruan. */
+export async function emailVerificationStatus(
+  page: Page,
+  status: { verified: boolean; canSend: boolean },
+): Promise<void> {
+  await page.route(`${API}/auth/email/verification`, (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return json(route, {
+      email: 'rina@majujaya.co.id',
+      verified: status.verified,
+      verifiedAt: status.verified ? new Date(Date.now() - 3 * 86_400_000).toISOString() : null,
+      canSend: status.canSend,
+    });
+  });
 }

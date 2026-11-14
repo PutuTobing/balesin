@@ -50,6 +50,12 @@
   background: var(--surface-2);
 }
 
+/* Hanya-baca (mis. email dari undangan): latar sekunder, teks tetap terbaca penuh. */
+.control:has(.input[readonly]) {
+  border-color: var(--line);
+  background: var(--surface-2);
+}
+
 .lg {
   height: var(--size-touch);
 }

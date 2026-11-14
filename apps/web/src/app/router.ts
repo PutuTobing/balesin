@@ -13,6 +13,12 @@ import { NotFoundPage } from '../components/shell/NotFoundPage';
 import { PageSkeleton } from '../components/shell/PageSkeleton';
 import { RootLayout } from '../components/shell/RootLayout';
 import { RouteErrorScreen } from '../components/shell/RouteErrorScreen';
+import {
+  ForgotPasswordPending,
+  InvitationPending,
+  ResetPasswordPending,
+  VerifyEmailPending,
+} from '../features/auth/AuthPending';
 import { LoginSkeleton } from '../features/auth/LoginSkeleton';
 import { parseLoginSearch } from '../features/auth/login-search';
 import { EmailSettingsSkeleton } from '../features/email-settings/EmailSettingsSkeleton';
@@ -22,17 +28,24 @@ import { parseInboxSearch } from '../features/inbox/inbox-search';
 import { SecuritySkeleton } from '../features/security/SecuritySkeleton';
 import { SetupSkeleton } from '../features/setup/SetupSkeleton';
 import { SetupStatusError } from '../features/setup/SetupStatusError';
+import { TeamSkeleton } from '../features/team/TeamSkeleton';
 import { EnrollmentSkeleton } from '../features/two-factor/EnrollmentSkeleton';
 import { t } from '../i18n/id';
-import { emailSettingsQuery, twoFactorStatusQuery } from '../lib/api/queries';
+import {
+  emailSettingsQuery,
+  emailVerificationQuery,
+  invitationsQuery,
+  twoFactorStatusQuery,
+} from '../lib/api/queries';
 import { createPreviewRoutes } from './preview-routes';
 import {
   guardEnrollment,
   guardLogin,
-  guardOwner,
+  guardPermission,
   guardSetup,
   guardVoluntaryEnrollment,
   prepareApp,
+  preparePublicLink,
   requireSession,
 } from './guards';
 
@@ -43,7 +56,8 @@ export interface RouterContext {
 /**
  * Peta rute. Alamat halaman memakai bahasa Indonesia karena ikut tampil ke pengguna.
  *
- * - Publik: `/setup` (wizard pertama kali) dan `/masuk`.
+ * - Publik: `/setup` (wizard pertama kali), `/masuk`, `/lupa-password`, dan halaman tujuan tautan
+ *   email bertoken (`/undangan`, `/atur-ulang-password`, `/verifikasi-email`; token di fragment).
  * - `/verifikasi-dua-langkah`: pendaftaran 2FA wajib, HANYA untuk sesi terbatas (Owner/Admin/
  *   Supervisor yang belum mengaktifkan 2FA). Sesi terbatas tidak bisa membuka rute lain.
  * - Semua rute lain ada di bawah layout `app`, yang mewajibkan sesi penuh (lihat `guards.ts`).
@@ -78,6 +92,53 @@ const loginRoute = createRoute({
   beforeLoad: ({ context, search }) => guardLogin(context.queryClient, search.redirect),
   component: lazyRouteComponent(() => import('../features/auth/LoginPage'), 'LoginPage'),
   pendingComponent: LoginSkeleton,
+});
+
+/** Lupa password: minta tautan atur ulang lewat email (publik). */
+const forgotPasswordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'lupa-password',
+  component: lazyRouteComponent(
+    () => import('../features/password-reset/ForgotPasswordPage'),
+    'ForgotPasswordPage',
+  ),
+  pendingComponent: ForgotPasswordPending,
+});
+
+/**
+ * Halaman tujuan tautan email bertoken. Token dibaca dari fragment lalu langsung dibuang dari
+ * alamat (`lib/link-token.ts`); tidak pernah ikut `?redirect=` atau penjaga rute.
+ */
+const invitationRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'undangan',
+  beforeLoad: ({ context }) => preparePublicLink(context.queryClient),
+  component: lazyRouteComponent(
+    () => import('../features/invitation/InvitationPage'),
+    'InvitationPage',
+  ),
+  pendingComponent: InvitationPending,
+});
+
+const resetPasswordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'atur-ulang-password',
+  component: lazyRouteComponent(
+    () => import('../features/password-reset/ResetPasswordPage'),
+    'ResetPasswordPage',
+  ),
+  pendingComponent: ResetPasswordPending,
+});
+
+const verifyEmailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'verifikasi-email',
+  beforeLoad: ({ context }) => preparePublicLink(context.queryClient),
+  component: lazyRouteComponent(
+    () => import('../features/email-verification/VerifyEmailPage'),
+    'VerifyEmailPage',
+  ),
+  pendingComponent: VerifyEmailPending,
 });
 
 /** Pendaftaran 2FA wajib (sesi terbatas): setelah setup, atau setelah masuk tanpa 2FA aktif. */
@@ -162,12 +223,12 @@ const settingsRoute = createRoute({
   component: lazyRouteComponent(() => import('../features/settings/SettingsPage'), 'SettingsPage'),
 });
 
-/** Pengaturan → Email pengirim: khusus Owner (peran lain dialihkan ke Pengaturan). */
+/** Pengaturan → Email pengirim: izin `settings.email.manage` (Owner, Admin). */
 const emailSettingsRoute = createRoute({
   getParentRoute,
   path: 'pengaturan/email',
   staticData: { page: { title: t.emailSettings.title, parent: 'settings' } },
-  beforeLoad: ({ context }) => guardOwner(context.session),
+  beforeLoad: ({ context }) => guardPermission(context.session, 'settings.email.manage'),
   loader: ({ context }) => context.queryClient.ensureQueryData(emailSettingsQuery),
   component: lazyRouteComponent(
     () => import('../features/email-settings/EmailSettingsPage'),
@@ -176,12 +237,28 @@ const emailSettingsRoute = createRoute({
   pendingComponent: EmailSettingsSkeleton,
 });
 
+/** Pengaturan → Tim: izin `team.invite` (Owner, Admin; peran lain dialihkan ke Pengaturan). */
+const teamRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/tim',
+  staticData: { page: { title: t.team.title, parent: 'settings' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'team.invite'),
+  loader: ({ context }) => context.queryClient.ensureQueryData(invitationsQuery),
+  component: lazyRouteComponent(() => import('../features/team/TeamPage'), 'TeamPage'),
+  pendingComponent: TeamSkeleton,
+});
+
 /** Pengaturan → Keamanan akun: semua peran. */
 const securityRoute = createRoute({
   getParentRoute,
   path: 'pengaturan/keamanan',
   staticData: { page: { title: t.security.title, parent: 'settings' } },
-  loader: ({ context }) => context.queryClient.ensureQueryData(twoFactorStatusQuery),
+  loader: async ({ context }) => {
+    // Status email dimuat bersamaan; bila gagal, kartunya sendiri yang menampilkan error.
+    const email = context.queryClient.ensureQueryData(emailVerificationQuery).catch(() => null);
+    await context.queryClient.ensureQueryData(twoFactorStatusQuery);
+    await email;
+  },
   component: lazyRouteComponent(() => import('../features/security/SecurityPage'), 'SecurityPage'),
   pendingComponent: SecuritySkeleton,
 });
@@ -221,18 +298,24 @@ const appChildren = [
   reportsRoute,
   settingsRoute,
   emailSettingsRoute,
+  teamRoute,
   securityRoute,
   securityEnrollRoute,
   moreRoute,
   notFoundRoute,
 ] as const;
 
-const routeTree = rootRoute.addChildren([
+const publicRoutes = [
   setupRoute,
   loginRoute,
+  forgotPasswordRoute,
+  invitationRoute,
+  resetPasswordRoute,
+  verifyEmailRoute,
   enrollmentRoute,
-  appRoute.addChildren(appChildren),
-]);
+] as const;
+
+const routeTree = rootRoute.addChildren([...publicRoutes, appRoute.addChildren(appChildren)]);
 
 /**
  * Mode pengembangan: tambah rute pratinjau. Tipe pohon rute sengaja tetap versi
@@ -240,9 +323,7 @@ const routeTree = rootRoute.addChildren([
  */
 function routeTreeWithPreviews(): typeof routeTree {
   return rootRoute.addChildren([
-    setupRoute,
-    loginRoute,
-    enrollmentRoute,
+    ...publicRoutes,
     appRoute.addChildren([...appChildren, ...createPreviewRoutes(appRoute)]),
   ]) as unknown as typeof routeTree;
 }

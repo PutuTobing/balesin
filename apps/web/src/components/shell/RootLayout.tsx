@@ -1,12 +1,19 @@
+import type { MeResponse } from '@balesin/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Outlet, useRouter } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { setLoginNotice } from '../../features/auth/login-notice';
 import { api } from '../../lib/api/client';
-import { clearAppData, endSession, refetchSession } from '../../lib/api/queries';
-import { safeRedirectTarget } from '../../lib/safe-redirect';
+import { clearAppData, endSession, queryKeys, refetchSession } from '../../lib/api/queries';
+import { isGuestPage, safeRedirectTarget } from '../../lib/safe-redirect';
 
 const ENROLLMENT_PATH = '/verifikasi-dua-langkah';
+
+/** Peran + izin sesi sebagai satu nilai pembanding. */
+function permissionKey(session: MeResponse | null | undefined): string {
+  if (!session) return '';
+  return `${session.status}:${session.user.role}:${(session.permissions ?? []).join(',')}`;
+}
 
 /** `?redirect=` yang dibawa layar pendaftaran 2FA (tujuan awal sebelum diminta mendaftar). */
 function carriedRedirect(search: unknown): string | undefined {
@@ -21,7 +28,11 @@ function carriedRedirect(search: unknown): string | undefined {
  *    tujuan setelah masuk lagi;
  *  - sesi ternyata terbatas (403 `TWO_FACTOR_ENROLLMENT_REQUIRED`, mis. layar aplikasi yang
  *    masih terbuka di tab lain): sesi dimuat ulang dari `/auth/me`, data aplikasi dibuang, lalu
- *    layar pendaftaran 2FA dibuka.
+ *    layar pendaftaran 2FA dibuka;
+ *  - izin ditolak (403 `FORBIDDEN`, mis. peran baru saja diubah Owner/Admin): sesi dimuat ulang;
+ *    bila izinnya memang berubah, penjaga rute diperiksa ulang (menu yang tidak berhak hilang,
+ *    halaman yang tidak lagi boleh dibuka dialihkan). Izin yang tidak berubah = 403 biasa dari
+ *    aturan rinci modul; layar menampilkan pesannya sendiri (tanpa memuat ulang berulang-ulang).
  */
 export function RootLayout() {
   const queryClient = useQueryClient();
@@ -31,7 +42,11 @@ export function RootLayout() {
     () =>
       api.onSessionExpired(() => {
         const { pathname, href, search } = router.state.location;
-        if (pathname === '/masuk' || pathname === '/setup') return;
+        // Halaman tamu (masuk, setup, tautan email): cukup kosongkan sesi, tetap di halaman ini.
+        if (isGuestPage(pathname)) {
+          endSession(queryClient);
+          return;
+        }
         // Sesi dikosongkan dulu, data aplikasi dibuang SETELAH pindah halaman (lihat useLogout).
         endSession(queryClient);
         setLoginNotice('session-ended');
@@ -64,6 +79,21 @@ export function RootLayout() {
             // Setelah layar aplikasi ditutup (kalau sebelumnya, query yang masih terpasang
             // langsung memuat ulang dan ditolak lagi).
             clearAppData(queryClient);
+          })
+          // Gagal memuat sesi (jaringan putus): layar sekarang tetap menampilkan error-nya.
+          .catch(() => undefined);
+      }),
+    [queryClient, router],
+  );
+
+  useEffect(
+    () =>
+      api.onForbidden(() => {
+        const before = queryClient.getQueryData<MeResponse | null>(queryKeys.session);
+        void refetchSession(queryClient)
+          .then(async (after) => {
+            if (permissionKey(before) === permissionKey(after)) return;
+            await router.invalidate();
           })
           // Gagal memuat sesi (jaringan putus): layar sekarang tetap menampilkan error-nya.
           .catch(() => undefined);

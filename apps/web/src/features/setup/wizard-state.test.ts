@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../../lib/api/client';
-import { estimatePasswordStrength } from './password-strength';
+import { estimatePasswordStrength } from '../../lib/password-strength';
 import { readSetupTokenFromHash } from './setup-token';
 import {
   buildCompleteRequest,

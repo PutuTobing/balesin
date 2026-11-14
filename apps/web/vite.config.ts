@@ -29,6 +29,10 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     restoreMocks: true,
+    // `pnpm test` menjalankan semua paket bersamaan (tes integrasi API/worker ikut memakan CPU):
+    // tes layar utuh yang biasanya < 1 detik bisa melewati batas bawaan 5 detik. Batas waktu
+    // bukan asersi — menunggu lebih lama tidak melemahkan apa pun yang diperiksa.
+    testTimeout: 15_000,
     // CSS komponen tidak diproses di tes (jsdom tidak punya layout). Pengecualian:
     // impor `.css?raw`, supaya tes penjaga bisa membaca isi berkas CSS apa adanya.
     css: { include: [/\.css\?raw/] },

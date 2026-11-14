@@ -176,6 +176,21 @@ export const t = {
     repeatRequired: 'Ketik ulang password.',
   },
 
+  /** Password baru (setup, undangan, atur ulang password). */
+  password: {
+    strength: {
+      label: 'Kekuatan password',
+      empty: 'Minimal 10 karakter.',
+      tooShort: (missing: number) => `Kurang ${missing} karakter lagi.`,
+      weak: 'Lumayan. Tambah panjang atau campur kata yang tidak umum.',
+      good: 'Bagus.',
+      strong: 'Kuat.',
+      checking: 'Memeriksa ke server…',
+      accepted: 'Siap dipakai.',
+      rejected: 'Belum bisa dipakai. Pilih password lain.',
+    },
+  },
+
   auth: {
     login: {
       title: 'Masuk',
@@ -194,6 +209,9 @@ export const t = {
       unlocked: 'Kamu sudah bisa mencoba masuk lagi.',
       sessionEnded: 'Sesimu sudah berakhir. Masuk lagi untuk melanjutkan.',
       loggedOut: 'Kamu sudah keluar. Sampai jumpa lagi!',
+      forgot: 'Lupa password?',
+      passwordReset:
+        'Password sudah diganti dan semua perangkat sudah dikeluarkan. Masuk dengan password barumu.',
       heroTitle: 'Semua chat pelanggan, satu inbox untuk seluruh tim.',
       heroBody: 'Balas lebih cepat, bagi tugas dengan rapi, dan pantau semuanya dari satu tempat.',
     },
@@ -205,6 +223,175 @@ export const t = {
       logoutFailed: 'Gagal keluar. Periksa koneksimu, lalu coba lagi.',
       account: 'Akun',
       security: 'Keamanan akun',
+    },
+  },
+
+  /** Halaman dari tautan email bertoken (undangan, atur ulang password, verifikasi email). */
+  links: {
+    toLogin: 'Ke halaman masuk',
+    lockedTitle: 'Dibatasi sementara',
+    failedTitle: 'Tautan belum bisa diperiksa',
+  },
+
+  invitation: {
+    documentTitle: 'Undangan',
+    eyebrow: 'Undangan bergabung',
+    title: (organization: string) => `Bergabung dengan ${organization}`,
+    subtitle: (inviter: string, role: string, product: string) =>
+      `${inviter} mengundangmu sebagai ${role} di ${product}. Lengkapi namamu dan buat password untuk akunmu.`,
+    email: 'Email',
+    emailHint: 'Dari undangan, tidak bisa diubah. Dipakai untuk masuk.',
+    expires: (time: string) => `Undangan berlaku sampai ${time}.`,
+    twoFactor: (role: string) =>
+      `Peran ${role} wajib verifikasi dua langkah. Siapkan aplikasi autentikator di ponselmu; kamu langsung diminta mendaftarkannya setelah akun dibuat.`,
+    name: 'Nama lengkap',
+    nameHint: 'Tampil ke rekan setim di inbox dan tiket.',
+    password: 'Password',
+    repeat: 'Ulangi password',
+    submit: 'Buat akun',
+    submitting: 'Membuat akun…',
+    signedIn: {
+      title: (name: string) => `Kamu sedang masuk sebagai ${name}`,
+      body: 'Menerima undangan akan mengeluarkanmu dari akun itu.',
+      logout: 'Keluar dulu',
+      loggingOut: 'Keluar…',
+      loggedOut: 'Kamu sudah keluar dari akun sebelumnya. Lanjutkan membuat akun di bawah.',
+      logoutFailed: 'Gagal keluar. Periksa koneksimu, lalu coba lagi.',
+    },
+    invalidTitle: 'Undangan tidak bisa dipakai',
+    missing:
+      'Tautan undangan ini tidak lengkap. Buka lagi tautan dari email undangan, atau minta Owner atau Admin di tempatmu mengirim undangan baru.',
+  },
+
+  forgotPassword: {
+    title: 'Lupa password',
+    heading: 'Atur ulang password',
+    subtitle:
+      'Masukkan email akunmu. Bila terdaftar, tautan untuk membuat password baru dikirim ke email itu.',
+    email: 'Email',
+    submit: 'Kirim tautan',
+    submitting: 'Mengirim…',
+    sentTitle: 'Periksa email-mu',
+    sent: (email: string, minutes: number) =>
+      `Kalau ${email} terdaftar, tautan atur ulang password sudah dikirim. Periksa kotak masuk dan folder spam. Tautan berlaku ${minutes} menit. Kalau ada beberapa email, pakai yang terbaru.`,
+    otherEmail: 'Pakai email lain',
+    unavailableTitle: 'Atur ulang password belum tersedia',
+    unavailable:
+      'Atur ulang password lewat email belum tersedia karena email pengirim belum diatur. Minta Owner atau Admin di tempatmu untuk membantu.',
+    back: 'Kembali ke halaman masuk',
+    lockedTitle: 'Permintaan dibatasi sementara',
+    loadFailedTitle: 'Halaman ini belum bisa dimuat',
+  },
+
+  resetPassword: {
+    title: 'Atur ulang password',
+    heading: 'Buat password baru',
+    subtitle: (email: string) =>
+      `Untuk akun ${email}. Setelah diganti, semua perangkat yang sedang masuk ke akun ini dikeluarkan.`,
+    expires: (time: string) => `Tautan berlaku sampai ${time}.`,
+    password: 'Password baru',
+    repeat: 'Ulangi password baru',
+    twoFactorTitle: 'Akun ini memakai verifikasi dua langkah',
+    twoFactorBody:
+      'Demi keamanan, password hanya bisa diganti bersama kode dari aplikasi autentikatormu.',
+    code: 'Kode verifikasi',
+    codeHintTotp: 'Kode di aplikasi berganti setiap 30 detik.',
+    codeHintAny: '6 digit dari aplikasi autentikator, atau salah satu kode cadangan.',
+    submit: 'Simpan password baru',
+    submitting: 'Menyimpan…',
+    invalidTitle: 'Tautan tidak bisa dipakai',
+    missing:
+      'Tautan atur ulang password ini tidak lengkap. Buka lagi tautan dari email, atau minta tautan baru.',
+    requestNew: 'Minta tautan baru',
+  },
+
+  verifyEmail: {
+    title: 'Verifikasi email',
+    doneTitle: 'Email sudah terverifikasi',
+    done: (email: string) => `Email ${email} sudah terverifikasi. Terima kasih!`,
+    toApp: 'Buka aplikasi',
+    invalidTitle: 'Tautan verifikasi tidak bisa dipakai',
+    missing:
+      'Tautan verifikasi ini tidak lengkap. Buka lagi tautan dari email, atau kirim ulang email verifikasi dari Keamanan akun.',
+    toSecurity: 'Ke Keamanan akun',
+  },
+
+  /** Pengaturan → Tim (Owner & Admin). */
+  team: {
+    title: 'Tim',
+    menuHint: 'Undang anggota tim dan kelola undangan',
+    menuStatus: (count: number) =>
+      count === 0 ? 'Belum ada undangan terbuka' : `${count} undangan terbuka`,
+    invite: {
+      title: 'Undang anggota tim',
+      viaEmail:
+        'Undangan dikirim ke email penerima. Mereka membuat password sendiri lewat tautan di email itu, yang berlaku 72 jam.',
+      viaLink:
+        'Email pengirim belum diatur, jadi tautan undangan ditampilkan untuk kamu salin dan kirim sendiri.',
+      setUpEmail: 'Atur email pengirim',
+      email: 'Email',
+      emailPlaceholder: 'Contoh: nama@perusahaan.co.id',
+      role: 'Peran',
+      roleHints: {
+        admin: 'Mengelola channel, pengguna, dan template. Wajib verifikasi dua langkah.',
+        supervisor:
+          'Memantau semua chat, membuat broadcast, dan mengelola template. Wajib verifikasi dua langkah.',
+        cs: 'Membalas chat pelanggan dan mengurus tiket.',
+        teknisi: 'Membalas chat yang ditugaskan kepadanya dan mengurus tiket miliknya.',
+      },
+      submitEmail: 'Kirim undangan',
+      submitLink: 'Buat tautan undangan',
+      submitting: 'Memproses…',
+      lockedTitle: 'Undangan dibatasi sementara',
+      sent: (email: string) => `Undangan untuk ${email} dibuat dan email-nya sedang dikirim.`,
+      created: (email: string) => `Undangan untuk ${email} dibuat.`,
+    },
+    list: {
+      title: 'Undangan terbuka',
+      hint: 'Belum diterima. Kirim ulang membuat tautan baru dan membatalkan tautan lama.',
+      emptyTitle: 'Belum ada undangan terbuka',
+      emptyBody:
+        'Undangan yang belum diterima tampil di sini, lengkap dengan status pengiriman email-nya.',
+      expired: 'Kedaluwarsa',
+      expiresAt: (date: string) => `berlaku sampai ${date}`,
+      expiredAt: (date: string) => `kedaluwarsa sejak ${date}`,
+      invitedBy: (name: string) => `Diundang ${name}`,
+      resend: 'Kirim ulang',
+      resending: 'Mengirim…',
+      revoke: 'Batalkan',
+      revokeTitle: 'Batalkan undangan?',
+      revokeBody: (email: string) =>
+        `Tautan undangan untuk ${email} langsung tidak berlaku. Kamu bisa mengundangnya lagi kapan saja.`,
+      revokeConfirm: 'Batalkan undangan',
+      keep: 'Jangan batalkan',
+      revoked: (email: string) => `Undangan untuk ${email} sudah dibatalkan.`,
+      resent: (email: string) =>
+        `Undangan baru untuk ${email} sedang dikirim. Tautan lama sudah tidak berlaku.`,
+      reissued: (email: string) =>
+        `Tautan baru untuk ${email} dibuat. Tautan lama sudah tidak berlaku.`,
+      managedByOwner: 'Hanya Owner yang bisa mengirim ulang atau membatalkan undangan Admin.',
+      deliveryHint: {
+        failed: 'Periksa Pengaturan → Email pengirim, lalu kirim ulang.',
+        skipped: 'Email pengirim belum diatur saat undangan diproses. Kirim ulang.',
+      },
+      actionsFor: (email: string) => `Undangan untuk ${email}`,
+    },
+    linkDialog: {
+      title: 'Salin tautan undangan',
+      body: (email: string) =>
+        `Kirim tautan ini sendiri ke ${email} lewat jalur yang aman. Tautan hanya ditampilkan sekarang dan berlaku 72 jam.`,
+      keyTitle: 'Tautan ini setara kunci akses',
+      keyBody: (role: string) =>
+        `Siapa pun yang membukanya bisa membuat akun ${role} di organisasimu. Kirim langsung ke orangnya lewat chat pribadi, jangan di grup atau tempat umum.`,
+      linkLabel: 'Tautan undangan',
+      copy: 'Salin tautan',
+      copied: 'Tersalin',
+      copiedAnnouncement: 'Tautan undangan tersalin ke clipboard.',
+      done: 'Selesai',
+      notCopied:
+        'Tautan belum disalin. Setelah dialog ini ditutup, tautan tidak bisa dilihat lagi; untuk tautan baru, kirim ulang undangannya.',
+      closeAnyway: 'Tutup saja',
+      back: 'Kembali',
     },
   },
 
@@ -341,8 +528,26 @@ export const t = {
   /** Pengaturan → Keamanan akun (semua peran). */
   security: {
     title: 'Keamanan akun',
-    menuHint: 'Verifikasi dua langkah dan kode cadangan',
+    menuHint: 'Email, verifikasi dua langkah, dan kode cadangan',
     sectionTitle: 'Akunmu',
+    email: {
+      title: 'Email akun',
+      verified: 'Terverifikasi',
+      unverified: 'Belum diverifikasi',
+      verifiedAt: (date: string) => `Diverifikasi ${date}`,
+      unverifiedBody:
+        'Verifikasi membuktikan email ini benar milikmu, supaya pemberitahuan keamanan dan tautan atur ulang password sampai ke orang yang tepat.',
+      send: 'Kirim email verifikasi',
+      resend: 'Kirim ulang',
+      sending: 'Mengirim…',
+      sent: (email: string) =>
+        `Email verifikasi sedang dikirim ke ${email}. Buka tautan di dalamnya dalam 24 jam.`,
+      noSender:
+        'Email verifikasi belum bisa dikirim karena email pengirim belum diatur. Minta Owner atau Admin di tempatmu mengaturnya.',
+      noSenderCanSetUp: 'Email verifikasi belum bisa dikirim karena email pengirim belum diatur.',
+      setUpSender: 'Atur email pengirim',
+      lockedTitle: 'Pengiriman dibatasi sementara',
+    },
     twoFactor: {
       title: 'Verifikasi dua langkah',
       body: 'Setiap kali masuk, selain password kamu juga memasukkan kode 6 digit dari aplikasi autentikator di ponselmu.',
@@ -426,16 +631,6 @@ export const t = {
         emailHint: 'Untuk masuk dan menerima email penting.',
         password: 'Password',
         repeat: 'Ulangi password',
-        strength: {
-          label: 'Kekuatan password',
-          empty: 'Minimal 10 karakter.',
-          tooShort: (missing: number) => `Kurang ${missing} karakter lagi.`,
-          weak: 'Lumayan. Tambah panjang atau campur kata yang tidak umum.',
-          good: 'Bagus.',
-          strong: 'Kuat.',
-          checking: 'Memeriksa ke server…',
-          accepted: 'Siap dipakai.',
-        },
       },
       branding: {
         nav: 'Tampilan',
@@ -654,6 +849,19 @@ export const t = {
     switchSuggestion: 'Ganti',
 
     loadFailed: 'Pengaturan email tidak bisa dimuat',
+    preview: {
+      title: 'Pratinjau email',
+      body: 'Contoh email yang dikirim ke timmu, memakai nama aplikasi dan logo organisasimu. Isi dan tautannya hanya contoh.',
+      template: 'Template',
+      subject: 'Subjek',
+      viewLabel: 'Tampilan pratinjau',
+      html: 'Email',
+      text: 'Teks polos',
+      frameTitle: (label: string) => `Pratinjau email: ${label}`,
+      loadFailedTitle: 'Pratinjau belum bisa dimuat',
+    },
+    /** Admin (bukan Owner) mengubah email pengirim: server memberi tahu semua Owner. */
+    ownersNotified: 'Owner akan diberi tahu lewat email bila server atau alamat pengirim diubah.',
     unsavedTest:
       'Tes memakai isian form di atas, termasuk yang belum disimpan. Status tersimpan berubah setelah kamu menyimpan lalu menguji.',
   },

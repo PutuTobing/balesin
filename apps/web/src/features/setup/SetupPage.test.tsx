@@ -63,7 +63,7 @@ describe('wizard setup', () => {
     expect(api.requests.find((r) => r.path === API_ROUTES.setup.verifyToken)?.body).toEqual({
       setupToken: TOKEN,
     });
-    expect(title).toHaveFocus();
+    await waitFor(() => expect(title).toHaveFocus());
     expect(window.localStorage.length).toBe(0);
     expect(window.sessionStorage.length).toBe(0);
   });

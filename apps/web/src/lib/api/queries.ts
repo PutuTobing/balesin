@@ -1,4 +1,4 @@
-import { type MeResponse } from '@balesin/shared';
+import { type EmailTemplateId, type MeResponse } from '@balesin/shared';
 import { queryOptions, type QueryClient } from '@tanstack/react-query';
 import { api, isApiError } from './client';
 import { endpoints } from './endpoints';
@@ -10,6 +10,11 @@ export const queryKeys = {
   setupStatus: ['setup', 'status'] as const,
   emailSettings: ['settings', 'email'] as const,
   twoFactorStatus: ['auth', 'two-factor'] as const,
+  emailVerification: ['auth', 'email-verification'] as const,
+  invitations: ['team', 'invitations'] as const,
+  passwordResetStatus: ['password-reset', 'status'] as const,
+  emailTemplatePreview: (template: EmailTemplateId) =>
+    ['settings', 'email', 'template', template] as const,
 };
 
 /**
@@ -65,6 +70,43 @@ export const twoFactorStatusQuery = queryOptions({
   queryFn: ({ signal }) => endpoints.twoFactor.status(signal),
 });
 
+/** Status verifikasi email akun sendiri (Pengaturan → Keamanan akun). */
+export const emailVerificationQuery = queryOptions({
+  queryKey: queryKeys.emailVerification,
+  queryFn: ({ signal }) => endpoints.emailVerification.status(signal),
+});
+
+/**
+ * Undangan terbuka (Pengaturan → Tim). Selama ada undangan yang emailnya masih diantrekan, daftar
+ * dimuat ulang tiap beberapa detik supaya "Sedang dikirim" berganti "Email terkirim" sendiri.
+ * Tautan undangan sekali tampil TIDAK pernah ada di sini (hanya di respons buat/kirim ulang).
+ */
+export const invitationsQuery = queryOptions({
+  queryKey: queryKeys.invitations,
+  queryFn: ({ signal }) => endpoints.invitations.list(signal),
+  refetchInterval: (query) =>
+    query.state.data?.invitations.some((invitation) => invitation.deliveryStatus === 'queued')
+      ? 3_000
+      : false,
+});
+
+/** Atur ulang password lewat email tersedia (email pengirim instalasi sudah diatur). */
+export const passwordResetStatusQuery = queryOptions({
+  queryKey: queryKeys.passwordResetStatus,
+  queryFn: ({ signal }) => endpoints.passwordReset.status(signal),
+  staleTime: 60_000,
+  retry: false,
+});
+
+/** Pratinjau satu template email (isi contoh dengan branding organisasi). */
+export function emailTemplatePreviewQuery(template: EmailTemplateId) {
+  return queryOptions({
+    queryKey: queryKeys.emailTemplatePreview(template),
+    queryFn: ({ signal }) => endpoints.emailSettings.templatePreview(template, signal),
+    staleTime: 60_000,
+  });
+}
+
 /**
  * Simpan sesi baru (setelah masuk, langkah 2FA, pendaftaran 2FA, atau setup selesai) ke cache
  * dan klien. Hanya bagian sesi yang disimpan: respons pendaftaran 2FA juga memuat kode cadangan,
@@ -72,7 +114,9 @@ export const twoFactorStatusQuery = queryOptions({
  */
 export function storeSession(queryClient: QueryClient, response: MeResponse): void {
   const { status, user, organization, csrfToken, session } = response;
-  const clean: MeResponse = { status, user, organization, csrfToken, session };
+  // `permissions` ikut disimpan (menu/tombol disembunyikan berdasarkan izin); tidak ada = [].
+  const permissions = response.permissions ?? [];
+  const clean: MeResponse = { status, user, organization, csrfToken, session, permissions };
   // Pengguna lain masuk di browser yang sama (komputer bersama): buang data milik pengguna
   // sebelumnya supaya tidak tampil sekilas dari cache.
   const previous = queryClient.getQueryData<MeResponse | null>(queryKeys.session);

@@ -13,14 +13,17 @@ function fill(email: string, password: string) {
 const submit = () => fireEvent.click(screen.getByRole('button', { name: t.auth.login.submit }));
 
 describe('halaman masuk', () => {
-  it('memakai nama organisasi dari branding dan tidak punya tautan Daftar/Lupa password', async () => {
+  it('memakai nama organisasi dari branding; tanpa tautan Daftar, dengan "Lupa password?"', async () => {
     await renderApp('/masuk', { session: null });
 
     expect(
       await screen.findByRole('heading', { level: 1, name: t.auth.login.heading('PT Maju Jaya') }),
     ).toBeVisible();
     expect(screen.queryByRole('link', { name: /daftar/i })).toBeNull();
-    expect(screen.queryByText(/lupa password/i)).toBeNull();
+    expect(screen.getByRole('link', { name: t.auth.login.forgot })).toHaveAttribute(
+      'href',
+      '/lupa-password',
+    );
     expect(screen.getByLabelText(t.auth.login.email)).toHaveAttribute('autocomplete', 'username');
     expect(screen.getByLabelText(t.auth.login.password)).toHaveAttribute(
       'autocomplete',
@@ -94,7 +97,7 @@ describe('halaman masuk', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(message);
     expect(router.state.location.pathname).toBe('/masuk');
-    expect(screen.getByLabelText(t.auth.login.password)).toHaveFocus();
+    await waitFor(() => expect(screen.getByLabelText(t.auth.login.password)).toHaveFocus());
   });
 
   it('429 terkunci: sisa waktu di tombol (bukan di wilayah alert), lalu aktif lagi dan diumumkan sekali', async () => {
@@ -147,7 +150,7 @@ describe('halaman masuk', () => {
       // Pesan kunci yang sudah basi hilang; pembaca layar diberi tahu sekali; fokus ke password.
       expect(screen.queryByRole('alert')).toBeNull();
       expect(status).toHaveTextContent(t.auth.login.unlocked);
-      expect(screen.getByLabelText(t.auth.login.password)).toHaveFocus();
+      await waitFor(() => expect(screen.getByLabelText(t.auth.login.password)).toHaveFocus());
     } finally {
       vi.useRealTimers();
     }

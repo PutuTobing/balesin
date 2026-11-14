@@ -265,7 +265,7 @@ function SetupWizard({
           });
           if (!check.acceptable) {
             return fail(step, {
-              'owner.password': check.message ?? t.setup.steps.owner.strength.weak,
+              'owner.password': check.message ?? t.password.strength.weak,
             });
           }
           return goto('branding');

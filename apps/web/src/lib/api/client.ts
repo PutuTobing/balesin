@@ -23,6 +23,8 @@ import { t } from '../../i18n/id';
  * - 403 `TWO_FACTOR_ENROLLMENT_REQUIRED` → sesi terbatas (wajib mendaftar 2FA dulu): pendengar
  *   `onTwoFactorEnrollmentRequired` dipanggil (aplikasi memuat ulang sesi lalu membuka layar
  *   pendaftaran 2FA).
+ * - 403 `FORBIDDEN` → izin ditolak: pendengar `onForbidden` dipanggil (izin bisa berubah bila
+ *   peran pengguna diubah; aplikasi memuat ulang `/auth/me` dan memeriksa ulang penjaga rute).
  * - 429 → `retryAfterSeconds` dari header `Retry-After`.
  * - Respons sukses divalidasi dengan skema Zod dari `@balesin/shared`.
  */
@@ -95,12 +97,15 @@ export interface ApiClient {
   onSessionExpired(listener: (error: ApiError) => void): () => void;
   /** Dipanggil saat API menjawab 403 `TWO_FACTOR_ENROLLMENT_REQUIRED` (sesi terbatas). */
   onTwoFactorEnrollmentRequired(listener: (error: ApiError) => void): () => void;
+  /** Dipanggil saat API menjawab 403 `FORBIDDEN` (izin ditolak; mungkin peran berubah). */
+  onForbidden(listener: (error: ApiError) => void): () => void;
 }
 
 export function createApiClient(options: ApiClientOptions = {}): ApiClient {
   let csrfToken: string | null = null;
   const expiredListeners = new Set<(error: ApiError) => void>();
   const enrollmentListeners = new Set<(error: ApiError) => void>();
+  const forbiddenListeners = new Set<(error: ApiError) => void>();
   const doFetch: typeof fetch = (...args) => (options.fetch ?? globalThis.fetch)(...args);
 
   async function send(path: string, method: HttpMethod, body: unknown, signal?: AbortSignal) {
@@ -205,6 +210,9 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     if (error.status === 403 && error.code === 'TWO_FACTOR_ENROLLMENT_REQUIRED') {
       for (const listener of enrollmentListeners) listener(error);
     }
+    if (error.status === 403 && error.code === 'FORBIDDEN') {
+      for (const listener of forbiddenListeners) listener(error);
+    }
     return error;
   }
 
@@ -219,6 +227,10 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     onSessionExpired(listener) {
       expiredListeners.add(listener);
       return () => expiredListeners.delete(listener);
+    },
+    onForbidden(listener) {
+      forbiddenListeners.add(listener);
+      return () => forbiddenListeners.delete(listener);
     },
     onTwoFactorEnrollmentRequired(listener) {
       enrollmentListeners.add(listener);

@@ -1,4 +1,4 @@
-import type { AuthenticatedSession, MeResponse } from '@balesin/shared';
+import type { AuthenticatedSession, MeResponse, Permission } from '@balesin/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from '@tanstack/react-router';
 import { isApiError } from '../../lib/api/client';
@@ -14,6 +14,23 @@ import { setLoginNotice } from './login-notice';
 export function useSession(): AuthenticatedSession | null {
   const session = useQuery(sessionQuery).data;
   return session?.status === 'authenticated' ? session : null;
+}
+
+/**
+ * Sesi ini memegang izin tersebut (daftar `permissions` dari server; docs/KONTRAK-API-AUTH.md
+ * "Peran & izin"). Hanya untuk menyembunyikan menu/tombol — server tetap memeriksa setiap
+ * permintaan. Matriks tidak ditulis ulang di web.
+ */
+export function sessionCan(
+  session: MeResponse | null | undefined,
+  permission: Permission,
+): boolean {
+  return session?.status === 'authenticated' && (session.permissions ?? []).includes(permission);
+}
+
+/** Sesi penuh yang sedang aktif memegang izin ini. */
+export function useCan(permission: Permission): boolean {
+  return sessionCan(useSession(), permission);
 }
 
 /** Sesi apa pun, termasuk sesi terbatas "wajib mendaftar 2FA" (layar pendaftaran 2FA). */

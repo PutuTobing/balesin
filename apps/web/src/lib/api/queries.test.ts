@@ -15,6 +15,20 @@ function clientWith(previous: ReturnType<typeof fakeSession> | null): QueryClien
 }
 
 describe('storeSession', () => {
+  it('menyimpan izin sesi (permissions) — tidak ada = []; field lain di luar sesi dibuang', () => {
+    const client = new QueryClient();
+    const session = fakeSession('admin');
+    storeSession(client, { ...session, backupCodes: { codes: ['rahasia'] } } as typeof session);
+    const stored = client.getQueryData<typeof session>(queryKeys.session);
+    expect(stored?.permissions).toEqual(session.permissions);
+    expect(stored?.permissions).toContain('team.invite');
+    expect(JSON.stringify(stored)).not.toContain('rahasia');
+
+    const { permissions: _omit, ...older } = session;
+    storeSession(client, older);
+    expect(client.getQueryData<typeof session>(queryKeys.session)?.permissions).toEqual([]);
+  });
+
   it('membuang data pengguna sebelumnya bila yang masuk pengguna lain (komputer bersama)', () => {
     const client = clientWith(fakeSession('owner'));
     const next = fakeSession('cs', 'Budi');

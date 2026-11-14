@@ -14,6 +14,7 @@ import { Button } from '../../components/ui/Button';
 import { PasswordField, SelectField, TextField } from '../../components/ui/Field';
 import { Icon } from '../../components/ui/Icon';
 import { Notice } from '../../components/ui/Notice';
+import { PasswordStrength, type ServerPasswordCheck } from '../../components/ui/PasswordStrength';
 import { RichText } from '../../components/ui/RichText';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { t } from '../../i18n/id';
@@ -24,7 +25,7 @@ import { EmailGuide } from '../email-settings/EmailGuide';
 import { EmailSettingsFields } from '../email-settings/EmailSettingsFields';
 import { EmailTestPanel, type RunEmailTest } from '../email-settings/EmailTestPanel';
 import { emailFormFingerprint, toEmailInput } from '../email-settings/email-form';
-import { estimatePasswordStrength } from './password-strength';
+import { estimatePasswordStrength } from '../../lib/password-strength';
 import styles from './Setup.module.css';
 import {
   emailConnectionVerified,
@@ -116,10 +117,7 @@ export function OrganizationStep({ state, patch, disabled }: StepProps) {
 
 // ── Owner ───────────────────────────────────────────────────────────────────
 
-type ServerCheck =
-  | { state: 'idle' }
-  | { state: 'checking'; password: string }
-  | { state: 'done'; password: string; acceptable: boolean; message: string | null };
+type ServerCheck = ServerPasswordCheck;
 
 const CHECK_DELAY_MS = 700;
 
@@ -173,7 +171,7 @@ export function OwnerStep({ state, patch, disabled }: StepProps) {
           aria-describedby={strengthId}
           disabled={disabled}
         />
-        <StrengthMeter id={strengthId} password={state.owner.password} check={check} />
+        <PasswordStrength id={strengthId} password={state.owner.password} check={check} />
       </div>
       <PasswordField
         size="lg"
@@ -228,51 +226,6 @@ function useServerPasswordCheck(state: WizardState): ServerCheck {
 
   if (!long || (check.state !== 'idle' && check.password !== password)) return { state: 'idle' };
   return check;
-}
-
-function StrengthMeter({
-  id,
-  password,
-  check,
-}: {
-  id: string;
-  password: string;
-  check: ServerCheck;
-}) {
-  const strength = estimatePasswordStrength(password);
-  const rejected = check.state === 'done' && !check.acceptable;
-  const level = rejected ? 0 : strength.level;
-  const copy = t.setup.steps.owner.strength;
-
-  let text: string;
-  if (password === '') text = copy.empty;
-  else if (strength.missing > 0) text = copy.tooShort(strength.missing);
-  else if (rejected) text = check.message ?? copy.weak;
-  else if (check.state === 'checking') text = copy.checking;
-  else text = [copy.weak, copy.weak, copy.good, copy.strong][strength.level] ?? copy.good;
-
-  const accepted = check.state === 'done' && check.acceptable;
-  const tone = rejected ? 'bad' : level >= 2 ? 'good' : level === 1 ? 'fair' : 'none';
-
-  return (
-    <div className={styles.strength} data-tone={tone}>
-      <div className={styles.strengthBars} aria-hidden="true">
-        {[1, 2, 3].map((bar) => (
-          <span
-            key={bar}
-            className={styles.strengthBar}
-            // Ditolak = satu batang merah (bukan tiga batang yang menyerupai "kuat").
-            data-on={(rejected ? bar === 1 : bar <= level) ? '' : undefined}
-          />
-        ))}
-      </div>
-      <p id={id} className={styles.strengthText} aria-live="polite">
-        <span className="sr-only">{copy.label}: </span>
-        {text}
-        {accepted ? <span className={styles.strengthAccepted}> {copy.accepted}</span> : null}
-      </p>
-    </div>
-  );
 }
 
 // ── Branding ────────────────────────────────────────────────────────────────

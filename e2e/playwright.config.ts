@@ -6,9 +6,17 @@ import { BASE_URL, VIEWPORTS, webServer } from './viewports';
  * E2E melawan API sungguhan (lihat `stack/`). Urutan:
  *  1. `alur-awal` — wizard setup dari instalasi kosong, masuk/keluar, terkunci; menyimpan sesi
  *     Owner ke `OWNER_STATE_PATH`.
- *  2. `desktop-1440` dan `hp-390` — semua tes lain, memakai sesi Owner itu (tes tamu
- *     mengosongkan sesinya sendiri lewat `test.use({ storageState })`).
+ *  2. `tanpa-email` — Pengaturan → Tim selagi email pengirim belum diatur (tautan undangan
+ *     disalin manual).
+ *  3. `desktop-1440` dan `hp-390` — semua tes lain, memakai sesi Owner itu (tes tamu
+ *     mengosongkan sesinya sendiri lewat `test.use({ storageState })`). Di sini
+ *     `email-pengirim.spec.ts` mengatur email pengirim organisasi.
+ *  4. `dengan-email` — undangan, lupa/atur ulang password, verifikasi email lewat Mailpit.
+ *
+ * Proyek 2 dan 4 bergantung pada pengaturan email organisasi yang dibagi bersama, jadi masing-
+ * masing berjalan sendiri di sela proyek paralel, tidak bersamaan dengannya.
  */
+const sharedEmailSpecs = /tim-(tanpa|dengan)-email\.spec\.ts$/;
 const desktop = { ...devices['Desktop Chrome'], viewport: VIEWPORTS.desktop };
 const hp = {
   ...devices['Desktop Chrome'],
@@ -38,14 +46,28 @@ export default defineConfig({
   projects: [
     { name: 'alur-awal', testMatch: /alur-awal\.setup\.ts$/, use: desktop },
     {
-      name: 'desktop-1440',
+      name: 'tanpa-email',
       dependencies: ['alur-awal'],
+      testMatch: /tim-tanpa-email\.spec\.ts$/,
+      use: { ...desktop, storageState: OWNER_STATE_PATH },
+    },
+    {
+      name: 'desktop-1440',
+      dependencies: ['tanpa-email'],
+      testIgnore: sharedEmailSpecs,
       use: { ...desktop, storageState: OWNER_STATE_PATH },
     },
     {
       name: 'hp-390',
-      dependencies: ['alur-awal'],
+      dependencies: ['tanpa-email'],
+      testIgnore: sharedEmailSpecs,
       use: { ...hp, storageState: OWNER_STATE_PATH },
+    },
+    {
+      name: 'dengan-email',
+      dependencies: ['desktop-1440', 'hp-390'],
+      testMatch: /tim-dengan-email\.spec\.ts$/,
+      use: { ...desktop, storageState: OWNER_STATE_PATH },
     },
   ],
   webServer,

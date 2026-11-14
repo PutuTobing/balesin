@@ -1,6 +1,6 @@
 import type { EmailSettingsResponse } from '@balesin/shared';
 import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
-import { CircleCheck } from 'lucide-react';
+import { CircleCheck, Info } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { useBrand } from '../../brand/brand';
 import { Button } from '../../components/ui/Button';
@@ -20,6 +20,7 @@ import styles from './EmailSettings.module.css';
 import { EmailGuide } from './EmailGuide';
 import { EmailSettingsFields } from './EmailSettingsFields';
 import { EmailStatusBadge } from './EmailStatusBadge';
+import { EmailTemplatePreview } from './EmailTemplatePreview';
 import { EmailTestPanel, type RunEmailTest } from './EmailTestPanel';
 import {
   emailFormFromView,
@@ -29,7 +30,7 @@ import {
   type EmailFormValues,
 } from './email-form';
 
-/** Pengaturan → Email pengirim (khusus Owner). Data dimuat oleh loader rute. */
+/** Pengaturan → Email pengirim (izin `settings.email.manage`: Owner, Admin). Data dimuat oleh loader rute. */
 export function EmailSettingsPage() {
   const { data } = useSuspenseQuery(emailSettingsQuery);
   return (
@@ -158,6 +159,15 @@ function EmailSettingsScreen({ data }: { data: EmailSettingsResponse }) {
                 : undefined
             }
           />
+          {/* Admin: perubahan server/alamat pengirim diberitahukan ke Owner (oleh server). */}
+          {session && session.user.role !== 'owner' ? (
+            <p className={styles.ownersNote}>
+              <Icon icon={Info} size={16} className={styles.ownersNoteIcon} />
+              {t.emailSettings.ownersNotified}
+            </p>
+          ) : null}
+          {/* Pesan server apa adanya (mis. 503 pemberitahuan ke Owner belum bisa dikirim);
+              isian form tetap seperti yang diketik. */}
           {saveError ? (
             <Notice tone="danger" role="alert">
               {saveError}
@@ -185,6 +195,7 @@ function EmailSettingsScreen({ data }: { data: EmailSettingsResponse }) {
             </Button>
           </div>
         </form>
+        <EmailTemplatePreview />
       </div>
 
       {isDesktop ? (

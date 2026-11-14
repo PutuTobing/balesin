@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/vitest';
 import { configureZodLocale } from '@balesin/shared';
 import { cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, vi } from 'vitest';
-import { clearLoginNotice } from '../features/auth/login-notice';
+import { clearHandoffEmail, clearLoginNotice } from '../features/auth/login-notice';
 import { api } from '../lib/api/client';
 import { THEME_ATTRIBUTE } from '../theme/theme';
 import { installMatchMedia, resetMatchMedia } from './match-media';
@@ -32,6 +32,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   api.setCsrfToken(null);
   clearLoginNotice();
+  clearHandoffEmail();
   resetMatchMedia();
   window.localStorage.clear();
   document.documentElement.removeAttribute(THEME_ATTRIBUTE);

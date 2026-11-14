@@ -343,6 +343,21 @@
   font-weight: var(--weight-medium);
 }
 
+/* Catatan untuk Admin di atas tombol Simpan: teks sekunder kecil dengan ikon info. */
+.ownersNote {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.ownersNoteIcon {
+  flex: none;
+  margin-top: calc((var(--text-13) * var(--leading-text) - var(--size-icon-sm)) / 2);
+}
+
 .formFooter {
   display: flex;
   flex-wrap: wrap;
@@ -367,6 +382,128 @@
 .aside {
   position: sticky;
   top: 0;
+}
+
+/* ---------- Pratinjau template email ---------- */
+
+.previewHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.previewTitle {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+}
+
+.previewBody {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.previewControls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-16);
+}
+
+/* Email | Teks polos: dua pilihan bersebelahan seperti tombol bersegmen. */
+.viewSwitch {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+}
+
+.viewOption {
+  min-width: 6rem;
+  height: calc(var(--size-control) - 2px);
+  padding: 0 var(--space-16);
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.viewOption + .viewOption {
+  border-left: 1px solid var(--line);
+}
+
+.viewOption[data-state='checked'] {
+  background: var(--primary-soft);
+  color: var(--ink);
+}
+
+.viewOption:focus-visible {
+  outline-offset: -3px;
+}
+
+.previewFrame {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.previewSubject {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-8);
+  padding: var(--space-12) var(--space-16);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.previewSubjectLabel {
+  color: var(--ink-2);
+  font-weight: var(--weight-regular);
+}
+
+/* Email selalu bertema terang (seperti di aplikasi email); tinggi tetap, isi digulir di dalam. */
+.previewIframe {
+  display: block;
+  width: 100%;
+  height: 36rem;
+  border: 0;
+  color-scheme: light;
+}
+
+.previewText {
+  height: 36rem;
+  margin: 0;
+  padding: var(--space-16);
+  overflow: auto;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+  line-height: var(--leading-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.previewSubjectSkeleton {
+  display: block;
+  width: 16rem;
+  max-width: 60%;
+  height: calc(var(--text-14) * var(--leading-text));
+}
+
+.previewIframeSkeleton {
+  display: block;
+  height: 36rem;
+  border-radius: 0;
 }
 
 /* Kerangka memuat. */
@@ -430,6 +567,25 @@
 @media (max-width: 640px) {
   .card {
     padding: var(--space-16);
+  }
+
+  .previewControls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .viewSwitch {
+    width: 100%;
+  }
+
+  .viewOption {
+    flex: 1;
+    height: calc(var(--size-touch) - 2px);
+  }
+
+  .previewIframe,
+  .previewText,
+  .previewIframeSkeleton {
+    height: 30rem;
   }
 
   .statusCard {

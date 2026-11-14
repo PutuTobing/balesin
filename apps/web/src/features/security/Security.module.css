@@ -56,6 +56,17 @@
   font-size: var(--text-13);
 }
 
+.emailAddress {
+  color: var(--ink);
+  font-size: var(--text-14);
+  overflow-wrap: anywhere;
+}
+
+.inlineLink {
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
 .explain {
   display: flex;
   align-items: flex-start;

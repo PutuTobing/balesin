@@ -1,25 +1,43 @@
 import {
   API_ROUTES,
+  acceptInvitationResponseSchema,
+  apiPath,
   brandingResponseSchema,
+  completePasswordResetResponseSchema,
   completeSetupResponseSchema,
   confirmTwoFactorEnrollmentResponseSchema,
   detectEmailHostResponseSchema,
   disableTwoFactorResponseSchema,
   emailSettingsResponseSchema,
+  emailTemplatePreviewResponseSchema,
   emailTestResultSchema,
+  emailVerificationStatusResponseSchema,
+  inspectInvitationResponseSchema,
+  inspectPasswordResetResponseSchema,
+  invitationIssuedResponseSchema,
+  invitationListResponseSchema,
   loginResponseSchema,
   logoutResponseSchema,
   meResponseSchema,
   passwordCheckResponseSchema,
+  passwordResetStatusResponseSchema,
   regenerateBackupCodesResponseSchema,
+  requestPasswordResetResponseSchema,
+  revokeInvitationResponseSchema,
+  sendEmailVerificationResponseSchema,
   setupStatusResponseSchema,
   startTwoFactorEnrollmentResponseSchema,
   twoFactorStatusResponseSchema,
+  verifyEmailResponseSchema,
   verifySetupTokenResponseSchema,
   verifyTwoFactorResponseSchema,
+  type AcceptInvitationRequest,
   type CheckSetupPasswordRequest,
+  type CompletePasswordResetRequest,
+  type CreateInvitationRequest,
   type CompleteSetupRequest,
   type EmailSettingsInput,
+  type EmailTemplateId,
   type LoginRequest,
   type SetupDetectEmailHostRequest,
   type SetupSendTestEmailRequest,
@@ -129,6 +147,96 @@ export function createEndpoints(client: ApiClient) {
           schema: disableTwoFactorResponseSchema,
         }),
     },
+    /**
+     * Undangan (docs/KONTRAK-API-AUTH.md bagian "Undangan"). Respons buat/kirim ulang bisa memuat
+     * tautan undangan (`link`) yang setara kunci akses: pemanggil TIDAK boleh menyimpannya di cache
+     * Query/mutasi atau storage (lihat `features/team`).
+     */
+    invitations: {
+      list: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.invitations.collection, {
+          schema: invitationListResponseSchema,
+          signal,
+        }),
+      create: (body: CreateInvitationRequest) =>
+        client.request(API_ROUTES.invitations.collection, {
+          method: 'POST',
+          body,
+          schema: invitationIssuedResponseSchema,
+        }),
+      resend: (invitationId: string) =>
+        client.request(apiPath(API_ROUTES.invitations.resend, { invitationId }), {
+          method: 'POST',
+          schema: invitationIssuedResponseSchema,
+        }),
+      revoke: (invitationId: string) =>
+        client.request(apiPath(API_ROUTES.invitations.revoke, { invitationId }), {
+          method: 'DELETE',
+          schema: revokeInvitationResponseSchema,
+        }),
+      /** Publik: token dari fragment tautan, dikirim di body. */
+      inspect: (token: string, signal?: AbortSignal) =>
+        client.request(API_ROUTES.invitations.inspect, {
+          method: 'POST',
+          body: { token },
+          schema: inspectInvitationResponseSchema,
+          signal,
+        }),
+      accept: (body: AcceptInvitationRequest) =>
+        client.request(API_ROUTES.invitations.accept, {
+          method: 'POST',
+          body,
+          schema: acceptInvitationResponseSchema,
+        }),
+    },
+    /** Atur ulang password (semua publik). */
+    passwordReset: {
+      status: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.passwordReset.status, {
+          schema: passwordResetStatusResponseSchema,
+          signal,
+        }),
+      request: (email: string) =>
+        client.request(API_ROUTES.passwordReset.request, {
+          method: 'POST',
+          body: { email },
+          schema: requestPasswordResetResponseSchema,
+        }),
+      inspect: (token: string, signal?: AbortSignal) =>
+        client.request(API_ROUTES.passwordReset.inspect, {
+          method: 'POST',
+          body: { token },
+          schema: inspectPasswordResetResponseSchema,
+          signal,
+        }),
+      complete: (body: CompletePasswordResetRequest) =>
+        client.request(API_ROUTES.passwordReset.complete, {
+          method: 'POST',
+          body,
+          schema: completePasswordResetResponseSchema,
+        }),
+    },
+    /** Verifikasi email akun sendiri. */
+    emailVerification: {
+      status: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.emailVerification.status, {
+          schema: emailVerificationStatusResponseSchema,
+          signal,
+        }),
+      send: () =>
+        client.request(API_ROUTES.emailVerification.status, {
+          method: 'POST',
+          body: {},
+          schema: sendEmailVerificationResponseSchema,
+        }),
+      /** Publik: token dari fragment tautan. */
+      verify: (token: string) =>
+        client.request(API_ROUTES.emailVerification.verify, {
+          method: 'POST',
+          body: { token },
+          schema: verifyEmailResponseSchema,
+        }),
+    },
     branding: {
       get: (signal?: AbortSignal) =>
         client.request(API_ROUTES.branding.get, { schema: brandingResponseSchema, signal }),
@@ -160,6 +268,12 @@ export function createEndpoints(client: ApiClient) {
           method: 'POST',
           body: settings ? { to, settings } : { to },
           schema: emailTestResultSchema,
+        }),
+      /** Pratinjau template email (data contoh, tanpa token sungguhan). */
+      templatePreview: (template: EmailTemplateId, signal?: AbortSignal) =>
+        client.request(apiPath(API_ROUTES.settings.emailTemplatePreview, { template }), {
+          schema: emailTemplatePreviewResponseSchema,
+          signal,
         }),
     },
   };

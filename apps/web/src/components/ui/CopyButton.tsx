@@ -1,6 +1,6 @@
 import { Check, Copy } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { Button } from './Button';
+import { useEffect, useState, type Ref } from 'react';
+import { Button, type ButtonVariant } from './Button';
 import { Icon } from './Icon';
 
 const COPIED_MS = 2000;
@@ -14,7 +14,11 @@ interface CopyButtonProps {
   /** Diumumkan pembaca layar sekali setelah berhasil. */
   announcement: string;
   size?: 'md' | 'lg';
+  variant?: ButtonVariant;
   className?: string;
+  /** Dipanggil setelah teks benar-benar masuk clipboard. */
+  onCopied?: () => void;
+  ref?: Ref<HTMLButtonElement>;
 }
 
 /**
@@ -28,7 +32,10 @@ export function CopyButton({
   copiedLabel,
   announcement,
   size,
+  variant,
   className,
+  onCopied,
+  ref,
 }: CopyButtonProps) {
   const [copied, setCopied] = useState(false);
 
@@ -42,6 +49,7 @@ export function CopyButton({
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
+      onCopied?.();
     } catch {
       // Clipboard ditolak: teks tetap bisa dipilih dan disalin manual.
     }
@@ -49,7 +57,13 @@ export function CopyButton({
 
   return (
     <>
-      <Button size={size} className={className} onClick={() => void copy()}>
+      <Button
+        ref={ref}
+        size={size}
+        variant={variant}
+        className={className}
+        onClick={() => void copy()}
+      >
         <Icon icon={copied ? Check : Copy} size={16} />
         {copied ? copiedLabel : label}
       </Button>

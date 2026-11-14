@@ -122,6 +122,15 @@
   transition: background-color var(--duration-fast) var(--ease-out);
 }
 
+/* Beberapa baris: dipisah garis; hanya baris terakhir yang membulat mengikuti kartu. */
+.menu li + li {
+  border-top: 1px solid var(--line);
+}
+
+.menu li:not(:last-child) .menuLink {
+  border-radius: 0;
+}
+
 .menuLink:hover {
   background: var(--surface-2);
   text-decoration: none;
@@ -166,6 +175,12 @@
   flex: none;
   align-items: center;
   gap: var(--space-8);
+}
+
+.menuCount {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  white-space: nowrap;
 }
 
 .statusSeparator {

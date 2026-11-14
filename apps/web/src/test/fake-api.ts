@@ -1,9 +1,14 @@
 import {
   API_ROUTES,
+  INVITE_PERMISSIONS,
+  permissionsForRole,
   isTwoFactorRequired,
   type AuthenticatedSession,
   type BrandingResponse,
   type EmailSettingsResponse,
+  type EmailVerificationStatusResponse,
+  type Invitation,
+  type InvitationListResponse,
   type MeResponse,
   type SetupStatusResponse,
   type StartTwoFactorEnrollmentResponse,
@@ -64,6 +69,7 @@ export function fakeSession(role: UserRole = 'owner', name = 'Rina Kartika'): Au
       timezone: 'Asia/Jakarta',
     },
     csrfToken: 'csrf-tes-1',
+    permissions: permissionsForRole(role),
     session: {
       idleExpiresAt: '2026-11-14T00:00:00.000Z',
       absoluteExpiresAt: '2026-12-13T00:00:00.000Z',
@@ -76,7 +82,13 @@ export function fakeEnrollmentSession(
   role: UserRole = 'owner',
   csrfToken = 'csrf-terbatas',
 ): TwoFactorEnrollmentSession {
-  return { ...fakeSession(role), status: 'two_factor_enrollment_required', csrfToken };
+  // Sesi terbatas tidak pernah memegang izin apa pun.
+  return {
+    ...fakeSession(role),
+    status: 'two_factor_enrollment_required',
+    csrfToken,
+    permissions: [],
+  };
 }
 
 /** Status 2FA bawaan: peran wajib sudah aktif dengan 10 kode; peran lain belum aktif. */
@@ -145,6 +157,47 @@ export const emptyEmailSettings: EmailSettingsResponse = {
   canStoreSecrets: true,
 };
 
+/** Status verifikasi email bawaan: sudah terverifikasi (keadaan paling tenang). */
+export function fakeEmailVerification(
+  overrides: Partial<EmailVerificationStatusResponse> = {},
+): EmailVerificationStatusResponse {
+  return {
+    email: 'rina@majujaya.co.id',
+    verified: true,
+    verifiedAt: '2026-11-13T03:00:00.000Z',
+    canSend: true,
+    ...overrides,
+  };
+}
+
+export function fakeInvitation(overrides: Partial<Invitation> = {}): Invitation {
+  return {
+    id: '7d1c4f8e-2b3a-4c5d-8e9f-0a1b2c3d4e01',
+    email: 'citra@majujaya.co.id',
+    role: 'cs',
+    status: 'pending',
+    invitedBy: { id: '0b0e2d8c-6d3f-4b8a-9d55-5e2f8a1c0001', name: 'Rina Kartika' },
+    createdAt: '2026-11-14T02:00:00.000Z',
+    lastSentAt: '2026-11-14T02:00:00.000Z',
+    expiresAt: '2026-11-17T02:00:00.000Z',
+    sendCount: 1,
+    deliveryStatus: 'sent',
+    canManage: true,
+    ...overrides,
+  };
+}
+
+export function fakeInvitationList(
+  overrides: Partial<InvitationListResponse> = {},
+): InvitationListResponse {
+  return {
+    invitations: [],
+    invitableRoles: ['admin', 'supervisor', 'cs', 'teknisi'],
+    emailDelivery: true,
+    ...overrides,
+  };
+}
+
 export interface FakeApiOptions {
   /** `null` = belum masuk (401). Sesi terbatas (`two_factor_enrollment_required`) juga bisa. */
   session?: MeResponse | null;
@@ -153,6 +206,12 @@ export interface FakeApiOptions {
   branding?: BrandingResponse;
   setupStatus?: SetupStatusResponse;
   emailSettings?: EmailSettingsResponse;
+  /** Bawaan: `fakeEmailVerification()` dengan email sesi. */
+  emailVerification?: EmailVerificationStatusResponse;
+  /** Bawaan: daftar kosong, pilihan peran sesuai peran sesi, email pengirim diatur. */
+  invitations?: InvitationListResponse;
+  /** Bawaan: `true` (email pengirim instalasi sudah diatur). */
+  passwordResetAvailable?: boolean;
   /** Penangan tambahan, kunci `"METODE /path"`; mengalahkan bawaan. */
   routes?: Record<string, FakeHandler>;
 }
@@ -198,6 +257,21 @@ export function installFakeApi(options: FakeApiOptions = {}): FakeApi {
     [`GET ${API_ROUTES.settings.email}`]: fullSessionOnly(() =>
       json(options.emailSettings ?? emptyEmailSettings),
     ),
+    [`GET ${API_ROUTES.emailVerification.status}`]: fullSessionOnly(() =>
+      json(
+        options.emailVerification ?? fakeEmailVerification({ email: session?.user.email ?? '' }),
+      ),
+    ),
+    [`GET ${API_ROUTES.invitations.collection}`]: fullSessionOnly(() =>
+      json(
+        options.invitations ??
+          fakeInvitationList({
+            invitableRoles: [...INVITE_PERMISSIONS[session?.user.role ?? 'cs']],
+          }),
+      ),
+    ),
+    [`GET ${API_ROUTES.passwordReset.status}`]: () =>
+      json({ available: options.passwordResetAvailable ?? true }),
     [`POST ${API_ROUTES.auth.logout}`]: () => {
       session = null;
       return json({ status: 'logged_out' });

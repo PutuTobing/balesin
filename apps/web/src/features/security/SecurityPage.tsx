@@ -21,6 +21,7 @@ import { formatDate } from '../../lib/format';
 import { useSession } from '../auth/session';
 import { BackupCodesPanel } from '../two-factor/BackupCodesPanel';
 import { BACKUP_CODES_LOW } from '../two-factor/constants';
+import { EmailCard, EmailCardSkeleton } from './EmailCard';
 import { ReauthForm } from './ReauthForm';
 import { TwoFactorBadge } from './TwoFactorBadge';
 import styles from './Security.module.css';
@@ -31,7 +32,7 @@ const BACKUP_HEADING_ID = 'keamanan-kode-cadangan';
 
 /**
  * Pengaturan → Keamanan akun (semua peran): status 2FA, sisa kode cadangan, buat ulang kode
- * cadangan, dan menonaktifkan 2FA bagi peran yang tidak wajib. Status sudah dimuat loader rute
+ * cadangan, menonaktifkan 2FA bagi peran yang tidak wajib, dan status verifikasi email akun. Status sudah dimuat loader rute
  * (dan biasanya sudah lebih dulu dari menu akun / Lainnya / Pengaturan).
  */
 export function SecurityPage() {
@@ -67,6 +68,7 @@ export function SecurityPage() {
             }}
           />
         ) : null}
+        <EmailCard />
       </div>
     </Page>
   );
@@ -85,6 +87,7 @@ export function SecurityCardsSkeleton() {
     <div className={styles.content}>
       <TwoFactorCard status={null} required={required} roleLabel={USER_ROLE_LABELS[role]} />
       {required ? <BackupCodesCard status={null} email="" /> : null}
+      <EmailCardSkeleton />
     </div>
   );
 }

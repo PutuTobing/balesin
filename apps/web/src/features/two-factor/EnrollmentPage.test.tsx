@@ -120,7 +120,7 @@ describe('pendaftaran 2FA wajib', () => {
     fireEvent.click(screen.getByRole('button', { name: copy.confirm.submit }));
 
     const heading = await screen.findByRole('heading', { level: 1, name: codesCopy.title });
-    expect(heading).toHaveFocus();
+    await waitFor(() => expect(heading).toHaveFocus());
     for (const code of FAKE_BACKUP_CODES) expect(screen.getByText(code)).toBeVisible();
     const confirm = view.api.requests.findLast(
       (request) => request.path === API_ROUTES.twoFactor.confirmEnrollment,

@@ -46,11 +46,39 @@ describe('penjaga rute', () => {
     await waitFor(() => expect(external.router.state.location.pathname).toBe('/inbox'));
   });
 
-  it('Email pengirim khusus Owner: peran lain dialihkan dan tidak melihat menunya', async () => {
-    const { router } = await renderApp('/pengaturan/email', { session: fakeSession('admin') });
+  it('Email pengirim butuh izin settings.email.manage: tanpa izin dialihkan dan tidak melihat menunya', async () => {
+    const { router } = await renderApp('/pengaturan/email', { session: fakeSession('supervisor') });
     await waitFor(() => expect(router.state.location.pathname).toBe('/pengaturan'));
     expect(await screen.findByRole('heading', { level: 1, name: t.nav.settings })).toBeVisible();
     expect(screen.queryByRole('link', { name: new RegExp(t.emailSettings.title) })).toBeNull();
+  });
+
+  it('menu mengikuti daftar izin dari server, bukan peran', async () => {
+    // Admin dengan izin dicabut server: tidak ada menu organisasi walau perannya Admin.
+    const view = await renderApp('/pengaturan/email', {
+      session: { ...fakeSession('admin'), permissions: ['inbox.view'] },
+    });
+    await waitFor(() => expect(view.router.state.location.pathname).toBe('/pengaturan'));
+    expect(screen.queryByRole('link', { name: new RegExp(t.emailSettings.title) })).toBeNull();
+    expect(screen.queryByRole('link', { name: new RegExp(t.team.title) })).toBeNull();
+  });
+
+  it('403 FORBIDDEN tak terduga → sesi dimuat ulang; izin yang hilang menutup halaman itu', async () => {
+    const view = await renderApp('/pengaturan/tim', { session: fakeSession('admin') });
+    await screen.findByRole('heading', { level: 1, name: t.team.title });
+    // Owner baru saja menurunkan peran pengguna ini menjadi CS.
+    view.api.setSession(fakeSession('cs'));
+    view.api.on(`POST ${API_ROUTES.invitations.collection}`, () =>
+      apiError(403, 'FORBIDDEN', 'Kamu tidak punya izin untuk melakukan tindakan ini.'),
+    );
+    fireEvent.change(screen.getByLabelText(t.team.invite.email), {
+      target: { value: 'citra@majujaya.co.id' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: t.team.invite.submitEmail }));
+    await waitFor(() => expect(view.router.state.location.pathname).toBe('/pengaturan'));
+    expect(view.api.requests.filter((r) => r.path === API_ROUTES.auth.me).length).toBeGreaterThan(
+      1,
+    );
   });
 
   it('Owner melihat menu Email pengirim beserta statusnya', async () => {

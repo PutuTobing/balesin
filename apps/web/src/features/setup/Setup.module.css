@@ -322,53 +322,6 @@ button.stepButton:hover:not(:disabled) {
   gap: var(--space-8);
 }
 
-.strength {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
-}
-
-.strengthBars {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-4);
-}
-
-.strengthBar {
-  height: var(--space-4);
-  border-radius: var(--radius-pill);
-  background: var(--line);
-  transition: background-color var(--duration-base) var(--ease-out);
-}
-
-.strength[data-tone='fair'] .strengthBar[data-on] {
-  background: var(--warning-ink);
-}
-
-.strength[data-tone='good'] .strengthBar[data-on] {
-  background: var(--success);
-}
-
-.strength[data-tone='bad'] .strengthBar[data-on] {
-  background: var(--danger);
-}
-
-.strengthText {
-  color: var(--ink-2);
-  font-size: var(--text-13);
-  text-wrap: pretty;
-}
-
-.strength[data-tone='bad'] .strengthText {
-  color: var(--danger-ink);
-  font-weight: var(--weight-medium);
-}
-
-.strengthAccepted {
-  color: var(--success-ink);
-  font-weight: var(--weight-semibold);
-}
-
 /* ---------- Branding ---------- */
 
 .logoField {

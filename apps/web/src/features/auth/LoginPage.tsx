@@ -5,7 +5,7 @@ import {
   type VerifyTwoFactorResponse,
 } from '@balesin/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { getRouteApi, useRouter } from '@tanstack/react-router';
+import { Link, getRouteApi, useRouter } from '@tanstack/react-router';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { BrandLogo } from '../../brand/BrandLogo';
 import { useBrand } from '../../brand/brand';
@@ -22,7 +22,15 @@ import { safeRedirectTarget } from '../../lib/safe-redirect';
 import { useLock } from '../../lib/use-lock';
 import { usePageTitle } from '../../lib/use-page-title';
 import styles from './Login.module.css';
-import { clearLoginNotice, peekLoginNotice, type LoginNotice } from './login-notice';
+import layout from './AuthLayout.module.css';
+import {
+  clearHandoffEmail,
+  clearLoginNotice,
+  peekHandoffEmail,
+  peekLoginNotice,
+  setHandoffEmail,
+  type LoginNotice,
+} from './login-notice';
 import { BackupCodeUsed, TwoFactorLoginForm } from './TwoFactorLogin';
 import { twoFactorLoginCopy } from './two-factor-copy';
 
@@ -67,14 +75,16 @@ export function LoginPage() {
     message: null,
     returning: false,
   });
-  // Email tetap terisi saat kembali dari langkah kode.
-  const [email, setEmail] = useState('');
+  // Email tetap terisi saat kembali dari langkah kode (dan dibawa dari/ke "Lupa password?").
+  const [email, setEmail] = useState(peekHandoffEmail);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const target = safeRedirectTarget(search.redirect);
 
   useEffect(() => {
     if (stage.kind === 'backup-used') headingRef.current?.focus();
   }, [stage.kind]);
+  // Email bawaan dari halaman lain sudah dipakai: jangan muncul lagi di kunjungan berikutnya.
+  useEffect(() => clearHandoffEmail(), []);
 
   const onVerified = async (response: VerifyTwoFactorResponse) => {
     storeSession(queryClient, response);
@@ -289,8 +299,12 @@ function LoginForm({
   return (
     <form ref={formRef} className={styles.form} onSubmit={submit} noValidate>
       {showNotice ? (
-        <Notice tone={notice === 'logged-out' ? 'success' : 'info'} role="status">
-          {notice === 'logged-out' ? t.auth.login.loggedOut : t.auth.login.sessionEnded}
+        <Notice tone={notice === 'session-ended' ? 'info' : 'success'} role="status">
+          {notice === 'logged-out'
+            ? t.auth.login.loggedOut
+            : notice === 'password-reset'
+              ? t.auth.login.passwordReset
+              : t.auth.login.sessionEnded}
         </Notice>
       ) : null}
       <TextField
@@ -319,6 +333,10 @@ function LoginForm({
         error={fieldErrors.password}
         disabled={login.isPending}
       />
+      {/* Email yang sudah diketik ikut ke halaman lupa password (memori, bukan URL). */}
+      <Link to="/lupa-password" className={layout.forgot} onClick={() => setHandoffEmail(email)}>
+        {t.auth.login.forgot}
+      </Link>
       <SubmitButton
         className={styles.submit}
         pending={login.isPending}
