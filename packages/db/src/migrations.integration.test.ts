@@ -36,6 +36,7 @@ describe('migrasi dari nol', () => {
     await runMigrations(database.url);
 
     expect(await publicTables()).toEqual([
+      'account_tokens',
       'audit_logs',
       'email_settings',
       'installation',
@@ -43,6 +44,7 @@ describe('migrasi dari nol', () => {
       'organizations',
       'two_factor_challenges',
       'user_backup_codes',
+      'user_invitations',
       'user_sessions',
       'users',
     ]);

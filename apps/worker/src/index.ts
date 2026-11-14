@@ -40,6 +40,7 @@ function main(config: WorkerConfig): void {
   });
   const runtime = startWorkers({ connection: redis }, logger, {
     email: {
+      appUrl: config.appUrl,
       db,
       secretBox: config.masterKey ? createSecretBox(config.masterKey) : null,
       fallback: config.smtpFallback,

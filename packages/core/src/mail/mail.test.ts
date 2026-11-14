@@ -17,11 +17,19 @@ import {
   type SmtpConnectionConfig,
 } from './smtp';
 import {
+  describeUserAgent,
   escapeHtml,
   renderAccountLockedEmail,
+  renderAdminTwoFactorNoticeEmail,
+  renderEmailVerificationEmail,
+  renderInvitationEmail,
+  renderPasswordResetEmail,
   renderSecurityNoticeEmail,
   renderTestEmail,
+  type EmailBrand,
 } from './templates';
+import { SECURITY_NOTICE_EVENTS, type SecurityNoticeEvent } from '../queues';
+import { buildTokenLink } from '@balesin/shared';
 import { createSecretBox } from '../crypto';
 import { z } from 'zod';
 
@@ -287,7 +295,17 @@ describe('klien SMTP terhadap server tiruan', () => {
   }
 
   const sender = { fromName: 'Balesin "Uji"', fromAddress: 'cs@contoh.test', replyTo: null };
-  const mail = { to: 'tujuan@contoh.test', ...renderTestEmail({ productName: 'Balesin Uji' }) };
+  const mail = {
+    to: 'tujuan@contoh.test',
+    ...renderTestEmail({
+      brand: {
+        productName: 'Balesin Uji',
+        organizationName: null,
+        logoSrc: null,
+        primaryColor: null,
+      },
+    }),
+  };
 
   it('verifikasi: sambung + login; password dikirim ke server, tidak ke tempat lain', async () => {
     const { config, policy, received } = await fakeSmtp((line) =>
@@ -558,8 +576,29 @@ describe('pengaturan tersimpan dan cadangan .env', () => {
 });
 
 describe('template email', () => {
+  const brand = (overrides: Partial<EmailBrand> = {}): EmailBrand => ({
+    productName: 'Balesin',
+    organizationName: 'PT Maju Jaya',
+    logoSrc: null,
+    primaryColor: null,
+    ...overrides,
+  });
+  const hostileBrand = brand({
+    productName: 'Balesin\r\nBcc: korban@contoh.test',
+    organizationName: '<script>alert(1)</script> Jaya',
+  });
+  const APP = 'https://balesin.contoh.co.id';
+  const at = new Date('2026-11-13T03:30:00.000Z');
+
+  /** Semua alamat http(s) di HTML hanya boleh tautan aplikasi. */
+  function externalUrls(html: string): string[] {
+    return [...html.matchAll(/https?:\/\/[^\s"'<>]+/g)]
+      .map((match) => match[0])
+      .filter((url) => !url.startsWith(`${APP}/`));
+  }
+
   it('email tes: bahasa Indonesia, sapaan "kamu", tanpa tautan atau gambar luar', () => {
-    const mail = renderTestEmail({ productName: 'Balesin <Uji>' });
+    const mail = renderTestEmail({ brand: brand({ productName: 'Balesin <Uji>' }) });
 
     expect(mail.subject).toBe('Email tes dari Balesin <Uji>');
     expect(mail.text).toContain('pengaturan email pengirim sudah benar');
@@ -569,13 +608,198 @@ describe('template email', () => {
     expect(mail.html).not.toMatch(/<img|<a |<script|https?:\/\//i);
   });
 
+  it('kerangka bermerek: nama produk, nama organisasi, logo hanya cid:/data:, warna dicek kontrasnya', () => {
+    const withLogo = renderTestEmail({
+      brand: brand({ logoSrc: 'cid:logo@balesin', primaryColor: '#0b5394' }),
+    });
+    expect(withLogo.html).toContain('<img src="cid:logo@balesin"');
+    expect(withLogo.html).toContain('PT Maju Jaya');
+    expect(withLogo.text).toContain('— Balesin · PT Maju Jaya');
+    expect(withLogo.text).toContain('Email ini dikirim otomatis oleh Balesin untuk PT Maju Jaya.');
+
+    // Logo dari alamat luar tidak pernah dirender.
+    const remote = renderTestEmail({ brand: brand({ logoSrc: 'https://jahat.test/x.png' }) });
+    expect(remote.html).not.toMatch(/<img/);
+
+    const invitation = (primaryColor: string | null) =>
+      renderInvitationEmail({
+        brand: brand({ primaryColor }),
+        timeZone: 'Asia/Jakarta',
+        inviterName: 'Rina',
+        role: 'cs',
+        email: 'budi@contoh.test',
+        link: `${APP}/undangan#token=abc`,
+        expiresAt: at,
+        twoFactorRequired: false,
+      }).html;
+    // Warna organisasi dengan kontras cukup dipakai untuk tombol.
+    expect(invitation('#0b5394')).toContain('background:#0b5394');
+    // Warna terlalu terang untuk teks putih: teks tombol memakai tinta gelap.
+    expect(invitation('#ffd24d')).toMatch(/background:#ffd24d[\s\S]*color:#14202E/);
+    // Bukan warna heksadesimal (data rusak): warna bawaan, tidak ada sisipan CSS.
+    const broken = invitation('red;background:url(x)');
+    expect(broken).not.toContain('url(x)');
+    expect(broken).toContain('background:#1167D8');
+  });
+
+  it('undangan: tautan dari APP_URL, peran, kedaluwarsa, 2FA untuk peran wajib, nilai pengguna di-escape', () => {
+    const link = buildTokenLink(APP, 'invitation', 'TokenAcak_123-xyz');
+    const mail = renderInvitationEmail({
+      brand: hostileBrand,
+      timeZone: 'Asia/Jakarta',
+      inviterName: '<b>Rina</b>\r\nBcc: x@contoh.test',
+      role: 'admin',
+      email: 'budi@contoh.test',
+      link,
+      expiresAt: at,
+      twoFactorRequired: true,
+    });
+
+    expect(link).toBe(`${APP}/undangan#token=TokenAcak_123-xyz`);
+    expect(mail.subject).not.toMatch(/[\r\n]/);
+    expect(mail.subject).toContain('mengundangmu');
+    expect(mail.text).toContain(link);
+    expect(mail.html).toContain(`href="${link}"`);
+    expect(mail.text).toContain('sebagai Admin');
+    expect(mail.text).toContain('13 November 2026');
+    expect(mail.text).toContain('verifikasi dua langkah');
+    expect(mail.html).toContain('&lt;b&gt;Rina&lt;/b&gt;');
+    expect(mail.html).not.toContain('<b>Rina</b>');
+    expect(mail.html).not.toContain('<script>');
+    expect(mail.html).toContain('&lt;script&gt;');
+    expect(externalUrls(mail.html ?? '')).toEqual([]);
+    expect(mail.text).not.toMatch(/\bAnda\b/i);
+
+    const cs = renderInvitationEmail({
+      brand: brand(),
+      timeZone: 'Asia/Jakarta',
+      inviterName: 'Rina',
+      role: 'cs',
+      email: 'budi@contoh.test',
+      link,
+      expiresAt: at,
+      twoFactorRequired: false,
+    });
+    expect(cs.text).not.toContain('verifikasi dua langkah');
+  });
+
+  it('tautan wajib http(s): template menolak skema lain', () => {
+    expect(() =>
+      renderEmailVerificationEmail({
+        brand: brand(),
+        timeZone: 'Asia/Jakarta',
+        userName: 'Budi',
+        email: 'budi@contoh.test',
+        link: 'javascript:alert(1)',
+        expiresAt: at,
+      }),
+    ).toThrow();
+  });
+
+  it('atur ulang password: 30 menit, asal permintaan (IP + perangkat), kode 2FA bila aktif', () => {
+    const link = buildTokenLink(APP, 'passwordReset', 'abc');
+    const mail = renderPasswordResetEmail({
+      brand: brand(),
+      timeZone: 'Asia/Jakarta',
+      userName: 'Budi',
+      email: 'budi@contoh.test',
+      link,
+      expiresAt: at,
+      requestedAt: at,
+      origin: {
+        ip: '203.0.113.7',
+        userAgent:
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36',
+      },
+      twoFactorEnabled: true,
+    });
+    expect(link).toBe(`${APP}/atur-ulang-password#token=abc`);
+    expect(mail.text).toContain('30 menit');
+    expect(mail.text).toContain('Alamat IP: 203.0.113.7');
+    expect(mail.text).toContain('Perangkat: Chrome di Windows');
+    expect(mail.text).toContain('kode cadangan');
+    expect(mail.text).toContain('Kalau bukan kamu yang meminta');
+    expect(externalUrls(mail.html ?? '')).toEqual([]);
+  });
+
+  it('verifikasi email dan pemberitahuan password diganti', () => {
+    const verify = renderEmailVerificationEmail({
+      brand: brand(),
+      timeZone: 'Asia/Jakarta',
+      userName: 'Budi',
+      email: 'budi@contoh.test',
+      link: buildTokenLink(`${APP}/`, 'emailVerification', 'abc'),
+      expiresAt: at,
+    });
+    expect(verify.text).toContain(`${APP}/verifikasi-email#token=abc`);
+    expect(verify.subject).toContain('Verifikasi alamat email');
+
+    const changed = renderSecurityNoticeEmail({
+      brand: brand(),
+      userName: 'Budi',
+      event: 'password_changed',
+      occurredAt: at,
+      timeZone: 'Asia/Jakarta',
+      origin: { ip: null, userAgent: null },
+    });
+    expect(changed.subject).toContain('Password akun Balesin kamu sudah diganti');
+    expect(changed.text).toContain('Semua perangkat yang sedang masuk sudah dikeluarkan');
+    expect(changed.text).toContain('Alamat IP: tidak diketahui');
+    expect(changed.text).toContain('Perangkat: Perangkat tidak dikenal');
+  });
+
+  it('2FA aktif ke Owner/Admin: nama, peran, waktu, IP, perangkat', () => {
+    const mail = renderAdminTwoFactorNoticeEmail({
+      brand: brand(),
+      timeZone: 'Asia/Jakarta',
+      recipientName: 'Rina',
+      subject: { name: 'Budi <Admin>', email: 'budi@contoh.test', role: 'admin' },
+      occurredAt: at,
+      origin: {
+        ip: '2001:db8::7',
+        userAgent:
+          'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+      },
+    });
+    expect(mail.subject).toContain('(Admin)');
+    expect(mail.text).toContain('Halo Rina,');
+    expect(mail.text).toContain('budi@contoh.test');
+    expect(mail.text).toContain('Alamat IP: 2001:db8::7');
+    expect(mail.text).toContain('Perangkat: Safari di iPhone');
+    expect(mail.html).toContain('Budi &lt;Admin&gt;');
+    expect(mail.html).not.toContain('Budi <Admin>');
+  });
+
+  it('perkiraan perangkat dari user agent', () => {
+    expect(describeUserAgent(null)).toBe('Perangkat tidak dikenal');
+    expect(
+      describeUserAgent(
+        'Mozilla/5.0 (Linux; Android 14; SM-A546E) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/25.0 Chrome/121.0 Mobile Safari/537.36',
+      ),
+    ).toBe('Samsung Internet di Android');
+    expect(
+      describeUserAgent(
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+      ),
+    ).toBe('Safari di macOS');
+    expect(
+      describeUserAgent(
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36 Edg/130.0',
+      ),
+    ).toBe('Microsoft Edge di Windows');
+    expect(
+      describeUserAgent('Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0'),
+    ).toBe('Firefox di Linux');
+    expect(describeUserAgent('curl/8.5.0')).toBe('Perangkat tidak dikenal');
+  });
+
   it('akun dikunci: nama di-escape, waktu dalam zona organisasi, subjek satu baris', () => {
     const mail = renderAccountLockedEmail({
-      productName: 'Balesin\r\nBcc: korban@contoh.test',
+      brand: brand({ productName: 'Balesin\r\nBcc: korban@contoh.test' }),
       userName: '<b>Budi</b>\nSantoso',
       failedAttempts: 5,
       lockMinutes: 15,
-      lockedUntil: new Date('2026-11-13T03:30:00.000Z'),
+      lockedUntil: at,
       timeZone: 'Asia/Jakarta',
     });
 
@@ -591,15 +815,19 @@ describe('template email', () => {
   });
 
   it('isi menyesuaikan lingkup kunci: satu jaringan, banyak jaringan, perangkat dikenal', () => {
-    const render = (scope: 'source' | 'account' | 'device' | 'two_factor') =>
+    const render = (
+      scope: 'source' | 'account' | 'device' | 'two_factor',
+      trigger?: 'login' | 'reauth' | 'password_reset',
+    ) =>
       renderAccountLockedEmail({
-        productName: 'Balesin',
+        brand: brand(),
         userName: 'Budi',
         failedAttempts: 5,
         lockMinutes: 15,
-        lockedUntil: new Date('2026-11-13T03:30:00.000Z'),
+        lockedUntil: at,
         timeZone: 'Asia/Jakarta',
         scope,
+        ...(trigger ? { trigger } : {}),
       }).text;
 
     expect(render('source')).toContain('5 kali percobaan masuk ke akunmu');
@@ -610,38 +838,25 @@ describe('template email', () => {
     expect(render('device')).toContain('dari perangkat yang pernah kamu pakai');
     expect(render('two_factor')).toContain('password yang BENAR, tetapi kode verifikasi');
     expect(render('two_factor')).toContain('password-mu sudah diketahui orang lain');
-    const fromReauth = renderAccountLockedEmail({
-      productName: 'Balesin',
-      userName: 'Budi',
-      failedAttempts: 5,
-      lockMinutes: 15,
-      lockedUntil: new Date('2026-11-13T03:30:00.000Z'),
-      timeZone: 'Asia/Jakarta',
-      scope: 'two_factor',
-      trigger: 'reauth',
-    }).text;
+    const fromReauth = render('two_factor', 'reauth');
     expect(fromReauth).toContain('halaman Keamanan akun');
     expect(fromReauth).toContain('sedang masuk ke akunmu');
     expect(fromReauth).not.toContain('percobaan masuk ke akunmu');
-    for (const text of [render('two_factor'), fromReauth]) {
+    const fromReset = render('two_factor', 'password_reset');
+    expect(fromReset).toContain('mengatur ulang password');
+    expect(fromReset).toContain('bisa membuka email akunmu');
+    for (const text of [render('two_factor'), fromReauth, fromReset]) {
       expect(text).not.toMatch(/ganti password|diatur ulang/);
     }
   });
 
   it('pemberitahuan keamanan: 2FA aktif, 2FA nonaktif, kode cadangan dipakai', () => {
-    const render = (
-      event:
-        | 'two_factor_enabled'
-        | 'two_factor_disabled'
-        | 'backup_code_used'
-        | 'backup_codes_regenerated',
-      backupCodesRemaining?: number,
-    ) =>
+    const render = (event: SecurityNoticeEvent, backupCodesRemaining?: number) =>
       renderSecurityNoticeEmail({
-        productName: 'Balesin\r\nBcc: korban@contoh.test',
+        brand: brand({ productName: 'Balesin\r\nBcc: korban@contoh.test' }),
         userName: '<b>Budi</b>',
         event,
-        occurredAt: new Date('2026-11-13T03:30:00.000Z'),
+        occurredAt: at,
         timeZone: 'Asia/Jakarta',
         ...(backupCodesRemaining === undefined ? {} : { backupCodesRemaining }),
       });
@@ -663,14 +878,9 @@ describe('template email', () => {
     const regenerated = render('backup_codes_regenerated');
     expect(regenerated.subject).toContain('dibuat ulang');
     expect(regenerated.text).toContain('Semua kode cadangan lama tidak berlaku lagi');
-    for (const event of [
-      'two_factor_enabled',
-      'two_factor_disabled',
-      'backup_code_used',
-      'backup_codes_regenerated',
-    ] as const) {
+    for (const event of SECURITY_NOTICE_EVENTS) {
       const mail = render(event, 1);
-      expect(mail.text).toContain('Kalau bukan kamu');
+      expect(mail.text).toMatch(/Kalau bukan kamu/);
       expect(mail.text).not.toMatch(/\bAnda\b/i);
       expect(mail.html).not.toMatch(/<img|<a |<script|https?:\/\//i);
     }
@@ -678,11 +888,11 @@ describe('template email', () => {
 
   it('zona waktu tak dikenal jatuh ke UTC, tidak melempar', () => {
     const mail = renderAccountLockedEmail({
-      productName: 'Balesin',
+      brand: brand(),
       userName: 'Budi',
       failedAttempts: 5,
       lockMinutes: 15,
-      lockedUntil: new Date('2026-11-13T03:30:00.000Z'),
+      lockedUntil: at,
       timeZone: 'Mars/Olympus',
     });
 

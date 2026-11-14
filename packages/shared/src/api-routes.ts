@@ -19,6 +19,40 @@ export const API_ROUTES = {
     logout: `${API_PREFIX}/auth/logout`,
     me: `${API_PREFIX}/auth/me`,
   },
+  /**
+   * Undangan (docs/KONTRAK-API-AUTH.md bagian "Undangan"). `resend`/`revoke` memuat parameter
+   * `:invitationId` — susun alamatnya dengan `apiPath`.
+   */
+  invitations: {
+    /** GET (Owner/Admin) — daftar undangan tertunda/kedaluwarsa; POST — buat undangan. */
+    collection: `${API_PREFIX}/invitations`,
+    /** POST (Owner/Admin) — kirim ulang: tautan baru, tautan lama batal. */
+    resend: `${API_PREFIX}/invitations/:invitationId/resend`,
+    /** DELETE (Owner/Admin) — batalkan undangan. */
+    revoke: `${API_PREFIX}/invitations/:invitationId`,
+    /** POST (publik) — isi undangan untuk token yang sah. */
+    inspect: `${API_PREFIX}/auth/invitation/inspect`,
+    /** POST (publik) — terima undangan: nama + password → akun + sesi. */
+    accept: `${API_PREFIX}/auth/invitation/accept`,
+  },
+  /** Atur ulang password (docs/KONTRAK-API-AUTH.md bagian "Atur ulang password"). Semua publik. */
+  passwordReset: {
+    /** GET — `{ available }`: email pengirim sudah diatur. */
+    status: `${API_PREFIX}/auth/password-reset`,
+    /** POST — minta tautan (jawaban sama untuk email terdaftar maupun tidak). */
+    request: `${API_PREFIX}/auth/password-reset/request`,
+    /** POST — isi tautan untuk token yang sah (perlu kode 2FA atau tidak). */
+    inspect: `${API_PREFIX}/auth/password-reset/inspect`,
+    /** POST — password baru (+ kode 2FA bila aktif). */
+    complete: `${API_PREFIX}/auth/password-reset/complete`,
+  },
+  /** Verifikasi email (docs/KONTRAK-API-AUTH.md bagian "Verifikasi email"). */
+  emailVerification: {
+    /** GET (sesi) — status verifikasi email akun sendiri; POST (sesi) — kirim tautan verifikasi. */
+    status: `${API_PREFIX}/auth/email/verification`,
+    /** POST (publik) — token dari tautan → email terverifikasi. */
+    verify: `${API_PREFIX}/auth/email/verify`,
+  },
   /** Verifikasi dua langkah (docs/KONTRAK-API-AUTH.md bagian 2FA). */
   twoFactor: {
     /** GET — status 2FA pengguna yang sedang masuk. */
@@ -43,5 +77,19 @@ export const API_ROUTES = {
     detectEmailHost: `${API_PREFIX}/settings/email/detect-host`,
     testEmailConnection: `${API_PREFIX}/settings/email/test-connection`,
     sendTestEmail: `${API_PREFIX}/settings/email/send-test`,
+    /** GET — pratinjau template email (`:template` = `EMAIL_TEMPLATE_IDS`). */
+    emailTemplatePreview: `${API_PREFIX}/settings/email/templates/:template/preview`,
   },
 } as const;
+
+/**
+ * Mengisi parameter `:nama` di path `API_ROUTES`. Nilai di-encode; parameter yang tidak diisi
+ * membuat fungsi melempar (salah pakai, bukan input pengguna).
+ */
+export function apiPath(template: string, params: Record<string, string>): string {
+  return template.replace(/:([A-Za-z]+)/g, (_match, name: string) => {
+    const value = params[name];
+    if (value === undefined) throw new Error(`Parameter "${name}" belum diisi untuk ${template}`);
+    return encodeURIComponent(value);
+  });
+}

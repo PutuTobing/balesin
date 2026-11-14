@@ -2,17 +2,30 @@ import {
   EMAIL_JOBS,
   QUEUE_NAMES,
   QUEUE_PREFIX,
+  SecretDecryptionError,
   accountLockedEmailPayloadSchema,
+  accountTokenDeliveryContext,
+  accountTokenEmailPayloadSchema,
   fallbackEmailSettings,
+  invitationDeliveryContext,
+  invitationEmailPayloadSchema,
   openStoredEmailSettings,
   renderAccountLockedEmail,
+  renderAdminTwoFactorNoticeEmail,
+  renderEmailVerificationEmail,
+  renderInvitationEmail,
+  renderPasswordResetEmail,
   renderSecurityNoticeEmail,
+  securityNoticeAdminEmailPayloadSchema,
   securityNoticeEmailPayloadSchema,
   sendSmtpMail,
+  type EmailBrand,
   type EmailJobResult,
+  type EventOrigin,
   type HostLookup,
   type Logger,
   type MailContent,
+  type MailInlineImage,
   type MailTransportSettings,
   type PlaintextLoginPolicy,
   type SecretBox,
@@ -21,14 +34,26 @@ import {
   type SmtpPolicy,
   type SmtpTimeouts,
 } from '@balesin/core';
-import { emailSettings, organizations, users, type Database } from '@balesin/db';
+import {
+  accountTokens,
+  auditLogs,
+  emailSettings,
+  organizationLogos,
+  organizations,
+  userInvitations,
+  users,
+  type Database,
+} from '@balesin/db';
 import {
   DEFAULT_PRODUCT_NAME,
   LOGIN_LOCK_MINUTES,
   LOGIN_MAX_FAILED_ATTEMPTS,
+  buildTokenLink,
+  isTwoFactorRequired,
+  type EmailDeliveryStatus,
 } from '@balesin/shared';
 import { UnrecoverableError, Worker } from 'bullmq';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
 import type { QueueConnectionOptions } from './system';
 
@@ -37,7 +62,11 @@ import type { QueueConnectionOptions } from './system';
  *
  * Payload job hanya memuat ID. Alamat penerima, pengaturan SMTP, dan password-nya (dibuka dari
  * bentuk terenkripsi) diambil dari database DI SINI, tepat saat mengirim — tidak pernah
- * tersimpan di Redis dan tidak pernah masuk log.
+ * tersimpan di Redis dan tidak pernah masuk log. Begitu juga token tautan (undangan, atur ulang
+ * password, verifikasi email): api menyimpan salinan terenkripsinya di baris tokennya, worker
+ * membukanya, mengirim, lalu MENGHAPUS salinan itu (yang tersisa hanya hash).
+ *
+ * Tautan disusun dari `APP_URL` worker (`buildTokenLink`), tidak pernah dari data permintaan.
  *
  * Email belum diatur BUKAN kegagalan: job selesai dengan status `skipped`, supaya fitur yang
  * mengantre (mis. kunci akun) tetap jalan sebelum Owner mengisi pengaturan email.
@@ -47,9 +76,14 @@ export interface EmailJob {
   id?: string;
   name: string;
   data: unknown;
+  /** Percobaan yang sudah GAGAL sebelum ini (BullMQ). */
+  attemptsMade?: number;
+  opts?: { attempts?: number };
 }
 
 export interface EmailJobDeps {
+  /** `APP_URL`: satu-satunya sumber alamat tautan di email. */
+  appUrl: string;
   db: Database;
   /** `null` = `BALESIN_MASTER_KEY` kosong (hanya mungkin di development/test). */
   secretBox: SecretBox | null;
@@ -155,22 +189,139 @@ async function deliver(
   throw PERMANENT_FAILURES.has(result.code) ? new UnrecoverableError(message) : new Error(message);
 }
 
-/** Penerima email akun: diambil dari database (payload hanya berisi ID). */
-async function findRecipient(organizationId: string, userId: string, deps: EmailJobDeps) {
-  const [recipient] = await deps.db
+/** Percobaan ini yang terakhir (gagal di sini = job gagal permanen). */
+function isFinalAttempt(job: EmailJob): boolean {
+  return (job.attemptsMade ?? 0) + 1 >= (job.opts?.attempts ?? 1);
+}
+
+/**
+ * Mengirim email bertoken lalu mencatat hasilnya di baris tokennya (`settle`): terkirim, tidak
+ * dikirim (email belum diatur), atau gagal permanen. Salinan token terenkripsi dihapus di
+ * ketiga keadaan itu; hanya kegagalan sementara yang masih akan diulang yang menyimpannya.
+ */
+async function deliverTokenMail(
+  organizationId: string,
+  mail: MailContent,
+  job: EmailJob,
+  deps: EmailJobDeps,
+  settle: (status: Extract<EmailDeliveryStatus, 'sent' | 'skipped' | 'failed'>) => Promise<void>,
+): Promise<EmailJobResult> {
+  let result: EmailJobResult;
+  try {
+    result = await deliver(organizationId, mail, job, deps);
+  } catch (error) {
+    if (error instanceof UnrecoverableError || isFinalAttempt(job)) await settle('failed');
+    throw error;
+  }
+  await settle(result.status === 'sent' ? 'sent' : 'skipped');
+  return result;
+}
+
+// ── Data dari database ──────────────────────────────────────────────────────
+
+interface OrganizationBrand {
+  brand: EmailBrand;
+  timeZone: string;
+  inlineImages: MailInlineImage[];
+}
+
+const LOGO_CID = 'logo@balesin';
+/** WebP tidak tampil di sebagian aplikasi email (mis. Outlook desktop): pakai nama produk saja. */
+const EMAIL_LOGO_TYPES: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg' };
+
+/** Branding organisasi untuk template: nama produk, nama organisasi, warna, logo (inline `cid:`). */
+export async function loadOrganizationBrand(
+  db: Database,
+  organizationId: string,
+): Promise<OrganizationBrand | undefined> {
+  const [row] = await db
+    .select({
+      name: organizations.name,
+      productName: organizations.productName,
+      brandColor: organizations.brandColor,
+      timezone: organizations.timezone,
+      logoType: organizationLogos.contentType,
+      logoData: organizationLogos.data,
+    })
+    .from(organizations)
+    .leftJoin(organizationLogos, eq(organizationLogos.organizationId, organizations.id))
+    .where(eq(organizations.id, organizationId))
+    .limit(1);
+  if (!row) return undefined;
+  const extension = row.logoType ? EMAIL_LOGO_TYPES[row.logoType] : undefined;
+  const inlineImages: MailInlineImage[] =
+    extension && row.logoType && row.logoData
+      ? [
+          {
+            cid: LOGO_CID,
+            filename: `logo.${extension}`,
+            contentType: row.logoType,
+            content: row.logoData,
+          },
+        ]
+      : [];
+  return {
+    brand: {
+      productName: row.productName ?? DEFAULT_PRODUCT_NAME,
+      organizationName: row.name,
+      logoSrc: inlineImages.length > 0 ? `cid:${LOGO_CID}` : null,
+      primaryColor: row.brandColor,
+    },
+    timeZone: row.timezone,
+    inlineImages,
+  };
+}
+
+/** Pengguna aktif di organisasi itu (payload hanya berisi ID). */
+async function findActiveUser(organizationId: string, userId: string, deps: EmailJobDeps) {
+  const [user] = await deps.db
     .select({
       email: users.email,
       name: users.name,
+      role: users.role,
       disabledAt: users.disabledAt,
-      timezone: organizations.timezone,
-      productName: organizations.productName,
+      totpEnabledAt: users.totpEnabledAt,
     })
     .from(users)
-    .innerJoin(organizations, eq(organizations.id, users.organizationId))
     .where(and(eq(users.organizationId, organizationId), eq(users.id, userId)))
     .limit(1);
-  return recipient && recipient.disabledAt === null ? recipient : undefined;
+  return user && user.disabledAt === null ? user : undefined;
 }
+
+/** IP + user agent dari baris audit kejadian (untuk "dari mana" di email keamanan). */
+async function findAuditOrigin(
+  organizationId: string,
+  auditLogId: string | undefined,
+  deps: EmailJobDeps,
+): Promise<EventOrigin | undefined> {
+  if (!auditLogId) return undefined;
+  const [row] = await deps.db
+    .select({ ip: auditLogs.ipAddress, userAgent: auditLogs.userAgent })
+    .from(auditLogs)
+    .where(and(eq(auditLogs.organizationId, organizationId), eq(auditLogs.id, auditLogId)))
+    .limit(1);
+  return row ? { ip: row.ip, userAgent: row.userAgent } : undefined;
+}
+
+function openDeliveryToken(
+  deps: EmailJobDeps,
+  encrypted: string,
+  context: Parameters<SecretBox['decrypt']>[1],
+): string {
+  if (!deps.secretBox) {
+    throw new UnrecoverableError('Token tautan tidak bisa dibuka: BALESIN_MASTER_KEY kosong');
+  }
+  try {
+    return deps.secretBox.decrypt(encrypted, context);
+  } catch (error) {
+    if (error instanceof SecretDecryptionError) {
+      throw new UnrecoverableError('Token tautan tidak bisa dibuka (periksa BALESIN_MASTER_KEY)');
+    }
+    throw error;
+  }
+}
+
+// ── Job ─────────────────────────────────────────────────────────────────────
 
 async function sendAccountLocked(job: EmailJob, deps: EmailJobDeps): Promise<EmailJobResult> {
   const payload = accountLockedEmailPayloadSchema.safeParse(job.data);
@@ -179,43 +330,290 @@ async function sendAccountLocked(job: EmailJob, deps: EmailJobDeps): Promise<Ema
   }
   const { organizationId, userId, lockedUntil, scope, trigger } = payload.data;
 
-  const recipient = await findRecipient(organizationId, userId, deps);
-  if (!recipient) return { status: 'skipped', reason: 'recipient_unavailable' };
+  const recipient = await findActiveUser(organizationId, userId, deps);
+  const branding = await loadOrganizationBrand(deps.db, organizationId);
+  if (!recipient || !branding) return { status: 'skipped', reason: 'recipient_unavailable' };
 
   const body = renderAccountLockedEmail({
-    productName: recipient.productName ?? DEFAULT_PRODUCT_NAME,
+    brand: branding.brand,
     userName: recipient.name,
     failedAttempts: LOGIN_MAX_FAILED_ATTEMPTS,
     lockMinutes: LOGIN_LOCK_MINUTES,
     lockedUntil: new Date(lockedUntil),
-    timeZone: recipient.timezone,
+    timeZone: branding.timeZone,
     scope,
     ...(trigger === undefined ? {} : { trigger }),
   });
-  return deliver(organizationId, { to: recipient.email, ...body }, job, deps);
+  return deliver(
+    organizationId,
+    { to: recipient.email, ...body, inlineImages: branding.inlineImages },
+    job,
+    deps,
+  );
 }
 
-/** 2FA diaktifkan/dinonaktifkan, kode cadangan dipakai — selalu ke pemilik akun sendiri. */
+/** 2FA diaktifkan/dinonaktifkan, kode cadangan dipakai, password diganti — ke pemilik akun. */
 async function sendSecurityNotice(job: EmailJob, deps: EmailJobDeps): Promise<EmailJobResult> {
   const payload = securityNoticeEmailPayloadSchema.safeParse(job.data);
   if (!payload.success) {
     throw new UnrecoverableError('Payload job email:security-notice tidak valid');
   }
-  const { organizationId, userId, event, occurredAt, backupCodesRemaining } = payload.data;
+  const { organizationId, userId, event, occurredAt, backupCodesRemaining, auditLogId } =
+    payload.data;
 
-  const recipient = await findRecipient(organizationId, userId, deps);
-  if (!recipient) return { status: 'skipped', reason: 'recipient_unavailable' };
+  const recipient = await findActiveUser(organizationId, userId, deps);
+  const branding = await loadOrganizationBrand(deps.db, organizationId);
+  if (!recipient || !branding) return { status: 'skipped', reason: 'recipient_unavailable' };
+  const origin = await findAuditOrigin(organizationId, auditLogId, deps);
 
   const body = renderSecurityNoticeEmail({
-    productName: recipient.productName ?? DEFAULT_PRODUCT_NAME,
+    brand: branding.brand,
     userName: recipient.name,
     event,
     occurredAt: new Date(occurredAt),
-    timeZone: recipient.timezone,
+    timeZone: branding.timeZone,
     ...(backupCodesRemaining === undefined ? {} : { backupCodesRemaining }),
+    ...(origin ? { origin } : {}),
   });
-  return deliver(organizationId, { to: recipient.email, ...body }, job, deps);
+  return deliver(
+    organizationId,
+    { to: recipient.email, ...body, inlineImages: branding.inlineImages },
+    job,
+    deps,
+  );
 }
+
+/** Ke satu Owner/Admin: 2FA akun ber-peran wajib baru aktif. */
+async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promise<EmailJobResult> {
+  const payload = securityNoticeAdminEmailPayloadSchema.safeParse(job.data);
+  if (!payload.success) {
+    throw new UnrecoverableError('Payload job email:security-notice-admin tidak valid');
+  }
+  const { organizationId, recipientUserId, subjectUserId, occurredAt, auditLogId } = payload.data;
+
+  const recipient = await findActiveUser(organizationId, recipientUserId, deps);
+  const subject = await findActiveUser(organizationId, subjectUserId, deps);
+  const branding = await loadOrganizationBrand(deps.db, organizationId);
+  // Penerima diperiksa ulang saat mengirim: yang perannya sudah bukan Owner/Admin dilewati.
+  if (
+    !recipient ||
+    !subject ||
+    !branding ||
+    (recipient.role !== 'owner' && recipient.role !== 'admin') ||
+    !isTwoFactorRequired(subject.role)
+  ) {
+    return { status: 'skipped', reason: 'recipient_unavailable' };
+  }
+  const origin = await findAuditOrigin(organizationId, auditLogId, deps);
+
+  const body = renderAdminTwoFactorNoticeEmail({
+    brand: branding.brand,
+    timeZone: branding.timeZone,
+    recipientName: recipient.name,
+    subject: { name: subject.name, email: subject.email, role: subject.role },
+    occurredAt: new Date(occurredAt),
+    ...(origin ? { origin } : {}),
+  });
+  return deliver(
+    organizationId,
+    { to: recipient.email, ...body, inlineImages: branding.inlineImages },
+    job,
+    deps,
+  );
+}
+
+/** Email undangan: token dari salinan terenkripsi di `user_invitations`. */
+async function sendInvitation(job: EmailJob, deps: EmailJobDeps): Promise<EmailJobResult> {
+  const payload = invitationEmailPayloadSchema.safeParse(job.data);
+  if (!payload.success) {
+    throw new UnrecoverableError('Payload job email:invitation tidak valid');
+  }
+  const { organizationId, invitationId, sendCount } = payload.data;
+
+  const [row] = await deps.db
+    .select({
+      email: userInvitations.email,
+      role: userInvitations.role,
+      sendCount: userInvitations.sendCount,
+      expiresAt: userInvitations.expiresAt,
+      sealed: userInvitations.deliveryTokenEncrypted,
+      open: sql<boolean>`${userInvitations.acceptedAt} is null and ${userInvitations.revokedAt} is null and ${userInvitations.expiresAt} > now()`,
+      inviterName: users.name,
+    })
+    .from(userInvitations)
+    .innerJoin(
+      users,
+      and(
+        eq(users.organizationId, userInvitations.organizationId),
+        eq(users.id, userInvitations.invitedByUserId),
+      ),
+    )
+    .where(
+      and(eq(userInvitations.organizationId, organizationId), eq(userInvitations.id, invitationId)),
+    )
+    .limit(1);
+
+  /** Status + hapus salinan token — hanya untuk generasi token job ini. */
+  const settle = async (status: 'sent' | 'skipped' | 'failed') => {
+    await deps.db
+      .update(userInvitations)
+      .set({
+        deliveryStatus: status,
+        deliveryTokenEncrypted: null,
+        ...(status === 'sent' ? { deliveredAt: sql`now()` } : {}),
+      })
+      .where(
+        and(
+          eq(userInvitations.organizationId, organizationId),
+          eq(userInvitations.id, invitationId),
+          eq(userInvitations.sendCount, sendCount),
+        ),
+      );
+  };
+
+  // Sudah diganti tautan baru (kirim ulang): job tautan baru yang mengirim.
+  if (!row || row.sendCount !== sendCount) return { status: 'skipped', reason: 'no_longer_valid' };
+  if (!row.open || row.sealed === null) {
+    if (row.sealed !== null) await settle('skipped');
+    return { status: 'skipped', reason: 'no_longer_valid' };
+  }
+  const branding = await loadOrganizationBrand(deps.db, organizationId);
+  if (!branding) return { status: 'skipped', reason: 'recipient_unavailable' };
+
+  let token: string;
+  try {
+    token = openDeliveryToken(
+      deps,
+      row.sealed,
+      invitationDeliveryContext(organizationId, invitationId, sendCount),
+    );
+  } catch (error) {
+    await settle('failed');
+    throw error;
+  }
+  const body = renderInvitationEmail({
+    brand: branding.brand,
+    timeZone: branding.timeZone,
+    inviterName: row.inviterName,
+    role: row.role,
+    email: row.email,
+    link: buildTokenLink(deps.appUrl, 'invitation', token),
+    expiresAt: row.expiresAt,
+    twoFactorRequired: isTwoFactorRequired(row.role),
+  });
+  return deliverTokenMail(
+    organizationId,
+    { to: row.email, ...body, inlineImages: branding.inlineImages },
+    job,
+    deps,
+    settle,
+  );
+}
+
+/** Tautan atur ulang password / verifikasi email: token dari salinan terenkripsi di `account_tokens`. */
+async function sendAccountToken(job: EmailJob, deps: EmailJobDeps): Promise<EmailJobResult> {
+  const payload = accountTokenEmailPayloadSchema.safeParse(job.data);
+  if (!payload.success) {
+    throw new UnrecoverableError('Payload job email:account-token tidak valid');
+  }
+  const { organizationId, tokenId } = payload.data;
+
+  const [row] = await deps.db
+    .select({
+      purpose: accountTokens.purpose,
+      email: accountTokens.email,
+      expiresAt: accountTokens.expiresAt,
+      createdAt: accountTokens.createdAt,
+      sealed: accountTokens.deliveryTokenEncrypted,
+      requestedIp: accountTokens.requestedIp,
+      requestedUserAgent: accountTokens.requestedUserAgent,
+      live: sql<boolean>`${accountTokens.usedAt} is null and ${accountTokens.revokedAt} is null and ${accountTokens.expiresAt} > now()`,
+      userName: users.name,
+      userEmail: users.email,
+      userDisabledAt: users.disabledAt,
+      totpEnabledAt: users.totpEnabledAt,
+    })
+    .from(accountTokens)
+    .innerJoin(
+      users,
+      and(
+        eq(users.organizationId, accountTokens.organizationId),
+        eq(users.id, accountTokens.userId),
+      ),
+    )
+    .where(and(eq(accountTokens.organizationId, organizationId), eq(accountTokens.id, tokenId)))
+    .limit(1);
+
+  const settle = async (status: 'sent' | 'skipped' | 'failed') => {
+    await deps.db
+      .update(accountTokens)
+      .set({
+        deliveryStatus: status,
+        deliveryTokenEncrypted: null,
+        ...(status === 'sent' ? { deliveredAt: sql`now()` } : {}),
+      })
+      .where(and(eq(accountTokens.organizationId, organizationId), eq(accountTokens.id, tokenId)));
+  };
+
+  if (!row) return { status: 'skipped', reason: 'no_longer_valid' };
+  // Atur ulang password hanya ke email akun SAAT INI: bila email akun sudah berubah, tautannya basi.
+  const stale =
+    !row.live ||
+    row.sealed === null ||
+    row.userDisabledAt !== null ||
+    (row.purpose === 'password_reset' && row.userEmail !== row.email);
+  const sealed = row.sealed;
+  if (stale || sealed === null) {
+    if (sealed !== null) await settle('skipped');
+    return { status: 'skipped', reason: 'no_longer_valid' };
+  }
+  const branding = await loadOrganizationBrand(deps.db, organizationId);
+  if (!branding) return { status: 'skipped', reason: 'recipient_unavailable' };
+
+  let token: string;
+  try {
+    token = openDeliveryToken(deps, sealed, accountTokenDeliveryContext(organizationId, tokenId));
+  } catch (error) {
+    await settle('failed');
+    throw error;
+  }
+  const body =
+    row.purpose === 'password_reset'
+      ? renderPasswordResetEmail({
+          brand: branding.brand,
+          timeZone: branding.timeZone,
+          userName: row.userName,
+          email: row.email,
+          link: buildTokenLink(deps.appUrl, 'passwordReset', token),
+          expiresAt: row.expiresAt,
+          requestedAt: row.createdAt,
+          origin: { ip: row.requestedIp, userAgent: row.requestedUserAgent },
+          twoFactorEnabled: row.totpEnabledAt !== null,
+        })
+      : renderEmailVerificationEmail({
+          brand: branding.brand,
+          timeZone: branding.timeZone,
+          userName: row.userName,
+          email: row.email,
+          link: buildTokenLink(deps.appUrl, 'emailVerification', token),
+          expiresAt: row.expiresAt,
+        });
+  return deliverTokenMail(
+    organizationId,
+    { to: row.email, ...body, inlineImages: branding.inlineImages },
+    job,
+    deps,
+    settle,
+  );
+}
+
+const PROCESSORS: Record<string, (job: EmailJob, deps: EmailJobDeps) => Promise<EmailJobResult>> = {
+  [EMAIL_JOBS.accountLocked]: sendAccountLocked,
+  [EMAIL_JOBS.securityNotice]: sendSecurityNotice,
+  [EMAIL_JOBS.securityNoticeAdmin]: sendSecurityNoticeAdmin,
+  [EMAIL_JOBS.invitation]: sendInvitation,
+  [EMAIL_JOBS.accountToken]: sendAccountToken,
+};
 
 /**
  * Memproses satu job email. Payload SELALU divalidasi; job tak dikenal atau payload rusak
@@ -223,9 +621,13 @@ async function sendSecurityNotice(job: EmailJob, deps: EmailJobDeps): Promise<Em
  * sebagai error biasa supaya BullMQ mengulang dengan jeda.
  */
 export function processEmailJob(job: EmailJob, deps: EmailJobDeps): Promise<EmailJobResult> {
-  if (job.name === EMAIL_JOBS.accountLocked) return sendAccountLocked(job, deps);
-  if (job.name === EMAIL_JOBS.securityNotice) return sendSecurityNotice(job, deps);
-  return Promise.reject(new UnrecoverableError(`Job "${job.name}" tidak dikenal di antrian email`));
+  const processor = Object.hasOwn(PROCESSORS, job.name) ? PROCESSORS[job.name] : undefined;
+  if (!processor) {
+    return Promise.reject(
+      new UnrecoverableError(`Job "${job.name}" tidak dikenal di antrian email`),
+    );
+  }
+  return processor(job, deps);
 }
 
 /** Sisi konsumen antrian `email`. */

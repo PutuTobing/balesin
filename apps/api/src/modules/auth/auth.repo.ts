@@ -13,6 +13,7 @@ export type LoginUser = Pick<
   | 'passwordHash'
   | 'disabledAt'
   | 'totpEnabledAt'
+  | 'passwordChangedAt'
 >;
 
 /** Pengguna untuk proses login, berdasarkan email BAKU di dalam satu organisasi. */
@@ -31,6 +32,7 @@ export async function findUserForLogin(
       passwordHash: users.passwordHash,
       disabledAt: users.disabledAt,
       totpEnabledAt: users.totpEnabledAt,
+      passwordChangedAt: users.passwordChangedAt,
     })
     .from(users)
     .where(and(eq(users.organizationId, organizationId), eq(users.email, email)))

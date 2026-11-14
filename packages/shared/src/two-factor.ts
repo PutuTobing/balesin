@@ -36,6 +36,11 @@ export const BACKUP_CODE_LENGTH = 10;
 export const TWO_FACTOR_ENROLLMENT_SESSION_MINUTES = 30;
 /** Rahasia yang sedang didaftarkan (QR) berlaku sekian menit sebelum harus dibuat ulang. */
 export const TWO_FACTOR_ENROLLMENT_PENDING_MINUTES = 15;
+/**
+ * Batas MUTLAK satu rahasia pendaftaran sejak pertama kali dibuat: menampilkan ulang QR yang sama
+ * (muat ulang layar) tidak bisa memperpanjangnya melewati ini (review 2FA Info 17).
+ */
+export const TWO_FACTOR_ENROLLMENT_PENDING_MAX_MINUTES = 30;
 /** Tantangan langkah kedua saat masuk berlaku sekian menit. */
 export const TWO_FACTOR_CHALLENGE_MINUTES = 5;
 /** Kode salah per tantangan sebelum tantangan hangus (harus masuk lagi dengan password). */

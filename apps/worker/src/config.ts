@@ -1,6 +1,8 @@
 import {
   allowedSmtpPorts,
   baseEnvShape,
+  envParse,
+  envRequired,
   isProductionLike,
   parseEnv,
   resolveSmtpFallback,
@@ -18,6 +20,11 @@ export interface WorkerConfig {
   env: NodeEnv;
   isProduction: boolean;
   logLevel: LogLevel;
+  /**
+   * Alamat publik web (`APP_URL`, sama dengan API). SATU-SATUNYA sumber alamat di tautan email
+   * (undangan, atur ulang password, verifikasi) — tidak pernah dari data permintaan.
+   */
+  appUrl: string;
   databaseUrl: Secret<string>;
   redisUrl: Secret<string>;
   /** Kunci AES-256-GCM untuk membuka kredensial tersimpan (password SMTP, nanti token channel). Wajib di production. */
@@ -33,8 +40,18 @@ export interface WorkerConfig {
  * menyebut nama variabel, tanpa nilainya) bila ada yang salah.
  */
 export function loadConfig(source: EnvSource): WorkerConfig {
+  const production = isProductionLike(source);
   const env = parseEnv(
-    z.object({ ...baseEnvShape(isProductionLike(source)), ...smtpFallbackEnvShape() }),
+    z.object({
+      ...baseEnvShape(production),
+      APP_URL: envRequired(
+        envParse.httpUrl({ httpsOnly: production }),
+        production
+          ? 'harus berupa URL http(s) tanpa query, contoh: https://balesin.perusahaan.co.id (wajib https di production)'
+          : 'harus berupa URL http(s) tanpa query, contoh: https://balesin.perusahaan.co.id',
+      ),
+      ...smtpFallbackEnvShape(),
+    }),
     source,
   );
   const isProduction = env.NODE_ENV === 'production';
@@ -42,6 +59,7 @@ export function loadConfig(source: EnvSource): WorkerConfig {
     env: env.NODE_ENV,
     isProduction,
     logLevel: env.LOG_LEVEL,
+    appUrl: env.APP_URL,
     databaseUrl: env.DATABASE_URL,
     redisUrl: env.REDIS_URL,
     masterKey: env.BALESIN_MASTER_KEY,

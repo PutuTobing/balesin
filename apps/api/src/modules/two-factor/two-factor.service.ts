@@ -8,6 +8,7 @@ import {
   SecretDecryptionError,
   sha256Hex,
   totpUri,
+  type LockTrigger,
   type SecretBox,
   type SecretContext,
   type SecurityNoticeEmailPayload,
@@ -18,6 +19,7 @@ import {
   TOTP_CODE_LENGTH,
   TOTP_PERIOD_SECONDS,
   TWO_FACTOR_CHALLENGE_MINUTES,
+  TWO_FACTOR_ENROLLMENT_PENDING_MAX_MINUTES,
   TWO_FACTOR_ENROLLMENT_PENDING_MINUTES,
   isTwoFactorRequired,
   twoFactorCodeKind,
@@ -47,6 +49,7 @@ import type { PasswordHasher } from '../auth/password-hasher';
 import type { AuthContext, IssuedSession, SessionService } from '../auth/session.service';
 import {
   deviceIssueTime,
+  deviceStillValid,
   trustedDeviceThreshold,
   type TrustedDevices,
 } from '../auth/trusted-device';
@@ -61,6 +64,8 @@ import {
   deleteBackupCodes,
   deleteChallenges,
   findChallenge,
+  findOtherAdministrators,
+  findSessionClient,
   findTotpIssuer,
   findTwoFactorUser,
   insertChallenge,
@@ -185,7 +190,40 @@ export interface TwoFactorService {
     input: { password: string; code: string },
     context: TwoFactorContext,
   ): Promise<void>;
+  /**
+   * Kode 2FA untuk aksi DI LUAR login yang tidak boleh menjadi jalan memotong 2FA (atur ulang
+   * password). Memakai ember tebakan yang SAMA dengan langkah kedua saat masuk (akun / perangkat
+   * dikenal): kode salah ke-5 mengunci langkah kedua akun 15 menit + email kunci. 429 bila sedang
+   * dikunci. Kode TOTP yang benar langsung dipakai (tidak bisa diputar ulang); kode cadangan yang
+   * benar hanya DITEMUKAN — tandai terpakai dengan `consumeBackupCode` di transaksi aksinya.
+   */
+  verifySecondFactor(
+    user: TwoFactorUser,
+    code: string,
+    trigger: Extract<LockTrigger, 'password_reset'>,
+    context: TwoFactorContext,
+  ): Promise<SecondFactorCheck>;
+  /** Menandai kode cadangan terpakai + audit. `undefined` = sudah dipakai permintaan lain. */
+  consumeBackupCode(
+    executor: DbExecutor,
+    user: Pick<TwoFactorUser, 'id' | 'organizationId'>,
+    codeId: string,
+    usage: 'password_reset',
+    context: TwoFactorContext,
+  ): Promise<number | undefined>;
+  /** Email "kode cadangan dipakai" (diantrekan tanpa ditunggu). */
+  notifyBackupCodeUsed(
+    user: Pick<TwoFactorUser, 'id' | 'organizationId'>,
+    remaining: number,
+    log: FastifyBaseLogger,
+  ): void;
 }
+
+/** Hasil `verifySecondFactor`. */
+export type SecondFactorCheck =
+  | { ok: true; method: 'totp' }
+  | { ok: true; method: 'backup_code'; backupCodeId: string }
+  | { ok: false };
 
 /** Bagian pengguna yang cukup untuk memilih ember kunci dan mengirim pemberitahuan. */
 export interface LockSubject {
@@ -194,6 +232,8 @@ export interface LockSubject {
   email: string;
   /** Cookie perangkat dikenal hanya diakui bila terbit SETELAH waktu ini (temuan S1). */
   totpEnabledAt: Date | null;
+  /** …dan setelah password terakhir diganti (atur ulang password, review 2FA G.3). */
+  passwordChangedAt: Date | null;
 }
 
 export interface TwoFactorServiceDeps {
@@ -350,7 +390,8 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
       device !== undefined &&
       device.userId === user.id &&
       user.totpEnabledAt !== null &&
-      device.issuedAt.getTime() >= trustedDeviceThreshold(user.totpEnabledAt);
+      device.issuedAt.getTime() >= trustedDeviceThreshold(user.totpEnabledAt) &&
+      deviceStillValid(device, user.passwordChangedAt);
     if (trusted) {
       return {
         rule: TWO_FACTOR_DEVICE_RULE,
@@ -384,6 +425,32 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
     });
   }
 
+  function notifyAdministrators(
+    user: Pick<TwoFactorUser, 'id' | 'organizationId'>,
+    occurredAt: string,
+    auditLogId: string,
+    log: FastifyBaseLogger,
+  ): void {
+    void findOtherAdministrators(db, user.organizationId, user.id)
+      .then((recipients) =>
+        Promise.all(
+          recipients.map((recipientUserId) =>
+            notifier.securityNoticeAdmin({
+              organizationId: user.organizationId,
+              recipientUserId,
+              subjectUserId: user.id,
+              event: 'two_factor_enabled',
+              occurredAt,
+              auditLogId,
+            }),
+          ),
+        ),
+      )
+      .catch((err: unknown) => {
+        log.warn({ err, userId: user.id }, 'Gagal mengantre pemberitahuan 2FA ke Owner/Admin');
+      });
+  }
+
   async function recordFailure(
     user: Pick<TwoFactorUser, 'id' | 'organizationId'>,
     context: TwoFactorContext,
@@ -404,7 +471,7 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
   async function lock(
     bucket: CodeBucket,
     user: LockSubject,
-    trigger: 'login' | 'reauth',
+    trigger: LockTrigger,
     context: TwoFactorContext,
   ): Promise<void> {
     await limiter.setFlag(bucket.flag, bucket.key, TWO_FACTOR_LOCK_SECONDS);
@@ -485,7 +552,7 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
     executor: DbExecutor,
     user: Pick<TwoFactorUser, 'id' | 'organizationId'>,
     codeId: string,
-    usage: 'login' | 'reauth',
+    usage: 'login' | 'reauth' | 'password_reset',
     context: TwoFactorContext,
   ): Promise<number | undefined> {
     if (!(await markBackupCodeUsed(executor, user.organizationId, codeId))) return undefined;
@@ -767,6 +834,7 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
           user.organizationId,
           user.id,
           TWO_FACTOR_ENROLLMENT_PENDING_MINUTES,
+          TWO_FACTOR_ENROLLMENT_PENDING_MAX_MINUTES,
         ));
       return {
         enabled,
@@ -802,6 +870,11 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
       // Layar dimuat ulang (tab HP dibuang browser saat pengguna pindah ke aplikasi autentikator):
       // rahasia tertunda yang masih berlaku DARI SESI INI dipakai ulang, supaya entri yang sudah
       // dipindai tidak basi. Rahasia tertunda dari sesi lain tidak bisa dibuka → rahasia baru.
+      // Pemakaian ulang juga dibatasi:
+      //  - waktu mutlak sejak rahasia itu pertama dibuat (`totp_pending_issued_at`);
+      //  - peramban + jaringan yang SAMA dengan saat sesi ini dibuat (review 2FA R7): pemegang
+      //    cookie curian dari tempat lain tidak bisa diam-diam membaca ulang rahasia yang sedang
+      //    dipindai pemilik — ia hanya bisa memutarnya, sehingga QR pemilik ditolak dan ketahuan.
       const pendingContext = pendingSecretContext(user.organizationId, user.id, auth.sessionRef);
       const existing =
         user.totpPendingSecretEncrypted !== null &&
@@ -810,17 +883,32 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
           user.organizationId,
           user.id,
           TWO_FACTOR_ENROLLMENT_PENDING_MINUTES,
+          TWO_FACTOR_ENROLLMENT_PENDING_MAX_MINUTES,
         ))
           ? user.totpPendingSecretEncrypted
           : null;
-      const reusedSecret = existing ? tryOpen(box, existing, pendingContext) : undefined;
+      const sessionClient = existing
+        ? await findSessionClient(db, user.organizationId, auth.sessionRef)
+        : undefined;
+      const sameClient =
+        sessionClient !== undefined &&
+        ipRateLimitKey(sessionClient) === ipRateLimitKey(context.client) &&
+        (sessionClient.userAgent ?? '') === (context.client.userAgent ?? '');
+      const openedSecret = existing ? tryOpen(box, existing, pendingContext) : undefined;
+      const reusedSecret = sameClient ? openedSecret : undefined;
       const secret = reusedSecret ?? generateTotpSecret();
       const pendingEncrypted =
         reusedSecret !== undefined && existing !== null
           ? existing
           : box.encrypt(secret, pendingContext);
       // Waktu dibuat diperbarui: QR yang tampil berlaku 15 menit sejak ditampilkan.
-      const createdAt = await savePendingSecret(db, user.organizationId, user.id, pendingEncrypted);
+      const createdAt = await savePendingSecret(
+        db,
+        user.organizationId,
+        user.id,
+        pendingEncrypted,
+        reusedSecret === undefined,
+      );
       if (!createdAt) throw conflict('Verifikasi dua langkah sudah aktif untuk akunmu.');
 
       const issuer = sanitizeTotpLabelPart(
@@ -833,7 +921,13 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
         action: AUDIT_ACTIONS.twoFactorEnrollmentStarted,
         targetType: 'user',
         targetId: user.id,
-        metadata: { reusedPending: reusedSecret !== undefined },
+        metadata: {
+          reusedPending: reusedSecret !== undefined,
+          // Rahasia milik sesi ini masih berlaku tetapi diputar karena peramban/jaringannya lain.
+          ...(openedSecret !== undefined && reusedSecret === undefined
+            ? { rotatedReason: 'different_client' }
+            : {}),
+        },
         client: context.client,
       });
       return {
@@ -874,6 +968,7 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
           user.organizationId,
           user.id,
           TWO_FACTOR_ENROLLMENT_PENDING_MINUTES,
+          TWO_FACTOR_ENROLLMENT_PENDING_MAX_MINUTES,
         ))
       ) {
         throw expired();
@@ -897,7 +992,7 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
 
       // Hashing kode cadangan (mahal) di luar transaksi.
       const backup = await generateBackupCodes(hasher);
-      const { issued, generatedAt, revokedSessions, enabledAt } = await db.transaction(
+      const { issued, generatedAt, revokedSessions, enabledAt, auditLogId } = await db.transaction(
         async (tx) => {
           const activatedAt = await activateTotp(tx, {
             organizationId: user.organizationId,
@@ -926,7 +1021,7 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
             twoFactorEnabled: true,
             twoFactorVerified: true,
           });
-          await recordAudit(tx, {
+          const enabledAuditId = await recordAudit(tx, {
             organizationId: user.organizationId,
             actorUserId: user.id,
             action: AUDIT_ACTIONS.twoFactorEnabled,
@@ -953,6 +1048,7 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
             generatedAt: codesCreatedAt,
             revokedSessions: revoked,
             enabledAt: activatedAt,
+            auditLogId: enabledAuditId,
           };
         },
       );
@@ -961,15 +1057,23 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
         'Verifikasi dua langkah diaktifkan; sesi diganti',
       );
       await limiter.reset(TWO_FACTOR_ENROLL_RULE, user.id);
+      const occurredAt = enabledAt.toISOString();
       notify(
         {
           organizationId: user.organizationId,
           userId: user.id,
           event: 'two_factor_enabled',
-          occurredAt: new Date().toISOString(),
+          occurredAt,
+          auditLogId,
         },
         context.log,
       );
+      // Trust-on-first-use (review 2FA R5): untuk peran wajib, autentikator yang PERTAMA
+      // didaftarkan menjadi kunci kedua akun itu. Owner/Admin lain ikut diberi tahu kapan, dari
+      // IP mana, dan dengan perangkat apa — satu job per penerima.
+      if (isTwoFactorRequired(user.role)) {
+        notifyAdministrators(user, occurredAt, auditLogId, context.log);
+      }
       return {
         issued,
         // Login kini benar-benar selesai (semua langkah): cookie perangkat dikenal diterbitkan.
@@ -1048,5 +1152,41 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
         context.log,
       );
     },
+
+    async verifySecondFactor(user, code, trigger, context) {
+      const bucket = bucketFor(user, context.presentedDeviceToken);
+      const lockedFor = await limiter.flagTtl(bucket.flag, bucket.key);
+      if (lockedFor > 0) {
+        await recordFailure(user, context, { usage: trigger, reason: 'locked' });
+        throw lockedError(lockedFor);
+      }
+      const attempt = await limiter.consume(bucket.rule, bucket.key);
+      if (!attempt.allowed) {
+        await recordFailure(user, context, { usage: trigger, reason: 'locked' });
+        throw lockedError(attempt.retryAfterSeconds);
+      }
+      const check = await checkCode(user, code);
+      if (!check.ok) {
+        await recordFailure(user, context, {
+          usage: trigger,
+          method: check.method,
+          reason: check.reason,
+          attempt: attempt.count,
+          trustedDevice: bucket.trustedDevice,
+        });
+        if (attempt.count >= bucket.rule.limit) {
+          await lock(bucket, user, trigger, context);
+          throw lockedError(TWO_FACTOR_LOCK_SECONDS);
+        }
+        return { ok: false };
+      }
+      await settleSuccess(bucket);
+      return check;
+    },
+
+    consumeBackupCode: (executor, user, codeId, usage, context) =>
+      consumeBackupCode(executor, user, codeId, usage, context),
+
+    notifyBackupCodeUsed,
   };
 }

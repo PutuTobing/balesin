@@ -511,7 +511,17 @@ export function createEmailSettingsService(deps: EmailSettingsServiceDeps): Emai
           sendSmtpMail(
             transport.connection,
             transport.sender,
-            { to, ...renderTestEmail({ productName: transport.sender.fromName }) },
+            {
+              to,
+              ...renderTestEmail({
+                brand: {
+                  productName: transport.sender.fromName,
+                  organizationName: null,
+                  logoSrc: null,
+                  primaryColor: null,
+                },
+              }),
+            },
             policy,
           ),
         `Email tes terkirim ke ${to}. Cek kotak masuk alamat itu, termasuk folder spam.`,

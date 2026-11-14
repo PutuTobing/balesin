@@ -56,7 +56,13 @@ beforeAll(async () => {
   queue = createSystemQueue({ connection: redis, prefix });
   db = createDb(inject('testDatabaseUrl'), { applicationName: 'balesin-test-worker' });
   runtime = startWorkers({ connection: redis, prefix }, logs.logger, {
-    email: { db, secretBox: null, fallback: null, allowedPorts: [] },
+    email: {
+      appUrl: 'http://localhost:5173',
+      db,
+      secretBox: null,
+      fallback: null,
+      allowedPorts: [],
+    },
   });
 }, 30_000);
 

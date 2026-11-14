@@ -11,7 +11,7 @@ export const QUEUE_PREFIX = 'balesin';
 export const QUEUE_NAMES = {
   /** Pekerjaan internal: uji antrian, nanti pembersihan sesi kedaluwarsa, dsb. */
   system: 'system',
-  /** Email sistem (notifikasi akun; nanti undangan dan reset password). */
+  /** Email sistem: notifikasi keamanan akun, undangan, atur ulang password, verifikasi email. */
   email: 'email',
 } as const;
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -59,12 +59,28 @@ export const EMAIL_JOBS = {
    * dikirim ke pemilik akun supaya perubahan yang bukan olehnya segera ketahuan.
    */
   securityNotice: 'security-notice',
+  /**
+   * Untuk Owner/Admin LAIN: 2FA akun ber-peran wajib (Owner/Admin/Supervisor) baru diaktifkan,
+   * lengkap dengan waktu, IP, dan perangkat (mitigasi trust-on-first-use, review 2FA R5).
+   */
+  securityNoticeAdmin: 'security-notice-admin',
+  /** Email undangan. Token diambil worker dari salinan terenkripsi di `user_invitations`. */
+  invitation: 'invitation',
+  /** Tautan atur ulang password / verifikasi email. Token dari salinan terenkripsi di `account_tokens`. */
+  accountToken: 'account-token',
 } as const;
 export type EmailJobName = (typeof EMAIL_JOBS)[keyof typeof EMAIL_JOBS];
 
 /** Lingkup kunci percobaan masuk (lihat `apps/api/src/modules/auth/login-rules.ts`). */
 export const LOCK_SCOPES = ['source', 'account', 'device', 'two_factor'] as const;
 export type LockScope = (typeof LOCK_SCOPES)[number];
+
+/**
+ * Sumber kode 2FA yang salah: langkah kedua saat masuk, konfirmasi ulang identitas di halaman
+ * Keamanan akun, atau saat menyelesaikan atur ulang password.
+ */
+export const LOCK_TRIGGERS = ['login', 'reauth', 'password_reset'] as const;
+export type LockTrigger = (typeof LOCK_TRIGGERS)[number];
 
 export const accountLockedEmailPayloadSchema = z.strictObject({
   organizationId: z.uuid(),
@@ -81,7 +97,7 @@ export const accountLockedEmailPayloadSchema = z.strictObject({
    * Untuk `two_factor`: dari mana kode salah datang — langkah kedua saat masuk (`login`), atau
    * konfirmasi ulang identitas di halaman Keamanan akun dari sesi yang sudah masuk (`reauth`).
    */
-  trigger: z.enum(['login', 'reauth']).optional(),
+  trigger: z.enum(LOCK_TRIGGERS).optional(),
 });
 export type AccountLockedEmailPayload = z.infer<typeof accountLockedEmailPayloadSchema>;
 
@@ -91,6 +107,7 @@ export const SECURITY_NOTICE_EVENTS = [
   'two_factor_disabled',
   'backup_code_used',
   'backup_codes_regenerated',
+  'password_changed',
 ] as const;
 export type SecurityNoticeEvent = (typeof SECURITY_NOTICE_EVENTS)[number];
 
@@ -102,8 +119,66 @@ export const securityNoticeEmailPayloadSchema = z.strictObject({
   occurredAt: z.iso.datetime(),
   /** Untuk `backup_code_used`: sisa kode cadangan yang belum dipakai. */
   backupCodesRemaining: z.number().int().nonnegative().optional(),
+  /**
+   * Baris audit kejadian ini: worker mengambil IP dan user agent dari sana untuk ditampilkan di
+   * email ("dari IP …, Chrome di Windows"). ID saja — bukan IP/UA — yang masuk antrian.
+   */
+  auditLogId: z.uuid().optional(),
 });
 export type SecurityNoticeEmailPayload = z.infer<typeof securityNoticeEmailPayloadSchema>;
+
+/** Satu email per penerima (Owner/Admin lain) supaya pengulangan job tidak menggandakan email. */
+export const securityNoticeAdminEmailPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  /** Owner/Admin penerima. */
+  recipientUserId: z.uuid(),
+  /** Pengguna yang 2FA-nya baru aktif. */
+  subjectUserId: z.uuid(),
+  event: z.enum(['two_factor_enabled']),
+  occurredAt: z.iso.datetime(),
+  auditLogId: z.uuid().optional(),
+});
+export type SecurityNoticeAdminEmailPayload = z.infer<typeof securityNoticeAdminEmailPayloadSchema>;
+
+export const invitationEmailPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  invitationId: z.uuid(),
+  /** `user_invitations.send_count` saat diantrekan: job untuk token yang sudah diganti diabaikan. */
+  sendCount: z.number().int().positive(),
+});
+export type InvitationEmailPayload = z.infer<typeof invitationEmailPayloadSchema>;
+
+export const accountTokenEmailPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  tokenId: z.uuid(),
+});
+export type AccountTokenEmailPayload = z.infer<typeof accountTokenEmailPayloadSchema>;
+
+/**
+ * Konteks `SecretBox` salinan token yang menunggu dikirim worker. Harus sama di api (yang
+ * mengenkripsi) dan worker (yang membuka). `subjectId` mengikat teks sandi ke satu baris (dan,
+ * untuk undangan, ke satu generasi token).
+ */
+export const DELIVERY_TOKEN_PURPOSES = {
+  invitation: 'user_invitations.delivery_token',
+  accountToken: 'account_tokens.delivery_token',
+} as const;
+
+export function invitationDeliveryContext(
+  organizationId: string,
+  invitationId: string,
+  sendCount: number,
+) {
+  return {
+    organizationId,
+    purpose: DELIVERY_TOKEN_PURPOSES.invitation,
+    subjectId: `${invitationId}|${sendCount}`,
+  };
+}
+
+export function accountTokenDeliveryContext(organizationId: string, tokenId: string) {
+  return { organizationId, purpose: DELIVERY_TOKEN_PURPOSES.accountToken, subjectId: tokenId };
+}
 
 export const emailJobResultSchema = z.object({
   /**
@@ -111,6 +186,10 @@ export const emailJobResultSchema = z.object({
    * jadi tidak diulang.
    */
   status: z.enum(['sent', 'skipped']),
-  reason: z.enum(['email_not_configured', 'recipient_unavailable']).optional(),
+  /**
+   * `no_longer_valid` = tautan sudah tidak berlaku saat diproses (dibatalkan, sudah dipakai,
+   * kedaluwarsa, atau sudah diganti tautan yang lebih baru) — tidak ada yang dikirim.
+   */
+  reason: z.enum(['email_not_configured', 'recipient_unavailable', 'no_longer_valid']).optional(),
 });
 export type EmailJobResult = z.infer<typeof emailJobResultSchema>;

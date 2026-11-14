@@ -49,6 +49,17 @@ export const users = pgTable(
      */
     totpPendingSecretEncrypted: text('totp_pending_secret_encrypted'),
     totpPendingCreatedAt: timestamptz('totp_pending_created_at'),
+    /**
+     * Waktu rahasia pendaftaran yang sekarang PERTAMA kali dibuat. `totp_pending_created_at`
+     * digeser setiap kali QR ditampilkan ulang (masa berlaku 15 menit sejak tampil); kolom ini
+     * tidak, jadi pemakaian ulang rahasia yang sama punya batas mutlak (review 2FA Info 17).
+     */
+    totpPendingIssuedAt: timestamptz('totp_pending_issued_at'),
+    /**
+     * Terakhir password diganti (atur ulang password; nanti ganti password di profil). Cookie
+     * "perangkat dikenal" yang terbit sebelum waktu ini tidak diakui lagi (review 2FA G.3).
+     */
+    passwordChangedAt: timestamptz('password_changed_at'),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },

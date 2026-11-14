@@ -4,23 +4,37 @@ import {
   QUEUE_NAMES,
   QUEUE_PREFIX,
   accountLockedEmailPayloadSchema,
+  accountTokenEmailPayloadSchema,
+  invitationEmailPayloadSchema,
+  securityNoticeAdminEmailPayloadSchema,
   securityNoticeEmailPayloadSchema,
   withTimeout,
   type AccountLockedEmailPayload,
+  type AccountTokenEmailPayload,
+  type InvitationEmailPayload,
   type Redis,
+  type SecurityNoticeAdminEmailPayload,
   type SecurityNoticeEmailPayload,
 } from '@balesin/core';
 import { Queue } from 'bullmq';
+import type { z } from 'zod';
 
 /**
  * Sisi produsen antrian `email`: API hanya MENGANTRE; pengirimannya dikerjakan worker
  * (apps/worker/src/queues/email.ts). Payload berisi ID saja — lihat `@balesin/core` queues.
+ * Token tautan TIDAK PERNAH masuk payload: worker membuka salinan terenkripsinya dari database.
  */
 export interface EmailNotifier {
   /** Antrekan pemberitahuan "akun dikunci sementara". */
   accountLocked(payload: AccountLockedEmailPayload): Promise<void>;
-  /** Antrekan pemberitahuan keamanan akun (2FA diaktifkan/dinonaktifkan, kode cadangan dipakai). */
+  /** Antrekan pemberitahuan keamanan akun (2FA, kode cadangan, password diganti). */
   securityNotice(payload: SecurityNoticeEmailPayload): Promise<void>;
+  /** Antrekan pemberitahuan ke SATU Owner/Admin: 2FA akun ber-peran wajib baru aktif. */
+  securityNoticeAdmin(payload: SecurityNoticeAdminEmailPayload): Promise<void>;
+  /** Antrekan email undangan. */
+  invitation(payload: InvitationEmailPayload): Promise<void>;
+  /** Antrekan tautan atur ulang password / verifikasi email. */
+  accountToken(payload: AccountTokenEmailPayload): Promise<void>;
 }
 
 export interface EmailQueue {
@@ -48,24 +62,23 @@ export function createEmailQueue(options: EmailQueueOptions): EmailQueue {
   // dilakukan listener koneksi Redis (createRedis).
   queue.on('error', () => undefined);
 
+  function enqueue<T>(name: string, schema: z.ZodType<T>) {
+    return async (payload: T): Promise<void> => {
+      const data = schema.parse(payload);
+      await withTimeout(queue.add(name, data), ENQUEUE_TIMEOUT_MS, 'Mengantre email');
+    };
+  }
+
   return {
     notifier: {
-      async accountLocked(payload) {
-        const data = accountLockedEmailPayloadSchema.parse(payload);
-        await withTimeout(
-          queue.add(EMAIL_JOBS.accountLocked, data),
-          ENQUEUE_TIMEOUT_MS,
-          'Mengantre email',
-        );
-      },
-      async securityNotice(payload) {
-        const data = securityNoticeEmailPayloadSchema.parse(payload);
-        await withTimeout(
-          queue.add(EMAIL_JOBS.securityNotice, data),
-          ENQUEUE_TIMEOUT_MS,
-          'Mengantre email',
-        );
-      },
+      accountLocked: enqueue(EMAIL_JOBS.accountLocked, accountLockedEmailPayloadSchema),
+      securityNotice: enqueue(EMAIL_JOBS.securityNotice, securityNoticeEmailPayloadSchema),
+      securityNoticeAdmin: enqueue(
+        EMAIL_JOBS.securityNoticeAdmin,
+        securityNoticeAdminEmailPayloadSchema,
+      ),
+      invitation: enqueue(EMAIL_JOBS.invitation, invitationEmailPayloadSchema),
+      accountToken: enqueue(EMAIL_JOBS.accountToken, accountTokenEmailPayloadSchema),
     },
     close: () => queue.close(),
   };

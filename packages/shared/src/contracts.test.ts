@@ -153,7 +153,10 @@ describe('kontrak autentikasi', () => {
 
     expect(urls.length).toBeGreaterThanOrEqual(15);
     expect(new Set(urls).size).toBe(urls.length);
-    for (const url of urls) expect(url).toMatch(/^\/api\/v1\/[a-z0-9/-]+$/);
+    // Segmen huruf kecil, atau parameter `:nama` (diisi `apiPath`) — tidak pernah token.
+    for (const url of urls) {
+      expect(url).toMatch(/^\/api\/v1(?:\/(?:[a-z0-9-]+|:[A-Za-z]+Id|:template))+$/);
+    }
   });
 });
 

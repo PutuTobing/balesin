@@ -41,7 +41,12 @@ import {
 import type { PasswordHasher } from './password-hasher';
 import { findActiveSession } from './session.repo';
 import type { AuthContext, IssuedSession, SessionService } from './session.service';
-import { deviceIssueTime, type TrustedDevices } from './trusted-device';
+import {
+  deviceIssueTime,
+  deviceStillValid,
+  latestDate,
+  type TrustedDevices,
+} from './trusted-device';
 
 export interface RequestContext {
   client: ClientInfo;
@@ -186,7 +191,10 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       ...issued,
       deviceToken: issued.auth.twoFactor.enrollmentRequired
         ? undefined
-        : devices.issue(user.id, deviceIssueTime(user.totpEnabledAt)),
+        : devices.issue(
+            user.id,
+            deviceIssueTime(latestDate(user.totpEnabledAt, user.passwordChangedAt)),
+          ),
       backupCodesRemaining,
     };
   }
@@ -282,10 +290,16 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
         ? await findUserForLogin(db, organization.id, input.email)
         : undefined;
 
-      // Perangkat dikenal: cookie bertanda tangan milik AKUN INI (bukan akun lain).
+      // Perangkat dikenal: cookie bertanda tangan milik AKUN INI (bukan akun lain) yang terbit
+      // setelah password terakhir diganti (atur ulang password membatalkan semua cookie lama).
       const presentedDevice = devices.verify(context.presentedDeviceToken);
       const device =
-        presentedDevice && user && presentedDevice.userId === user.id ? presentedDevice : undefined;
+        presentedDevice &&
+        user &&
+        presentedDevice.userId === user.id &&
+        deviceStillValid(presentedDevice, user.passwordChangedAt)
+          ? presentedDevice
+          : undefined;
       const deviceKey = device ? sha256Hex(`${accountKey}|${device.deviceKey}`).slice(0, 40) : '';
 
       /** Setiap percobaan yang ditolak tercatat di audit — juga yang ditolak karena terkunci. */

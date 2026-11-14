@@ -189,6 +189,7 @@ describe('putaran 2: rahasia tertunda dipakai ulang hanya oleh sesi yang memulai
         .set({
           totpPendingSecretEncrypted: box.encrypt(planted, { organizationId, purpose, subjectId }),
           totpPendingCreatedAt: sql`now()`,
+          totpPendingIssuedAt: sql`now()`,
         })
         .where(eq(users.id, admin.id));
       return secretOf(await enroll({}, as));

@@ -535,6 +535,9 @@ describe('brute force: kunci per asal, per akun, perangkat dikenal, dan batas pe
       notifier: {
         accountLocked: () => Promise.reject(new Error('antrian tidak tersedia')),
         securityNotice: () => Promise.reject(new Error('antrian tidak tersedia')),
+        securityNoticeAdmin: () => Promise.reject(new Error('antrian tidak tersedia')),
+        invitation: () => Promise.reject(new Error('antrian tidak tersedia')),
+        accountToken: () => Promise.reject(new Error('antrian tidak tersedia')),
       },
     });
 

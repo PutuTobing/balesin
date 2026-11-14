@@ -38,6 +38,7 @@ import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 import { createEmailWorker, processEmailJob, type EmailJobDeps } from './email';
 
 const MASTER_KEY = new Secret(randomBytes(32));
+const APP_URL = 'https://balesin.contoh.test';
 const SMTP_PASSWORD_MARKER = TEST_MAIL.password;
 
 let logs: LogCapture;
@@ -55,6 +56,7 @@ beforeAll(async () => {
   db = createDb(inject('testDatabaseUrl'), { applicationName: 'balesin-test-worker-email' });
   secretBox = createSecretBox(MASTER_KEY);
   deps = {
+    appUrl: APP_URL,
     db,
     secretBox,
     fallback: null,

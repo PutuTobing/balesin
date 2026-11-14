@@ -31,6 +31,20 @@ export const AUDIT_ACTIONS = {
   twoFactorBackupCodeUsed: 'auth.2fa.backup_code_used',
   emailSettingsUpdated: 'settings.email.updated',
   emailSettingsTested: 'settings.email.tested',
+  invitationCreated: 'user.invitation.created',
+  invitationResent: 'user.invitation.resent',
+  invitationRevoked: 'user.invitation.revoked',
+  invitationAccepted: 'user.invitation.accepted',
+  /** Tautan undangan ditampilkan ke pembuatnya untuk disalin manual (email pengirim belum diatur). */
+  invitationLinkShown: 'user.invitation.link_shown',
+  /** Tautan undangan yang tidak berlaku dicoba dibuka/diterima. */
+  invitationRejected: 'user.invitation.rejected',
+  passwordResetRequested: 'auth.password_reset.requested',
+  passwordResetCompleted: 'auth.password_reset.completed',
+  passwordResetFailed: 'auth.password_reset.failed',
+  emailVerificationSent: 'auth.email.verification_sent',
+  emailVerified: 'auth.email.verified',
+  emailVerificationFailed: 'auth.email.verification_failed',
 } as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
 
@@ -46,17 +60,23 @@ export interface AuditEntry {
   client: ClientInfo;
 }
 
-export async function recordAudit(db: DbExecutor, entry: AuditEntry): Promise<void> {
-  await db.insert(auditLogs).values({
-    organizationId: entry.organizationId,
-    actorUserId: entry.actorUserId,
-    action: entry.action,
-    targetType: entry.targetType ?? null,
-    targetId: entry.targetId ?? null,
-    metadata: redactSecrets(entry.metadata ?? {}) as Record<string, unknown>,
-    ipAddress: entry.client.ip !== null && isIP(entry.client.ip) !== 0 ? entry.client.ip : null,
-    userAgent: entry.client.userAgent?.slice(0, USER_AGENT_MAX_LENGTH) ?? null,
-  });
+/** Menulis satu baris audit. Mengembalikan ID barisnya (dirujuk job email keamanan untuk IP/perangkat). */
+export async function recordAudit(db: DbExecutor, entry: AuditEntry): Promise<string> {
+  const [row] = await db
+    .insert(auditLogs)
+    .values({
+      organizationId: entry.organizationId,
+      actorUserId: entry.actorUserId,
+      action: entry.action,
+      targetType: entry.targetType ?? null,
+      targetId: entry.targetId ?? null,
+      metadata: redactSecrets(entry.metadata ?? {}) as Record<string, unknown>,
+      ipAddress: entry.client.ip !== null && isIP(entry.client.ip) !== 0 ? entry.client.ip : null,
+      userAgent: entry.client.userAgent?.slice(0, USER_AGENT_MAX_LENGTH) ?? null,
+    })
+    .returning({ id: auditLogs.id });
+  if (!row) throw new Error('Audit log tidak tersimpan');
+  return row.id;
 }
 
 /** `budi.santoso@contoh.co.id` → `b***@contoh.co.id`: cukup untuk mengenali, tanpa menyimpan utuh. */

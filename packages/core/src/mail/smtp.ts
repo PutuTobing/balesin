@@ -31,11 +31,21 @@ export interface MailSender {
   replyTo: string | null;
 }
 
+/** Lampiran gambar inline (logo di template bermerek), dirujuk dari HTML lewat `cid:`. */
+export interface MailInlineImage {
+  cid: string;
+  filename: string;
+  contentType: string;
+  content: Buffer;
+}
+
 export interface MailContent {
   to: string;
   subject: string;
   text: string;
   html?: string;
+  /** Hanya isi dari memori (Buffer) — akses berkas dan URL dimatikan di transport. */
+  inlineImages?: MailInlineImage[];
 }
 
 export interface SmtpTimeouts {
@@ -331,6 +341,13 @@ export function sendSmtpMail(
       subject: mail.subject,
       text: mail.text,
       html: mail.html,
+      attachments: mail.inlineImages?.map((image) => ({
+        cid: image.cid,
+        filename: image.filename,
+        contentType: image.contentType,
+        content: image.content,
+        contentDisposition: 'inline' as const,
+      })),
     });
     const rejected = asRecord(info).rejected;
     if (Array.isArray(rejected) && rejected.length > 0) {

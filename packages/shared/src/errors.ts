@@ -18,6 +18,7 @@ export const ERROR_CODES = [
   'CSRF_INVALID',
   'TWO_FACTOR_ENROLLMENT_REQUIRED',
   'TWO_FACTOR_CHALLENGE_INVALID',
+  'TOKEN_INVALID',
   'NOT_FOUND',
   'METHOD_NOT_ALLOWED',
   'CONFLICT',
@@ -41,6 +42,7 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
   CSRF_INVALID: 403,
   TWO_FACTOR_ENROLLMENT_REQUIRED: 403,
   TWO_FACTOR_CHALLENGE_INVALID: 401,
+  TOKEN_INVALID: 410,
   NOT_FOUND: 404,
   METHOD_NOT_ALLOWED: 405,
   CONFLICT: 409,
@@ -66,6 +68,9 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   // Tantangan langkah kedua tidak dikenal, kedaluwarsa, sudah dipakai, atau hangus.
   TWO_FACTOR_CHALLENGE_INVALID:
     'Langkah verifikasi ini sudah tidak berlaku. Masuk lagi dengan email dan password-mu.',
+  // Tautan email (undangan, atur ulang password, verifikasi) tidak dikenal, kedaluwarsa, sudah
+  // dipakai, atau dibatalkan. Pesan khusus per jenis tautan dikirim server.
+  TOKEN_INVALID: 'Tautan ini sudah tidak berlaku.',
   NOT_FOUND: 'Data atau alamat yang diminta tidak ditemukan.',
   METHOD_NOT_ALLOWED: 'Metode permintaan ini tidak didukung untuk alamat tersebut.',
   CONFLICT: 'Data bentrok dengan data yang sudah ada.',

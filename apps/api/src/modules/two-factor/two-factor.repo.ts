@@ -2,11 +2,12 @@ import {
   organizations,
   twoFactorChallenges,
   userBackupCodes,
+  userSessions,
   users,
   type DbExecutor,
 } from '@balesin/db';
 import type { UserRole } from '@balesin/shared';
-import { and, eq, isNull, lt, max, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lt, max, ne, or, sql } from 'drizzle-orm';
 
 import type { ClientInfo } from '../../http/client-info';
 
@@ -32,6 +33,10 @@ export interface TwoFactorUser {
   totpLastUsedStep: number | null;
   totpPendingSecretEncrypted: string | null;
   totpPendingCreatedAt: Date | null;
+  /** Waktu rahasia pendaftaran yang sekarang PERTAMA kali dibuat (batas mutlak pemakaian ulang). */
+  totpPendingIssuedAt: Date | null;
+  /** Terakhir password diganti: cookie perangkat dikenal yang lebih tua tidak diakui. */
+  passwordChangedAt: Date | null;
 }
 
 const twoFactorUserColumns = {
@@ -47,6 +52,8 @@ const twoFactorUserColumns = {
   totpLastUsedStep: users.totpLastUsedStep,
   totpPendingSecretEncrypted: users.totpPendingSecretEncrypted,
   totpPendingCreatedAt: users.totpPendingCreatedAt,
+  totpPendingIssuedAt: users.totpPendingIssuedAt,
+  passwordChangedAt: users.passwordChangedAt,
 };
 
 export async function findTwoFactorUser(
@@ -62,16 +69,24 @@ export async function findTwoFactorUser(
   return row;
 }
 
-/** Menyimpan rahasia pendaftaran baru (menggantikan yang lama). Mengembalikan waktu dibuat. */
+/**
+ * Menyimpan rahasia pendaftaran (baru, atau yang sama ditampilkan ulang). `fresh` = rahasia baru:
+ * waktu terbit pertamanya (`totp_pending_issued_at`) ikut diatur ulang. Mengembalikan waktu dibuat.
+ */
 export async function savePendingSecret(
   db: DbExecutor,
   organizationId: string,
   userId: string,
   pendingSecretEncrypted: string,
+  fresh: boolean,
 ): Promise<Date | undefined> {
   const [row] = await db
     .update(users)
-    .set({ totpPendingSecretEncrypted: pendingSecretEncrypted, totpPendingCreatedAt: sql`now()` })
+    .set({
+      totpPendingSecretEncrypted: pendingSecretEncrypted,
+      totpPendingCreatedAt: sql`now()`,
+      ...(fresh ? { totpPendingIssuedAt: sql`now()` } : {}),
+    })
     .where(
       and(
         eq(users.organizationId, organizationId),
@@ -83,16 +98,21 @@ export async function savePendingSecret(
   return row?.createdAt ?? undefined;
 }
 
-/** `true` bila rahasia pendaftaran masih dalam masa berlakunya (jam database). */
+/**
+ * `true` bila rahasia pendaftaran masih berlaku (jam database): ditampilkan terakhir kurang dari
+ * `pendingMinutes` lalu, DAN pertama kali dibuat kurang dari `maxMinutes` lalu (batas mutlak —
+ * rahasia yang sama tidak bisa dipakai ulang tanpa batas dengan terus menampilkannya ulang).
+ */
 export async function isPendingSecretFresh(
   db: DbExecutor,
   organizationId: string,
   userId: string,
   pendingMinutes: number,
+  maxMinutes: number,
 ): Promise<boolean> {
   const [row] = await db
     .select({
-      fresh: sql<boolean>`${users.totpPendingCreatedAt} > now() - make_interval(mins => ${pendingMinutes})`,
+      fresh: sql<boolean>`${users.totpPendingCreatedAt} > now() - make_interval(mins => ${pendingMinutes}) and ${users.totpPendingIssuedAt} > now() - make_interval(mins => ${maxMinutes})`,
     })
     .from(users)
     .where(and(eq(users.organizationId, organizationId), eq(users.id, userId)))
@@ -123,6 +143,7 @@ export async function activateTotp(
       totpLastUsedStep: input.usedStep,
       totpPendingSecretEncrypted: null,
       totpPendingCreatedAt: null,
+      totpPendingIssuedAt: null,
     })
     .where(
       and(
@@ -150,6 +171,7 @@ export async function deactivateTotp(
       totpLastUsedStep: null,
       totpPendingSecretEncrypted: null,
       totpPendingCreatedAt: null,
+      totpPendingIssuedAt: null,
     })
     .where(
       and(
@@ -186,6 +208,43 @@ export async function claimTotpStep(
     )
     .returning({ id: users.id });
   return rows.length > 0;
+}
+
+/**
+ * IP + user agent yang tercatat saat sesi dibuat. Dipakai pendaftaran 2FA: rahasia tertunda hanya
+ * dipakai ulang bila permintaan datang dari peramban + jaringan yang sama (review 2FA R7).
+ */
+export async function findSessionClient(
+  db: DbExecutor,
+  organizationId: string,
+  sessionId: string,
+): Promise<ClientInfo | undefined> {
+  const [row] = await db
+    .select({ ip: userSessions.ipAddress, userAgent: userSessions.userAgent })
+    .from(userSessions)
+    .where(and(eq(userSessions.organizationId, organizationId), eq(userSessions.id, sessionId)))
+    .limit(1);
+  return row;
+}
+
+/** Owner/Admin aktif LAIN di organisasi (penerima pemberitahuan 2FA peran wajib). */
+export async function findOtherAdministrators(
+  db: DbExecutor,
+  organizationId: string,
+  exceptUserId: string,
+): Promise<string[]> {
+  const rows = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(
+      and(
+        eq(users.organizationId, organizationId),
+        ne(users.id, exceptUserId),
+        isNull(users.disabledAt),
+        inArray(users.role, ['owner', 'admin']),
+      ),
+    );
+  return rows.map((row) => row.id);
 }
 
 /** Nama yang tampil sebagai penerbit di aplikasi autentikator: nama produk, atau nama organisasi. */

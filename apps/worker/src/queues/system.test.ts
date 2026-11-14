@@ -77,7 +77,13 @@ describe('startWorkers saat Redis tidak bisa dihubungi', () => {
     // Database tidak pernah disentuh di tes ini (tidak ada job yang diproses).
     const db = createDb('postgres://tidak-dipakai:tidak-dipakai@127.0.0.1:1/tidak_dipakai');
     const runtime = startWorkers({ connection: redis, prefix: 'balesin-tes' }, logs.logger, {
-      email: { db, secretBox: null, fallback: null, allowedPorts: [] },
+      email: {
+        appUrl: 'http://localhost:5173',
+        db,
+        secretBox: null,
+        fallback: null,
+        allowedPorts: [],
+      },
     });
     expect(runtime.workers.map((worker) => worker.name)).toEqual(['system', 'email']);
 

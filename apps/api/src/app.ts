@@ -42,12 +42,22 @@ import { createEmailSettingsService } from './modules/email-settings/email-setti
 import { HEALTH_PATHS, healthRoutes } from './modules/health/health.routes';
 import { createReadinessService, type ReadinessProbes } from './modules/health/health.service';
 import { createSetupEmailTestMemo } from './modules/setup/setup-email-test-memo';
+import { createBackgroundTasks, type BackgroundTasks } from './http/background-tasks';
+import { createTokenDelivery } from './modules/account-tokens/token-delivery';
+import { createEmailTemplatePreview } from './modules/email-settings/email-template-preview';
+import { emailVerificationRoutes } from './modules/email-verification/email-verification.routes';
+import { createEmailVerificationService } from './modules/email-verification/email-verification.service';
+import { invitationRoutes } from './modules/invitations/invitations.routes';
+import { createInvitationService } from './modules/invitations/invitations.service';
+import { passwordResetRoutes } from './modules/password-reset/password-reset.routes';
+import { createPasswordResetService } from './modules/password-reset/password-reset.service';
 import { setupRoutes } from './modules/setup/setup.routes';
 import { createSetupService } from './modules/setup/setup.service';
 import type { EmailNotifier } from './queues/email-queue';
 
 export type AppConfig = Pick<
   ApiConfig,
+  | 'appUrl'
   | 'appOrigin'
   | 'isProduction'
   | 'trustProxy'
@@ -195,6 +205,40 @@ export async function buildApp(deps: AppDeps) {
     }),
   });
 
+  const delivery = createTokenDelivery({ secretBox, fallback: config.smtpFallback });
+  const background = createBackgroundTasks();
+  const invitations = createInvitationService({
+    db,
+    appUrl: config.appUrl,
+    hasher,
+    limiter,
+    notifier: deps.notifier,
+    sessions,
+    devices,
+    delivery,
+  });
+  const passwordReset = createPasswordResetService({
+    db,
+    hasher,
+    limiter,
+    notifier: deps.notifier,
+    sessions,
+    twoFactor,
+    delivery,
+    background,
+  });
+  const emailVerification = createEmailVerificationService({
+    db,
+    limiter,
+    notifier: deps.notifier,
+    delivery,
+  });
+  const templatePreview = createEmailTemplatePreview({ db, appUrl: config.appUrl });
+
+  // Pekerjaan latar belakang (mis. minta atur ulang password) ditunggu selesai saat ditutup.
+  app.decorate('backgroundTasks', background);
+  app.addHook('onClose', () => background.drain());
+
   // Hash pembanding untuk email tidak terdaftar dibuat SEBELUM permintaan pertama dilayani;
   // kalau dibuat saat login pertama, login itu lebih lambat dan membuka bahwa emailnya tidak ada.
   app.addHook('onReady', () => hasher.warmUp());
@@ -227,7 +271,10 @@ export async function buildApp(deps: AppDeps) {
   await app.register(authRoutes, { auth, cookieSecure: config.cookieSecure });
   await app.register(twoFactorRoutes, { twoFactor, cookieSecure: config.cookieSecure });
   await app.register(brandingRoutes, { db });
-  await app.register(emailSettingsRoutes, { emailSettings, limiter });
+  await app.register(emailSettingsRoutes, { emailSettings, templatePreview, limiter });
+  await app.register(invitationRoutes, { invitations, cookieSecure: config.cookieSecure });
+  await app.register(passwordResetRoutes, { passwordReset, cookieSecure: config.cookieSecure });
+  await app.register(emailVerificationRoutes, { emailVerification });
 
   // Harus setelah SEMUA rute modul didaftarkan (lihat http/method-not-allowed.ts).
   registerMethodNotAllowedRoutes();
@@ -236,3 +283,10 @@ export async function buildApp(deps: AppDeps) {
 }
 
 export type App = Awaited<ReturnType<typeof buildApp>>;
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    /** Pekerjaan setelah jawaban terkirim (lihat `http/background-tasks.ts`). */
+    backgroundTasks: BackgroundTasks;
+  }
+}

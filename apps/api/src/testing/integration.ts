@@ -127,8 +127,12 @@ export async function createIntegrationHarness(
       if (redis) await deleteRedisKeys(redis, rateLimitPrefix);
       totpSecrets.clear();
       if (built) {
+        await built.app.backgroundTasks.drain();
         built.lockedNotifications.length = 0;
         built.securityNotices.length = 0;
+        built.adminNotices.length = 0;
+        built.invitationJobs.length = 0;
+        built.accountTokenJobs.length = 0;
         built.logs.lines.length = 0;
       }
     },
@@ -156,6 +160,18 @@ export async function createIntegrationHarness(
     get securityNotices(): SecurityNoticeEmailPayload[] {
       if (!built) throw new Error('Aplikasi tes belum dibangun');
       return built.securityNotices;
+    },
+    get adminNotices() {
+      if (!built) throw new Error('Aplikasi tes belum dibangun');
+      return built.adminNotices;
+    },
+    get invitationJobs() {
+      if (!built) throw new Error('Aplikasi tes belum dibangun');
+      return built.invitationJobs;
+    },
+    get accountTokenJobs() {
+      if (!built) throw new Error('Aplikasi tes belum dibangun');
+      return built.accountTokenJobs;
     },
     get redis(): Redis {
       if (!redis) throw new Error('Redis tes belum tersambung');

@@ -232,7 +232,14 @@ describe('deklarasi akses rute (bawaan tolak)', () => {
     // dan minta review keamanan.
     expect(publicUrls).toEqual([
       '/api/v1/auth/2fa/verify',
+      '/api/v1/auth/email/verify',
+      '/api/v1/auth/invitation/accept',
+      '/api/v1/auth/invitation/inspect',
       '/api/v1/auth/login',
+      '/api/v1/auth/password-reset',
+      '/api/v1/auth/password-reset/complete',
+      '/api/v1/auth/password-reset/inspect',
+      '/api/v1/auth/password-reset/request',
       '/api/v1/branding',
       '/api/v1/branding/logo',
       '/api/v1/setup/check-password',

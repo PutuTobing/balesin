@@ -37,6 +37,27 @@ export function deviceIssueTime(totpEnabledAt: Date | null, now = new Date()): D
   return new Date(Math.max(now.getTime(), trustedDeviceThreshold(totpEnabledAt)));
 }
 
+/** Waktu paling akhir di antara yang ada (`null` bila semuanya kosong). */
+export function latestDate(...dates: Array<Date | null | undefined>): Date | null {
+  let latest: Date | null = null;
+  for (const date of dates) {
+    if (date && (latest === null || date.getTime() > latest.getTime())) latest = date;
+  }
+  return latest;
+}
+
+/**
+ * Cookie perangkat dikenal tetap diakui setelah password diganti HANYA bila terbit sesudahnya
+ * (review 2FA G.3): atur ulang password membatalkan semua cookie perangkat lama, sehingga ember
+ * batas laju milik perangkat itu tidak bisa dipakai lagi oleh siapa pun yang memegangnya.
+ */
+export function deviceStillValid(device: TrustedDevice, passwordChangedAt: Date | null): boolean {
+  return (
+    passwordChangedAt === null ||
+    device.issuedAt.getTime() >= trustedDeviceThreshold(passwordChangedAt)
+  );
+}
+
 const VERSION = 'v1';
 const TOKEN_PATTERN =
   /^v1\.([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.(\d{1,12})\.([A-Za-z0-9_-]{43})$/;

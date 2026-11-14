@@ -6,6 +6,7 @@ import { loadConfig } from './config';
 const developmentEnv: EnvSource = {
   NODE_ENV: 'development',
   LOG_LEVEL: 'debug',
+  APP_URL: 'http://localhost:5173',
   DATABASE_URL: 'postgres://balesin:sandi-db@localhost:5432/balesin',
   REDIS_URL: 'redis://:sandi-redis@localhost:6379',
   BALESIN_MASTER_KEY: '',
@@ -60,8 +61,30 @@ describe('loadConfig (worker)', () => {
   });
 
   it('mengabaikan variabel yang hanya dipakai api', () => {
-    const config = loadConfig({ ...developmentEnv, APP_URL: 'bukan url', API_PORT: 'abc' });
+    const config = loadConfig({ ...developmentEnv, API_URL: 'bukan url', API_PORT: 'abc' });
     expect(config.env).toBe('development');
+  });
+
+  it('APP_URL wajib (sumber tautan email) dan wajib https di production', () => {
+    expect(loadConfig(developmentEnv).appUrl).toBe('http://localhost:5173');
+    const problemsOf = (source: EnvSource) => {
+      try {
+        loadConfig(source);
+      } catch (caught) {
+        return (caught as EnvValidationError).problems.map((problem) => problem.variable);
+      }
+      return [];
+    };
+    expect(problemsOf({ ...developmentEnv, APP_URL: '' })).toEqual(['APP_URL']);
+    expect(problemsOf({ ...developmentEnv, APP_URL: 'bukan url' })).toEqual(['APP_URL']);
+    expect(
+      problemsOf({
+        ...developmentEnv,
+        NODE_ENV: 'production',
+        BALESIN_MASTER_KEY: Buffer.alloc(32, 1).toString('base64'),
+        APP_URL: 'http://balesin.contoh.co.id',
+      }),
+    ).toEqual(['APP_URL']);
   });
 
   it('mewajibkan master key di production dan menolak env yang salah tanpa mencetak nilainya', () => {

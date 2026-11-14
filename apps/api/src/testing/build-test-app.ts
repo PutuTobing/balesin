@@ -1,6 +1,9 @@
 import {
   Secret,
   type AccountLockedEmailPayload,
+  type AccountTokenEmailPayload,
+  type InvitationEmailPayload,
+  type SecurityNoticeAdminEmailPayload,
   type SecurityNoticeEmailPayload,
 } from '@balesin/core';
 import { createLogCapture, type LogCapture } from '@balesin/core/testing';
@@ -35,12 +38,19 @@ export interface TestApp {
   lockedNotifications: AccountLockedEmailPayload[];
   /** Pemberitahuan keamanan (2FA, kode cadangan) yang diantrekan (bila `notifier` tidak diganti). */
   securityNotices: SecurityNoticeEmailPayload[];
+  /** Pemberitahuan 2FA peran wajib ke Owner/Admin lain. */
+  adminNotices: SecurityNoticeAdminEmailPayload[];
+  /** Job email undangan. */
+  invitationJobs: InvitationEmailPayload[];
+  /** Job email atur ulang password / verifikasi email. */
+  accountTokenJobs: AccountTokenEmailPayload[];
 }
 
 const healthy = () => Promise.resolve();
 
 export function defaultTestConfig(): AppConfig {
   return {
+    appUrl: TEST_APP_ORIGIN,
     appOrigin: TEST_APP_ORIGIN,
     isProduction: false,
     trustProxy: false,
@@ -82,6 +92,15 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<TestAp
   const logs = createLogCapture();
   const lockedNotifications: AccountLockedEmailPayload[] = [];
   const securityNotices: SecurityNoticeEmailPayload[] = [];
+  const adminNotices: SecurityNoticeAdminEmailPayload[] = [];
+  const invitationJobs: InvitationEmailPayload[] = [];
+  const accountTokenJobs: AccountTokenEmailPayload[] = [];
+  const record =
+    <T>(list: T[]) =>
+    (payload: T) => {
+      list.push(payload);
+      return Promise.resolve();
+    };
   const redis = options.redis ?? unreachableRedis();
   // ioredis memancarkan `error` saat gagal tersambung; tanpa listener itu menjadi galat tak tertangani.
   if (!options.redis) redis.on('error', () => undefined);
@@ -94,18 +113,23 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<TestAp
     db: options.db ?? unreachableDb(),
     redis,
     notifier: options.notifier ?? {
-      accountLocked: (payload) => {
-        lockedNotifications.push(payload);
-        return Promise.resolve();
-      },
-      securityNotice: (payload) => {
-        securityNotices.push(payload);
-        return Promise.resolve();
-      },
+      accountLocked: record(lockedNotifications),
+      securityNotice: record(securityNotices),
+      securityNoticeAdmin: record(adminNotices),
+      invitation: record(invitationJobs),
+      accountToken: record(accountTokenJobs),
     },
     overrides: options.overrides,
   });
-  return { app, logs, lockedNotifications, securityNotices };
+  return {
+    app,
+    logs,
+    lockedNotifications,
+    securityNotices,
+    adminNotices,
+    invitationJobs,
+    accountTokenJobs,
+  };
 }
 
 /**

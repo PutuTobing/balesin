@@ -1,6 +1,7 @@
-# Kontrak API — Setup, Login, 2FA, Branding, Email pengirim (Fase 1)
+# Kontrak API — Setup, Login, 2FA, Undangan, Atur ulang password, Verifikasi email, Branding, Email pengirim (Fase 1)
 
-Sumber kebenaran tipe: skema Zod di `packages/shared/src/auth.ts` dan konstanta path di
+Sumber kebenaran tipe: skema Zod di `packages/shared/src/` (`auth.ts`, `two-factor.ts`, `invitations.ts`,
+`password-reset.ts`, `email-verification.ts`, `email-templates.ts`, `links.ts`) dan konstanta path di
 `packages/shared/src/api-routes.ts` (`API_ROUTES`). Dokumen ini menjelaskan perilaku yang
 tidak terlihat dari skema. Semua path diawali `/api/v1`.
 
@@ -238,3 +239,245 @@ atau tunggu langkah berganti.
 - **Email**: email kunci langkah kedua membedakan sumbernya (masuk vs konfirmasi ulang di Keamanan
   akun); email 2FA tidak lagi menyarankan fitur yang belum ada (ganti password, reset 2FA oleh
   Owner/Admin).
+
+## Tautan email bertoken (undangan, atur ulang password, verifikasi email)
+
+Berlaku untuk ketiga alur di bawah. Skema: `packages/shared/src/{links,invitations,password-reset,email-verification}.ts`.
+
+- Bentuk tautan (disusun server dari `APP_URL`, **tidak pernah** dari header `Host`):
+  `APP_URL + EMAIL_LINK_PATHS[jenis] + "#token=" + token` → `/undangan#token=…`,
+  `/atur-ulang-password#token=…`, `/verifikasi-email#token=…`. Halaman "lupa password":
+  `FORGOT_PASSWORD_PATH` = `/lupa-password`.
+- **Token di fragment** (`#`), bukan path/query: fragment tidak dikirim browser ke server (tidak ada di log
+  akses web/proxy/API — sensor log tidak menangkap rahasia di segmen path) dan tidak ikut `Referer`.
+  Fragment tetap tersimpan di riwayat browser, jadi web WAJIB:
+  1. membaca token dengan `readTokenFromFragment(location.hash)` saat halaman dibuka;
+  2. **langsung** `history.replaceState(null, '', location.pathname)` (buang fragment);
+  3. menyimpan token di memori komponen saja (bukan URL, storage, cache Query, atau log error);
+  4. mengirim token di **body** `{ token }`.
+- Token: 43 karakter base64url (256-bit). `linkTokenSchema` hanya memeriksa bentuk kasar; karakter lain →
+  400 `VALIDATION_ERROR` field `token`.
+- Token tidak berlaku (tidak dikenal, kedaluwarsa, sudah dipakai, dibatalkan, diganti tautan yang lebih
+  baru) → **410 `TOKEN_INVALID`** dengan `message` khusus per kasus — tampilkan apa adanya beserta
+  tombol ke langkah berikutnya (halaman masuk / minta tautan baru). Bukan sesi habis.
+- Token tidak berlaku dari satu jaringan: 30 per 15 menit (`tautan-ip`, dipakai bersama ketiga alur;
+  token sah tidak dihitung) → 429 "Terlalu banyak percobaan membuka tautan dari jaringanmu."
+- Rute publik bertoken tidak butuh CSRF, tetapi `Origin` selain `APP_URL` → 403.
+
+## Undangan
+
+Tidak ada pendaftaran publik: pengguna selain Owner hanya lewat undangan. Owner hanya dibuat wizard setup.
+
+### Siapa boleh mengundang (`INVITE_PERMISSIONS`, `canInviteRole`)
+
+| Pengundang | Admin | Supervisor | CS | Teknisi | Owner |
+|---|:-:|:-:|:-:|:-:|:-:|
+| Owner | ✅ | ✅ | ✅ | ✅ | – |
+| Admin | – | ✅ | ✅ | ✅ | – |
+| Supervisor, CS, Teknisi | – | – | – | – | – |
+
+Sama untuk kirim ulang dan batalkan: Admin melihat undangan Admin buatan Owner di daftar (`canManage: false`)
+tetapi tidak bisa mengirim ulang/membatalkannya. Owner/Admin/Supervisor yang belum mendaftar 2FA (sesi
+terbatas) → 403 `TWO_FACTOR_ENROLLMENT_REQUIRED`.
+
+### Endpoint
+
+| Metode & path | Akses | Request | Respons 2xx |
+|---|---|---|---|
+| GET `/invitations` | Owner/Admin | – | `invitationListResponseSchema` `{ invitations, invitableRoles, emailDelivery }` |
+| POST `/invitations` | Owner/Admin + CSRF | `createInvitationRequestSchema` `{ email, role }` | **201** `invitationIssuedResponseSchema` `{ invitation, link }` |
+| POST `/invitations/:invitationId/resend` | Owner/Admin + CSRF | – | 200 `invitationIssuedResponseSchema` |
+| DELETE `/invitations/:invitationId` | Owner/Admin + CSRF | – | 200 `{ status: "revoked" }` |
+| POST `/auth/invitation/inspect` | publik | `{ token }` | 200 `inspectInvitationResponseSchema` |
+| POST `/auth/invitation/accept` | publik | `acceptInvitationRequestSchema` `{ token, name, password }` | **201** `acceptInvitationResponseSchema` (= `meResponseSchema`) + cookie |
+
+Path ber-parameter disusun dengan `apiPath(API_ROUTES.invitations.resend, { invitationId })`.
+
+`invitation` (`invitationSchema`): `id, email, role, status ("pending" | "expired"), invitedBy {id, name},
+createdAt, lastSentAt, expiresAt, sendCount, deliveryStatus, canManage`. `deliveryStatus`
+(`EMAIL_DELIVERY_LABELS`): `queued` "Sedang dikirim", `sent` "Email terkirim", `failed` "Email gagal
+terkirim" (periksa Pengaturan → Email pengirim, lalu kirim ulang), `skipped` "Email tidak dikirim" (email
+pengirim belum diatur saat worker memprosesnya — kirim ulang), `link` "Tautan disalin manual". Daftar hanya
+memuat undangan terbuka (belum diterima/dibatalkan), terbaru dulu, maks. 200. Muat ulang daftar beberapa
+detik setelah membuat undangan untuk melihat `queued` → `sent`.
+
+### Tanpa email pengirim (`emailDelivery: false`)
+
+Undangan tetap dibuat, tetapi tidak ada email: respons buat/kirim ulang membawa `link` (tautan lengkap).
+- Tampilkan **sekali** dengan tombol "Salin" + teks "Kirim tautan ini sendiri ke {email} lewat jalur yang
+  aman. Tautan hanya ditampilkan sekarang dan berlaku 72 jam." Jangan simpan di cache Query/storage, jangan
+  tampilkan lagi setelah dialog ditutup (server tidak menyimpan token; untuk tautan baru → kirim ulang,
+  yang membatalkan tautan sebelumnya). Setiap tampilan tercatat di audit (`user.invitation.link_shown`).
+- Akun dari tautan yang disalin manual **tidak** dianggap email-terverifikasi (lihat Verifikasi email).
+- Bila email pengirim sudah diatur, `link` selalu `null`.
+
+### Alur Owner/Admin (Pengaturan → Tim / Pengguna)
+1. `GET /invitations` → daftar + pilihan peran dari `invitableRoles` (label `USER_ROLE_LABELS`) + mode
+   `emailDelivery` (beri tahu di form: "Undangan dikirim ke email" vs "Tautan undangan akan ditampilkan
+   untuk kamu salin").
+2. Form email + peran → `POST /invitations`. 201 → tambahkan ke daftar; bila `link` ≠ `null` buka dialog
+   salin tautan.
+3. Per baris: "Kirim ulang" (`POST …/resend`; tautan lama langsung batal, 72 jam lagi) dan "Batalkan"
+   (`DELETE`, minta konfirmasi). Sembunyikan keduanya bila `canManage: false`. Status `expired` → tampilkan
+   "Kedaluwarsa" + "Kirim ulang".
+
+Error membuat/mengirim ulang/membatalkan:
+
+| Kasus | Respons |
+|---|---|
+| Email tidak valid / memuat baris baru, peran bukan Admin/Supervisor/CS/Teknisi (termasuk `owner`) | 400 `VALIDATION_ERROR` field `email` / `role` |
+| Admin mengundang/mengelola undangan Admin | 403 `FORBIDDEN` "Admin hanya bisa mengundang dan mengelola undangan Supervisor, CS, dan Teknisi…" |
+| Supervisor/CS/Teknisi | 403 `FORBIDDEN` (deklarasi rute) |
+| Email sudah dipakai pengguna organisasi (aktif atau nonaktif) | 409 `CONFLICT` field `email` "Email ini sudah terdaftar sebagai pengguna di organisasimu." |
+| Masih ada undangan berlaku untuk email itu | 409 `CONFLICT` field `email` "…Kirim ulang dari daftar undangan bila perlu." (Undangan yang sudah kedaluwarsa otomatis diganti yang baru.) |
+| Undangan tidak ada / sudah diterima / dibatalkan / milik organisasi lain | 404 `NOT_FOUND` |
+| Dua kirim ulang bersamaan | 409 `CONFLICT` "Undangan ini baru saja berubah…" |
+| Batas laju: 20/jam per pengundang, 50/jam per organisasi, 5/jam per email tujuan (buat + kirim ulang) | 429 + `Retry-After` |
+
+### Alur penerima (`/undangan#token=…`)
+1. Baca + buang fragment (aturan di atas). Bila browser sedang masuk (`GET /auth/me` 200), tampilkan
+   "Kamu sedang masuk sebagai {nama}. Menerima undangan akan mengeluarkanmu dari akun itu." — menerima
+   undangan mencabut sesi yang ada di browser itu (rotasi).
+2. `POST /auth/invitation/inspect {token}` → tampilkan nama organisasi, `productName`, `invitedByName`,
+   email (tidak bisa diubah), peran, `expiresAt`. `twoFactorRequired: true` → beri tahu "Peran {peran} wajib
+   verifikasi dua langkah. Siapkan aplikasi autentikator; kamu langsung diminta mendaftarkannya."
+3. Form nama + password (`PASSWORD_RULES_HINT`, aturan sama dengan setup: min 10, bukan password umum,
+   tidak memuat nama/email/nama organisasi/nama produk) → `POST /auth/invitation/accept`.
+4. 201 — periksa `status`:
+   - `authenticated` (CS/Teknisi): sesi penuh + cookie perangkat dikenal → masuk ke aplikasi.
+   - `two_factor_enrollment_required` (Admin/Supervisor): sesi TERBATAS 30 menit, hanya cookie sesi →
+     langsung ke layar pendaftaran 2FA yang sudah ada (`POST /auth/2fa/enroll` dengan body `{}`, lalu
+     `enroll/confirm`; lihat bagian 2FA). Pengguna tidak mendapat sesi penuh sebelum 2FA aktif. Bila sesi
+     terbatas habis, pengguna masuk lagi dengan email + password → sesi terbatas baru.
+
+Error penerima:
+
+| Kasus | Respons |
+|---|---|
+| Token tidak dikenal / sudah diganti kirim ulang / undangan dibatalkan | 410 `TOKEN_INVALID` "Tautan undangan ini tidak berlaku. Buka tautan dari email undangan terbaru…" |
+| Kedaluwarsa (72 jam) | 410 `TOKEN_INVALID` "Undangan ini sudah kedaluwarsa. Minta Owner atau Admin … mengirim ulang…" |
+| Sudah dipakai / email sudah punya akun | 410 `TOKEN_INVALID` "…Masuk dengan email dan password-mu." → tombol ke halaman masuk |
+| Nama kosong/terlalu pendek/memuat baris baru | 400 field `name` |
+| Password melanggar kebijakan | 400 field `password` (pesan dari server; token tetap berlaku, boleh dicoba lagi) |
+| `role`/`email` dikirim di body | diabaikan — peran & email selalu dari undangan |
+| Token tidak berlaku 30×/15 menit dari satu jaringan | 429 |
+
+## Atur ulang password
+
+Semua publik. Rute: `API_ROUTES.passwordReset`. Tautan berlaku **30 menit**, sekali pakai; meminta tautan
+baru membatalkan yang lama; tautan batal bila email akun berubah.
+
+| Metode & path | Request | Respons 2xx |
+|---|---|---|
+| GET `/auth/password-reset` | – | `{ available }` — `false` bila email pengirim instalasi belum diatur |
+| POST `/auth/password-reset/request` | `{ email }` | **202** `{ status: "accepted", validMinutes: 30 }` |
+| POST `/auth/password-reset/inspect` | `{ token }` | 200 `{ email, expiresAt, twoFactorRequired, methods }` |
+| POST `/auth/password-reset/complete` | `{ token, password, code? }` | 200 `{ status: "password_reset" }` (tanpa sesi baru) |
+
+### Alur
+1. Halaman masuk: tautan "Lupa password?" → `/lupa-password`. Panggil `GET /auth/password-reset`:
+   - `available: false` → JANGAN tampilkan form. Tampilkan: "Atur ulang password lewat email belum tersedia
+     karena email pengirim belum diatur. Minta Owner atau Admin di tempatmu untuk membantu." (Ini keadaan
+     instalasi, sama untuk semua orang — tidak membuka apakah suatu akun ada.)
+   - `available: true` → form email.
+2. `POST …/request` → 202 SELALU sama untuk email terdaftar, tidak terdaftar, maupun akun nonaktif (waktu
+   jawabannya juga sama: pencarian akun dikerjakan setelah menjawab). Tampilkan: "Kalau {email} terdaftar,
+   tautan atur ulang password sudah dikirim. Periksa kotak masuk dan folder spam. Tautan berlaku 30 menit."
+   Jangan menulis "email terkirim".
+3. Tautan email → `/atur-ulang-password#token=…` → baca + buang fragment → `POST …/inspect`.
+4. Form password baru (`PASSWORD_RULES_HINT`); bila `twoFactorRequired`, juga isian kode
+   (`TWO_FACTOR_CODE_HINT`; `methods` memuat `backup_code` bila masih ada kode cadangan).
+5. `POST …/complete` → 200: tampilkan "Password sudah diganti. Semua perangkat sudah dikeluarkan." + tombol
+   masuk. Buang data sesi di memori web (sesi akun itu di browser ini sudah dicabut; permintaan berikutnya
+   dengan cookie lama → 401 seperti biasa).
+
+Yang terjadi di server saat selesai: semua sesi akun dicabut, tantangan 2FA dibuang, **cookie perangkat
+dikenal yang lama tidak diakui lagi**, kunci login akibat tebakan password dilepas (kunci 50-gagal-dari-banyak-
+jaringan + kunci asal dari jaringan yang menyelesaikan reset; kunci langkah kedua 2FA TIDAK dilepas), email
+dianggap terverifikasi, email "Password sudah diganti" (waktu, IP, perangkat) dikirim. Login berikutnya
+tetap butuh kode 2FA bila aktif.
+
+| Kasus | Respons |
+|---|---|
+| Email pengirim belum diatur (`request`) | 503 `SERVICE_UNAVAILABLE` (pesan sama untuk email apa pun) |
+| Email tidak valid | 400 field `email` |
+| > 3 permintaan/jam untuk email yang sama (terdaftar atau tidak, sama), > 10/15 menit per jaringan | 429 + `Retry-After` |
+| Token tidak dikenal / dibatalkan / email akun berubah / akun nonaktif | 410 `TOKEN_INVALID` "Tautan atur ulang password ini tidak berlaku. Minta tautan baru…" |
+| Kedaluwarsa | 410 `TOKEN_INVALID` "…sudah kedaluwarsa (berlaku 30 menit)…" |
+| Sudah dipakai | 410 `TOKEN_INVALID` "Tautan ini sudah dipakai…" |
+| Password melanggar kebijakan | 400 field `password` — diperiksa SEBELUM kode, jadi kode tidak terpakai |
+| Akun ber-2FA tanpa `code` | 400 field `code` |
+| Kode salah | 400 field `code` "…Sisa N percobaan." |
+| Kode salah ke-3 pada tautan yang sama | 410 `TOKEN_INVALID` "Kode salah 3 kali. Tautan ini tidak berlaku lagi — minta tautan…" |
+| 5 kode salah per akun / 15 menit (gabungan dengan langkah kedua saat masuk dan konfirmasi ulang) | 429 + `Retry-After`; langkah kedua akun dikunci 15 menit (login juga 429), email kunci (sumber "atur ulang password") |
+
+## Verifikasi email
+
+| Metode & path | Akses | Request | Respons 2xx |
+|---|---|---|---|
+| GET `/auth/email/verification` | sesi penuh | – | `{ email, verified, verifiedAt, canSend }` |
+| POST `/auth/email/verification` | sesi penuh + CSRF | `{}` | **202** `{ status: "queued", expiresAt }` |
+| POST `/auth/email/verify` | publik | `{ token }` | 200 `{ status: "verified", email }` |
+
+- Lingkup sekarang: verifikasi email akun SENDIRI. Siapa yang belum terverifikasi: Owner hasil wizard
+  setup (selalu), dan akun dari undangan yang tautannya disalin manual. Akun dari undangan yang terkirim
+  lewat email, dan akun yang pernah menyelesaikan atur ulang password, otomatis terverifikasi.
+- Status ini **tidak membatasi** apa pun (tidak ada fitur yang diblokir) — hanya petunjuk. Saran tampilan:
+  di Pengaturan → Akun/Keamanan, "Email belum diverifikasi" + tombol "Kirim email verifikasi" (sembunyikan
+  bila `canSend: false`, ganti dengan "Atur email pengirim dulu" untuk Owner).
+- Tautan berlaku 24 jam, sekali pakai; meminta lagi membatalkan yang lama. Halaman `/verifikasi-email`:
+  baca + buang fragment → `POST /auth/email/verify` → "Email {email} sudah terverifikasi." (tidak perlu
+  sedang masuk).
+- Ubah email di profil belum ada; tokennya sudah memakai kolom alamat tujuan sehingga nanti tinggal dipakai.
+
+| Kasus | Respons |
+|---|---|
+| Sudah terverifikasi (`POST …/verification`) | 409 `CONFLICT` |
+| Email pengirim belum diatur | 503 `SERVICE_UNAVAILABLE` |
+| > 3 kali per jam per pengguna | 429 + `Retry-After` |
+| Sesi terbatas (wajib 2FA) | 403 `TWO_FACTOR_ENROLLMENT_REQUIRED` |
+| Token tidak dikenal/dibatalkan, kedaluwarsa, sudah dipakai, email akun sudah berubah | 410 `TOKEN_INVALID` (pesan per kasus) |
+
+## Pratinjau template email (Pengaturan → Email pengirim; khusus Owner, sama dengan modul itu)
+
+- GET `/settings/email/templates/:template/preview` (`apiPath(API_ROUTES.settings.emailTemplatePreview,
+  { template })`), `template` ∈ `EMAIL_TEMPLATE_IDS` (label `EMAIL_TEMPLATE_LABELS`): `invitation`,
+  `password_reset`, `email_verification`, `password_changed`, `two_factor_enabled`,
+  `two_factor_enabled_admin`, `account_locked`. Template lain → 400.
+- 200 `emailTemplatePreviewResponseSchema` `{ template, subject, text, html }`: template yang sama dengan
+  email sungguhan, branding organisasi (nama produk, logo PNG/JPEG, warna utama bila kontrasnya cukup, nama
+  organisasi), data contoh dan tautan contoh `…#token=CONTOH-TAUTAN-PRATINJAU` (bukan token sungguhan).
+- `html` adalah dokumen lengkap dengan `style=` inline dan logo `data:` URI. Tampilkan di
+  `<iframe sandbox="" srcdoc={html} title="Pratinjau email">` (tanpa `allow-scripts`/`allow-same-origin`).
+  Catatan CSP: iframe `srcdoc` mewarisi CSP halaman induk; bila nanti `style-src` tanpa `'unsafe-inline'`
+  diterapkan di web, pratinjau akan tampil tanpa gaya — pilihan: render `text` sebagai cadangan, atau
+  keputusan CSP khusus untuk iframe ini. Jangan pernah memakai `dangerouslySetInnerHTML` untuk `html`.
+
+## Email sistem bermerek (semua email)
+
+Undangan, atur ulang password, verifikasi, password diganti, 2FA aktif/nonaktif, kode cadangan, kunci
+percobaan masuk, dan email tes memakai satu kerangka: logo (PNG/JPEG inline; WebP diganti nama produk),
+nama produk, nama organisasi, warna tombol dari warna utama organisasi bila kontras ≥ 4,5:1, versi HTML +
+teks polos, sapaan "kamu", semua nilai pengguna di-escape. Email keamanan memuat waktu, alamat IP, dan
+perkiraan perangkat ("Chrome di Windows") dari audit log.
+
+## Perubahan pada bagian yang sudah ada (Fase 1 butir 4)
+
+- **Kode error baru `TOKEN_INVALID` (410)** — tautan email tidak berlaku. Ditangani seperti error isian
+  halaman, bukan sesi habis.
+- **2FA aktif untuk peran wajib → email juga ke semua Owner/Admin aktif lain** (nama, email, peran, waktu,
+  IP, perangkat). Email "2FA aktif" ke pemilik akun juga kini memuat IP + perangkat.
+- **Rahasia pendaftaran 2FA tertunda** (langkah 2 "Wajib daftar"): dipakai ulang hanya bila permintaan
+  datang dari peramban (user agent) + jaringan (IP, atau /64 IPv6) yang sama dengan saat sesi dibuat, dan
+  paling lama 30 menit sejak rahasia itu pertama dibuat. Selain itu rahasia baru dibuat (QR lama batal —
+  konfirmasi dengan kode dari QR lama → 400). Bentuk respons tidak berubah.
+- **Cookie perangkat dikenal** yang terbit sebelum password diatur ulang tidak diakui lagi.
+- **Login**: tidak ada perubahan bentuk. Akun dari undangan masuk seperti biasa.
+- Worker kini WAJIB `APP_URL` (sumber tautan email) — sudah ada di `.env.example` dan env E2E.
+
+## Catatan untuk tes E2E
+
+- Mailpit menangkap semua email. Tautan ada di teks/HTML email; ambil token dari `#token=…`.
+- Tanpa email pengirim, tautan undangan ada di respons `POST /invitations` (`link`) dan di dialog salin.
+- Tes "lupa password" harus mengatur email pengirim dulu (`available: false` tanpa itu).
+- Akun Admin/Supervisor dari undangan langsung ke layar pendaftaran 2FA; pakai `generateTotp(secret)`.

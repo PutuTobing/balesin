@@ -3,6 +3,8 @@ import {
   detectEmailHostRequestSchema,
   detectEmailHostResponseSchema,
   emailSettingsResponseSchema,
+  emailTemplateParamsSchema,
+  emailTemplatePreviewResponseSchema,
   emailTestResultSchema,
   errorEnvelopeSchema,
   saveEmailSettingsRequestSchema,
@@ -16,9 +18,11 @@ import { enforceRateLimit, type RateLimitRule, type RateLimiter } from '../../ht
 import { allowRoles } from '../../http/route-access';
 import { requireAuth } from '../auth/auth.hook';
 import type { EmailSettingsService } from './email-settings.service';
+import type { EmailTemplatePreview } from './email-template-preview';
 
 export interface EmailSettingsRoutesOptions {
   emailSettings: EmailSettingsService;
+  templatePreview: EmailTemplatePreview;
   limiter: RateLimiter;
 }
 
@@ -57,13 +61,14 @@ const errors = {
  * - `POST /settings/email/detect-host`      saran host dari domain email
  * - `POST /settings/email/test-connection`  tes koneksi (tersimpan atau isi form)
  * - `POST /settings/email/send-test`        kirim email tes
+ * - `GET  /settings/email/templates/:template/preview`  pratinjau template email bermerek
  */
 export const emailSettingsRoutes: FastifyPluginCallbackZod<EmailSettingsRoutesOptions> = (
   app,
   options,
   done,
 ) => {
-  const { emailSettings, limiter } = options;
+  const { emailSettings, templatePreview, limiter } = options;
 
   app.get(
     API_ROUTES.settings.email,
@@ -152,6 +157,18 @@ export const emailSettingsRoutes: FastifyPluginCallbackZod<EmailSettingsRoutesOp
       );
       return reply.send(result);
     },
+  );
+
+  app.get(
+    API_ROUTES.settings.emailTemplatePreview,
+    {
+      config: { access: ACCESS },
+      schema: {
+        params: emailTemplateParamsSchema,
+        response: { 200: emailTemplatePreviewResponseSchema, ...errors },
+      },
+    },
+    async (request) => templatePreview.render(requireAuth(request), request.params.template),
   );
 
   done();
