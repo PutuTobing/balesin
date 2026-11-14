@@ -73,6 +73,10 @@ export const twoFactorStatusQuery = queryOptions({
 export function storeSession(queryClient: QueryClient, response: MeResponse): void {
   const { status, user, organization, csrfToken, session } = response;
   const clean: MeResponse = { status, user, organization, csrfToken, session };
+  // Pengguna lain masuk di browser yang sama (komputer bersama): buang data milik pengguna
+  // sebelumnya supaya tidak tampil sekilas dari cache.
+  const previous = queryClient.getQueryData<MeResponse | null>(queryKeys.session);
+  if (previous && previous.user.id !== clean.user.id) clearAppData(queryClient);
   api.setCsrfToken(clean.csrfToken);
   queryClient.setQueryData(queryKeys.session, clean);
 }

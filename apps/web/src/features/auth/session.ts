@@ -40,8 +40,12 @@ export function useLogout() {
       // (kalau dibuang lebih dulu, layar yang masih terbuka memuat ulang datanya → 401).
       endSession(queryClient);
       setLoginNotice('logged-out');
-      await router.navigate({ to: '/masuk', replace: true });
-      clearAppData(queryClient);
+      try {
+        await router.navigate({ to: '/masuk', replace: true });
+      } finally {
+        // Tetap dibuang walau navigasi gagal — komputer bersama tidak boleh menyisakan data.
+        clearAppData(queryClient);
+      }
     },
   });
 }

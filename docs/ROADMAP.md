@@ -19,7 +19,7 @@ Orkestrator mengerjakan dari atas ke bawah. Tandai `[x]` saat Definition of Done
 ## Fase 1 — Akun, peran, keamanan
 - [x] Wizard setup pertama (token setup dari env) → Owner + organisasi + branding + SMTP
 - [x] Login, logout, sesi, CSRF, rate limit, kunci akun
-- [ ] 2FA TOTP + kode cadangan; wajib untuk Owner/Admin/Supervisor
+- [x] 2FA TOTP + kode cadangan; wajib untuk Owner/Admin/Supervisor
 - [ ] Undangan via email, verifikasi email, reset password (template email bermerek)
 - [ ] RBAC 5 peran + tes otorisasi per endpoint
 - [ ] Manajemen pengguna & sesi aktif, audit log

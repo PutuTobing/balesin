@@ -1,7 +1,7 @@
 # Progress
 
 **Fase aktif:** 1 — Akun, peran, keamanan
-**Terakhir diperbarui:** 2026-11-14 (Fase 1 butir 1–2 selesai; butir 3 2FA berjalan)
+**Terakhir diperbarui:** 2026-11-14 (Fase 1 butir 1–3 selesai)
 
 ## Selesai
 
@@ -35,18 +35,23 @@
   diperbaiki, `kritikus-desain` LOLOS putaran 3 (`docs/design-reviews/2026-11-13-auth-fase1.md`).
 - Aset merek terpasang (logo, favicon, ikon PWA, ilustrasi login).
 
+### Fase 1 butir 3 — 2FA TOTP + kode cadangan (14 Nov 2026)
+- Wajib untuk Owner/Admin/Supervisor (termasuk Owner hasil setup — sesi pendaftaran 30 menit),
+  login dua langkah dengan tantangan, kode cadangan (argon2id, tampil sekali + dialog tinggalkan),
+  Pengaturan → Keamanan akun, QR di browser, email pemberitahuan, audit. TOTP ditulis sendiri
+  (vektor RFC). Kontrak: `docs/KONTRAK-API-AUTH.md` bagian 2FA.
+- Review: security AMAN putaran 2 (`docs/security-reviews/2026-11-14-fase1-2fa.md`), QA bug
+  QA-2FA-1..5 diperbaiki, `kritikus-desain` LOLOS putaran 3 (`docs/design-reviews/2026-11-14-2fa.md`).
+- Tes: 1.238 Vitest + 176 E2E lulus.
+
 ## Sedang dikerjakan
-- **Fase 1 butir 3 — 2FA TOTP + kode cadangan (14 Nov).** Backend selesai tetapi **BELUM di-commit**
-  (working tree: `apps/api/src/modules/two-factor/`, `packages/core/src/totp.ts`, migrasi `0003`, dsb.)
-  karena mengubah respons `/auth/me`, `/auth/login`, `/setup/complete` sehingga `apps/web` gagal
-  typecheck sampai frontend menyesuaikan. Frontend (langkah kode di halaman masuk, pendaftaran 2FA +
-  QR + kode cadangan, Pengaturan → Keamanan, E2E dengan TOTP) dan review security 2FA sedang
-  berjalan. Commit backend + frontend bersama setelah root hijau, lalu QA + kritikus untuk layar 2FA.
-  Bila sesi terputus: periksa `git status`, jalankan `pnpm typecheck` — sisa pekerjaan ada di
-  `apps/web` dan `e2e`.
-- Pose Kak Sky & ilustrasi login pengganti menunggu Tobing (BUTUH-TOBING #5, #13).
-- Database dev `balesin` dimigrasi s.d. 0002 (0003 belum). E2E memakai database `balesin_e2e`,
-  Redis db 14, port API 3100 / web 5180.
+- Berikutnya: Fase 1 butir 4 — undangan via email, verifikasi email, reset password (template
+  email bermerek). Ingat: mitigasi trust-on-first-use 2FA (review 2FA R5/R7) dibangun di sini —
+  pendaftaran 2FA menyatu dengan penerimaan undangan, email "2FA aktif" untuk peran wajib juga ke
+  Owner/Admin, simpan `totp_pending_issued_at` terpisah bila sesi pendaftaran lebih panjang.
+- Pose Kak Sky menunggu Tobing (BUTUH-TOBING #5).
+- Database dev `balesin` dimigrasi s.d. 0002 (jalankan `pnpm db:migrate` untuk 0003). E2E memakai
+  database `balesin_e2e`, Redis db 14, port API 3100 / web 5180.
 
 ## Catatan untuk sesi berikutnya
 
