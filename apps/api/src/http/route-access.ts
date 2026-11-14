@@ -79,6 +79,16 @@ declare module 'fastify' {
      * lewat amplop error). Tanpa ini, rute tanpa skema respons membuat aplikasi menolak start.
      */
     rawResponse?: boolean;
+    /**
+     * `true` = rute GET ini punya EFEK SAMPING (menulis audit, memakai jatah, mengunduh data
+     * pribadi) sehingga wajib header `X-CSRF-Token` walau metodenya "aman", dan permintaan dengan
+     * `Sec-Fetch-Site` selain `same-origin` atau `Origin` asing ditolak 403 `CSRF_INVALID`.
+     * Cookie sesi `SameSite=Lax` ikut terkirim pada navigasi tingkat atas dari situs lain, jadi
+     * tanpa penanda ini tautan di mana pun bisa memicu rutenya (review butir 6 R3). WAJIB untuk
+     * setiap GET yang menulis data/memakai jatah (mis. ekspor audit; nanti ekspor kontak, unduh
+     * media). Web memanggilnya lewat `fetch` dengan header CSRF, bukan dengan membuka URL-nya.
+     */
+    requireCsrf?: boolean;
     /** Dipasang `http/method-not-allowed.ts` pada rute pelengkap 405. Jangan dipakai modul. */
     methodNotAllowed?: boolean;
   }
@@ -91,7 +101,12 @@ declare module 'fastify' {
 interface RouteDefinition {
   method: string | string[];
   url: string;
-  config?: { access?: RouteAccess; rawResponse?: boolean; methodNotAllowed?: boolean };
+  config?: {
+    access?: RouteAccess;
+    rawResponse?: boolean;
+    requireCsrf?: boolean;
+    methodNotAllowed?: boolean;
+  };
   schema?: { response?: unknown };
 }
 

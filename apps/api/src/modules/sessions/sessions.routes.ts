@@ -3,6 +3,7 @@ import {
   activeSessionListResponseSchema,
   errorEnvelopeSchema,
   identityConfirmationSchema,
+  revokeOwnSessionRequestSchema,
   revokeSessionResponseSchema,
   revokeSessionsResponseSchema,
   sessionIdParamsSchema,
@@ -66,8 +67,10 @@ export const sessionsRoutes: FastifyPluginCallbackZod<SessionsRoutesOptions> = (
     API_ROUTES.sessions.revoke,
     {
       config: { access: AUTHENTICATED },
+      bodyLimit: BODY_LIMIT_BYTES,
       schema: {
         params: sessionIdParamsSchema,
+        body: revokeOwnSessionRequestSchema,
         response: { 200: revokeSessionResponseSchema, ...errors },
       },
     },
@@ -75,6 +78,7 @@ export const sessionsRoutes: FastifyPluginCallbackZod<SessionsRoutesOptions> = (
       await sessionsService.revoke(
         requireAuth(request),
         request.params.sessionId,
+        request.body,
         contextOf(request),
       );
       return { status: 'revoked' as const };

@@ -71,6 +71,34 @@ const SECURITY_EVENT_CONDITIONS: Readonly<Record<SecurityEventKind, SQL>> = {
   user_disabled: sql`${auditLogs.action} = ${AUDIT_ACTIONS.userDisabled}`,
 };
 
+/**
+ * Ubah peran / nonaktifkan oleh SELAIN Owner dinaikkan menjadi `warning` (review butir 6 Info 6).
+ * Baris lama tanpa `actorRole` tetap `info`.
+ */
+const BY_NON_OWNER = sql`(${auditLogs.metadata} ->> 'actorRole' is not null and ${auditLogs.metadata} ->> 'actorRole' <> 'owner')`;
+
+function severityOf(kind: SecurityEventKind, row: AuditRow): 'warning' | 'info' {
+  if (kind === 'role_changed' || kind === 'user_disabled') {
+    const actorRole = row.metadata.actorRole;
+    return typeof actorRole === 'string' && actorRole !== 'owner'
+      ? 'warning'
+      : SECURITY_EVENT_SEVERITY[kind];
+  }
+  return SECURITY_EVENT_SEVERITY[kind];
+}
+
+/** Kondisi SQL "kejadian ini `warning`" — padanan `severityOf`. */
+function warningCondition(): SQL {
+  const conditions = SECURITY_EVENT_KINDS.map((kind) =>
+    SECURITY_EVENT_SEVERITY[kind] === 'warning'
+      ? SECURITY_EVENT_CONDITIONS[kind]
+      : kind === 'role_changed' || kind === 'user_disabled'
+        ? (and(SECURITY_EVENT_CONDITIONS[kind], BY_NON_OWNER) as SQL)
+        : undefined,
+  ).filter((condition): condition is SQL => condition !== undefined);
+  return or(...conditions) as SQL;
+}
+
 function kindOf(row: AuditRow): SecurityEventKind | undefined {
   switch (row.action) {
     case AUDIT_ACTIONS.emailSettingsUpdated:
@@ -101,8 +129,8 @@ const DETAIL_KEYS: Readonly<Record<SecurityEventKind, readonly string[]>> = {
   two_factor_enrollment_reopened: ['role', 'dueAt'],
   password_reset_without_two_factor: [],
   account_locked: ['scope', 'lockedUntil'],
-  role_changed: ['from', 'to'],
-  user_disabled: ['role'],
+  role_changed: ['from', 'to', 'actorRole'],
+  user_disabled: ['role', 'actorRole'],
 };
 
 export function createAuditService(deps: { db: Database; limiter: RateLimiter }): AuditService {
@@ -181,19 +209,9 @@ export function createAuditService(deps: { db: Database; limiter: RateLimiter })
           limit: SECURITY_SUMMARY_MAX_EVENTS,
         }),
         countAuditRowsMatching(db, inRange, SECURITY_EVENT_CONDITIONS),
-        selectAuditRows(
-          db,
-          auth.organizationId,
-          and(
-            inRange,
-            or(
-              ...SECURITY_EVENT_KINDS.filter(
-                (kind) => SECURITY_EVENT_SEVERITY[kind] === 'warning',
-              ).map((kind) => SECURITY_EVENT_CONDITIONS[kind]),
-            ),
-          ) as SQL,
-          { limit: 1 },
-        ),
+        selectAuditRows(db, auth.organizationId, and(inRange, warningCondition()) as SQL, {
+          limit: 1,
+        }),
       ]);
 
       const events: SecurityEvent[] = [];
@@ -204,7 +222,7 @@ export function createAuditService(deps: { db: Database; limiter: RateLimiter })
         events.push({
           id: row.id,
           kind,
-          severity: SECURITY_EVENT_SEVERITY[kind],
+          severity: severityOf(kind, row),
           occurredAt: row.createdAt.toISOString(),
           actor: row.actor,
           subject:

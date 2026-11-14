@@ -17,6 +17,8 @@ import {
 import {
   TWO_FACTOR_ACCOUNT_LOCK_FLAG,
   TWO_FACTOR_ACCOUNT_RULE,
+  TWO_FACTOR_DAILY_LOCK_FLAG,
+  TWO_FACTOR_DAILY_RULE,
   TWO_FACTOR_DEVICE_LOCK_FLAG,
   TWO_FACTOR_DEVICE_RULE,
   TWO_FACTOR_REAUTH_RULE,
@@ -43,6 +45,8 @@ interface LockBucket {
   flag: string;
   key: string;
   rules: readonly RateLimitRule[];
+  /** `true` = tidak dilepas "Buka kunci" (kunci 2FA harian); hanya oleh atur ulang 2FA. */
+  survivesUnlock?: boolean;
 }
 
 interface LockEventRow {
@@ -52,7 +56,9 @@ interface LockEventRow {
   ip: string | null;
 }
 
-const LOCK_WINDOW = sql.raw(`interval '${LOGIN_LOCK_MINUTES} minutes'`);
+// 24 jam: kunci 2FA harian (`TWO_FACTOR_DAILY_RULE`) berlaku selama itu. Kunci lain 15 menit;
+// yang sudah habis tersaring oleh pemeriksaan Redis.
+const LOCK_WINDOW = sql.raw(`interval '${TWO_FACTOR_DAILY_RULE.windowSeconds} seconds'`);
 
 /** Kejadian kunci yang mungkin masih berlaku (audit `auth.account.locked` 15 menit terakhir). */
 async function recentLockEvents(
@@ -90,6 +96,12 @@ function twoFactorBuckets(user: LockSubjectUser): LockBucket[] {
       rules: [TWO_FACTOR_ACCOUNT_RULE, TWO_FACTOR_REAUTH_RULE],
     },
     { flag: TWO_FACTOR_DEVICE_LOCK_FLAG, key: user.id, rules: [TWO_FACTOR_DEVICE_RULE] },
+    {
+      flag: TWO_FACTOR_DAILY_LOCK_FLAG,
+      key: user.id,
+      rules: [TWO_FACTOR_DAILY_RULE],
+      survivesUnlock: true,
+    },
   ];
 }
 
@@ -175,6 +187,7 @@ export function createLockInspector(deps: {
       const events = await recentLockEvents(db, organizationId, [user.id]);
       const cleared = new Set<string>();
       for (const bucket of [...accountBuckets(user), ...eventBuckets(user, events)]) {
+        if (bucket.survivesUnlock) continue;
         if ((await limiter.flagTtl(bucket.flag, bucket.key)) > 0) cleared.add(bucket.flag);
         await limiter.clearFlag(bucket.flag, bucket.key);
         for (const rule of bucket.rules) await limiter.reset(rule, bucket.key);

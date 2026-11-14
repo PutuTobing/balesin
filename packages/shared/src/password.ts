@@ -11,7 +11,7 @@ export const PASSWORD_MAX_LENGTH = 128;
 
 export const PASSWORD_RULES_HINT =
   `Minimal ${PASSWORD_MIN_LENGTH} karakter. Hindari password yang umum dipakai ` +
-  'atau yang memuat nama dan emailmu.';
+  'atau yang memuat nama dan email-mu.';
 
 /** Password BARU (setup, undangan, ganti/reset password). */
 export const newPasswordSchema = z

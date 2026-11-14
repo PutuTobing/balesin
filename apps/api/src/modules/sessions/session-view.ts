@@ -10,7 +10,11 @@ import type { ActiveSessionRow } from '../auth/session.repo';
  * sebagian — cukup untuk mengenali jaringan ("kantor", "rumah"), tidak membuka alamat lengkap;
  * user agent diringkas menjadi peramban + sistem operasi. Token dan hash sesi tidak pernah ikut.
  */
-export function toActiveSession(row: ActiveSessionRow, currentSessionRef?: string): ActiveSession {
+export function toActiveSession(
+  row: ActiveSessionRow,
+  currentSessionRef?: string,
+  currentCreatedAt?: Date,
+): ActiveSession {
   return {
     id: row.id,
     device: describeUserAgent(row.userAgent),
@@ -19,7 +23,22 @@ export function toActiveSession(row: ActiveSessionRow, currentSessionRef?: strin
     lastSeenAt: row.lastSeenAt.toISOString(),
     current: row.id === currentSessionRef,
     limited: row.kind === 'two_factor_enrollment',
+    confirmationRequired: requiresConfirmation(row, currentSessionRef, currentCreatedAt),
   };
+}
+
+/**
+ * Mengeluarkan sesi SENDIRI yang dibuat pada/sesudah sesi pemanggil wajib konfirmasi identitas
+ * (review butir 6 R4). Seri (waktu sama) dianggap "lebih baru" — lebih aman.
+ */
+export function requiresConfirmation(
+  row: Pick<ActiveSessionRow, 'id' | 'createdAt'>,
+  currentSessionRef: string | undefined,
+  currentCreatedAt: Date | undefined,
+): boolean {
+  if (currentSessionRef === undefined || currentCreatedAt === undefined) return false;
+  if (row.id === currentSessionRef) return false;
+  return row.createdAt.getTime() >= currentCreatedAt.getTime();
 }
 
 /** Delapan grup heksadesimal alamat IPv6 (tanpa zona), atau `undefined` bila tidak sah. */

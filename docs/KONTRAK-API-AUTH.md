@@ -707,7 +707,7 @@ pengguna × aturan per menit.
 | Metode & path | Request | Respons 2xx |
 |---|---|---|
 | GET `/auth/sessions` | – | `activeSessionListResponseSchema` `{ sessions }` |
-| DELETE `/auth/sessions/:sessionId` | – | `{ status: "revoked" }` |
+| DELETE `/auth/sessions/:sessionId` | body opsional `revokeOwnSessionRequestSchema` `{ password, code? }` — WAJIB bila `confirmationRequired: true` | `{ status: "revoked" }` |
 | POST `/auth/sessions/revoke-others` | `{ password, code? }` (`code` wajib bila 2FA aktif) | `{ revokedSessions }` |
 
 `session` (`activeSessionSchema`): `id, device` ("Chrome di Windows"), `ipAddress` (tersamar: IPv4
@@ -743,7 +743,7 @@ masih berlaku. Mengeluarkan sesi ini sendiri → 409 "…pakai tombol Keluar." S
 | Metode & path | Request | Respons 2xx |
 |---|---|---|
 | GET `/audit-logs` | query `auditLogListQuerySchema` | `auditLogListResponseSchema` `{ entries, nextCursor }` |
-| GET `/audit-logs/export` | query `auditLogFilterSchema` (tanpa `cursor`/`limit`) | **`text/csv; charset=utf-8`**, unduhan |
+| GET `/audit-logs/export` | query `auditLogFilterSchema` (tanpa `cursor`/`limit`) + **header `X-CSRF-Token` wajib walau GET** | **`text/csv; charset=utf-8`**, unduhan |
 | GET `/audit-logs/security-summary` | – | `securitySummaryResponseSchema` |
 
 Saringan (semua opsional): `actorUserId` (aksi oleh pengguna itu), `userId` (aksi OLEH atau TERHADAP pengguna
@@ -796,3 +796,45 @@ pengguna — kenyamanan saja; server tidak menyimpan status "sudah dibaca"), tau
 - Konfirmasi identitas memakai kode TOTP pelaku; satu kode tidak bisa dipakai dua kali dalam 30 detik — pakai
   helper TOTP yang sama dengan tes 2FA (`e2e/tests/two-factor.ts`).
 - Setelah ubah peran/nonaktifkan/atur ulang 2FA, browser sasaran mendapat 401 pada permintaan berikutnya.
+
+### Perubahan setelah review keamanan butir 6 (path & bentuk tidak berubah; ada perilaku baru)
+
+Sumber: `docs/security-reviews/2026-11-14-fase1-tim-audit.md` (R1–R4, Info 2, Info 6).
+
+- **Ekspor audit wajib CSRF (R3).** `GET /audit-logs/export` kini ditolak **403 `CSRF_INVALID`** bila header
+  `X-CSRF-Token` tidak ada/salah, bila `Sec-Fetch-Site` ada dan bukan `same-origin`, atau bila `Origin` ada dan
+  bukan origin aplikasi (juga HEAD). **Web: unduh lewat `fetch(url, { credentials: 'include', headers:
+  { 'X-CSRF-Token': csrfToken } })` → `Blob` → tautan unduhan**; jangan membuka URL ekspor di tab/`<a href>`.
+  Pola server: rute GET ber-efek-samping memakai `config.requireCsrf: true` (wajib untuk setiap GET yang
+  menulis data/memakai jatah berikutnya, mis. ekspor kontak).
+- **Mengeluarkan sesi sendiri yang lebih baru (R4).** Daftar `GET /auth/sessions` kini memuat
+  `confirmationRequired` per sesi (tambahan): `true` = sesi itu dibuat pada/sesudah sesi yang sedang dipakai.
+  `DELETE /auth/sessions/:sessionId` untuk sesi seperti itu tanpa body → **400 `VALIDATION_ERROR` field
+  `password`** "Sesi itu lebih baru dari sesi yang sedang kamu pakai. Masukkan password-mu (dan kode verifikasi
+  dua langkah bila aktif) untuk mengeluarkannya." Dengan body `{ password, code? }` (`code` wajib bila 2FA
+  aktif) → 200; salah → 400 field `password`/`code`, 429 seperti konfirmasi lain. Sesi yang lebih lama
+  (`confirmationRequired: false`) tetap satu klik tanpa body. **Web: dialog konfirmasi (password + kode) hanya
+  untuk sesi `confirmationRequired: true`.** Daftar sesi pengguna lain (Owner/Admin): selalu `false`.
+- **Pemeriksaan ulang di transaksi (R1/R2).** Semua aksi kelola (termasuk buka kunci dan keluarkan satu sesi
+  pengguna lain) kini berurutan per organisasi dan memeriksa ulang keadaan TERBARU: bila peran/status/2FA
+  sasaran berubah sejak dibaca (permintaan lain menang tipis) → **409 `CONFLICT`** "Data pengguna ini baru saja
+  berubah. Muat ulang halaman Tim, lalu coba lagi."; bila peran pelaku sekarang tidak lagi boleh mengelola
+  sasaran / memberi peran itu → **403 `FORBIDDEN`** dengan pesan aturan. Dua Owner yang saling menurunkan
+  bersamaan: satu 200, yang lain 403/409 (bukan 500). Web: pada 409 muat ulang daftar Tim; pada 403 yang tidak
+  diduga muat ulang `/auth/me` (perannya mungkin baru diturunkan).
+- **Perubahan tim oleh selain Owner (Info 6).** Ubah peran / nonaktifkan oleh Admin → email ke semua Owner
+  aktif ("Peran {nama} di {produk} diubah oleh {pelaku} (Admin)" / "{nama} di {produk} dinonaktifkan oleh …"),
+  dan di ringkasan keamanan kejadian `role_changed`/`user_disabled` itu ber-`severity: "warning"` (ikut
+  `latestWarningAt`; `details.actorRole` = peran pelaku). Oleh Owner tetap `info`, tanpa email.
+  `SECURITY_EVENT_SEVERITY` adalah keparahan BAWAAN — web selalu memakai `event.severity` dari server. Audit
+  `user.role_changed`/`user.disabled` kini memuat `actorRole`.
+- **Kunci 2FA harian (Info 2).** 20 kode verifikasi dua langkah salah dalam 24 jam dari perangkat yang belum
+  dikenal → langkah kedua akun itu dikunci sampai jendela 24 jamnya habis (429 + `Retry-After`, audit
+  `auth.account.locked` dengan `daily: true`). **"Buka kunci" Owner/Admin TIDAK melepas kunci ini** (supaya
+  "tolong buka kunci saya" tidak memberi tebakan tanpa batas) — respons buka kunci bisa tetap
+  `status: "locked"` dengan `lockedUntil` hingga 24 jam. Yang melepasnya: atur ulang 2FA (autentikator baru).
+  Perangkat dikenal pemilik akun tidak dihitung dan tidak terkena. Saran teks web bila setelah buka kunci masih
+  terkunci: "Kunci ini karena terlalu banyak kode verifikasi salah dalam 24 jam. Atur ulang verifikasi dua
+  langkah bila pemiliknya kehilangan aplikasi autentikator."
+- **Teks email**: subjek "akun {produk} kamu" kini "akun {produk}-mu" (nama produk dari branding); "kotak
+  emailmu" → "kotak email-mu". `PASSWORD_RULES_HINT` dan pesan kode SMTP di shared kini "email-mu".

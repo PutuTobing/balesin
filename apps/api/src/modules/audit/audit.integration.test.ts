@@ -232,6 +232,33 @@ describe('daftar audit', () => {
 });
 
 describe('ekspor CSV', () => {
+  it('wajib token CSRF walau GET (review butir 6 R3): tanpa token, lintas situs, atau Origin asing → 403', async () => {
+    const owner = await completeSetup(harness.app);
+    const cookieOnly = { cookie: owner.cookie };
+    for (const [label, options] of [
+      ['tanpa token', cookieOnly],
+      ['HEAD tanpa token', cookieOnly],
+      ['token + lintas situs', { ...as(owner), headers: { 'sec-fetch-site': 'cross-site' } }],
+      ['token + Origin asing', { ...as(owner), origin: 'https://jahat.example' }],
+      ['token salah', { cookie: owner.cookie, csrf: 'token-palsu' }],
+    ] as const) {
+      const method = label.startsWith('HEAD') ? 'HEAD' : 'GET';
+      const response = await call(harness.app, method, routes.export, undefined, options);
+      expect(response.statusCode, label).toBe(403);
+    }
+    const none = await harness.db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.action, 'audit.exported'));
+    expect(none).toHaveLength(0);
+    const ok = await call(harness.app, 'GET', routes.export, undefined, {
+      ...as(owner),
+      origin: null,
+      headers: { 'sec-fetch-site': 'same-origin' },
+    });
+    expect(ok.statusCode).toBe(200);
+  });
+
   it('CSV ber-BOM, terunduh, aman dari formula injection, dan ekspornya diaudit', async () => {
     const owner = await completeSetup(harness.app);
     const organizationId = owner.session.organization.id;

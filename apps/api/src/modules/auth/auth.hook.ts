@@ -45,6 +45,8 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  *  2. Rute publik (`config.access = PUBLIC`): lanjut tanpa sesi.
  *  3. Selain itu wajib ada sesi yang sah → 401 bila tidak.
  *  4. Permintaan pengubah data wajib membawa `Origin` aplikasi dan token CSRF sesi itu → 403.
+ *     GET bertanda `config.requireCsrf` (efek samping) juga wajib token CSRF, tanpa `Origin`
+ *     asing dan tanpa `Sec-Fetch-Site` selain `same-origin` → 403 `CSRF_INVALID`.
  *  5. Sesi terbatas (Owner/Admin/Supervisor yang 2FA-nya belum aktif) hanya boleh ke rute
  *     `AUTHENTICATED_OR_ENROLLING` → selain itu 403 `TWO_FACTOR_ENROLLMENT_REQUIRED`. Keadaan 2FA
  *     dibaca dari database setiap permintaan, jadi peran yang baru dinaikkan langsung ikut.
@@ -103,6 +105,17 @@ export function registerAuthHook(app: FastifyInstance, options: AuthHookOptions)
       // bercookie sesi tidak diterima.
       if (
         origin !== appOrigin ||
+        !csrf.verify(auth.sessionTokenHash, request.headers[CSRF_HEADER_NAME])
+      ) {
+        throw new AppError('CSRF_INVALID');
+      }
+    } else if (request.routeOptions.config.requireCsrf === true) {
+      // GET ber-efek-samping (`config.requireCsrf`): browser tidak mengirim `Origin` pada GET
+      // same-origin, jadi yang diwajibkan adalah token CSRF + bukan permintaan lintas situs.
+      const fetchSite = request.headers['sec-fetch-site'];
+      if (
+        (origin !== undefined && origin !== appOrigin) ||
+        (typeof fetchSite === 'string' && fetchSite !== 'same-origin') ||
         !csrf.verify(auth.sessionTokenHash, request.headers[CSRF_HEADER_NAME])
       ) {
         throw new AppError('CSRF_INVALID');

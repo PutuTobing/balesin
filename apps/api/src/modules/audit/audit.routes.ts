@@ -53,7 +53,9 @@ export const auditRoutes: FastifyPluginCallbackZod<AuditRoutesOptions> = (app, o
     API_ROUTES.audit.export,
     {
       // Isi CSV, bukan JSON: tidak lewat skema respons (error tetap amplop JSON biasa).
-      config: { access: VIEW, rawResponse: true },
+      // Efek samping (jatah 10/jam + audit `audit.exported` + unduhan data pribadi): wajib CSRF
+      // walau GET, dan permintaan lintas situs ditolak (review butir 6 R3).
+      config: { access: VIEW, rawResponse: true, requireCsrf: true },
       schema: { querystring: auditLogFilterSchema },
     },
     async (request, reply) => {

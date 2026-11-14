@@ -56,7 +56,9 @@ import {
   hasPermission,
   invitationIssuerAuthorized,
   isTwoFactorRequired,
+  userRoleSchema,
   type EmailDeliveryStatus,
+  type UserRole,
 } from '@balesin/shared';
 import { UnrecoverableError, Worker } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
@@ -317,6 +319,37 @@ async function findUserAnyState(organizationId: string, userId: string, deps: Em
   return user;
 }
 
+/** Seperti `findUserAnyState`, plus email (untuk menyebut pengguna yang sudah dinonaktifkan). */
+async function findUserAnyStateWithEmail(
+  organizationId: string,
+  userId: string,
+  deps: EmailJobDeps,
+) {
+  const [user] = await deps.db
+    .select({ name: users.name, email: users.email, role: users.role })
+    .from(users)
+    .where(and(eq(users.organizationId, organizationId), eq(users.id, userId)))
+    .limit(1);
+  return user;
+}
+
+/** Peran lama → baru dari baris audit `user.role_changed` (bukan dari payload). */
+async function findRoleChange(
+  organizationId: string,
+  auditLogId: string | undefined,
+  deps: EmailJobDeps,
+): Promise<{ from: UserRole; to: UserRole } | undefined> {
+  if (!auditLogId) return undefined;
+  const [row] = await deps.db
+    .select({ metadata: auditLogs.metadata })
+    .from(auditLogs)
+    .where(and(eq(auditLogs.organizationId, organizationId), eq(auditLogs.id, auditLogId)))
+    .limit(1);
+  const from = userRoleSchema.safeParse(row?.metadata.from);
+  const to = userRoleSchema.safeParse(row?.metadata.to);
+  return from.success && to.success ? { from: from.data, to: to.data } : undefined;
+}
+
 /** IP + user agent dari baris audit kejadian (untuk "dari mana" di email keamanan). */
 async function findAuditOrigin(
   organizationId: string,
@@ -430,19 +463,26 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
   const { organizationId, recipientUserId, subjectUserId, event, occurredAt, auditLogId } =
     payload.data;
 
+  const ownersOnly =
+    event === 'two_factor_reset' || event === 'role_changed' || event === 'user_disabled';
   const recipient = await findActiveUser(organizationId, recipientUserId, deps);
-  const subject = await findActiveUser(organizationId, subjectUserId, deps);
+  // Pengguna yang baru dinonaktifkan tetap disebut di email "dinonaktifkan".
+  const subject =
+    event === 'user_disabled'
+      ? await findUserAnyStateWithEmail(organizationId, subjectUserId, deps)
+      : await findActiveUser(organizationId, subjectUserId, deps);
   const branding = await loadOrganizationBrand(deps.db, organizationId);
   // Penerima diperiksa ulang saat mengirim: yang perannya sudah tidak berhak dilewati —
   // `team.manage` (Owner/Admin, matriks izin di @balesin/shared), atau khusus Owner untuk
-  // pemberitahuan 2FA diatur ulang.
+  // pemberitahuan 2FA diatur ulang / perubahan tim oleh Admin.
   const recipientEligible =
     recipient !== undefined &&
-    (event === 'two_factor_reset'
-      ? recipient.role === 'owner'
-      : hasPermission(recipient.role, 'team.manage'));
+    (ownersOnly ? recipient.role === 'owner' : hasPermission(recipient.role, 'team.manage'));
   const subjectEligible =
-    subject !== undefined && (event === 'two_factor_reset' || isTwoFactorRequired(subject.role));
+    subject !== undefined &&
+    (event === 'two_factor_enabled' || event === 'password_reset_without_two_factor'
+      ? isTwoFactorRequired(subject.role)
+      : true);
   if (!recipient || !subject || !branding || !recipientEligible || !subjectEligible) {
     return { status: 'skipped', reason: 'recipient_unavailable' };
   }
@@ -462,6 +502,8 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
     const actor = payload.data.actorUserId
       ? await findUserAnyState(organizationId, payload.data.actorUserId, deps)
       : undefined;
+    const roleChange =
+      event === 'role_changed' ? await findRoleChange(organizationId, auditLogId, deps) : undefined;
     body = renderAdminAccountNoticeEmail({
       brand: branding.brand,
       timeZone: branding.timeZone,
@@ -470,6 +512,7 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
       subject: { name: subject.name, email: subject.email, role: subject.role },
       occurredAt: new Date(occurredAt),
       ...(actor ? { actor: { name: actor.name, role: actor.role } } : {}),
+      ...(roleChange ? { roleChange } : {}),
       ...(origin ? { origin } : {}),
     });
   }

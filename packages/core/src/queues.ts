@@ -144,11 +144,16 @@ export type SecurityNoticeEmailPayload = z.infer<typeof securityNoticeEmailPaylo
  *    Penerima: Owner lain saja.
  *  - `password_reset_without_two_factor` — akun ber-peran wajib yang BELUM mendaftar 2FA mengatur
  *    ulang password-nya (review undangan R3). Penerima: pemegang `team.manage`.
+ *  - `role_changed`, `user_disabled` — oleh Admin (bukan Owner). Penerima: Owner saja.
  */
 export const SECURITY_NOTICE_ADMIN_EVENTS = [
   'two_factor_enabled',
   'two_factor_reset',
   'password_reset_without_two_factor',
+  // Peran diubah / pengguna dinonaktifkan oleh SELAIN Owner (Admin): ke semua Owner aktif. Peran
+  // lama → baru dibaca worker dari baris audit `auditLogId` (review butir 6 Info 6).
+  'role_changed',
+  'user_disabled',
 ] as const;
 export type SecurityNoticeAdminEvent = (typeof SECURITY_NOTICE_ADMIN_EVENTS)[number];
 

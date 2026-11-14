@@ -108,11 +108,28 @@ describe('sesi aktif milik sendiri', () => {
     expect(foreign.statusCode).toBe(404);
     expect((await me(csSigned)).statusCode).toBe(200);
 
-    const revoked = await call(
+    // Sesi `phone` lebih BARU dari sesi `owner`: tanpa konfirmasi ditolak (review butir 6 R4).
+    const listed = await list(owner);
+    expect(listed.sessions.find((session) => session.id === phoneRef)?.confirmationRequired).toBe(
+      true,
+    );
+    const unconfirmed = await call(
       harness.app,
       'DELETE',
       apiPath(routes.revoke, { sessionId: phoneRef }),
       undefined,
+      as(owner),
+    );
+    expect(unconfirmed.statusCode).toBe(400);
+    expect(errorEnvelopeSchema.parse(unconfirmed.json()).error.details?.[0]?.field).toBe(
+      'password',
+    );
+    expect((await me(phone)).statusCode).toBe(200);
+    const revoked = await call(
+      harness.app,
+      'DELETE',
+      apiPath(routes.revoke, { sessionId: phoneRef }),
+      { password: OWNER.password, code: await freshTotpCode(OWNER.email) },
       as(owner),
     );
     expect(revoked.statusCode).toBe(200);
@@ -126,6 +143,24 @@ describe('sesi aktif milik sendiri', () => {
       as(owner),
     );
     expect(again.statusCode).toBe(404);
+  });
+
+  it('sesi yang lebih LAMA dikeluarkan satu klik (pemilik yang masuk ulang mengusir cookie lama)', async () => {
+    const old = await completeSetup(harness.app);
+    const fresh = await login(harness.app, OWNER);
+    const sessions = (await list(fresh)).sessions;
+    const oldRef = sessions.find((session) => !session.current)?.id ?? '';
+    expect(sessions.find((session) => session.id === oldRef)?.confirmationRequired).toBe(false);
+    const revoked = await call(
+      harness.app,
+      'DELETE',
+      apiPath(routes.revoke, { sessionId: oldRef }),
+      undefined,
+      as(fresh),
+    );
+    expect(revoked.statusCode).toBe(200);
+    expect((await me(old)).statusCode).toBe(401);
+    expect((await me(fresh)).statusCode).toBe(200);
   });
 
   it('keluarkan semua sesi lain butuh password + kode; sesi ini tetap hidup', async () => {

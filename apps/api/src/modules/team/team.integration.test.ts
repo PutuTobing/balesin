@@ -17,6 +17,7 @@ import {
   teamUserActionResponseSchema,
   teamUserListResponseSchema,
   teamUserResponseSchema,
+  securitySummaryResponseSchema,
   activeSessionListResponseSchema,
   invitationIssuedResponseSchema,
   type ErrorEnvelope,
@@ -351,7 +352,8 @@ describe('matriks kelola', () => {
     ]);
     const statuses = [a.statusCode, b.statusCode].sort();
     expect(statuses[0]).toBe(200);
-    expect(statuses[1]).not.toBe(200);
+    // Yang kalah: jawaban terkendali (403 peran baru / 409), bukan 500 deadlock (review butir 6 R2).
+    expect([403, 409]).toContain(statuses[1]);
     const owners = await harness.db
       .select()
       .from(users)
@@ -935,6 +937,125 @@ describe('buka kunci', () => {
     const signed = await login(harness.app, { email: supervisor.email, password: PASSWORD });
     expect(signed.session.user.id).toBe(supervisor.id);
   });
+});
+
+describe('perubahan tim oleh selain Owner (review butir 6 Info 6)', () => {
+  it('Admin mengubah peran / menonaktifkan → email ke Owner + kejadian warning; oleh Owner → info tanpa email', async () => {
+    const owner = await completeSetup(harness.app);
+    const admin = await member(owner, 'admin', 'Admin Rudi');
+    const cs = await member(owner, 'cs', 'Budi CS');
+    const teknisi = await member(owner, 'teknisi', 'Tono Teknisi');
+    harness.adminNotices.length = 0;
+
+    expect(
+      (
+        await act(admin, 'role', cs.id, {
+          role: 'supervisor',
+          ...(await confirmation(admin, PASSWORD)),
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (await act(admin, 'disable', teknisi.id, await confirmation(admin, PASSWORD))).statusCode,
+    ).toBe(200);
+    const byOwner = await member(owner, 'cs', 'CS Lain');
+    expect((await act(owner, 'disable', byOwner.id, await ownerConfirmation())).statusCode).toBe(
+      200,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    const notices = harness.adminNotices.filter(
+      (notice) => notice.event === 'role_changed' || notice.event === 'user_disabled',
+    );
+    expect(notices).toEqual([
+      expect.objectContaining({
+        event: 'role_changed',
+        recipientUserId: owner.session.user.id,
+        subjectUserId: cs.id,
+        actorUserId: admin.id,
+      }),
+      expect.objectContaining({
+        event: 'user_disabled',
+        recipientUserId: owner.session.user.id,
+        subjectUserId: teknisi.id,
+        actorUserId: admin.id,
+      }),
+    ]);
+
+    const summary = securitySummaryResponseSchema.parse(
+      (
+        await call(harness.app, 'GET', API_ROUTES.audit.securitySummary, undefined, as(owner))
+      ).json(),
+    );
+    const severityOf = (subjectId: string) =>
+      summary.events.find((event) => event.subject?.id === subjectId)?.severity;
+    expect(severityOf(cs.id)).toBe('warning');
+    expect(severityOf(teknisi.id)).toBe('warning');
+    expect(severityOf(byOwner.id)).toBe('info');
+    expect(summary.latestWarningAt).not.toBeNull();
+  });
+});
+
+describe('hitungan kode 2FA salah 24 jam (review butir 6 Info 2)', () => {
+  it('20 kode salah dari perangkat tak dikenal: tetap terkunci walau dibuka Owner; atur ulang 2FA melepasnya', async () => {
+    const owner = await completeSetup(harness.app);
+    const supervisor = await member(owner, 'supervisor');
+    let failures = 0;
+    for (let round = 0; round < 60 && failures < 20; round += 1) {
+      const started = await call(harness.app, 'POST', API_ROUTES.auth.login, {
+        email: supervisor.email,
+        password: PASSWORD,
+      });
+      if (started.statusCode === 429) {
+        expect(
+          (await act(owner, 'unlock', supervisor.id, await ownerConfirmation())).statusCode,
+        ).toBe(200);
+        continue;
+      }
+      const { challengeToken } = started.json<{ challengeToken: string }>();
+      const verified = await call(harness.app, 'POST', API_ROUTES.twoFactor.verify, {
+        challengeToken,
+        code: '000000',
+      });
+      expect([400, 429]).toContain(verified.statusCode);
+      failures += 1;
+    }
+    expect(failures).toBe(20);
+
+    // Buka kunci oleh Owner tidak melepas kunci harian.
+    expect((await act(owner, 'unlock', supervisor.id, await ownerConfirmation())).statusCode).toBe(
+      200,
+    );
+    const blocked = await call(harness.app, 'POST', API_ROUTES.auth.login, {
+      email: supervisor.email,
+      password: PASSWORD,
+    });
+    expect(blocked.statusCode).toBe(429);
+    const view = teamUserResponseSchema.parse(
+      (
+        await call(
+          harness.app,
+          'GET',
+          path(routes.user, { userId: supervisor.id }),
+          undefined,
+          as(owner),
+        )
+      ).json(),
+    );
+    expect(view.user.status).toBe('locked');
+    expect(Date.parse(view.user.lockedUntil ?? '')).toBeGreaterThan(Date.now() + 20 * 3600_000);
+    const dailyAudit = (await auditOf('auth.account.locked')).find(
+      (row) => row.metadata.daily === true,
+    );
+    expect(dailyAudit?.targetId).toBe(supervisor.id);
+
+    // Atur ulang 2FA (autentikator baru) melepasnya: masuk → wajib daftar ulang.
+    expect(
+      (await act(owner, 'resetTwoFactor', supervisor.id, await ownerConfirmation())).statusCode,
+    ).toBe(200);
+    const after = await startLogin(harness.app, { email: supervisor.email, password: PASSWORD });
+    expect(after.body.status).toBe('two_factor_enrollment_required');
+  }, 60_000);
 });
 
 describe('sesi pengguna lain', () => {

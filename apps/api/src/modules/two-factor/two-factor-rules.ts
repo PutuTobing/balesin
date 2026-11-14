@@ -63,6 +63,23 @@ export const TWO_FACTOR_REAUTH_RULE: RateLimitRule = {
   windowSeconds: 15 * 60,
 };
 
+/**
+ * Hitungan JANGKA PANJANG kode salah per akun (selain dari perangkat dikenal): 20 per 24 jam →
+ * langkah kedua dikunci sampai jendelanya habis. TIDAK dilepas "Buka kunci" Owner/Admin — supaya
+ * rekayasa sosial "tolong buka kunci saya" tidak memberi tebakan tanpa batas (review butir 6
+ * Info 2). Hanya dilepas bila 2FA diatur ulang (autentikator baru: tebakan lama tidak relevan).
+ * Perangkat dikenal tidak dihitung dan tidak terkena, jadi pemilik akun tidak bisa dikunci 24 jam
+ * oleh orang lain yang tahu password-nya.
+ */
+export const TWO_FACTOR_DAILY_RULE: RateLimitRule = {
+  name: '2fa-akun-harian',
+  limit: 20,
+  windowSeconds: 24 * 60 * 60,
+};
+
+/** Penanda Redis "langkah kedua akun ini dikunci sampai jendela harian habis". */
+export const TWO_FACTOR_DAILY_LOCK_FLAG = '2fa-akun-terkunci-harian';
+
 /** Penanda Redis "langkah kedua akun ini dikunci" (aturan 2). */
 export const TWO_FACTOR_ACCOUNT_LOCK_FLAG = '2fa-akun-terkunci';
 /** Penanda Redis "langkah kedua dari perangkat dikenal ini dikunci" (aturan 3). */

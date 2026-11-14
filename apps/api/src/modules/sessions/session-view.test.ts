@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { maskIpAddress, toActiveSession } from './session-view';
+import { maskIpAddress, requiresConfirmation, toActiveSession } from './session-view';
 
 describe('maskIpAddress', () => {
   it.each([
@@ -40,6 +40,20 @@ describe('toActiveSession', () => {
       lastSeenAt: '2026-11-14T02:00:00.000Z',
       current: true,
       limited: true,
+      confirmationRequired: false,
     });
+  });
+
+  it('konfirmasi hanya untuk sesi lain yang lebih baru (seri = lebih baru)', () => {
+    const now = new Date('2026-11-14T02:00:00Z');
+    const older = { id: 'lama', createdAt: new Date('2026-11-14T01:00:00Z') };
+    const newer = { id: 'baru', createdAt: new Date('2026-11-14T03:00:00Z') };
+    const tie = { id: 'seri', createdAt: now };
+    expect(requiresConfirmation(older, 'ini', now)).toBe(false);
+    expect(requiresConfirmation(newer, 'ini', now)).toBe(true);
+    expect(requiresConfirmation(tie, 'ini', now)).toBe(true);
+    expect(requiresConfirmation({ id: 'ini', createdAt: now }, 'ini', now)).toBe(false);
+    // Daftar sesi pengguna lain (tanpa sesi pemanggil): tidak pernah.
+    expect(requiresConfirmation(newer, undefined, undefined)).toBe(false);
   });
 });

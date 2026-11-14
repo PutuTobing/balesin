@@ -122,7 +122,7 @@ export const SMTP_PRESETS: readonly SmtpPreset[] = [
     port: null,
     security: null,
     requiresAppPassword: false,
-    hint: 'Isi host, port, dan keamanan sesuai petunjuk penyedia emailmu.',
+    hint: 'Isi host, port, dan keamanan sesuai petunjuk penyedia email-mu.',
   },
 ];
 
@@ -254,7 +254,7 @@ export const EMAIL_TEST_MESSAGES: Record<EmailTestCode, string> = {
   host_not_found:
     'Server email tidak ditemukan. Periksa lagi penulisan host SMTP, contoh: mail.perusahaan.co.id.',
   host_blocked:
-    'Alamat ini tidak boleh dipakai sebagai server email. Isi host SMTP dari penyedia emailmu.',
+    'Alamat ini tidak boleh dipakai sebagai server email. Isi host SMTP dari penyedia email-mu.',
   port_not_allowed:
     'Port ini tidak didukung. Pakai 465 (SSL/TLS), 587 (STARTTLS), atau 25/2525 (tanpa enkripsi).',
   connection_refused:
@@ -264,11 +264,11 @@ export const EMAIL_TEST_MESSAGES: Record<EmailTestCode, string> = {
   tls_failed:
     'Sambungan aman gagal dibuat. Coba ganti pilihan keamanan: port 465 memakai SSL/TLS, port 587 memakai STARTTLS.',
   certificate_invalid:
-    'Sertifikat keamanan server email tidak valid atau tidak cocok dengan nama host. Pakai nama host resmi dari penyedia emailmu.',
+    'Sertifikat keamanan server email tidak valid atau tidak cocok dengan nama host. Pakai nama host resmi dari penyedia email-mu.',
   auth_failed:
     'Username atau password ditolak server email. Periksa lagi keduanya. Untuk Gmail dan Microsoft 365, pakai app password, bukan password akun biasa.',
   auth_unsupported:
-    'Server email tidak menerima login dengan cara ini. Coba pilihan keamanan lain (SSL/TLS atau STARTTLS), atau hubungi penyedia emailmu.',
+    'Server email tidak menerima login dengan cara ini. Coba pilihan keamanan lain (SSL/TLS atau STARTTLS), atau hubungi penyedia email-mu.',
   insecure_login:
     'Pilihan "Tanpa enkripsi" hanya untuk server email di jaringan lokal, karena password akan terkirim tanpa perlindungan. Pilih SSL/TLS (port 465) atau STARTTLS (port 587).',
   sender_rejected:
@@ -276,7 +276,7 @@ export const EMAIL_TEST_MESSAGES: Record<EmailTestCode, string> = {
   recipient_rejected:
     'Server menolak alamat tujuan. Periksa lagi penulisan alamat tujuan email tes.',
   message_rejected:
-    'Server email menolak pesan tes. Coba lagi beberapa saat lagi, atau hubungi penyedia emailmu.',
+    'Server email menolak pesan tes. Coba lagi beberapa saat lagi, atau hubungi penyedia email-mu.',
   secret_unavailable:
     'Password email yang tersimpan tidak bisa dibuka. Masukkan ulang passwordnya, lalu simpan.',
   unknown:

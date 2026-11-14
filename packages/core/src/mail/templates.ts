@@ -348,7 +348,7 @@ export function renderPasswordResetEmail(input: PasswordResetEmailInput): MailBo
   const product = singleLine(input.brand.productName);
   const paragraphs = [
     hello(input.userName),
-    `Ada permintaan untuk mengatur ulang password akun ${product} kamu (${singleLine(input.email)}). Buka tautan di bawah untuk membuat password baru. Tautan berlaku 30 menit, sampai ${formatLocalTime(input.expiresAt, input.timeZone)}, dan hanya bisa dipakai sekali.`,
+    `Ada permintaan untuk mengatur ulang password akun ${product}-mu (${singleLine(input.email)}). Buka tautan di bawah untuk membuat password baru. Tautan berlaku 30 menit, sampai ${formatLocalTime(input.expiresAt, input.timeZone)}, dan hanya bisa dipakai sekali.`,
   ];
   if (input.twoFactorEnabled) {
     paragraphs.push(
@@ -386,12 +386,12 @@ export interface EmailVerificationEmailInput {
 export function renderEmailVerificationEmail(input: EmailVerificationEmailInput): MailBody {
   const product = singleLine(input.brand.productName);
   return compose(input.brand, {
-    subject: `Verifikasi alamat email ${product} kamu`,
+    subject: `Verifikasi alamat email ${product}-mu`,
     preheader: 'Konfirmasi bahwa alamat email ini milikmu.',
     heading: 'Verifikasi alamat email',
     paragraphs: [
       hello(input.userName),
-      `Buka tautan di bawah untuk memastikan ${singleLine(input.email)} adalah alamat email akun ${product} kamu. Email ini dipakai untuk mengatur ulang password dan pemberitahuan keamanan.`,
+      `Buka tautan di bawah untuk memastikan ${singleLine(input.email)} adalah alamat email akun ${product}-mu. Email ini dipakai untuk mengatur ulang password dan pemberitahuan keamanan.`,
       `Tautan berlaku sampai ${formatLocalTime(input.expiresAt, input.timeZone)} dan hanya bisa dipakai sekali.`,
     ],
     action: { label: 'Verifikasi email', url: input.link },
@@ -435,10 +435,10 @@ export function renderAccountLockedEmail(input: AccountLockedEmailInput): MailBo
       trigger === 'reauth'
         ? 'Kalau bukan kamu, berarti ada orang lain yang sedang masuk ke akunmu dan tahu password-mu. Verifikasi dua langkah masih menahannya. Segera kabari Owner atau Admin di tempatmu.'
         : trigger === 'password_reset'
-          ? 'Kalau bukan kamu, berarti ada orang lain yang bisa membuka email akunmu. Verifikasi dua langkah masih menahannya. Segera amankan kotak emailmu dan kabari Owner atau Admin di tempatmu.'
+          ? 'Kalau bukan kamu, berarti ada orang lain yang bisa membuka email akunmu. Verifikasi dua langkah masih menahannya. Segera amankan kotak email-mu dan kabari Owner atau Admin di tempatmu.'
           : 'Kalau bukan kamu, berarti password-mu sudah diketahui orang lain. Verifikasi dua langkah masih menahannya. Segera kabari Owner atau Admin di tempatmu.';
     return compose(input.brand, {
-      subject: `Kode verifikasi akun ${product} kamu salah berulang kali`,
+      subject: `Kode verifikasi akun ${product}-mu salah berulang kali`,
       preheader: 'Langkah verifikasi dua langkah dihentikan sementara.',
       heading: 'Kode verifikasi salah berulang kali',
       paragraphs: [
@@ -460,7 +460,7 @@ export function renderAccountLockedEmail(input: AccountLockedEmailInput): MailBo
       ? `Dari perangkat yang biasa kamu pakai untuk masuk, kamu tetap bisa masuk seperti biasa. Dari perangkat lain, coba lagi setelah ${until}.`
       : `Dari jaringan dan perangkat lain kamu tetap bisa masuk seperti biasa. Dari asal yang dihentikan, coba lagi setelah ${until}.`;
   return compose(input.brand, {
-    subject: `Percobaan masuk ke akun ${product} kamu dihentikan sementara`,
+    subject: `Percobaan masuk ke akun ${product}-mu dihentikan sementara`,
     preheader: 'Ada percobaan masuk dengan password yang salah.',
     heading: 'Percobaan masuk dihentikan sementara',
     paragraphs: [
@@ -505,7 +505,7 @@ export function renderSecurityNoticeEmail(input: SecurityNoticeEmailInput): Mail
   switch (input.event) {
     case 'two_factor_enabled':
       return compose(input.brand, {
-        subject: `Verifikasi dua langkah akun ${product} kamu sudah aktif`,
+        subject: `Verifikasi dua langkah akun ${product}-mu sudah aktif`,
         preheader: 'Mulai sekarang masuk butuh kode dari aplikasi autentikator.',
         heading: 'Verifikasi dua langkah aktif',
         paragraphs: [
@@ -518,7 +518,7 @@ export function renderSecurityNoticeEmail(input: SecurityNoticeEmailInput): Mail
       });
     case 'two_factor_disabled':
       return compose(input.brand, {
-        subject: `Verifikasi dua langkah akun ${product} kamu dinonaktifkan`,
+        subject: `Verifikasi dua langkah akun ${product}-mu dinonaktifkan`,
         preheader: 'Akunmu kini bisa dimasuki hanya dengan password.',
         heading: 'Verifikasi dua langkah dinonaktifkan',
         paragraphs: [
@@ -532,7 +532,7 @@ export function renderSecurityNoticeEmail(input: SecurityNoticeEmailInput): Mail
     case 'backup_code_used': {
       const remaining = input.backupCodesRemaining ?? 0;
       return compose(input.brand, {
-        subject: `Kode cadangan akun ${product} kamu dipakai`,
+        subject: `Kode cadangan akun ${product}-mu dipakai`,
         preheader: 'Satu kode cadangan baru saja dipakai.',
         heading: 'Kode cadangan dipakai',
         paragraphs: [
@@ -549,7 +549,7 @@ export function renderSecurityNoticeEmail(input: SecurityNoticeEmailInput): Mail
     }
     case 'backup_codes_regenerated':
       return compose(input.brand, {
-        subject: `Kode cadangan akun ${product} kamu dibuat ulang`,
+        subject: `Kode cadangan akun ${product}-mu dibuat ulang`,
         preheader: 'Semua kode cadangan lama tidak berlaku lagi.',
         heading: 'Kode cadangan dibuat ulang',
         paragraphs: [
@@ -562,7 +562,7 @@ export function renderSecurityNoticeEmail(input: SecurityNoticeEmailInput): Mail
       });
     case 'password_changed':
       return compose(input.brand, {
-        subject: `Password akun ${product} kamu sudah diganti`,
+        subject: `Password akun ${product}-mu sudah diganti`,
         preheader: 'Password diganti lewat tautan atur ulang password.',
         heading: 'Password sudah diganti',
         paragraphs: [
@@ -571,7 +571,7 @@ export function renderSecurityNoticeEmail(input: SecurityNoticeEmailInput): Mail
         ],
         details,
         notes: [
-          'Kalau bukan kamu yang menggantinya, segera atur ulang password lagi dari halaman masuk, amankan kotak emailmu, dan kabari Owner atau Admin di tempatmu.',
+          'Kalau bukan kamu yang menggantinya, segera atur ulang password lagi dari halaman masuk, amankan kotak email-mu, dan kabari Owner atau Admin di tempatmu.',
         ],
       });
     case 'two_factor_reset': {
@@ -579,7 +579,7 @@ export function renderSecurityNoticeEmail(input: SecurityNoticeEmailInput): Mail
         ? `${singleLine(input.actor.name)} (${USER_ROLE_LABELS[input.actor.role]})`
         : 'Owner atau Admin di tempatmu';
       return compose(input.brand, {
-        subject: `Verifikasi dua langkah akun ${product} kamu diatur ulang`,
+        subject: `Verifikasi dua langkah akun ${product}-mu diatur ulang`,
         preheader: 'Aplikasi autentikator dan kode cadangan lamamu tidak berlaku lagi.',
         heading: 'Verifikasi dua langkah diatur ulang',
         paragraphs: [
@@ -637,10 +637,13 @@ export interface AdminAccountNoticeEmailInput {
   brand: EmailBrand;
   timeZone: string;
   recipientName: string;
-  event: 'two_factor_reset' | 'password_reset_without_two_factor';
+  event:
+    'two_factor_reset' | 'password_reset_without_two_factor' | 'role_changed' | 'user_disabled';
   subject: { name: string; email: string; role: UserRole };
-  /** Untuk `two_factor_reset`: Owner/Admin yang mengatur ulang. */
+  /** Untuk `two_factor_reset`, `role_changed`, `user_disabled`: pelakunya. */
   actor?: { name: string; role: UserRole };
+  /** Untuk `role_changed`: peran lama → baru. */
+  roleChange?: { from: UserRole; to: UserRole };
   occurredAt: Date;
   origin?: EventOrigin;
 }
@@ -663,6 +666,34 @@ export function renderAdminAccountNoticeEmail(input: AdminAccountNoticeEmailInpu
     { label: 'Akun', value: `${name} · ${role}` },
     ...originDetails(when, input.origin),
   ];
+  if (input.event === 'role_changed' || input.event === 'user_disabled') {
+    const by = input.actor
+      ? `${singleLine(input.actor.name)} (${USER_ROLE_LABELS[input.actor.role]})`
+      : 'Seorang Admin';
+    const change = input.roleChange
+      ? `${USER_ROLE_LABELS[input.roleChange.from]} → ${USER_ROLE_LABELS[input.roleChange.to]}`
+      : null;
+    const roleChanged = input.event === 'role_changed';
+    const what = roleChanged
+      ? `mengubah peran ${account}${change ? ` (${change})` : ''}`
+      : `menonaktifkan akun ${account}`;
+    return compose(input.brand, {
+      subject: roleChanged
+        ? `Peran ${name} di ${product} diubah oleh ${by}`
+        : `${name} di ${product} dinonaktifkan oleh ${by}`,
+      preheader: `${by} ${roleChanged ? 'mengubah peran' : 'menonaktifkan'} ${name}.`,
+      heading: roleChanged ? 'Peran pengguna diubah' : 'Pengguna dinonaktifkan',
+      paragraphs: [
+        hello(input.recipientName),
+        `${by} ${what}. Semua sesi akun itu sudah dikeluarkan.`,
+        'Kamu menerima email ini karena kamu Owner. Perubahan wewenang tim oleh selain Owner selalu diberitahukan.',
+      ],
+      details: [...details, ...(change ? [{ label: 'Perubahan peran', value: change }] : [])],
+      notes: [
+        `Kalau perubahan ini tidak kamu duga, masuk ke ${product}, periksa halaman Tim dan Audit log, lalu nonaktifkan akun ${by} bila perlu.`,
+      ],
+    });
+  }
   if (input.event === 'two_factor_reset') {
     const by = input.actor
       ? `${singleLine(input.actor.name)} (${USER_ROLE_LABELS[input.actor.role]})`

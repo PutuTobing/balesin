@@ -90,13 +90,31 @@ export async function lockActor(
 }
 
 /**
- * Menyerialkan perubahan yang bisa mengurangi jumlah Owner aktif di satu organisasi (turunkan /
- * nonaktifkan Owner), supaya dua Owner yang saling menurunkan bersamaan tidak menghabiskan Owner.
+ * Menyerialkan SEMUA transaksi pengelolaan pengguna di satu organisasi. WAJIB menjadi kunci
+ * PERTAMA di transaksinya (sebelum kunci baris apa pun): urutan kunci yang sama di setiap aksi
+ * mencegah deadlock (review butir 6 R2 — dua Owner saling menurunkan), dan aksi yang kalah melihat
+ * keadaan terbaru pelaku + sasaran. Juga menjaga "minimal satu Owner aktif". Aksi kelola jarang,
+ * jadi biayanya praktis nol.
  */
-export async function lockOwnerChanges(tx: DbExecutor, organizationId: string): Promise<void> {
+export async function lockTeamChanges(tx: DbExecutor, organizationId: string): Promise<void> {
   await tx.execute(
     sql`select pg_advisory_xact_lock(hashtextextended(${`team-owner|${organizationId}`}, 0))`,
   );
+}
+
+/** Keadaan sasaran SEKARANG, dikunci (`FOR UPDATE`) sampai transaksi selesai. */
+export async function lockTarget(
+  tx: DbExecutor,
+  organizationId: string,
+  userId: string,
+): Promise<{ role: UserRole; disabledAt: Date | null; totpEnabledAt: Date | null } | undefined> {
+  const [row] = await tx
+    .select({ role: users.role, disabledAt: users.disabledAt, totpEnabledAt: users.totpEnabledAt })
+    .from(users)
+    .where(and(eq(users.organizationId, organizationId), eq(users.id, userId)))
+    .for('update')
+    .limit(1);
+  return row;
 }
 
 /** Jumlah Owner aktif selain `exceptUserId`. */
@@ -154,12 +172,12 @@ export async function updateUserRole(
   return rows.length > 0;
 }
 
-/** Nonaktifkan (bersyarat masih aktif). Pendaftaran 2FA yang sedang berjalan dibuang. */
+/** Nonaktifkan (bersyarat masih aktif + peran masih `expectedRole`). Pendaftaran 2FA yang berjalan dibuang. */
 export async function disableUser(
   tx: DbExecutor,
-  organizationId: string,
-  userId: string,
+  input: { organizationId: string; userId: string; expectedRole: UserRole },
 ): Promise<boolean> {
+  const { organizationId, userId } = input;
   const rows = await tx
     .update(users)
     .set({
@@ -169,7 +187,12 @@ export async function disableUser(
       totpPendingIssuedAt: null,
     })
     .where(
-      and(eq(users.organizationId, organizationId), eq(users.id, userId), isNull(users.disabledAt)),
+      and(
+        eq(users.organizationId, organizationId),
+        eq(users.id, userId),
+        eq(users.role, input.expectedRole),
+        isNull(users.disabledAt),
+      ),
     )
     .returning({ id: users.id });
   return rows.length > 0;
@@ -194,6 +217,7 @@ export async function enableUser(
       and(
         eq(users.organizationId, input.organizationId),
         eq(users.id, input.userId),
+        eq(users.role, input.role),
         isNotNull(users.disabledAt),
       ),
     )
@@ -224,6 +248,7 @@ export async function resetUserTwoFactor(
       and(
         eq(users.organizationId, input.organizationId),
         eq(users.id, input.userId),
+        eq(users.role, input.role),
         isNotNull(users.totpEnabledAt),
       ),
     )
@@ -245,6 +270,7 @@ export async function reopenTwoFactorEnrollment(
       and(
         eq(users.organizationId, input.organizationId),
         eq(users.id, input.userId),
+        eq(users.role, input.role),
         isNull(users.totpEnabledAt),
       ),
     )

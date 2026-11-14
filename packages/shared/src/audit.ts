@@ -283,7 +283,11 @@ export const SECURITY_EVENT_KINDS = [
 export const securityEventKindSchema = z.enum(SECURITY_EVENT_KINDS);
 export type SecurityEventKind = z.infer<typeof securityEventKindSchema>;
 
-/** `warning` = tampilkan sebagai banner peringatan; `info` = cukup di daftar. */
+/**
+ * Keparahan BAWAAN: `warning` = tampilkan sebagai banner peringatan; `info` = cukup di daftar.
+ * Server bisa menaikkannya per kejadian (ubah peran / nonaktifkan oleh SELAIN Owner → `warning`),
+ * jadi web selalu memakai `event.severity` dari respons, bukan tabel ini.
+ */
 export const SECURITY_EVENT_SEVERITY: Readonly<Record<SecurityEventKind, 'warning' | 'info'>> = {
   email_sender_changed: 'warning',
   two_factor_reset: 'warning',

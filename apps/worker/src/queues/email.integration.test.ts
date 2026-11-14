@@ -30,7 +30,7 @@ import {
   waitForCapturedMail,
   type LogCapture,
 } from '@balesin/core/testing';
-import { closeDb, createDb, emailSettings, type Database } from '@balesin/db';
+import { auditLogs, closeDb, createDb, emailSettings, type Database } from '@balesin/db';
 import { insertOrganization, insertUser, uniqueSuffix } from '@balesin/db/testing';
 import { Queue } from 'bullmq';
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
@@ -147,7 +147,7 @@ describe('antrian email — pemberitahuan akun dikunci', () => {
     expect(emailJobResultSchema.parse(job.returnvalue)).toEqual({ status: 'sent' });
 
     const mail = await waitForCapturedMail(user.email);
-    expect(mail.subject).toBe('Percobaan masuk ke akun Balesin Contoh kamu dihentikan sementara');
+    expect(mail.subject).toBe('Percobaan masuk ke akun Balesin Contoh-mu dihentikan sementara');
     expect(mail.from).toEqual({ name: 'Balesin Contoh', address: 'cs@contoh.test' });
     expect(mail.to).toEqual([user.email]);
     expect(mail.replyTo).toEqual(['bantuan@contoh.test']);
@@ -335,9 +335,9 @@ describe('antrian email — pemberitahuan akun dikunci', () => {
     await expect.poll(async () => (await capturedMailFor(user.email)).length).toBe(3);
     const subjects = (await capturedMailFor(user.email)).map((mail) => mail.subject).sort();
     expect(subjects).toEqual([
-      'Kode cadangan akun Balesin Contoh kamu dipakai',
-      'Verifikasi dua langkah akun Balesin Contoh kamu dinonaktifkan',
-      'Verifikasi dua langkah akun Balesin Contoh kamu sudah aktif',
+      'Kode cadangan akun Balesin Contoh-mu dipakai',
+      'Verifikasi dua langkah akun Balesin Contoh-mu dinonaktifkan',
+      'Verifikasi dua langkah akun Balesin Contoh-mu sudah aktif',
     ]);
     const backup = (await capturedMailFor(user.email)).find((mail) =>
       mail.subject.startsWith('Kode cadangan'),
@@ -425,9 +425,7 @@ describe('antrian email — pemberitahuan akun dikunci', () => {
 
     await expect.poll(async () => (await capturedMailFor(target.email)).length).toBe(1);
     const [targetMail] = await capturedMailFor(target.email);
-    expect(targetMail?.subject).toBe(
-      'Verifikasi dua langkah akun Balesin Contoh kamu diatur ulang',
-    );
+    expect(targetMail?.subject).toBe('Verifikasi dua langkah akun Balesin Contoh-mu diatur ulang');
     expect(targetMail?.text).toContain('Sari Owner (Owner) mengatur ulang verifikasi dua langkah');
     await expect.poll(async () => (await capturedMailFor(otherOwner.email)).length).toBe(1);
     const [ownerMail] = await capturedMailFor(otherOwner.email);
@@ -441,6 +439,78 @@ describe('antrian email — pemberitahuan akun dikunci', () => {
     for (const mail of [targetMail, ownerMail, adminMail]) {
       expect(mail?.text).not.toMatch(/\bAnda\b/i);
     }
+  }, 60_000);
+
+  it('perubahan tim oleh Admin: ke Owner saja; peran lama → baru dari audit; pengguna nonaktif tetap disebut', async () => {
+    const { organization, user: owner } = await recipient({ role: 'owner', name: 'Sari Owner' });
+    await configureEmail(organization.id);
+    const admin = await insertUser(db, organization.id, {
+      role: 'admin',
+      name: 'Rudi Admin',
+      email: `rudi-${uniqueSuffix()}@contoh.test`,
+    });
+    const otherAdmin = await insertUser(db, organization.id, {
+      role: 'admin',
+      email: `admin2-${uniqueSuffix()}@contoh.test`,
+    });
+    const changed = await insertUser(db, organization.id, {
+      role: 'supervisor',
+      name: 'Budi Naik',
+      email: `budi-naik-${uniqueSuffix()}@contoh.test`,
+    });
+    const disabled = await insertUser(db, organization.id, {
+      role: 'teknisi',
+      name: 'Tono Nonaktif',
+      email: `tono-${uniqueSuffix()}@contoh.test`,
+      disabledAt: new Date(),
+    });
+    const [audit] = await db
+      .insert(auditLogs)
+      .values({
+        organizationId: organization.id,
+        actorUserId: admin.id,
+        action: 'user.role_changed',
+        targetType: 'user',
+        targetId: changed.id,
+        metadata: { from: 'cs', to: 'supervisor' },
+      })
+      .returning();
+    const occurredAt = new Date().toISOString();
+    const base = { organizationId: organization.id, occurredAt, actorUserId: admin.id };
+
+    const roleJob = await runJob(EMAIL_JOBS.securityNoticeAdmin, {
+      ...base,
+      recipientUserId: owner.id,
+      subjectUserId: changed.id,
+      event: 'role_changed',
+      auditLogId: audit?.id,
+    });
+    const disabledJob = await runJob(EMAIL_JOBS.securityNoticeAdmin, {
+      ...base,
+      recipientUserId: owner.id,
+      subjectUserId: disabled.id,
+      event: 'user_disabled',
+    });
+    const toAdmin = await runJob(EMAIL_JOBS.securityNoticeAdmin, {
+      ...base,
+      recipientUserId: otherAdmin.id,
+      subjectUserId: changed.id,
+      event: 'role_changed',
+    });
+    expect(roleJob.returnvalue).toEqual({ status: 'sent' });
+    expect(disabledJob.returnvalue).toEqual({ status: 'sent' });
+    expect(toAdmin.returnvalue).toEqual({ status: 'skipped', reason: 'recipient_unavailable' });
+
+    await expect.poll(async () => (await capturedMailFor(owner.email)).length).toBe(2);
+    const subjects = (await capturedMailFor(owner.email)).map((mail) => mail.subject).sort();
+    expect(subjects).toEqual([
+      'Peran Budi Naik di Balesin Contoh diubah oleh Rudi Admin (Admin)',
+      'Tono Nonaktif di Balesin Contoh dinonaktifkan oleh Rudi Admin (Admin)',
+    ]);
+    const roleMail = (await capturedMailFor(owner.email)).find((mail) =>
+      mail.subject.startsWith('Peran'),
+    );
+    expect(roleMail?.text).toContain('CS → Supervisor');
   }, 60_000);
 
   it('log worker tidak pernah memuat password SMTP', () => {

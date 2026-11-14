@@ -4,7 +4,8 @@
  *
  * Pola: `it(...)` = penjaga regresi (perilaku aman yang sudah benar dan harus tetap benar);
  * `it.fails(...)` = celah yang masih terbuka. Setelah celahnya diperbaiki, Vitest melaporkan tes
- * `it.fails` itu gagal: hapus `.fails`-nya, dan jangan melemahkan asersinya.
+ * `it.fails` itu gagal: hapus `.fails`-nya, dan jangan melemahkan asersinya. Saat ini tidak ada
+ * `it.fails` di berkas ini: T1–T5 sudah ditutup.
  *
  * Balapan dibuat DETERMINISTIK: tes memegang kunci baris (`FOR UPDATE`) di transaksi sendiri,
  * menunggu sampai permintaan API benar-benar menunggu kunci itu (`pg_stat_activity`), lalu
@@ -300,173 +301,158 @@ describe('penjaga: audit tidak bocor lintas organisasi & tidak memuat rahasia', 
   });
 });
 
-// ── Celah terbuka ───────────────────────────────────────────────────────────
+// ── Celah yang sudah ditutup (dulu it.fails T1–T5) ───────────────────────────────────────────────────────────
 
-describe('celah: pemeriksaan ulang di dalam transaksi memakai keadaan basi', () => {
-  it.fails(
-    'T1: Supervisor dinaikkan ke Admin oleh Owner tepat saat Admin mengatur ulang 2FA-nya → aksi Admin tidak boleh berhasil',
-    async () => {
-      const admin = await member('admin');
-      const supervisor = await member('supervisor');
-      const confirmation = await confirmationOf(admin.email, PASSWORD);
+describe('ditutup: pemeriksaan ulang di dalam transaksi memakai keadaan basi', () => {
+  it('T1: Supervisor dinaikkan ke Admin oleh Owner tepat saat Admin mengatur ulang 2FA-nya → aksi Admin tidak boleh berhasil', async () => {
+    const admin = await member('admin');
+    const supervisor = await member('supervisor');
+    const confirmation = await confirmationOf(admin.email, PASSWORD);
 
-      const response = await whileRowLocked(
-        supervisor.id,
-        () =>
-          call(
-            harness.app,
-            'POST',
-            apiPath(API_ROUTES.team.resetTwoFactor, { userId: supervisor.id }),
-            confirmation,
-            as(admin),
-          ),
-        async (tx) => {
-          // "Permintaan Owner" yang menang tipis: Supervisor kini Admin.
-          await tx.update(users).set({ role: 'admin' }).where(eq(users.id, supervisor.id));
-        },
-      );
+    const response = await whileRowLocked(
+      supervisor.id,
+      () =>
+        call(
+          harness.app,
+          'POST',
+          apiPath(API_ROUTES.team.resetTwoFactor, { userId: supervisor.id }),
+          confirmation,
+          as(admin),
+        ),
+      async (tx) => {
+        // "Permintaan Owner" yang menang tipis: Supervisor kini Admin.
+        await tx.update(users).set({ role: 'admin' }).where(eq(users.id, supervisor.id));
+      },
+    );
 
-      const after = await userRow(supervisor.id);
-      expect(after.role).toBe('admin');
-      // Matriks kelola: Admin tidak boleh mengatur ulang 2FA Admin lain.
-      expect(response.statusCode).not.toBe(200);
-      expect(after.totpEnabledAt).not.toBeNull();
-    },
-  );
+    const after = await userRow(supervisor.id);
+    expect(after.role).toBe('admin');
+    // Matriks kelola: Admin tidak boleh mengatur ulang 2FA Admin lain.
+    expect(response.statusCode).not.toBe(200);
+    expect(after.totpEnabledAt).not.toBeNull();
+  });
 
-  it.fails(
-    'T2: Owner yang diturunkan ke Admin tepat saat memberi peran Admin → peran Admin tidak boleh diberikan',
-    async () => {
-      const second = await member('owner', 'Owner Kedua');
-      const cs = await member('cs');
-      const confirmation = await confirmationOf(second.email, PASSWORD);
+  it('T2: Owner yang diturunkan ke Admin tepat saat memberi peran Admin → peran Admin tidak boleh diberikan', async () => {
+    const second = await member('owner', 'Owner Kedua');
+    const cs = await member('cs');
+    const confirmation = await confirmationOf(second.email, PASSWORD);
 
-      const response = await whileRowLocked(
-        second.id,
-        () =>
-          call(
-            harness.app,
-            'PUT',
-            apiPath(API_ROUTES.team.role, { userId: cs.id }),
-            { role: 'admin', ...confirmation },
-            as(second),
-          ),
-        async (tx) => {
-          // "Owner pertama" menurunkan Owner kedua menjadi Admin, menang tipis.
-          await tx.update(users).set({ role: 'admin' }).where(eq(users.id, second.id));
-        },
-      );
+    const response = await whileRowLocked(
+      second.id,
+      () =>
+        call(
+          harness.app,
+          'PUT',
+          apiPath(API_ROUTES.team.role, { userId: cs.id }),
+          { role: 'admin', ...confirmation },
+          as(second),
+        ),
+      async (tx) => {
+        // "Owner pertama" menurunkan Owner kedua menjadi Admin, menang tipis.
+        await tx.update(users).set({ role: 'admin' }).where(eq(users.id, second.id));
+      },
+    );
 
-      expect((await userRow(second.id)).role).toBe('admin');
-      // Admin (peran pelaku SEKARANG) tidak boleh memberi peran Admin.
-      expect(response.statusCode).not.toBe(200);
-      expect((await userRow(cs.id)).role).toBe('cs');
-    },
-  );
+    expect((await userRow(second.id)).role).toBe('admin');
+    // Admin (peran pelaku SEKARANG) tidak boleh memberi peran Admin.
+    expect(response.statusCode).not.toBe(200);
+    expect((await userRow(cs.id)).role).toBe('cs');
+  });
 });
 
-describe('celah: saling menurunkan Owner bersamaan', () => {
-  it.fails(
-    'T3: dua Owner saling menurunkan bersamaan → yang kalah mendapat 409/403 (bukan 500 deadlock)',
-    async () => {
-      const second = await member('owner', 'Owner Kedua');
-      const [confirmA, confirmB] = [
-        await confirmationOf(OWNER.email, OWNER.password),
-        await confirmationOf(second.email, PASSWORD),
-      ];
-      let pending: Promise<Array<Awaited<ReturnType<typeof call>>>> | undefined;
-      // Tes memegang advisory lock "perubahan Owner" organisasi ini, supaya kedua permintaan
-      // pasti sudah mengunci baris pelakunya (`lockActor` FOR SHARE) sebelum salah satunya lanjut.
-      await harness.db.transaction(async (tx) => {
-        await tx.execute(
-          sql`select pg_advisory_xact_lock(hashtextextended(${`team-owner|${owner.session.organization.id}`}, 0))`,
-        );
-        pending = Promise.all([
-          call(
-            harness.app,
-            'PUT',
-            apiPath(API_ROUTES.team.role, { userId: second.id }),
-            { role: 'admin', ...confirmA },
-            as(owner),
-          ),
-          call(
-            harness.app,
-            'PUT',
-            apiPath(API_ROUTES.team.role, { userId: owner.session.user.id }),
-            { role: 'admin', ...confirmB },
-            as(second),
-          ),
-        ]);
-        await waitForLockWaiters(2);
-      });
-      if (!pending) throw new Error('Permintaan tidak berjalan');
-      const results = await pending;
-      const statuses = results.map((response) => response.statusCode).sort();
-      // Invarian tetap terjaga: tepat satu berhasil, Owner aktif tersisa satu.
-      expect(statuses.filter((status) => status === 200)).toHaveLength(1);
-      const owners = await harness.db
-        .select()
-        .from(users)
-        .where(and(eq(users.role, 'owner'), isNull(users.disabledAt)));
-      expect(owners).toHaveLength(1);
-      // Yang kalah seharusnya jawaban terkendali (409/403), bukan 500 karena deadlock.
-      expect(statuses.filter((status) => status >= 500)).toEqual([]);
-    },
-  );
+describe('ditutup: saling menurunkan Owner bersamaan', () => {
+  it('T3: dua Owner saling menurunkan bersamaan → yang kalah mendapat 409/403 (bukan 500 deadlock)', async () => {
+    const second = await member('owner', 'Owner Kedua');
+    const [confirmA, confirmB] = [
+      await confirmationOf(OWNER.email, OWNER.password),
+      await confirmationOf(second.email, PASSWORD),
+    ];
+    let pending: Promise<Array<Awaited<ReturnType<typeof call>>>> | undefined;
+    // Tes memegang advisory lock "perubahan Owner" organisasi ini, supaya kedua permintaan
+    // pasti sudah mengunci baris pelakunya (`lockActor` FOR SHARE) sebelum salah satunya lanjut.
+    await harness.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${`team-owner|${owner.session.organization.id}`}, 0))`,
+      );
+      pending = Promise.all([
+        call(
+          harness.app,
+          'PUT',
+          apiPath(API_ROUTES.team.role, { userId: second.id }),
+          { role: 'admin', ...confirmA },
+          as(owner),
+        ),
+        call(
+          harness.app,
+          'PUT',
+          apiPath(API_ROUTES.team.role, { userId: owner.session.user.id }),
+          { role: 'admin', ...confirmB },
+          as(second),
+        ),
+      ]);
+      await waitForLockWaiters(2);
+    });
+    if (!pending) throw new Error('Permintaan tidak berjalan');
+    const results = await pending;
+    const statuses = results.map((response) => response.statusCode).sort();
+    // Invarian tetap terjaga: tepat satu berhasil, Owner aktif tersisa satu.
+    expect(statuses.filter((status) => status === 200)).toHaveLength(1);
+    const owners = await harness.db
+      .select()
+      .from(users)
+      .where(and(eq(users.role, 'owner'), isNull(users.disabledAt)));
+    expect(owners).toHaveLength(1);
+    // Yang kalah seharusnya jawaban terkendali (409/403), bukan 500 karena deadlock.
+    expect(statuses.filter((status) => status >= 500)).toEqual([]);
+  });
 });
 
-describe('celah: ekspor audit bisa dipicu lintas situs', () => {
-  it.fails(
-    'T4: navigasi tingkat atas dari situs lain (Sec-Fetch-Site: cross-site, tanpa Origin) tidak boleh mengunduh audit / memakai jatah ekspor',
-    async () => {
-      const response = await call(harness.app, 'GET', API_ROUTES.audit.export, undefined, {
-        cookie: owner.cookie,
-        origin: null,
-        headers: {
-          'sec-fetch-site': 'cross-site',
-          'sec-fetch-mode': 'navigate',
-          'sec-fetch-dest': 'document',
-        },
-      });
-      expect(response.statusCode).toBe(403);
-      const exportedRows = await harness.db
-        .select()
-        .from(auditLogs)
-        .where(eq(auditLogs.action, 'audit.exported'));
-      expect(exportedRows).toHaveLength(0);
-    },
-  );
+describe('ditutup: ekspor audit bisa dipicu lintas situs', () => {
+  it('T4: navigasi tingkat atas dari situs lain (Sec-Fetch-Site: cross-site, tanpa Origin) tidak boleh mengunduh audit / memakai jatah ekspor', async () => {
+    const response = await call(harness.app, 'GET', API_ROUTES.audit.export, undefined, {
+      cookie: owner.cookie,
+      origin: null,
+      headers: {
+        'sec-fetch-site': 'cross-site',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-dest': 'document',
+      },
+    });
+    expect(response.statusCode).toBe(403);
+    const exportedRows = await harness.db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.action, 'audit.exported'));
+    expect(exportedRows).toHaveLength(0);
+  });
 });
 
-describe('celah: mengeluarkan sesi sendiri tanpa konfirmasi', () => {
-  it.fails(
-    'T5: cookie LAMA yang dicuri tidak boleh mengeluarkan sesi BARU pemilik (yang masuk ulang untuk mengusir pencuri) tanpa password',
-    async () => {
-      // Pencuri memegang cookie sesi lama milik CS (dicuri dari perangkatnya); tidak tahu password.
-      const thief = await member('cs');
-      // Pemilik masuk lagi dari perangkat lain (sesi lebih baru) — mis. untuk membuka "Sesi aktif".
-      const owned = await login(harness.app, { email: thief.email, password: PASSWORD });
-      const listed = activeSessionListResponseSchema.parse(
-        (await call(harness.app, 'GET', API_ROUTES.sessions.list, undefined, as(thief))).json(),
-      );
-      const newer = listed.sessions.find((session) => !session.current);
-      if (!newer) throw new Error('Sesi baru pemilik tidak ada');
-      expect(Date.parse(newer.createdAt)).toBeGreaterThanOrEqual(
-        Date.parse(listed.sessions.find((session) => session.current)?.createdAt ?? ''),
-      );
-      const revoked = await call(
-        harness.app,
-        'DELETE',
-        apiPath(API_ROUTES.sessions.revoke, { sessionId: newer.id }),
-        undefined,
-        as(thief),
-      );
-      // Usulan: mengeluarkan sesi yang LEBIH BARU dari sesi pemanggil butuh konfirmasi identitas.
-      expect(revoked.statusCode).not.toBe(200);
-      const ownerMe = await call(harness.app, 'GET', API_ROUTES.auth.me, undefined, as(owned));
-      expect(ownerMe.statusCode).toBe(200);
-    },
-  );
+describe('ditutup: mengeluarkan sesi sendiri tanpa konfirmasi', () => {
+  it('T5: cookie LAMA yang dicuri tidak boleh mengeluarkan sesi BARU pemilik (yang masuk ulang untuk mengusir pencuri) tanpa password', async () => {
+    // Pencuri memegang cookie sesi lama milik CS (dicuri dari perangkatnya); tidak tahu password.
+    const thief = await member('cs');
+    // Pemilik masuk lagi dari perangkat lain (sesi lebih baru) — mis. untuk membuka "Sesi aktif".
+    const owned = await login(harness.app, { email: thief.email, password: PASSWORD });
+    const listed = activeSessionListResponseSchema.parse(
+      (await call(harness.app, 'GET', API_ROUTES.sessions.list, undefined, as(thief))).json(),
+    );
+    const newer = listed.sessions.find((session) => !session.current);
+    if (!newer) throw new Error('Sesi baru pemilik tidak ada');
+    expect(Date.parse(newer.createdAt)).toBeGreaterThanOrEqual(
+      Date.parse(listed.sessions.find((session) => session.current)?.createdAt ?? ''),
+    );
+    const revoked = await call(
+      harness.app,
+      'DELETE',
+      apiPath(API_ROUTES.sessions.revoke, { sessionId: newer.id }),
+      undefined,
+      as(thief),
+    );
+    // Usulan: mengeluarkan sesi yang LEBIH BARU dari sesi pemanggil butuh konfirmasi identitas.
+    expect(revoked.statusCode).not.toBe(200);
+    const ownerMe = await call(harness.app, 'GET', API_ROUTES.auth.me, undefined, as(owned));
+    expect(ownerMe.statusCode).toBe(200);
+  });
 });
 
 /** Menunggu sampai sedikitnya `count` koneksi di database tes ini menunggu kunci. */

@@ -82,6 +82,8 @@ import {
   CHALLENGE_MAX_ATTEMPTS,
   TWO_FACTOR_ACCOUNT_LOCK_FLAG,
   TWO_FACTOR_ACCOUNT_RULE,
+  TWO_FACTOR_DAILY_LOCK_FLAG,
+  TWO_FACTOR_DAILY_RULE,
   TWO_FACTOR_DEVICE_LOCK_FLAG,
   TWO_FACTOR_DEVICE_RULE,
   TWO_FACTOR_ENROLL_RULE,
@@ -494,6 +496,46 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
     });
   }
 
+  /** Sisa kunci untuk ember ini: kunci 15 menit, atau kunci harian (selain perangkat dikenal). */
+  async function lockTtl(bucket: CodeBucket): Promise<number> {
+    const short = await limiter.flagTtl(bucket.flag, bucket.key);
+    if (bucket.trustedDevice) return short;
+    return Math.max(short, await limiter.flagTtl(TWO_FACTOR_DAILY_LOCK_FLAG, bucket.key));
+  }
+
+  /**
+   * Kode salah (selain dari perangkat dikenal) dihitung di ember 24 jam. Mencapai batas → kunci
+   * harian + audit. Mengembalikan lama kunci (detik) bila kunci harian baru saja dipasang, atau 0.
+   */
+  async function recordDailyFailure(
+    bucket: CodeBucket,
+    user: LockSubject,
+    trigger: LockTrigger,
+    context: TwoFactorContext,
+  ): Promise<number> {
+    if (bucket.trustedDevice) return 0;
+    const daily = await limiter.consume(TWO_FACTOR_DAILY_RULE, bucket.key);
+    if (daily.count < TWO_FACTOR_DAILY_RULE.limit) return 0;
+    await limiter.setFlag(TWO_FACTOR_DAILY_LOCK_FLAG, bucket.key, daily.retryAfterSeconds);
+    await recordAudit(db, {
+      organizationId: user.organizationId,
+      actorUserId: null,
+      action: AUDIT_ACTIONS.accountLocked,
+      targetType: 'user',
+      targetId: user.id,
+      metadata: {
+        scope: 'two_factor',
+        daily: true,
+        trustedDevice: false,
+        failedAttempts: TWO_FACTOR_DAILY_RULE.limit,
+        trigger,
+        lockedUntil: new Date(Date.now() + daily.retryAfterSeconds * 1000).toISOString(),
+      },
+      client: context.client,
+    });
+    return daily.retryAfterSeconds;
+  }
+
   /** Kunci langkah kedua (lingkup `two_factor`): penanda Redis, audit, email (≤ 1×/jam/akun). */
   async function lock(
     bucket: CodeBucket,
@@ -643,7 +685,7 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
     let check: CodeCheck | undefined;
     if (input.code !== undefined) {
       const bucket = bucketFor(user, context.presentedDeviceToken);
-      const lockedFor = await limiter.flagTtl(bucket.flag, bucket.key);
+      const lockedFor = await lockTtl(bucket);
       if (lockedFor > 0) {
         await recordFailure(user, context, { usage: action, reason: 'locked' });
         throw lockedError(lockedFor);
@@ -670,6 +712,8 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
           attempt: codeAttempt.count,
           trustedDevice: bucket.trustedDevice,
         });
+        const dailyLock = await recordDailyFailure(bucket, user, 'reauth', context);
+        if (dailyLock > 0) throw lockedError(dailyLock);
         if (codeAttempt.count >= bucket.rule.limit) {
           await lock(bucket, user, 'reauth', context);
           throw lockedError(TWO_FACTOR_LOCK_SECONDS);
@@ -735,7 +779,7 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
 
     async assertNotLocked(user, context) {
       const bucket = bucketFor(user, context.presentedDeviceToken);
-      const lockedFor = await limiter.flagTtl(bucket.flag, bucket.key);
+      const lockedFor = await lockTtl(bucket);
       if (lockedFor > 0) {
         await recordFailure(user, context, {
           usage: 'login',
@@ -809,7 +853,7 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
       }
 
       const bucket = bucketFor(user, context.presentedDeviceToken);
-      const lockedFor = await limiter.flagTtl(bucket.flag, bucket.key);
+      const lockedFor = await lockTtl(bucket);
       if (lockedFor > 0) {
         await recordFailure(user, context, { reason: 'locked', challengeRef: challenge.id });
         throw lockedError(lockedFor);
@@ -841,6 +885,11 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
           trustedDevice: bucket.trustedDevice,
           challengeRef: challenge.id,
         });
+        const dailyLock = await recordDailyFailure(bucket, user, 'login', context);
+        if (dailyLock > 0) {
+          await closeChallenge(db, challenge.organizationId, challenge.id);
+          throw lockedError(dailyLock);
+        }
         if (attempt.count >= bucket.rule.limit) {
           await closeChallenge(db, challenge.organizationId, challenge.id);
           await lock(bucket, user, 'login', context);
@@ -1233,7 +1282,7 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
 
     async verifySecondFactor(user, code, trigger, context) {
       const bucket = bucketFor(user, context.presentedDeviceToken);
-      const lockedFor = await limiter.flagTtl(bucket.flag, bucket.key);
+      const lockedFor = await lockTtl(bucket);
       if (lockedFor > 0) {
         await recordFailure(user, context, { usage: trigger, reason: 'locked' });
         throw lockedError(lockedFor);
@@ -1252,6 +1301,8 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
           attempt: attempt.count,
           trustedDevice: bucket.trustedDevice,
         });
+        const dailyLock = await recordDailyFailure(bucket, user, trigger, context);
+        if (dailyLock > 0) throw lockedError(dailyLock);
         if (attempt.count >= bucket.rule.limit) {
           await lock(bucket, user, trigger, context);
           throw lockedError(TWO_FACTOR_LOCK_SECONDS);

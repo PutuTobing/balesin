@@ -9,7 +9,7 @@ import { listActiveSessions, revokeSessionOfUser } from '../auth/session.repo';
 import type { AuthContext, SessionService } from '../auth/session.service';
 import { deleteChallenges } from '../two-factor/two-factor.repo';
 import type { TwoFactorService } from '../two-factor/two-factor.service';
-import { toActiveSession } from './session-view';
+import { requiresConfirmation, toActiveSession } from './session-view';
 
 /**
  * Sesi aktif milik pengguna sendiri (Pengaturan → Keamanan akun → Sesi aktif). Alur & error:
@@ -30,7 +30,12 @@ export interface SessionsContext {
 
 export interface OwnSessionsService {
   list(auth: AuthContext): Promise<ActiveSessionListResponse>;
-  revoke(auth: AuthContext, sessionId: string, context: SessionsContext): Promise<void>;
+  revoke(
+    auth: AuthContext,
+    sessionId: string,
+    input: IdentityConfirmation | null | undefined,
+    context: SessionsContext,
+  ): Promise<void>;
   revokeOthers(
     auth: AuthContext,
     input: IdentityConfirmation,
@@ -50,14 +55,40 @@ export function createOwnSessionsService(deps: {
   return {
     async list(auth) {
       const rows = await listActiveSessions(db, auth.organizationId, auth.user.id);
-      return { sessions: rows.map((row) => toActiveSession(row, auth.sessionRef)) };
+      const current = rows.find((row) => row.id === auth.sessionRef);
+      return {
+        sessions: rows.map((row) => toActiveSession(row, auth.sessionRef, current?.createdAt)),
+      };
     },
 
-    async revoke(auth, sessionId, context) {
+    async revoke(auth, sessionId, input, context) {
       if (sessionId === auth.sessionRef) {
         throw new AppError('CONFLICT', {
           message: 'Ini sesi yang sedang kamu pakai. Untuk mengakhirinya, pakai tombol Keluar.',
         });
+      }
+      const rows = await listActiveSessions(db, auth.organizationId, auth.user.id);
+      const target = rows.find((row) => row.id === sessionId);
+      if (!target) throw new AppError('NOT_FOUND', { message: SESSION_NOT_FOUND_MESSAGE });
+      const current = rows.find((row) => row.id === auth.sessionRef);
+      let confirmedWith: string | null = null;
+      if (requiresConfirmation(target, auth.sessionRef, current?.createdAt)) {
+        // Sesi yang lebih baru dari sesi ini: cookie lama (mungkin curian) tidak boleh mengusir
+        // pemiliknya yang baru masuk lagi tanpa password (review butir 6 R4).
+        if (!input) {
+          const message =
+            'Sesi itu lebih baru dari sesi yang sedang kamu pakai. Masukkan password-mu (dan kode verifikasi dua langkah bila aktif) untuk mengeluarkannya.';
+          throw new AppError('VALIDATION_ERROR', {
+            message,
+            details: [{ location: 'body', field: 'password', message }],
+          });
+        }
+        ({ method: confirmedWith } = await twoFactor.confirmIdentity(
+          auth,
+          { password: input.password, code: input.code },
+          'revoke_newer_session',
+          context,
+        ));
       }
       await db.transaction(async (tx) => {
         if (!(await revokeSessionOfUser(tx, auth.organizationId, auth.user.id, sessionId))) {
@@ -69,7 +100,12 @@ export function createOwnSessionsService(deps: {
           action: AUDIT_ACTIONS.sessionRevoked,
           targetType: 'session',
           targetId: sessionId,
-          metadata: { by: 'self', userRef: auth.user.id },
+          metadata: {
+            by: 'self',
+            userRef: auth.user.id,
+            newer: confirmedWith !== null,
+            confirmedWith,
+          },
           client: context.client,
         });
       });

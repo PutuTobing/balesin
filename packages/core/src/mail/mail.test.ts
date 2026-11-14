@@ -744,7 +744,7 @@ describe('template email', () => {
       timeZone: 'Asia/Jakarta',
       origin: { ip: null, userAgent: null },
     });
-    expect(changed.subject).toContain('Password akun Balesin kamu sudah diganti');
+    expect(changed.subject).toContain('Password akun Balesin-mu sudah diganti');
     expect(changed.text).toContain('Semua perangkat yang sedang masuk sudah dikeluarkan');
     expect(changed.text).toContain('Alamat IP: tidak diketahui');
     expect(changed.text).toContain('Perangkat: Perangkat tidak dikenal');
@@ -826,6 +826,36 @@ describe('template email', () => {
       expect(mail.subject).not.toMatch(/[\r\n]/);
       expect(mail.text).not.toMatch(/\bAnda\b/i);
       expect(mail.html).not.toMatch(/<script|https?:\/\//i);
+    }
+  });
+
+  it('perubahan tim oleh Admin (ke Owner): ubah peran dengan peran lama → baru, nonaktifkan', () => {
+    const changed = renderAdminAccountNoticeEmail({
+      brand: brand(),
+      timeZone: 'Asia/Jakarta',
+      recipientName: 'Sari',
+      event: 'role_changed',
+      subject: { name: 'Budi <CS>', email: 'budi@contoh.test', role: 'supervisor' },
+      actor: { name: 'Rudi', role: 'admin' },
+      roleChange: { from: 'cs', to: 'supervisor' },
+      occurredAt: at,
+    });
+    expect(changed.subject).toBe('Peran Budi <CS> di Balesin diubah oleh Rudi (Admin)');
+    expect(changed.text).toContain('Perubahan peran: CS → Supervisor');
+    expect(changed.html).toContain('Budi &lt;CS&gt;');
+    const disabled = renderAdminAccountNoticeEmail({
+      brand: brand(),
+      timeZone: 'Asia/Jakarta',
+      recipientName: 'Sari',
+      event: 'user_disabled',
+      subject: { name: 'Tono', email: 'tono@contoh.test', role: 'teknisi' },
+      actor: { name: 'Rudi', role: 'admin' },
+      occurredAt: at,
+    });
+    expect(disabled.subject).toBe('Tono di Balesin dinonaktifkan oleh Rudi (Admin)');
+    expect(disabled.text).toContain('menonaktifkan akun Tono');
+    for (const mail of [changed, disabled]) {
+      expect(mail.text).not.toMatch(/\bAnda\b/i);
     }
   });
 

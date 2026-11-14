@@ -449,7 +449,7 @@ describe('pemberitahuan keamanan dengan IP dan perangkat', () => {
       ),
     ).toEqual({ status: 'sent' });
     const mail = await waitForCapturedMail(owner.email);
-    expect(mail.subject).toBe('Password akun Balesin Maju kamu sudah diganti');
+    expect(mail.subject).toBe('Password akun Balesin Maju-mu sudah diganti');
   }, 30_000);
 
   it('payload dengan kunci tambahan (mis. token) ditolak permanen', async () => {

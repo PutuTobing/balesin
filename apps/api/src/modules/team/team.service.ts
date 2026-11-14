@@ -44,7 +44,8 @@ import {
   findTeamUser,
   listTeamUsers,
   lockActor,
-  lockOwnerChanges,
+  lockTarget,
+  lockTeamChanges,
   reopenTwoFactorEnrollment,
   resetUserTwoFactor,
   updateUserRole,
@@ -165,6 +166,12 @@ function conflict(message: string): AppError {
   return new AppError('CONFLICT', { message });
 }
 
+function assignRoleMessage(actor: UserRole): string {
+  return actor === 'admin'
+    ? 'Admin hanya bisa memberi peran Supervisor, CS, atau Teknisi.'
+    : 'Peran ini tidak bisa diberikan lewat ubah peran.';
+}
+
 function manageRoleMessage(actor: UserRole): string {
   return actor === 'admin'
     ? 'Admin hanya bisa mengelola Supervisor, CS, dan Teknisi. Owner dan Admin lain hanya bisa dikelola Owner.'
@@ -259,30 +266,59 @@ export function createTeamService(deps: TeamServiceDeps): TeamService {
   }
 
   /**
-   * Di DALAM transaksi: pelaku masih aktif dan perannya SEKARANG masih boleh mengelola peran
-   * sasaran (bisa saja baru diturunkan/dinonaktifkan oleh permintaan lain).
+   * WAJIB menjadi langkah PERTAMA setiap transaksi pengelolaan (review butir 6 R1/R2):
+   *  1. kunci advisory organisasi — semua aksi kelola berurutan, urutan kunci selalu sama (tanpa
+   *     deadlock), dan yang kalah melihat keadaan terbaru;
+   *  2. baris pelaku (`FOR SHARE`) — masih aktif, dan perannya SEKARANG masih boleh mengelola peran
+   *     sasaran SEKARANG dan (ubah peran) masih boleh memberi peran baru; selain itu 403 + audit;
+   *  3. baris sasaran (`FOR UPDATE`) — peran/status/2FA-nya sama dengan yang dibaca sebelum
+   *     transaksi; bila berubah (permintaan lain menang tipis) → 409.
    */
-  async function assertActorStillAuthorized(
+  async function lockManaged(
     tx: DbExecutor,
     auth: AuthContext,
-    targetRole: UserRole,
+    target: TeamUserRow,
+    operation: TeamOperation,
     context: TeamContext,
+    assignRole?: InvitableRole,
   ): Promise<void> {
+    await lockTeamChanges(tx, auth.organizationId);
     const actor = await lockActor(tx, auth.organizationId, auth.user.id);
-    if (!actor || actor.disabledAt !== null || !canManageRole(actor.role, targetRole)) {
+    const fresh = await lockTarget(tx, auth.organizationId, target.id);
+    if (
+      !fresh ||
+      fresh.role !== target.role ||
+      fresh.disabledAt?.getTime() !== target.disabledAt?.getTime() ||
+      fresh.totpEnabledAt?.getTime() !== target.totpEnabledAt?.getTime()
+    ) {
+      throw conflict(CHANGED_MESSAGE);
+    }
+    if (!actor || actor.disabledAt !== null || !canManageRole(actor.role, fresh.role)) {
       await forbidByRule(accessDenied, {
         auth,
         rule: ACCESS_RULES.teamManageRole,
         client: context.client,
-        details: { operation: 'recheck', targetRole },
+        details: { operation, targetRole: fresh.role, stage: 'recheck' },
         message: manageRoleMessage(actor?.role ?? 'cs'),
+      });
+      return;
+    }
+    if (assignRole !== undefined && !assignableRoles(actor.role).includes(assignRole)) {
+      await forbidByRule(accessDenied, {
+        auth,
+        rule: ACCESS_RULES.teamAssignRole,
+        client: context.client,
+        details: { operation, targetRole: assignRole, stage: 'recheck' },
+        message: assignRoleMessage(actor.role),
       });
     }
   }
 
-  /** Owner aktif tidak boleh habis: dipanggil sebelum menurunkan/menonaktifkan seorang Owner. */
+  /**
+   * Owner aktif tidak boleh habis: dipanggil (sesudah `lockManaged`, yang sudah memegang kunci
+   * organisasi) sebelum menurunkan/menonaktifkan seorang Owner.
+   */
   async function assertOwnerRemains(tx: DbExecutor, auth: AuthContext, target: TeamUserRow) {
-    await lockOwnerChanges(tx, auth.organizationId);
     if ((await countOtherActiveOwners(tx, auth.organizationId, target.id)) === 0) {
       throw conflict(
         'Organisasi harus selalu punya minimal satu Owner aktif. Perubahan ini akan menghapus Owner terakhir.',
@@ -345,6 +381,40 @@ export function createTeamService(deps: TeamServiceDeps): TeamService {
     return revoked;
   }
 
+  /**
+   * Ubah peran / nonaktifkan oleh SELAIN Owner (Admin) → email ke semua Owner aktif (review butir 6
+   * Info 6, pola review RBAC S1): Admin yang dibobol tidak bisa diam-diam merombak tim.
+   */
+  function notifyOwnersOfChange(
+    auth: AuthContext,
+    subjectUserId: string,
+    event: 'role_changed' | 'user_disabled',
+    auditLogId: string,
+    context: TeamContext,
+  ): void {
+    if (auth.user.role === 'owner') return;
+    const occurredAt = new Date().toISOString();
+    warnOnFailure(
+      findActiveOwners(db, auth.organizationId, [auth.user.id, subjectUserId]).then(
+        async (owners) => {
+          for (const recipientUserId of owners) {
+            await notifier.securityNoticeAdmin({
+              organizationId: auth.organizationId,
+              recipientUserId,
+              subjectUserId,
+              event,
+              occurredAt,
+              auditLogId,
+              actorUserId: auth.user.id,
+            });
+          }
+        },
+      ),
+      context.log,
+      subjectUserId,
+    );
+  }
+
   function warnOnFailure(promise: Promise<unknown>, log: FastifyBaseLogger, userId: string) {
     void promise.catch((err: unknown) => {
       log.warn({ err, userId }, 'Gagal mengantre email pemberitahuan manajemen pengguna');
@@ -380,10 +450,7 @@ export function createTeamService(deps: TeamServiceDeps): TeamService {
           rule: ACCESS_RULES.teamAssignRole,
           client: context.client,
           details: { operation: 'change_role', targetRole: input.role },
-          message:
-            auth.user.role === 'admin'
-              ? 'Admin hanya bisa memberi peran Supervisor, CS, atau Teknisi.'
-              : 'Peran ini tidak bisa diberikan lewat ubah peran.',
+          message: assignRoleMessage(auth.user.role),
         });
       }
       if (target.role === input.role) {
@@ -392,7 +459,7 @@ export function createTeamService(deps: TeamServiceDeps): TeamService {
       const confirmedWith = await confirm(auth, input, 'change_role', context);
 
       const result = await db.transaction(async (tx) => {
-        await assertActorStillAuthorized(tx, auth, target.role, context);
+        await lockManaged(tx, auth, target, 'change_role', context, input.role);
         if (target.role === 'owner') await assertOwnerRemains(tx, auth, target);
         const twoFactorEnabled = target.totpEnabledAt !== null;
         const updated = await updateUserRole(tx, {
@@ -414,7 +481,7 @@ export function createTeamService(deps: TeamServiceDeps): TeamService {
           'issuer_role_changed',
           context,
         );
-        await recordAudit(tx, {
+        const auditLogId = await recordAudit(tx, {
           organizationId: auth.organizationId,
           actorUserId: auth.user.id,
           action: AUDIT_ACTIONS.userRoleChanged,
@@ -426,17 +493,23 @@ export function createTeamService(deps: TeamServiceDeps): TeamService {
             revokedSessions,
             revokedInvitations,
             twoFactorEnrollmentRequired: isTwoFactorRequired(input.role) && !twoFactorEnabled,
+            actorRole: auth.user.role,
             confirmedWith,
           },
           client: context.client,
         });
-        return { revokedSessions, revokedInvitations };
+        return { revokedSessions, revokedInvitations, auditLogId };
       });
       context.log.info(
         { userId: target.id, from: target.role, to: input.role, ...result },
         'Peran pengguna diubah; sesinya dicabut',
       );
-      return { user: await viewOne(auth, target.id), ...result };
+      notifyOwnersOfChange(auth, target.id, 'role_changed', result.auditLogId, context);
+      return {
+        user: await viewOne(auth, target.id),
+        revokedSessions: result.revokedSessions,
+        revokedInvitations: result.revokedInvitations,
+      };
     },
 
     async disable(auth, userId, input, context) {
@@ -445,9 +518,15 @@ export function createTeamService(deps: TeamServiceDeps): TeamService {
       const confirmedWith = await confirm(auth, input, 'disable_user', context);
 
       const result = await db.transaction(async (tx) => {
-        await assertActorStillAuthorized(tx, auth, target.role, context);
+        await lockManaged(tx, auth, target, 'disable', context);
         if (target.role === 'owner') await assertOwnerRemains(tx, auth, target);
-        if (!(await disableUser(tx, auth.organizationId, target.id))) {
+        if (
+          !(await disableUser(tx, {
+            organizationId: auth.organizationId,
+            userId: target.id,
+            expectedRole: target.role,
+          }))
+        ) {
           throw conflict(CHANGED_MESSAGE);
         }
         const revokedSessions = await signOutEverywhere(tx, auth, target.id);
@@ -462,7 +541,7 @@ export function createTeamService(deps: TeamServiceDeps): TeamService {
           'issuer_disabled',
           context,
         );
-        await recordAudit(tx, {
+        const auditLogId = await recordAudit(tx, {
           organizationId: auth.organizationId,
           actorUserId: auth.user.id,
           action: AUDIT_ACTIONS.userDisabled,
@@ -474,14 +553,20 @@ export function createTeamService(deps: TeamServiceDeps): TeamService {
             revokedInvitations,
             // Tautan atur ulang password / verifikasi email (nama kunci tanpa "token": disensor).
             revokedAccountLinks: revokedTokens,
+            actorRole: auth.user.role,
             confirmedWith,
           },
           client: context.client,
         });
-        return { revokedSessions, revokedInvitations };
+        return { revokedSessions, revokedInvitations, auditLogId };
       });
       context.log.info({ userId: target.id, ...result }, 'Pengguna dinonaktifkan');
-      return { user: await viewOne(auth, target.id), ...result };
+      notifyOwnersOfChange(auth, target.id, 'user_disabled', result.auditLogId, context);
+      return {
+        user: await viewOne(auth, target.id),
+        revokedSessions: result.revokedSessions,
+        revokedInvitations: result.revokedInvitations,
+      };
     },
 
     async enable(auth, userId, input, context) {
@@ -490,7 +575,7 @@ export function createTeamService(deps: TeamServiceDeps): TeamService {
       const confirmedWith = await confirm(auth, input, 'enable_user', context);
 
       await db.transaction(async (tx) => {
-        await assertActorStillAuthorized(tx, auth, target.role, context);
+        await lockManaged(tx, auth, target, 'enable', context);
         const twoFactorEnabled = target.totpEnabledAt !== null;
         const enabled = await enableUser(tx, {
           organizationId: auth.organizationId,
@@ -528,7 +613,7 @@ export function createTeamService(deps: TeamServiceDeps): TeamService {
       const confirmedWith = await confirm(auth, input, 'reset_user_two_factor', context);
 
       const { revokedSessions, auditLogId } = await db.transaction(async (tx) => {
-        await assertActorStillAuthorized(tx, auth, target.role, context);
+        await lockManaged(tx, auth, target, 'reset_two_factor', context);
         const reset = await resetUserTwoFactor(tx, {
           organizationId: auth.organizationId,
           userId: target.id,
@@ -610,7 +695,7 @@ export function createTeamService(deps: TeamServiceDeps): TeamService {
       const confirmedWith = await confirm(auth, input, 'reopen_two_factor_enrollment', context);
 
       await db.transaction(async (tx) => {
-        await assertActorStillAuthorized(tx, auth, target.role, context);
+        await lockManaged(tx, auth, target, 'reopen_two_factor_enrollment', context);
         const dueAt = await reopenTwoFactorEnrollment(tx, {
           organizationId: auth.organizationId,
           userId: target.id,
@@ -638,8 +723,10 @@ export function createTeamService(deps: TeamServiceDeps): TeamService {
     async unlock(auth, userId, input, context) {
       const target = await loadManageable(auth, userId, 'unlock', context);
       const confirmedWith = await confirm(auth, input, 'unlock_user', context);
-      const cleared = await locks.unlock(auth.organizationId, target);
       await db.transaction(async (tx) => {
+        await lockManaged(tx, auth, target, 'unlock', context);
+        // Kunci Redis dilepas SETELAH wewenang dipastikan ulang; galat Redis membatalkan transaksi.
+        const cleared = await locks.unlock(auth.organizationId, target);
         await clearLockedUntil(tx, auth.organizationId, target.id);
         await recordAudit(tx, {
           organizationId: auth.organizationId,
@@ -663,6 +750,7 @@ export function createTeamService(deps: TeamServiceDeps): TeamService {
     async revokeSession(auth, userId, sessionId, context) {
       const target = await loadManageable(auth, userId, 'revoke_session', context);
       await db.transaction(async (tx) => {
+        await lockManaged(tx, auth, target, 'revoke_session', context);
         if (!(await revokeSessionOfUser(tx, auth.organizationId, target.id, sessionId))) {
           throw new AppError('NOT_FOUND', { message: SESSION_NOT_FOUND_MESSAGE });
         }
@@ -682,7 +770,7 @@ export function createTeamService(deps: TeamServiceDeps): TeamService {
       const target = await loadManageable(auth, userId, 'revoke_all_sessions', context);
       const confirmedWith = await confirm(auth, input, 'revoke_user_sessions', context);
       return db.transaction(async (tx) => {
-        await assertActorStillAuthorized(tx, auth, target.role, context);
+        await lockManaged(tx, auth, target, 'revoke_all_sessions', context);
         const revoked = await signOutEverywhere(tx, auth, target.id);
         await recordAudit(tx, {
           organizationId: auth.organizationId,

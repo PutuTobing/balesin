@@ -170,6 +170,14 @@ export const activeSessionSchema = z.object({
   current: z.boolean(),
   /** Sesi terbatas "wajib mendaftar 2FA" (berumur 30 menit). */
   limited: z.boolean(),
+  /**
+   * Daftar sesi SENDIRI: sesi ini dibuat pada/sesudah sesi yang sedang dipakai, jadi mengeluarkannya
+   * wajib konfirmasi identitas (`{ password, code? }` di body DELETE) — supaya cookie lama yang dicuri
+   * tidak bisa terus mengusir sesi baru pemiliknya (review butir 6 R4). Sesi yang lebih lama tetap
+   * satu klik. Daftar sesi pengguna lain (Owner/Admin): selalu `false`.
+   * Server SELALU mengirimnya; opsional di tipe hanya supaya klien lama tetap terkompilasi.
+   */
+  confirmationRequired: z.boolean().optional(),
 });
 export type ActiveSession = z.infer<typeof activeSessionSchema>;
 
@@ -183,6 +191,13 @@ export const sessionIdParamsSchema = z.object({
   sessionId: z.uuid({ error: 'Sesi tidak ditemukan.' }),
 });
 export const userSessionParamsSchema = userIdParamsSchema.extend(sessionIdParamsSchema.shape);
+
+/**
+ * Body opsional `DELETE /auth/sessions/:sessionId`: wajib bila sesi sasaran lebih baru dari sesi ini
+ * (`confirmationRequired: true`); diabaikan bila tidak.
+ */
+// `nullish`: Fastify memberi `null` untuk DELETE tanpa body.
+export const revokeOwnSessionRequestSchema = identityConfirmationSchema.nullish();
 
 export const revokeSessionResponseSchema = z.object({ status: z.literal('revoked') });
 export type RevokeSessionResponse = z.infer<typeof revokeSessionResponseSchema>;
