@@ -10,12 +10,12 @@ import { createUser, type ExtraUser } from './pengguna';
  * dan desktop: server menjawab 404 dengan pesan yang jelas, daftar dimuat ulang — pesan itu harus
  * TETAP terbaca dan fokus tidak jatuh ke <body>.
  *
- * BUG TERBUKA (QA butir 4/6, dikunci `test.fail`): pesan error ditempel di baris yang barusan
- * diklik, lalu daftar dimuat ulang dan baris itu hilang — pesan ikut hilang tanpa jejak, fokus ke
- * <body>. Pengguna hanya melihat barisnya lenyap. Berkas: `apps/web/src/features/team/TeamPage.tsx`
- * (`InvitationsCard.fail`), `apps/web/src/features/security/SessionsCard.tsx` (`revoke`), pola yang
- * sama di `apps/web/src/features/team-user/TeamUserPage.tsx` (`UserSessionsCard.revoke`). Setelah
- * diperbaiki, Playwright melaporkan tes ini "lulus padahal diharapkan gagal": hapus `test.fail`.
+ * Bug QA butir 4/6 (sudah diperbaiki, dijaga tes ini): dulu pesan error ditempel di baris yang
+ * barusan diklik, lalu daftar dimuat ulang dan baris itu hilang — pesan ikut hilang tanpa jejak,
+ * fokus ke <body>. Sekarang pesan 404 tampil di kartu dan fokus pindah ke judul kartu. Berkas:
+ * `apps/web/src/features/team/TeamPage.tsx` (`InvitationsCard.fail`),
+ * `apps/web/src/features/security/SessionsCard.tsx` (`revoke`), pola yang sama di
+ * `apps/web/src/features/team-user/TeamUserPage.tsx` (`UserSessionsCard.revoke`).
  */
 test.describe.configure({ timeout: 120_000 });
 
@@ -44,7 +44,6 @@ test('undangan dibatalkan di tab lain → "Kirim ulang" di daftar basi: pesan te
   page,
   expectHttpError,
 }) => {
-  test.fail(true, 'BUG: pesan 404 hilang bersama barisnya; fokus jatuh ke <body>');
   const tag = isHp(page) ? 'hp' : 'desktop';
   const email = `basi-${tag}-${Date.now().toString(36)}@majujaya.test`;
   const { api, headers } = await ownerApi();
@@ -77,7 +76,6 @@ test('sesi lain sudah keluar sendiri → "Keluarkan sesi" di daftar basi: pesan 
   browser,
   page: projectPage,
 }) => {
-  test.fail(true, 'BUG: pesan 404 hilang bersama barisnya; fokus jatuh ke <body>');
   const hp = isHp(projectPage);
   const cs = await createUser('cs', `basi-sesi-${hp ? 'hp' : 'desktop'}`);
   // Sesi lama lebih dulu, supaya dari sesi baru ia bisa dikeluarkan satu klik (tanpa dialog).

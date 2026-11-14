@@ -48,7 +48,7 @@ export function SecurityBanner() {
 
   if (!canView || !summary.data || !userId || !allowed) return null;
   const seenAt = Math.max(readSeenAt(userId), dismissed?.userId === userId ? dismissed.at : 0);
-  const events = unseenWarnings(summary.data, seenAt);
+  const events = unseenWarnings(summary.data, seenAt, userId);
   const latest = events[0];
   if (!latest) return null;
 

@@ -26,6 +26,8 @@ export function SessionsCard({ requireCode }: { requireCode: boolean }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** Sesi yang ternyata sudah berakhir (404): barisnya hilang, pesannya di kartu. */
+  const [gone, setGone] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   // Sesi yang lebih baru dari sesi ini: dikeluarkan lewat konfirmasi identitas (review butir 6 R4).
   const [newer, setNewer] = useState<ActiveSession | null>(null);
@@ -43,6 +45,13 @@ export function SessionsCard({ requireCode }: { requireCode: boolean }) {
       old ? { sessions: old.sessions.filter(keep) } : old,
     );
 
+  /** Sesi sudah berakhir di tempat lain: muat ulang daftar, pesan di kartu, fokus ke judul. */
+  const alreadyGone = (message: string) => {
+    setGone(message);
+    void queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
+    setFocusHeading((tick) => tick + 1);
+  };
+
   const revoked = (session: ActiveSession) => {
     removeFromCache((item) => item.id !== session.id);
     setNotice(t.sessions.revoked(session.device));
@@ -54,6 +63,7 @@ export function SessionsCard({ requireCode }: { requireCode: boolean }) {
     if (session.confirmationRequired) {
       setRowError(null);
       setNotice(null);
+      setGone(null);
       newerTrigger.current = document.getElementById(
         revokeSessionButtonId(session.id),
       ) as HTMLButtonElement | null;
@@ -63,18 +73,19 @@ export function SessionsCard({ requireCode }: { requireCode: boolean }) {
     setBusyId(session.id);
     setRowError(null);
     setNotice(null);
+    setGone(null);
     try {
       await endpoints.sessions.revoke(session.id);
       revoked(session);
     } catch (caught) {
+      if (isApiError(caught) && caught.status === 404) {
+        alreadyGone(caught.message);
+        return;
+      }
       setRowError({
         id: session.id,
         message: isApiError(caught) ? caught.message : t.api.network,
       });
-      // Sudah berakhir di tempat lain: muat ulang daftarnya.
-      if (isApiError(caught) && caught.status === 404) {
-        void queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
-      }
     } finally {
       setBusyId(null);
     }
@@ -94,6 +105,11 @@ export function SessionsCard({ requireCode }: { requireCode: boolean }) {
       {notice ? (
         <Notice tone="success" role="status">
           {notice}
+        </Notice>
+      ) : null}
+      {gone ? (
+        <Notice tone="warning" role="alert">
+          {gone}
         </Notice>
       ) : null}
       {list ? (
@@ -123,6 +139,7 @@ export function SessionsCard({ requireCode }: { requireCode: boolean }) {
               className={styles.dangerText}
               onClick={() => {
                 setNotice(null);
+                setGone(null);
                 setConfirming(true);
               }}
               disabled={busyId !== null}
@@ -152,8 +169,7 @@ export function SessionsCard({ requireCode }: { requireCode: boolean }) {
             // Sudah berakhir di tempat lain: tutup dialog, muat ulang daftarnya.
             if (isApiError(caught) && caught.status === 404) {
               setNewer(null);
-              void queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
-              setRowError({ id: newer.id, message: caught.message });
+              alreadyGone(caught.message);
               return;
             }
             throw caught;

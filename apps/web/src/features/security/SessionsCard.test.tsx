@@ -45,6 +45,26 @@ describe('Keamanan akun → Sesi aktif', () => {
     ).toBeVisible();
   });
 
+  it('sesi sudah berakhir di tempat lain (404): pesan di kartu (bukan di baris yang hilang), fokus ke judul', async () => {
+    let listed = [CURRENT, PHONE];
+    const { card } = await openSecurity('owner', {
+      [`GET ${API_ROUTES.sessions.list}`]: () => json({ sessions: listed }),
+      [`DELETE ${apiPath(API_ROUTES.sessions.revoke, { sessionId: PHONE.id })}`]: () => {
+        listed = [CURRENT];
+        return apiError(404, 'NOT_FOUND', 'Sesi tidak ditemukan atau sudah berakhir.');
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: t.sessions.revokeLabel('Safari di iOS') }));
+    const message = await screen.findByText('Sesi tidak ditemukan atau sudah berakhir.');
+    // Daftar dimuat ulang: barisnya hilang, pesannya tetap (di kartu, bukan di baris).
+    await waitFor(() => expect(within(card()).getAllByRole('listitem')).toHaveLength(1));
+    expect(message).toBeVisible();
+    expect(message.closest('li')).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 2, name: copy.title })).toHaveFocus(),
+    );
+  });
+
   it('keluarkan satu sesi lain tanpa konfirmasi identitas; fokus ke judul kartu', async () => {
     const { card } = await openSecurity('owner', {
       [`DELETE ${apiPath(API_ROUTES.sessions.revoke, { sessionId: PHONE.id })}`]: () =>

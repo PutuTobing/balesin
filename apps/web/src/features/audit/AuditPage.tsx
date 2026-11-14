@@ -59,6 +59,8 @@ export function AuditPage() {
   const search = routeApi.useSearch();
   const filter = auditFilter(search);
   const exporter = useAuditExport();
+  // Rentang tanggal terbalik: ekspor ditahan (CSV tanpa saringan tanggal akan menyesatkan).
+  const badRange = rangeInvalid(search);
   return (
     <Page
       actions={
@@ -66,11 +68,17 @@ export function AuditPage() {
           buttonRef={exporter.buttonRef}
           pending={exporter.pending}
           lock={exporter.lock}
+          disabled={badRange}
           onRun={() => void exporter.run(search)}
         />
       }
     >
       <div className={styles.content}>
+        {badRange ? (
+          <Notice tone="warning" role="alert">
+            {copy.filters.rangeSummary}
+          </Notice>
+        ) : null}
         {exporter.result ? (
           <ExportResult
             result={exporter.result}
@@ -99,7 +107,7 @@ function useAuditExport() {
   const buttonRef = useRef<HTMLButtonElement>(null);
 
   const run = async (search: AuditSearch) => {
-    if (pending || lock.locked) return;
+    if (pending || lock.locked || rangeInvalid(search)) return;
     setPending(true);
     setResult(null);
     try {
@@ -124,11 +132,14 @@ function ExportButton({
   buttonRef,
   pending,
   lock,
+  disabled,
   onRun,
 }: {
   buttonRef: RefObject<HTMLButtonElement | null>;
   pending: boolean;
   lock: Lock;
+  /** Saringan tidak sah (rentang tanggal terbalik); alasannya tampil di atas daftar. */
+  disabled: boolean;
   onRun: () => void;
 }) {
   return (
@@ -140,6 +151,7 @@ function ExportButton({
       pending={pending}
       pendingLabel={copy.exporting}
       lock={lock}
+      disabled={disabled}
       onClick={onRun}
       className={styles.exportButton}
     >
@@ -324,7 +336,22 @@ function AuditList({
   const navigate = routeApi.useNavigate();
   const list = useInfiniteQuery({ ...auditLogQuery(filter), placeholderData: keepPreviousData });
   const retryLock = useLock();
+  const listRef = useRef<HTMLOListElement>(null);
   const entries = list.data?.pages.flatMap((page) => page.entries) ?? [];
+
+  /**
+   * "Muat lagi": setelah halaman berikutnya tiba, fokus ke entri pertama yang baru, supaya pembaca
+   * melanjutkan dari situ — dan tidak jatuh ke <body> saat tombolnya hilang di halaman terakhir.
+   */
+  const loadMore = async () => {
+    const firstNew = entries.length;
+    const result = await list.fetchNextPage();
+    if (result.isError) return;
+    requestAnimationFrame(() => {
+      const item = listRef.current?.children.item(firstNew);
+      if (item instanceof HTMLElement) item.focus();
+    });
+  };
   const filtered = activeFilterCount(search) > 0;
 
   if (!list.data) {
@@ -387,6 +414,7 @@ function AuditList({
         <span>{copy.columns.origin}</span>
       </div>
       <ol
+        ref={listRef}
         className={cx(styles.list, list.isPlaceholderData && styles.stale)}
         aria-label={copy.listLabel}
         aria-busy={list.isPlaceholderData || undefined}
@@ -406,7 +434,7 @@ function AuditList({
         </span>
         {list.hasNextPage ? (
           <Button
-            onClick={() => void list.fetchNextPage()}
+            onClick={() => void loadMore()}
             loading={list.isFetchingNextPage}
             disabled={list.isPlaceholderData}
           >

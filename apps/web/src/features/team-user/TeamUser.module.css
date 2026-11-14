@@ -173,6 +173,11 @@ ol.activity {
   padding: var(--space-12) var(--space-24);
 }
 
+/* Entri difokus terprogram setelah "Muat lagi". */
+.activityItem:focus-visible {
+  outline-offset: var(--space-4);
+}
+
 .activityItem + .activityItem {
   border-top: 1px solid var(--line);
 }

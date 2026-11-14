@@ -57,6 +57,15 @@ describe('status "sudah dilihat"', () => {
     expect(unseenWarnings(summary([INFO]), 0)).toEqual([]);
   });
 
+  it('kejadian oleh pengguna itu sendiri tidak memicu banner', () => {
+    const own = event({
+      id: '9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c13',
+      actor: { ...WARNING.actor!, id: OWNER_ID },
+    });
+    expect(unseenWarnings(summary([own]), 0, OWNER_ID)).toEqual([]);
+    expect(unseenWarnings(summary([own, WARNING]), 0, OWNER_ID)).toEqual([WARNING]);
+  });
+
   it('tautan Audit log: satu jenis → saringan aksinya; mulai dari tanggal kejadian tertua', () => {
     const search = auditSearchFor([WARNING], emptySecuritySummary.since);
     expect(search.action).toBe('settings.email.updated');

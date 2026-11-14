@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { ChevronRight, LogOut, ShieldCheck } from 'lucide-react';
 import { BrandMark } from '../../brand/BrandMark';
 import { useBrand } from '../../brand/brand';
-import { moreMenuItems } from '../../components/shell/nav-items';
+import { allowedNavItems, moreMenuItems } from '../../components/shell/nav-items';
 import { UserIdentity } from '../../components/shell/UserMenu';
 import { Icon } from '../../components/ui/Icon';
 import { Notice } from '../../components/ui/Notice';
@@ -48,7 +48,7 @@ export function MorePage() {
       ) : null}
       <nav aria-label={t.more.menuLabel} className={styles.nav}>
         <ul className={styles.menu}>
-          {moreMenuItems.map((item) => (
+          {allowedNavItems(moreMenuItems, session?.permissions ?? []).map((item) => (
             <li key={item.id} className={styles.menuItem}>
               <Link to={item.to} className={styles.menuLink}>
                 <Icon icon={item.icon} size={20} className={styles.menuIcon} />

@@ -1,6 +1,6 @@
 import { Page } from '../../components/ui/Page';
 import { SkeletonRegion } from '../../components/ui/Skeleton';
-import { SecurityCardsSkeleton } from './SecurityPage';
+import { SecurityCardsSkeleton } from './SecurityCards';
 
 /**
  * Kerangka Keamanan akun: header asli dan kartu yang sama dengan layar jadi (sesuai peran dari

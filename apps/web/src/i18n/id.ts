@@ -711,8 +711,11 @@ export const t = {
       disabled: (name: string) =>
         `Akun ${name} sudah dinonaktifkan dan dikeluarkan dari semua perangkat.`,
       enabled: (name: string) => `Akun ${name} aktif lagi. Ia sudah bisa masuk.`,
-      twoFactorReset: (name: string) =>
-        `Verifikasi dua langkah ${name} sudah diatur ulang. Ia perlu mendaftarkan aplikasi autentikator lagi saat masuk.`,
+      /** `required`: peran wajib 2FA → diminta mendaftar lagi saat masuk; selain itu opsional. */
+      twoFactorReset: (name: string, required: boolean) =>
+        required
+          ? `Verifikasi dua langkah ${name} sudah diatur ulang. Ia perlu mendaftarkan aplikasi autentikator lagi saat masuk.`
+          : `Verifikasi dua langkah ${name} sudah diatur ulang. Ia bisa masuk dengan password saja, dan mengaktifkannya lagi dari Keamanan akun bila mau.`,
       reopened: (name: string) =>
         `Pendaftaran verifikasi dua langkah ${name} dibuka lagi selama 72 jam. Minta ia masuk sekarang.`,
       unlocked: (name: string) => `Kunci akun ${name} sudah dibuka. Ia bisa mencoba masuk lagi.`,
@@ -837,6 +840,9 @@ export const t = {
       from: 'Dari tanggal',
       to: 'Sampai tanggal',
       rangeError: 'Tanggal akhir tidak boleh sebelum tanggal mulai.',
+      /** Di luar panel saringan (di HP panelnya bisa tertutup); juga menjelaskan ekspor yang ditahan. */
+      rangeSummary:
+        'Rentang tanggal terbalik, jadi saringan tanggal belum dipakai dan ekspor CSV ditahan. Perbaiki tanggalnya di Saringan.',
       clear: 'Hapus saringan',
       chipUser: (name: string) => `Terkait ${name}`,
       chipTarget: (id: string) => `Target ${id}`,

@@ -57,10 +57,6 @@ test('Muat lagi: 50 entri pertama, lalu sisanya tanpa ganda; tombol hilang di ak
 });
 
 test('setelah halaman terakhir dimuat, fokus keyboard tidak jatuh ke <body>', async ({ page }) => {
-  test.fail(
-    true,
-    'BUG: tombol "Muat lagi" yang sedang difokus dihapus setelah halaman terakhir; fokus ke <body>',
-  );
   const user = await createUser('teknisi', `audit-fokus-${isHp(page) ? 'hp' : 'desktop'}`);
   const id = await seedEntries(user.email, 55);
   const list = await openFiltered(page, id);

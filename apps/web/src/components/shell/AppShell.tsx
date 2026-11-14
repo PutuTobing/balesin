@@ -5,13 +5,14 @@ import { useBrand } from '../../brand/brand';
 import { t } from '../../i18n/id';
 import { cx } from '../../lib/cx';
 import { media, useMediaQuery } from '../../lib/media';
+import { useSession } from '../../features/auth/session';
 import { SecurityBanner } from '../../features/security-banner/SecurityBanner';
 import { Icon } from '../ui/Icon';
 import { Tooltip } from '../ui/Tooltip';
 import styles from './AppShell.module.css';
 import { ThemeMenu } from './ThemeMenu';
 import { UserMenu } from './UserMenu';
-import { navActiveState, navItems, type NavItem } from './nav-items';
+import { allowedNavItems, navActiveState, navItems, type NavItem } from './nav-items';
 import { RAIL_POPOVER_OFFSET } from './rail';
 
 const MAIN_ID = 'konten';
@@ -56,13 +57,15 @@ function MainNav({ pathname }: { pathname: string }) {
   const { productName } = useBrand();
   // Di navigasi bawah HP label sudah tampil, jadi tooltip hanya untuk rail ikon.
   const labelsVisible = useMediaQuery(media.hp);
+  const session = useSession();
+  const items = allowedNavItems(navItems, session?.permissions ?? []);
   return (
     <nav className={styles.nav} aria-label={t.nav.label}>
       <Link to="/inbox" className={styles.brand} aria-label={t.nav.home(productName)}>
         <BrandMark />
       </Link>
       <ul className={styles.items}>
-        {navItems.map((item) => (
+        {items.map((item) => (
           <li key={item.id} className={cx(styles.item, styles[item.placement])}>
             <NavLink item={item} pathname={pathname} showTooltip={!labelsVisible} />
           </li>

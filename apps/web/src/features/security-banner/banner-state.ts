@@ -14,11 +14,22 @@ export function readSeenAt(userId: string): number {
   return Number.isNaN(time) ? 0 : time;
 }
 
-/** Kejadian `warning` yang lebih baru dari "terakhir ditutup", terbaru dulu. */
-export function unseenWarnings(summary: SecuritySummaryResponse, seenAt: number): SecurityEvent[] {
+/**
+ * Kejadian `warning` yang lebih baru dari "terakhir ditutup", terbaru dulu. Kejadian yang
+ * pelakunya pengguna ini sendiri (`selfId`) dilewati: Admin tidak perlu diperingatkan atas
+ * aksinya sendiri.
+ */
+export function unseenWarnings(
+  summary: SecuritySummaryResponse,
+  seenAt: number,
+  selfId?: string,
+): SecurityEvent[] {
   if (!summary.latestWarningAt || Date.parse(summary.latestWarningAt) <= seenAt) return [];
   return summary.events.filter(
-    (event) => event.severity === 'warning' && Date.parse(event.occurredAt) > seenAt,
+    (event) =>
+      event.severity === 'warning' &&
+      Date.parse(event.occurredAt) > seenAt &&
+      (selfId === undefined || event.actor?.id !== selfId),
   );
 }
 

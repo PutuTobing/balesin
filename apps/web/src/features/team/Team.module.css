@@ -155,6 +155,8 @@
 /* Tiap bagian keterangan patah sebagai satu kesatuan bila muat (bukan "… Dimas / Pratama"). */
 .segment {
   display: inline-block;
+  /* Satu potongan keterangan tidak dipatah di tengah; titik pemisah ikut potongannya. */
+  white-space: nowrap;
 }
 
 .rowActions {

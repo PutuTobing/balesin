@@ -333,6 +333,11 @@ function InvitationsCard({
   const [busy, setBusy] = useState<{ id: string; action: RowAction } | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /**
+   * Pesan untuk baris yang ternyata sudah tidak ada (404: diterima/dibatalkan di tempat lain).
+   * Barisnya hilang saat daftar dimuat ulang, jadi pesannya di kartu, bukan di baris.
+   */
+  const [gone, setGone] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<Invitation | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [focusHeading, setFocusHeading] = useState(0);
@@ -342,20 +347,27 @@ function InvitationsCard({
   }, [focusHeading]);
 
   const fail = (invitation: Invitation, caught: unknown) => {
-    setRowError({
-      id: invitation.id,
-      message: isApiError(caught) ? caught.message : t.api.network,
-    });
     // Undangan sudah diterima/dibatalkan di tempat lain, atau baru saja berubah: muat ulang.
     if (isApiError(caught) && (caught.status === 404 || caught.status === 409)) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.invitations });
     }
+    if (isApiError(caught) && caught.status === 404) {
+      // Barisnya akan hilang: pesan di kartu, fokus ke judul daftar (bukan <body>).
+      setGone(caught.message);
+      setFocusHeading((tick) => tick + 1);
+      return;
+    }
+    setRowError({
+      id: invitation.id,
+      message: isApiError(caught) ? caught.message : t.api.network,
+    });
   };
 
   const resend = async (invitation: Invitation) => {
     setBusy({ id: invitation.id, action: 'resend' });
     setRowError(null);
     setNotice(null);
+    setGone(null);
     try {
       const response = await endpoints.invitations.resend(invitation.id);
       setNotice(
@@ -374,6 +386,7 @@ function InvitationsCard({
     setBusy({ id: invitation.id, action: 'revoke' });
     setRowError(null);
     setNotice(null);
+    setGone(null);
     try {
       await endpoints.invitations.revoke(invitation.id);
       queryClient.setQueryData<InvitationListResponse>(queryKeys.invitations, (old) =>
@@ -405,6 +418,11 @@ function InvitationsCard({
       {notice ? (
         <Notice tone="success" role="status">
           {notice}
+        </Notice>
+      ) : null}
+      {gone ? (
+        <Notice tone="warning" role="alert">
+          {gone}
         </Notice>
       ) : null}
       {invitations.length === 0 ? (

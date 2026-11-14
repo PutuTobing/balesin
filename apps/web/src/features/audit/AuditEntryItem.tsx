@@ -26,7 +26,8 @@ export function AuditEntryItem({ entry }: { entry: AuditLogEntry }) {
   const metadata = Object.entries(entry.metadata);
   const known = label !== entry.action;
   return (
-    <li className={styles.entry}>
+    // tabIndex -1: tujuan fokus setelah "Muat lagi" (entri pertama yang baru dimuat).
+    <li className={styles.entry} tabIndex={-1}>
       <div className={styles.cellTime}>
         <span className="sr-only">{copy.columns.time}: </span>
         <time dateTime={entry.createdAt}>{formatDateTime(entry.createdAt)}</time>

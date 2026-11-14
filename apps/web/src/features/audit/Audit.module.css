@@ -124,6 +124,11 @@
   grid-template-rows: auto minmax(var(--space-24), auto);
 }
 
+/* Entri difokus terprogram setelah "Muat lagi": cincin di dalam kartu, tidak terpotong. */
+.entry:focus-visible {
+  outline-offset: -2px;
+}
+
 .listHead {
   border-bottom: 1px solid var(--line);
   background: var(--surface-2);

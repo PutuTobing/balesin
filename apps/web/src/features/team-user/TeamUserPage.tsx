@@ -183,7 +183,7 @@ function TeamUserScreen({ user }: { user: TeamUser }) {
       case 'reset2fa': {
         const response = await endpoints.team.resetTwoFactor(user.id, identity);
         setAction(null);
-        applied(response, copy.done.twoFactorReset(name));
+        applied(response, copy.done.twoFactorReset(name, isTwoFactorRequired(response.user.role)));
         return;
       }
       case 'reopen': {
@@ -609,6 +609,8 @@ function UserSessionsCard({ user, onRequest }: { user: TeamUser; onRequest: OnRe
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** Sesi yang ternyata sudah berakhir (404): barisnya hilang, pesannya di kartu. */
+  const [gone, setGone] = useState<string | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const revokeAllRef = useRef<HTMLButtonElement>(null);
   const [focusHeading, setFocusHeading] = useState(0);
@@ -621,6 +623,7 @@ function UserSessionsCard({ user, onRequest }: { user: TeamUser; onRequest: OnRe
     setBusyId(session.id);
     setRowError(null);
     setNotice(null);
+    setGone(null);
     try {
       await endpoints.team.revokeSession(user.id, session.id);
       queryClient.setQueryData<ActiveSessionListResponse>(queryKeys.userSessions(user.id), (old) =>
@@ -631,10 +634,14 @@ function UserSessionsCard({ user, onRequest }: { user: TeamUser; onRequest: OnRe
       setNotice(t.sessions.revoked(session.device));
       setFocusHeading((tick) => tick + 1);
     } catch (caught) {
-      setRowError({ id: session.id, message: isApiError(caught) ? caught.message : t.api.network });
       if (isApiError(caught) && caught.status === 404) {
+        // Barisnya akan hilang: pesan di kartu, fokus ke judul kartu (bukan <body>).
         void queryClient.invalidateQueries({ queryKey: queryKeys.userSessions(user.id) });
+        setGone(caught.message);
+        setFocusHeading((tick) => tick + 1);
+        return;
       }
+      setRowError({ id: session.id, message: isApiError(caught) ? caught.message : t.api.network });
     } finally {
       setBusyId(null);
     }
@@ -654,6 +661,11 @@ function UserSessionsCard({ user, onRequest }: { user: TeamUser; onRequest: OnRe
           {notice}
         </Notice>
       ) : null}
+      {gone ? (
+        <Notice tone="warning" role="alert">
+          {gone}
+        </Notice>
+      ) : null}
       {list ? (
         list.length > 0 ? (
           <>
@@ -670,6 +682,7 @@ function UserSessionsCard({ user, onRequest }: { user: TeamUser; onRequest: OnRe
                 disabled={busyId !== null}
                 onClick={() => {
                   setNotice(null);
+                  setGone(null);
                   onRequest({ kind: 'revokeAll', trigger: revokeAllRef });
                 }}
               >
@@ -726,6 +739,18 @@ function AccessCard({ onRequest }: { onRequest: OnRequest }) {
 function ActivityCard({ user }: { user: TeamUser }) {
   const activity = useInfiniteQuery(userAuditQuery(user.id));
   const entries = activity.data?.pages.flatMap((page) => page.entries) ?? [];
+  const listRef = useRef<HTMLOListElement>(null);
+
+  /** "Muat lagi": fokus ke entri pertama yang baru (tombolnya hilang di halaman terakhir). */
+  const loadMore = async () => {
+    const firstNew = entries.length;
+    const result = await activity.fetchNextPage();
+    if (result.isError) return;
+    requestAnimationFrame(() => {
+      const item = listRef.current?.children.item(firstNew);
+      if (item instanceof HTMLElement) item.focus();
+    });
+  };
   return (
     <section className={styles.card} aria-labelledby="anggota-aktivitas">
       <div className={styles.cardHead}>
@@ -736,9 +761,9 @@ function ActivityCard({ user }: { user: TeamUser }) {
       </div>
       {activity.data ? (
         entries.length > 0 ? (
-          <ol className={styles.activity} aria-label={copy.activity.title}>
+          <ol ref={listRef} className={styles.activity} aria-label={copy.activity.title}>
             {entries.map((entry) => (
-              <li key={entry.id} className={styles.activityItem}>
+              <li key={entry.id} className={styles.activityItem} tabIndex={-1}>
                 <span className={styles.activityAction}>{auditActionLabel(entry.action)}</span>
                 <span className={styles.activityMeta}>
                   {[
@@ -768,10 +793,7 @@ function ActivityCard({ user }: { user: TeamUser }) {
       {activity.data && entries.length > 0 ? (
         <div className={styles.activityFooter}>
           {activity.hasNextPage ? (
-            <Button
-              onClick={() => void activity.fetchNextPage()}
-              loading={activity.isFetchingNextPage}
-            >
+            <Button onClick={() => void loadMore()} loading={activity.isFetchingNextPage}>
               {activity.isFetchingNextPage ? t.audit.loadingMore : t.audit.loadMore}
             </Button>
           ) : (

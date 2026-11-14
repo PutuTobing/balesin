@@ -152,6 +152,25 @@ describe('Pengaturan → Audit log', () => {
     expect(view.router.state.location.search).toMatchObject({ action: 'user.disabled' });
   });
 
+  it('"Muat lagi" halaman terakhir: tombolnya hilang, fokus ke entri pertama yang baru', async () => {
+    await openAudit('/pengaturan/audit', {
+      [`GET ${API_ROUTES.audit.list}`]: (request) =>
+        request.query.get('cursor')
+          ? json({
+              entries: [fakeAuditEntry({ id: '9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c03' })],
+              nextCursor: null,
+            })
+          : json({ entries: [fakeAuditEntry()], nextCursor: 'kursor-2' }),
+    });
+    const list = await screen.findByRole('list', { name: copy.listLabel });
+    const more = screen.getByRole('button', { name: copy.loadMore });
+    more.focus();
+    fireEvent.click(more);
+    await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(2));
+    expect(screen.queryByRole('button', { name: copy.loadMore })).toBeNull();
+    await waitFor(() => expect(within(list).getAllByRole('listitem')[1]).toHaveFocus());
+  });
+
   it('kosong tanpa saringan vs tidak ada yang cocok (dengan tombol hapus saringan)', async () => {
     const view = await openAudit('/pengaturan/audit?action=auth.logout');
     expect(await screen.findByRole('heading', { name: copy.noMatchTitle })).toBeVisible();
@@ -166,6 +185,9 @@ describe('Pengaturan → Audit log', () => {
     expect(screen.getByText(copy.filters.rangeError)).toBeVisible();
     expect(screen.getByLabelText(copy.filters.to)).toHaveAttribute('aria-invalid', 'true');
     expect(auditRequests(view)[0]?.query.get('from')).toBeNull();
+    // Di luar panel saringan (yang di HP bisa tertutup) + ekspor ditahan.
+    expect(screen.getByRole('alert')).toHaveTextContent(copy.filters.rangeSummary);
+    expect(screen.getByRole('button', { name: copy.export })).toBeDisabled();
   });
 
   it('gagal memuat (429): pesan server dengan tombol coba lagi', async () => {

@@ -4,8 +4,9 @@ import { defaultBrand } from '../../brand/brand';
 import { t } from '../../i18n/id';
 import { media } from '../../lib/media';
 import { setMediaQuery } from '../../test/match-media';
+import { fakeSession } from '../../test/fake-api';
 import { renderApp } from '../../test/render-app';
-import { navActiveState, navItems } from './nav-items';
+import { allowedNavItems, navActiveState, navItems } from './nav-items';
 
 const product = defaultBrand.productName;
 
@@ -134,6 +135,43 @@ describe('navigasi kerangka aplikasi', () => {
 
     expect(await screen.findByRole('heading', { level: 1, name: t.nav.settings })).toBeVisible();
     expect(router.state.location.pathname).toBe('/pengaturan');
+  });
+});
+
+describe('menu mengikuti izin peran (permissions dari sesi)', () => {
+  it('CS: tanpa Broadcast di rail; Inbox, Kontak, Tiket, Laporan, Pengaturan tetap', async () => {
+    await renderApp('/inbox', { session: fakeSession('cs') });
+    await screen.findByRole('heading', { level: 1, name: t.inbox.title });
+    expect(mainNav().queryByRole('link', { name: t.nav.broadcast })).toBeNull();
+    for (const label of [
+      t.nav.inbox,
+      t.nav.contacts,
+      t.nav.tickets,
+      t.nav.reports,
+      t.nav.settings,
+    ]) {
+      expect(navLink(label)).toBeVisible();
+    }
+  });
+
+  it('Teknisi di HP: navigasi bawah dan layar Lainnya tanpa Broadcast', async () => {
+    act(() => setMediaQuery(media.hp, true));
+    await renderApp('/lainnya', { session: fakeSession('teknisi') });
+    const menu = within(await screen.findByRole('navigation', { name: t.more.menuLabel }));
+    expect(mainNav().queryByRole('link', { name: t.nav.broadcast })).toBeNull();
+    expect(navLink(t.nav.inbox)).toBeVisible();
+    expect(navLink(t.nav.contacts)).toBeVisible();
+    expect(menu.getByRole('link', { name: t.nav.tickets })).toBeVisible();
+    expect(menu.getByRole('link', { name: t.nav.reports })).toBeVisible();
+  });
+
+  it('item tanpa izin yang cocok disembunyikan; tanpa izin apa pun hanya Pengaturan & Lainnya', () => {
+    const ids = (permissions: Parameters<typeof allowedNavItems>[1]) =>
+      allowedNavItems(navItems, permissions).map((item) => item.id);
+    expect(ids(fakeSession('owner').permissions ?? [])).toEqual(navItems.map((item) => item.id));
+    expect(ids(fakeSession('supervisor').permissions ?? [])).toContain('broadcast');
+    expect(ids(fakeSession('cs').permissions ?? [])).not.toContain('broadcast');
+    expect(ids([])).toEqual(['more', 'settings']);
   });
 });
 

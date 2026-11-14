@@ -377,15 +377,15 @@ describe('Pengaturan → Tim → detail anggota', () => {
 });
 
 /**
- * BUG TERBUKA (QA butir 6, dikunci `it.fails`): pesan berhasil "Atur ulang 2FA" selalu berbunyi
- * "Ia perlu mendaftarkan aplikasi autentikator lagi saat masuk", juga untuk CS/Teknisi yang 2FA-nya
- * TIDAK wajib — server tidak memintanya mendaftar lagi (masuk berikutnya cukup password; E2E
- * `tim-kunci.spec.ts`). Teks: `t.teamUser.done.twoFactorReset` (`apps/web/src/i18n/id.ts`),
- * dipakai `TeamUserPage.tsx`. Hal yang sama di email ke Owner (`renderAdminAccountNoticeEmail`,
- * `packages/core/src/mail/templates.ts`). Setelah diperbaiki, hapus `.fails`.
+ * Bug QA butir 6 (sudah diperbaiki, dijaga tes ini): pesan berhasil "Atur ulang 2FA" dulu selalu
+ * berbunyi "Ia perlu mendaftarkan aplikasi autentikator lagi saat masuk", juga untuk CS/Teknisi
+ * yang 2FA-nya TIDAK wajib — server tidak memintanya mendaftar lagi (masuk berikutnya cukup
+ * password; E2E `tim-kunci.spec.ts`). Teks: `t.teamUser.done.twoFactorReset(name, required)`
+ * (`apps/web/src/i18n/id.ts`), dipakai `TeamUserPage.tsx`. Email serupa ke Owner
+ * (`renderAdminAccountNoticeEmail`, `packages/core/src/mail/templates.ts`) diurus backend.
  */
 describe('atur ulang 2FA peran yang tidak wajib', () => {
-  it.fails('pesan berhasil tidak menjanjikan pendaftaran wajib saat masuk berikutnya', async () => {
+  it('pesan berhasil tidak menjanjikan pendaftaran wajib saat masuk berikutnya', async () => {
     const teknisi = fakeTeamUser({
       role: 'teknisi',
       twoFactor: {
