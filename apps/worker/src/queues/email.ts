@@ -51,6 +51,8 @@ import {
   type Database,
 } from '@balesin/db';
 import {
+  AUDIT_ACTIONS,
+  BUSINESS_PROFILE_FIELDS,
   CHANNEL_CHANGE_AUDIT_ACTIONS,
   DEFAULT_PRODUCT_NAME,
   LOGIN_LOCK_MINUTES,
@@ -62,6 +64,7 @@ import {
   invitationIssuerAuthorized,
   isTwoFactorRequired,
   userRoleSchema,
+  type BusinessProfileField,
   type EmailDeliveryStatus,
   type UserRole,
 } from '@balesin/shared';
@@ -905,6 +908,14 @@ async function sendChannelChanged(job: EmailJob, deps: EmailJobDeps): Promise<Em
   ) {
     throw new UnrecoverableError('Baris audit bukan perubahan channel yang diberitahukan');
   }
+  // Profil bisnis: audit dicatat SEBELUM dikirim ke Meta. Bila Meta menolaknya, tidak ada yang
+  // berubah — tidak ada yang perlu dilaporkan.
+  if (
+    change.data === 'business_profile_changed' &&
+    (await profileUpdateFailed(organizationId, auditLogId, deps))
+  ) {
+    return { status: 'skipped', reason: 'no_longer_valid' };
+  }
 
   const recipient = await findActiveUser(organizationId, recipientUserId, deps);
   const branding = await loadOrganizationBrand(deps.db, organizationId);
@@ -936,6 +947,9 @@ async function sendChannelChanged(job: EmailJob, deps: EmailJobDeps): Promise<Em
     },
     changedFields,
     previousPhoneNumberId: text(audit.metadata.previousPhoneNumberId),
+    ...(change.data === 'business_profile_changed'
+      ? { profileChanges: profileChangesOf(audit.metadata) }
+      : {}),
     occurredAt: audit.createdAt,
     origin: { ip: audit.ip, userAgent: audit.userAgent },
   });
@@ -945,6 +959,48 @@ async function sendChannelChanged(job: EmailJob, deps: EmailJobDeps): Promise<Em
     job,
     deps,
   );
+}
+
+/** Ada baris audit "Meta menolak perubahan profil bisnis" untuk perubahan `auditLogId`. */
+async function profileUpdateFailed(
+  organizationId: string,
+  auditLogId: string,
+  deps: EmailJobDeps,
+): Promise<boolean> {
+  const [row] = await deps.db
+    .select({ id: auditLogs.id })
+    .from(auditLogs)
+    .where(
+      and(
+        eq(auditLogs.organizationId, organizationId),
+        eq(auditLogs.action, AUDIT_ACTIONS.channelBusinessProfileUpdateFailed),
+        sql`${auditLogs.metadata} ->> 'auditLogId' = ${auditLogId}`,
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
+}
+
+/** Isian profil bisnis yang diubah + nilai lama → baru dari metadata audit (data publik). */
+function profileChangesOf(
+  metadata: Record<string, unknown>,
+): Array<{ field: BusinessProfileField; previous: string | null; next: string }> {
+  const record = (value: unknown): Record<string, unknown> | null =>
+    typeof value === 'object' && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  const previous = record(metadata.previous);
+  const next = record(metadata.next) ?? {};
+  const changed = Array.isArray(metadata.changedFields) ? metadata.changedFields : [];
+  return BUSINESS_PROFILE_FIELDS.filter((field) => changed.includes(field)).map((field) => {
+    const before = previous?.[field];
+    const after = next[field];
+    return {
+      field,
+      previous: typeof before === 'string' ? before : null,
+      next: typeof after === 'string' ? after : '',
+    };
+  });
 }
 
 const PROCESSORS: Record<string, (job: EmailJob, deps: EmailJobDeps) => Promise<EmailJobResult>> = {

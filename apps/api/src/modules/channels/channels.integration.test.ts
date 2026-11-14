@@ -10,7 +10,7 @@
  * channel diubah oleh selain Owner.
  */
 import { appSecretProof, createSecretBox, Secret, WHATSAPP_SECRET_PURPOSES } from '@balesin/core';
-import { auditLogs, channels } from '@balesin/db';
+import { auditLogs, channels, newId } from '@balesin/db';
 import { insertOrganization, insertUser } from '@balesin/db/testing';
 import {
   API_ROUTES,
@@ -23,6 +23,7 @@ import {
   createChannelResponseSchema,
   errorEnvelopeSchema,
   businessProfileResponseSchema,
+  MAX_CHANNELS_PER_ORGANIZATION,
   securitySummaryResponseSchema,
   updateBusinessProfileResponseSchema,
   type ErrorEnvelope,
@@ -138,6 +139,12 @@ async function member(owner: SignedIn, role: UserRole): Promise<SignedIn> {
   });
   return login(harness.app, { email, password: PASSWORD });
 }
+
+/** Konfirmasi identitas anggota buatan `member` (password + kode 2FA yang didaftarkan helper). */
+const memberConfirmation = async (signed: SignedIn) => ({
+  password: PASSWORD,
+  code: await freshTotpCode(signed.session.user.email),
+});
 
 const wizardBody = (overrides: Record<string, unknown> = {}) => ({
   type: 'whatsapp',
@@ -678,8 +685,9 @@ describe('profil bisnis', () => {
       websites: [],
       about: 'Layanan pelanggan',
     });
-    expect(fake.requests[0]).toMatchObject({ method: 'POST' });
-    expect(fake.requests[0]?.body).toEqual({
+    // Nilai lama dibaca dulu (untuk audit), lalu perubahan dikirim, lalu dibaca ulang.
+    expect(fake.requests.map((request) => request.method)).toEqual(['GET', 'POST', 'GET']);
+    expect(fake.requests[1]?.body).toEqual({
       messaging_product: 'whatsapp',
       description: 'Internet rumahan 😊\nBuka 08.00–17.00',
       email: 'cs@majujaya.test',
@@ -690,7 +698,20 @@ describe('profil bisnis', () => {
       .select()
       .from(auditLogs)
       .where(eq(auditLogs.action, 'channel.business_profile_updated'));
-    expect(audit?.metadata).toEqual({ changedFields: ['description', 'email', 'websites'] });
+    expect(audit?.metadata).toEqual({
+      changedFields: ['description', 'email', 'websites'],
+      previous: { description: '', email: '', websites: 'https://majujaya.test' },
+      next: {
+        description: 'Internet rumahan 😊\nBuka 08.00–17.00',
+        email: 'cs@majujaya.test',
+        websites: '',
+      },
+      name: 'CS Utama',
+      phoneNumberId: PHONE_ID,
+      change: 'business_profile_changed',
+      actorRole: 'owner',
+      ownersNotified: false,
+    });
   });
 
   it('400 untuk isian di luar aturan Meta; 502 dengan pesan Indonesia bila Meta menolak', async () => {
@@ -754,10 +775,28 @@ describe('penyalahgunaan & isolasi', () => {
     expect((await channelRow(channel.id)).name).toBe('CS Utama');
   });
 
-  it('Admin boleh mengelola channel (channels.manage)', async () => {
+  it('Admin boleh mengelola channel (channels.manage), tetapi menambah channel wajib konfirmasi identitas', async () => {
     const owner = await completeSetup(harness.app);
     const admin = await member(owner, 'admin');
-    const response = await send(admin, 'POST', routes.settings, wizardBody());
+    const unconfirmed = await send(admin, 'POST', routes.settings, wizardBody());
+    expect(unconfirmed.statusCode).toBe(400);
+    expect(errorOf(unconfirmed).details?.[0]?.field).toBe('confirmation.password');
+    const wrong = await send(
+      admin,
+      'POST',
+      routes.settings,
+      wizardBody({ confirmation: { password: 'bukan-password-admin-9', code: '000000' } }),
+    );
+    expect(wrong.statusCode).toBe(400);
+    expect(errorOf(wrong).details?.[0]?.field).toMatch(/^confirmation\./);
+    expect(await harness.db.select().from(channels)).toEqual([]);
+
+    const response = await send(
+      admin,
+      'POST',
+      routes.settings,
+      wizardBody({ confirmation: await memberConfirmation(admin) }),
+    );
     expect(response.statusCode, response.body).toBe(201);
   });
 
@@ -857,7 +896,7 @@ describe('pemberitahuan ke Owner bila channel diubah selain Owner', () => {
     return securitySummaryResponseSchema.parse(response.json());
   }
 
-  it('Admin: buat, ganti kredensial, buat ulang verify token, nonaktifkan, hapus → satu job per Owner aktif + warning di ringkasan', async () => {
+  it('Admin: buat, ganti kredensial, buat ulang verify token, nonaktifkan, aktifkan, hapus → satu job per Owner aktif + warning di ringkasan', async () => {
     const owner = await completeSetup(harness.app);
     const organizationId = owner.session.organization.id;
     const secondOwner = await insertUser(harness.db, organizationId, {
@@ -873,8 +912,8 @@ describe('pemberitahuan ke Owner bila channel diubah selain Owner', () => {
     });
     const { admin, confirm } = await signInAdmin(owner);
 
-    const { channel, webhook } = await createChannel(admin);
-    // Ganti nama saja dan mengaktifkan kembali TIDAK diberitahukan.
+    const { channel, webhook } = await createChannel(admin, { confirmation: await confirm() });
+    // Ganti nama saja TIDAK diberitahukan.
     const renamed = await send(admin, 'PATCH', path(routes.channel, channel.id), {
       name: 'CS Kedua',
     });
@@ -896,8 +935,8 @@ describe('pemberitahuan ke Owner bila channel diubah selain Owner', () => {
     const audits = await channelAudits();
     const auditById = new Map(audits.map((row) => [row.id, row]));
     const notices = harness.channelChangeNotices;
-    // 5 perubahan × 2 Owner aktif (Owner nonaktif tidak ikut).
-    expect(notices).toHaveLength(10);
+    // 6 perubahan × 2 Owner aktif (Owner nonaktif tidak ikut).
+    expect(notices).toHaveLength(12);
     expect(new Set(notices.map((notice) => notice.recipientUserId))).toEqual(
       new Set([owner.session.user.id, secondOwner.id]),
     );
@@ -915,7 +954,14 @@ describe('pemberitahuan ke Owner bila channel diubah selain Owner', () => {
       notices
         .filter((notice) => notice.recipientUserId === owner.session.user.id)
         .map((notice) => auditById.get(notice.auditLogId)?.metadata.change),
-    ).toEqual(['created', 'credentials_changed', 'verify_token_rotated', 'disabled', 'deleted']);
+    ).toEqual([
+      'created',
+      'credentials_changed',
+      'verify_token_rotated',
+      'disabled',
+      'enabled',
+      'deleted',
+    ]);
 
     const notified = audits.filter((row) => row.metadata.ownersNotified === true);
     expect(notified.map((row) => row.action).sort()).toEqual(
@@ -923,6 +969,7 @@ describe('pemberitahuan ke Owner bila channel diubah selain Owner', () => {
         'channel.created',
         'channel.deleted',
         'channel.disabled',
+        'channel.enabled',
         'channel.updated',
         'channel.webhook_verify_token_rotated',
       ].sort(),
@@ -936,13 +983,13 @@ describe('pemberitahuan ke Owner bila channel diubah selain Owner', () => {
       phoneNumberId: PHONE_ID_2,
     });
     const quiet = audits.filter((row) => row.metadata.ownersNotified !== true);
-    expect(quiet.map((row) => row.action).sort()).toEqual(['channel.enabled', 'channel.updated']);
+    expect(quiet.map((row) => row.action)).toEqual(['channel.updated']);
     for (const row of quiet) expect(row.metadata).not.toHaveProperty('change');
 
     const summary = await summaryOf(owner);
     const events = summary.events.filter((event) => event.kind === 'channel_changed');
-    expect(events).toHaveLength(5);
-    expect(summary.counts.channel_changed).toBe(5);
+    expect(events).toHaveLength(6);
+    expect(summary.counts.channel_changed).toBe(6);
     for (const event of events) {
       expect(event.severity).toBe('warning');
       expect(event.actor?.id).toBe(admin.session.user.id);
@@ -950,7 +997,14 @@ describe('pemberitahuan ke Owner bila channel diubah selain Owner', () => {
       expect(event.details.actorRole).toBe('admin');
     }
     expect(events.map((event) => event.details.change).sort()).toEqual(
-      ['created', 'credentials_changed', 'deleted', 'disabled', 'verify_token_rotated'].sort(),
+      [
+        'created',
+        'credentials_changed',
+        'deleted',
+        'disabled',
+        'enabled',
+        'verify_token_rotated',
+      ].sort(),
     );
     expect(
       events.find((event) => event.details.change === 'credentials_changed')?.details,
@@ -1002,7 +1056,7 @@ describe('pemberitahuan ke Owner bila channel diubah selain Owner', () => {
   it('pemberitahuan tidak bisa diantrekan: perubahan oleh Admin BATAL (503); oleh Owner tetap jalan', async () => {
     const owner = await completeSetup(harness.app);
     const { channel } = await createChannel(owner);
-    const { admin } = await signInAdmin(owner);
+    const { admin, confirm } = await signInAdmin(owner);
     await harness.rebuild({
       ...DEFAULT_OPTIONS(),
       notifier: {
@@ -1020,10 +1074,18 @@ describe('pemberitahuan ke Owner bila channel diubah selain Owner', () => {
         admin,
         'POST',
         routes.settings,
-        wizardBody({ phoneNumberId: PHONE_ID_2 }),
+        wizardBody({ phoneNumberId: PHONE_ID_2, confirmation: await confirm() }),
       );
       expect(created.statusCode).toBe(503);
       expect(errorOf(created).message).toContain('pemberitahuan ke Owner');
+      expect((await send(admin, 'POST', path(routes.enable, channel.id))).statusCode).toBe(200);
+      // Profil bisnis: pemberitahuan gagal diantre → perubahan TIDAK dikirim ke Meta.
+      fake.requests.length = 0;
+      const profile = await send(admin, 'PUT', path(routes.businessProfile, channel.id), {
+        about: 'Diambil alih',
+      });
+      expect(profile.statusCode).toBe(503);
+      expect(fake.requests.map((request) => request.method)).toEqual(['GET']);
       expect((await send(admin, 'POST', path(routes.disable, channel.id))).statusCode).toBe(503);
       expect(
         (await send(admin, 'POST', path(routes.rotateVerifyToken, channel.id))).statusCode,
@@ -1043,5 +1105,160 @@ describe('pemberitahuan ke Owner bila channel diubah selain Owner', () => {
     } finally {
       await rebuildDefault();
     }
+  });
+});
+
+describe('profil bisnis oleh selain Owner (review S1)', () => {
+  const MALICIOUS_SITE = 'https://majujaya-bayar.example';
+
+  async function businessAudits() {
+    return harness.db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.action, 'channel.business_profile_updated'));
+  }
+
+  it('website/email oleh Admin wajib konfirmasi; tanpa itu 400 dan Meta tidak diubah', async () => {
+    const owner = await completeSetup(harness.app);
+    const { channel } = await createChannel(owner);
+    const admin = await member(owner, 'admin');
+    fake.requests.length = 0;
+
+    for (const body of [
+      { websites: [MALICIOUS_SITE] },
+      { email: 'tagihan@majujaya-bayar.example' },
+      { websites: [] },
+      {
+        websites: [MALICIOUS_SITE],
+        confirmation: { password: 'bukan-password-admin-9', code: '000000' },
+      },
+    ]) {
+      const response = await send(admin, 'PUT', path(routes.businessProfile, channel.id), body);
+      expect(response.statusCode, JSON.stringify(body)).toBe(400);
+      expect(errorOf(response).details?.[0]?.field).toMatch(/^confirmation\./);
+    }
+    expect(fake.requests.filter((request) => request.method === 'POST')).toEqual([]);
+    expect(await businessAudits()).toEqual([]);
+    expect(harness.channelChangeNotices).toEqual([]);
+
+    // Owner tidak perlu konfirmasi dan tidak memberi tahu dirinya sendiri.
+    const byOwner = await send(owner, 'PUT', path(routes.businessProfile, channel.id), {
+      websites: ['https://majujaya.co.id'],
+    });
+    expect(byOwner.statusCode, byOwner.body).toBe(200);
+    expect(harness.channelChangeNotices).toEqual([]);
+  });
+
+  it('Admin mengubah profil: audit nilai lama + baru, satu job per Owner, warning business_profile_changed', async () => {
+    const owner = await completeSetup(harness.app);
+    const { channel } = await createChannel(owner);
+    const admin = await member(owner, 'admin');
+
+    // Deskripsi saja: tanpa konfirmasi, tetapi tetap diberitahukan.
+    const described = await send(admin, 'PUT', path(routes.businessProfile, channel.id), {
+      description: 'Bayar tagihan lewat tautan di profil',
+    });
+    expect(described.statusCode, described.body).toBe(200);
+    const sited = await send(admin, 'PUT', path(routes.businessProfile, channel.id), {
+      websites: [MALICIOUS_SITE],
+      confirmation: await memberConfirmation(admin),
+    });
+    expect(sited.statusCode, sited.body).toBe(200);
+
+    const audits = await businessAudits();
+    expect(audits).toHaveLength(2);
+    const siteAudit = audits.find((row) =>
+      (row.metadata.changedFields as string[]).includes('websites'),
+    );
+    expect(siteAudit?.metadata).toMatchObject({
+      changedFields: ['websites'],
+      previous: { websites: 'https://majujaya.test' },
+      next: { websites: MALICIOUS_SITE },
+      change: 'business_profile_changed',
+      actorRole: 'admin',
+      ownersNotified: true,
+      name: 'CS Utama',
+    });
+    expect(harness.channelChangeNotices.map((notice) => notice.auditLogId).sort()).toEqual(
+      audits.map((row) => row.id).sort(),
+    );
+    expect(
+      harness.channelChangeNotices.every(
+        (notice) => notice.recipientUserId === owner.session.user.id,
+      ),
+    ).toBe(true);
+
+    const summaryResponse = await send(owner, 'GET', API_ROUTES.audit.securitySummary);
+    const summary = securitySummaryResponseSchema.parse(summaryResponse.json());
+    const events = summary.events.filter((event) => event.kind === 'business_profile_changed');
+    expect(events).toHaveLength(2);
+    expect(summary.counts.business_profile_changed).toBe(2);
+    expect(summary.counts.channel_changed).toBe(0);
+    for (const event of events) {
+      expect(event).toMatchObject({ severity: 'warning', actor: { id: admin.session.user.id } });
+    }
+  });
+
+  it('Meta menolak perubahan: 502, baris audit penolakan merujuk perubahan yang batal', async () => {
+    const owner = await completeSetup(harness.app);
+    const { channel } = await createChannel(owner);
+    const admin = await member(owner, 'admin');
+    fake.failNext(`/${PHONE_ID}/whatsapp_business_profile`, {
+      status: 400,
+      body: metaErrorBody(100, 'Invalid parameter'),
+      method: 'POST',
+    });
+
+    const response = await send(admin, 'PUT', path(routes.businessProfile, channel.id), {
+      about: 'Diambil alih',
+    });
+    expect(response.statusCode).toBe(502);
+    expect(errorOf(response).code).toBe('META_REQUEST_FAILED');
+
+    const [changed] = await businessAudits();
+    const failed = await harness.db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.action, 'channel.business_profile_update_failed'));
+    expect(failed).toHaveLength(1);
+    expect(failed[0]?.metadata).toMatchObject({
+      auditLogId: changed?.id,
+      kind: 'invalid_parameter',
+    });
+    // Job tetap ada; worker melewatinya karena baris penolakan (lihat tes worker).
+    expect(harness.channelChangeNotices.map((notice) => notice.auditLogId)).toEqual([changed?.id]);
+  });
+});
+
+describe('batas jumlah channel', () => {
+  it('pembuatan bersamaan tidak melewati batas (kunci per organisasi)', async () => {
+    const owner = await completeSetup(harness.app);
+    const organizationId = owner.session.organization.id;
+    const box = createSecretBox(new Secret(TEST_MASTER_KEY));
+    // 19 channel langsung di database (lebih cepat dari wizard), lalu 3 pembuatan bersamaan.
+    for (let index = 0; index < MAX_CHANNELS_PER_ORGANIZATION - 1; index += 1) {
+      const id = newId();
+      const seal = (purpose: string, value: string) =>
+        box.encrypt(value, { organizationId, purpose, subjectId: id });
+      await harness.db.insert(channels).values({
+        id,
+        organizationId,
+        type: 'whatsapp',
+        name: `CS ${index}`,
+        waPhoneNumberId: `9${String(index).padStart(14, '0')}`,
+        waBusinessAccountId: WABA_ID,
+        waAccessTokenEncrypted: seal(WHATSAPP_SECRET_PURPOSES.accessToken, TOKEN),
+        waAppSecretEncrypted: seal(WHATSAPP_SECRET_PURPOSES.appSecret, APP_SECRET),
+        waVerifyTokenEncrypted: seal(WHATSAPP_SECRET_PURPOSES.verifyToken, 'verify'),
+        waVerifyTokenRotatedAt: new Date(),
+      });
+    }
+    const responses = await Promise.all(
+      ['106540352240001', '106540352240002', '106540352240003'].map((phoneNumberId) =>
+        send(owner, 'POST', routes.settings, wizardBody({ phoneNumberId })),
+      ),
+    );
+    expect(responses.map((response) => response.statusCode).sort()).toEqual([201, 409, 409]);
+    expect(await harness.db.select().from(channels)).toHaveLength(MAX_CHANNELS_PER_ORGANIZATION);
   });
 });

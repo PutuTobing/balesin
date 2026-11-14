@@ -354,6 +354,98 @@ describe('createMetaGraphClient', () => {
     expect(long.calls.length).toBeGreaterThan(1);
   });
 
+  it('masa dingin: per kelompok operasi, dan paling lama 60 menit walau header Meta menyebut lebih', async () => {
+    let clock = 5_000_000;
+    const { client, calls } = clientWith(
+      [
+        json(400, metaError(80007), { 'retry-after': '999999' }),
+        json(200, { id: '1' }),
+        json(200, { id: '1' }),
+      ],
+      { now: () => clock },
+    );
+    const request = { operation: 'tes', method: 'GET' as const, path: ['1'], schema: okSchema };
+    await expect(client.request(credentials, request)).rejects.toMatchObject({
+      kind: 'rate_limited',
+    });
+    // Kelompok pengiriman pesan tidak ikut didinginkan oleh batas laju pengelolaan.
+    await expect(
+      client.request(credentials, { ...request, rateLimitGroup: 'messaging' }),
+    ).resolves.toEqual({ id: '1' });
+    // Masih didinginkan (tanpa memanggil Meta), dengan sisa waktu dibatasi 60 menit.
+    await expect(client.request(credentials, request)).rejects.toMatchObject({
+      kind: 'rate_limited',
+      retryAfterSeconds: 3600,
+    });
+    expect(calls).toHaveLength(2);
+    clock += 60 * 60 * 1000 + 1;
+    await expect(client.request(credentials, request)).resolves.toEqual({ id: '1' });
+    expect(calls).toHaveLength(3);
+  });
+
+  it('tenggat total (signal): tidak ada ulangan setelah tenggat lewat; tenggat yang sudah lewat tidak memanggil Meta', async () => {
+    const controller = new AbortController();
+    const { client, calls } = clientWith(
+      [json(503, metaError(2)), json(503, metaError(2)), json(200, { id: '1' })],
+      {
+        sleep: () => {
+          controller.abort();
+          return Promise.resolve();
+        },
+      },
+    );
+    const request = {
+      operation: 'tes',
+      method: 'GET' as const,
+      path: ['1'],
+      schema: okSchema,
+      signal: controller.signal,
+    };
+    await expect(client.request(credentials, request)).rejects.toMatchObject({
+      kind: 'network_error',
+      attempts: 1,
+    });
+    expect(calls).toHaveLength(1);
+    await expect(client.request(credentials, request)).rejects.toMatchObject({
+      kind: 'network_error',
+      attempts: 0,
+    });
+    expect(calls).toHaveLength(1);
+
+    // Signal ikut diteruskan ke fetch (percobaan yang berjalan ikut dihentikan).
+    const live = new AbortController();
+    const forwarded = clientWith([json(200, { id: '1' })]);
+    await forwarded.client.request(credentials, { ...request, signal: live.signal });
+    const signal = forwarded.calls[0]?.init.signal;
+    expect(signal?.aborted).toBe(false);
+    live.abort();
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it('base URL tiruan hanya loopback dan hanya development/test (penjaga di klien, R6)', () => {
+    const make = (baseUrl: string, nodeEnv: string | undefined) =>
+      createMetaGraphClient({
+        version: 'v26.0',
+        baseUrl,
+        environment: { NODE_ENV: nodeEnv },
+      });
+    expect(() => make('http://127.0.0.1:4010', 'test')).not.toThrow();
+    expect(() => make('http://localhost:4010', 'development')).not.toThrow();
+    expect(() => make('http://[::1]:4010', 'test')).not.toThrow();
+    for (const nodeEnv of ['production', 'staging', undefined]) {
+      expect(() => make('http://127.0.0.1:4010', nodeEnv)).toThrow(/development\/test/);
+    }
+    for (const host of [
+      'http://graph.penyerang.test',
+      'https://10.0.0.5',
+      'http://169.254.169.254',
+    ]) {
+      expect(() => make(host, 'test')).toThrow(/loopback/);
+    }
+    // Host resmi selalu boleh, di lingkungan apa pun.
+    expect(() => make('https://graph.facebook.com', 'production')).not.toThrow();
+  });
+
   it('redirect tidak diikuti; jawaban kebesaran / tidak sesuai skema = unexpected_response', async () => {
     const { client } = clientWith(
       [

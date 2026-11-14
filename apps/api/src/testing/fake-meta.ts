@@ -41,6 +41,8 @@ export interface FakeFailure {
   status: number;
   body: unknown;
   headers?: Record<string, string>;
+  /** Hanya untuk metode ini (mis. `POST`); permintaan metode lain tidak memakainya. */
+  method?: string;
 }
 
 export interface FakeMeta {
@@ -107,8 +109,11 @@ export async function startFakeMeta(): Promise<FakeMeta> {
         body,
       });
 
-      const queued = failures.get(path);
-      const failure = queued?.shift();
+      const queued = failures.get(path) ?? [];
+      const index = queued.findIndex(
+        (entry) => entry.method === undefined || entry.method === request.method,
+      );
+      const failure = index === -1 ? undefined : queued.splice(index, 1)[0];
       if (failure) return send(response, failure.status, failure.body, failure.headers);
 
       const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : '';

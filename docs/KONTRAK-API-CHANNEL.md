@@ -25,7 +25,7 @@ asal → 404 `NOT_FOUND` "Channel tidak ditemukan. Mungkin sudah dihapus."
 |---|---|---|
 | GET `/channels` | – | `channelSummaryListResponseSchema` `{channels: [{id, type, name, enabled, displayPhoneNumber}]}` |
 | GET `/settings/channels` | – | `channelSettingsListResponseSchema` `{channels: WhatsAppChannel[], canStoreSecrets, maxChannels}` |
-| POST `/settings/channels` | `createChannelRequestSchema` `{type:'whatsapp', name, phoneNumberId, wabaId, accessToken, appSecret}` | **201** `createChannelResponseSchema` `{channel, webhook}` |
+| POST `/settings/channels` | `createChannelRequestSchema` `{type:'whatsapp', name, phoneNumberId, wabaId, accessToken, appSecret, confirmation?}` (`confirmation` wajib untuk selain Owner) | **201** `createChannelResponseSchema` `{channel, webhook}` |
 | GET `/settings/channels/:channelId` | – | `channelResponseSchema` `{channel}` |
 | PATCH `/settings/channels/:channelId` | `updateChannelRequestSchema` (isian opsional + `confirmation`) | `{channel}` |
 | DELETE `/settings/channels/:channelId` | `deleteChannelRequestSchema` `{password, code}` | `{status:'deleted'}` |
@@ -75,6 +75,15 @@ Teks tiap langkah dari `SETUP-META.md`. Server tidak menyimpan langkah wizard �
 5. **Langkah 6 — App Secret**: isian *App Secret* (tipe password). Lalu **simpan**:
    `POST /settings/channels`. Error 400 dipetakan ke isian lewat `details[].field` (`name`,
    `phoneNumberId`, `wabaId`, `accessToken`, `appSecret`).
+   - **Selain Owner (Admin) wajib konfirmasi identitas** di langkah simpan: kirim
+     `confirmation: { password, code }` (password + kode autentikator/kode cadangan pelaku), sama
+     seperti ganti kredensial. Tanpa itu → 400 `details[0].field = "confirmation.password"`; salah →
+     400 `confirmation.password` / `confirmation.code`; 429 setelah 5 salah. Owner tidak perlu (isian
+     boleh tidak ditampilkan untuk Owner; kalau dikirim, diabaikan).
+   - Nama channel (dan semua teks satu baris lain) menolak karakter tak terlihat: kendali C0/C1,
+     pemisah baris Unicode, pengubah arah (U+202E, U+2066–U+2069), lebar-nol (U+200B, U+2060), BOM.
+     ZWJ untuk emoji tetap boleh. Pesan: "Tidak boleh memuat baris baru atau karakter khusus tak
+     terlihat."
 6. **Langkah 7 — Pasang webhook**: tampilkan `webhook.callbackUrl` dan `webhook.verifyToken` dari
    respons 201 (atau `GET …/webhook`) masing-masing dengan tombol **Salin**, plus daftar
    `webhook.subscribeFields` (`messages`, `message_template_status_update`, `account_update`) untuk
@@ -118,6 +127,8 @@ Server memakai kredensial TERSIMPAN (tidak menerima isian form), memanggil:
 
 Error HTTP: 404 (channel tidak ada), 429 setelah **10 tes per 5 menit per pengguna** ("Terlalu banyak
 tes koneksi…"). Hasil yang selesai setelah kredensial diganti di tengah jalan tidak mengubah status.
+Satu tes paling lama **±25 detik** (tenggat total semua panggilan Meta-nya); bila Meta terlalu lambat,
+hasilnya `network_error`. Tampilkan indikator proses selama itu.
 
 ## Ubah channel (`PATCH`)
 
@@ -135,7 +146,8 @@ tes koneksi…"). Hasil yang selesai setelah kredensial diganti di tengah jalan 
 
 ## Nonaktifkan / hapus
 
-- `disable` / `enable`: tanpa konfirmasi, tercatat di audit. Idempoten.
+- `disable` / `enable`: tanpa konfirmasi, tercatat di audit. Idempoten. Keduanya diberitahukan ke Owner
+  bila pelakunya selain Owner (lihat "Pemberitahuan ke Owner").
 - `DELETE` dengan body `{password, code}` (konfirmasi identitas, error sama dengan di atas tetapi field
   `password`/`code` tanpa awalan). Hapus = kredensial **dimusnahkan** dari database (token, App Secret,
   verify token dikosongkan), channel hilang dari semua daftar. Nomor yang sama boleh ditambahkan lagi.
@@ -155,6 +167,13 @@ tes koneksi…"). Hasil yang selesai setelah kredensial diganti di tengah jalan 
 - **GET** wajib header `X-CSRF-Token` (rute ini memakai jatah batas laju dan memanggil Meta, jadi tidak
   boleh terpicu tautan dari situs lain) — panggil lewat `fetch`, bukan membuka URL.
 - `profile`: `{about, address, description, email, websites[], vertical}`; isian kosong = `null`/`[]`.
+- **PUT oleh selain Owner yang mengubah `websites` atau `email`** (termasuk mengosongkannya) wajib
+  `confirmation: { password, code }` di body yang sama (`BUSINESS_PROFILE_CONFIRMED_FIELDS`): tanpa itu →
+  400 `confirmation.password`, salah → 400 `confirmation.password`/`confirmation.code`, 429 setelah 5
+  salah. Isian lain (Info, alamat, deskripsi, kategori) tidak butuh konfirmasi. Owner tidak pernah
+  butuh. Profil bisnis tampil ke semua pelanggan, jadi tautan/email di sana bisa dipakai menipu.
+- Server membaca profil lama dulu (dicatat di audit), lalu mengirim perubahan, lalu membaca ulang.
+  Bila profil lama tidak bisa dibaca → 502 dan tidak ada yang diubah. Satu PUT paling lama ±25 detik.
 - **PUT**: kirim hanya isian yang diubah. `""`/`[]` = kosongkan di Meta. Batas (aturan Meta,
   `BUSINESS_PROFILE_LIMITS`): Info (`about`) 1–139 karakter satu baris dan tidak boleh dikosongkan;
   alamat ≤ 256 satu baris; deskripsi ≤ 512 (boleh berbaris); email ≤ 128; website ≤ 2, masing-masing
@@ -166,15 +185,16 @@ tes koneksi…"). Hasil yang selesai setelah kredensial diganti di tengah jalan 
   penyesuaian CSP/proxy) — tampilkan "Ubah foto profil lewat WhatsApp Manager" untuk sementara.
 - Error: 400 per isian; **502 `META_REQUEST_FAILED`** dengan `message` Indonesia yang menjelaskan
   penyebab + solusi (token kedaluwarsa, izin kurang, nomor tidak ditemukan, dsb.; `Retry-After` bila
-  Meta membatasi laju); 503 bila kredensial tak bisa dibuka; 429 setelah **30 permintaan profil per
-  5 menit per pengguna**.
+  Meta membatasi laju); 503 bila kredensial tak bisa dibuka atau (oleh selain Owner) pemberitahuan ke
+  Owner tidak bisa diantrekan; 429 setelah **30 permintaan profil per 5 menit per pengguna**.
 
 ## Pemberitahuan ke Owner (perubahan oleh selain Owner)
 
 Bila **Admin** (siapa pun selain Owner) melakukan salah satu perubahan di bawah, **semua Owner aktif**
 menerima email (nama produk dari branding; isi: pelaku + perannya, channel, apa yang berubah, waktu,
-IP, perangkat — tanpa nilai rahasia apa pun), dan kejadiannya muncul sebagai **`channel_changed`
-(`warning`)** di ringkasan keamanan (`GET /audit-logs/security-summary`, banner Owner/Admin).
+IP, perangkat — tanpa nilai rahasia apa pun), dan kejadiannya muncul di ringkasan keamanan
+(`GET /audit-logs/security-summary`, banner Owner/Admin) sebagai **`channel_changed` (`warning`)**,
+atau **`business_profile_changed` (`warning`)** untuk profil bisnis.
 
 | Perubahan (`change`) | Pemicu |
 |---|---|
@@ -182,10 +202,16 @@ IP, perangkat — tanpa nilai rahasia apa pun), dan kejadiannya muncul sebagai *
 | `credentials_changed` | `PATCH` yang benar-benar mengganti token, App Secret, Phone Number ID, atau WABA ID |
 | `verify_token_rotated` | `POST …/webhook/verify-token` |
 | `disabled` | `POST …/disable` (yang benar-benar mengubah status) |
+| `enabled` | `POST …/enable` (yang benar-benar mengubah status) |
 | `deleted` | `DELETE …/:channelId` |
+| `business_profile_changed` | `PUT …/business-profile` (isian apa pun). Email memuat nilai lama → baru sebagai teks yang "dijinakkan" (`https[:]//contoh[.]com`), bukan tautan. Kejadian ringkasan keamanan: `business_profile_changed` |
 
-- **Tidak** diberitahukan: ganti nama saja, `enable`, tes koneksi, profil bisnis, dan semua
-  perubahan oleh Owner (tetap tercatat di audit seperti biasa).
+- **Tidak** diberitahukan: ganti nama saja, tes koneksi, dan semua perubahan oleh Owner (tetap
+  tercatat di audit seperti biasa).
+- Profil bisnis: audit + antrean dicatat sebelum perubahan dikirim ke Meta; email baru dikirim ±30 detik
+  kemudian, dan dilewati bila Meta menolak perubahan itu (baris audit
+  `channel.business_profile_update_failed`). Kejadian di ringkasan keamanan tetap muncul (percobaan
+  oleh selain Owner).
 - Pemberitahuan diantrekan di dalam transaksi penyimpanan. Bila antrean tidak bisa dipakai, perubahan
   Admin **dibatalkan** → **503 `SERVICE_UNAVAILABLE`** "Perubahan channel belum disimpan karena
   pemberitahuan ke Owner tidak bisa dikirim sekarang. Coba lagi beberapa saat lagi." Tampilkan
@@ -195,22 +221,29 @@ IP, perangkat — tanpa nilai rahasia apa pun), dan kejadiannya muncul sebagai *
   `actorRole`, dan untuk `credentials_changed` juga `changedFields` (teks JSON nama isian, mis.
   `'["phoneNumberId","accessToken"]'`). `subject` selalu `null`; `actor` = pelakunya. Label:
   `SECURITY_EVENT_LABELS.channel_changed` ("Channel diubah oleh selain Owner"), label tiap perubahan
-  `CHANNEL_CHANGE_LABELS`, label isian `CHANNEL_CREDENTIAL_FIELD_LABELS`. Satu jenis kejadian
-  mencakup lima aksi audit (`CHANNEL_CHANGE_AUDIT_ACTIONS`), jadi tautan dari banner cukup memakai
-  saringan `targetType=channel` + tanggal.
-- `counts` di ringkasan keamanan kini selalu memuat kunci `channel_changed` (rekaman/mock respons
-  harus ikut memuatnya — skema `counts` lengkap per jenis).
+  `CHANNEL_CHANGE_LABELS`, label isian `CHANNEL_CREDENTIAL_FIELD_LABELS`. `channel_changed` mencakup
+  enam aksi audit (`CHANNEL_CHANGE_AUDIT_ACTIONS` selain profil bisnis), jadi tautan dari banner cukup
+  memakai saringan `targetType=channel` + tanggal.
+- `business_profile_changed`: `details` = `name`, `phoneNumberId`, `changedFields` (teks JSON, mis.
+  `'["websites"]'`, label `BUSINESS_PROFILE_FIELD_LABELS`), `actorRole`. Nilai lama/baru ada di Audit
+  log (aksi `channel.business_profile_updated`). Label `SECURITY_EVENT_LABELS.business_profile_changed`
+  ("Profil bisnis WhatsApp diubah oleh selain Owner").
+- `counts` di ringkasan keamanan selalu memuat kunci `channel_changed` dan `business_profile_changed`
+  (rekaman/mock respons harus ikut memuatnya — skema `counts` lengkap per jenis).
 
 ## Audit (tanpa rahasia)
 
 `channel.created`, `channel.updated` (`changedFields`: nama isian saja, mis. `["accessToken"]`),
 `channel.disabled`, `channel.enabled`, `channel.deleted`, `channel.tested` (`code`, `metaCode`,
 kualitas, status nomor), `channel.webhook_verify_token_rotated`, `channel.business_profile_updated`
-(`changedFields`). Target `channel` + ID channel. Saringan Audit log `targetType=channel`.
+(`changedFields`, `previous` dan `next` = nilai lama/baru isian yang diubah sebagai teks — website
+dipisah koma, kosong = `""`; data publik), `channel.business_profile_update_failed` (`auditLogId` =
+baris perubahan yang ditolak Meta, `kind`, `metaCode`). Target `channel` + ID channel. Saringan Audit
+log `targetType=channel`.
 
 Aksi yang bisa diberitahukan ke Owner (lihat bagian sebelumnya) juga memuat `actorRole`,
 `ownersNotified` (`true` = pelakunya selain Owner dan Owner diberi tahu), dan `change`. Ganti nama
-saja dan `channel.enabled` hanya memuat `actorRole`.
+saja hanya memuat `actorRole`.
 
 ## Rahasia & keamanan (ringkas)
 
@@ -219,6 +252,12 @@ saja dan `channel.enabled` hanya memuat `actorRole`.
   nilainya, URL berisi query, maupun `appsecret_proof`.
 - Klien Graph API terpusat (`@balesin/core` `createMetaGraphClient`): versi dari `META_GRAPH_VERSION`
   (bawaan `v26.0`), token di header `Authorization`, `appsecret_proof` di setiap panggilan, batas waktu
-  10 dtk, 3 percobaan dengan backoff untuk gangguan sementara, hormati batas laju Meta.
+  10 dtk per percobaan, 3 percobaan dengan backoff untuk gangguan sementara, tenggat total per operasi
+  (tes koneksi / profil bisnis ±25 dtk), hormati batas laju Meta. Masa dingin batas laju per kredensial
+  (hash token) + objek Meta + kelompok operasi (pengelolaan vs pengiriman pesan), paling lama 60 menit.
 - Host Meta tidak bisa diubah dari UI. `META_GRAPH_BASE_URL` (server Meta tiruan) hanya diterima di
-  development/test dan hanya alamat loopback; production menolak start.
+  development/test dan hanya alamat loopback; production menolak start. Penjaga yang sama ada di klien
+  Graph API sendiri (api maupun worker): host selain `graph.facebook.com` ditolak kecuali loopback +
+  NODE_ENV development/test.
+- Menambah channel dibatasi 20 per organisasi; pembuatan bersamaan diurutkan dengan kunci per
+  organisasi (tidak bisa melewati batas).

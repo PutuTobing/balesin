@@ -75,7 +75,13 @@ export const AUDIT_ACTIONS = {
   channelDeleted: 'channel.deleted',
   channelTested: 'channel.tested',
   channelVerifyTokenRotated: 'channel.webhook_verify_token_rotated',
+  /**
+   * Profil bisnis diubah: `changedFields`, nilai lama (`previous`, `null` bila tidak terbaca) dan baru
+   * (`next`) — data publik, bukan rahasia.
+   */
   channelBusinessProfileUpdated: 'channel.business_profile_updated',
+  /** Meta menolak perubahan profil bisnis yang sudah tercatat (`auditLogId` = baris yang batal). */
+  channelBusinessProfileUpdateFailed: 'channel.business_profile_update_failed',
 } as const;
 
 export type AuditActionKey = keyof typeof AUDIT_ACTIONS;
@@ -134,6 +140,7 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'channel.tested': 'Koneksi channel dites',
   'channel.webhook_verify_token_rotated': 'Verify token webhook dibuat ulang',
   'channel.business_profile_updated': 'Profil bisnis WhatsApp diubah',
+  'channel.business_profile_update_failed': 'Perubahan profil bisnis WhatsApp ditolak Meta',
 };
 
 /** Label untuk aksi yang mungkin belum dikenal klien (versi lama): tampilkan kodenya apa adanya. */
@@ -292,7 +299,10 @@ export const SECURITY_SUMMARY_MAX_EVENTS = 20;
  *  - `account_locked` — akun dikunci sementara karena gagal masuk/kode 2FA berulang;
  *  - `role_changed`, `user_disabled` — perubahan wewenang di tim;
  *  - `channel_changed` — channel dibuat, kredensial/ID-nya diganti, verify token dibuat ulang,
- *    dinonaktifkan, atau dihapus oleh SELAIN Owner (semua Owner juga diberi tahu lewat email).
+ *    dinonaktifkan, diaktifkan kembali, atau dihapus oleh SELAIN Owner (semua Owner juga diberi tahu
+ *    lewat email);
+ *  - `business_profile_changed` — profil bisnis WhatsApp (tampil ke semua pelanggan) diubah oleh
+ *    SELAIN Owner (semua Owner juga diberi tahu lewat email).
  */
 export const SECURITY_EVENT_KINDS = [
   'email_sender_changed',
@@ -303,6 +313,7 @@ export const SECURITY_EVENT_KINDS = [
   'role_changed',
   'user_disabled',
   'channel_changed',
+  'business_profile_changed',
 ] as const;
 export const securityEventKindSchema = z.enum(SECURITY_EVENT_KINDS);
 export type SecurityEventKind = z.infer<typeof securityEventKindSchema>;
@@ -321,6 +332,7 @@ export const SECURITY_EVENT_SEVERITY: Readonly<Record<SecurityEventKind, 'warnin
   role_changed: 'info',
   user_disabled: 'info',
   channel_changed: 'warning',
+  business_profile_changed: 'warning',
 };
 
 export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> = {
@@ -333,6 +345,7 @@ export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> 
   role_changed: 'Peran pengguna diubah',
   user_disabled: 'Pengguna dinonaktifkan',
   channel_changed: 'Channel diubah oleh selain Owner',
+  business_profile_changed: 'Profil bisnis WhatsApp diubah oleh selain Owner',
 };
 
 export const securityEventSchema = z.object({

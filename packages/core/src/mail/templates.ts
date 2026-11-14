@@ -1,7 +1,9 @@
 import {
+  BUSINESS_PROFILE_FIELD_LABELS,
   CHANNEL_CHANGE_LABELS,
   CHANNEL_CREDENTIAL_FIELD_LABELS,
   USER_ROLE_LABELS,
+  type BusinessProfileField,
   type ChannelChangeKind,
   type ChannelCredentialField,
   type UserRole,
@@ -53,10 +55,17 @@ export function escapeHtml(text: string): string {
     .replaceAll("'", '&#39;');
 }
 
-/** Satu baris: semua spasi/baris baru/karakter kendali dirapatkan menjadi satu spasi. */
+/**
+ * Satu baris: semua spasi/baris baru/karakter kendali (C0/C1, pemisah baris/paragraf Unicode)
+ * dirapatkan menjadi satu spasi; karakter format tak terlihat (pengubah arah U+202E/U+2066–U+2069,
+ * lebar-nol U+200B/U+2060, BOM — kecuali ZWJ untuk emoji) dibuang, supaya nama tidak bisa
+ * disamarkan di subjek/isi email.
+ */
 function singleLine(text: string): string {
-  // eslint-disable-next-line no-control-regex
-  return text.replace(/[\s\u0000-\u001f\u007f]+/g, ' ').trim();
+  return text
+    .replace(/(?!\u200d)\p{Cf}/gu, '')
+    .replace(/[\s\p{Cc}\p{Zl}\p{Zp}]+/gu, ' ')
+    .trim();
 }
 
 /** Perkiraan peramban + sistem operasi dari user agent, mis. "Chrome di Windows". */
@@ -801,8 +810,32 @@ export interface ChannelChangedEmailInput {
   changedFields?: readonly ChannelCredentialField[];
   /** Untuk `credentials_changed` bila Phone Number ID ikut diganti: nilai sebelumnya. */
   previousPhoneNumberId?: string | null;
+  /**
+   * Untuk `business_profile_changed`: isian yang diubah, nilai lama (`null` = tidak terbaca) → baru,
+   * sudah berupa teks (website dipisah koma, kosong = `""`). Ditampilkan sebagai teks "dijinakkan"
+   * (`https[:]//contoh[.]com`), bukan tautan.
+   */
+  profileChanges?: ReadonlyArray<{
+    field: BusinessProfileField;
+    previous: string | null;
+    next: string;
+  }>;
   occurredAt: Date;
   origin?: EventOrigin;
+}
+
+const PROFILE_VALUE_MAX = 300;
+
+/**
+ * Nilai profil bisnis untuk email keamanan: satu baris, dipendekkan, dan "dijinakkan" supaya
+ * aplikasi email tidak menjadikannya tautan yang bisa diklik (nilainya mungkin tautan penipuan).
+ */
+function defangedProfileValue(value: string | null): string {
+  if (value === null) return 'tidak terbaca';
+  const line = singleLine(value);
+  if (line === '') return '(kosong)';
+  const clipped = line.length > PROFILE_VALUE_MAX ? `${line.slice(0, PROFILE_VALUE_MAX)}…` : line;
+  return clipped.replaceAll('://', '[:]//').replaceAll('.', '[.]').replaceAll('@', '[@]');
 }
 
 /**
@@ -832,19 +865,30 @@ export function renderChannelChangedEmail(input: ChannelChangedEmailInput): Mail
       ? singleLine(input.previousPhoneNumberId)
       : null;
 
+  const profileChanges =
+    input.change === 'business_profile_changed' ? (input.profileChanges ?? []) : [];
+  const profileFields =
+    profileChanges.length > 0
+      ? profileChanges.map((entry) => BUSINESS_PROFILE_FIELD_LABELS[entry.field]).join(', ')
+      : 'isian';
+
   const subject: Record<ChannelChangeKind, string> = {
     created: `Channel baru ${channel} ditambahkan di ${product} oleh ${by}`,
     credentials_changed: `Kredensial channel ${channel} di ${product} diganti oleh ${by}`,
     verify_token_rotated: `Verify token channel ${channel} di ${product} dibuat ulang oleh ${by}`,
     disabled: `Channel ${channel} di ${product} dinonaktifkan oleh ${by}`,
+    enabled: `Channel ${channel} di ${product} diaktifkan kembali oleh ${by}`,
     deleted: `Channel ${channel} di ${product} dihapus oleh ${by}`,
+    business_profile_changed: `Profil bisnis WhatsApp channel ${channel} di ${product} diubah oleh ${by}`,
   };
   const what: Record<ChannelChangeKind, string> = {
     created: `menambahkan channel WhatsApp baru ${channel}`,
     credentials_changed: `mengganti ${replaced} channel ${channel}`,
     verify_token_rotated: `membuat ulang verify token webhook channel ${channel}`,
     disabled: `menonaktifkan channel ${channel}`,
+    enabled: `mengaktifkan kembali channel ${channel}`,
     deleted: `menghapus channel ${channel} beserta kredensialnya`,
+    business_profile_changed: `mengubah ${profileFields} profil bisnis WhatsApp channel ${channel}`,
   };
   const impact: Record<ChannelChangeKind, string> = {
     created:
@@ -855,6 +899,10 @@ export function renderChannelChangedEmail(input: ChannelChangedEmailInput): Mail
       'Verify token lama langsung tidak berlaku. Webhook yang sudah terpasang di Meta tetap jalan, tetapi verifikasi ulang di Meta harus memakai token yang baru.',
     disabled:
       'Channel ini berhenti menerima dan mengirim pesan; pelanggan yang menghubungi nomor ini tidak terlayani sampai channel diaktifkan lagi.',
+    enabled:
+      'Channel ini kembali menerima dan mengirim pesan. Bila sebelumnya sengaja dinonaktifkan (mis. karena token dicurigai bocor), periksa apakah memang sudah aman.',
+    business_profile_changed:
+      'Profil bisnis tampil ke semua pelanggan di WhatsApp. Website atau email yang salah bisa dipakai untuk mengarahkan pelanggan ke tautan penipuan atas nama perusahaanmu.',
     deleted:
       'Nomor ini tidak lagi terhubung ke inbox. Untuk memakainya lagi, channel harus ditambahkan ulang dengan token dan App Secret.',
   };
@@ -878,6 +926,10 @@ export function renderChannelChangedEmail(input: ChannelChangedEmailInput): Mail
       ...(input.change === 'credentials_changed' && fields.length > 0
         ? [{ label: 'Yang diganti', value: fields.join(', ') }]
         : []),
+      ...profileChanges.map((entry) => ({
+        label: BUSINESS_PROFILE_FIELD_LABELS[entry.field],
+        value: `${defangedProfileValue(entry.previous)} → ${defangedProfileValue(entry.next)}`,
+      })),
       ...originDetails(when, input.origin),
     ],
     notes: [

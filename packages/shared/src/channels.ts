@@ -98,7 +98,11 @@ export const metaAppSecretSchema = z
     'App Secret berisi huruf dan angka saja (biasanya 32 karakter). Salin dari Aplikasi → Pengaturan → Dasar → App Secret.',
   );
 
-/** `POST /settings/channels` — langkah 4–6 wizard (SETUP-META.md). */
+/**
+ * `POST /settings/channels` — langkah 4–6 wizard (SETUP-META.md). Pelaku selain Owner WAJIB
+ * `confirmation` (password + kode 2FA): channel baru dengan App Secret milik orang lain bisa dipakai
+ * memalsukan pesan masuk ke inbox.
+ */
 export const createWhatsAppChannelRequestSchema = z.object({
   type: z.literal('whatsapp'),
   name: channelNameSchema,
@@ -106,6 +110,7 @@ export const createWhatsAppChannelRequestSchema = z.object({
   wabaId: wabaIdSchema,
   accessToken: metaAccessTokenSchema,
   appSecret: metaAppSecretSchema,
+  confirmation: identityConfirmationSchema.optional(),
 });
 
 /** Satu varian per jenis channel (sekarang hanya WhatsApp). */
@@ -620,10 +625,39 @@ const websiteSchema = z
     'Alamat website harus diawali https:// (atau http://), contoh: https://perusahaan.co.id',
   );
 
+/** Isian profil bisnis (urutan tetap; juga daftar isian yang diteruskan ke Meta). */
+export const BUSINESS_PROFILE_FIELDS = [
+  'about',
+  'address',
+  'description',
+  'email',
+  'websites',
+  'vertical',
+] as const;
+export type BusinessProfileField = (typeof BUSINESS_PROFILE_FIELDS)[number];
+
+/**
+ * Isian profil bisnis yang mengarahkan pelanggan ke luar (tautan/alamat kontak): mengubahnya oleh
+ * selain Owner WAJIB `confirmation` — sesi Admin curian tidak bisa memasang tautan penipuan.
+ */
+export const BUSINESS_PROFILE_CONFIRMED_FIELDS = [
+  'websites',
+  'email',
+] as const satisfies readonly BusinessProfileField[];
+
+export const BUSINESS_PROFILE_FIELD_LABELS: Readonly<Record<BusinessProfileField, string>> = {
+  about: 'Info',
+  address: 'Alamat',
+  description: 'Deskripsi',
+  email: 'Email',
+  websites: 'Website',
+  vertical: 'Kategori',
+};
+
 /**
  * `PUT /settings/channels/:channelId/business-profile`. Hanya isian yang dikirim yang diubah.
  * Teks kosong (`""`) / `websites: []` = kosongkan isian itu di Meta. `about` (Info) tidak boleh
- * dikosongkan (aturan Meta).
+ * dikosongkan (aturan Meta). Mengubah `websites`/`email` oleh selain Owner wajib `confirmation`.
  */
 export const updateBusinessProfileRequestSchema = z
   .object({
@@ -650,8 +684,9 @@ export const updateBusinessProfileRequestSchema = z
       .max(BUSINESS_PROFILE_LIMITS.websites, 'Paling banyak 2 alamat website.')
       .optional(),
     vertical: z.union([businessVerticalSchema, z.literal('')]).optional(),
+    confirmation: identityConfirmationSchema.optional(),
   })
-  .refine((value) => Object.values(value).some((field) => field !== undefined), {
+  .refine((value) => BUSINESS_PROFILE_FIELDS.some((field) => value[field] !== undefined), {
     error: 'Tidak ada yang diubah. Isi minimal satu isian.',
     path: ['about'],
   });
@@ -680,7 +715,9 @@ export const CHANNEL_CHANGE_KINDS = [
   'credentials_changed',
   'verify_token_rotated',
   'disabled',
+  'enabled',
   'deleted',
+  'business_profile_changed',
 ] as const;
 export const channelChangeKindSchema = z.enum(CHANNEL_CHANGE_KINDS);
 export type ChannelChangeKind = z.infer<typeof channelChangeKindSchema>;
@@ -691,7 +728,9 @@ export const CHANNEL_CHANGE_AUDIT_ACTIONS = {
   credentials_changed: AUDIT_ACTIONS.channelUpdated,
   verify_token_rotated: AUDIT_ACTIONS.channelVerifyTokenRotated,
   disabled: AUDIT_ACTIONS.channelDisabled,
+  enabled: AUDIT_ACTIONS.channelEnabled,
   deleted: AUDIT_ACTIONS.channelDeleted,
+  business_profile_changed: AUDIT_ACTIONS.channelBusinessProfileUpdated,
 } as const satisfies Readonly<Record<ChannelChangeKind, AuditAction>>;
 
 export const channelCredentialFieldSchema = z.enum(CHANNEL_CREDENTIAL_FIELDS);
@@ -701,7 +740,9 @@ export const CHANNEL_CHANGE_LABELS: Readonly<Record<ChannelChangeKind, string>> 
   credentials_changed: 'Kredensial atau ID channel diganti',
   verify_token_rotated: 'Verify token webhook dibuat ulang',
   disabled: 'Channel dinonaktifkan',
+  enabled: 'Channel diaktifkan kembali',
   deleted: 'Channel dihapus',
+  business_profile_changed: 'Profil bisnis WhatsApp diubah',
 };
 
 /** Nama isian kredensial untuk ditampilkan (email, banner). */

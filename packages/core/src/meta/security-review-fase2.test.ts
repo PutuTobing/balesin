@@ -79,43 +79,40 @@ describe('review fase 2 — klien Graph API', () => {
    * membuat permintaan kredensial LAIN ke objek yang sama ikut gagal tanpa pernah sampai ke Meta.
    * Yang diharapkan: kunci masa dingin memuat identitas kredensial (mis. hash token) atau channel.
    */
-  it.fails(
-    'R1: batas laju milik satu kredensial tidak memblokir kredensial lain untuk ID objek yang sama',
-    async () => {
-      const seen: string[] = [];
-      const responses = [
-        json(400, { error: { code: 80007, message: 'rate limit' } }, { 'retry-after': '3600' }),
-        json(200, { id: '106540352242922' }),
-      ];
-      const client = createMetaGraphClient({
-        version: DEFAULT_META_GRAPH_VERSION,
-        fetch: ((_url: URL, init: RequestInit) => {
-          seen.push((init.headers as Record<string, string>).authorization ?? '');
-          const next = responses.shift();
-          return next ? Promise.resolve(next) : Promise.reject(new Error('habis'));
-        }) as unknown as typeof fetch,
-        sleep: () => Promise.resolve(),
-      });
-      const request = {
-        operation: 'phone_number.read',
-        method: 'GET' as const,
-        path: ['106540352242922'],
-        schema: okSchema,
-      };
+  it('R1: batas laju milik satu kredensial tidak memblokir kredensial lain untuk ID objek yang sama', async () => {
+    const seen: string[] = [];
+    const responses = [
+      json(400, { error: { code: 80007, message: 'rate limit' } }, { 'retry-after': '3600' }),
+      json(200, { id: '106540352242922' }),
+    ];
+    const client = createMetaGraphClient({
+      version: DEFAULT_META_GRAPH_VERSION,
+      fetch: ((_url: URL, init: RequestInit) => {
+        seen.push((init.headers as Record<string, string>).authorization ?? '');
+        const next = responses.shift();
+        return next ? Promise.resolve(next) : Promise.reject(new Error('habis'));
+      }) as unknown as typeof fetch,
+      sleep: () => Promise.resolve(),
+    });
+    const request = {
+      operation: 'phone_number.read',
+      method: 'GET' as const,
+      path: ['106540352242922'],
+      schema: okSchema,
+    };
 
-      // Kredensial A (mis. channel organisasi/aplikasi lain) kena batas laju lama.
-      await expect(
-        client.request({ accessToken: new Secret(TOKEN_A), appSecret: null }, request),
-      ).rejects.toMatchObject({ kind: 'rate_limited' });
+    // Kredensial A (mis. channel organisasi/aplikasi lain) kena batas laju lama.
+    await expect(
+      client.request({ accessToken: new Secret(TOKEN_A), appSecret: null }, request),
+    ).rejects.toMatchObject({ kind: 'rate_limited' });
 
-      // Kredensial B (pemilik sah nomor itu) seharusnya tetap bisa memanggil Meta.
-      await expect(
-        client.request(
-          { accessToken: new Secret(TOKEN_B), appSecret: new Secret(APP_SECRET) },
-          request,
-        ),
-      ).resolves.toEqual({ id: '106540352242922' });
-      expect(seen).toEqual([`Bearer ${TOKEN_A}`, `Bearer ${TOKEN_B}`]);
-    },
-  );
+    // Kredensial B (pemilik sah nomor itu) seharusnya tetap bisa memanggil Meta.
+    await expect(
+      client.request(
+        { accessToken: new Secret(TOKEN_B), appSecret: new Secret(APP_SECRET) },
+        request,
+      ),
+    ).resolves.toEqual({ id: '106540352242922' });
+    expect(seen).toEqual([`Bearer ${TOKEN_A}`, `Bearer ${TOKEN_B}`]);
+  });
 });

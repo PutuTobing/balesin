@@ -26,9 +26,13 @@ import {
   type DbExecutor,
 } from '@balesin/db';
 import {
+  BUSINESS_PROFILE_CONFIRMED_FIELDS,
+  BUSINESS_PROFILE_FIELDS,
   CHANNEL_TEST_MESSAGES,
   MAX_CHANNELS_PER_ORGANIZATION,
   numberWarnings,
+  type BusinessProfile,
+  type BusinessProfileField,
   type BusinessProfileResponse,
   type ChannelCredentialField,
   type ChannelSettingsListResponse,
@@ -47,6 +51,7 @@ import {
   type WhatsAppChannel,
   type WhatsAppNumberSummary,
 } from '@balesin/shared';
+import { sql } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 
 import type { ClientInfo } from '../../http/client-info';
@@ -158,6 +163,41 @@ const SECRET_UNAVAILABLE_MESSAGE =
 const PHONE_CONFLICT_MESSAGE =
   'Nomor dengan Phone Number ID ini sudah terhubung sebagai channel lain. Ubah atau hapus channel itu dulu.';
 const LIVE_PHONE_INDEX = 'channels_organization_id_wa_phone_number_id_live_unique';
+/**
+ * Tenggat total satu operasi yang memanggil Meta (tes koneksi = sampai 7 panggilan; profil bisnis =
+ * baca + ubah + baca ulang): permintaan HTTP tidak tertahan menit-menit saat Meta lambat (review R5).
+ */
+export const META_OPERATION_DEADLINE_MS = 25_000;
+/**
+ * Pemberitahuan perubahan profil bisnis baru boleh diambil worker setelah jeda ini (> tenggat Meta):
+ * saat itu sudah diketahui apakah Meta menerima perubahannya (baris audit `…_update_failed`).
+ */
+export const BUSINESS_PROFILE_NOTICE_DELAY_MS = META_OPERATION_DEADLINE_MS + 5_000;
+
+const CONFIRMATION_REQUIRED = {
+  create: 'Masukkan password-mu (dan kode verifikasi dua langkah) untuk menambahkan channel.',
+  credentials:
+    'Masukkan password-mu (dan kode verifikasi dua langkah) untuk mengganti kredensial channel.',
+  businessProfile:
+    'Masukkan password-mu (dan kode verifikasi dua langkah) untuk mengubah website atau email profil bisnis.',
+} as const;
+
+function confirmationRequired(message: string): AppError {
+  return new AppError('VALIDATION_ERROR', {
+    message,
+    details: [bodyDetail('confirmation.password', message)],
+  });
+}
+
+/** Nilai profil bisnis satu isian sebagai teks audit/email (website dipisah koma). */
+function profileValue(
+  profile: BusinessProfile | UpdateBusinessProfileRequest,
+  field: BusinessProfileField,
+): string {
+  const value = profile[field];
+  if (value === undefined || value === null) return '';
+  return Array.isArray(value) ? value.join(', ') : String(value);
+}
 
 function notFound(): AppError {
   return new AppError('NOT_FOUND', { message: NOT_FOUND_MESSAGE });
@@ -362,15 +402,17 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
   }> {
     const phoneNumberId = row.waPhoneNumberId ?? '';
     const wabaId = row.waBusinessAccountId ?? '';
+    // Satu tenggat untuk SEMUA panggilan tes ini (review R5).
+    const options = { signal: AbortSignal.timeout(META_OPERATION_DEADLINE_MS) };
     let number: WhatsAppNumberSummary;
     try {
-      number = summaryOf(await readPhoneNumber(meta, credentials, phoneNumberId), now());
+      number = summaryOf(await readPhoneNumber(meta, credentials, phoneNumberId, options), now());
     } catch (error) {
       if (!isMetaApiError(error)) throw error;
       return { code: testCodeFor(error.kind, 'phone'), number: null, metaCode: error.metaCode };
     }
     try {
-      const belongs = await wabaHasPhoneNumber(meta, credentials, wabaId, phoneNumberId);
+      const belongs = await wabaHasPhoneNumber(meta, credentials, wabaId, phoneNumberId, options);
       return { code: belongs ? 'ok' : 'phone_number_waba_mismatch', number, metaCode: null };
     } catch (error) {
       if (!isMetaApiError(error)) throw error;
@@ -403,6 +445,11 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
 
     async create(auth, input, context) {
       const box = requireBox();
+      // Channel baru dengan App Secret milik orang lain = pesan masuk bisa dipalsukan (review R2).
+      if (auth.user.role !== 'owner') {
+        if (!input.confirmation) throw confirmationRequired(CONFIRMATION_REQUIRED.create);
+        await confirm(auth, input.confirmation, 'channel.create', context, 'confirmation.');
+      }
       const id = newId();
       const owner = { id, organizationId: auth.organizationId };
       const createdAt = now();
@@ -410,6 +457,10 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
 
       const row = await db
         .transaction(async (tx) => {
+          // Pembuatan bersamaan berurutan per organisasi: batas jumlah channel tidak terlewati.
+          await tx.execute(
+            sql`select pg_advisory_xact_lock(hashtextextended(${`channels-create|${auth.organizationId}`}, 0))`,
+          );
           if ((await countChannels(tx, auth.organizationId)) >= MAX_CHANNELS_PER_ORGANIZATION) {
             throw new AppError('CONFLICT', {
               message: `Batas ${MAX_CHANNELS_PER_ORGANIZATION} channel per organisasi sudah tercapai. Hapus channel yang tidak dipakai dulu.`,
@@ -467,14 +518,7 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
       if (nameChanged) changes.name = input.name;
       if (changed.length > 0) {
         const box = requireBox();
-        if (!input.confirmation) {
-          const message =
-            'Masukkan password-mu (dan kode verifikasi dua langkah) untuk mengganti kredensial channel.';
-          throw new AppError('VALIDATION_ERROR', {
-            message,
-            details: [bodyDetail('confirmation.password', message)],
-          });
-        }
+        if (!input.confirmation) throw confirmationRequired(CONFIRMATION_REQUIRED.credentials);
         await confirm(auth, input.confirmation, 'channel.credentials', context, 'confirmation.');
 
         const owner = { id: row.id, organizationId: auth.organizationId };
@@ -562,14 +606,13 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
           metadata: {
             name: row.name,
             phoneNumberId: row.waPhoneNumberId,
-            // Mengaktifkan kembali tidak diberitahukan ke Owner.
-            ...(enabled
-              ? { actorRole: auth.user.role }
-              : noticeMetadata(actorOf(auth), 'disabled')),
+            // Mengaktifkan kembali juga diberitahukan (review R3): channel yang sengaja
+            // dinonaktifkan Owner tidak boleh bisa dihidupkan lagi diam-diam.
+            ...noticeMetadata(actorOf(auth), enabled ? 'enabled' : 'disabled'),
           },
           client: context.client,
         });
-        if (!enabled) await notifyOwners(tx, auth, auditLogId);
+        await notifyOwners(tx, auth, auditLogId);
         return next;
       });
       return toWhatsAppChannel(updated, apiUrl);
@@ -702,7 +745,9 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
       const row = await load(auth, channelId);
       const credentials = requireCredentials(row);
       try {
-        const profile = await readBusinessProfile(meta, credentials, row.waPhoneNumberId ?? '');
+        const profile = await readBusinessProfile(meta, credentials, row.waPhoneNumberId ?? '', {
+          signal: AbortSignal.timeout(META_OPERATION_DEADLINE_MS),
+        });
         return { profile, fetchedAt: now().toISOString() };
       } catch (error) {
         if (isMetaApiError(error)) throw metaRequestFailed(error);
@@ -714,27 +759,89 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
       const row = await load(auth, channelId);
       const credentials = requireCredentials(row);
       const phoneNumberId = row.waPhoneNumberId ?? '';
+      const changedFields = BUSINESS_PROFILE_FIELDS.filter((field) => input[field] !== undefined);
+
+      // Website/email mengarahkan pelanggan ke luar: selain Owner wajib konfirmasi (review S1).
+      if (
+        auth.user.role !== 'owner' &&
+        BUSINESS_PROFILE_CONFIRMED_FIELDS.some((field) => input[field] !== undefined)
+      ) {
+        if (!input.confirmation) throw confirmationRequired(CONFIRMATION_REQUIRED.businessProfile);
+        await confirm(
+          auth,
+          input.confirmation,
+          'channel.business_profile',
+          context,
+          'confirmation.',
+        );
+      }
+
+      // Satu tenggat untuk baca nilai lama + ubah + baca ulang (review R5).
+      const options = { signal: AbortSignal.timeout(META_OPERATION_DEADLINE_MS) };
+      // Nilai lama (data publik) dicatat di audit supaya bisa dibandingkan/dipulihkan. Bila tidak
+      // terbaca, perubahan juga tidak dikirim (Meta yang sama hampir pasti menolaknya).
+      let previous: BusinessProfile;
       try {
-        await updateBusinessProfile(meta, credentials, phoneNumberId, input);
+        previous = await readBusinessProfile(meta, credentials, phoneNumberId, options);
       } catch (error) {
         if (isMetaApiError(error)) throw metaRequestFailed(error);
         throw error;
       }
-      await recordAudit(db, {
-        organizationId: auth.organizationId,
-        actorUserId: auth.user.id,
-        action: AUDIT_ACTIONS.channelBusinessProfileUpdated,
-        targetType: 'channel',
-        targetId: row.id,
-        metadata: {
-          changedFields: Object.keys(input).filter(
-            (key) => input[key as keyof UpdateBusinessProfileRequest] !== undefined,
-          ),
-        },
-        client: context.client,
+
+      // Audit + pemberitahuan Owner tercatat SEBELUM perubahan dikirim ke Meta (yang tidak bisa
+      // ditarik kembali): bila antrean mati, tidak ada yang berubah (503). Job baru diambil worker
+      // setelah tenggat Meta lewat, jadi penolakan Meta (baris `…_update_failed`) sudah tercatat.
+      const auditLogId = await db.transaction(async (tx) => {
+        const id = await recordAudit(tx, {
+          organizationId: auth.organizationId,
+          actorUserId: auth.user.id,
+          action: AUDIT_ACTIONS.channelBusinessProfileUpdated,
+          targetType: 'channel',
+          targetId: row.id,
+          metadata: {
+            changedFields,
+            previous: Object.fromEntries(
+              changedFields.map((field) => [field, profileValue(previous, field)]),
+            ),
+            next: Object.fromEntries(
+              changedFields.map((field) => [field, profileValue(input, field)]),
+            ),
+            name: row.name,
+            phoneNumberId: row.waPhoneNumberId,
+            ...noticeMetadata(actorOf(auth), 'business_profile_changed'),
+          },
+          client: context.client,
+        });
+        await queueChannelChangeNotices(tx, notifier, {
+          organizationId: auth.organizationId,
+          actor: actorOf(auth),
+          auditLogId: id,
+          delayMs: BUSINESS_PROFILE_NOTICE_DELAY_MS,
+        });
+        return id;
       });
+
       try {
-        const profile = await readBusinessProfile(meta, credentials, phoneNumberId);
+        await updateBusinessProfile(meta, credentials, phoneNumberId, input, options);
+      } catch (error) {
+        await recordAudit(db, {
+          organizationId: auth.organizationId,
+          actorUserId: auth.user.id,
+          action: AUDIT_ACTIONS.channelBusinessProfileUpdateFailed,
+          targetType: 'channel',
+          targetId: row.id,
+          metadata: {
+            auditLogId,
+            kind: isMetaApiError(error) ? error.kind : 'internal',
+            metaCode: isMetaApiError(error) ? error.metaCode : null,
+          },
+          client: context.client,
+        });
+        if (isMetaApiError(error)) throw metaRequestFailed(error);
+        throw error;
+      }
+      try {
+        const profile = await readBusinessProfile(meta, credentials, phoneNumberId, options);
         return { status: 'updated', profile, fetchedAt: now().toISOString() };
       } catch (error) {
         if (!isMetaApiError(error)) throw error;

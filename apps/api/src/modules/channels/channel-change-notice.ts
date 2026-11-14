@@ -45,17 +45,26 @@ export function noticeMetadata(
 export async function queueChannelChangeNotices(
   tx: DbExecutor,
   notifier: Pick<EmailNotifier, 'channelChanged'>,
-  input: { organizationId: string; actor: ChannelChangeActor; auditLogId: string },
+  input: {
+    organizationId: string;
+    actor: ChannelChangeActor;
+    auditLogId: string;
+    /** Jeda sebelum job boleh diambil worker (perubahan yang hasilnya baru diketahui kemudian). */
+    delayMs?: number;
+  },
 ): Promise<number> {
   if (!shouldNotifyOwners(input.actor)) return 0;
   const owners = await findActiveOwners(tx, input.organizationId, [input.actor.userId]);
   try {
     for (const recipientUserId of owners) {
-      await notifier.channelChanged({
-        organizationId: input.organizationId,
-        recipientUserId,
-        auditLogId: input.auditLogId,
-      });
+      await notifier.channelChanged(
+        {
+          organizationId: input.organizationId,
+          recipientUserId,
+          auditLogId: input.auditLogId,
+        },
+        input.delayMs === undefined ? undefined : { delayMs: input.delayMs },
+      );
     }
   } catch (cause) {
     throw new AppError('SERVICE_UNAVAILABLE', {

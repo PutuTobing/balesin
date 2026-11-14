@@ -58,7 +58,7 @@ describe('review fase 2 — validasi isian', () => {
    * isi email ke Owner dan di inbox, jadi bisa dipakai menyamarkan nama ("CS Utama" terbalik/
    * tersembunyi). Yang diharapkan: ditolak seperti karakter kendali lain.
    */
-  it.fails('R4: nama channel menolak karakter pengubah arah / lebar-nol', () => {
+  it('R4: nama channel menolak karakter pengubah arah / lebar-nol', () => {
     for (const name of ['CS ‮amatu', 'CS​Utama', 'CS ⁦Utama⁩', 'CS\u0085Utama']) {
       expect(channelNameSchema.safeParse(name).success, JSON.stringify(name)).toBe(false);
     }

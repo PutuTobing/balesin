@@ -1,7 +1,8 @@
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 
 import type { z } from 'zod';
 
+import { isProductionLike, type EnvSource } from '../env';
 import type { Secret } from '../secret';
 import { classifyMetaError, MetaApiError } from './errors';
 
@@ -19,7 +20,12 @@ import { classifyMetaError, MetaApiError } from './errors';
  * - Ulang otomatis dengan backoff eksponensial + jitter untuk gangguan sementara (hanya GET atau
  *   permintaan yang ditandai `idempotent`). Batas laju dihormati: waktu tunggu dari header
  *   `Retry-After` / `X-Business-Use-Case-Usage` (`estimated_time_to_regain_access`, menit); bila
- *   terlalu lama, langsung gagal `rate_limited` dan objek itu "didinginkan" di proses ini.
+ *   terlalu lama, langsung gagal `rate_limited` dan objek itu "didinginkan" di proses ini — per
+ *   kredensial (hash token) + objek + kelompok operasi, paling lama `MAX_COOLDOWN_MS`.
+ * - Tenggat total opsional per permintaan (`signal`): percobaan berikutnya dan jeda backoff tidak
+ *   dijalankan setelah tenggat lewat, jadi satu permintaan HTTP tidak tertahan menit-menit.
+ * - Base URL selain `graph.facebook.com` (server Meta tiruan) hanya diterima untuk host loopback DAN
+ *   NODE_ENV development/test — penjaga ada di klien, jadi api maupun worker terlindungi.
  * - Log hanya memuat operasi, status, kode Meta, percobaan, durasi, fbtrace_id — tidak pernah URL,
  *   query, token, atau App Secret.
  */
@@ -43,6 +49,17 @@ export interface MetaCredentials {
 
 export type MetaQueryValue = string | number | boolean | undefined;
 
+/**
+ * Kelompok batas laju Meta (Business Use Case): pengelolaan (nomor, WABA, profil) dan pengiriman
+ * pesan dihitung terpisah oleh Meta, jadi masa dinginnya juga terpisah.
+ */
+export type MetaRateLimitGroup = 'management' | 'messaging';
+
+/** Masa dingin terpanjang yang dipercaya dari header Meta (setelah itu boleh dicoba lagi). */
+export const MAX_COOLDOWN_MS = 60 * 60 * 1000;
+/** Jumlah entri masa dingin maksimal di memori satu proses. */
+const MAX_COOLDOWN_ENTRIES = 1024;
+
 export interface MetaRequest<T> {
   /** Nama tetap untuk log, mis. `phone_number.read`. Bukan data pengguna. */
   operation: string;
@@ -56,6 +73,13 @@ export interface MetaRequest<T> {
   schema: z.ZodType<T>;
   /** `true` = aman diulang otomatis walau bukan GET (hasilnya sama bila terkirim dua kali). */
   idempotent?: boolean;
+  /** Kelompok batas laju. Bawaan `management`. */
+  rateLimitGroup?: MetaRateLimitGroup;
+  /**
+   * Tenggat total (mis. `AbortSignal.timeout(25_000)` yang dipakai bersama beberapa permintaan satu
+   * tes koneksi). Setelah dibatalkan: percobaan yang berjalan dihentikan, tidak ada ulangan lagi.
+   */
+  signal?: AbortSignal;
 }
 
 export interface MetaGraphLogger {
@@ -67,10 +91,13 @@ export interface MetaGraphClientOptions {
   /** Versi Graph API, mis. `v26.0`. */
   version: string;
   /**
-   * Hanya development/test (server Meta tiruan) — divalidasi config: production menolak. Bawaan
-   * `META_GRAPH_HOST`.
+   * Hanya development/test (server Meta tiruan): selain `META_GRAPH_HOST`, hanya host loopback
+   * (localhost/127.0.0.1/[::1]) dan hanya bila `environment` (bawaan `process.env`) NODE_ENV-nya
+   * development/test. Bawaan `META_GRAPH_HOST`.
    */
   baseUrl?: string | null;
+  /** Sumber NODE_ENV untuk penjaga `baseUrl`. Bawaan `process.env`. */
+  environment?: EnvSource;
   fetch?: typeof fetch;
   logger?: MetaGraphLogger;
   /** Batas waktu satu percobaan. Bawaan 10 detik. */
@@ -182,7 +209,9 @@ function parseJson(text: string): unknown {
   }
 }
 
-function normalizeBaseUrl(baseUrl: string | null | undefined): string {
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+function normalizeBaseUrl(baseUrl: string | null | undefined, environment: EnvSource): string {
   const value = baseUrl ?? META_GRAPH_HOST;
   const parsed = new URL(value);
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
@@ -191,7 +220,26 @@ function normalizeBaseUrl(baseUrl: string | null | undefined): string {
   if (parsed.username || parsed.password || parsed.search || parsed.hash) {
     throw new Error('Base URL Graph API tidak boleh memuat kredensial, query, atau fragmen');
   }
-  return parsed.origin + parsed.pathname.replace(/\/+$/, '');
+  const normalized = parsed.origin + parsed.pathname.replace(/\/+$/, '');
+  if (normalized === META_GRAPH_HOST) return normalized;
+  // Server Meta tiruan: token Meta tidak boleh bisa dibelokkan ke host lain.
+  if (!LOOPBACK_HOSTS.has(parsed.hostname)) {
+    throw new Error('Base URL Graph API selain graph.facebook.com hanya boleh alamat loopback');
+  }
+  if (isProductionLike(environment)) {
+    throw new Error('Base URL Graph API tiruan hanya boleh dipakai di development/test');
+  }
+  return normalized;
+}
+
+/** Sidik kredensial untuk kunci masa dingin (bukan token itu sendiri). */
+function credentialFingerprint(accessToken: string): string {
+  return createHash('sha256').update(accessToken).digest('hex').slice(0, 16);
+}
+
+/** Error saat tenggat total permintaan (`signal`) sudah lewat sebelum/di antara percobaan. */
+function deadlineExceeded(operation: string, attempts: number): MetaApiError {
+  return new MetaApiError({ kind: 'network_error', retryable: false, operation, attempts });
 }
 
 const defaultSleep = (ms: number) =>
@@ -203,7 +251,7 @@ export function createMetaGraphClient(options: MetaGraphClientOptions): MetaGrap
   if (!META_GRAPH_VERSION_PATTERN.test(options.version)) {
     throw new Error('Versi Graph API harus berformat vNN.0');
   }
-  const base = `${normalizeBaseUrl(options.baseUrl)}/${options.version}`;
+  const base = `${normalizeBaseUrl(options.baseUrl, options.environment ?? process.env)}/${options.version}`;
   const doFetch = options.fetch ?? fetch;
   const timeoutMs = options.timeoutMs ?? 10_000;
   const maxAttempts = Math.max(1, options.maxAttempts ?? 3);
@@ -217,11 +265,27 @@ export function createMetaGraphClient(options: MetaGraphClientOptions): MetaGrap
   const logger = options.logger;
 
   /**
-   * Objek Meta (segmen pertama path, mis. Phone Number ID) yang sedang kena batas laju → kapan
-   * boleh dicoba lagi. Selama itu permintaan ke objek yang sama langsung gagal tanpa memanggil
-   * Meta (tidak memperparah hitungan batas laju).
+   * (kredensial, objek Meta — segmen pertama path, kelompok operasi) yang sedang kena batas laju →
+   * kapan boleh dicoba lagi. Selama itu permintaan yang sama langsung gagal tanpa memanggil Meta
+   * (tidak memperparah hitungan batas laju). Kredensial lain untuk objek yang sama tidak terpengaruh.
    */
   const cooldowns = new Map<string, number>();
+
+  function setCooldown(key: string, waitSeconds: number) {
+    const until = now() + Math.min(waitSeconds * 1000, MAX_COOLDOWN_MS);
+    cooldowns.delete(key);
+    cooldowns.set(key, until);
+    if (cooldowns.size <= MAX_COOLDOWN_ENTRIES) return;
+    const current = now();
+    for (const [entry, expiresAt] of cooldowns) {
+      if (expiresAt <= current) cooldowns.delete(entry);
+    }
+    // Masih penuh: buang yang tertua (urutan sisip Map).
+    for (const entry of cooldowns.keys()) {
+      if (cooldowns.size <= MAX_COOLDOWN_ENTRIES) break;
+      cooldowns.delete(entry);
+    }
+  }
 
   function buildUrl(request: MetaRequest<unknown>, proof: string | null): URL {
     if (request.path.length === 0 || !request.path.every((part) => SEGMENT_PATTERN.test(part))) {
@@ -239,8 +303,10 @@ export function createMetaGraphClient(options: MetaGraphClientOptions): MetaGrap
     return url;
   }
 
-  function cooldownKey(request: MetaRequest<unknown>): string {
-    return request.path[0] ?? '';
+  function cooldownKey(credentials: MetaCredentials, request: MetaRequest<unknown>): string {
+    const group = request.rateLimitGroup ?? 'management';
+    const fingerprint = credentialFingerprint(credentials.accessToken.reveal());
+    return `${fingerprint}:${request.path[0] ?? ''}:${group}`;
   }
 
   async function attemptOnce<T>(
@@ -269,7 +335,9 @@ export function createMetaGraphClient(options: MetaGraphClientOptions): MetaGrap
         headers,
         body,
         redirect: 'manual',
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: request.signal
+          ? AbortSignal.any([AbortSignal.timeout(timeoutMs), request.signal])
+          : AbortSignal.timeout(timeoutMs),
       });
     } catch (cause) {
       const timedOut =
@@ -384,9 +452,10 @@ export function createMetaGraphClient(options: MetaGraphClientOptions): MetaGrap
           : appSecretProof(credentials.accessToken.reveal(), credentials.appSecret.reveal());
       const url = buildUrl(request, proof);
       const repeatable = request.method === 'GET' || request.idempotent === true;
-      const key = cooldownKey(request);
+      const key = cooldownKey(credentials, request);
 
       for (let attempt = 1; ; attempt += 1) {
+        if (request.signal?.aborted) throw deadlineExceeded(request.operation, attempt - 1);
         const blockedUntil = cooldowns.get(key);
         if (blockedUntil !== undefined) {
           const remainingMs = blockedUntil - now();
@@ -415,9 +484,9 @@ export function createMetaGraphClient(options: MetaGraphClientOptions): MetaGrap
             outcome.waitSeconds === null
               ? backoffDelayMs(attempt, { baseDelayMs, maxDelayMs, random })
               : outcome.waitSeconds * 1000;
-          if (!canRetry || waitMs > maxRateLimitWaitMs) {
+          if (!canRetry || waitMs > maxRateLimitWaitMs || request.signal?.aborted) {
             if (outcome.waitSeconds !== null && outcome.waitSeconds > 0) {
-              cooldowns.set(key, now() + outcome.waitSeconds * 1000);
+              setCooldown(key, outcome.waitSeconds);
             }
             throw error;
           }
@@ -425,7 +494,7 @@ export function createMetaGraphClient(options: MetaGraphClientOptions): MetaGrap
           continue;
         }
 
-        if (!canRetry) throw error;
+        if (!canRetry || request.signal?.aborted) throw error;
         await sleep(backoffDelayMs(attempt, { baseDelayMs, maxDelayMs, random }));
       }
     },

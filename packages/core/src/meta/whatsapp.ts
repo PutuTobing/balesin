@@ -1,8 +1,17 @@
-import type { BusinessProfile, UpdateBusinessProfileRequest } from '@balesin/shared';
+import {
+  BUSINESS_PROFILE_FIELDS,
+  type BusinessProfile,
+  type UpdateBusinessProfileRequest,
+} from '@balesin/shared';
 import { z } from 'zod';
 
 import { MetaApiError } from './errors';
 import type { MetaCredentials, MetaGraphClient } from './graph-client';
+
+/** Opsi bersama operasi WhatsApp: tenggat total (dipakai bersama beberapa panggilan). */
+export interface MetaCallOptions {
+  signal?: AbortSignal;
+}
 
 /**
  * Operasi WhatsApp Cloud API di atas `MetaGraphClient`. Bentuk jawaban dibaca TOLERAN: isian yang
@@ -90,6 +99,7 @@ export async function readPhoneNumber(
   client: MetaGraphClient,
   credentials: MetaCredentials,
   phoneNumberId: string,
+  options: MetaCallOptions = {},
 ): Promise<PhoneNumberDetails> {
   const fetchWith = (fields: readonly string[]) =>
     client.request(credentials, {
@@ -98,6 +108,7 @@ export async function readPhoneNumber(
       path: [phoneNumberId],
       query: { fields: fields.join(',') },
       schema: phoneNumberResponseSchema,
+      signal: options.signal,
     });
 
   let data: z.infer<typeof phoneNumberResponseSchema>;
@@ -154,6 +165,7 @@ export async function wabaHasPhoneNumber(
   credentials: MetaCredentials,
   wabaId: string,
   phoneNumberId: string,
+  options: MetaCallOptions = {},
 ): Promise<boolean> {
   let after: string | undefined;
   for (let page = 0; page < WABA_MAX_PAGES; page += 1) {
@@ -163,6 +175,7 @@ export async function wabaHasPhoneNumber(
       path: [wabaId, 'phone_numbers'],
       query: { fields: 'id', limit: 100, after },
       schema: wabaPhoneNumbersSchema,
+      signal: options.signal,
     });
     if (data.data.some((entry) => entry.id === phoneNumberId)) return true;
     if (!data.paging) return false;
@@ -172,15 +185,6 @@ export async function wabaHasPhoneNumber(
 }
 
 // ── Profil bisnis ───────────────────────────────────────────────────────────
-
-const BUSINESS_PROFILE_FIELDS = [
-  'about',
-  'address',
-  'description',
-  'email',
-  'websites',
-  'vertical',
-] as const;
 
 const businessProfileResponseSchema = z.object({
   data: z
@@ -210,6 +214,7 @@ export async function readBusinessProfile(
   client: MetaGraphClient,
   credentials: MetaCredentials,
   phoneNumberId: string,
+  options: MetaCallOptions = {},
 ): Promise<BusinessProfile> {
   const data = await client.request(credentials, {
     operation: 'business_profile.read',
@@ -217,6 +222,7 @@ export async function readBusinessProfile(
     path: [phoneNumberId, 'whatsapp_business_profile'],
     query: { fields: BUSINESS_PROFILE_FIELDS.join(',') },
     schema: businessProfileResponseSchema,
+    signal: options.signal,
   });
   const profile = data.data[0];
   return {
@@ -241,10 +247,12 @@ export async function updateBusinessProfile(
   credentials: MetaCredentials,
   phoneNumberId: string,
   changes: UpdateBusinessProfileRequest,
+  options: MetaCallOptions = {},
 ): Promise<void> {
   const body: Record<string, unknown> = { messaging_product: 'whatsapp' };
-  for (const [key, value] of Object.entries(changes)) {
-    if (value !== undefined) body[key] = value;
+  // Hanya isian profil yang dikenal (bukan `confirmation` atau isian lain dari permintaan).
+  for (const field of BUSINESS_PROFILE_FIELDS) {
+    if (changes[field] !== undefined) body[field] = changes[field];
   }
   await client.request(credentials, {
     operation: 'business_profile.update',
@@ -253,5 +261,6 @@ export async function updateBusinessProfile(
     body,
     schema: successSchema,
     idempotent: true,
+    signal: options.signal,
   });
 }

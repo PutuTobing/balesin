@@ -173,7 +173,13 @@ describe('antrian email — channel diubah selain Owner', () => {
 
   it('buat, verify token dibuat ulang, nonaktifkan, hapus: subjek sesuai perubahan; pelaku nonaktif tetap disebut', async () => {
     const { organization, owner, admin } = await organizationWithAdmin({ adminDisabled: true });
-    for (const change of ['created', 'verify_token_rotated', 'disabled', 'deleted'] as const) {
+    for (const change of [
+      'created',
+      'verify_token_rotated',
+      'disabled',
+      'enabled',
+      'deleted',
+    ] as const) {
       const audit = await channelAudit(organization.id, admin.id, change);
       const result = await processEmailJob(
         job({ organizationId: organization.id, recipientUserId: owner.id, auditLogId: audit.id }),
@@ -181,7 +187,7 @@ describe('antrian email — channel diubah selain Owner', () => {
       );
       expect(result, change).toEqual({ status: 'sent' });
     }
-    await expect.poll(async () => (await capturedMailFor(owner.email)).length).toBe(4);
+    await expect.poll(async () => (await capturedMailFor(owner.email)).length).toBe(5);
     const subjects = (await capturedMailFor(owner.email)).map((mail) => mail.subject).sort();
     expect(subjects).toEqual(
       [
@@ -189,6 +195,7 @@ describe('antrian email — channel diubah selain Owner', () => {
         'Verify token channel "CS Utama" di Balesin Maju dibuat ulang oleh Adi Admin (Admin)',
         'Channel "CS Utama" di Balesin Maju dinonaktifkan oleh Adi Admin (Admin)',
         'Channel "CS Utama" di Balesin Maju dihapus oleh Adi Admin (Admin)',
+        'Channel "CS Utama" di Balesin Maju diaktifkan kembali oleh Adi Admin (Admin)',
       ].sort(),
     );
   }, 30_000);
@@ -234,6 +241,57 @@ describe('antrian email — channel diubah selain Owner', () => {
       expect(await capturedMailFor(email)).toEqual([]);
     }
   }, 30_000);
+
+  it('profil bisnis diubah Admin: nilai lama → baru sebagai teks yang dijinakkan (bukan tautan)', async () => {
+    const { organization, owner, admin } = await organizationWithAdmin();
+    const audit = await channelAudit(organization.id, admin.id, 'business_profile_changed', {
+      changedFields: ['email', 'websites', 'isianAsing'],
+      previous: { email: 'cs@maju.test', websites: 'https://maju.test' },
+      next: { email: 'tagihan@maju-bayar.example', websites: 'https://maju-bayar.example/tagihan' },
+    });
+    const result = await processEmailJob(
+      job({ organizationId: organization.id, recipientUserId: owner.id, auditLogId: audit.id }),
+      deps,
+    );
+    expect(result).toEqual({ status: 'sent' });
+
+    await expect.poll(async () => (await capturedMailFor(owner.email)).length).toBe(1);
+    const [mail] = await capturedMailFor(owner.email);
+    expect(mail?.subject).toBe(
+      'Profil bisnis WhatsApp channel "CS Utama" di Balesin Maju diubah oleh Adi Admin (Admin)',
+    );
+    expect(mail?.text).toContain('mengubah Email, Website profil bisnis WhatsApp');
+    expect(mail?.text).toContain('Email: cs[@]maju[.]test → tagihan[@]maju-bayar[.]example');
+    expect(mail?.text).toContain(
+      'Website: https[:]//maju[.]test → https[:]//maju-bayar[.]example/tagihan',
+    );
+    expect(mail?.text).not.toContain('maju-bayar.example');
+    expect(mail?.html).not.toContain('maju-bayar.example');
+    expect(mail?.text).not.toContain('isianAsing');
+  }, 30_000);
+
+  it('profil bisnis yang ditolak Meta (baris penolakan ada): dilewati tanpa mengirim', async () => {
+    const { organization, owner, admin } = await organizationWithAdmin();
+    const audit = await channelAudit(organization.id, admin.id, 'business_profile_changed', {
+      changedFields: ['about'],
+      previous: { about: 'Layanan pelanggan' },
+      next: { about: 'Diambil alih' },
+    });
+    await db.insert(auditLogs).values({
+      organizationId: organization.id,
+      actorUserId: admin.id,
+      action: 'channel.business_profile_update_failed',
+      targetType: 'channel',
+      targetId: audit.targetId,
+      metadata: { auditLogId: audit.id, kind: 'invalid_parameter' },
+    });
+    const result = await processEmailJob(
+      job({ organizationId: organization.id, recipientUserId: owner.id, auditLogId: audit.id }),
+      deps,
+    );
+    expect(result).toEqual({ status: 'skipped', reason: 'no_longer_valid' });
+    expect(await capturedMailFor(owner.email)).toEqual([]);
+  });
 
   it('baris audit belum terlihat diulang; tetap tidak ada di percobaan terakhir = dilewati', async () => {
     const { organization, owner } = await organizationWithAdmin();

@@ -65,7 +65,9 @@ export const AUDIT_EXPORT_RULE: RateLimitRule = {
  * Aksi channel yang memberi tahu Owner bila pelakunya selain Owner (`ownersNotified: true` di
  * metadatanya, ditulis modul channels).
  */
-const NOTIFIED_CHANNEL_ACTIONS: readonly string[] = Object.values(CHANNEL_CHANGE_AUDIT_ACTIONS);
+const NOTIFIED_CHANNEL_ACTIONS: readonly string[] = Object.values(
+  CHANNEL_CHANGE_AUDIT_ACTIONS,
+).filter((action) => action !== AUDIT_ACTIONS.channelBusinessProfileUpdated);
 
 /** Kondisi SQL per jenis kejadian keamanan (sama dengan `kindOf` di bawah). */
 const SECURITY_EVENT_CONDITIONS: Readonly<Record<SecurityEventKind, SQL>> = {
@@ -77,6 +79,7 @@ const SECURITY_EVENT_CONDITIONS: Readonly<Record<SecurityEventKind, SQL>> = {
   role_changed: sql`${auditLogs.action} = ${AUDIT_ACTIONS.userRoleChanged}`,
   user_disabled: sql`${auditLogs.action} = ${AUDIT_ACTIONS.userDisabled}`,
   channel_changed: sql`(${inArray(auditLogs.action, [...NOTIFIED_CHANNEL_ACTIONS])} and ${auditLogs.metadata} ->> 'ownersNotified' = 'true')`,
+  business_profile_changed: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.channelBusinessProfileUpdated} and ${auditLogs.metadata} ->> 'ownersNotified' = 'true')`,
 };
 
 /**
@@ -128,9 +131,12 @@ function kindOf(row: AuditRow): SecurityEventKind | undefined {
     case AUDIT_ACTIONS.channelCreated:
     case AUDIT_ACTIONS.channelUpdated:
     case AUDIT_ACTIONS.channelDisabled:
+    case AUDIT_ACTIONS.channelEnabled:
     case AUDIT_ACTIONS.channelDeleted:
     case AUDIT_ACTIONS.channelVerifyTokenRotated:
       return row.metadata.ownersNotified === true ? 'channel_changed' : undefined;
+    case AUDIT_ACTIONS.channelBusinessProfileUpdated:
+      return row.metadata.ownersNotified === true ? 'business_profile_changed' : undefined;
     default:
       return undefined;
   }
@@ -146,6 +152,8 @@ const DETAIL_KEYS: Readonly<Record<SecurityEventKind, readonly string[]>> = {
   role_changed: ['from', 'to', 'actorRole'],
   user_disabled: ['role', 'actorRole'],
   channel_changed: ['change', 'name', 'phoneNumberId', 'changedFields', 'actorRole'],
+  // Nilai lama/baru (`previous`/`next`) ada di Audit log; banner cukup menyebut isiannya.
+  business_profile_changed: ['name', 'phoneNumberId', 'changedFields', 'actorRole'],
 };
 
 export function createAuditService(deps: { db: Database; limiter: RateLimiter }): AuditService {

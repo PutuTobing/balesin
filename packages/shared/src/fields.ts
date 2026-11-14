@@ -5,13 +5,17 @@ import { z } from 'zod';
  * Pesannya bahasa Indonesia dan langsung bisa ditampilkan di bawah isian.
  */
 
-/** `true` bila teks memuat karakter kendali (termasuk baris baru) — tidak pernah sah di isian satu baris. */
+/**
+ * Karakter tak terlihat yang tidak pernah sah di isian satu baris: kendali C0/C1 (termasuk baris
+ * baru), pemisah baris/paragraf Unicode, dan karakter format (`Cf`: pengubah arah U+202E/U+2066–
+ * U+2069, lebar-nol U+200B/U+2060, BOM, …) — bisa dipakai menyamarkan nama di email/inbox. ZWJ
+ * (U+200D) dikecualikan karena dipakai emoji gabungan.
+ */
+export const INVISIBLE_CHARACTER_PATTERN = /[\p{Cc}\p{Zl}\p{Zp}]|(?!\u200d)\p{Cf}/u;
+
+/** `true` bila teks memuat karakter kendali/format tak terlihat (lihat `INVISIBLE_CHARACTER_PATTERN`). */
 export function hasControlCharacters(text: string): boolean {
-  for (let index = 0; index < text.length; index += 1) {
-    const code = text.charCodeAt(index);
-    if (code < 0x20 || code === 0x7f) return true;
-  }
-  return false;
+  return INVISIBLE_CHARACTER_PATTERN.test(text);
 }
 
 const NO_CONTROL_MESSAGE = 'Tidak boleh memuat baris baru atau karakter khusus tak terlihat.';

@@ -953,6 +953,20 @@ describe('template email', () => {
       'Channel "CS Bcc: korban@contoh.test" di Balesin Maju dihapus oleh pengguna selain Owner',
     );
     expect(unknownActor.text).toContain('nonaktifkan akun pelakunya bila perlu');
+
+    // Karakter pengubah arah / lebar-nol (data lama sebelum validasi R4) dibuang; ZWJ emoji tetap.
+    const disguised = renderChannelChangedEmail({
+      ...base,
+      change: 'disabled',
+      channel: {
+        name: 'CS \u202eamatU\u202c \u2066x\u2069\u200b\u2060\ufeff\u0085👨\u200d💻',
+        phoneNumberId: null,
+      },
+    });
+    expect(disguised.subject).toBe(
+      'Channel "CS amatU x 👨\u200d💻" di Balesin Maju dinonaktifkan oleh Adi <Admin> (Admin)',
+    );
+    expect(disguised.text).not.toMatch(/[\u202e\u202c\u2066\u2069\u200b\u2060\ufeff\u0085]/);
     expect(unknownActor.text).not.toContain('Phone Number ID');
   });
 

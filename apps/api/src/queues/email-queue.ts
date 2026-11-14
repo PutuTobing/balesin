@@ -41,8 +41,15 @@ export interface EmailNotifier {
   accountToken(payload: AccountTokenEmailPayload): Promise<void>;
   /** Antrekan pemberitahuan ke SATU Owner: email pengirim diubah pengguna lain. */
   emailSettingsChanged(payload: EmailSettingsChangedEmailPayload): Promise<void>;
-  /** Antrekan pemberitahuan ke SATU Owner: channel diubah pengguna selain Owner. */
-  channelChanged(payload: ChannelChangedEmailPayload): Promise<void>;
+  /**
+   * Antrekan pemberitahuan ke SATU Owner: channel diubah pengguna selain Owner. `delayMs` = job baru
+   * boleh diambil setelah jeda (mis. menunggu hasil panggilan Meta yang sedang berjalan).
+   */
+  channelChanged(payload: ChannelChangedEmailPayload, options?: EnqueueOptions): Promise<void>;
+}
+
+export interface EnqueueOptions {
+  delayMs?: number;
 }
 
 export interface EmailQueue {
@@ -71,9 +78,13 @@ export function createEmailQueue(options: EmailQueueOptions): EmailQueue {
   queue.on('error', () => undefined);
 
   function enqueue<T>(name: string, schema: z.ZodType<T>) {
-    return async (payload: T): Promise<void> => {
+    return async (payload: T, options: EnqueueOptions = {}): Promise<void> => {
       const data = schema.parse(payload);
-      await withTimeout(queue.add(name, data), ENQUEUE_TIMEOUT_MS, 'Mengantre email');
+      await withTimeout(
+        queue.add(name, data, options.delayMs ? { delay: options.delayMs } : undefined),
+        ENQUEUE_TIMEOUT_MS,
+        'Mengantre email',
+      );
     };
   }
 

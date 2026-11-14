@@ -104,7 +104,7 @@ export interface AppDeps {
     mailDns?: MailDns;
     smtpTimeouts?: Partial<SmtpTimeouts>;
     /** Klien Graph API (mis. `sleep` instan supaya backoff tidak memperlambat tes). */
-    meta?: Partial<Omit<MetaGraphClientOptions, 'version' | 'baseUrl'>>;
+    meta?: Partial<Omit<MetaGraphClientOptions, 'version' | 'baseUrl' | 'environment'>>;
   };
 }
 
@@ -265,11 +265,9 @@ export async function buildApp(deps: AppDeps) {
   });
   const audit = createAuditService({ db, limiter });
 
-  // Server Meta tiruan hanya untuk development/test (config sudah menolaknya di production; ini
-  // lapis kedua bila AppConfig dirakit di luar `loadConfig`).
-  if (config.isProduction && config.metaGraphBaseUrl !== null) {
-    throw new Error('META_GRAPH_BASE_URL tidak boleh diisi di production');
-  }
+  // Server Meta tiruan hanya untuk development/test: config menolaknya di luar itu, dan klien
+  // sendiri (lapis kedua, juga melindungi worker) hanya menerima host loopback bila NODE_ENV
+  // development/test — selain itu melempar saat dibuat (aplikasi gagal start).
   const meta = createMetaGraphClient({
     version: config.metaGraphVersion,
     baseUrl: config.metaGraphBaseUrl,

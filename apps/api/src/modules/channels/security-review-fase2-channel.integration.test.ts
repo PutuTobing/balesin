@@ -247,53 +247,50 @@ describe('review fase 2 — penjaga regresi', () => {
   });
 });
 
-describe('review fase 2 — celah yang dikunci it.fails', () => {
+describe('review fase 2 — celah yang sudah ditutup (dulu it.fails)', () => {
   /**
    * S1: Admin (sesi dibobol) bisa mengganti profil bisnis RESMI nomor perusahaan — website, email,
    * deskripsi — ke tautan phishing tanpa konfirmasi identitas, tanpa pemberitahuan ke Owner, dan
    * audit hanya mencatat NAMA isian (nilai lama tidak bisa dipulihkan / dibandingkan).
    */
-  it.fails(
-    'S1: Admin mengubah website profil bisnis → Owner diberi tahu + audit menyimpan nilai lama & baru',
-    async () => {
-      const owner = await completeSetup(harness.app);
-      const { channel } = await createChannel(owner);
-      const admin = await member(owner, 'admin');
-      harness.channelChangeNotices.length = 0;
+  it('S1: Admin mengubah website profil bisnis → Owner diberi tahu + audit menyimpan nilai lama & baru', async () => {
+    const owner = await completeSetup(harness.app);
+    const { channel } = await createChannel(owner);
+    const admin = await member(owner, 'admin');
+    harness.channelChangeNotices.length = 0;
 
-      const response = await send(admin, 'PUT', path(routes.businessProfile, channel.id), {
-        websites: ['https://majujaya-bayar.example'],
-        email: 'tagihan@majujaya-bayar.example',
-      });
-      expect(response.statusCode, response.body).toBe(200);
+    const response = await send(admin, 'PUT', path(routes.businessProfile, channel.id), {
+      websites: ['https://majujaya-bayar.example'],
+      email: 'tagihan@majujaya-bayar.example',
+      // Website/email oleh selain Owner kini wajib konfirmasi identitas (perbaikan S1 butir 3);
+      // tanpa ini 400 — diuji terpisah di channels.integration.test.ts.
+      confirmation: { password: PASSWORD, code: await freshTotpCode(admin.session.user.email) },
+    });
+    expect(response.statusCode, response.body).toBe(200);
 
-      // Yang diharapkan: perubahan profil publik oleh selain Owner diberitahukan.
-      expect(harness.channelChangeNotices.length).toBeGreaterThan(0);
-      const [audit] = await harness.db
-        .select()
-        .from(auditLogs)
-        .where(eq(auditLogs.action, 'channel.business_profile_updated'));
-      expect(JSON.stringify(audit?.metadata)).toContain('https://majujaya.test');
-      expect(JSON.stringify(audit?.metadata)).toContain('https://majujaya-bayar.example');
-    },
-  );
+    // Yang diharapkan: perubahan profil publik oleh selain Owner diberitahukan.
+    expect(harness.channelChangeNotices.length).toBeGreaterThan(0);
+    const [audit] = await harness.db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.action, 'channel.business_profile_updated'));
+    expect(JSON.stringify(audit?.metadata)).toContain('https://majujaya.test');
+    expect(JSON.stringify(audit?.metadata)).toContain('https://majujaya-bayar.example');
+  });
 
   /**
    * R3: channel yang dinonaktifkan Owner (mis. karena token dicurigai bocor) bisa diaktifkan lagi
    * diam-diam oleh Admin — `enable` tidak diberitahukan.
    */
-  it.fails(
-    'R3: Admin mengaktifkan lagi channel yang dinonaktifkan Owner → Owner diberi tahu',
-    async () => {
-      const owner = await completeSetup(harness.app);
-      const { channel } = await createChannel(owner);
-      expect((await send(owner, 'POST', path(routes.disable, channel.id))).statusCode).toBe(200);
-      const admin = await member(owner, 'admin');
-      harness.channelChangeNotices.length = 0;
+  it('R3: Admin mengaktifkan lagi channel yang dinonaktifkan Owner → Owner diberi tahu', async () => {
+    const owner = await completeSetup(harness.app);
+    const { channel } = await createChannel(owner);
+    expect((await send(owner, 'POST', path(routes.disable, channel.id))).statusCode).toBe(200);
+    const admin = await member(owner, 'admin');
+    harness.channelChangeNotices.length = 0;
 
-      const enabled = await send(admin, 'POST', path(routes.enable, channel.id));
-      expect(enabled.statusCode, enabled.body).toBe(200);
-      expect(harness.channelChangeNotices.length).toBeGreaterThan(0);
-    },
-  );
+    const enabled = await send(admin, 'POST', path(routes.enable, channel.id));
+    expect(enabled.statusCode, enabled.body).toBe(200);
+    expect(harness.channelChangeNotices.length).toBeGreaterThan(0);
+  });
 });
