@@ -1,7 +1,7 @@
 # Progress
 
 **Fase aktif:** 1 — Akun, peran, keamanan
-**Terakhir diperbarui:** 2026-11-14 (Fase 1 butir 1–3 selesai; butir 4 berjalan, dihentikan sementara)
+**Terakhir diperbarui:** 2026-11-14 malam (Fase 1 butir 4–6 backend selesai; web butir 6 hampir selesai)
 
 ## Selesai
 
@@ -44,30 +44,39 @@
   QA-2FA-1..5 diperbaiki, `kritikus-desain` LOLOS putaran 3 (`docs/design-reviews/2026-11-14-2fa.md`).
 - Tes: 1.238 Vitest + 176 E2E lulus.
 
-## Sedang dikerjakan
-- **Fase 1 butir 4 — undangan, reset password, verifikasi email, template bermerek** (dihentikan
-  14 Nov karena Tobing istirahat; lanjut pukul 11.00).
-  - **Backend selesai & di-commit** (`5affb46`); kontrak di `docs/KONTRAK-API-AUTH.md`. Review
-    security **AMAN** (`docs/security-reviews/2026-11-14-fase1-undangan-reset.md`, commit `2f6ec07`).
-  - **Belum di-commit, ada di working tree (setengah jadi — JANGAN commit apa adanya):**
-    1. `apps/api`, `apps/worker`, `docs/KONTRAK-API-AUTH.md`: perbaikan temuan security R1, R2
-       (sisi terima), R4, R5 + kegagalan diam-diam `BackgroundTasks`. Hampir selesai (tes lulus,
-       sedang memperbarui kontrak). Lanjutkan: periksa `git diff`, pastikan 2 `it.fails` di
-       `apps/api/src/security-review-fase1-undangan-reset.test.ts` sudah lulus tanpa `.fails`,
-       kontrak diperbarui, lalu jalankan pemeriksaan backend.
-    2. `apps/web`, `e2e`: layar Pengaturan → Tim, `/undangan`, `/lupa-password`,
-       `/atur-ulang-password`, `/verifikasi-email`, pratinjau template, perbaikan flake
-       `TwoFactorLogin.test.tsx`. Baru sebagian (sedang mengerjakan kartu email di halaman
-       Keamanan). Lanjutkan dengan agent frontend: periksa `git diff` dulu, selesaikan sisa daftar,
-       tes unit + E2E + screenshot.
-  - Setelah itu: commit, QA, kritikus-desain, lalu centang butir 4.
-  - R3 (batas 72 jam akun peran wajib yang belum daftar 2FA) dan pembatalan massal undangan saat
-    pengundang dinonaktifkan → butir 6 (manajemen pengguna).
-  - Owner lupa password tanpa SMTP butuh perintah CLI pemulihan → Fase 7 (`balesin` CLI).
-- Catatan alat: sesi Claude Code saat ini tidak memuat `/lanjut` dan subagent proyek; orkestrator
-  memakai subagent umum (Opus) dengan instruksi membaca `.claude/agents/<peran>.md`.
-- Pose Kak Sky menunggu Tobing (BUTUH-TOBING #5).
-- Database dev `balesin` dimigrasi s.d. 0002 (jalankan `pnpm db:migrate` untuk 0003). E2E memakai
+## Sedang dikerjakan (dihentikan 14 Nov malam — lanjut sesi berikutnya)
+
+**Sudah di-commit (belum di-push — 39 commit menunggu `git push origin dev`):**
+- Fase 1 butir 4 backend + perbaikan security (`5affb46`, `ccc5623`); web butir 4 (`9ef14f8`).
+- Fase 1 butir 5 RBAC + perbaikan security (`a6a76b4`, `e87bd33`) — PRD §4 diperbarui.
+- Fase 1 butir 6 backend (`4141fcd`) + perbaikan security R1–R4 (`84792bc`).
+- Fase 2 butir 1–2 backend: channel WhatsApp (`91ec7c2`), kontrak `docs/KONTRAK-API-CHANNEL.md`.
+- Review: security AMAN untuk butir 4, 5, 6 (`docs/security-reviews/2026-11-14-*`).
+
+**Di working tree, BELUM di-commit (setengah jadi — periksa dulu, jangan commit apa adanya):**
+1. `apps/web`, `e2e` (agent frontend, hampir selesai — terakhir: screenshot 625/625 lulus, akan
+   menjalankan `pnpm test` dan `pnpm build`):
+   - layar butir 6: Tim (daftar & detail pengguna, ubah peran, nonaktif, reset 2FA, buka kunci,
+     sesi), dialog konfirmasi identitas, Keamanan → Sesi aktif, Audit log (+ ekspor CSV dengan
+     header CSRF), banner keamanan, `TWO_FACTOR_ENROLLMENT_EXPIRED`;
+   - revisi kritikus butir 4 (`docs/design-reviews/2026-11-14-undangan-reset.md` W1–W3, S1–S6,
+     P1–P3, P5, P6);
+   - penyesuaian perubahan API butir 6 (`docs/KONTRAK-API-AUTH.md` bagian "Perubahan setelah
+     review keamanan butir 6") dan teks "email-mu".
+   Lanjutkan: agent `frontend` periksa `git diff`, lengkapi yang belum, jalankan semua pemeriksaan
+   root (`format:check`, `lint`, `check:deps`, `typecheck`, `test`, `build`, `e2e`, `screenshots`).
+2. `apps/api`, `packages/core`, `packages/shared` (agent backend, baru sebagian): pemberitahuan
+   email ke Owner + kejadian `warning` saat Admin mengubah kredensial/channel WhatsApp. Lanjutkan
+   atau mulai ulang dengan agent `backend` (periksa `git diff` dulu), lalu pemeriksaan backend.
+
+**Urutan berikutnya:** selesaikan 1 & 2 → commit → kritikus putaran 2 butir 4 + kritikus layar
+butir 6 → QA butir 4–6 → centang butir 4, 5, 6 di ROADMAP → butir 7 (review security +
+kritikus semua layar auth) → tutup Fase 1 → review security channel WhatsApp → frontend wizard
+WhatsApp (Fase 2 butir 1–2) → webhook masuk (Fase 2 butir 3).
+
+- Owner lupa password tanpa SMTP butuh perintah CLI pemulihan → Fase 7 (wajib sebelum produksi).
+- Pose Kak Sky menunggu Tobing (BUTUH-TOBING #5). Kredensial Meta menunggu Tobing (#3).
+- Database dev `balesin` belum menerima migrasi 0003–0008 (jalankan `pnpm db:migrate`). E2E memakai
   database `balesin_e2e`, Redis db 14, port API 3100 / web 5180.
 
 ## Catatan untuk sesi berikutnya
