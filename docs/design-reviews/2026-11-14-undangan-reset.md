@@ -302,3 +302,98 @@ Tidak ditemukan.
 
 S1–S6 murah dan langsung terasa; sebaiknya ikut di putaran yang sama. P1–P7 boleh menyusul (P4 dan P7 lewat
 `backend`, P8 lewat `qa-tester`).
+
+---
+
+# Putaran 2
+
+- **Tanggal:** 2026-11-15 · **Penilai:** `kritikus-desain` · **Putaran:** 2
+- **Kode yang dinilai:** `edf06b9` ("manajemen tim, sesi aktif, audit log, banner keamanan + revisi kritikus
+  butir 4"), branch `dev`. Agent `backend` sedang mengubah `apps/api` dan `packages/*` di working tree utama
+  (belum di-commit), jadi foto diambil dari worktree terpisah.
+
+## Putusan putaran 2: LOLOS
+
+W1–W3 memenuhi kriteria lolosnya di semua varian yang diukur, tidak ada nilai di bawah 4, tidak ada
+pelanggaran §3, dan tidak ada regresi pada layar yang sudah LOLOS. Klaim `frontend` sudah saya periksa sendiri
+dan **benar**, dengan satu catatan pada S3 (lihat tabel).
+
+## Cara menilai
+
+1. **Foto (terisolasi).** Git worktree sementara dari `edf06b9` di scratchpad, `pnpm install
+   --frozen-lockfile`, stack terpisah: API **3191**, web **5191**, database **`balesin_kd_e2e`**, Redis **db 11**
+   (salinan `e2e/stack/env.ts` di worktree dibuat membaca `E2E_DATABASE_NAME`; berkas repo tidak diubah).
+   `pnpm screenshots`: **625/625 lulus, 0 ulangan** (156 layar × 4 + sesi).
+2. **Ukur.** Spek Playwright di luar repo yang memakai `e2e/capture/screens.ts` + `mocks*.ts` apa adanya:
+   kerangka → isi dengan respons API **ditahan lalu dilepas** (undangan CS/Admin/Supervisor, atur ulang
+   dengan/tanpa 2FA, verifikasi email, Tim dengan 0–4 undangan) × 4 varian; warna, label, dan fokus tombol di
+   enam dialog; fokus `masuk-password-diganti`; audit generik (scroll horizontal, ukuran/keluarga huruf,
+   kontras, warna di luar token, teks terpotong, target sentuh) untuk 53 layar × 4. **Semua 343 uji lulus.**
+3. **Regresi:** lembar kontak 121 layar lama (1440 terang, 390 gelap).
+4. **Bersih-bersih:** lihat laporan `2026-11-15-tim-audit.md` (satu stack untuk kedua penilaian).
+
+## Hasil ukur revisi
+
+| Revisi | Kriteria | Hasil | Status |
+|---|---|---|---|
+| **W1** form undangan diam | y isian Email/Nama/Password/Ulangi Δ ≤ 4 px | **Δ 0,0** di CS, Admin, Supervisor × 390/1440 × terang/gelap (12 varian; klaim 8 varian benar). Kotak 2FA tampil di antara "Ulangi password" dan "Buat akun". Tombol & catatan kaki tidak ada di kerangka, jadi tidak ada yang melompat | Lolos |
+| **W2** form atur ulang diam | y "Password baru"/"Ulangi password baru" Δ ≤ 4 px | **Δ 0,0** dengan & tanpa 2FA, 4 varian. Blok 2FA + tombol baru muncul setelah data tiba, di bawah isian | Lolos |
+| **W3** satu tombol berwarna per dialog | tepat satu tombol berlatar `--primary`/`--danger-ink`; fokus awal aman | `tim-batalkan`: "Batalkan undangan" `#C03535` (terang) / `#F07070` (gelap) + "Kembali" sekunder (`--surface` + tepi `--line`); fokus di **"Kembali"**. `tim-tautan-belum-disalin`: "Salin tautan" `#1167D8` / `#4D9BFF` + "Tutup tanpa menyalin" ghost teks `--danger-ink`; fokus di **"Salin tautan"**; kotak "belum disalin" kini `warning`. Tidak ada lagi "Kembali" tanpa tujuan. `IdentityDialog` dan dua dialog sesi (butir 6) memakai pola yang sama | Lolos |
+| S1 meter tidak mengulang | tidak ada kalimat tampil dua kali | Meter kosong: "Ketik password untuk melihat kekuatannya." (setup, undangan, atur ulang) | Lolos |
+| S2 fokus setelah password diganti | `activeElement` = `input[name=password]` | Benar di 4 varian | Lolos |
+| S3 kerangka daftar Tim | y baris pertama Δ ≤ 4 px | Tepi atas baris pertama: **Δ 0,8** (1440) / **Δ 0** (390). **Catatan:** di 390 tombol "Kirim ulang/Batalkan" baris pertama turun **19,6 px** (642,3 → 661,9) karena baris detail undangan dua baris di HP, sedangkan kerangkanya satu. Kriteria tertulis terpenuhi; sisa lompatan masuk saran T-S5 di laporan butir 6 | Lolos (dengan catatan) |
+| S4 teks layar tautan | teks baru + tombol verifikasi Δ ≤ 4 px | Teks sudah diganti (judul tidak lagi diulang isinya). Tombol "Ke halaman masuk" `verifikasi-email-memuat` → `-berhasil`: **Δ −8 px** di 390 (192,6 → 184,6) dan 1440 (391,4 → 383,4). Subjudul sudah sama tinggi (40,6); selisihnya ada di jarak kerangka tombol | Teks lolos; Δ belum (Kecepatan tetap 4) |
+| S5 dialog tautan | tanpa nasihat ganda | Teks baru dipakai | Lolos |
+| S6 deskripsi kartu Email 13 px | semua paragraf penjelasan 13 px | `.description` 13 px `--ink-2`; yang 14 px hanya alamat email (disengaja) | Lolos |
+| P1 `LinkProblem tall` | logo tidak melompat | `undangan-tidak-berlaku`, `-terkunci`, `atur-ulang-password-tidak-berlaku` kini rata atas seperti kerangkanya | Lolos |
+| P2, P3, P5, P6 | — | Titik dihapus; `menuHint` sesuai urutan kartu (+ "sesi aktif"); kartu Email tanpa pengirim memakai tombol sekunder 44 px di HP; "kedaluwarsa sejak hari ini pukul …" | Lolos |
+| P8 (qa) | foto setelah undangan dibuat | `tim-tautan`/`tim-terkirim` kini menampilkan undangan baru di "Undangan terbuka" | Lolos |
+| P4, P7 (backend) | "email-mu", "akun Balesin-mu" | `PASSWORD_RULES_HINT` "…nama dan email-mu." tampil di semua form password | Lolos |
+
+Audit generik: tidak ada scroll horizontal; ukuran huruf 12/13/14/16/20/24 saja; tidak ada teks aktif < 4,5:1;
+warna di luar token hanya miniatur tema di Pengaturan (sudah diterima).
+
+## Tabel nilai putaran 2 (kelompok yang dinilai ulang penuh)
+
+Kolom sama dengan putaran 1. Nilai terang = gelap.
+
+| Kelompok | Ukuran | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| **D. Tautan belum disalin** — `tim-tautan-belum-disalin` | 390 / 1440 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 4 | 5 |
+| **E. Batalkan undangan** — `tim-batalkan` | 390 / 1440 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| **H. Undangan wajib 2FA** — `undangan-wajib-2fa` | 390 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| | 1440 | 5 | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 5 | 5 |
+| **M. Atur ulang tanpa 2FA** — `atur-ulang-password` | 390 / 1440 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| **N. Atur ulang dengan 2FA** — `atur-ulang-password-2fa`, `-kode-salah`, `-memuat` | 390 / 1440 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+
+Kelompok lain dari putaran 1 tetap atau naik: G kolom 8 → 5 (S1), O kolom 7 → 5 (S2), Q kolom 3 → 5 (S6),
+`keamanan-email-tanpa-pengirim` 390 kolom 5 → 5 (P5), C kolom 8 → 5 (S5), J 1440 kolom 10 → 5 (P1), F kolom 4
+→ 5 (P2), L kolom 8 → 5 (S4). P kolom 10 tetap 4 (Δ −8), kolom 3 naik ke 5 (kata yatim hilang).
+
+### Alasan nilai 4
+
+- **D, Kesan 4:** dua kotak peringatan kuning bertumpuk ("Tautan ini setara kunci akses" + "Tautan belum
+  disalin") dengan bobot sama; yang kedua tanpa judul. Diterima karena keduanya memang peringatan.
+- **H 1440, Kerapian 4:** subjudul "Rina Kartika mengundangmu sebagai Admin di Balesin." cukup satu baris,
+  tetapi `.subtitleReserve` menyisakan tinggi dua baris, jadi celah di atas "Email" ±20 px lebih lebar daripada
+  halaman auth lain. Ini harga yang disengaja untuk Δ 0, jadi diterima dan tidak direvisi.
+
+## Larangan §3 (putaran 2)
+
+Bersih untuk semua butir: tidak ada gradien/glassmorphism/emoji; tombol radius 6, tidak ada bayangan baru;
+tidak ada kartu berulang; teks Indonesia; skala huruf tetap; warna dari token.
+
+## Regresi
+
+Tidak ditemukan. Lembar kontak 121 layar lama sama dengan putaran 1 selain perubahan yang disengaja (P1 tata
+letak rata atas; kartu "Sesi aktif" baru di Keamanan akun; baris Tim/Audit log di Pengaturan — dinilai di
+laporan butir 6).
+
+## Sisa saran (tidak memblokir)
+
+- **S4 lanjutan:** `apps/web/src/features/email-verification/VerifyEmailPage.tsx` kasus `'loading'`: samakan
+  jarak atas `layout.actions` kerangka dengan layar `done`/`invalid` (sekarang kerangka 8 px lebih rendah).
+  Kriteria: tombol `verifikasi-email-memuat` → `-berhasil` Δ ≤ 4 px di 390 & 1440.
+- **D:** beri kotak kedua judul tebal "Tautan belum disalin" dan pendekkan isinya menjadi "Setelah dialog ini
+  ditutup, tautan tidak bisa dilihat lagi. Untuk tautan baru, kirim ulang undangannya."
+  (`i18n/id.ts` `team.linkDialog.notCopied` + `Notice title`).
