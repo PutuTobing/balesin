@@ -1,7 +1,7 @@
 # Progress
 
 **Fase aktif:** 1 — Akun, peran, keamanan
-**Terakhir diperbarui:** 2026-11-15 (Fase 1 butir 4–6 di-commit; perbaikan security channel setengah jadi)
+**Terakhir diperbarui:** 2026-11-15 malam (Fase 1 butir 1–6 selesai; butir 7 sedang diperbaiki)
 
 ## Selesai
 
@@ -44,34 +44,40 @@
   QA-2FA-1..5 diperbaiki, `kritikus-desain` LOLOS putaran 3 (`docs/design-reviews/2026-11-14-2fa.md`).
 - Tes: 1.238 Vitest + 176 E2E lulus.
 
-## Sedang dikerjakan (dihentikan 15 Nov — lanjut sesi berikutnya)
+## Sedang dikerjakan (dihentikan 15 Nov malam — lanjut besok)
 
-**Sudah di-commit (belum di-push — `git push origin dev`):**
-- Fase 1 butir 4 (undangan, reset, verifikasi email): backend + web + revisi kritikus putaran 1.
-- Fase 1 butir 5 RBAC; butir 6 manajemen tim, sesi aktif, audit log — backend + web (`edf06b9`).
-- Fase 2 butir 1–2 backend: channel WhatsApp (`91ec7c2`) + pemberitahuan Owner (`cfe195e`).
-- Review security AMAN: butir 4, 5, 6, channel WhatsApp (`docs/security-reviews/`).
+**Selesai & di-commit:** Fase 1 butir 1–6 (dicentang di ROADMAP), backend channel WhatsApp +
+perbaikan security-nya (`19690a3`). Tinggal **butir 7** (review akhir) untuk menutup Fase 1.
+
+**Butir 7 — dua review akhir:**
+- Kritikus konsistensi lintas layar: **REVISI** (`docs/design-reviews/2026-11-15-fase1-akhir.md`).
+- Security akhir: **PERBAIKI**, 2 Tinggi (`docs/security-reviews/2026-11-15-fase1-akhir.md`):
+  T1 undangan tanpa konfirmasi identitas (cookie curian → akun Admin menetap), T2 Owner mengubah
+  SMTP tanpa konfirmasi/pemberitahuan; S1 pengecualian Owner di buat channel/profil bisnis;
+  R2 banjir `account_locked`, R3 cek ulang pelaku di transaksi, R5 reset massal. Tes pengunci:
+  `apps/api/src/security-review-fase1-akhir.test.ts` (5 `it.fails` + tes "BUKTI T1").
 
 **Di working tree, BELUM di-commit (setengah jadi — jangan commit apa adanya):**
-- `apps/api`, `packages/core`, `packages/shared`: perbaikan temuan review keamanan channel
-  WhatsApp (`docs/security-reviews/2026-11-15-fase2-channel-whatsapp.md`: S1 profil bisnis →
-  audit nilai lama/baru + beri tahu Owner + konfirmasi untuk website/email; R1 masa dingin batas
-  laju per token+objek+operasi maks. 60 menit; R2 buat channel oleh non-Owner wajib konfirmasi
-  identitas; R3 `enable` diberitahukan; R4 tolak karakter format Unicode; R5 tenggat total
-  permintaan Graph; R6 penjaga `META_GRAPH_BASE_URL` di klien; advisory lock batas 20 channel).
-  Klien Graph (R1/R5/R6) sudah, service channel (R2/R3/S1/R5/lock) sedang dikerjakan saat
-  berhenti. Lanjutkan dengan agent `backend` (periksa `git diff`), hapus `.fails` di 4 tes
-  pengunci, perbarui `docs/KONTRAK-API-CHANNEL.md`, pemeriksaan backend, commit.
+1. Backend (`apps/api`, `apps/worker`, `packages/*`, `docs/KONTRAK-API-*.md`), dua pekerjaan
+   bercampur:
+   - selesai: teks pesan API (label "Buka lagi pendaftaran", pesan 429 tanpa durasi, setiap 429
+     membawa `Retry-After`, tanpa "reset"/"login");
+   - **setengah jadi**: perbaikan T1, T2, S1, R2, R3, R5 (terakhir: memindahkan helper cek ulang
+     pelaku ke satu tempat dan memakainya di invitations & email-settings; jenis kejadian baru
+     `member_joined`, `password_reset_burst`). Saat berhenti, lint gagal di 2 berkas dan 137 tes
+     API merah.
+   Lanjutkan dengan agent `backend` (periksa `git diff`), tuntaskan sesuai laporan security akhir,
+   hapus `.fails`, ubah tes "BUKTI T1" menjadi penjaga, perbarui kontrak, pemeriksaan backend.
+2. Web (`apps/web`, `e2e`) — revisi konsistensi kritikus W1–W6, S1, S3 **selesai**: dialog,
+   `FormErrorNotice`, `IdentityDialog` di Keamanan, istilah, white-label, penjaga rute per izin.
+   Sisi web hijau (461 tes, build, 629 foto), tetapi E2E terblokir karena undangan kini menuntut
+   konfirmasi identitas. Setelah kontrak backend final: frontend memasang `IdentityDialog` untuk
+   undang/kirim ulang undangan dan simpan email pengirim (semua peran termasuk Owner), lalu
+   semua pemeriksaan root.
 
-**Penilaian desain yang terpotong:** kritikus-desain (putaran 2 butir 4 +
-layar butir 6) sudah memotret & mengukur di worktree sementara
-`…\scratchpad\kd6\wt` (database `balesin_kd_e2e`, Redis db 11) dan tinggal menulis laporan saat
-dihentikan. Jalankan ulang (atau lanjutkan) lalu bersihkan worktree/database/Redis itu.
-
-**Urutan berikutnya:** perbaikan security channel → commit → kritikus putaran 2 butir 4 +
-kritikus butir 6 → revisi frontend bila perlu → QA butir 4–6 → centang butir 4, 5, 6 di ROADMAP
-→ butir 7 (review security + kritikus semua layar auth) → tutup Fase 1 → frontend wizard
-WhatsApp (Fase 2 butir 1–2) → webhook masuk (Fase 2 butir 3; syaratnya ada di bagian D laporan
+**Urutan berikutnya:** backend T1/T2/… selesai → frontend dialog konfirmasi → root hijau → commit →
+security cek ulang T1/T2 → kritikus nilai ulang layar yang tersentuh → centang butir 7 → **tutup
+Fase 1** → Fase 2: frontend wizard WhatsApp, lalu webhook masuk (syarat di bagian D laporan
 security channel).
 
 - Owner lupa password tanpa SMTP butuh perintah CLI pemulihan → Fase 7 (wajib sebelum produksi).
