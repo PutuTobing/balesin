@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import { request } from '@playwright/test';
+import { Redis } from 'ioredis';
 import pg from 'pg';
-import { E2E_ADMIN_DATABASE_URL, E2E_DATABASE_NAME, E2E_OWNER } from '../stack/env';
+import { E2E_ADMIN_DATABASE_URL, E2E_DATABASE_NAME, E2E_OWNER, E2E_REDIS_URL } from '../stack/env';
 import { BASE_URL } from '../viewports';
 import { totpAtStep, totpStep } from './two-factor';
 
@@ -173,4 +174,24 @@ export async function userId(email: string): Promise<string> {
   const id = rows[0]?.id;
   if (!id) throw new Error(`Pengguna ${email} tidak ada`);
   return id;
+}
+
+/**
+ * Kosongkan hitungan "percobaan masuk gagal per IP" (`login-ip`, 20 / 15 menit) di Redis E2E.
+ *
+ * Semua tes E2E masuk dari 127.0.0.1, jadi jatah itu dipakai bersama seluruh suite; jatah diambil
+ * SEBELUM password diperiksa (login sah yang sedang berjalan ikut terhitung sesaat). Tes yang
+ * SENGAJA gagal masuk berkali-kali (penguncian akun) memanggil ini setelah asersinya selesai,
+ * supaya tes lain yang masuk bersamaan tidak ikut terkena 429 "dari jaringanmu". Kunci akun/asal
+ * yang sedang diuji tidak disentuh (kunci Redis lain).
+ */
+export async function releaseLoginIpBudget(): Promise<void> {
+  const redis = new Redis(E2E_REDIS_URL, { lazyConnect: true, maxRetriesPerRequest: 1 });
+  await redis.connect();
+  try {
+    const keys = await redis.keys('balesin:rl:login-ip:*');
+    if (keys.length > 0) await redis.del(...keys);
+  } finally {
+    redis.disconnect();
+  }
 }

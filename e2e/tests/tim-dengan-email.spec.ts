@@ -4,7 +4,8 @@ import { BASE_URL } from '../viewports';
 import { expect, openApp, owner, submitLogin, test } from './fixtures';
 import { expectNoTokenInUrl, openWatchedPage } from './konteks';
 import { findMail, waitForTokenLink } from './mailpit';
-import { createUser, enableTwoFactorViaApi, nextTotp } from './pengguna';
+import { createUser, e2eSql, enableTwoFactorViaApi, nextTotp } from './pengguna';
+import { wrongTotp } from './two-factor';
 
 /**
  * Undangan, lupa/atur ulang password, dan verifikasi email DENGAN email pengirim (Mailpit): email
@@ -195,6 +196,14 @@ test('atur ulang password akun ber-2FA wajib dengan kode; masuk berikutnya tetap
     // Tanpa kode → ditolak di browser.
     await guest.page.getByRole('button', { name: 'Simpan password baru' }).click();
     await expect(guest.page.getByLabel('Kode verifikasi')).toHaveAttribute('aria-invalid', 'true');
+    // Kode salah → ditolak server di isian kode dengan sisa percobaan; tautan tetap bisa dipakai.
+    guest.allow('/api/v1/auth/password-reset/complete', 400);
+    await guest.page.getByLabel('Kode verifikasi').fill(wrongTotp(secret));
+    await guest.page.getByRole('button', { name: 'Simpan password baru' }).click();
+    await expect(guest.page.getByText(/Sisa 2 percobaan/)).toBeVisible();
+    await expect(guest.page.getByLabel('Kode verifikasi')).toHaveAttribute('aria-invalid', 'true');
+    await expect(guest.page.getByLabel('Kode verifikasi')).toBeFocused();
+    await expect(guest.page.getByLabel('Password baru', { exact: true })).toHaveValue(NEW_PASSWORD);
     const { code, step } = await nextTotp(secret, lastStep);
     await guest.page.getByLabel('Kode verifikasi').fill(code);
     await guest.page.getByRole('button', { name: 'Simpan password baru' }).click();
@@ -246,4 +255,154 @@ test('pratinjau template email: iframe ber-sandbox dengan branding organisasi', 
   await page.getByLabel('Template').selectOption({ label: 'Atur ulang password' });
   await page.getByRole('radio', { name: 'Teks polos' }).click();
   await expect(page.locator('pre')).toContainText('CONTOH-TAUTAN-PRATINJAU');
+});
+
+// ── Tambahan QA butir 4: batas 72 jam undangan, tautan kedaluwarsa, tautan verifikasi dipakai ulang ──
+
+test('undangan Supervisor lewat 72 jam: penerima melihat "kedaluwarsa"; kirim ulang membatalkan tautan lama dan tautan baru berlaku', async ({
+  page,
+  browser,
+}) => {
+  test.setTimeout(120_000);
+  const email = `sari-kedaluwarsa-${stamp}@majujaya.test`;
+  const since = new Date();
+  await openApp(page, '/pengaturan/tim');
+  await page.getByLabel('Email', { exact: true }).fill(email);
+  await page.getByLabel('Peran').selectOption({ label: 'Supervisor' });
+  await page.getByRole('button', { name: 'Kirim undangan' }).click();
+  const row = page.getByRole('listitem', { name: `Undangan untuk ${email}` });
+  await expect(row).toContainText('Email terkirim', { timeout: 30_000 });
+  const oldLink = await waitForTokenLink(email, '/undangan', since);
+
+  // Jam server tidak bisa dimajukan: batas 72 jam dilewati dengan memundurkan `expires_at`.
+  await e2eSql(
+    `update user_invitations set expires_at = now() - interval '1 minute'
+     where email = $1 and accepted_at is null and revoked_at is null`,
+    [email],
+  );
+
+  const guest = await openWatchedPage(browser, { hp: true });
+  guest.allow('/api/v1/auth/me', 401);
+  guest.allow('/api/v1/auth/invitation/inspect', 410);
+  try {
+    await guest.page.goto(oldLink);
+    await expect(
+      guest.page.getByRole('heading', { level: 1, name: 'Undangan tidak bisa dipakai' }),
+    ).toBeVisible();
+    await expect(guest.page.getByRole('main')).toContainText('sudah kedaluwarsa');
+    await expect(guest.page.getByLabel('Nama lengkap')).toHaveCount(0);
+    await expectNoTokenInUrl(guest.page);
+
+    // Daftar Owner: "Kedaluwarsa" + "Kirim ulang" (tanpa memuat ulang manual → muat ulang halaman).
+    await page.reload();
+    await expect(row).toContainText('Kedaluwarsa');
+    const resendSince = new Date();
+    await row.getByRole('button', { name: 'Kirim ulang' }).click();
+    await expect(row).not.toContainText('Kedaluwarsa');
+    await expect(row).toContainText('Email terkirim', { timeout: 30_000 });
+    const newLink = await waitForTokenLink(email, '/undangan', resendSince);
+    expect(newLink).not.toBe(oldLink);
+
+    // Tautan lama: tidak berlaku (diganti kirim ulang), bukan lagi "kedaluwarsa".
+    await guest.page.goto('/masuk');
+    await guest.page.goto(oldLink);
+    await expect(
+      guest.page.getByRole('heading', { level: 1, name: 'Undangan tidak bisa dipakai' }),
+    ).toBeVisible();
+    await expect(guest.page.getByRole('main')).toContainText('tidak berlaku');
+
+    // Tautan baru: form, peran wajib 2FA → langsung ke pendaftaran 2FA setelah akun dibuat.
+    await guest.page.goto('/masuk');
+    await guest.page.goto(newLink);
+    await expect(
+      guest.page.getByText(/Peran Supervisor wajib verifikasi dua langkah/),
+    ).toBeVisible();
+    await guest.page.getByLabel('Nama lengkap').fill('Sari Wulandari');
+    await guest.page.getByLabel('Password', { exact: true }).fill(PASSWORD);
+    await guest.page.getByLabel('Ulangi password').fill(PASSWORD);
+    await guest.page.getByRole('button', { name: 'Buat akun' }).click();
+    await expect(guest.page).toHaveURL(/\/verifikasi-dua-langkah$/);
+    guest.expectClean();
+  } finally {
+    await guest.close();
+  }
+  await page.reload();
+  await expect(row).toHaveCount(0);
+});
+
+test('tautan atur ulang password lewat 30 menit → "kedaluwarsa" dengan tombol minta tautan baru', async ({
+  browser,
+}) => {
+  const user = await createUser('teknisi', 'reset-kedaluwarsa');
+  const guest = await openWatchedPage(browser);
+  guest.allow('/api/v1/auth/me', 401);
+  guest.allow('/api/v1/auth/password-reset/inspect', 410);
+  try {
+    const since = new Date();
+    await guest.page.goto('/lupa-password');
+    await requestReset(guest.page, user.email);
+    const link = await waitForTokenLink(user.email, '/atur-ulang-password', since);
+    await e2eSql(
+      `update account_tokens set expires_at = now() - interval '1 minute'
+       where purpose = 'password_reset' and used_at is null and revoked_at is null
+         and user_id = (select id from users where email = $1)`,
+      [user.email],
+    );
+    await guest.page.goto(link);
+    await expect(
+      guest.page.getByRole('heading', { level: 1, name: 'Tautan tidak bisa dipakai' }),
+    ).toBeVisible();
+    await expect(guest.page.getByRole('main')).toContainText('kedaluwarsa');
+    await expectNoTokenInUrl(guest.page);
+    await guest.page.getByRole('link', { name: 'Minta tautan baru' }).click();
+    await expect(guest.page).toHaveURL(/\/lupa-password$/);
+    await expect(guest.page.getByLabel('Email')).toBeVisible();
+    guest.expectClean();
+  } finally {
+    await guest.close();
+  }
+});
+
+test('CS memverifikasi email-nya; tautan verifikasi yang sama dibuka lagi → tidak bisa dipakai', async ({
+  browser,
+}) => {
+  const user = await createUser('cs', 'verifikasi');
+  await e2eSql(`update users set email_verified_at = null where email = $1`, [user.email]);
+  const cs = await openWatchedPage(browser, { hp: true });
+  cs.allow('/api/v1/auth/me', 401);
+  try {
+    await cs.page.goto('/masuk');
+    await submitLogin(cs.page, user.email, user.password);
+    await expect(cs.page).toHaveURL(/\/inbox$/);
+    await cs.page.goto('/pengaturan/keamanan');
+    const card = cs.page.getByRole('region', { name: 'Email akun' });
+    await expect(card).toContainText('Belum diverifikasi');
+    const since = new Date();
+    await card.getByRole('button', { name: 'Kirim email verifikasi' }).click();
+    await expect(card.getByText(`Email verifikasi sedang dikirim ke ${user.email}`)).toBeVisible();
+    const link = await waitForTokenLink(user.email, '/verifikasi-email', since);
+
+    await cs.page.goto(link);
+    await expect(
+      cs.page.getByRole('heading', { level: 1, name: 'Email sudah terverifikasi' }),
+    ).toBeVisible();
+    await expectNoTokenInUrl(cs.page);
+
+    cs.allow('/api/v1/auth/email/verify', 410);
+    await cs.page.goto('/inbox');
+    await cs.page.goto(link);
+    await expect(
+      cs.page.getByRole('heading', { level: 1, name: 'Tautan verifikasi tidak bisa dipakai' }),
+    ).toBeVisible();
+    await expect(cs.page.getByRole('main')).toContainText(/sudah dipakai|sudah terverifikasi/);
+    await expectNoTokenInUrl(cs.page);
+
+    await cs.page.goto('/pengaturan/keamanan');
+    await expect(cs.page.getByRole('region', { name: 'Email akun' })).toContainText(
+      'Terverifikasi',
+    );
+    cs.expectClean();
+  } finally {
+    await cs.close();
+  }
 });

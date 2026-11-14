@@ -375,3 +375,45 @@ describe('Pengaturan → Tim → detail anggota', () => {
     expect(view.router.state.location.pathname).toBe('/pengaturan');
   });
 });
+
+/**
+ * BUG TERBUKA (QA butir 6, dikunci `it.fails`): pesan berhasil "Atur ulang 2FA" selalu berbunyi
+ * "Ia perlu mendaftarkan aplikasi autentikator lagi saat masuk", juga untuk CS/Teknisi yang 2FA-nya
+ * TIDAK wajib — server tidak memintanya mendaftar lagi (masuk berikutnya cukup password; E2E
+ * `tim-kunci.spec.ts`). Teks: `t.teamUser.done.twoFactorReset` (`apps/web/src/i18n/id.ts`),
+ * dipakai `TeamUserPage.tsx`. Hal yang sama di email ke Owner (`renderAdminAccountNoticeEmail`,
+ * `packages/core/src/mail/templates.ts`). Setelah diperbaiki, hapus `.fails`.
+ */
+describe('atur ulang 2FA peran yang tidak wajib', () => {
+  it.fails('pesan berhasil tidak menjanjikan pendaftaran wajib saat masuk berikutnya', async () => {
+    const teknisi = fakeTeamUser({
+      role: 'teknisi',
+      twoFactor: {
+        ...CS.twoFactor,
+        enabled: true,
+        required: false,
+        enabledAt: '2026-11-11T00:00:00.000Z',
+      },
+    });
+    const after = {
+      ...teknisi,
+      twoFactor: { ...teknisi.twoFactor, enabled: false, enabledAt: null },
+    };
+    await openUser(teknisi, {
+      [`POST ${apiPath(API_ROUTES.team.resetTwoFactor, { userId: teknisi.id })}`]: () =>
+        json(action(after)),
+    });
+    fireEvent.click(screen.getByRole('button', { name: copy.twoFactor.reset }));
+    await screen.findByRole('dialog', { name: copy.twoFactor.resetTitle });
+    fillIdentity();
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: copy.twoFactor.resetConfirm }),
+    );
+    const status = await screen.findByText(/sudah diatur ulang/);
+    expect(status).toBeVisible();
+    // Teknisi tidak wajib 2FA: ia TIDAK diminta mendaftar lagi saat masuk.
+    expect(status.textContent).not.toMatch(
+      /perlu mendaftarkan aplikasi autentikator lagi saat masuk/,
+    );
+  });
+});

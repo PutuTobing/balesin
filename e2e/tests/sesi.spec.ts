@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { request, type BrowserContext, type Page } from '@playwright/test';
 import { OWNER_STATE_PATH } from '../stack/env';
 import { expect, isHp, mainNav, owner, submitLogin, test } from './fixtures';
+import { releaseLoginIpBudget } from './pengguna';
 import { completeTwoFactor } from './two-factor';
 
 /**
@@ -188,4 +189,6 @@ test('terkunci: tombol Masuk mati, hitung mundur berjalan, lalu aktif lagi', asy
     page.getByRole('status').filter({ hasText: 'Kamu sudah bisa mencoba masuk lagi.' }),
   ).toHaveCount(1);
   expect(sent).toBe(0);
+  // Jatah gagal per IP dipakai bersama semua tes (lihat `releaseLoginIpBudget`).
+  await releaseLoginIpBudget();
 });

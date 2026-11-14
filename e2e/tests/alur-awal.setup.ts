@@ -4,6 +4,7 @@ import type { Page } from '@playwright/test';
 import { E2E_SETUP_TOKEN, MAILPIT_SMTP, OWNER_STATE_PATH } from '../stack/env';
 import { expect, mainNav, owner, submitLogin, test } from './fixtures';
 import { findMail } from './mailpit';
+import { releaseLoginIpBudget } from './pengguna';
 import {
   replaceOwnerBackupCodes,
   saveOwnerTwoFactor,
@@ -559,4 +560,6 @@ test('setup dari nol sampai Owner mendaftar 2FA, masuk dua langkah, lalu terkunc
   await submitLogin(login, owner.email, owner.password);
   await expect(login.getByRole('alert')).toContainText('Masuk dikunci sementara');
   await intruder.close();
+  // Jatah gagal per IP dipakai bersama semua tes (lihat `releaseLoginIpBudget`).
+  await releaseLoginIpBudget();
 });
