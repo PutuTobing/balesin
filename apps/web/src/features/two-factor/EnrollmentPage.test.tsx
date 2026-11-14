@@ -4,7 +4,7 @@ import {
   type ConfirmTwoFactorEnrollmentResponse,
 } from '@balesin/shared';
 import type { QueryClient } from '@tanstack/react-query';
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { t } from '../../i18n/id';
 import {
@@ -41,7 +41,11 @@ async function openEnrollment(options: FakeApiOptions = {}) {
       ...options.routes,
     },
   });
-  await screen.findByRole('heading', { level: 1, name: copy.title });
+  // Judul biasa, atau judul "pendaftaran ditutup" bila server menolak memulai (batas lewat).
+  await screen.findByRole('heading', {
+    level: 1,
+    name: new RegExp(`^(${copy.title}|${copy.closedTitle})$`),
+  });
   return view;
 }
 
@@ -318,13 +322,16 @@ describe('pendaftaran 2FA wajib', () => {
           ),
       },
     });
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent(copy.closedTitle);
-    expect(alert).toHaveTextContent('membuka lagi pendaftarannya');
+    // Layar berganti: judul "Pendaftaran 2FA sudah ditutup" (difokus), pesan server, satu Keluar.
+    const title = await screen.findByRole('heading', { level: 1, name: copy.closedTitle });
+    await waitFor(() => expect(title).toHaveFocus());
+    expect(screen.getByText(/membuka lagi pendaftarannya/)).toBeVisible();
+    expect(screen.queryByText(copy.eyebrow)).toBeNull();
+    expect(screen.queryByRole('heading', { name: copy.title })).toBeNull();
     expect(screen.queryByRole('list', { name: copy.stepsLabel })).toBeNull();
-    const logout = within(alert).getByRole('button', { name: t.auth.userMenu.logout });
-    await waitFor(() => expect(logout).toHaveFocus());
-    fireEvent.click(logout);
+    const logout = screen.getAllByRole('button', { name: t.auth.userMenu.logout });
+    expect(logout).toHaveLength(1);
+    fireEvent.click(logout[0]!);
     await waitFor(() => expect(router.state.location.pathname).toBe('/masuk'));
   });
 });

@@ -498,3 +498,9 @@ input.codeInput {
     padding: var(--space-16);
   }
 }
+
+/* Pendaftaran ditutup: satu tombol Keluar di bawah penjelasan. */
+.closedActions {
+  display: flex;
+  margin-top: var(--space-8);
+}

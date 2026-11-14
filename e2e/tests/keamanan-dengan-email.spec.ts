@@ -78,8 +78,10 @@ test('Admin mengubah alamat email pengirim → Owner melihat banner, membuka Aud
     await openApp(page, '/inbox');
     const banner = page.getByRole('region', { name: /kejadian keamanan baru$/ });
     await expect(banner).toBeVisible();
-    await expect(banner).toContainText('Terbaru: Email pengirim diubah oleh selain Owner');
-    await expect(banner).toContainText(`Oleh ${admin.name} (Admin).`);
+    await expect(banner).toContainText(
+      `Terbaru: Email pengirim diubah oleh ${admin.name} (Admin), `,
+    );
+    await expect(banner).not.toContainText('selain Owner');
     // Bukan pengumuman berulang: tidak memakai peran alert.
     await expect(page.getByRole('alert')).toHaveCount(0);
 

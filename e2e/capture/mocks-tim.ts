@@ -197,7 +197,11 @@ export async function teamUserDetail(
   await page.route(`${API}/users/${user.id}/sessions`, (route) =>
     json(route, { sessions: options.sessions ?? photoSessions() }),
   );
-  await auditList(page, options.entries ?? photoAuditEntries().slice(0, 3), null);
+  // Riwayat aktivitas: hanya entri oleh atau terhadap anggota ini (seperti saringan `userId`).
+  const related = photoAuditEntries().filter(
+    (entry) => entry.actor?.id === user.id || entry.target.id === user.id,
+  );
+  await auditList(page, options.entries ?? related, null);
 }
 
 /** Sesi aktif milik sendiri (Keamanan akun). */

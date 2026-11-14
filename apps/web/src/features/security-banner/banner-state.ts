@@ -24,10 +24,17 @@ export function unseenWarnings(summary: SecuritySummaryResponse, seenAt: number)
 
 /** Tautan Audit log tersaring untuk kejadian yang belum dilihat. */
 export function auditSearchFor(events: readonly SecurityEvent[], since: string): AuditSearch {
-  const kinds = new Set(events.map((event) => event.kind));
   const oldest = events.at(-1)?.occurredAt ?? since;
   const search: AuditSearch = { from: toDateInput(new Date(oldest)) };
-  const [only] = kinds;
-  const filter = kinds.size === 1 && only ? SECURITY_EVENT_FILTERS[only] : undefined;
-  return { ...search, ...filter };
+  // Semua kejadian bersaringan sama (mis. channel + profil bisnis → target Channel): pakai saringan
+  // itu; campuran jenis lain cukup rentang tanggal.
+  const filters = [...new Set(events.map((event) => event.kind))].map(
+    (kind) => SECURITY_EVENT_FILTERS[kind],
+  );
+  const [first] = filters;
+  const shared =
+    first && filters.every((item) => item && JSON.stringify(item) === JSON.stringify(first))
+      ? first
+      : undefined;
+  return { ...search, ...shared };
 }

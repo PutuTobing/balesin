@@ -1,7 +1,8 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ChevronRight, History, Mail, ShieldCheck, UsersRound } from 'lucide-react';
 import { RadioGroup } from 'radix-ui';
+import { useEffect } from 'react';
 import { useBrand } from '../../brand/brand';
 import { Icon } from '../../components/ui/Icon';
 import { Page } from '../../components/ui/Page';
@@ -15,6 +16,8 @@ import { useCan } from '../auth/session';
 import { EmailStatusBadge } from '../email-settings/EmailStatusBadge';
 import {
   emailSettingsQuery,
+  emailVerificationQuery,
+  sessionsQuery,
   invitationsQuery,
   teamUsersQuery,
   twoFactorStatusQuery,
@@ -247,6 +250,14 @@ function AuditMenuItem() {
 /** Menu akun pengguna sendiri (semua peran): Keamanan akun dengan status 2FA. */
 function AccountSettings() {
   const status = useQuery(twoFactorStatusQuery);
+  const queryClient = useQueryClient();
+  // Data Keamanan akun dimuat lebih dulu (seperti undangan & anggota untuk baris Tim): dibuka dari
+  // menu, halamannya langsung tampil tanpa kerangka. Gagal di sini tidak apa-apa; halamannya
+  // memuat ulang sendiri.
+  useEffect(() => {
+    void queryClient.prefetchQuery(emailVerificationQuery);
+    void queryClient.prefetchQuery(sessionsQuery);
+  }, [queryClient]);
   return (
     <section className={styles.card} aria-labelledby={ACCOUNT_HEADING_ID}>
       <div className={styles.cardHead}>

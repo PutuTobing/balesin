@@ -74,6 +74,12 @@ interface EnrollmentStepsProps {
   onConfirmed: (response: ConfirmTwoFactorEnrollmentResponse) => void;
   /** Server menjawab 409 saat memulai: 2FA ternyata sudah aktif (mis. di tab lain). */
   onAlreadyEnabled: () => void;
+  /**
+   * Batas waktu pendaftaran sudah lewat (403 `TWO_FACTOR_ENROLLMENT_EXPIRED`): pemanggil mengganti
+   * seluruh layar dengan penjelasannya (`message` = pesan server). Tanpa ini, kotak penjelasan
+   * tampil di tempat langkah-langkahnya.
+   */
+  onClosed?: (message: string) => void;
 }
 
 /**
@@ -85,7 +91,12 @@ interface EnrollmentStepsProps {
  * Fokus: setelah pengguna sendiri memulai (Lanjut, Coba lagi, Buat kode QR baru) → judul langkah
  * 2; saat QR kedaluwarsa atau pembuatannya gagal → satu-satunya tombol aksi (tidak ke `<body>`).
  */
-export function EnrollmentSteps({ mode, onConfirmed, onAlreadyEnabled }: EnrollmentStepsProps) {
+export function EnrollmentSteps({
+  mode,
+  onConfirmed,
+  onAlreadyEnabled,
+  onClosed,
+}: EnrollmentStepsProps) {
   const [state, setState] = useState<EnrollmentState>(
     mode === 'required'
       ? { kind: 'starting' }
@@ -134,6 +145,10 @@ export function EnrollmentSteps({ mode, onConfirmed, onAlreadyEnabled }: Enrollm
         return;
       }
       if (isApiError(error) && error.code === 'TWO_FACTOR_ENROLLMENT_EXPIRED') {
+        if (onClosed) {
+          onClosed(error.message);
+          return;
+        }
         setState({ kind: 'closed', error });
         focusLater('action');
         return;

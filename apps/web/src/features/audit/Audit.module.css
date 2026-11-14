@@ -9,11 +9,17 @@
   flex-direction: column;
   gap: var(--space-16);
   width: 100%;
-  max-width: 64rem;
+  /* 80rem: saringan Aksi cukup lebar untuk label aksi terpanjang (kritikus butir 6 W5). */
+  max-width: 80rem;
 }
 
 .exportButton {
   flex: none;
+}
+
+/* "Tutup" di kotak hasil ekspor: teks rata dengan tepi kiri teks kotak (padding ghost dikompensasi). */
+.noticeClose {
+  margin-left: calc(var(--space-16) * -1);
 }
 
 /* ---------- Saringan ---------- */
@@ -41,7 +47,8 @@
 
 .filterGrid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  /* Aksi dua kali lebih lebar: labelnya yang terpanjang. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) repeat(3, minmax(0, 1fr));
   align-items: start;
   gap: var(--space-12) var(--space-16);
 }
@@ -110,6 +117,11 @@
     minmax(0, 1fr);
   gap: var(--space-4) var(--space-16);
   padding: var(--space-12) var(--space-24);
+}
+
+/* Baris kedua (Rincian) selalu ada: baris tanpa rincian setinggi yang punya (ritme rata). */
+.entry {
+  grid-template-rows: auto minmax(var(--space-24), auto);
 }
 
 .listHead {
@@ -201,12 +213,12 @@
   grid-column: 2 / -1;
 }
 
-/* ID target (sesi, undangan): satu baris terpotong; nilai utuhnya ada di CSV dan atribut title. */
 /* Wadah nilai sel: tak terlihat di desktop (nilai tetap bertumpuk di kolomnya), baris di HP. */
 .values {
   display: contents;
 }
 
+/* ID target (sesi, undangan): satu baris terpotong; nilai utuhnya ada di CSV dan atribut title. */
 .targetId {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -369,8 +381,19 @@
     grid-column: 1 / -1;
   }
 
+  /* Tombol ghost di bawah isian: teksnya rata dengan tepi kiri isian (padding ghost dikompensasi). */
   .clear {
-    margin-left: 0;
+    margin-left: calc(var(--space-16) * -1);
+  }
+
+  /* Hapus chip: target sentuh 44 px, ikon tetap 16. Chip ikut setinggi itu. */
+  .chipRemove {
+    width: var(--size-touch);
+    height: var(--size-touch);
+  }
+
+  .chip {
+    min-height: var(--size-touch);
   }
 
   .listHead {
@@ -385,6 +408,7 @@
       'target target'
       'origin origin'
       'details details';
+    grid-template-rows: none;
     gap: var(--space-8) var(--space-12);
     padding: var(--space-16);
   }

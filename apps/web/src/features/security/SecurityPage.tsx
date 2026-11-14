@@ -24,7 +24,6 @@ import { BACKUP_CODES_LOW } from '../two-factor/constants';
 import { EmailCard, EmailCardSkeleton } from './EmailCard';
 import { ReauthForm } from './ReauthForm';
 import { SessionsCard } from './SessionsCard';
-import { SessionListSkeleton } from '../sessions/SessionList';
 import { TwoFactorBadge } from './TwoFactorBadge';
 import styles from './Security.module.css';
 
@@ -92,13 +91,10 @@ export function SecurityCardsSkeleton() {
       <TwoFactorCard status={null} required={required} roleLabel={USER_ROLE_LABELS[role]} />
       {required ? <BackupCodesCard status={null} email="" /> : null}
       <EmailCardSkeleton />
-      <section className={styles.card}>
-        <div className={styles.cardHead}>
-          <h2 className={styles.cardTitle}>{t.security.sessions.title}</h2>
-          <p className={styles.text}>{t.security.sessions.hint}</p>
-        </div>
-        <SessionListSkeleton rows={1} />
-      </section>
+      {/*
+        Tanpa kartu "Sesi aktif": tinggi kartu Email bergantung data (terverifikasi / belum / tanpa
+        pengirim), jadi kartu di bawahnya baru tampil setelah data tiba (kritikus butir 6 W1).
+      */}
     </div>
   );
 }

@@ -62,7 +62,7 @@ export function MembersCard({ users }: { users: readonly TeamUser[] }) {
               <h3 className={styles.groupTitle}>{copy.disabledGroup(disabled.length)}</h3>
               <ul className={styles.memberList} aria-label={copy.disabledGroup(disabled.length)}>
                 {disabled.map((user) => (
-                  <MemberRow key={user.id} user={user} />
+                  <MemberRow key={user.id} user={user} inDisabledGroup />
                 ))}
               </ul>
             </>
@@ -73,8 +73,14 @@ export function MembersCard({ users }: { users: readonly TeamUser[] }) {
   );
 }
 
-function MemberRow({ user }: { user: TeamUser }) {
-  const badges = memberBadges(user);
+function MemberRow({
+  user,
+  inDisabledGroup = false,
+}: {
+  user: TeamUser;
+  inDisabledGroup?: boolean;
+}) {
+  const badges = memberBadges(user, { inDisabledGroup });
   const content = (
     <>
       <Avatar name={user.name} className={styles.memberAvatar} />

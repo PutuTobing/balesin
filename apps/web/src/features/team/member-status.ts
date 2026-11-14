@@ -14,9 +14,15 @@ export interface MemberBadge {
  * terkunci), keadaan 2FA, lalu email belum diverifikasi. "Aktif" tidak diberi lencana (keadaan
  * biasa); 2FA selalu ditampilkan karena itu yang paling sering dicari Owner.
  */
-export function memberBadges(user: TeamUser): MemberBadge[] {
+export function memberBadges(
+  user: TeamUser,
+  /** Baris di kelompok "Nonaktif": judul kelompok sudah menyatakannya, tanpa lencana ganda. */
+  { inDisabledGroup = false }: { inDisabledGroup?: boolean } = {},
+): MemberBadge[] {
   const list: MemberBadge[] = [];
-  if (user.status === 'disabled') list.push({ tone: 'neutral', label: badges.disabled });
+  if (user.status === 'disabled' && !inDisabledGroup) {
+    list.push({ tone: 'neutral', label: badges.disabled });
+  }
   if (user.status === 'locked') list.push({ tone: 'warning', label: badges.locked });
   list.push(twoFactorBadge(user));
   if (!user.emailVerified) list.push({ tone: 'warning', label: badges.emailUnverified });
@@ -28,21 +34,26 @@ export function twoFactorBadge(user: TeamUser): MemberBadge {
   if (twoFactor.enabled) return { tone: 'success', label: badges.twoFactorOn };
   if (twoFactor.required) {
     return twoFactor.enrollmentExpired
-      ? { tone: 'danger', label: badges.twoFactorExpired }
+      ? // Setara "Terkunci sementara": tidak bisa masuk sampai ditangani (sama dengan kotak di detail).
+        { tone: 'warning', label: badges.twoFactorExpired }
       : { tone: 'warning', label: badges.twoFactorPending };
   }
   return { tone: 'neutral', label: badges.twoFactorOff };
 }
 
-/** Saring anggota berdasarkan nama atau email (tanpa membedakan huruf besar-kecil). */
+/**
+ * Saring anggota berdasarkan nama atau email (tanpa membedakan huruf besar-kecil). Tanpa "@", yang
+ * dicocokkan hanya bagian email sebelum "@": domain organisasi sama untuk semua orang, jadi "ma"
+ * tidak boleh cocok dengan semua anggota hanya karena "majujaya.co.id".
+ */
 export function filterMembers(users: readonly TeamUser[], query: string): TeamUser[] {
   const needle = query.trim().toLocaleLowerCase('id-ID');
   if (!needle) return [...users];
-  return users.filter(
-    (user) =>
-      user.name.toLocaleLowerCase('id-ID').includes(needle) ||
-      user.email.toLocaleLowerCase('id-ID').includes(needle),
-  );
+  return users.filter((user) => {
+    const email = user.email.toLocaleLowerCase('id-ID');
+    const searchable = needle.includes('@') ? email : (email.split('@')[0] ?? email);
+    return user.name.toLocaleLowerCase('id-ID').includes(needle) || searchable.includes(needle);
+  });
 }
 
 /** Kolom pencarian baru tampil bila anggotanya cukup banyak untuk perlu dicari. */

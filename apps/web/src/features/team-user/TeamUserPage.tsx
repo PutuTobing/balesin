@@ -106,10 +106,20 @@ function TeamUserScreen({ user }: { user: TeamUser }) {
   const [result, setResult] = useState<{ lines: string[]; warning: boolean } | null>(null);
   const resultRef = useRef<HTMLDivElement>(null);
   const [resultTick, setResultTick] = useState(0);
+  /*
+   * Buka kunci ditolak kunci 2FA harian (review butir 6 Info 2): kotak "terkunci" yang sama berganti
+   * isi dan aksinya jadi "Atur ulang 2FA" (kritikus butir 6 W4). Berlaku sampai halaman dimuat ulang.
+   */
+  const [dailyLock, setDailyLock] = useState(false);
+  const lockRef = useRef<HTMLDivElement>(null);
+  const [lockTick, setLockTick] = useState(0);
 
   useEffect(() => {
     if (resultTick > 0) resultRef.current?.focus();
   }, [resultTick]);
+  useEffect(() => {
+    if (lockTick > 0) lockRef.current?.focus();
+  }, [lockTick]);
 
   const reason = viewOnlyReason(user, session?.user.role);
 
@@ -185,12 +195,15 @@ function TeamUserScreen({ user }: { user: TeamUser }) {
       case 'unlock': {
         const response = await endpoints.team.unlock(user.id, identity);
         setAction(null);
-        // Kunci 2FA harian tidak ikut dibuka (review butir 6 Info 2): jelaskan jalannya.
-        applied(
-          response,
-          response.user.status === 'locked' ? copy.done.stillLocked : copy.done.unlocked(name),
-          response.user.status === 'locked',
-        );
+        if (response.user.status === 'locked') {
+          // Kunci 2FA harian tidak ikut dibuka: tanpa kotak terpisah, kotak terkunci berganti isi.
+          storeTeamUser(queryClient, response.user);
+          setResult(null);
+          setDailyLock(true);
+          setLockTick((tick) => tick + 1);
+          return;
+        }
+        applied(response, copy.done.unlocked(name));
         return;
       }
       case 'revokeAll': {
@@ -226,13 +239,20 @@ function TeamUserScreen({ user }: { user: TeamUser }) {
           </Notice>
         </div>
       ) : null}
-      <ProfileCard user={user} reason={reason} onUnlock={request} />
+      <ProfileCard
+        user={user}
+        reason={reason}
+        onRequest={request}
+        dailyLock={dailyLock}
+        lockRef={lockRef}
+      />
       {user.canManage ? (
         <>
           <RoleCard user={user} onRequest={request} />
           <TwoFactorCard user={user} onRequest={request} />
           <UserSessionsCard user={user} onRequest={request} />
-          <AccessCard user={user} onRequest={request} />
+          {/* Akun nonaktif: "Aktifkan lagi" ada di kotak "Akun nonaktif" (satu aksi, satu tempat). */}
+          {user.status !== 'disabled' ? <AccessCard onRequest={request} /> : null}
         </>
       ) : null}
       {canAudit ? <ActivityCard user={user} /> : null}
@@ -340,14 +360,22 @@ function twoFactorFact(user: TeamUser): string {
 function ProfileCard({
   user,
   reason,
-  onUnlock,
+  onRequest,
+  dailyLock,
+  lockRef,
 }: {
   user: TeamUser;
   reason: ReturnType<typeof viewOnlyReason>;
-  onUnlock: OnRequest;
+  onRequest: OnRequest;
+  /** Kunci 2FA harian (buka kunci tidak melepasnya): aksinya atur ulang 2FA. */
+  dailyLock: boolean;
+  lockRef: RefObject<HTMLDivElement | null>;
 }) {
   const unlockRef = useRef<HTMLButtonElement>(null);
+  const resetRef = useRef<HTMLButtonElement>(null);
+  const enableRef = useRef<HTMLButtonElement>(null);
   const badges = memberBadges(user);
+  const daily = dailyLock && user.twoFactor.enabled;
   return (
     <section className={styles.card} aria-labelledby="anggota-nama">
       <div className={styles.profile}>
@@ -371,26 +399,53 @@ function ProfileCard({
         </div>
       </div>
       {user.status === 'locked' && user.lockedUntil ? (
+        <div ref={lockRef} tabIndex={-1} className={styles.result}>
+          <Notice
+            tone="warning"
+            title={daily ? copy.locked.dailyTitle : copy.locked.title}
+            role={daily ? 'status' : undefined}
+            actions={
+              !user.canManage ? undefined : daily ? (
+                <Button
+                  ref={resetRef}
+                  variant="secondary"
+                  onClick={() => onRequest({ kind: 'reset2fa', trigger: resetRef })}
+                >
+                  {copy.locked.dailyAction}
+                </Button>
+              ) : (
+                <Button
+                  ref={unlockRef}
+                  variant="secondary"
+                  onClick={() => onRequest({ kind: 'unlock', trigger: unlockRef })}
+                >
+                  {copy.locked.action}
+                </Button>
+              )
+            }
+          >
+            {daily
+              ? copy.locked.dailyBody(formatTime(user.lockedUntil))
+              : copy.locked.body(formatTime(user.lockedUntil))}
+          </Notice>
+        </div>
+      ) : null}
+      {user.status === 'disabled' && user.disabledAt ? (
         <Notice
-          tone="warning"
-          title={copy.locked.title}
+          tone="info"
+          title={copy.disabledNotice.title}
           actions={
             user.canManage ? (
               <Button
-                ref={unlockRef}
+                ref={enableRef}
                 variant="secondary"
-                onClick={() => onUnlock({ kind: 'unlock', trigger: unlockRef })}
+                onClick={() => onRequest({ kind: 'enable', trigger: enableRef })}
               >
-                {copy.locked.action}
+                {copy.access.enable}
               </Button>
             ) : undefined
           }
         >
-          {copy.locked.body(formatTime(user.lockedUntil))}
-        </Notice>
-      ) : null}
-      {user.status === 'disabled' && user.disabledAt ? (
-        <Notice tone="info" title={copy.disabledNotice.title}>
           {copy.disabledNotice.body(formatDateTimeInline(user.disabledAt))}
         </Notice>
       ) : null}
@@ -479,7 +534,12 @@ function RoleCard({ user, onRequest }: { user: TeamUser; onRequest: OnRequest })
           error={error}
         />
         <div className={styles.actions}>
-          <Button ref={triggerRef} type="submit" variant="primary">
+          {/* Biru hanya setelah peran lain dipilih: sebelum itu tombolnya belum berguna (T-S1). */}
+          <Button
+            ref={triggerRef}
+            type="submit"
+            variant={role !== user.role ? 'primary' : 'secondary'}
+          >
             {copy.role.submit}
           </Button>
         </div>
@@ -496,9 +556,11 @@ function TwoFactorCard({ user, onRequest }: { user: TeamUser; onRequest: OnReque
   const { twoFactor } = user;
   const hint = twoFactor.enabled
     ? copy.twoFactor.hintOn
-    : twoFactor.required
-      ? copy.twoFactor.hintRequired
-      : copy.twoFactor.hintOptional;
+    : twoFactor.enrollmentExpired
+      ? copy.twoFactor.hintExpired
+      : twoFactor.required
+        ? copy.twoFactor.hintRequired
+        : copy.twoFactor.hintOptional;
   return (
     <section className={styles.card} aria-labelledby="anggota-2fa">
       <div className={styles.cardHead}>
@@ -635,34 +697,25 @@ function UserSessionsCard({ user, onRequest }: { user: TeamUser; onRequest: OnRe
 
 // ── Akses akun ──────────────────────────────────────────────────────────────
 
-function AccessCard({ user, onRequest }: { user: TeamUser; onRequest: OnRequest }) {
+/** Akses akun (akun aktif): nonaktifkan. Akun nonaktif diaktifkan lagi dari kotak di kartu profil. */
+function AccessCard({ onRequest }: { onRequest: OnRequest }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const disabled = user.status === 'disabled';
   return (
     <section className={styles.card} aria-labelledby="anggota-akses">
       <div className={styles.cardHead}>
         <h2 id="anggota-akses" className={styles.cardTitle}>
           {copy.access.title}
         </h2>
-        <p className={styles.hint}>{disabled ? copy.access.enableHint : copy.access.disableHint}</p>
+        <p className={styles.hint}>{copy.access.disableHint}</p>
       </div>
       <div className={styles.actions}>
-        {disabled ? (
-          <Button
-            ref={triggerRef}
-            onClick={() => onRequest({ kind: 'enable', trigger: triggerRef })}
-          >
-            {copy.access.enable}
-          </Button>
-        ) : (
-          <Button
-            ref={triggerRef}
-            className={styles.dangerText}
-            onClick={() => onRequest({ kind: 'disable', trigger: triggerRef })}
-          >
-            {copy.access.disable}
-          </Button>
-        )}
+        <Button
+          ref={triggerRef}
+          className={styles.dangerText}
+          onClick={() => onRequest({ kind: 'disable', trigger: triggerRef })}
+        >
+          {copy.access.disable}
+        </Button>
       </div>
     </section>
   );
@@ -724,9 +777,12 @@ function ActivityCard({ user }: { user: TeamUser }) {
           ) : (
             <span />
           )}
-          <Link to="/pengaturan/audit" search={{ userId: user.id }} className={styles.inlineLink}>
-            {copy.activity.openAll}
-          </Link>
+          {/* Satu-satunya aksi baris kaki: tombol (44 px di HP), bukan tautan sebaris (T-S3). */}
+          <Button asChild variant="ghost" className={styles.footerLink}>
+            <Link to="/pengaturan/audit" search={{ userId: user.id }}>
+              {copy.activity.openAll}
+            </Link>
+          </Button>
         </div>
       ) : null}
     </section>

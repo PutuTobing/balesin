@@ -73,8 +73,12 @@ describe('banner peringatan keamanan', () => {
   it('Owner: tampil di halaman aplikasi, menyebut kejadian terbaru dan pelakunya', async () => {
     await renderApp('/inbox', { securitySummary: summary([INFO, WARNING]) });
     const banner = await screen.findByRole('region', { name: copy.title(1) });
-    expect(banner).toHaveTextContent('Email pengirim diubah oleh selain Owner');
-    expect(banner).toHaveTextContent(copy.by('Agus Pratama', 'Admin'));
+    // Satu kalimat: "oleh" sekali, tanpa frasa "selain Owner" (kritikus W6).
+    expect(banner).toHaveTextContent(
+      /Terbaru: Email pengirim diubah oleh Agus Pratama \(Admin\), \S.*\./,
+    );
+    expect(banner.textContent?.match(/oleh/g)).toHaveLength(1);
+    expect(banner).not.toHaveTextContent('selain Owner');
     // Bukan wilayah alert (tampil sejak awal, tidak diumumkan berulang).
     expect(banner).not.toHaveAttribute('role', 'alert');
     expect(screen.getByRole('link', { name: copy.review })).toHaveAttribute(
@@ -145,9 +149,13 @@ describe('banner peringatan keamanan', () => {
     expect(auditSearchFor([channel], emptySecuritySummary.since)).toMatchObject({
       targetType: 'channel',
     });
+    const profile = event({ kind: 'business_profile_changed', subject: null });
+    expect(auditSearchFor([profile, channel], emptySecuritySummary.since)).toMatchObject({
+      targetType: 'channel',
+    });
     await renderApp('/inbox', { securitySummary: summary([channel]) });
     const banner = await screen.findByRole('region', { name: copy.title(1) });
-    expect(banner).toHaveTextContent('Channel diubah oleh selain Owner');
+    expect(banner).toHaveTextContent('Terbaru: Channel diubah oleh Agus Pratama (Admin)');
     expect(screen.getByRole('link', { name: copy.review })).toHaveAttribute(
       'href',
       expect.stringContaining('targetType=channel'),

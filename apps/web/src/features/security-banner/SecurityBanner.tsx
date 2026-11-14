@@ -67,10 +67,13 @@ export function SecurityBanner() {
           {copy.title(events.length)}
         </p>
         <p className={styles.body}>
-          {copy.latest(SECURITY_EVENT_LABELS[latest.kind], formatDateTimeInline(latest.occurredAt))}
-          {latest.actor ? (
-            <> {copy.by(latest.actor.name, USER_ROLE_LABELS[latest.actor.role])}</>
-          ) : null}
+          {copy.latest(
+            SECURITY_EVENT_LABELS[latest.kind],
+            formatDateTimeInline(latest.occurredAt),
+            latest.actor
+              ? { name: latest.actor.name, role: USER_ROLE_LABELS[latest.actor.role] }
+              : undefined,
+          )}
         </p>
       </div>
       <div className={styles.actions}>

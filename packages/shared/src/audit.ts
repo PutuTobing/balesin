@@ -102,19 +102,19 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'auth.logout': 'Keluar',
   'auth.2fa.challenge_issued': 'Diminta kode verifikasi dua langkah',
   'auth.2fa.failed': 'Kode verifikasi dua langkah salah',
-  'auth.2fa.enrollment_started': 'Mulai mendaftarkan verifikasi dua langkah',
+  'auth.2fa.enrollment_started': 'Mulai mendaftar 2FA',
   'auth.2fa.enabled': 'Verifikasi dua langkah diaktifkan',
   'auth.2fa.disabled': 'Verifikasi dua langkah dinonaktifkan',
   'auth.2fa.backup_codes_regenerated': 'Kode cadangan dibuat ulang',
   'auth.2fa.backup_code_used': 'Kode cadangan dipakai',
-  'auth.2fa.enrollment_expired': 'Ditolak: batas waktu daftar verifikasi dua langkah lewat',
+  'auth.2fa.enrollment_expired': 'Masuk ditolak: batas daftar 2FA lewat',
   'settings.email.updated': 'Email pengirim diubah',
   'settings.email.tested': 'Email pengirim dites',
   'user.invitation.created': 'Undangan dibuat',
   'user.invitation.resent': 'Undangan dikirim ulang',
   'user.invitation.revoked': 'Undangan dibatalkan',
   'user.invitation.accepted': 'Undangan diterima',
-  'user.invitation.link_shown': 'Tautan undangan ditampilkan untuk disalin',
+  'user.invitation.link_shown': 'Tautan undangan disalin manual',
   'user.invitation.rejected': 'Tautan undangan tidak berlaku dibuka',
   'auth.password_reset.requested': 'Atur ulang password diminta',
   'auth.password_reset.completed': 'Password diatur ulang',
@@ -126,8 +126,8 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'user.role_changed': 'Peran pengguna diubah',
   'user.disabled': 'Pengguna dinonaktifkan',
   'user.enabled': 'Pengguna diaktifkan kembali',
-  'user.2fa.reset': 'Verifikasi dua langkah pengguna diatur ulang',
-  'user.2fa.enrollment_reopened': 'Pendaftaran verifikasi dua langkah dibuka lagi',
+  'user.2fa.reset': '2FA pengguna diatur ulang',
+  'user.2fa.enrollment_reopened': 'Pendaftaran 2FA dibuka lagi',
   'user.unlocked': 'Kunci akun dibuka',
   'auth.session.revoked': 'Sesi dikeluarkan',
   'auth.sessions.revoked_all': 'Semua sesi dikeluarkan',
@@ -140,7 +140,7 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'channel.tested': 'Koneksi channel dites',
   'channel.webhook_verify_token_rotated': 'Verify token webhook dibuat ulang',
   'channel.business_profile_updated': 'Profil bisnis WhatsApp diubah',
-  'channel.business_profile_update_failed': 'Perubahan profil bisnis WhatsApp ditolak Meta',
+  'channel.business_profile_update_failed': 'Perubahan profil bisnis ditolak Meta',
 };
 
 /** Label untuk aksi yang mungkin belum dikenal klien (versi lama): tampilkan kodenya apa adanya. */
@@ -336,16 +336,15 @@ export const SECURITY_EVENT_SEVERITY: Readonly<Record<SecurityEventKind, 'warnin
 };
 
 export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> = {
-  email_sender_changed: 'Email pengirim diubah oleh selain Owner',
-  two_factor_reset: 'Verifikasi dua langkah pengguna diatur ulang',
-  two_factor_enrollment_reopened: 'Pendaftaran verifikasi dua langkah dibuka lagi',
-  password_reset_without_two_factor:
-    'Akun yang belum memakai verifikasi dua langkah mengatur ulang password',
+  email_sender_changed: 'Email pengirim diubah',
+  two_factor_reset: '2FA pengguna diatur ulang',
+  two_factor_enrollment_reopened: 'Pendaftaran 2FA dibuka lagi',
+  password_reset_without_two_factor: 'Password diatur ulang tanpa 2FA',
   account_locked: 'Akun dikunci sementara',
   role_changed: 'Peran pengguna diubah',
   user_disabled: 'Pengguna dinonaktifkan',
-  channel_changed: 'Channel diubah oleh selain Owner',
-  business_profile_changed: 'Profil bisnis WhatsApp diubah oleh selain Owner',
+  channel_changed: 'Channel diubah',
+  business_profile_changed: 'Profil bisnis WhatsApp diubah',
 };
 
 export const securityEventSchema = z.object({

@@ -189,6 +189,12 @@ ol.activity {
   font-size: var(--text-13);
 }
 
+/* "Buka di Audit log": tombol ghost yang teksnya rata dengan tepi kanan isi kartu. */
+.footerLink {
+  margin-inline: auto calc(var(--space-16) * -1);
+  font-weight: var(--weight-semibold);
+}
+
 .activityFooter {
   display: flex;
   flex-wrap: wrap;

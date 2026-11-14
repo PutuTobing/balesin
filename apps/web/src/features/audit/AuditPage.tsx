@@ -159,7 +159,7 @@ function ExportResult({
   onClose: () => void;
 }) {
   const close = (
-    <Button variant="ghost" onClick={onClose}>
+    <Button variant="ghost" className={styles.noticeClose} onClick={onClose}>
       {t.common.close}
     </Button>
   );

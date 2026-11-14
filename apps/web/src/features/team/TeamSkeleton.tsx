@@ -20,7 +20,11 @@ export function TeamSkeleton() {
       <div className={pageStyles.body}>
         <SkeletonRegion className={styles.content}>
           {canInvite ? <InvitationCardsSkeleton /> : null}
-          {canManage ? <MembersCardSkeleton /> : null}
+          {/*
+            Tinggi daftar undangan bergantung data: kartu anggota di bawahnya baru tampil setelah
+            data tiba, supaya tidak ada yang bergeser (kritikus butir 6 W2).
+          */}
+          {canManage && !canInvite ? <MembersCardSkeleton /> : null}
         </SkeletonRegion>
       </div>
     </div>
@@ -101,6 +105,8 @@ function InvitationCardsSkeleton() {
                 <Skeleton className={styles.skeletonEmail} />
                 <Skeleton className={styles.skeletonMeta} />
                 <Skeleton className={styles.skeletonDetail} />
+                {/* Di HP keterangan pengundang + masa berlaku dua baris. */}
+                <Skeleton className={styles.skeletonDetailHp} />
               </div>
               <Skeleton className={styles.skeletonButtons} />
             </div>

@@ -240,6 +240,32 @@ export const teamScreens: Screen[] = [
     },
   },
   {
+    // Buka kunci ditolak kunci 2FA harian: kotak terkunci berganti isi, aksinya Atur ulang 2FA.
+    name: 'anggota-kunci-harian',
+    path: detailPath(TEKNISI.id),
+    before: async (page) => {
+      await quietSecurity(page);
+      await teamUserDetail(page, TEKNISI);
+      const stillLocked = {
+        ...TEKNISI,
+        status: 'locked',
+        lockedUntil: new Date(Date.now() + 20 * 3_600_000).toISOString(),
+      };
+      await page.route(`${API}/users/${TEKNISI.id}/unlock`, (route) =>
+        json(route, { user: stillLocked, revokedSessions: 0, revokedInvitations: 0 }),
+      );
+    },
+    waitFor: 'h2',
+    prepare: async (page) => {
+      await page.getByRole('button', { name: 'Buka kunci' }).click();
+      await page.getByRole('dialog').waitFor();
+      await fillIdentity(page);
+      await page.getByRole('dialog').getByRole('button', { name: 'Buka kunci' }).click();
+      await page.getByText('Kunci verifikasi dua langkah masih berlaku').waitFor();
+      await settle(page);
+    },
+  },
+  {
     name: 'anggota-berhasil',
     path: detailPath(CS.id),
     before: async (page) => {
@@ -542,6 +568,6 @@ export const teamScreens: Screen[] = [
         ),
       );
     },
-    waitFor: '[role="alert"]',
+    waitFor: 'h1:has-text("Pendaftaran 2FA sudah ditutup")',
   },
 ];

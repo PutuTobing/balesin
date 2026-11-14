@@ -224,8 +224,12 @@ describe('Pengaturan → Tim → detail anggota', () => {
     );
   });
 
-  it('buka kunci tetapi kunci 2FA harian tetap: penjelasan peringatan, bukan pesan berhasil', async () => {
-    const locked = fakeTeamUser({ status: 'locked', lockedUntil: '2026-11-15T02:00:00.000Z' });
+  it('buka kunci tetapi kunci 2FA harian tetap: kotak yang sama berganti isi, aksinya Atur ulang 2FA', async () => {
+    const locked = fakeTeamUser({
+      status: 'locked',
+      lockedUntil: '2026-11-15T02:00:00.000Z',
+      twoFactor: { ...CS.twoFactor, enabled: true, enabledAt: '2026-11-11T00:00:00.000Z' },
+    });
     await openUser(locked, {
       [`POST ${apiPath(API_ROUTES.team.unlock, { userId: locked.id })}`]: () =>
         json(action(locked, { revokedSessions: 0 })),
@@ -235,8 +239,36 @@ describe('Pengaturan → Tim → detail anggota', () => {
     fireEvent.click(
       within(screen.getByRole('dialog')).getByRole('button', { name: copy.locked.confirm }),
     );
-    expect(await screen.findByText(copy.done.stillLocked)).toBeVisible();
+    const title = await screen.findByText(copy.locked.dailyTitle);
+    // Satu kotak saja: judul lama dan pesan berhasil tidak tampil, tombol Buka kunci hilang.
+    expect(screen.queryByText(copy.locked.title)).toBeNull();
     expect(screen.queryByText(copy.done.unlocked(locked.name))).toBeNull();
+    expect(screen.queryByRole('button', { name: copy.locked.action })).toBeNull();
+    const box = title.closest('[tabindex="-1"]') as HTMLElement;
+    await waitFor(() => expect(box).toHaveFocus());
+    fireEvent.click(within(box).getByRole('button', { name: copy.locked.dailyAction }));
+    expect(await screen.findByRole('dialog', { name: copy.twoFactor.resetTitle })).toBeVisible();
+  });
+
+  it('akun nonaktif: satu tombol Aktifkan lagi di kotak penjelasan, tanpa kartu Akses akun', async () => {
+    const disabled = fakeTeamUser({
+      status: 'disabled',
+      disabledAt: '2026-11-11T14:26:00.000Z',
+    });
+    await openUser(disabled);
+    const enable = screen.getAllByRole('button', { name: copy.access.enable });
+    expect(enable).toHaveLength(1);
+    expect(screen.queryByRole('heading', { name: copy.access.title })).toBeNull();
+    fireEvent.click(enable[0]!);
+    expect(await screen.findByRole('dialog', { name: copy.access.enableTitle })).toBeVisible();
+  });
+
+  it('Ubah peran baru biru setelah peran lain dipilih', async () => {
+    await openUser(CS);
+    const submit = screen.getByRole('button', { name: copy.role.submit });
+    expect(submit).toHaveClass(/secondary/);
+    fireEvent.change(screen.getByLabelText(copy.role.label), { target: { value: 'supervisor' } });
+    expect(submit).toHaveClass(/primary/);
   });
 
   it('batas daftar 2FA lewat: tombol Buka lagi pendaftaran memanggil endpoint jendela pendaftaran', async () => {

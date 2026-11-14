@@ -45,6 +45,13 @@ export function EnrollmentPage() {
     titleRef.current?.focus();
   }, []);
 
+  // Batas waktu pendaftaran sudah lewat: layar berganti jadi penjelasan + Keluar (kritikus T-S6).
+  const [closed, setClosed] = useState<string | null>(null);
+  const logout = useLogout();
+  useEffect(() => {
+    if (closed !== null) titleRef.current?.focus();
+  }, [closed]);
+
   const onConfirmed = (response: ConfirmTwoFactorEnrollmentResponse) => {
     // Sesi penuh baru + token CSRF baru (sesi terbatas sudah dicabut server). `storeSession`
     // hanya menyimpan bagian sesi; kode cadangan tidak ikut ke cache.
@@ -60,7 +67,8 @@ export function EnrollmentPage() {
   };
 
   return (
-    <EnrollmentFrame email={email} showLogout={codes === null}>
+    // Pendaftaran ditutup: Keluar cukup satu, tombol utama di bawah penjelasannya.
+    <EnrollmentFrame email={email} showLogout={codes === null && closed === null}>
       {codes ? (
         <BackupCodesPanel
           codes={codes}
@@ -77,6 +85,18 @@ export function EnrollmentPage() {
           // pendaftaran baru (409, 2FA sudah aktif).
           onDone={() => void router.navigate({ href: target, replace: true })}
         />
+      ) : closed !== null ? (
+        <div className={styles.intro}>
+          <h1 ref={titleRef} tabIndex={-1} className={styles.title}>
+            {copy.closedTitle}
+          </h1>
+          <p className={styles.introBody}>{closed}</p>
+          <div className={styles.closedActions}>
+            <Button variant="primary" onClick={() => logout.mutate()} loading={logout.isPending}>
+              {logout.isPending ? t.auth.userMenu.loggingOut : t.auth.userMenu.logout}
+            </Button>
+          </div>
+        </div>
       ) : (
         <>
           <div className={styles.intro}>
@@ -92,6 +112,7 @@ export function EnrollmentPage() {
             mode="required"
             onConfirmed={onConfirmed}
             onAlreadyEnabled={onAlreadyEnabled}
+            onClosed={setClosed}
           />
         </>
       )}

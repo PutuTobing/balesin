@@ -368,7 +368,7 @@ describe('anggota tim: lencana & alasan hanya dilihat', () => {
     });
     expect(memberBadges(admin)).toEqual([
       { tone: 'warning', label: copy.badges.locked },
-      { tone: 'danger', label: copy.badges.twoFactorExpired },
+      { tone: 'warning', label: copy.badges.twoFactorExpired },
       { tone: 'warning', label: copy.badges.emailUnverified },
     ]);
     expect(
@@ -392,6 +392,17 @@ describe('anggota tim: lencana & alasan hanya dilihat', () => {
     ];
     expect(filterMembers(users, 'TONO').map((user) => user.name)).toEqual(['Tono Saputra']);
     expect(filterMembers(users, '  ')).toHaveLength(2);
+    // Domain organisasi tidak ikut dicocokkan ("ma" bukan semua orang); dengan "@" boleh.
+    expect(filterMembers(users, 'jaya')).toHaveLength(0);
+    expect(filterMembers(users, '@majujaya')).toHaveLength(2);
+  });
+
+  it('kelompok Nonaktif tanpa lencana "Nonaktif" ganda', () => {
+    const disabled = fakeTeamUser({ status: 'disabled' });
+    expect(memberBadges(disabled).map((badge) => badge.label)).toContain(copy.badges.disabled);
+    expect(
+      memberBadges(disabled, { inDisabledGroup: true }).map((badge) => badge.label),
+    ).not.toContain(copy.badges.disabled);
   });
 });
 
@@ -430,7 +441,8 @@ describe('Pengaturan → Tim → daftar anggota', () => {
     expect(rows[2]).toHaveAttribute('href', `/pengaturan/tim/${fakeTeamUser().id}`);
     expect(rows[2]).toHaveTextContent(copy.members.sessions(1));
     const disabled = screen.getByRole('list', { name: copy.members.disabledGroup(1) });
-    expect(disabled).toHaveTextContent(copy.badges.disabled);
+    // Kelompok Nonaktif: judulnya sudah menyatakan, tanpa lencana "Nonaktif" ganda (T-S4).
+    expect(disabled).not.toHaveTextContent(copy.badges.disabled);
     expect(disabled).toHaveTextContent(copy.members.neverLoggedIn);
     // Pencarian baru muncul untuk tim besar.
     expect(screen.queryByRole('searchbox', { name: copy.members.searchLabel })).toBeNull();

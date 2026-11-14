@@ -365,6 +365,14 @@
   display: none;
 }
 
+/* Baris kedua keterangan undangan: hanya di HP (di desktop keterangannya satu baris). */
+.skeletonDetailHp {
+  display: none;
+  width: 12rem;
+  max-width: 100%;
+  height: calc(var(--text-13) * var(--leading-text));
+}
+
 .skeletonFieldHint {
   color: var(--ink-2);
   font-size: var(--text-13);
@@ -450,7 +458,8 @@
     padding: var(--space-12) var(--space-16) var(--space-8);
   }
 
-  .skeletonHintHp {
+  .skeletonHintHp,
+  .skeletonDetailHp {
     display: block;
   }
 

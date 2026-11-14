@@ -105,7 +105,8 @@ export function toDateInput(date: Date): string {
 /**
  * Saringan Audit log untuk tiap jenis kejadian keamanan (tautan dari banner). Sebagian: jenis baru
  * dari server yang belum dikenal di sini cukup memakai saringan tanggal. Perubahan channel tercatat
- * dengan beberapa aksi (dibuat, diubah, dihapus, …), jadi disaring menurut jenis target.
+ * dengan beberapa aksi (dibuat, diubah, dihapus, profil bisnis, …), jadi disaring menurut jenis
+ * target.
  */
 export const SECURITY_EVENT_FILTERS: Readonly<
   Partial<Record<SecurityEventKind, Pick<AuditSearch, 'action' | 'targetType'>>>
@@ -118,4 +119,5 @@ export const SECURITY_EVENT_FILTERS: Readonly<
   role_changed: { action: 'user.role_changed' },
   user_disabled: { action: 'user.disabled' },
   channel_changed: { targetType: 'channel' },
+  business_profile_changed: { targetType: 'channel' },
 };

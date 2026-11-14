@@ -238,7 +238,7 @@ test('Admin: tidak bisa mengelola Owner/Admin; atur ulang 2FA Teknisi, nonaktif/
   await page.goto(`/pengaturan/audit?userId=${teknisiId}`);
   await expect(page.getByRole('heading', { level: 1, name: 'Audit log' })).toBeVisible();
   const list = page.getByRole('list', { name: 'Entri audit log' });
-  await expect(list.getByText('Verifikasi dua langkah pengguna diatur ulang')).toBeVisible();
+  await expect(list.getByText('2FA pengguna diatur ulang')).toBeVisible();
   await expect(list.getByText('Pengguna diaktifkan kembali')).toBeVisible();
   if (hp) await page.getByRole('button', { name: /^Saringan/ }).click();
   await page.getByLabel('Aksi').selectOption({ label: 'Pengguna dinonaktifkan' });

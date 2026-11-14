@@ -707,7 +707,7 @@ export const t = {
           ? `Peran ${name} sekarang ${role}. ${sessions} sesinya dikeluarkan, jadi ia perlu masuk lagi.`
           : `Peran ${name} sekarang ${role}.`,
       invitationsRevoked: (count: number) =>
-        `${count} undangan terbitannya dibatalkan karena tidak lagi sesuai perannya.`,
+        `${count} undangan yang ia kirim dibatalkan karena tidak lagi sesuai perannya.`,
       disabled: (name: string) =>
         `Akun ${name} sudah dinonaktifkan dan dikeluarkan dari semua perangkat.`,
       enabled: (name: string) => `Akun ${name} aktif lagi. Ia sudah bisa masuk.`,
@@ -716,8 +716,6 @@ export const t = {
       reopened: (name: string) =>
         `Pendaftaran verifikasi dua langkah ${name} dibuka lagi selama 72 jam. Minta ia masuk sekarang.`,
       unlocked: (name: string) => `Kunci akun ${name} sudah dibuka. Ia bisa mencoba masuk lagi.`,
-      stillLocked:
-        'Kunci ini karena terlalu banyak kode verifikasi salah dalam 24 jam. Atur ulang verifikasi dua langkah bila pemiliknya kehilangan aplikasi autentikator.',
       sessionsRevoked: (name: string, count: number) =>
         count === 0
           ? `${name} tidak punya sesi aktif.`
@@ -728,6 +726,11 @@ export const t = {
       body: (time: string) =>
         `Terlalu banyak percobaan masuk atau kode yang salah. Kunci terbuka sendiri ${time}, atau buka sekarang bila kamu yakin itu memang dia.`,
       action: 'Buka kunci',
+      /** Buka kunci ditolak kunci 2FA harian: kotak yang sama berganti isi (kritikus butir 6 W4). */
+      dailyTitle: 'Kunci verifikasi dua langkah masih berlaku',
+      dailyBody: (time: string) =>
+        `Terlalu banyak kode verifikasi salah dalam 24 jam, jadi kunci ini tidak bisa dibuka dari sini. Kunci terbuka sendiri ${time}. Bila pemiliknya kehilangan aplikasi autentikator, atur ulang verifikasi dua langkahnya.`,
+      dailyAction: 'Atur ulang 2FA',
       dialogTitle: 'Buka kunci akun?',
       dialogBody: (name: string) =>
         `${name} bisa langsung mencoba masuk lagi. Bila percobaan tadi bukan olehnya, atur ulang password-nya juga.`,
@@ -769,6 +772,7 @@ export const t = {
       title: 'Verifikasi dua langkah',
       hintOn: 'Atur ulang bila ponselnya hilang atau aplikasi autentikatornya terhapus.',
       hintRequired: 'Wajib untuk perannya. Ia diminta mendaftar saat masuk.',
+      hintExpired: 'Wajib untuk perannya.',
       hintOptional:
         'Tidak wajib untuk perannya. Ia bisa mengaktifkannya sendiri dari Keamanan akun.',
       reset: 'Atur ulang 2FA',
@@ -793,12 +797,11 @@ export const t = {
     access: {
       title: 'Akses akun',
       disableHint:
-        'Menonaktifkan akun mengeluarkannya dari semua perangkat dan membatalkan undangan terbitannya. Data dan riwayatnya tetap tersimpan.',
-      enableHint: 'Mengaktifkan lagi membuatnya bisa masuk dengan password lamanya.',
+        'Menonaktifkan akun mengeluarkannya dari semua perangkat dan membatalkan undangan yang ia kirim. Data dan riwayatnya tetap tersimpan.',
       disable: 'Nonaktifkan akun',
       disableTitle: 'Nonaktifkan akun ini?',
       disableBody: (name: string) =>
-        `${name} langsung keluar dari semua perangkat dan tidak bisa masuk. Tautan atur ulang password dan undangan terbitannya ikut dibatalkan.`,
+        `${name} langsung keluar dari semua perangkat dan tidak bisa masuk. Tautan atur ulang password dan undangan yang ia kirim ikut dibatalkan.`,
       disableConfirm: 'Nonaktifkan',
       disablePending: 'Menonaktifkan…',
       enable: 'Aktifkan lagi',
@@ -907,8 +910,11 @@ export const t = {
     label: 'Peringatan keamanan',
     title: (count: number) =>
       count === 1 ? 'Ada 1 kejadian keamanan baru' : `Ada ${count} kejadian keamanan baru`,
-    latest: (label: string, time: string) => `Terbaru: ${label}, ${time}.`,
-    by: (name: string, role: string) => `Oleh ${name} (${role}).`,
+    /** Satu kalimat: "Terbaru: Email pengirim diubah oleh Agus Pratama (Admin), hari ini, 19.25." */
+    latest: (label: string, time: string, actor?: { name: string; role: string }) =>
+      actor
+        ? `Terbaru: ${label} oleh ${actor.name} (${actor.role}), ${time}.`
+        : `Terbaru: ${label}, ${time}.`,
     review: 'Periksa di Audit log',
     dismiss: 'Tutup peringatan keamanan',
   },

@@ -168,6 +168,8 @@
 .menuHint {
   color: var(--ink-2);
   font-size: var(--text-13);
+  /* Tanpa kata yatim di HP ("…dan dari / mana"). */
+  text-wrap: pretty;
 }
 
 .menuStatus {
