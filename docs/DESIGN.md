@@ -80,6 +80,18 @@ Pesan error menjelaskan solusi ("Token Meta kedaluwarsa. Buat token baru di Peng
 Channel"). Sapaan ke pengguna: **"kamu/-mu"**, bukan "Anda" — berlaku untuk UI web dan pesan
 error API; hindari kata ganti bila kalimatnya tetap wajar.
 
+**Istilah & pola tetap** (audit konsistensi akhir Fase 1, `docs/design-reviews/2026-11-15-fase1-akhir.md`):
+- "verifikasi dua langkah" di kalimat dan judul; "2FA" hanya di label ringkas (lencana, chip,
+  tombol ≤ 3 kata, label sesi, rincian audit).
+- "atur ulang", bukan "reset"; "masuk"/"keluar" (atau "proses masuk"), bukan "login"/"logout".
+- Rujukan ke pengelola: "Owner atau Admin di tempatmu".
+- Judul gagal: "… belum bisa dimuat". Judul batas: "… dikunci sementara" (tebakan kredensial) atau
+  "… dibatasi sementara" (batas permintaan). Pesan 429 tidak menyebut durasi — hitung mundur
+  `m:ss` tampil di tombol nonaktif (`FormErrorNotice`).
+- Waktu ke depan memakai "pukul 02.04"; waktu lampau "Hari ini, 03.47" / "Kemarin, …" / tanggal.
+- Di dialog, tombol berwarna selalu terakhir (kanan di desktop, atas di HP); tombol batal berbingkai.
+- Nama produk tidak pernah ditulis langsung di teks UI — selalu dari pengaturan merek (white-label).
+
 ## 5. RUBRIK `kritikus-desain`
 
 Nilai 1–5 per kriteria, untuk setiap layar di **390×844** dan **1440×900**, terang & gelap.
