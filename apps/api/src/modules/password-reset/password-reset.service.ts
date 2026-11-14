@@ -4,6 +4,7 @@ import {
   DEFAULT_PRODUCT_NAME,
   PASSWORD_RESET_VALID_MINUTES,
   TWO_FACTOR_CHALLENGE_MAX_ATTEMPTS,
+  isTwoFactorRequired,
   type CompletePasswordResetRequest,
   type InspectPasswordResetResponse,
   type PasswordResetStatusResponse,
@@ -54,6 +55,7 @@ import {
 import {
   backupCodeSummary,
   deleteChallenges,
+  findOtherAdministrators,
   findTwoFactorUser,
   type TwoFactorUser,
 } from '../two-factor/two-factor.repo';
@@ -387,6 +389,9 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps): Pass
       }
 
       const passwordHash = await hasher.hash(input.password);
+      // Peran wajib 2FA yang BELUM mendaftar: siapa pun yang menguasai kotak masuk ini kini bisa
+      // menjadi pemegang faktor keduanya (review undangan R3) — Owner/Admin diberi tahu.
+      const enrollmentPending = isTwoFactorRequired(user.role) && user.totpEnabledAt === null;
       const twoFactorContext = { client: context.client, log: context.log };
       const { auditLogId, revokedSessions, backupCodesRemaining } = await db.transaction(
         async (tx) => {
@@ -420,7 +425,12 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps): Pass
             action: AUDIT_ACTIONS.passwordResetCompleted,
             targetType: 'user',
             targetId: user.id,
-            metadata: { tokenRef: row.id, twoFactor: method, revokedSessions: revoked },
+            metadata: {
+              tokenRef: row.id,
+              twoFactor: method,
+              revokedSessions: revoked,
+              ...(enrollmentPending ? { twoFactorEnrollmentPending: true } : {}),
+            },
             client: context.client,
           });
           return { auditLogId: auditId, revokedSessions: revoked, backupCodesRemaining: remaining };
@@ -449,6 +459,23 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps): Pass
       );
       if (backupCodesRemaining !== undefined) {
         twoFactor.notifyBackupCodeUsed(user, backupCodesRemaining, context.log);
+      }
+      if (enrollmentPending) {
+        const occurredAt = new Date().toISOString();
+        notify(
+          findOtherAdministrators(db, organizationId, user.id).then(async (recipients) => {
+            for (const recipientUserId of recipients) {
+              await notifier.securityNoticeAdmin({
+                organizationId,
+                recipientUserId,
+                subjectUserId: user.id,
+                event: 'password_reset_without_two_factor',
+                occurredAt,
+                auditLogId,
+              });
+            }
+          }),
+        );
       }
 
       // Kunci login karena tebakan password dilepas: tebakan itu untuk password lama. Kunci

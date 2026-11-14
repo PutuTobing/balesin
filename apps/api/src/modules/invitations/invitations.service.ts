@@ -40,6 +40,7 @@ import { checkPassword } from '../auth/password-policy';
 import { findActiveSession } from '../auth/session.repo';
 import type { AuthContext, IssuedSession, SessionService } from '../auth/session.service';
 import type { TrustedDevices } from '../auth/trusted-device';
+import { enrollmentDueAtValue } from '../two-factor/enrollment-window';
 import {
   findInvitationByTokenHash,
   findOpenInvitation,
@@ -519,6 +520,8 @@ export function createInvitationService(deps: InvitationServiceDeps): Invitation
               role: row.role,
               emailVerifiedAt: emailVerified ? sql`now()` : null,
               lastLoginAt: sql`now()`,
+              // Peran wajib 2FA: 72 jam untuk mendaftarkan 2FA (review undangan R3).
+              twoFactorEnrollmentDueAt: enrollmentDueAtValue(row.role, false),
             })
             .returning({ id: users.id, name: users.name, email: users.email, role: users.role });
           if (!user) throw new Error('Pengguna baru tidak tersimpan');

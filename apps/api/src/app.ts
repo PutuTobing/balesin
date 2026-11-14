@@ -52,7 +52,14 @@ import { invitationRoutes } from './modules/invitations/invitations.routes';
 import { createInvitationService } from './modules/invitations/invitations.service';
 import { passwordResetRoutes } from './modules/password-reset/password-reset.routes';
 import { createPasswordResetService } from './modules/password-reset/password-reset.service';
+import { auditRoutes } from './modules/audit/audit.routes';
+import { createAuditService } from './modules/audit/audit.service';
+import { sessionsRoutes } from './modules/sessions/sessions.routes';
+import { createOwnSessionsService } from './modules/sessions/sessions.service';
 import { setupRoutes } from './modules/setup/setup.routes';
+import { createLockInspector } from './modules/team/lock-state';
+import { teamRoutes } from './modules/team/team.routes';
+import { createTeamService } from './modules/team/team.service';
 import { createSetupService } from './modules/setup/setup.service';
 import type { EmailNotifier } from './queues/email-queue';
 
@@ -238,6 +245,16 @@ export async function buildApp(deps: AppDeps) {
     delivery,
   });
   const templatePreview = createEmailTemplatePreview({ db, appUrl: config.appUrl });
+  const ownSessions = createOwnSessionsService({ db, sessions, twoFactor });
+  const team = createTeamService({
+    db,
+    sessions,
+    twoFactor,
+    notifier: deps.notifier,
+    accessDenied,
+    locks: createLockInspector({ db, limiter, logger: app.log }),
+  });
+  const audit = createAuditService({ db, limiter });
 
   // Pekerjaan latar belakang (mis. minta atur ulang password) ditunggu selesai saat ditutup.
   app.decorate('backgroundTasks', background);
@@ -280,6 +297,12 @@ export async function buildApp(deps: AppDeps) {
   await app.register(invitationRoutes, { invitations, cookieSecure: config.cookieSecure });
   await app.register(passwordResetRoutes, { passwordReset, cookieSecure: config.cookieSecure });
   await app.register(emailVerificationRoutes, { emailVerification });
+  await app.register(sessionsRoutes, {
+    sessionsService: ownSessions,
+    cookieSecure: config.cookieSecure,
+  });
+  await app.register(teamRoutes, { team, cookieSecure: config.cookieSecure });
+  await app.register(auditRoutes, { audit });
 
   // Harus setelah SEMUA rute modul didaftarkan (lihat http/method-not-allowed.ts).
   registerMethodNotAllowedRoutes();

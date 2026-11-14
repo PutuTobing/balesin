@@ -1,7 +1,8 @@
-# Kontrak API — Setup, Login, 2FA, Undangan, Atur ulang password, Verifikasi email, Branding, Email pengirim, Peran & izin (Fase 1)
+# Kontrak API — Setup, Login, 2FA, Undangan, Atur ulang password, Verifikasi email, Branding, Email pengirim, Peran & izin, Manajemen pengguna, Sesi aktif, Audit log (Fase 1)
 
 Sumber kebenaran tipe: skema Zod di `packages/shared/src/` (`auth.ts`, `two-factor.ts`, `invitations.ts`,
-`password-reset.ts`, `email-verification.ts`, `email-templates.ts`, `links.ts`, `permissions.ts`) dan konstanta path di
+`password-reset.ts`, `email-verification.ts`, `email-templates.ts`, `links.ts`, `permissions.ts`, `team.ts`,
+`audit.ts`) dan konstanta path di
 `packages/shared/src/api-routes.ts` (`API_ROUTES`). Dokumen ini menjelaskan perilaku yang
 tidak terlihat dari skema. Semua path diawali `/api/v1`.
 
@@ -552,7 +553,7 @@ setiap permintaan; web hanya menyembunyikan menu/tombol.
 | `reports.view` | ✅ | ✅ | ✅ | milik sendiri | milik sendiri | Fase 5 |
 
 Rute yang cukup dengan sesi (data milik sendiri, tanpa izin): `/auth/me`, `/auth/logout`, `/auth/2fa*`,
-`/auth/email/verification`.
+`/auth/email/verification`, `/auth/sessions*` (butir 6).
 
 ### Perilaku
 
@@ -594,3 +595,204 @@ Rute yang cukup dengan sesi (data milik sendiri, tanpa izin): `/auth/me`, `/auth
   oleh Owner, tidak memicu pemberitahuan. Audit `settings.email.updated` kini memuat `previousHost` dan
   `ownersNotified`. Saran teks di form untuk Admin: "Owner akan diberi tahu lewat email bila server atau
   alamat pengirim diubah." 
+
+## Manajemen pengguna, sesi aktif & audit log (Fase 1 butir 6)
+
+Skema: `packages/shared/src/team.ts` (pengguna, sesi, konfirmasi identitas, `MANAGE_PERMISSIONS`,
+`TWO_FACTOR_ENROLLMENT_WINDOW_HOURS`) dan `packages/shared/src/audit.ts` (aksi + label, saringan, entri,
+ringkasan kejadian keamanan). Path: `API_ROUTES.team`, `API_ROUTES.sessions`, `API_ROUTES.audit`; path
+ber-parameter disusun dengan `apiPath(API_ROUTES.team.role, { userId })`.
+
+### Matriks kelola (`MANAGE_PERMISSIONS`, `canManageRole`, `assignableRoles`)
+
+Izin rute: `team.manage` (Owner, Admin). Di atasnya, per peran SASARAN:
+
+| Pelaku ↓ / sasaran → | Owner lain | Admin | Supervisor | CS | Teknisi | Diri sendiri |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| Owner | ✅ | ✅ | ✅ | ✅ | ✅ | – (halaman Keamanan akun) |
+| Admin | – | – (termasuk Admin lain) | ✅ | ✅ | ✅ | – |
+| Supervisor, CS, Teknisi | – | – | – | – | – | – |
+
+"Kelola" = ubah peran, nonaktifkan/aktifkan, atur ulang 2FA, buka lagi pendaftaran 2FA, buka kunci, lihat &
+keluarkan sesi. Melihat daftar/detail boleh untuk semua pengguna organisasi (Admin melihat Owner dengan
+`canManage: false`). Peran yang boleh **diberikan** lewat ubah peran = `assignableRoles(pelaku)` =
+`INVITE_PERMISSIONS` (Owner → Admin/Supervisor/CS/Teknisi; Admin → Supervisor/CS/Teknisi). **Tidak ada yang
+bisa menjadikan orang Owner** lewat ubah peran (Zod menolak `role: "owner"` → 400); pemindahan kepemilikan
+belum ada. Organisasi selalu punya ≥ 1 Owner aktif.
+
+### Konfirmasi ulang identitas pelaku (`identityConfirmationSchema`)
+
+Body `{ password, code }` — password **pelaku** + kode autentikator / kode cadangan **pelaku** (`code` wajib
+bila 2FA pelaku aktif; Owner/Admin selalu). Wajib untuk: ubah peran, nonaktifkan, aktifkan, atur ulang 2FA,
+buka lagi pendaftaran 2FA, buka kunci, keluarkan SEMUA sesi (pengguna lain maupun "semua sesi lain" milik
+sendiri). Tidak perlu untuk keluarkan SATU sesi.
+
+| Kasus | Respons |
+|---|---|
+| `password` kosong/tidak ada | 400 `VALIDATION_ERROR` field `password` |
+| 2FA pelaku aktif tapi `code` tidak ada | 400 field `code` "Masukkan kode dari aplikasi autentikator…" |
+| Password salah | 400 field `password` "Password salah…" |
+| Kode salah | 400 field `code` (ember sama dengan langkah kedua masuk: kode salah ke-5 mengunci langkah kedua akun pelaku 15 menit + email) |
+| 5 konfirmasi gagal / 15 menit, atau langkah kedua pelaku terkunci | 429 + `Retry-After` |
+
+Web: dialog konfirmasi dengan isian password + kode (seperti "Buat ulang kode cadangan"); isian tidak disimpan
+di cache/storage; kosongkan setelah selesai.
+
+### Endpoint pengguna (semua `team.manage`; tulis butuh CSRF)
+
+| Metode & path | Request | Respons 2xx |
+|---|---|---|
+| GET `/users` | – | `teamUserListResponseSchema` `{ users, manageableRoles }` |
+| GET `/users/:userId` | – | `teamUserResponseSchema` `{ user }` |
+| PUT `/users/:userId/role` | `changeUserRoleRequestSchema` `{ role, password, code }` | `teamUserActionResponseSchema` `{ user, revokedSessions, revokedInvitations }` |
+| POST `/users/:userId/disable` | `{ password, code }` | `teamUserActionResponseSchema` |
+| POST `/users/:userId/enable` | `{ password, code }` | `teamUserActionResponseSchema` |
+| POST `/users/:userId/2fa/reset` | `{ password, code }` | `teamUserActionResponseSchema` |
+| POST `/users/:userId/2fa/enrollment-window` | `{ password, code }` | `teamUserActionResponseSchema` |
+| POST `/users/:userId/unlock` | `{ password, code }` | `teamUserActionResponseSchema` |
+| GET `/users/:userId/sessions` | – | `activeSessionListResponseSchema` `{ sessions }` |
+| DELETE `/users/:userId/sessions/:sessionId` | – | `{ status: "revoked" }` |
+| POST `/users/:userId/sessions/revoke-all` | `{ password, code }` | `{ revokedSessions }` |
+
+`user` (`teamUserSchema`): `id, name, email, role, status ("active" | "locked" | "disabled",
+`TEAM_USER_STATUS_LABELS`), disabledAt, lockedUntil, emailVerified, lastLoginAt, createdAt, twoFactor
+{ enabled, required, enabledAt, enrollmentDueAt, enrollmentExpired }, activeSessions, isSelf, canManage,
+assignableRoles`. Daftar: aktif dulu, lalu urut peran (Owner → Teknisi), lalu nama; maks. 1000. Tidak pernah
+memuat hash/rahasia. `emailVerified: false` → tampilkan "Email belum diverifikasi" (mis. undangan yang
+tautannya disalin manual; atur ulang password tetap dikirim ke alamat itu). `status: "locked"` = aktif tetapi
+masuk/langkah kedua sedang dikunci sementara sampai `lockedUntil` → tombol "Buka kunci".
+
+Efek tiap aksi (semua tercatat di audit):
+- **Ubah peran** (`user.role_changed` {from, to, revokedSessions, revokedInvitations,
+  twoFactorEnrollmentRequired}): SEMUA sesi + tantangan 2FA sasaran dicabut (ia harus masuk lagi; web-nya
+  mendapat 401 lalu halaman masuk). Naik ke peran wajib 2FA tanpa 2FA → login berikutnya =
+  `two_factor_enrollment_required` dengan batas 72 jam. Undangan terbuka terbitan sasaran yang tidak lagi boleh
+  ia terbitkan dibatalkan (`user.invitation.revoked` reason `issuer_role_changed`), mis. Owner → Admin:
+  undangan Admin batal, undangan Supervisor/CS/Teknisi tetap.
+- **Nonaktifkan** (`user.disabled`): sesi + tantangan dicabut, tautan atur ulang password/verifikasi email
+  yang masih hidup batal, SEMUA undangan terbuka terbitannya batal (reason `issuer_disabled`). Masuk →
+  401 `INVALID_CREDENTIALS` (sama dengan password salah). Pengguna tidak pernah dihapus.
+- **Aktifkan** (`user.enabled`): bisa masuk lagi; peran wajib tanpa 2FA mendapat batas pendaftaran 72 jam baru.
+- **Atur ulang 2FA** (`user.2fa.reset`): autentikator + kode cadangan dibuang, sesi + tantangan dicabut, kunci
+  langkah kedua lama dilepas. Peran wajib → login berikutnya wajib mendaftar ulang (batas 72 jam). Email ke
+  sasaran ("…diatur ulang oleh {nama} ({peran})") dan ke **Owner lain** (bukan pelaku, bukan sasaran).
+- **Buka lagi pendaftaran 2FA** (`user.2fa.enrollment_reopened`): hanya peran wajib yang belum mendaftar;
+  batas baru = 72 jam dari sekarang.
+- **Buka kunci** (`user.unlocked` {cleared}): melepas kunci masuk (per jaringan, per akun, per perangkat
+  dikenal) dan kunci langkah kedua 2FA, beserta hitungannya. Idempoten.
+- **Keluarkan sesi** (`auth.session.revoked` {by: "administrator"}) / **semua sesi**
+  (`auth.sessions.revoked_all`).
+
+Error:
+
+| Kasus | Respons |
+|---|---|
+| Supervisor/CS/Teknisi | 403 `FORBIDDEN` pesan bawaan (izin rute, `auth.access.denied`) |
+| Pengguna tidak ada / organisasi lain | 404 `NOT_FOUND` "Pengguna tidak ditemukan." |
+| Sasaran = diri sendiri | 403 `FORBIDDEN` "Akunmu sendiri tidak bisa dikelola dari halaman Tim…" (audit aturan `team.manage.self`) |
+| Admin → Owner/Admin | 403 `FORBIDDEN` "Admin hanya bisa mengelola Supervisor, CS, dan Teknisi…" (aturan `team.manage.role`) |
+| Admin memberi peran Admin | 403 `FORBIDDEN` "Admin hanya bisa memberi peran Supervisor, CS, atau Teknisi." (aturan `team.manage.assign_role`) |
+| `role` bukan Admin/Supervisor/CS/Teknisi (termasuk `owner`) | 400 field `role` |
+| Peran sama / sudah nonaktif / sudah aktif / 2FA belum aktif (atur ulang) / peran tidak wajib atau 2FA sudah aktif (buka lagi) | 409 `CONFLICT` dengan pesan khusus |
+| Perubahan akan menghapus Owner aktif terakhir (mis. dua Owner saling menurunkan bersamaan) | 409 `CONFLICT` "Organisasi harus selalu punya minimal satu Owner aktif…" |
+| Data berubah oleh permintaan lain | 409 `CONFLICT` "Data pengguna ini baru saja berubah…" |
+| Sesi tidak ada / bukan milik pengguna itu / sudah berakhir | 404 `NOT_FOUND` "Sesi tidak ditemukan atau sudah berakhir." |
+| Konfirmasi identitas | lihat tabel di atas (400/429) |
+
+Semua 403 aturan di atas dicatat `auth.access.denied` (`targetType: "rule"`), paling banyak satu entri per
+pengguna × aturan per menit.
+
+### Sesi aktif milik sendiri (cukup sesi PENUH; sesi terbatas 2FA → 403 `TWO_FACTOR_ENROLLMENT_REQUIRED`)
+
+| Metode & path | Request | Respons 2xx |
+|---|---|---|
+| GET `/auth/sessions` | – | `activeSessionListResponseSchema` `{ sessions }` |
+| DELETE `/auth/sessions/:sessionId` | – | `{ status: "revoked" }` |
+| POST `/auth/sessions/revoke-others` | `{ password, code? }` (`code` wajib bila 2FA aktif) | `{ revokedSessions }` |
+
+`session` (`activeSessionSchema`): `id, device` ("Chrome di Windows"), `ipAddress` (tersamar: IPv4
+`203.0.113.*`, IPv6 3 grup pertama `2001:db8:85a3:*`, `null` bila tidak tercatat), `createdAt` (waktu masuk),
+`lastSeenAt` (diperbarui paling sering 1×/menit), `current` (sesi yang sedang dipakai — tampilkan "Sesi ini",
+tanpa tombol keluarkan), `limited` (sesi pendaftaran 2FA 30 menit). Terakhir dipakai dulu; hanya sesi yang
+masih berlaku. Mengeluarkan sesi ini sendiri → 409 "…pakai tombol Keluar." Sesi milik orang lain → 404.
+"Keluarkan semua sesi lain" juga membuang login 2FA yang sedang setengah jalan; sesi ini tetap hidup.
+
+### Batas waktu pendaftaran 2FA peran wajib (R3, `TWO_FACTOR_ENROLLMENT_WINDOW_HOURS` = 72)
+
+- Akun Owner/Admin/Supervisor yang belum mendaftar 2FA punya batas `twoFactor.enrollmentDueAt` = 72 jam sejak:
+  menerima undangan, perannya dinaikkan, 2FA-nya diatur ulang, diaktifkan kembali, atau pendaftarannya dibuka
+  lagi. Mendaftar 2FA mengosongkannya.
+- Lewat batas: `POST /auth/login` dengan password BENAR → **403 `TWO_FACTOR_ENROLLMENT_EXPIRED`** "Batas waktu
+  mendaftarkan verifikasi dua langkah untuk akunmu sudah lewat. Minta Owner atau Admin di tempatmu membuka lagi
+  pendaftarannya, lalu masuk kembali." — tanpa cookie. Password salah tetap `INVALID_CREDENTIALS`. Sesi
+  pendaftaran yang terbit sebelum batas: `POST /auth/2fa/enroll` → 403 kode yang sama. Tercatat
+  `auth.2fa.enrollment_expired` (maks. 1×/menit/pengguna). Web (halaman masuk): tampilkan pesannya apa adanya,
+  tanpa tombol coba lagi otomatis.
+- Pemulihan: Owner/Admin (sesuai matriks kelola) → "Buka lagi pendaftaran 2FA"
+  (`POST /users/:userId/2fa/enrollment-window`). Daftar Tim menampilkan `enrollmentExpired: true`.
+- **Owner hasil wizard setup tidak punya batas** (`enrollmentDueAt: null`): wizard memaksa pendaftaran di sesi
+  yang sama, dan tidak ada orang lain yang bisa membukakannya. Batas seorang Owner (mis. setelah 2FA-nya diatur
+  ulang Owner lain) hanya ditegakkan selama ada Owner aktif LAIN ber-2FA yang bisa membukanya lagi —
+  instalasi tidak pernah terkunci dari dirinya sendiri.
+- Atur ulang password akun peran wajib yang belum mendaftar 2FA tetap boleh (pemulihan sah), tetapi semua
+  Owner/Admin lain mendapat email "{nama} mengatur ulang password tanpa verifikasi dua langkah"; audit
+  `auth.password_reset.completed` memuat `twoFactorEnrollmentPending: true`.
+
+### Audit log (`audit.view` = Owner, Admin)
+
+| Metode & path | Request | Respons 2xx |
+|---|---|---|
+| GET `/audit-logs` | query `auditLogListQuerySchema` | `auditLogListResponseSchema` `{ entries, nextCursor }` |
+| GET `/audit-logs/export` | query `auditLogFilterSchema` (tanpa `cursor`/`limit`) | **`text/csv; charset=utf-8`**, unduhan |
+| GET `/audit-logs/security-summary` | – | `securitySummaryResponseSchema` |
+
+Saringan (semua opsional): `actorUserId` (aksi oleh pengguna itu), `userId` (aksi OLEH atau TERHADAP pengguna
+itu — dipakai di detail pengguna), `action` (salah satu `AUDIT_ACTION_NAMES`), `targetType`
+(`AUDIT_TARGET_TYPES`), `targetId`, `from` ≤ waktu < `to` (ISO 8601 UTC). Halaman: `limit` 1–200 (bawaan 50),
+`cursor` = `nextCursor` sebelumnya (`null` = habis). Terbaru dulu. Kursor/saringan tidak valid, `from` ≥ `to`,
+`limit` > 200 → 400 `VALIDATION_ERROR`.
+
+`entry` (`auditLogEntrySchema`): `id, createdAt, action` (label: `auditActionLabel(action)` /
+`AUDIT_ACTION_LABELS`; aksi yang belum dikenal klien ditampilkan kodenya), `actor` `{ id, name, email, role }`
+atau `null` (sistem / pelaku tidak dikenal, mis. login gagal) — **peran sekarang**, bukan saat kejadian,
+`target` `{ type, id, name }` (`name` hanya untuk target `user`; label jenis `AUDIT_TARGET_TYPE_LABELS`),
+`metadata` (datar: teks/angka/boolean/null; nilai bersarang dikirim sebagai teks JSON; rahasia sudah disaring
+saat ditulis DAN saat dikirim), `ipAddress` (lengkap — log keamanan), `device` ("Chrome di Windows").
+
+Ekspor CSV: RFC 4180 dengan koma, diawali BOM UTF-8 (Excel), header `Content-Disposition: attachment;
+filename="audit-log-YYYYMMDD.csv"`, `x-export-rows`, `x-export-truncated` (`1` bila lebih dari 10.000 baris —
+hanya 10.000 terbaru yang ikut; persempit rentang waktu). Kolom: Waktu (UTC), Waktu setempat, Aksi, Kode aksi,
+Pelaku, Email pelaku, Peran pelaku, Jenis target, ID target, Nama target, Alamat IP, Perangkat, Rincian. Setiap
+sel dikutip; teks yang diawali `= + - @`, tab, atau CR (juga setelah spasi/kutip) diberi awalan `'` (anti
+formula injection). Maks. 10 ekspor/jam per pengguna → 429. Setiap ekspor dicatat `audit.exported`. Web:
+unduh lewat `fetch` (credentials) → `Blob` → tautan unduhan, bukan membuka URL di tab baru (sama-origin, tanpa
+token di URL).
+
+Ringkasan kejadian keamanan (banner peringatan Owner/Admin): `{ since, events, counts, latestWarningAt }`,
+rentang 7 hari (`SECURITY_SUMMARY_DAYS`), `events` terbaru dulu maks. 20. `event`: `id` (baris audit),
+`kind` (`SECURITY_EVENT_KINDS`, label `SECURITY_EVENT_LABELS`), `severity` (`warning` → banner; `info` →
+cukup di daftar), `occurredAt`, `actor`, `subject` `{ id, name, role }` (pengguna yang terkena), `details`
+(mis. `email_sender_changed`: `previousHost`, `host`, `port`, `fromAddress`; `role_changed`: `from`, `to`;
+`account_locked`: `scope`, `lockedUntil`). Jenis: `email_sender_changed` (server/alamat email pengirim diubah
+oleh selain Owner — review RBAC S1), `two_factor_reset`, `two_factor_enrollment_reopened`,
+`password_reset_without_two_factor`, `account_locked`, `role_changed`, `user_disabled`. Saran web: tampilkan
+banner bila `latestWarningAt` lebih baru dari "terakhir ditutup" (simpan waktu itu di `localStorage` per
+pengguna — kenyamanan saja; server tidak menyimpan status "sudah dibaca"), tautan ke Audit log tersaring.
+
+### Perubahan pada bagian yang sudah ada (bentuk respons tidak berubah)
+
+- **Kode error baru** `TWO_FACTOR_ENROLLMENT_EXPIRED` (403) di `ERROR_CODES` — `POST /auth/login` dan
+  `POST /auth/2fa/enroll` (lihat R3 di atas).
+- Rute "cukup sesi" bertambah: `/auth/sessions*` (data milik sendiri).
+- `POST /auth/invitation/accept` untuk Admin/Supervisor kini memulai batas pendaftaran 2FA 72 jam.
+- Audit `auth.account.locked` untuk akun terdaftar kini memuat `lockRef` (kunci ember Redis berbentuk hash —
+  bukan rahasia) supaya kunci bisa dibuka Owner/Admin.
+- Email baru (worker): "Verifikasi dua langkah akun … diatur ulang" (ke sasaran), "Verifikasi dua langkah
+  {nama} ({peran}) … diatur ulang" (ke Owner lain), "{nama} ({peran}) mengatur ulang password tanpa
+  verifikasi dua langkah" (ke Owner/Admin).
+
+### Catatan untuk tes E2E
+
+- Konfirmasi identitas memakai kode TOTP pelaku; satu kode tidak bisa dipakai dua kali dalam 30 detik — pakai
+  helper TOTP yang sama dengan tes 2FA (`e2e/tests/two-factor.ts`).
+- Setelah ubah peran/nonaktifkan/atur ulang 2FA, browser sasaran mendapat 401 pada permintaan berikutnya.

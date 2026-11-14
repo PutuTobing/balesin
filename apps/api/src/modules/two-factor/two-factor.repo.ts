@@ -144,6 +144,8 @@ export async function activateTotp(
       totpPendingSecretEncrypted: null,
       totpPendingCreatedAt: null,
       totpPendingIssuedAt: null,
+      // Sudah mendaftar: batas waktu pendaftaran (review undangan R3) tidak berlaku lagi.
+      twoFactorEnrollmentDueAt: null,
     })
     .where(
       and(

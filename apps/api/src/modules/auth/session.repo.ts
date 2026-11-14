@@ -1,6 +1,6 @@
 import { TWO_FACTOR_ENROLLMENT_SESSION_MINUTES, type UserRole } from '@balesin/shared';
 import { organizations, userSessions, users, type DbExecutor, type SessionKind } from '@balesin/db';
-import { and, eq, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 
 import type { ClientInfo } from '../../http/client-info';
 
@@ -226,4 +226,106 @@ export async function revokeUserSessions(
     )
     .returning({ id: userSessions.id });
   return rows.length;
+}
+
+/** Satu sesi yang masih berlaku, untuk daftar "sesi aktif" (tanpa token/hash). */
+export interface ActiveSessionRow {
+  id: string;
+  userId: string;
+  kind: SessionKind;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: Date;
+  lastSeenAt: Date;
+}
+
+/**
+ * Kondisi "sesi ini masih bisa dipakai" — sama dengan `findActiveSession`: belum dicabut, belum
+ * lewat batas idle/mutlak, penggunanya aktif, dan (bila 2FA aktif) dibuat setelah langkah kedua.
+ * Dipakai bersama `innerJoin(users …)`.
+ */
+function usableSession() {
+  return and(
+    isNull(userSessions.revokedAt),
+    sql`${userSessions.idleExpiresAt} > now()`,
+    sql`${userSessions.absoluteExpiresAt} > now()`,
+    isNull(users.disabledAt),
+    or(isNull(users.totpEnabledAt), isNotNull(userSessions.twoFactorVerifiedAt)),
+  );
+}
+
+/** Sesi yang masih berlaku milik satu pengguna, terakhir dipakai dulu. */
+export async function listActiveSessions(
+  db: DbExecutor,
+  organizationId: string,
+  userId: string,
+): Promise<ActiveSessionRow[]> {
+  return db
+    .select({
+      id: userSessions.id,
+      userId: userSessions.userId,
+      kind: userSessions.kind,
+      ipAddress: userSessions.ipAddress,
+      userAgent: userSessions.userAgent,
+      createdAt: userSessions.createdAt,
+      lastSeenAt: userSessions.lastSeenAt,
+    })
+    .from(userSessions)
+    .innerJoin(
+      users,
+      and(eq(users.organizationId, userSessions.organizationId), eq(users.id, userSessions.userId)),
+    )
+    .where(
+      and(
+        eq(userSessions.organizationId, organizationId),
+        eq(userSessions.userId, userId),
+        usableSession(),
+      ),
+    )
+    .orderBy(desc(userSessions.lastSeenAt), desc(userSessions.id))
+    .limit(200);
+}
+
+/** Jumlah sesi yang masih berlaku per pengguna organisasi (untuk daftar pengguna). */
+export async function countActiveSessionsByUser(
+  db: DbExecutor,
+  organizationId: string,
+): Promise<Map<string, number>> {
+  const rows = await db
+    .select({ userId: userSessions.userId, count: sql<number>`count(*)::int` })
+    .from(userSessions)
+    .innerJoin(
+      users,
+      and(eq(users.organizationId, userSessions.organizationId), eq(users.id, userSessions.userId)),
+    )
+    .where(and(eq(userSessions.organizationId, organizationId), usableSession()))
+    .groupBy(userSessions.userId);
+  return new Map(rows.map((row) => [row.userId, row.count]));
+}
+
+/**
+ * Mencabut satu sesi MILIK pengguna tertentu (sesi pengguna lain/organisasi lain tidak tersentuh).
+ * `true` bila sesi itu memang masih berlaku.
+ */
+export async function revokeSessionOfUser(
+  db: DbExecutor,
+  organizationId: string,
+  userId: string,
+  sessionId: string,
+): Promise<boolean> {
+  const rows = await db
+    .update(userSessions)
+    .set({ revokedAt: sql`now()` })
+    .where(
+      and(
+        eq(userSessions.organizationId, organizationId),
+        eq(userSessions.userId, userId),
+        eq(userSessions.id, sessionId),
+        isNull(userSessions.revokedAt),
+        sql`${userSessions.idleExpiresAt} > now()`,
+        sql`${userSessions.absoluteExpiresAt} > now()`,
+      ),
+    )
+    .returning({ id: userSessions.id });
+  return rows.length > 0;
 }

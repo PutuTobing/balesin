@@ -367,6 +367,82 @@ describe('antrian email — pemberitahuan akun dikunci', () => {
     }
   }, 60_000);
 
+  it('manajemen pengguna: 2FA diatur ulang (ke sasaran + Owner lain) dan reset password tanpa 2FA (ke Owner/Admin)', async () => {
+    const { organization, user: target } = await recipient({ role: 'admin', name: 'Rina Admin' });
+    await configureEmail(organization.id);
+    const actor = await insertUser(db, organization.id, {
+      role: 'owner',
+      name: 'Sari Owner',
+      email: `sari-${uniqueSuffix()}@contoh.test`,
+    });
+    const otherOwner = await insertUser(db, organization.id, {
+      role: 'owner',
+      name: 'Owner Lain',
+      email: `owner-${uniqueSuffix()}@contoh.test`,
+    });
+    const otherAdmin = await insertUser(db, organization.id, {
+      role: 'admin',
+      name: 'Admin Lain',
+      email: `admin-${uniqueSuffix()}@contoh.test`,
+    });
+    const occurredAt = new Date().toISOString();
+
+    const toTarget = await runJob(EMAIL_JOBS.securityNotice, {
+      organizationId: organization.id,
+      userId: target.id,
+      event: 'two_factor_reset',
+      occurredAt,
+      actorUserId: actor.id,
+    });
+    const toOwner = await runJob(EMAIL_JOBS.securityNoticeAdmin, {
+      organizationId: organization.id,
+      recipientUserId: otherOwner.id,
+      subjectUserId: target.id,
+      event: 'two_factor_reset',
+      occurredAt,
+      actorUserId: actor.id,
+    });
+    // "2FA diatur ulang" hanya untuk Owner: Admin penerima dilewati.
+    const toAdmin = await runJob(EMAIL_JOBS.securityNoticeAdmin, {
+      organizationId: organization.id,
+      recipientUserId: otherAdmin.id,
+      subjectUserId: target.id,
+      event: 'two_factor_reset',
+      occurredAt,
+      actorUserId: actor.id,
+    });
+    const resetNotice = await runJob(EMAIL_JOBS.securityNoticeAdmin, {
+      organizationId: organization.id,
+      recipientUserId: otherAdmin.id,
+      subjectUserId: target.id,
+      event: 'password_reset_without_two_factor',
+      occurredAt,
+    });
+    expect(toTarget.returnvalue).toEqual({ status: 'sent' });
+    expect(toOwner.returnvalue).toEqual({ status: 'sent' });
+    expect(toAdmin.returnvalue).toEqual({ status: 'skipped', reason: 'recipient_unavailable' });
+    expect(resetNotice.returnvalue).toEqual({ status: 'sent' });
+
+    await expect.poll(async () => (await capturedMailFor(target.email)).length).toBe(1);
+    const [targetMail] = await capturedMailFor(target.email);
+    expect(targetMail?.subject).toBe(
+      'Verifikasi dua langkah akun Balesin Contoh kamu diatur ulang',
+    );
+    expect(targetMail?.text).toContain('Sari Owner (Owner) mengatur ulang verifikasi dua langkah');
+    await expect.poll(async () => (await capturedMailFor(otherOwner.email)).length).toBe(1);
+    const [ownerMail] = await capturedMailFor(otherOwner.email);
+    expect(ownerMail?.subject).toContain('Verifikasi dua langkah Rina Admin (Admin)');
+    expect(ownerMail?.text).toContain('Sari Owner (Owner) mengatur ulang');
+    await expect.poll(async () => (await capturedMailFor(otherAdmin.email)).length).toBe(1);
+    const [adminMail] = await capturedMailFor(otherAdmin.email);
+    expect(adminMail?.subject).toBe(
+      'Rina Admin (Admin) mengatur ulang password tanpa verifikasi dua langkah',
+    );
+    for (const mail of [targetMail, ownerMail, adminMail]) {
+      expect(mail?.text).not.toMatch(/\bAnda\b/i);
+    }
+  }, 60_000);
+
   it('log worker tidak pernah memuat password SMTP', () => {
     // `balesin` juga awalan kunci tes dan nama koneksi, jadi yang diperiksa adalah bentuk
     // penugasan rahasia, bukan sekadar kemunculan katanya.

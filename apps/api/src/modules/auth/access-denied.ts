@@ -40,6 +40,12 @@ export const ACCESS_DENIED_FLAG = 'akses-ditolak';
 export const ACCESS_RULES = {
   /** Peran pemanggil tidak boleh mengundang/mengelola undangan peran itu (`INVITE_PERMISSIONS`). */
   invitationRole: 'team.invite.role',
+  /** Peran pemanggil tidak boleh mengelola pengguna ber-peran itu (`MANAGE_PERMISSIONS`). */
+  teamManageRole: 'team.manage.role',
+  /** Mengelola diri sendiri lewat endpoint tim (ubah peran/nonaktifkan/2FA/sesi diri sendiri). */
+  teamManageSelf: 'team.manage.self',
+  /** Peran baru di luar yang boleh diberikan pemanggil (`assignableRoles`). */
+  teamAssignRole: 'team.manage.assign_role',
 } as const;
 export type AccessRule = (typeof ACCESS_RULES)[keyof typeof ACCESS_RULES];
 

@@ -9,10 +9,11 @@ import {
   INVITATION_VALID_HOURS,
   invitationIssuerAuthorized,
   type EmailDeliveryStatus,
+  type InvitableRole,
   type UserRole,
 } from '@balesin/shared';
 import { alias } from 'drizzle-orm/pg-core';
-import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, notInArray, or, sql } from 'drizzle-orm';
 
 /**
  * Query undangan. Semua query memfilter `organization_id`, kecuali pencarian berdasarkan hash
@@ -261,14 +262,17 @@ export async function revokeInvitation(
 /**
  * Membatalkan semua undangan terbuka yang dibuat ATAU terakhir dikirim ulang oleh `userId`. Untuk
  * butir 6 (manajemen pengguna): dipanggil di transaksi yang sama dengan menonaktifkan/menurunkan
- * peran pengguna itu (review undangan R2.2). Mengembalikan ID undangan yang dibatalkan.
+ * peran pengguna itu (review undangan R2.2). `keepRoles` = peran undangan yang MASIH boleh
+ * diterbitkan pengguna itu (ganti peran: `INVITE_PERMISSIONS[peran baru]`) — undangan peran itu
+ * tidak dibatalkan. Mengembalikan undangan yang dibatalkan.
  */
 export async function revokeInvitationsIssuedBy(
   db: DbExecutor,
   organizationId: string,
   userId: string,
   actorUserId: string,
-): Promise<string[]> {
+  keepRoles: readonly InvitableRole[] = [],
+): Promise<Array<{ id: string; role: UserRole }>> {
   const rows = await db
     .update(userInvitations)
     .set({ revokedAt: sql`now()`, revokedByUserId: actorUserId, deliveryTokenEncrypted: null })
@@ -279,11 +283,12 @@ export async function revokeInvitationsIssuedBy(
           eq(userInvitations.invitedByUserId, userId),
           eq(userInvitations.lastSentByUserId, userId),
         ),
+        keepRoles.length > 0 ? notInArray(userInvitations.role, [...keepRoles]) : undefined,
         openOnly(),
       ),
     )
-    .returning({ id: userInvitations.id });
-  return rows.map((row) => row.id);
+    .returning({ id: userInvitations.id, role: userInvitations.role });
+  return rows;
 }
 
 /** Pengantrean email gagal: tandai gagal dan buang salinan token (generasi token ini saja). */

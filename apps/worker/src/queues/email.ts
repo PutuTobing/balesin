@@ -12,6 +12,7 @@ import {
   invitationEmailPayloadSchema,
   openStoredEmailSettings,
   renderAccountLockedEmail,
+  renderAdminAccountNoticeEmail,
   renderAdminTwoFactorNoticeEmail,
   renderEmailSettingsChangedEmail,
   renderEmailVerificationEmail,
@@ -306,6 +307,16 @@ async function findActiveUser(organizationId: string, userId: string, deps: Emai
   return user && user.disabledAt === null ? user : undefined;
 }
 
+/** Nama + peran pengguna di organisasi itu, aktif maupun nonaktif (untuk menyebut pelaku). */
+async function findUserAnyState(organizationId: string, userId: string, deps: EmailJobDeps) {
+  const [user] = await deps.db
+    .select({ name: users.name, role: users.role })
+    .from(users)
+    .where(and(eq(users.organizationId, organizationId), eq(users.id, userId)))
+    .limit(1);
+  return user;
+}
+
 /** IP + user agent dari baris audit kejadian (untuk "dari mana" di email keamanan). */
 async function findAuditOrigin(
   organizationId: string,
@@ -383,6 +394,11 @@ async function sendSecurityNotice(job: EmailJob, deps: EmailJobDeps): Promise<Em
   const branding = await loadOrganizationBrand(deps.db, organizationId);
   if (!recipient || !branding) return { status: 'skipped', reason: 'recipient_unavailable' };
   const origin = await findAuditOrigin(organizationId, auditLogId, deps);
+  // Pelaku (untuk "diatur ulang oleh …") dibaca dari database, tidak dari payload. Pelaku yang
+  // sudah dinonaktifkan tetap disebut namanya: pemilik akun perlu tahu siapa.
+  const actor = payload.data.actorUserId
+    ? await findUserAnyState(organizationId, payload.data.actorUserId, deps)
+    : undefined;
 
   const body = renderSecurityNoticeEmail({
     brand: branding.brand,
@@ -392,6 +408,7 @@ async function sendSecurityNotice(job: EmailJob, deps: EmailJobDeps): Promise<Em
     timeZone: branding.timeZone,
     ...(backupCodesRemaining === undefined ? {} : { backupCodesRemaining }),
     ...(origin ? { origin } : {}),
+    ...(actor ? { actor: { name: actor.name, role: actor.role } } : {}),
   });
   return deliver(
     organizationId,
@@ -401,38 +418,61 @@ async function sendSecurityNotice(job: EmailJob, deps: EmailJobDeps): Promise<Em
   );
 }
 
-/** Ke satu Owner/Admin: 2FA akun ber-peran wajib baru aktif. */
+/**
+ * Ke satu Owner/Admin: 2FA akun ber-peran wajib baru aktif, 2FA seseorang diatur ulang (hanya ke
+ * Owner), atau akun ber-peran wajib yang belum mendaftar 2FA mengatur ulang password-nya.
+ */
 async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promise<EmailJobResult> {
   const payload = securityNoticeAdminEmailPayloadSchema.safeParse(job.data);
   if (!payload.success) {
     throw new UnrecoverableError('Payload job email:security-notice-admin tidak valid');
   }
-  const { organizationId, recipientUserId, subjectUserId, occurredAt, auditLogId } = payload.data;
+  const { organizationId, recipientUserId, subjectUserId, event, occurredAt, auditLogId } =
+    payload.data;
 
   const recipient = await findActiveUser(organizationId, recipientUserId, deps);
   const subject = await findActiveUser(organizationId, subjectUserId, deps);
   const branding = await loadOrganizationBrand(deps.db, organizationId);
-  // Penerima diperiksa ulang saat mengirim: yang perannya sudah tidak memegang `team.manage`
-  // (Owner/Admin, matriks izin di @balesin/shared) dilewati.
-  if (
-    !recipient ||
-    !subject ||
-    !branding ||
-    !hasPermission(recipient.role, 'team.manage') ||
-    !isTwoFactorRequired(subject.role)
-  ) {
+  // Penerima diperiksa ulang saat mengirim: yang perannya sudah tidak berhak dilewati —
+  // `team.manage` (Owner/Admin, matriks izin di @balesin/shared), atau khusus Owner untuk
+  // pemberitahuan 2FA diatur ulang.
+  const recipientEligible =
+    recipient !== undefined &&
+    (event === 'two_factor_reset'
+      ? recipient.role === 'owner'
+      : hasPermission(recipient.role, 'team.manage'));
+  const subjectEligible =
+    subject !== undefined && (event === 'two_factor_reset' || isTwoFactorRequired(subject.role));
+  if (!recipient || !subject || !branding || !recipientEligible || !subjectEligible) {
     return { status: 'skipped', reason: 'recipient_unavailable' };
   }
   const origin = await findAuditOrigin(organizationId, auditLogId, deps);
 
-  const body = renderAdminTwoFactorNoticeEmail({
-    brand: branding.brand,
-    timeZone: branding.timeZone,
-    recipientName: recipient.name,
-    subject: { name: subject.name, email: subject.email, role: subject.role },
-    occurredAt: new Date(occurredAt),
-    ...(origin ? { origin } : {}),
-  });
+  let body;
+  if (event === 'two_factor_enabled') {
+    body = renderAdminTwoFactorNoticeEmail({
+      brand: branding.brand,
+      timeZone: branding.timeZone,
+      recipientName: recipient.name,
+      subject: { name: subject.name, email: subject.email, role: subject.role },
+      occurredAt: new Date(occurredAt),
+      ...(origin ? { origin } : {}),
+    });
+  } else {
+    const actor = payload.data.actorUserId
+      ? await findUserAnyState(organizationId, payload.data.actorUserId, deps)
+      : undefined;
+    body = renderAdminAccountNoticeEmail({
+      brand: branding.brand,
+      timeZone: branding.timeZone,
+      recipientName: recipient.name,
+      event,
+      subject: { name: subject.name, email: subject.email, role: subject.role },
+      occurredAt: new Date(occurredAt),
+      ...(actor ? { actor: { name: actor.name, role: actor.role } } : {}),
+      ...(origin ? { origin } : {}),
+    });
+  }
   return deliver(
     organizationId,
     { to: recipient.email, ...body, inlineImages: branding.inlineImages },

@@ -2,6 +2,7 @@ import { isIP } from 'node:net';
 
 import { redactSecrets } from '@balesin/core';
 import { auditLogs, type DbExecutor } from '@balesin/db';
+import type { AuditAction, AuditTargetType } from '@balesin/shared';
 
 import { USER_AGENT_MAX_LENGTH, type ClientInfo } from '../../http/client-info';
 
@@ -15,47 +16,19 @@ import { USER_AGENT_MAX_LENGTH, type ClientInfo } from '../../http/client-info';
  * - Tabelnya hanya-tambah di tingkat database (trigger), jadi tidak ada fungsi ubah/hapus.
  */
 
-/** Nama aksi bertitik. Tambahkan di sini setiap ada aksi baru supaya daftarnya satu tempat. */
-export const AUDIT_ACTIONS = {
-  setupCompleted: 'setup.completed',
-  loginSucceeded: 'auth.login.success',
-  loginFailed: 'auth.login.failed',
-  accountLocked: 'auth.account.locked',
-  logout: 'auth.logout',
-  twoFactorChallengeIssued: 'auth.2fa.challenge_issued',
-  twoFactorFailed: 'auth.2fa.failed',
-  twoFactorEnrollmentStarted: 'auth.2fa.enrollment_started',
-  twoFactorEnabled: 'auth.2fa.enabled',
-  twoFactorDisabled: 'auth.2fa.disabled',
-  twoFactorBackupCodesRegenerated: 'auth.2fa.backup_codes_regenerated',
-  twoFactorBackupCodeUsed: 'auth.2fa.backup_code_used',
-  emailSettingsUpdated: 'settings.email.updated',
-  emailSettingsTested: 'settings.email.tested',
-  invitationCreated: 'user.invitation.created',
-  invitationResent: 'user.invitation.resent',
-  invitationRevoked: 'user.invitation.revoked',
-  invitationAccepted: 'user.invitation.accepted',
-  /** Tautan undangan ditampilkan ke pembuatnya untuk disalin manual (email pengirim belum diatur). */
-  invitationLinkShown: 'user.invitation.link_shown',
-  /** Tautan undangan yang tidak berlaku dicoba dibuka/diterima. */
-  invitationRejected: 'user.invitation.rejected',
-  passwordResetRequested: 'auth.password_reset.requested',
-  passwordResetCompleted: 'auth.password_reset.completed',
-  passwordResetFailed: 'auth.password_reset.failed',
-  emailVerificationSent: 'auth.email.verification_sent',
-  emailVerified: 'auth.email.verified',
-  emailVerificationFailed: 'auth.email.verification_failed',
-  /** Permintaan ditolak 403 karena peran tidak punya izinnya (dibatasi, lihat `access-denied.ts`). */
-  accessDenied: 'auth.access.denied',
-} as const;
-export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
+/**
+ * Nama aksi bertitik — daftarnya (beserta label bahasa Indonesia) ada di `@balesin/shared`
+ * (`audit.ts`) supaya layar Audit log dan ekspor CSV memakai sumber yang sama. Tambahkan aksi baru
+ * DI SANA.
+ */
+export { AUDIT_ACTIONS, type AuditAction } from '@balesin/shared';
 
 export interface AuditEntry {
   organizationId: string;
   /** `null` untuk aksi tanpa pelaku yang dikenal (mis. login gagal). */
   actorUserId: string | null;
   action: AuditAction;
-  targetType?: string;
+  targetType?: AuditTargetType;
   targetId?: string;
   /** Tanpa rahasia. */
   metadata?: Record<string, unknown>;

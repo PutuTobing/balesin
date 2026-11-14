@@ -17,6 +17,7 @@ export const ERROR_CODES = [
   'FORBIDDEN',
   'CSRF_INVALID',
   'TWO_FACTOR_ENROLLMENT_REQUIRED',
+  'TWO_FACTOR_ENROLLMENT_EXPIRED',
   'TWO_FACTOR_CHALLENGE_INVALID',
   'TOKEN_INVALID',
   'NOT_FOUND',
@@ -41,6 +42,7 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
   FORBIDDEN: 403,
   CSRF_INVALID: 403,
   TWO_FACTOR_ENROLLMENT_REQUIRED: 403,
+  TWO_FACTOR_ENROLLMENT_EXPIRED: 403,
   TWO_FACTOR_CHALLENGE_INVALID: 401,
   TOKEN_INVALID: 410,
   NOT_FOUND: 404,
@@ -65,6 +67,10 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   // Owner/Admin/Supervisor tanpa 2FA aktif: hanya pendaftaran 2FA, "siapa saya", dan keluar.
   TWO_FACTOR_ENROLLMENT_REQUIRED:
     'Aktifkan verifikasi dua langkah dulu. Peranmu wajib memakainya sebelum bisa memakai aplikasi.',
+  // Peran wajib 2FA yang belum mendaftar lewat batas waktu (`TWO_FACTOR_ENROLLMENT_WINDOW_HOURS`):
+  // password benar, tetapi pendaftaran 2FA lewat login biasa sudah ditutup.
+  TWO_FACTOR_ENROLLMENT_EXPIRED:
+    'Batas waktu mendaftarkan verifikasi dua langkah untuk akunmu sudah lewat. Minta Owner atau Admin di tempatmu membuka lagi pendaftarannya, lalu masuk kembali.',
   // Tantangan langkah kedua tidak dikenal, kedaluwarsa, sudah dipakai, atau hangus.
   TWO_FACTOR_CHALLENGE_INVALID:
     'Langkah verifikasi ini sudah tidak berlaku. Masuk lagi dengan email dan password-mu.',

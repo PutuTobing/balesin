@@ -239,7 +239,10 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
             scope,
             failedAttempts: rule.limit,
             lockedUntil: until.toISOString(),
-            ...(user ? {} : { email: maskEmail(context.email) }),
+            // Kunci Redis ember yang dikunci (hash, bukan rahasia) — supaya Owner/Admin bisa
+            // membuka kunci akun ini (`team` unlock). Hanya untuk akun sungguhan: hash email yang
+            // tidak terdaftar tidak disimpan.
+            ...(user ? { lockRef: bucketKey } : { email: maskEmail(context.email) }),
           },
           client: context.client,
         });
@@ -402,6 +405,11 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
           challenge: await twoFactor.issueChallenge(user, organization.id, context),
         };
       }
+
+      // Peran wajib 2FA yang belum mendaftar dan sudah lewat batas waktu pendaftaran (review
+      // undangan R3): password benar, tetapi tidak ada sesi pendaftaran lagi sampai Owner/Admin
+      // membukanya (403 `TWO_FACTOR_ENROLLMENT_EXPIRED`, tercatat di audit).
+      await twoFactor.assertEnrollmentOpen(user, 'login', context);
 
       // Tanpa 2FA aktif. Peran wajib 2FA mendapat sesi TERBATAS (hanya untuk mendaftar 2FA,
       // lihat `SessionService.issue`); peran lain mendapat sesi penuh.

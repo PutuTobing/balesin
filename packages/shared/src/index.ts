@@ -5,6 +5,7 @@
 export const APP_NAME = 'Balesin';
 
 export * from './api-routes';
+export * from './audit';
 export * from './auth';
 export * from './branding';
 export * from './email';
@@ -21,5 +22,6 @@ export * from './password-reset';
 export * from './permissions';
 export * from './roles';
 export * from './setup';
+export * from './team';
 export * from './two-factor';
 export * from './zod-locale';

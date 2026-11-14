@@ -46,6 +46,17 @@ export const auditLogs = pgTable(
       table.organizationId,
       table.actorUserId,
     ),
+    // Saringan layar Audit log (aksi; target) dan ringkasan kejadian keamanan.
+    index('audit_logs_organization_id_action_created_at_idx').on(
+      table.organizationId,
+      table.action,
+      table.createdAt,
+    ),
+    index('audit_logs_organization_id_target_idx').on(
+      table.organizationId,
+      table.targetType,
+      table.targetId,
+    ),
   ],
 );
 

@@ -20,6 +20,7 @@ import {
   describeUserAgent,
   escapeHtml,
   renderAccountLockedEmail,
+  renderAdminAccountNoticeEmail,
   renderAdminTwoFactorNoticeEmail,
   renderEmailSettingsChangedEmail,
   renderEmailVerificationEmail,
@@ -769,6 +770,63 @@ describe('template email', () => {
     expect(mail.text).toContain('Perangkat: Safari di iPhone');
     expect(mail.html).toContain('Budi &lt;Admin&gt;');
     expect(mail.html).not.toContain('Budi <Admin>');
+  });
+
+  it('2FA diatur ulang (ke sasaran dan ke Owner lain) + reset password tanpa 2FA (ke Owner/Admin)', () => {
+    const toTarget = renderSecurityNoticeEmail({
+      brand: brand(),
+      userName: 'Budi',
+      event: 'two_factor_reset',
+      occurredAt: at,
+      timeZone: 'Asia/Jakarta',
+      actor: { name: 'Sari <b>Owner</b>\r\nBcc: x@y.test', role: 'owner' },
+    });
+    expect(toTarget.subject).toContain('diatur ulang');
+    expect(toTarget.text).toContain('Sari <b>Owner</b> Bcc: x@y.test (Owner) mengatur ulang');
+    expect(toTarget.html).not.toContain('<b>Owner</b>');
+    const anonymous = renderSecurityNoticeEmail({
+      brand: brand(),
+      userName: 'Budi',
+      event: 'two_factor_reset',
+      occurredAt: at,
+      timeZone: 'Asia/Jakarta',
+    });
+    expect(anonymous.text).toContain('Owner atau Admin di tempatmu mengatur ulang');
+
+    const toOwner = renderAdminAccountNoticeEmail({
+      brand: brand(),
+      timeZone: 'Asia/Jakarta',
+      recipientName: 'Rina',
+      event: 'two_factor_reset',
+      subject: { name: 'Adi <Admin>', email: 'adi@contoh.test', role: 'admin' },
+      actor: { name: 'Sari', role: 'owner' },
+      occurredAt: at,
+      origin: { ip: '198.51.100.7', userAgent: null },
+    });
+    expect(toOwner.subject).toContain('Adi <Admin> (Admin)');
+    expect(toOwner.text).toContain(
+      'Sari (Owner) mengatur ulang verifikasi dua langkah Adi <Admin>',
+    );
+    expect(toOwner.text).toContain('Alamat IP: 198.51.100.7');
+    expect(toOwner.html).toContain('Adi &lt;Admin&gt;');
+
+    const reset = renderAdminAccountNoticeEmail({
+      brand: brand(),
+      timeZone: 'Asia/Jakarta',
+      recipientName: 'Rina',
+      event: 'password_reset_without_two_factor',
+      subject: { name: 'Dewi', email: 'dewi@contoh.test', role: 'supervisor' },
+      occurredAt: at,
+    });
+    expect(reset.subject).toBe(
+      'Dewi (Supervisor) mengatur ulang password tanpa verifikasi dua langkah',
+    );
+    expect(reset.text).toContain('belum mendaftarkannya');
+    for (const mail of [toTarget, toOwner, reset]) {
+      expect(mail.subject).not.toMatch(/[\r\n]/);
+      expect(mail.text).not.toMatch(/\bAnda\b/i);
+      expect(mail.html).not.toMatch(/<script|https?:\/\//i);
+    }
   });
 
   it('email pengirim diubah (ke Owner): pelaku, server lama → baru, IP; nilai pengguna di-escape', () => {

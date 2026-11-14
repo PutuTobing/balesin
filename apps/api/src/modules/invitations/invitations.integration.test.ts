@@ -851,13 +851,13 @@ describe('penerbit token undangan harus tetap berhak (review R2)', () => {
     const admin = await adminSession(owner);
     const byAdmin = await invited(admin, 'a1@majujaya.test', 'cs');
     const byOwner = await invited(owner, 'a2@majujaya.test', 'cs');
-    const ids = await revokeInvitationsIssuedBy(
+    const revoked = await revokeInvitationsIssuedBy(
       harness.db,
       owner.session.organization.id,
       admin.session.user.id,
       owner.session.user.id,
     );
-    expect(ids).toEqual([byAdmin.invitation.id]);
+    expect(revoked.map((row) => row.id)).toEqual([byAdmin.invitation.id]);
     expect((await invitationRow(byAdmin.invitation.id)).revokedByUserId).toBe(
       owner.session.user.id,
     );

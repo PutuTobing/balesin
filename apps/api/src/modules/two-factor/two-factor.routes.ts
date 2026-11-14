@@ -50,8 +50,8 @@ const errors = {
  * - `POST /auth/2fa/backup-codes`    buat ulang kode cadangan (password + kode)
  * - `POST /auth/2fa/disable`         nonaktifkan (peran tidak wajib saja; password + kode)
  *
- * Mereset 2FA pengguna LAIN (Owner/Admin) adalah bagian manajemen pengguna (roadmap Fase 1
- * butir 6): cukup `deactivateTotp` + `deleteBackupCodes` + `deleteChallenges` + cabut sesinya.
+ * Mengatur ulang 2FA pengguna LAIN (Owner/Admin) ada di manajemen pengguna:
+ * `POST /users/:userId/2fa/reset` (`modules/team`).
  */
 export const twoFactorRoutes: FastifyPluginCallbackZod<TwoFactorRoutesOptions> = (
   app,

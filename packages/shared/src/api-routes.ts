@@ -20,6 +20,55 @@ export const API_ROUTES = {
     me: `${API_PREFIX}/auth/me`,
   },
   /**
+   * Sesi aktif milik sendiri (docs/KONTRAK-API-AUTH.md bagian "Sesi aktif"). `revoke` memuat
+   * parameter `:sessionId` — susun dengan `apiPath`.
+   */
+  sessions: {
+    /** GET (sesi penuh) — sesi yang masih berlaku milik pengguna ini. */
+    list: `${API_PREFIX}/auth/sessions`,
+    /** DELETE — keluarkan satu sesi lain. */
+    revoke: `${API_PREFIX}/auth/sessions/:sessionId`,
+    /** POST — keluarkan semua sesi lain (password + kode 2FA bila aktif). */
+    revokeOthers: `${API_PREFIX}/auth/sessions/revoke-others`,
+  },
+  /**
+   * Manajemen pengguna (izin `team.manage` = Owner/Admin + matriks kelola `MANAGE_PERMISSIONS`).
+   * Path ber-`:userId`/`:sessionId` disusun dengan `apiPath`.
+   */
+  team: {
+    /** GET — semua pengguna organisasi. */
+    users: `${API_PREFIX}/users`,
+    /** GET — satu pengguna. */
+    user: `${API_PREFIX}/users/:userId`,
+    /** PUT — ubah peran (+ konfirmasi ulang identitas). */
+    role: `${API_PREFIX}/users/:userId/role`,
+    /** POST — nonaktifkan (+ konfirmasi ulang identitas). */
+    disable: `${API_PREFIX}/users/:userId/disable`,
+    /** POST — aktifkan kembali (+ konfirmasi ulang identitas). */
+    enable: `${API_PREFIX}/users/:userId/enable`,
+    /** POST — atur ulang 2FA (+ konfirmasi ulang identitas). */
+    resetTwoFactor: `${API_PREFIX}/users/:userId/2fa/reset`,
+    /** POST — buka lagi pendaftaran 2FA yang batas waktunya lewat (+ konfirmasi ulang identitas). */
+    reopenTwoFactorEnrollment: `${API_PREFIX}/users/:userId/2fa/enrollment-window`,
+    /** POST — buka kunci masuk/2FA (+ konfirmasi ulang identitas). */
+    unlock: `${API_PREFIX}/users/:userId/unlock`,
+    /** GET — sesi aktif pengguna itu. */
+    sessions: `${API_PREFIX}/users/:userId/sessions`,
+    /** DELETE — keluarkan satu sesi pengguna itu. */
+    revokeSession: `${API_PREFIX}/users/:userId/sessions/:sessionId`,
+    /** POST — keluarkan semua sesi pengguna itu (+ konfirmasi ulang identitas). */
+    revokeAllSessions: `${API_PREFIX}/users/:userId/sessions/revoke-all`,
+  },
+  /** Audit log (izin `audit.view` = Owner/Admin). */
+  audit: {
+    /** GET — daftar bersaring + kursor. */
+    list: `${API_PREFIX}/audit-logs`,
+    /** GET — CSV (`text/csv`, unduhan) dengan saringan yang sama. */
+    export: `${API_PREFIX}/audit-logs/export`,
+    /** GET — ringkasan kejadian keamanan 7 hari terakhir (banner peringatan). */
+    securitySummary: `${API_PREFIX}/audit-logs/security-summary`,
+  },
+  /**
    * Undangan (docs/KONTRAK-API-AUTH.md bagian "Undangan"). `resend`/`revoke` memuat parameter
    * `:invitationId` — susun alamatnya dengan `apiPath`.
    */

@@ -94,6 +94,26 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'GET /api/v1/auth/email/verification': 'session',
   'POST /api/v1/auth/email/verification': 'session',
   'POST /api/v1/auth/email/verify': 'public',
+  // sesi aktif milik sendiri
+  'GET /api/v1/auth/sessions': 'session',
+  'DELETE /api/v1/auth/sessions/:sessionId': 'session',
+  'POST /api/v1/auth/sessions/revoke-others': 'session',
+  // manajemen pengguna (aturan per peran sasaran: `MANAGE_PERMISSIONS`, diuji team.integration)
+  'GET /api/v1/users': 'team.manage',
+  'GET /api/v1/users/:userId': 'team.manage',
+  'PUT /api/v1/users/:userId/role': 'team.manage',
+  'POST /api/v1/users/:userId/disable': 'team.manage',
+  'POST /api/v1/users/:userId/enable': 'team.manage',
+  'POST /api/v1/users/:userId/2fa/reset': 'team.manage',
+  'POST /api/v1/users/:userId/2fa/enrollment-window': 'team.manage',
+  'POST /api/v1/users/:userId/unlock': 'team.manage',
+  'GET /api/v1/users/:userId/sessions': 'team.manage',
+  'DELETE /api/v1/users/:userId/sessions/:sessionId': 'team.manage',
+  'POST /api/v1/users/:userId/sessions/revoke-all': 'team.manage',
+  // audit log
+  'GET /api/v1/audit-logs': 'audit.view',
+  'GET /api/v1/audit-logs/export': 'audit.view',
+  'GET /api/v1/audit-logs/security-summary': 'audit.view',
 };
 
 const LOGOUT = 'POST /api/v1/auth/logout';
@@ -169,6 +189,8 @@ function observedOutcome(response: Response): Observed {
 const SAMPLE_PARAMS: Readonly<Record<string, string>> = {
   invitationId: '00000000-0000-4000-8000-0000000000aa',
   template: 'invitation',
+  userId: '00000000-0000-4000-8000-0000000000bb',
+  sessionId: '00000000-0000-4000-8000-0000000000cc',
 };
 
 function concreteUrl(pattern: string): string {
@@ -299,15 +321,18 @@ describe('deklarasi rute = tabel tertulis', () => {
         .sort();
     // Rute "cukup sesi" hanya untuk data milik pengguna itu sendiri.
     expect(byExpectation(['session', 'enrollment'])).toEqual([
+      'DELETE /api/v1/auth/sessions/:sessionId',
       'GET /api/v1/auth/2fa',
       'GET /api/v1/auth/email/verification',
       'GET /api/v1/auth/me',
+      'GET /api/v1/auth/sessions',
       'POST /api/v1/auth/2fa/backup-codes',
       'POST /api/v1/auth/2fa/disable',
       'POST /api/v1/auth/2fa/enroll',
       'POST /api/v1/auth/2fa/enroll/confirm',
       'POST /api/v1/auth/email/verification',
       'POST /api/v1/auth/logout',
+      'POST /api/v1/auth/sessions/revoke-others',
     ]);
   });
 });

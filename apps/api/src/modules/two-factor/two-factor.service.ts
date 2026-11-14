@@ -28,6 +28,7 @@ import {
   type TwoFactorChallengeResponse,
   type TwoFactorMethod,
   type TwoFactorStatusResponse,
+  type UserRole,
 } from '@balesin/shared';
 import type { FastifyBaseLogger } from 'fastify';
 
@@ -54,6 +55,7 @@ import {
   type TrustedDevices,
 } from '../auth/trusted-device';
 import { generateBackupCodes } from './backup-codes';
+import { isEnrollmentClosed } from './enrollment-window';
 import {
   activateTotp,
   backupCodeSummary,
@@ -96,6 +98,9 @@ import {
  * tujuan + ID pengguna) dan hanya dibuka di memori saat memeriksa kode. Tidak pernah dicatat di
  * log atau audit; hanya dikirim ke pengguna SEKALI saat pendaftaran dimulai.
  */
+
+/** Penanda Redis "audit pendaftaran 2FA ditutup sudah ditulis menit ini" per pengguna. */
+const ENROLLMENT_EXPIRED_AUDIT_FLAG = 'audit-daftar-2fa-ditutup';
 
 /** Tujuan kotak rahasia (`SecretContext.purpose`). */
 const ACTIVE_SECRET_PURPOSE = 'users.totp_secret';
@@ -217,6 +222,28 @@ export interface TwoFactorService {
     remaining: number,
     log: FastifyBaseLogger,
   ): void;
+  /**
+   * Konfirmasi ulang identitas PELAKU untuk aksi sensitif di luar halaman 2FA (kelola pengguna lain,
+   * keluarkan semua sesi): password, dan kode autentikator/kode cadangan bila 2FA pelaku aktif.
+   * Ember salah-password dan salah-kode sama dengan halaman Keamanan akun. 400 field `password`/
+   * `code` bila salah, 429 bila terkunci.
+   */
+  confirmIdentity(
+    auth: AuthContext,
+    input: { password: string; code?: string | undefined },
+    action: string,
+    context: TwoFactorContext,
+  ): Promise<{ method: TwoFactorMethod | null }>;
+  /**
+   * 403 `TWO_FACTOR_ENROLLMENT_EXPIRED` (+ audit) bila akun ber-peran wajib ini sudah lewat batas
+   * waktu pendaftaran 2FA (`enrollment-window.ts`). Dipanggil login (password benar, 2FA belum
+   * aktif) dan saat mulai mendaftar.
+   */
+  assertEnrollmentOpen(
+    user: { id: string; organizationId: string; role: UserRole; totpEnabledAt: Date | null },
+    usage: 'login' | 'enrollment',
+    context: TwoFactorContext,
+  ): Promise<void>;
 }
 
 /** Hasil `verifySecondFactor`. */
@@ -655,8 +682,56 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
     return check;
   }
 
+  async function assertEnrollmentOpen(
+    user: { id: string; organizationId: string; role: UserRole; totpEnabledAt: Date | null },
+    usage: 'login' | 'enrollment',
+    context: TwoFactorContext,
+  ): Promise<void> {
+    if (!isTwoFactorRequired(user.role) || user.totpEnabledAt !== null) return;
+    if (!(await isEnrollmentClosed(db, user.organizationId, user.id))) return;
+    // Paling banyak satu entri per pengguna per menit: pemegang password tidak bisa membanjiri
+    // audit dengan mencoba masuk berulang (jawabannya tetap 403).
+    const firstInWindow = await limiter
+      .claimFlag(ENROLLMENT_EXPIRED_AUDIT_FLAG, user.id, 60)
+      .catch(() => true);
+    if (firstInWindow) {
+      await recordAudit(db, {
+        organizationId: user.organizationId,
+        actorUserId: user.id,
+        action: AUDIT_ACTIONS.twoFactorEnrollmentExpired,
+        targetType: 'user',
+        targetId: user.id,
+        metadata: { usage },
+        client: context.client,
+      });
+    }
+    throw new AppError('TWO_FACTOR_ENROLLMENT_EXPIRED');
+  }
+
   return {
     available: secretBox !== null,
+
+    assertEnrollmentOpen,
+
+    async confirmIdentity(auth, input, action, context) {
+      const user = await loadUser(auth);
+      const enabled = user.totpEnabledAt !== null;
+      if (enabled && input.code === undefined) {
+        throw codeError(
+          'Masukkan kode dari aplikasi autentikator atau salah satu kode cadangan untuk melanjutkan.',
+        );
+      }
+      const check = await reauthenticate(
+        user,
+        {
+          password: input.password,
+          ...(enabled && input.code !== undefined ? { code: input.code } : {}),
+        },
+        action,
+        context,
+      );
+      return { method: check?.ok ? check.method : null };
+    },
 
     async assertNotLocked(user, context) {
       const bucket = bucketFor(user, context.presentedDeviceToken);
@@ -859,6 +934,9 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
         (wait) =>
           `Terlalu sering mencoba mendaftarkan verifikasi dua langkah. Coba lagi dalam ${wait}.`,
       );
+      // Batas waktu pendaftaran peran wajib (review undangan R3): juga untuk sesi terbatas yang
+      // dibuat sebelum batasnya lewat.
+      await assertEnrollmentOpen(user, 'enrollment', context);
       // Hanya sesi berjenis pendaftaran 2FA — dibuat TEPAT setelah password dimasukkan
       // (masuk/setup) dan berumur 30 menit — yang dibebaskan dari password. Jenisnya ditetapkan
       // saat sesi dibuat, bukan dari peran sekarang: sesi biasa yang dicuri lalu perannya

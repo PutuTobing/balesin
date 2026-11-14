@@ -488,6 +488,8 @@ export interface SecurityNoticeEmailInput {
   backupCodesRemaining?: number;
   /** IP + perangkat dari audit log, bila tersedia. */
   origin?: EventOrigin;
+  /** Untuk `two_factor_reset`: nama + peran Owner/Admin yang mengatur ulang. */
+  actor?: { name: string; role: UserRole };
 }
 
 /**
@@ -572,6 +574,25 @@ export function renderSecurityNoticeEmail(input: SecurityNoticeEmailInput): Mail
           'Kalau bukan kamu yang menggantinya, segera atur ulang password lagi dari halaman masuk, amankan kotak emailmu, dan kabari Owner atau Admin di tempatmu.',
         ],
       });
+    case 'two_factor_reset': {
+      const by = input.actor
+        ? `${singleLine(input.actor.name)} (${USER_ROLE_LABELS[input.actor.role]})`
+        : 'Owner atau Admin di tempatmu';
+      return compose(input.brand, {
+        subject: `Verifikasi dua langkah akun ${product} kamu diatur ulang`,
+        preheader: 'Aplikasi autentikator dan kode cadangan lamamu tidak berlaku lagi.',
+        heading: 'Verifikasi dua langkah diatur ulang',
+        paragraphs: [
+          greeting,
+          `${by} mengatur ulang verifikasi dua langkah akunmu pada ${when}. Entri akun ini di aplikasi autentikatormu dan semua kode cadangan lama tidak berlaku lagi, dan semua perangkat yang sedang masuk sudah dikeluarkan.`,
+          'Saat masuk berikutnya, daftarkan lagi aplikasi autentikator. Kalau peranmu wajib memakai verifikasi dua langkah, kamu langsung diminta mendaftarkannya setelah memasukkan password.',
+        ],
+        details,
+        notes: [
+          `Kalau bukan kamu yang meminta pengaturan ulang ini, hubungi ${by} lewat jalur lain sekarang.`,
+        ],
+      });
+    }
   }
 }
 
@@ -608,6 +629,71 @@ export function renderAdminTwoFactorNoticeEmail(input: AdminTwoFactorNoticeEmail
     details: [{ label: 'Akun', value: `${name} · ${role}` }, ...originDetails(when, input.origin)],
     notes: [
       `Kalau ini tidak kamu duga (misalnya ${name} belum membuka undangannya, atau lokasi/perangkatnya asing), hubungi ${name} lewat jalur lain sekarang dan kabari Owner.`,
+    ],
+  });
+}
+
+export interface AdminAccountNoticeEmailInput {
+  brand: EmailBrand;
+  timeZone: string;
+  recipientName: string;
+  event: 'two_factor_reset' | 'password_reset_without_two_factor';
+  subject: { name: string; email: string; role: UserRole };
+  /** Untuk `two_factor_reset`: Owner/Admin yang mengatur ulang. */
+  actor?: { name: string; role: UserRole };
+  occurredAt: Date;
+  origin?: EventOrigin;
+}
+
+/**
+ * Ke Owner/Admin lain:
+ *  - `two_factor_reset` — 2FA seseorang diatur ulang (hanya ke Owner): jalan yang bisa dipakai akun
+ *    Owner/Admin yang dibobol untuk mengambil alih akun lain, jadi Owner lain harus tahu.
+ *  - `password_reset_without_two_factor` — akun ber-peran wajib yang belum mendaftar 2FA mengatur
+ *    ulang password-nya (review undangan R3): siapa pun yang menguasai kotak masuk akun itu bisa
+ *    menjadi pemegang faktor keduanya.
+ */
+export function renderAdminAccountNoticeEmail(input: AdminAccountNoticeEmailInput): MailBody {
+  const product = singleLine(input.brand.productName);
+  const name = singleLine(input.subject.name);
+  const role = USER_ROLE_LABELS[input.subject.role];
+  const when = formatLocalTime(input.occurredAt, input.timeZone);
+  const account = `${name} (${singleLine(input.subject.email)}, peran ${role})`;
+  const details = [
+    { label: 'Akun', value: `${name} · ${role}` },
+    ...originDetails(when, input.origin),
+  ];
+  if (input.event === 'two_factor_reset') {
+    const by = input.actor
+      ? `${singleLine(input.actor.name)} (${USER_ROLE_LABELS[input.actor.role]})`
+      : 'Owner atau Admin lain';
+    return compose(input.brand, {
+      subject: `Verifikasi dua langkah ${name} (${role}) di ${product} diatur ulang`,
+      preheader: `${by} mengatur ulang verifikasi dua langkah ${name}.`,
+      heading: `Verifikasi dua langkah ${name} diatur ulang`,
+      paragraphs: [
+        hello(input.recipientName),
+        `${by} mengatur ulang verifikasi dua langkah ${account}. Semua sesi akun itu sudah dikeluarkan; saat masuk berikutnya ${name} harus mendaftarkan aplikasi autentikator lagi.`,
+        'Kamu menerima email ini karena kamu Owner.',
+      ],
+      details,
+      notes: [
+        `Kalau pengaturan ulang ini tidak kamu duga, hubungi ${name} dan ${by} lewat jalur lain sekarang, lalu periksa Audit log di ${product}.`,
+      ],
+    });
+  }
+  return compose(input.brand, {
+    subject: `${name} (${role}) mengatur ulang password tanpa verifikasi dua langkah`,
+    preheader: `${name} belum mendaftarkan verifikasi dua langkah, padahal perannya wajib.`,
+    heading: 'Password diatur ulang sebelum 2FA didaftarkan',
+    paragraphs: [
+      hello(input.recipientName),
+      `Password ${account} baru saja diatur ulang lewat tautan email. Akun ini wajib memakai verifikasi dua langkah tetapi belum mendaftarkannya, jadi siapa pun yang menguasai kotak masuk email itu bisa menjadi pemegang faktor keduanya.`,
+      'Kamu menerima email ini karena kamu Owner atau Admin.',
+    ],
+    details,
+    notes: [
+      `Kalau ini tidak kamu duga, hubungi ${name} lewat jalur lain sekarang. Bila perlu, nonaktifkan akunnya dari halaman Tim di ${product} sampai jelas.`,
     ],
   });
 }

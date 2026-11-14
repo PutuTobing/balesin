@@ -60,6 +60,15 @@ export const users = pgTable(
      * "perangkat dikenal" yang terbit sebelum waktu ini tidak diakui lagi (review 2FA G.3).
      */
     passwordChangedAt: timestamptz('password_changed_at'),
+    /**
+     * Batas waktu akun ber-peran wajib 2FA (Owner/Admin/Supervisor) yang BELUM mendaftar 2FA untuk
+     * mendaftarkannya lewat login biasa (`TWO_FACTOR_ENROLLMENT_WINDOW_HOURS`, review undangan R3).
+     * Diisi `now() + 72 jam` setiap kali akun masuk ke keadaan "wajib tapi belum": dibuat lewat
+     * undangan, peran dinaikkan, 2FA diatur ulang Owner/Admin, diaktifkan kembali, atau
+     * pendaftarannya dibuka lagi. Dikosongkan saat 2FA aktif atau perannya tidak wajib lagi.
+     * `NULL` = tanpa batas — sengaja untuk Owner hasil wizard setup (lihat docs/DECISIONS.md).
+     */
+    twoFactorEnrollmentDueAt: timestamptz('two_factor_enrollment_due_at'),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },

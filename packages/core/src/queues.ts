@@ -113,6 +113,8 @@ export const SECURITY_NOTICE_EVENTS = [
   'backup_code_used',
   'backup_codes_regenerated',
   'password_changed',
+  /** 2FA diatur ulang Owner/Admin (autentikator + kode cadangan dibuang). `actorUserId` = pelaku. */
+  'two_factor_reset',
 ] as const;
 export type SecurityNoticeEvent = (typeof SECURITY_NOTICE_EVENTS)[number];
 
@@ -129,19 +131,39 @@ export const securityNoticeEmailPayloadSchema = z.strictObject({
    * email ("dari IP …, Chrome di Windows"). ID saja — bukan IP/UA — yang masuk antrian.
    */
   auditLogId: z.uuid().optional(),
+  /** Untuk `two_factor_reset`: Owner/Admin yang mengatur ulang (namanya ditampilkan di email). */
+  actorUserId: z.uuid().optional(),
 });
 export type SecurityNoticeEmailPayload = z.infer<typeof securityNoticeEmailPayloadSchema>;
+
+/**
+ * Kejadian yang diberitahukan ke Owner/Admin lain (satu job per penerima):
+ *  - `two_factor_enabled` — 2FA akun ber-peran wajib baru aktif (mitigasi TOFU, review 2FA R5).
+ *    Penerima: pemegang `team.manage`.
+ *  - `two_factor_reset` — 2FA seseorang diatur ulang Owner/Admin (`actorUserId` = pelaku).
+ *    Penerima: Owner lain saja.
+ *  - `password_reset_without_two_factor` — akun ber-peran wajib yang BELUM mendaftar 2FA mengatur
+ *    ulang password-nya (review undangan R3). Penerima: pemegang `team.manage`.
+ */
+export const SECURITY_NOTICE_ADMIN_EVENTS = [
+  'two_factor_enabled',
+  'two_factor_reset',
+  'password_reset_without_two_factor',
+] as const;
+export type SecurityNoticeAdminEvent = (typeof SECURITY_NOTICE_ADMIN_EVENTS)[number];
 
 /** Satu email per penerima (Owner/Admin lain) supaya pengulangan job tidak menggandakan email. */
 export const securityNoticeAdminEmailPayloadSchema = z.strictObject({
   organizationId: z.uuid(),
   /** Owner/Admin penerima. */
   recipientUserId: z.uuid(),
-  /** Pengguna yang 2FA-nya baru aktif. */
+  /** Pengguna yang mengalami kejadian (2FA-nya aktif/diatur ulang, password-nya diatur ulang). */
   subjectUserId: z.uuid(),
-  event: z.enum(['two_factor_enabled']),
+  event: z.enum(SECURITY_NOTICE_ADMIN_EVENTS),
   occurredAt: z.iso.datetime(),
   auditLogId: z.uuid().optional(),
+  /** Untuk `two_factor_reset`: Owner/Admin yang mengatur ulang. */
+  actorUserId: z.uuid().optional(),
 });
 export type SecurityNoticeAdminEmailPayload = z.infer<typeof securityNoticeAdminEmailPayloadSchema>;
 
