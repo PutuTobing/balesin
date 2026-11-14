@@ -140,11 +140,17 @@ Toleransi jam ponsel ±1 langkah (±30 detik). Kode yang sama tidak bisa dipakai
      `secretGrouped` (per 4 karakter, untuk diketik manual), `issuer` (nama produk dari branding, atau
      nama organisasi), `accountName` (email), `expiresAt` (15 menit), `digits` 6, `periodSeconds` 30.
    - **Buat QR di browser dari `otpauthUri`** (pustaka QR lokal, jangan layanan luar); tampilkan juga
-     `secretGrouped`. Jangan simpan rahasia di mana pun. Memanggil lagi = rahasia baru (yang lama batal).
+     `secretGrouped`. Jangan simpan rahasia di mana pun.
+   - Memanggil lagi **dari sesi yang sama** selama rahasia tertunda masih berlaku (15 menit) =
+     rahasia **yang sama** (aman untuk muat ulang layar; entri yang sudah dipindai tetap berlaku),
+     dengan `expiresAt` baru 15 menit sejak saat itu. Setelah kedaluwarsa, atau dari sesi lain milik
+     pengguna yang sama = rahasia baru (yang lama batal). Setiap panggilan tetap memakai jatah
+     10×/15 menit.
    - 409 bila 2FA sudah aktif; 503 bila `BALESIN_MASTER_KEY` server kosong; 429 setelah 10 percobaan
      mulai/konfirmasi per 15 menit.
 3. `POST /auth/2fa/enroll/confirm` (sesi + CSRF) `{ code }` (6 digit, `totpCodeSchema`):
-   - 400 field `code` bila tidak cocok; 409 bila QR kedaluwarsa/belum dibuat ("Mulai lagi").
+   - 400 field `code` bila tidak cocok; 409 bila QR kedaluwarsa/belum dibuat, atau pendaftaran itu
+     dimulai dari sesi lain ("Mulai lagi"). Konfirmasi hanya bisa dari sesi yang memulai pendaftaran.
    - 200 `confirmTwoFactorEnrollmentResponseSchema` = sesi penuh **baru** + `backupCodes:
      { codes: string[10] "xxxxx-xxxxx", generatedAt }`. Cookie sesi baru + cookie perangkat dikenal
      dipasang; **semua** sesi lama pengguna (termasuk sesi terbatas ini) dicabut — ganti `csrfToken`
@@ -218,3 +224,17 @@ atau tunggu langkah berganti.
 ## Pengembangan lokal
 - Mailpit (dari `pnpm db:up`) menangkap semua email: UI http://localhost:8025. Isian SMTP:
   host `localhost`, port `1025`, keamanan "Tanpa enkripsi", username/password `balesin`.
+
+## Perubahan putaran kritikus/QA 2FA (path & bentuk tidak berubah)
+
+- **Pesan 429 tanpa durasi** (web menampilkan hitung mundur dari `Retry-After`):
+  - kunci langkah kedua: "Terlalu banyak kode verifikasi yang salah untuk akun ini."
+  - konfirmasi ulang: "Terlalu banyak percobaan konfirmasi yang salah."
+  - verify per IP: "Terlalu banyak percobaan verifikasi dari jaringanmu."
+  - login, akun dikunci: "Akun ini dikunci sementara karena terlalu banyak percobaan masuk yang gagal."
+  - login per IP: "Terlalu banyak percobaan masuk dari jaringanmu."
+  - Pesan 429 lain (token setup, tes email, mulai/konfirmasi pendaftaran 2FA) tetap menyebut durasi.
+- **Pendaftaran**: rahasia tertunda dipakai ulang di sesi yang sama (lihat langkah 2 bagian 2FA).
+- **Email**: email kunci langkah kedua membedakan sumbernya (masuk vs konfirmasi ulang di Keamanan
+  akun); email 2FA tidak lagi menyarankan fitur yang belum ada (ganti password, reset 2FA oleh
+  Owner/Admin).

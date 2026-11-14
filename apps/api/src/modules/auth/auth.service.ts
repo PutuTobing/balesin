@@ -9,7 +9,7 @@ import {
 import type { FastifyBaseLogger } from 'fastify';
 
 import { ipRateLimitKey, type ClientInfo } from '../../http/client-info';
-import { enforceRateLimit, formatWait, rateLimited, type RateLimiter } from '../../http/rate-limit';
+import { enforceRateLimit, rateLimited, type RateLimiter } from '../../http/rate-limit';
 import type { EmailNotifier } from '../../queues/email-queue';
 import { AUDIT_ACTIONS, maskEmail, recordAudit } from '../audit/audit';
 import {
@@ -114,8 +114,8 @@ type LoginFailureReason = 'unknown_email' | 'wrong_password' | 'disabled' | 'loc
 function accountLocked(retryAfterSeconds: number): AppError {
   return rateLimited(
     retryAfterSeconds,
-    'Akun ini dikunci sementara karena terlalu banyak percobaan masuk yang gagal. ' +
-      `Coba lagi dalam ${formatWait(retryAfterSeconds)}.`,
+    // Tanpa durasi: halaman masuk menampilkan hitung mundur dari `Retry-After`.
+    'Akun ini dikunci sementara karena terlalu banyak percobaan masuk yang gagal.',
   );
 }
 
@@ -274,7 +274,7 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
         limiter,
         LOGIN_IP_RULE,
         ipKey,
-        (wait) => `Terlalu banyak percobaan masuk dari jaringanmu. Coba lagi dalam ${wait}.`,
+        () => 'Terlalu banyak percobaan masuk dari jaringanmu.',
       );
 
       const organization = await findInstallationOrganization(db);

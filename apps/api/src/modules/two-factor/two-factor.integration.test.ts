@@ -296,17 +296,63 @@ describe('setup → Owner wajib mendaftar 2FA sebelum memakai aplikasi', () => {
     expect(again.statusCode).toBe(409);
   });
 
-  it('pendaftaran kedaluwarsa atau dimulai ulang: rahasia lama tidak bisa diaktifkan', async () => {
+  it('layar dimuat ulang di sesi yang sama: rahasia tertunda dipakai ulang (entri yang dipindai tetap berlaku)', async () => {
     const owner = await completeSetupWithoutTwoFactor(harness.app);
     const as = { cookie: owner.cookie, csrf: owner.csrf };
     const first = startTwoFactorEnrollmentResponseSchema.parse(
       (await call(harness.app, 'POST', routes.enroll, {}, as)).json(),
     );
+    await harness.db
+      .update(users)
+      .set({ totpPendingCreatedAt: sql`now() - interval '10 minutes'` });
+    const reloaded = startTwoFactorEnrollmentResponseSchema.parse(
+      (await call(harness.app, 'POST', routes.enroll, {}, as)).json(),
+    );
+
+    expect(reloaded.secret).toBe(first.secret);
+    expect(reloaded.otpauthUri).toBe(first.otpauthUri);
+    // Masa berlaku dihitung ulang dari saat QR ditampilkan lagi.
+    const minutes = (Date.parse(reloaded.expiresAt) - Date.now()) / 60_000;
+    expect(minutes).toBeGreaterThan(14.5);
+    expect((await auditRows('auth.2fa.enrollment_started')).map((row) => row.metadata)).toEqual([
+      { reusedPending: false },
+      { reusedPending: true },
+    ]);
+
+    await awayFromStepBoundary();
+    const confirm = await call(
+      harness.app,
+      'POST',
+      routes.confirmEnrollment,
+      { code: generateTotp(first.secret) },
+      as,
+    );
+    expect(confirm.statusCode).toBe(200);
+  });
+
+  it('pendaftaran kedaluwarsa: rahasia baru dibuat, rahasia lama tidak bisa diaktifkan', async () => {
+    const owner = await completeSetupWithoutTwoFactor(harness.app);
+    const as = { cookie: owner.cookie, csrf: owner.csrf };
+    const first = startTwoFactorEnrollmentResponseSchema.parse(
+      (await call(harness.app, 'POST', routes.enroll, {}, as)).json(),
+    );
+    await harness.db
+      .update(users)
+      .set({ totpPendingCreatedAt: sql`now() - interval '16 minutes'` });
+    const expired = await call(
+      harness.app,
+      'POST',
+      routes.confirmEnrollment,
+      { code: generateTotp(first.secret) },
+      as,
+    );
+    expect(expired.statusCode).toBe(409);
+    expect(errorOf(expired).message).toContain('kedaluwarsa');
+
     const second = startTwoFactorEnrollmentResponseSchema.parse(
       (await call(harness.app, 'POST', routes.enroll, {}, as)).json(),
     );
     expect(second.secret).not.toBe(first.secret);
-
     await awayFromStepBoundary();
     const withOld = await call(
       harness.app,
@@ -316,19 +362,39 @@ describe('setup → Owner wajib mendaftar 2FA sebelum memakai aplikasi', () => {
       as,
     );
     expect(withOld.statusCode).toBe(400);
+    expect(errorOf(withOld).message).toContain('hapus entri lamanya');
+  });
 
-    await harness.db
-      .update(users)
-      .set({ totpPendingCreatedAt: sql`now() - interval '16 minutes'` });
-    const expired = await call(
+  it('sesi lain milik pengguna yang sama tidak mendapat rahasia tertunda pemilik dan tidak bisa mengonfirmasinya', async () => {
+    const owner = await completeSetup(harness.app);
+    const password = 'sandi-admin-dua-sesi-daftar';
+    const admin = await addUser(owner.session.organization.id, 'admin', password);
+    const sessionOf = async () => {
+      const { response, body } = await startLogin(harness.app, { email: admin.email, password });
+      if (body.status !== 'two_factor_enrollment_required') throw new Error(body.status);
+      return { cookie: sessionCookieOf(response), csrf: body.csrfToken };
+    };
+    const mine = await sessionOf();
+    const other = await sessionOf();
+
+    const minePending = startTwoFactorEnrollmentResponseSchema.parse(
+      (await call(harness.app, 'POST', routes.enroll, {}, mine)).json(),
+    );
+    // Sesi lain mengonfirmasi dengan kode dari rahasia milik sesi pertama: tidak bisa.
+    await awayFromStepBoundary();
+    const foreign = await call(
       harness.app,
       'POST',
       routes.confirmEnrollment,
-      { code: generateTotp(second.secret) },
-      as,
+      { code: generateTotp(minePending.secret) },
+      other,
     );
-    expect(expired.statusCode).toBe(409);
-    expect(errorOf(expired).message).toContain('kedaluwarsa');
+    expect(foreign.statusCode).toBe(409);
+    // Memulai dari sesi lain = rahasia BARU (rahasia sesi pertama tidak pernah terlihat).
+    const otherPending = startTwoFactorEnrollmentResponseSchema.parse(
+      (await call(harness.app, 'POST', routes.enroll, {}, other)).json(),
+    );
+    expect(otherPending.secret).not.toBe(minePending.secret);
   });
 
   it('tanpa BALESIN_MASTER_KEY: pendaftaran 503 dengan petunjuk, sesi tetap terbatas', async () => {
@@ -893,7 +959,10 @@ describe('kelola 2FA sendiri: buat ulang kode cadangan, nonaktifkan', () => {
     const [lock] = await auditRows('auth.account.locked');
     expect(lock?.metadata).toMatchObject({ scope: 'two_factor', failedAttempts: 5 });
     await expect.poll(() => harness.lockedNotifications.length).toBe(1);
-    expect(harness.lockedNotifications[0]?.scope).toBe('two_factor');
+    expect(harness.lockedNotifications[0]).toMatchObject({
+      scope: 'two_factor',
+      trigger: 'reauth',
+    });
     // Langkah kedua saat masuk ikut terkunci.
     const login = await call(harness.app, 'POST', API_ROUTES.auth.login, {
       email: OWNER.email,

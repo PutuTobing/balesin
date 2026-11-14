@@ -610,6 +610,22 @@ describe('template email', () => {
     expect(render('device')).toContain('dari perangkat yang pernah kamu pakai');
     expect(render('two_factor')).toContain('password yang BENAR, tetapi kode verifikasi');
     expect(render('two_factor')).toContain('password-mu sudah diketahui orang lain');
+    const fromReauth = renderAccountLockedEmail({
+      productName: 'Balesin',
+      userName: 'Budi',
+      failedAttempts: 5,
+      lockMinutes: 15,
+      lockedUntil: new Date('2026-11-13T03:30:00.000Z'),
+      timeZone: 'Asia/Jakarta',
+      scope: 'two_factor',
+      trigger: 'reauth',
+    }).text;
+    expect(fromReauth).toContain('halaman Keamanan akun');
+    expect(fromReauth).toContain('sedang masuk ke akunmu');
+    expect(fromReauth).not.toContain('percobaan masuk ke akunmu');
+    for (const text of [render('two_factor'), fromReauth]) {
+      expect(text).not.toMatch(/ganti password|diatur ulang/);
+    }
   });
 
   it('pemberitahuan keamanan: 2FA aktif, 2FA nonaktif, kode cadangan dipakai', () => {
@@ -642,6 +658,8 @@ describe('template email', () => {
       'Sisa kode cadangan yang masih berlaku: 3',
     );
     expect(render('backup_code_used', 0).text).toContain('sudah habis');
+    // Tidak menyarankan fitur yang belum ada (reset 2FA oleh Owner/Admin, ganti password).
+    expect(render('backup_code_used', 3).text).not.toMatch(/diatur ulang|ganti password/);
     const regenerated = render('backup_codes_regenerated');
     expect(regenerated.subject).toContain('dibuat ulang');
     expect(regenerated.text).toContain('Semua kode cadangan lama tidak berlaku lagi');

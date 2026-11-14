@@ -32,7 +32,6 @@ import type { FastifyBaseLogger } from 'fastify';
 import { ipRateLimitKey, type ClientInfo } from '../../http/client-info';
 import {
   enforceRateLimit,
-  formatWait,
   rateLimited,
   type RateLimitRule,
   type RateLimiter,
@@ -245,8 +244,8 @@ function passwordError(message: string): AppError {
 function lockedError(retryAfterSeconds: number): AppError {
   return rateLimited(
     retryAfterSeconds,
-    'Terlalu banyak kode verifikasi yang salah. Langkah verifikasi untuk akun ini dihentikan ' +
-      `sementara. Coba lagi dalam ${formatWait(retryAfterSeconds)}.`,
+    // Tanpa durasi: web menampilkan hitung mundur dari `Retry-After` (kritikus 2FA S3).
+    'Terlalu banyak kode verifikasi yang salah untuk akun ini.',
   );
 }
 
@@ -261,6 +260,36 @@ function challengeBinding(client: ClientInfo): string {
 
 function secretContext(organizationId: string, userId: string, purpose: string): SecretContext {
   return { organizationId, purpose, subjectId: userId };
+}
+
+/**
+ * Rahasia pendaftaran terikat ke pengguna DAN sesi yang memulainya (ikut AAD). Akibatnya:
+ * - memuat ulang layar pendaftaran di sesi yang sama memakai ulang rahasia yang sama (entri yang
+ *   sudah dipindai di aplikasi autentikator tetap berlaku);
+ * - sesi lain milik pengguna yang sama tidak bisa membuka (apalagi menerima) rahasia itu, jadi
+ *   orang yang kebetulan tahu password tidak bisa ikut "melihat" rahasia yang sedang dipindai
+ *   pemilik akun — ia hanya bisa memulai pendaftaran baru (yang membatalkan milik pemilik).
+ */
+function pendingSecretContext(
+  organizationId: string,
+  userId: string,
+  sessionRef: string,
+): SecretContext {
+  return {
+    organizationId,
+    purpose: PENDING_SECRET_PURPOSE,
+    subjectId: `${userId}|sesi:${sessionRef}`,
+  };
+}
+
+/** Membuka rahasia; `undefined` bila tidak bisa dibuka dengan konteks ini (bukan error server). */
+function tryOpen(box: SecretBox, encrypted: string, context: SecretContext): string | undefined {
+  try {
+    return box.decrypt(encrypted, context);
+  } catch (error) {
+    if (error instanceof SecretDecryptionError) return undefined;
+    throw error;
+  }
 }
 
 /** `ABCDEFGH…` → `ABCD EFGH …` untuk diketik manual. */
@@ -375,6 +404,7 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
   async function lock(
     bucket: CodeBucket,
     user: LockSubject,
+    trigger: 'login' | 'reauth',
     context: TwoFactorContext,
   ): Promise<void> {
     await limiter.setFlag(bucket.flag, bucket.key, TWO_FACTOR_LOCK_SECONDS);
@@ -390,6 +420,7 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
         scope: 'two_factor',
         trustedDevice: bucket.trustedDevice,
         failedAttempts: bucket.rule.limit,
+        trigger,
         lockedUntil,
       },
       client: context.client,
@@ -406,6 +437,7 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
         userId: user.id,
         lockedUntil,
         scope: 'two_factor',
+        trigger,
       })
       .catch((err: unknown) => {
         context.log.warn({ err, userId: user.id }, 'Gagal mengantre email kunci akun');
@@ -507,7 +539,7 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
     if (!attempt.allowed) {
       throw rateLimited(
         attempt.retryAfterSeconds,
-        `Terlalu banyak percobaan konfirmasi yang salah. Coba lagi dalam ${formatWait(attempt.retryAfterSeconds)}.`,
+        'Terlalu banyak percobaan konfirmasi yang salah.',
       );
     }
     if (!(await hasher.verify(user.passwordHash, input.password))) {
@@ -545,7 +577,7 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
           trustedDevice: bucket.trustedDevice,
         });
         if (codeAttempt.count >= bucket.rule.limit) {
-          await lock(bucket, user, context);
+          await lock(bucket, user, 'reauth', context);
           throw lockedError(TWO_FACTOR_LOCK_SECONDS);
         }
         throw codeError(WRONG_CODE_MESSAGE);
@@ -607,7 +639,7 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
         limiter,
         TWO_FACTOR_IP_RULE,
         ipKey,
-        (wait) => `Terlalu banyak percobaan verifikasi dari jaringanmu. Coba lagi dalam ${wait}.`,
+        () => 'Terlalu banyak percobaan verifikasi dari jaringanmu.',
       );
 
       const challenge = await findChallenge(db, sha256Hex(input.challengeToken));
@@ -669,7 +701,7 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
         });
         if (attempt.count >= bucket.rule.limit) {
           await closeChallenge(db, challenge.organizationId, challenge.id);
-          await lock(bucket, user, context);
+          await lock(bucket, user, 'login', context);
           throw lockedError(TWO_FACTOR_LOCK_SECONDS);
         }
         if (challengeAttempt >= CHALLENGE_MAX_ATTEMPTS) {
@@ -767,11 +799,27 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
         await reauthenticate(user, { password: input.password }, 'enrollment', context);
       }
 
-      const secret = generateTotpSecret();
-      const pendingEncrypted = box.encrypt(
-        secret,
-        secretContext(user.organizationId, user.id, PENDING_SECRET_PURPOSE),
-      );
+      // Layar dimuat ulang (tab HP dibuang browser saat pengguna pindah ke aplikasi autentikator):
+      // rahasia tertunda yang masih berlaku DARI SESI INI dipakai ulang, supaya entri yang sudah
+      // dipindai tidak basi. Rahasia tertunda dari sesi lain tidak bisa dibuka → rahasia baru.
+      const pendingContext = pendingSecretContext(user.organizationId, user.id, auth.sessionRef);
+      const existing =
+        user.totpPendingSecretEncrypted !== null &&
+        (await isPendingSecretFresh(
+          db,
+          user.organizationId,
+          user.id,
+          TWO_FACTOR_ENROLLMENT_PENDING_MINUTES,
+        ))
+          ? user.totpPendingSecretEncrypted
+          : null;
+      const reusedSecret = existing ? tryOpen(box, existing, pendingContext) : undefined;
+      const secret = reusedSecret ?? generateTotpSecret();
+      const pendingEncrypted =
+        reusedSecret !== undefined && existing !== null
+          ? existing
+          : box.encrypt(secret, pendingContext);
+      // Waktu dibuat diperbarui: QR yang tampil berlaku 15 menit sejak ditampilkan.
       const createdAt = await savePendingSecret(db, user.organizationId, user.id, pendingEncrypted);
       if (!createdAt) throw conflict('Verifikasi dua langkah sudah aktif untuk akunmu.');
 
@@ -785,6 +833,7 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
         action: AUDIT_ACTIONS.twoFactorEnrollmentStarted,
         targetType: 'user',
         targetId: user.id,
+        metadata: { reusedPending: reusedSecret !== undefined },
         client: context.client,
       });
       return {
@@ -829,12 +878,20 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
       ) {
         throw expired();
       }
-      const secret = openSecret(user, pending, PENDING_SECRET_PURPOSE);
+      // Hanya sesi yang memulai pendaftaran yang bisa mengonfirmasinya (lihat `pendingSecretContext`).
+      const secret = tryOpen(
+        box,
+        pending,
+        pendingSecretContext(user.organizationId, user.id, auth.sessionRef),
+      );
+      if (secret === undefined) throw expired();
       const step = matchTotp(secret, input.code);
       if (step === null) {
         await recordFailure(user, context, { usage: 'enrollment', reason: 'wrong_code' });
         throw codeError(
-          'Kode tidak cocok. Masukkan kode terbaru dari aplikasi autentikator, dan pastikan jam di ponselmu tepat.',
+          'Kode tidak cocok. Masukkan kode terbaru dari entri akun ini di aplikasi autentikator. ' +
+            'Kalau kamu pernah memindai kode QR lain untuk akun ini, hapus entri lamanya. ' +
+            'Pastikan juga jam di ponselmu tepat.',
         );
       }
 

@@ -69,6 +69,8 @@ export interface AccountLockedEmailInput {
   timeZone: string;
   /** Lingkup kunci; bawaan `account`. */
   scope?: LockScope;
+  /** Untuk `two_factor`: sumber kode salah (bawaan `login`). */
+  trigger?: 'login' | 'reauth';
 }
 
 function formatLocalTime(date: Date, timeZone: string): string {
@@ -90,14 +92,19 @@ export function renderAccountLockedEmail(input: AccountLockedEmailInput): MailBo
   const until = formatLocalTime(input.lockedUntil, input.timeZone);
   const scope = input.scope ?? 'account';
   if (scope === 'two_factor') {
+    const fromReauth = input.trigger === 'reauth';
     return compose(
       input.productName,
       `Kode verifikasi akun ${input.productName} kamu salah berulang kali`,
       [
         `Halo ${singleLine(input.userName)},`,
-        `Ada ${input.failedAttempts} kali percobaan masuk ke akunmu dengan password yang BENAR, tetapi kode verifikasi dua langkahnya salah. Langkah verifikasi untuk akunmu dihentikan sementara selama ${input.lockMinutes} menit, sampai ${until}.`,
-        'Kalau itu memang kamu, tunggu sampai waktunya lalu masukkan kode dari aplikasi autentikatormu (pastikan jam di ponselmu tepat), atau pakai salah satu kode cadangan.',
-        'Kalau bukan kamu, berarti password-mu sudah diketahui orang lain. Verifikasi dua langkah masih menahannya, tetapi segera ganti password dan kabari Owner atau Admin di tempatmu.',
+        fromReauth
+          ? `Kode verifikasi dua langkah yang salah dimasukkan berulang kali saat mengonfirmasi identitas di halaman Keamanan akun, dari sesi yang sedang masuk ke akunmu dan dengan password yang BENAR. Langkah verifikasi untuk akunmu dihentikan sementara selama ${input.lockMinutes} menit, sampai ${until}.`
+          : `Ada ${input.failedAttempts} kali percobaan masuk ke akunmu dengan password yang BENAR, tetapi kode verifikasi dua langkahnya salah. Langkah verifikasi untuk akunmu dihentikan sementara selama ${input.lockMinutes} menit, sampai ${until}.`,
+        'Kalau itu memang kamu, tunggu sampai waktunya lalu masukkan kode terbaru dari aplikasi autentikatormu (pastikan jam di ponselmu tepat), atau pakai salah satu kode cadangan.',
+        fromReauth
+          ? 'Kalau bukan kamu, berarti ada orang lain yang sedang masuk ke akunmu dan tahu password-mu. Verifikasi dua langkah masih menahannya. Segera kabari Owner atau Admin di tempatmu.'
+          : 'Kalau bukan kamu, berarti password-mu sudah diketahui orang lain. Verifikasi dua langkah masih menahannya. Segera kabari Owner atau Admin di tempatmu.',
       ],
     );
   }
@@ -135,8 +142,7 @@ export interface SecurityNoticeEmailInput {
   backupCodesRemaining?: number;
 }
 
-const NOT_YOU =
-  'Kalau bukan kamu yang melakukannya, segera ganti password-mu dan kabari Owner atau Admin di tempatmu.';
+const NOT_YOU = 'Kalau bukan kamu yang melakukannya, segera kabari Owner atau Admin di tempatmu.';
 
 /**
  * Pemberitahuan perubahan keamanan akun: 2FA diaktifkan/dinonaktifkan, kode cadangan dipakai, kode
@@ -175,9 +181,9 @@ export function renderSecurityNoticeEmail(input: SecurityNoticeEmailInput): Mail
         hello,
         `Salah satu kode cadangan dipakai untuk masuk ke akunmu pada ${when}. Kode itu tidak bisa dipakai lagi.`,
         remaining > 0
-          ? `Sisa kode cadangan yang masih berlaku: ${remaining}. Kalau tinggal sedikit, buat kode cadangan baru dari halaman keamanan akun.`
-          : 'Kode cadangan yang masih berlaku sudah habis. Segera buat kode cadangan baru dari halaman keamanan akun.',
-        'Kalau ponselmu hilang, kabari Owner atau Admin supaya verifikasi dua langkahmu bisa diatur ulang.',
+          ? `Sisa kode cadangan yang masih berlaku: ${remaining}. Kalau tinggal sedikit, buat kode cadangan baru dari halaman Keamanan akun.`
+          : 'Kode cadangan yang masih berlaku sudah habis. Selagi aplikasi autentikator di ponselmu masih bisa dipakai, buat kode cadangan baru dari halaman Keamanan akun sekarang.',
+        'Simpan kode cadangan di tempat yang aman selain ponselmu: tanpa ponsel dan tanpa kode cadangan, kamu tidak bisa masuk ke akunmu.',
         NOT_YOU,
       ]);
     }

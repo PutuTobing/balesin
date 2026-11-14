@@ -77,6 +77,11 @@ export const accountLockedEmailPayloadSchema = z.strictObject({
    * `two_factor` = password benar tetapi kode verifikasi dua langkah salah berulang kali.
    */
   scope: z.enum(LOCK_SCOPES).default('account'),
+  /**
+   * Untuk `two_factor`: dari mana kode salah datang — langkah kedua saat masuk (`login`), atau
+   * konfirmasi ulang identitas di halaman Keamanan akun dari sesi yang sudah masuk (`reauth`).
+   */
+  trigger: z.enum(['login', 'reauth']).optional(),
 });
 export type AccountLockedEmailPayload = z.infer<typeof accountLockedEmailPayloadSchema>;
 

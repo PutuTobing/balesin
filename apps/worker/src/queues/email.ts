@@ -177,7 +177,7 @@ async function sendAccountLocked(job: EmailJob, deps: EmailJobDeps): Promise<Ema
   if (!payload.success) {
     throw new UnrecoverableError('Payload job email:account-locked tidak valid');
   }
-  const { organizationId, userId, lockedUntil, scope } = payload.data;
+  const { organizationId, userId, lockedUntil, scope, trigger } = payload.data;
 
   const recipient = await findRecipient(organizationId, userId, deps);
   if (!recipient) return { status: 'skipped', reason: 'recipient_unavailable' };
@@ -190,6 +190,7 @@ async function sendAccountLocked(job: EmailJob, deps: EmailJobDeps): Promise<Ema
     lockedUntil: new Date(lockedUntil),
     timeZone: recipient.timezone,
     scope,
+    ...(trigger === undefined ? {} : { trigger }),
   });
   return deliver(organizationId, { to: recipient.email, ...body }, job, deps);
 }

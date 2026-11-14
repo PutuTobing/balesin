@@ -457,7 +457,7 @@ describe('CSRF dan POST /auth/logout', () => {
 describe('brute force: kunci per asal, per akun, perangkat dikenal, dan batas per IP', () => {
   const WRONG = 'tebakan-password-salah';
   const LOCKED_MESSAGE =
-    'Akun ini dikunci sementara karena terlalu banyak percobaan masuk yang gagal. Coba lagi dalam 15 menit.';
+    'Akun ini dikunci sementara karena terlalu banyak percobaan masuk yang gagal.';
 
   it('5 kali gagal dari satu IP → email itu dikunci 15 menit DARI IP ITU, termasuk password benar', async () => {
     const statuses: number[] = [];
@@ -734,9 +734,7 @@ describe('brute force: kunci per asal, per akun, perangkat dikenal, dan batas pe
     );
     expect(statuses.at(-1)).toBe(429);
     expect(blocked.statusCode).toBe(429);
-    expect(errorOf(blocked).message).toMatch(
-      /^Terlalu banyak percobaan masuk dari jaringanmu\. Coba lagi dalam \d+ menit\.$/,
-    );
+    expect(errorOf(blocked).message).toMatch(/^Terlalu banyak percobaan masuk dari jaringanmu\.$/);
     expect(elsewhere.statusCode).toBe(200);
   });
 
