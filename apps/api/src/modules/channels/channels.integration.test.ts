@@ -5,7 +5,9 @@
  * Mencakup: wizard (buat, validasi, URL webhook + verify token), enkripsi kredensial + petunjuk
  * tersamar, tes koneksi (berhasil + kasus error Meta), ganti kredensial dengan konfirmasi identitas,
  * nonaktifkan/hapus, profil bisnis, batas laju, dan penyalahgunaan: CS/Supervisor ke pengaturan &
- * verify token, IDOR lintas organisasi, rahasia tidak pernah muncul di respons/log/audit.
+ * verify token, IDOR lintas organisasi, rahasia tidak pernah muncul di respons/log/audit. Juga
+ * pemberitahuan ke Owner (job antrean + kejadian `channel_changed` di ringkasan keamanan) saat
+ * channel diubah oleh selain Owner.
  */
 import { appSecretProof, createSecretBox, Secret, WHATSAPP_SECRET_PURPOSES } from '@balesin/core';
 import { auditLogs, channels } from '@balesin/db';
@@ -21,6 +23,7 @@ import {
   createChannelResponseSchema,
   errorEnvelopeSchema,
   businessProfileResponseSchema,
+  securitySummaryResponseSchema,
   updateBusinessProfileResponseSchema,
   type ErrorEnvelope,
   type UserRole,
@@ -236,6 +239,9 @@ describe('wizard: buat channel', () => {
       name: 'CS Utama',
       phoneNumberId: PHONE_ID,
       wabaId: WABA_ID,
+      change: 'created',
+      actorRole: 'owner',
+      ownersNotified: false,
     });
   });
 
@@ -827,5 +833,215 @@ describe('penyalahgunaan & isolasi', () => {
     // Log memuat jejak panggilan Meta (operasi + kode), tanpa URL ber-query.
     expect(logs).toContain('phone_number.read');
     expect(logs).not.toContain('appsecret_proof=');
+  });
+});
+
+describe('pemberitahuan ke Owner bila channel diubah selain Owner', () => {
+  /** Admin dengan 2FA terdaftar + konfirmasi identitasnya. */
+  async function signInAdmin(owner: SignedIn) {
+    const admin = await member(owner, 'admin');
+    const confirm = async () => ({
+      password: PASSWORD,
+      code: await freshTotpCode(admin.session.user.email),
+    });
+    return { admin, confirm };
+  }
+
+  async function channelAudits() {
+    return harness.db.select().from(auditLogs).where(eq(auditLogs.targetType, 'channel'));
+  }
+
+  async function summaryOf(owner: SignedIn) {
+    const response = await send(owner, 'GET', API_ROUTES.audit.securitySummary);
+    expect(response.statusCode, response.body).toBe(200);
+    return securitySummaryResponseSchema.parse(response.json());
+  }
+
+  it('Admin: buat, ganti kredensial, buat ulang verify token, nonaktifkan, hapus → satu job per Owner aktif + warning di ringkasan', async () => {
+    const owner = await completeSetup(harness.app);
+    const organizationId = owner.session.organization.id;
+    const secondOwner = await insertUser(harness.db, organizationId, {
+      role: 'owner',
+      email: 'owner-kedua@majujaya.test',
+      name: 'Owner Kedua',
+    });
+    await insertUser(harness.db, organizationId, {
+      role: 'owner',
+      email: 'owner-nonaktif@majujaya.test',
+      name: 'Owner Nonaktif',
+      disabledAt: new Date(),
+    });
+    const { admin, confirm } = await signInAdmin(owner);
+
+    const { channel, webhook } = await createChannel(admin);
+    // Ganti nama saja dan mengaktifkan kembali TIDAK diberitahukan.
+    const renamed = await send(admin, 'PATCH', path(routes.channel, channel.id), {
+      name: 'CS Kedua',
+    });
+    expect(renamed.statusCode, renamed.body).toBe(200);
+    const replaced = await send(admin, 'PATCH', path(routes.channel, channel.id), {
+      phoneNumberId: PHONE_ID_2,
+      accessToken: TOKEN_2,
+      confirmation: await confirm(),
+    });
+    expect(replaced.statusCode, replaced.body).toBe(200);
+    const rotated = await send(admin, 'POST', path(routes.rotateVerifyToken, channel.id));
+    expect(rotated.statusCode, rotated.body).toBe(200);
+    const newVerifyToken = channelWebhookResponseSchema.parse(rotated.json()).verifyToken;
+    expect((await send(admin, 'POST', path(routes.disable, channel.id))).statusCode).toBe(200);
+    expect((await send(admin, 'POST', path(routes.enable, channel.id))).statusCode).toBe(200);
+    const removed = await send(admin, 'DELETE', path(routes.channel, channel.id), await confirm());
+    expect(removed.statusCode, removed.body).toBe(200);
+
+    const audits = await channelAudits();
+    const auditById = new Map(audits.map((row) => [row.id, row]));
+    const notices = harness.channelChangeNotices;
+    // 5 perubahan × 2 Owner aktif (Owner nonaktif tidak ikut).
+    expect(notices).toHaveLength(10);
+    expect(new Set(notices.map((notice) => notice.recipientUserId))).toEqual(
+      new Set([owner.session.user.id, secondOwner.id]),
+    );
+    for (const notice of notices) {
+      // Payload hanya ID — rincian dibaca worker dari audit.
+      expect(Object.keys(notice).sort()).toEqual([
+        'auditLogId',
+        'organizationId',
+        'recipientUserId',
+      ]);
+      expect(notice.organizationId).toBe(organizationId);
+      expect(auditById.get(notice.auditLogId)?.actorUserId).toBe(admin.session.user.id);
+    }
+    expect(
+      notices
+        .filter((notice) => notice.recipientUserId === owner.session.user.id)
+        .map((notice) => auditById.get(notice.auditLogId)?.metadata.change),
+    ).toEqual(['created', 'credentials_changed', 'verify_token_rotated', 'disabled', 'deleted']);
+
+    const notified = audits.filter((row) => row.metadata.ownersNotified === true);
+    expect(notified.map((row) => row.action).sort()).toEqual(
+      [
+        'channel.created',
+        'channel.deleted',
+        'channel.disabled',
+        'channel.updated',
+        'channel.webhook_verify_token_rotated',
+      ].sort(),
+    );
+    for (const row of notified) expect(row.metadata.actorRole).toBe('admin');
+    const credentialAudit = notified.find((row) => row.action === 'channel.updated');
+    expect(credentialAudit?.metadata).toMatchObject({
+      change: 'credentials_changed',
+      changedFields: ['phoneNumberId', 'accessToken'],
+      previousPhoneNumberId: PHONE_ID,
+      phoneNumberId: PHONE_ID_2,
+    });
+    const quiet = audits.filter((row) => row.metadata.ownersNotified !== true);
+    expect(quiet.map((row) => row.action).sort()).toEqual(['channel.enabled', 'channel.updated']);
+    for (const row of quiet) expect(row.metadata).not.toHaveProperty('change');
+
+    const summary = await summaryOf(owner);
+    const events = summary.events.filter((event) => event.kind === 'channel_changed');
+    expect(events).toHaveLength(5);
+    expect(summary.counts.channel_changed).toBe(5);
+    for (const event of events) {
+      expect(event.severity).toBe('warning');
+      expect(event.actor?.id).toBe(admin.session.user.id);
+      expect(event.subject).toBeNull();
+      expect(event.details.actorRole).toBe('admin');
+    }
+    expect(events.map((event) => event.details.change).sort()).toEqual(
+      ['created', 'credentials_changed', 'deleted', 'disabled', 'verify_token_rotated'].sort(),
+    );
+    expect(
+      events.find((event) => event.details.change === 'credentials_changed')?.details,
+    ).toMatchObject({ name: 'CS Kedua', phoneNumberId: PHONE_ID_2 });
+    expect(summary.latestWarningAt).not.toBeNull();
+
+    // Tidak ada rahasia di audit, ringkasan, maupun payload antrean.
+    const visible = JSON.stringify([audits, summary, notices]);
+    for (const secret of [TOKEN, TOKEN_2, APP_SECRET, webhook.verifyToken, newVerifyToken]) {
+      expect(visible).not.toContain(secret);
+    }
+  });
+
+  it('Owner sendiri yang mengubah: tidak ada email dan tidak ada kejadian di ringkasan keamanan', async () => {
+    const owner = await completeSetup(harness.app);
+    await insertUser(harness.db, owner.session.organization.id, {
+      role: 'owner',
+      email: 'owner-lain@majujaya.test',
+      name: 'Owner Lain',
+    });
+    const { channel } = await createChannel(owner);
+    const replaced = await send(owner, 'PATCH', path(routes.channel, channel.id), {
+      appSecret: 'fedcba9876543210fedcba9876543210',
+      confirmation: await ownerConfirmation(),
+    });
+    expect(replaced.statusCode, replaced.body).toBe(200);
+    const rotated = await send(owner, 'POST', path(routes.rotateVerifyToken, channel.id));
+    expect(rotated.statusCode).toBe(200);
+    expect((await send(owner, 'POST', path(routes.disable, channel.id))).statusCode).toBe(200);
+    const removed = await send(
+      owner,
+      'DELETE',
+      path(routes.channel, channel.id),
+      await ownerConfirmation(),
+    );
+    expect(removed.statusCode).toBe(200);
+
+    expect(harness.channelChangeNotices).toEqual([]);
+    const audits = await channelAudits();
+    expect(audits).toHaveLength(5);
+    for (const row of audits) {
+      expect(row.metadata).toMatchObject({ ownersNotified: false, actorRole: 'owner' });
+    }
+    const summary = await summaryOf(owner);
+    expect(summary.counts.channel_changed).toBe(0);
+    expect(summary.events.filter((event) => event.kind === 'channel_changed')).toEqual([]);
+  });
+
+  it('pemberitahuan tidak bisa diantrekan: perubahan oleh Admin BATAL (503); oleh Owner tetap jalan', async () => {
+    const owner = await completeSetup(harness.app);
+    const { channel } = await createChannel(owner);
+    const { admin } = await signInAdmin(owner);
+    await harness.rebuild({
+      ...DEFAULT_OPTIONS(),
+      notifier: {
+        accountLocked: () => Promise.resolve(),
+        securityNotice: () => Promise.resolve(),
+        securityNoticeAdmin: () => Promise.resolve(),
+        invitation: () => Promise.resolve(),
+        accountToken: () => Promise.resolve(),
+        emailSettingsChanged: () => Promise.resolve(),
+        channelChanged: () => Promise.reject(new Error('antrian mati')),
+      },
+    });
+    try {
+      const created = await send(
+        admin,
+        'POST',
+        routes.settings,
+        wizardBody({ phoneNumberId: PHONE_ID_2 }),
+      );
+      expect(created.statusCode).toBe(503);
+      expect(errorOf(created).message).toContain('pemberitahuan ke Owner');
+      expect((await send(admin, 'POST', path(routes.disable, channel.id))).statusCode).toBe(503);
+      expect(
+        (await send(admin, 'POST', path(routes.rotateVerifyToken, channel.id))).statusCode,
+      ).toBe(503);
+
+      const rows = await harness.db.select().from(channels);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ id: channel.id, enabled: true });
+      expect((await channelAudits()).map((row) => row.action)).toEqual(['channel.created']);
+
+      // Ganti nama oleh Admin tidak butuh pemberitahuan; Owner tidak memberi tahu dirinya sendiri.
+      const renamed = await send(admin, 'PATCH', path(routes.channel, channel.id), {
+        name: 'CS Baru',
+      });
+      expect(renamed.statusCode, renamed.body).toBe(200);
+      expect((await send(owner, 'POST', path(routes.disable, channel.id))).statusCode).toBe(200);
+    } finally {
+      await rebuildDefault();
+    }
   });
 });

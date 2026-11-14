@@ -22,6 +22,7 @@ import {
   renderAccountLockedEmail,
   renderAdminAccountNoticeEmail,
   renderAdminTwoFactorNoticeEmail,
+  renderChannelChangedEmail,
   renderEmailSettingsChangedEmail,
   renderEmailVerificationEmail,
   renderInvitationEmail,
@@ -889,6 +890,70 @@ describe('template email', () => {
       occurredAt: at,
     });
     expect(first.text).toContain('Server sebelumnya: Belum diatur');
+  });
+
+  it('channel diubah selain Owner (ke Owner): pelaku, channel, perubahan, IP; tanpa rahasia; di-escape', () => {
+    const base = {
+      brand: brand({ productName: 'Balesin Maju' }),
+      timeZone: 'Asia/Jakarta',
+      recipientName: 'Rina',
+      actor: { name: 'Adi <Admin>', email: 'adi@contoh.test', role: 'admin' as const },
+      channel: { name: 'CS <Utama>', phoneNumberId: '106540352249999' },
+      occurredAt: at,
+      origin: { ip: '198.51.100.7', userAgent: null },
+    };
+    const replaced = renderChannelChangedEmail({
+      ...base,
+      change: 'credentials_changed',
+      changedFields: ['phoneNumberId', 'accessToken'],
+      previousPhoneNumberId: '106540352242922',
+    });
+    expect(replaced.subject).toBe(
+      'Kredensial channel "CS <Utama>" di Balesin Maju diganti oleh Adi <Admin> (Admin)',
+    );
+    expect(replaced.text).toContain(
+      'Adi <Admin> (adi@contoh.test, peran Admin) mengganti Phone Number ID, Token System User channel "CS <Utama>"',
+    );
+    expect(replaced.text).toContain('Phone Number ID: 106540352242922 → 106540352249999');
+    expect(replaced.text).toContain('Yang diganti: Phone Number ID, Token System User');
+    expect(replaced.text).toContain('Alamat IP: 198.51.100.7');
+    expect(replaced.text).toContain('Kamu menerima email ini karena kamu Owner');
+    expect(replaced.text).toContain('nonaktifkan akun Adi <Admin> bila perlu');
+    expect(replaced.text).not.toMatch(/\bAnda\b/i);
+    expect(replaced.html).toContain('CS &lt;Utama&gt;');
+    expect(replaced.html).not.toContain('Adi <Admin>');
+
+    const subjects = (['created', 'verify_token_rotated', 'disabled', 'deleted'] as const).map(
+      (change) => renderChannelChangedEmail({ ...base, change }).subject,
+    );
+    expect(subjects).toEqual([
+      'Channel baru "CS <Utama>" ditambahkan di Balesin Maju oleh Adi <Admin> (Admin)',
+      'Verify token channel "CS <Utama>" di Balesin Maju dibuat ulang oleh Adi <Admin> (Admin)',
+      'Channel "CS <Utama>" di Balesin Maju dinonaktifkan oleh Adi <Admin> (Admin)',
+      'Channel "CS <Utama>" di Balesin Maju dihapus oleh Adi <Admin> (Admin)',
+    ]);
+    // "Yang diganti" hanya untuk penggantian kredensial; nomor lama hanya bila ID ikut diganti.
+    const disabled = renderChannelChangedEmail({
+      ...base,
+      change: 'disabled',
+      changedFields: ['accessToken'],
+      previousPhoneNumberId: '1',
+    });
+    expect(disabled.text).not.toContain('Yang diganti');
+    expect(disabled.text).toContain('Phone Number ID: 106540352249999');
+    expect(disabled.text).toContain('berhenti menerima dan mengirim pesan');
+
+    const unknownActor = renderChannelChangedEmail({
+      ...base,
+      actor: null,
+      change: 'deleted',
+      channel: { name: 'CS\r\nBcc: korban@contoh.test', phoneNumberId: null },
+    });
+    expect(unknownActor.subject).toBe(
+      'Channel "CS Bcc: korban@contoh.test" di Balesin Maju dihapus oleh pengguna selain Owner',
+    );
+    expect(unknownActor.text).toContain('nonaktifkan akun pelakunya bila perlu');
+    expect(unknownActor.text).not.toContain('Phone Number ID');
   });
 
   it('perkiraan perangkat dari user agent', () => {

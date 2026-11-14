@@ -169,12 +169,48 @@ tes koneksi…"). Hasil yang selesai setelah kredensial diganti di tengah jalan 
   Meta membatasi laju); 503 bila kredensial tak bisa dibuka; 429 setelah **30 permintaan profil per
   5 menit per pengguna**.
 
+## Pemberitahuan ke Owner (perubahan oleh selain Owner)
+
+Bila **Admin** (siapa pun selain Owner) melakukan salah satu perubahan di bawah, **semua Owner aktif**
+menerima email (nama produk dari branding; isi: pelaku + perannya, channel, apa yang berubah, waktu,
+IP, perangkat — tanpa nilai rahasia apa pun), dan kejadiannya muncul sebagai **`channel_changed`
+(`warning`)** di ringkasan keamanan (`GET /audit-logs/security-summary`, banner Owner/Admin).
+
+| Perubahan (`change`) | Pemicu |
+|---|---|
+| `created` | `POST /settings/channels` |
+| `credentials_changed` | `PATCH` yang benar-benar mengganti token, App Secret, Phone Number ID, atau WABA ID |
+| `verify_token_rotated` | `POST …/webhook/verify-token` |
+| `disabled` | `POST …/disable` (yang benar-benar mengubah status) |
+| `deleted` | `DELETE …/:channelId` |
+
+- **Tidak** diberitahukan: ganti nama saja, `enable`, tes koneksi, profil bisnis, dan semua
+  perubahan oleh Owner (tetap tercatat di audit seperti biasa).
+- Pemberitahuan diantrekan di dalam transaksi penyimpanan. Bila antrean tidak bisa dipakai, perubahan
+  Admin **dibatalkan** → **503 `SERVICE_UNAVAILABLE`** "Perubahan channel belum disimpan karena
+  pemberitahuan ke Owner tidak bisa dikirim sekarang. Coba lagi beberapa saat lagi." Tampilkan
+  `message` apa adanya; tidak ada yang berubah, pengguna cukup mencoba lagi. Perubahan oleh Owner tidak
+  terpengaruh.
+- Rincian kejadian di ringkasan keamanan (`details`): `change`, `name`, `phoneNumberId`,
+  `actorRole`, dan untuk `credentials_changed` juga `changedFields` (teks JSON nama isian, mis.
+  `'["phoneNumberId","accessToken"]'`). `subject` selalu `null`; `actor` = pelakunya. Label:
+  `SECURITY_EVENT_LABELS.channel_changed` ("Channel diubah oleh selain Owner"), label tiap perubahan
+  `CHANNEL_CHANGE_LABELS`, label isian `CHANNEL_CREDENTIAL_FIELD_LABELS`. Satu jenis kejadian
+  mencakup lima aksi audit (`CHANNEL_CHANGE_AUDIT_ACTIONS`), jadi tautan dari banner cukup memakai
+  saringan `targetType=channel` + tanggal.
+- `counts` di ringkasan keamanan kini selalu memuat kunci `channel_changed` (rekaman/mock respons
+  harus ikut memuatnya — skema `counts` lengkap per jenis).
+
 ## Audit (tanpa rahasia)
 
 `channel.created`, `channel.updated` (`changedFields`: nama isian saja, mis. `["accessToken"]`),
 `channel.disabled`, `channel.enabled`, `channel.deleted`, `channel.tested` (`code`, `metaCode`,
 kualitas, status nomor), `channel.webhook_verify_token_rotated`, `channel.business_profile_updated`
 (`changedFields`). Target `channel` + ID channel. Saringan Audit log `targetType=channel`.
+
+Aksi yang bisa diberitahukan ke Owner (lihat bagian sebelumnya) juga memuat `actorRole`,
+`ownersNotified` (`true` = pelakunya selain Owner dan Owner diberi tahu), dan `change`. Ganti nama
+saja dan `channel.enabled` hanya memuat `actorRole`.
 
 ## Rahasia & keamanan (ringkas)
 

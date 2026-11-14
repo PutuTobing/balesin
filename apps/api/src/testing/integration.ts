@@ -134,6 +134,7 @@ export async function createIntegrationHarness(
         built.invitationJobs.length = 0;
         built.accountTokenJobs.length = 0;
         built.emailSettingsNotices.length = 0;
+        built.channelChangeNotices.length = 0;
         built.logs.lines.length = 0;
       }
     },
@@ -177,6 +178,10 @@ export async function createIntegrationHarness(
     get emailSettingsNotices() {
       if (!built) throw new Error('Aplikasi tes belum dibangun');
       return built.emailSettingsNotices;
+    },
+    get channelChangeNotices() {
+      if (!built) throw new Error('Aplikasi tes belum dibangun');
+      return built.channelChangeNotices;
     },
     get redis(): Redis {
       if (!redis) throw new Error('Redis tes belum tersambung');

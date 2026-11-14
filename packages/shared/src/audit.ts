@@ -290,7 +290,9 @@ export const SECURITY_SUMMARY_MAX_EVENTS = 20;
  *  - `password_reset_without_two_factor` — akun peran wajib-2FA yang belum mendaftar 2FA mengatur
  *    ulang password-nya (review undangan R3);
  *  - `account_locked` — akun dikunci sementara karena gagal masuk/kode 2FA berulang;
- *  - `role_changed`, `user_disabled` — perubahan wewenang di tim.
+ *  - `role_changed`, `user_disabled` — perubahan wewenang di tim;
+ *  - `channel_changed` — channel dibuat, kredensial/ID-nya diganti, verify token dibuat ulang,
+ *    dinonaktifkan, atau dihapus oleh SELAIN Owner (semua Owner juga diberi tahu lewat email).
  */
 export const SECURITY_EVENT_KINDS = [
   'email_sender_changed',
@@ -300,6 +302,7 @@ export const SECURITY_EVENT_KINDS = [
   'account_locked',
   'role_changed',
   'user_disabled',
+  'channel_changed',
 ] as const;
 export const securityEventKindSchema = z.enum(SECURITY_EVENT_KINDS);
 export type SecurityEventKind = z.infer<typeof securityEventKindSchema>;
@@ -317,6 +320,7 @@ export const SECURITY_EVENT_SEVERITY: Readonly<Record<SecurityEventKind, 'warnin
   account_locked: 'warning',
   role_changed: 'info',
   user_disabled: 'info',
+  channel_changed: 'warning',
 };
 
 export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> = {
@@ -328,6 +332,7 @@ export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> 
   account_locked: 'Akun dikunci sementara',
   role_changed: 'Peran pengguna diubah',
   user_disabled: 'Pengguna dinonaktifkan',
+  channel_changed: 'Channel diubah oleh selain Owner',
 };
 
 export const securityEventSchema = z.object({

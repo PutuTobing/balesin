@@ -73,6 +73,12 @@ export const EMAIL_JOBS = {
    * pengaturan SEBELUM perubahan (salinan di `email_settings_change_notices`), bukan yang baru.
    */
   emailSettingsChanged: 'email-settings-changed',
+  /**
+   * Ke satu Owner: channel dibuat / kredensial atau ID-nya diganti / verify token dibuat ulang /
+   * dinonaktifkan / dihapus oleh pengguna SELAIN Owner. Isi (pelaku, channel, perubahan, waktu,
+   * IP/perangkat) dibaca worker dari baris audit `auditLogId` — payload hanya ID.
+   */
+  channelChanged: 'channel-changed',
 } as const;
 export type EmailJobName = (typeof EMAIL_JOBS)[keyof typeof EMAIL_JOBS];
 
@@ -183,6 +189,16 @@ export const emailSettingsChangedEmailPayloadSchema = z.strictObject({
 export type EmailSettingsChangedEmailPayload = z.infer<
   typeof emailSettingsChangedEmailPayloadSchema
 >;
+
+/** Satu email per Owner penerima. Rincian kejadian diambil dari baris audit (bukan dari payload). */
+export const channelChangedEmailPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  /** Owner penerima (diperiksa ulang saat mengirim: masih aktif dan masih Owner). */
+  recipientUserId: z.uuid(),
+  /** Baris audit `channel.*` kejadiannya. */
+  auditLogId: z.uuid(),
+});
+export type ChannelChangedEmailPayload = z.infer<typeof channelChangedEmailPayloadSchema>;
 
 export const invitationEmailPayloadSchema = z.strictObject({
   organizationId: z.uuid(),

@@ -4,6 +4,7 @@ import {
   AUDIT_ACTIONS,
   AUDIT_LOG_EXPORT_MAX_ROWS,
   AUDIT_LOG_PAGE_DEFAULT,
+  CHANNEL_CHANGE_AUDIT_ACTIONS,
   SECURITY_EVENT_KINDS,
   SECURITY_EVENT_SEVERITY,
   SECURITY_SUMMARY_DAYS,
@@ -15,7 +16,7 @@ import {
   type SecurityEventKind,
   type SecuritySummaryResponse,
 } from '@balesin/shared';
-import { and, eq, gte, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, gte, inArray, or, sql, type SQL } from 'drizzle-orm';
 
 import type { ClientInfo } from '../../http/client-info';
 import { enforceRateLimit, type RateLimitRule, type RateLimiter } from '../../http/rate-limit';
@@ -60,6 +61,12 @@ export const AUDIT_EXPORT_RULE: RateLimitRule = {
   windowSeconds: 60 * 60,
 };
 
+/**
+ * Aksi channel yang memberi tahu Owner bila pelakunya selain Owner (`ownersNotified: true` di
+ * metadatanya, ditulis modul channels).
+ */
+const NOTIFIED_CHANNEL_ACTIONS: readonly string[] = Object.values(CHANNEL_CHANGE_AUDIT_ACTIONS);
+
 /** Kondisi SQL per jenis kejadian keamanan (sama dengan `kindOf` di bawah). */
 const SECURITY_EVENT_CONDITIONS: Readonly<Record<SecurityEventKind, SQL>> = {
   email_sender_changed: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.emailSettingsUpdated} and ${auditLogs.metadata} ->> 'ownersNotified' = 'true')`,
@@ -69,6 +76,7 @@ const SECURITY_EVENT_CONDITIONS: Readonly<Record<SecurityEventKind, SQL>> = {
   account_locked: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.accountLocked} and ${auditLogs.targetType} = 'user')`,
   role_changed: sql`${auditLogs.action} = ${AUDIT_ACTIONS.userRoleChanged}`,
   user_disabled: sql`${auditLogs.action} = ${AUDIT_ACTIONS.userDisabled}`,
+  channel_changed: sql`(${inArray(auditLogs.action, [...NOTIFIED_CHANNEL_ACTIONS])} and ${auditLogs.metadata} ->> 'ownersNotified' = 'true')`,
 };
 
 /**
@@ -117,6 +125,12 @@ function kindOf(row: AuditRow): SecurityEventKind | undefined {
       return 'role_changed';
     case AUDIT_ACTIONS.userDisabled:
       return 'user_disabled';
+    case AUDIT_ACTIONS.channelCreated:
+    case AUDIT_ACTIONS.channelUpdated:
+    case AUDIT_ACTIONS.channelDisabled:
+    case AUDIT_ACTIONS.channelDeleted:
+    case AUDIT_ACTIONS.channelVerifyTokenRotated:
+      return row.metadata.ownersNotified === true ? 'channel_changed' : undefined;
     default:
       return undefined;
   }
@@ -131,6 +145,7 @@ const DETAIL_KEYS: Readonly<Record<SecurityEventKind, readonly string[]>> = {
   account_locked: ['scope', 'lockedUntil'],
   role_changed: ['from', 'to', 'actorRole'],
   user_disabled: ['role', 'actorRole'],
+  channel_changed: ['change', 'name', 'phoneNumberId', 'changedFields', 'actorRole'],
 };
 
 export function createAuditService(deps: { db: Database; limiter: RateLimiter }): AuditService {

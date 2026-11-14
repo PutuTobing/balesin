@@ -6,6 +6,7 @@ import {
   accountLockedEmailPayloadSchema,
   accountTokenDeliveryContext,
   accountTokenEmailPayloadSchema,
+  channelChangedEmailPayloadSchema,
   emailSettingsChangedEmailPayloadSchema,
   fallbackEmailSettings,
   invitationDeliveryContext,
@@ -14,6 +15,7 @@ import {
   renderAccountLockedEmail,
   renderAdminAccountNoticeEmail,
   renderAdminTwoFactorNoticeEmail,
+  renderChannelChangedEmail,
   renderEmailSettingsChangedEmail,
   renderEmailVerificationEmail,
   renderInvitationEmail,
@@ -49,10 +51,13 @@ import {
   type Database,
 } from '@balesin/db';
 import {
+  CHANNEL_CHANGE_AUDIT_ACTIONS,
   DEFAULT_PRODUCT_NAME,
   LOGIN_LOCK_MINUTES,
   LOGIN_MAX_FAILED_ATTEMPTS,
   buildTokenLink,
+  channelChangeKindSchema,
+  channelCredentialFieldSchema,
   hasPermission,
   invitationIssuerAuthorized,
   isTwoFactorRequired,
@@ -862,6 +867,86 @@ function previousTransport(
   };
 }
 
+/**
+ * Ke satu Owner: channel dibuat / kredensial atau ID-nya diganti / verify token dibuat ulang /
+ * dinonaktifkan / dihapus oleh pengguna SELAIN Owner. Semua rincian (pelaku, channel, perubahan,
+ * waktu, IP/perangkat) dibaca dari baris audit kejadiannya — payload hanya ID, dan audit tidak
+ * pernah memuat token/App Secret/verify token.
+ */
+async function sendChannelChanged(job: EmailJob, deps: EmailJobDeps): Promise<EmailJobResult> {
+  const payload = channelChangedEmailPayloadSchema.safeParse(job.data);
+  if (!payload.success) {
+    throw new UnrecoverableError('Payload job email:channel-changed tidak valid');
+  }
+  const { organizationId, recipientUserId, auditLogId } = payload.data;
+  const [audit] = await deps.db
+    .select({
+      action: auditLogs.action,
+      actorUserId: auditLogs.actorUserId,
+      metadata: auditLogs.metadata,
+      ip: auditLogs.ipAddress,
+      userAgent: auditLogs.userAgent,
+      createdAt: auditLogs.createdAt,
+    })
+    .from(auditLogs)
+    .where(and(eq(auditLogs.organizationId, organizationId), eq(auditLogs.id, auditLogId)))
+    .limit(1);
+  if (!audit) {
+    // Job diantrekan sebelum transaksi penyimpanan selesai: baris bisa belum terlihat (diulang).
+    // Masih tidak ada di percobaan terakhir = perubahannya dibatalkan; tidak ada yang dilaporkan.
+    if (isFinalAttempt(job)) return { status: 'skipped', reason: 'no_longer_valid' };
+    throw new Error('Baris audit perubahan channel belum tersedia');
+  }
+  const change = channelChangeKindSchema.safeParse(audit.metadata.change);
+  if (
+    !change.success ||
+    CHANNEL_CHANGE_AUDIT_ACTIONS[change.data] !== audit.action ||
+    audit.metadata.ownersNotified !== true
+  ) {
+    throw new UnrecoverableError('Baris audit bukan perubahan channel yang diberitahukan');
+  }
+
+  const recipient = await findActiveUser(organizationId, recipientUserId, deps);
+  const branding = await loadOrganizationBrand(deps.db, organizationId);
+  // Penerima diperiksa ulang saat mengirim: yang sudah bukan Owner (atau nonaktif) dilewati.
+  if (!recipient || recipient.role !== 'owner' || !branding) {
+    return { status: 'skipped', reason: 'recipient_unavailable' };
+  }
+  // Pelaku yang sudah dinonaktifkan tetap disebut: Owner perlu tahu siapa.
+  const actor = audit.actorUserId
+    ? await findUserAnyStateWithEmail(organizationId, audit.actorUserId, deps)
+    : undefined;
+  const text = (value: unknown) => (typeof value === 'string' && value !== '' ? value : null);
+  const changedFields = Array.isArray(audit.metadata.changedFields)
+    ? audit.metadata.changedFields.flatMap((field) => {
+        const parsed = channelCredentialFieldSchema.safeParse(field);
+        return parsed.success ? [parsed.data] : [];
+      })
+    : [];
+
+  const body = renderChannelChangedEmail({
+    brand: branding.brand,
+    timeZone: branding.timeZone,
+    recipientName: recipient.name,
+    actor: actor ?? null,
+    change: change.data,
+    channel: {
+      name: text(audit.metadata.name) ?? 'Tanpa nama',
+      phoneNumberId: text(audit.metadata.phoneNumberId),
+    },
+    changedFields,
+    previousPhoneNumberId: text(audit.metadata.previousPhoneNumberId),
+    occurredAt: audit.createdAt,
+    origin: { ip: audit.ip, userAgent: audit.userAgent },
+  });
+  return deliver(
+    organizationId,
+    { to: recipient.email, ...body, inlineImages: branding.inlineImages },
+    job,
+    deps,
+  );
+}
+
 const PROCESSORS: Record<string, (job: EmailJob, deps: EmailJobDeps) => Promise<EmailJobResult>> = {
   [EMAIL_JOBS.accountLocked]: sendAccountLocked,
   [EMAIL_JOBS.securityNotice]: sendSecurityNotice,
@@ -869,6 +954,7 @@ const PROCESSORS: Record<string, (job: EmailJob, deps: EmailJobDeps) => Promise<
   [EMAIL_JOBS.invitation]: sendInvitation,
   [EMAIL_JOBS.accountToken]: sendAccountToken,
   [EMAIL_JOBS.emailSettingsChanged]: sendEmailSettingsChanged,
+  [EMAIL_JOBS.channelChanged]: sendChannelChanged,
 };
 
 /**

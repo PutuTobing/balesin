@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { AUDIT_ACTIONS, type AuditAction } from './audit';
 import { hasControlCharacters, isoDateTimeSchema, singleLineText } from './fields';
 import { identityConfirmationSchema } from './team';
 
@@ -666,3 +667,47 @@ export const updateBusinessProfileResponseSchema = z.object({
   fetchedAt: isoDateTimeSchema.nullable(),
 });
 export type UpdateBusinessProfileResponse = z.infer<typeof updateBusinessProfileResponseSchema>;
+
+// ── Pemberitahuan ke Owner ──────────────────────────────────────────────────
+
+/**
+ * Perubahan channel yang, bila dilakukan SELAIN Owner (Admin), dikirim ke semua Owner aktif lewat
+ * email dan muncul sebagai kejadian `warning` `channel_changed` di ringkasan keamanan. Nilai ini
+ * tercatat di metadata audit (`change`) bersama `ownersNotified: true`.
+ */
+export const CHANNEL_CHANGE_KINDS = [
+  'created',
+  'credentials_changed',
+  'verify_token_rotated',
+  'disabled',
+  'deleted',
+] as const;
+export const channelChangeKindSchema = z.enum(CHANNEL_CHANGE_KINDS);
+export type ChannelChangeKind = z.infer<typeof channelChangeKindSchema>;
+
+/** Aksi audit yang mencatat tiap jenis perubahan (satu jenis = satu aksi). */
+export const CHANNEL_CHANGE_AUDIT_ACTIONS = {
+  created: AUDIT_ACTIONS.channelCreated,
+  credentials_changed: AUDIT_ACTIONS.channelUpdated,
+  verify_token_rotated: AUDIT_ACTIONS.channelVerifyTokenRotated,
+  disabled: AUDIT_ACTIONS.channelDisabled,
+  deleted: AUDIT_ACTIONS.channelDeleted,
+} as const satisfies Readonly<Record<ChannelChangeKind, AuditAction>>;
+
+export const channelCredentialFieldSchema = z.enum(CHANNEL_CREDENTIAL_FIELDS);
+
+export const CHANNEL_CHANGE_LABELS: Readonly<Record<ChannelChangeKind, string>> = {
+  created: 'Channel baru ditambahkan',
+  credentials_changed: 'Kredensial atau ID channel diganti',
+  verify_token_rotated: 'Verify token webhook dibuat ulang',
+  disabled: 'Channel dinonaktifkan',
+  deleted: 'Channel dihapus',
+};
+
+/** Nama isian kredensial untuk ditampilkan (email, banner). */
+export const CHANNEL_CREDENTIAL_FIELD_LABELS: Readonly<Record<ChannelCredentialField, string>> = {
+  phoneNumberId: 'Phone Number ID',
+  wabaId: 'WhatsApp Business Account ID',
+  accessToken: 'Token System User',
+  appSecret: 'App Secret',
+};

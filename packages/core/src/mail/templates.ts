@@ -1,4 +1,11 @@
-import { USER_ROLE_LABELS, type UserRole } from '@balesin/shared';
+import {
+  CHANNEL_CHANGE_LABELS,
+  CHANNEL_CREDENTIAL_FIELD_LABELS,
+  USER_ROLE_LABELS,
+  type ChannelChangeKind,
+  type ChannelCredentialField,
+  type UserRole,
+} from '@balesin/shared';
 import { color, contrastRatio } from '@balesin/shared/design-tokens';
 
 import type { LockScope, LockTrigger, SecurityNoticeEvent } from '../queues';
@@ -778,6 +785,103 @@ export function renderEmailSettingsChangedEmail(input: EmailSettingsChangedEmail
     ],
     notes: [
       `Kalau perubahan ini tidak kamu duga, masuk ke ${product} sekarang, periksa Pengaturan → Email pengirim, dan nonaktifkan akun ${name} bila perlu. Server email yang salah bisa membaca tautan atur ulang password dan undangan.`,
+    ],
+  });
+}
+
+export interface ChannelChangedEmailInput {
+  brand: EmailBrand;
+  timeZone: string;
+  recipientName: string | null;
+  /** Pelaku (aktif maupun sudah dinonaktifkan); `null` = tidak diketahui lagi. */
+  actor: { name: string; email: string; role: UserRole } | null;
+  change: ChannelChangeKind;
+  channel: { name: string; phoneNumberId: string | null };
+  /** Untuk `credentials_changed`: isian yang diganti (nama saja, tidak pernah nilainya). */
+  changedFields?: readonly ChannelCredentialField[];
+  /** Untuk `credentials_changed` bila Phone Number ID ikut diganti: nilai sebelumnya. */
+  previousPhoneNumberId?: string | null;
+  occurredAt: Date;
+  origin?: EventOrigin;
+}
+
+/**
+ * Ke Owner: channel WhatsApp diubah oleh pengguna SELAIN Owner. Mengganti token/App Secret/ID bisa
+ * membelokkan pesan agen ke nomor lain atau memungkinkan pemalsuan webhook; menonaktifkan/menghapus
+ * menghentikan layanan pelanggan — Admin yang dibobol tidak boleh bisa melakukannya diam-diam.
+ * Tidak pernah memuat nilai rahasia.
+ */
+export function renderChannelChangedEmail(input: ChannelChangedEmailInput): MailBody {
+  const product = singleLine(input.brand.productName);
+  const channel = `"${singleLine(input.channel.name)}"`;
+  const when = formatLocalTime(input.occurredAt, input.timeZone);
+  const actorName = input.actor ? singleLine(input.actor.name) : null;
+  const by = input.actor
+    ? `${actorName ?? ''} (${USER_ROLE_LABELS[input.actor.role]})`
+    : 'pengguna selain Owner';
+  const byFull = input.actor
+    ? `${actorName ?? ''} (${singleLine(input.actor.email)}, peran ${USER_ROLE_LABELS[input.actor.role]})`
+    : 'Seorang pengguna selain Owner';
+  const fields = (input.changedFields ?? []).map((field) => CHANNEL_CREDENTIAL_FIELD_LABELS[field]);
+  const replaced = fields.length > 0 ? fields.join(', ') : 'kredensial';
+  const phoneNumberId = input.channel.phoneNumberId
+    ? singleLine(input.channel.phoneNumberId)
+    : null;
+  const previousPhoneNumberId =
+    input.change === 'credentials_changed' && input.previousPhoneNumberId
+      ? singleLine(input.previousPhoneNumberId)
+      : null;
+
+  const subject: Record<ChannelChangeKind, string> = {
+    created: `Channel baru ${channel} ditambahkan di ${product} oleh ${by}`,
+    credentials_changed: `Kredensial channel ${channel} di ${product} diganti oleh ${by}`,
+    verify_token_rotated: `Verify token channel ${channel} di ${product} dibuat ulang oleh ${by}`,
+    disabled: `Channel ${channel} di ${product} dinonaktifkan oleh ${by}`,
+    deleted: `Channel ${channel} di ${product} dihapus oleh ${by}`,
+  };
+  const what: Record<ChannelChangeKind, string> = {
+    created: `menambahkan channel WhatsApp baru ${channel}`,
+    credentials_changed: `mengganti ${replaced} channel ${channel}`,
+    verify_token_rotated: `membuat ulang verify token webhook channel ${channel}`,
+    disabled: `menonaktifkan channel ${channel}`,
+    deleted: `menghapus channel ${channel} beserta kredensialnya`,
+  };
+  const impact: Record<ChannelChangeKind, string> = {
+    created:
+      'Nomor yang tidak kamu kenal bisa dipakai untuk menerima dan mengirim pesan atas nama perusahaanmu.',
+    credentials_changed:
+      'Kredensial atau ID yang salah bisa membelokkan balasan agen ke nomor atau aplikasi Meta lain, atau membuat pesan palsu masuk ke inbox.',
+    verify_token_rotated:
+      'Verify token lama langsung tidak berlaku. Webhook yang sudah terpasang di Meta tetap jalan, tetapi verifikasi ulang di Meta harus memakai token yang baru.',
+    disabled:
+      'Channel ini berhenti menerima dan mengirim pesan; pelanggan yang menghubungi nomor ini tidak terlayani sampai channel diaktifkan lagi.',
+    deleted:
+      'Nomor ini tidak lagi terhubung ke inbox. Untuk memakainya lagi, channel harus ditambahkan ulang dengan token dan App Secret.',
+  };
+
+  return compose(input.brand, {
+    subject: subject[input.change],
+    preheader: `${input.actor ? by : 'Pengguna selain Owner'} ${what[input.change]}.`,
+    heading: CHANNEL_CHANGE_LABELS[input.change],
+    paragraphs: [
+      hello(input.recipientName),
+      `${byFull} ${what[input.change]}. ${impact[input.change]}`,
+      'Kamu menerima email ini karena kamu Owner. Perubahan channel oleh selain Owner selalu diberitahukan.',
+    ],
+    details: [
+      { label: 'Channel', value: singleLine(input.channel.name) },
+      ...(previousPhoneNumberId && phoneNumberId
+        ? [{ label: 'Phone Number ID', value: `${previousPhoneNumberId} → ${phoneNumberId}` }]
+        : phoneNumberId
+          ? [{ label: 'Phone Number ID', value: phoneNumberId }]
+          : []),
+      ...(input.change === 'credentials_changed' && fields.length > 0
+        ? [{ label: 'Yang diganti', value: fields.join(', ') }]
+        : []),
+      ...originDetails(when, input.origin),
+    ],
+    notes: [
+      `Kalau perubahan ini tidak kamu duga, masuk ke ${product} sekarang, periksa Pengaturan → Channel dan Audit log, lalu nonaktifkan akun ${actorName ?? 'pelakunya'} bila perlu.`,
     ],
   });
 }

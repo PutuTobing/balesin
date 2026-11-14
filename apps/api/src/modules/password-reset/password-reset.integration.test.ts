@@ -204,6 +204,7 @@ describe('minta tautan', () => {
         invitation: () => Promise.resolve(),
         accountToken: () => blocked,
         emailSettingsChanged: () => Promise.resolve(),
+        channelChanged: () => Promise.resolve(),
       },
     });
     const started = Date.now();

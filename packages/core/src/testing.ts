@@ -116,10 +116,13 @@ interface MailpitAddress {
   Address?: string;
 }
 
-async function mailpitRequest(path: string): Promise<Response> {
+async function mailpitRequest(path: string, method: 'GET' | 'DELETE' = 'GET'): Promise<Response> {
   let response: Response;
   try {
-    response = await fetch(`${MAILPIT_API_URL}${path}`, { signal: AbortSignal.timeout(10_000) });
+    response = await fetch(`${MAILPIT_API_URL}${path}`, {
+      method,
+      signal: AbortSignal.timeout(10_000),
+    });
   } catch (error) {
     throw new Error(
       `Penangkap email (Mailpit) tidak bisa dihubungi di ${MAILPIT_API_URL}. ` +
@@ -172,6 +175,12 @@ export async function capturedMailFor(recipient: string): Promise<CapturedMail[]
     });
   }
   return mails;
+}
+
+/** Menghapus email tertangkap untuk SATU alamat tujuan (bersih-bersih setelah tes). */
+export async function deleteCapturedMailFor(recipient: string): Promise<void> {
+  const query = encodeURIComponent(`to:"${recipient}"`);
+  await (await mailpitRequest(`/api/v1/search?query=${query}`, 'DELETE')).text();
 }
 
 /** Menunggu sampai ada email untuk `recipient` (bawaan paling lama 10 detik). */

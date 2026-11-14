@@ -281,6 +281,7 @@ export async function buildApp(deps: AppDeps) {
     secretBox,
     meta,
     twoFactor,
+    notifier: deps.notifier,
     apiUrl: config.apiUrl,
   });
 

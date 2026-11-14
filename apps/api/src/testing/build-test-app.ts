@@ -3,6 +3,7 @@ import {
   Secret,
   type AccountLockedEmailPayload,
   type AccountTokenEmailPayload,
+  type ChannelChangedEmailPayload,
   type EmailSettingsChangedEmailPayload,
   type InvitationEmailPayload,
   type SecurityNoticeAdminEmailPayload,
@@ -48,6 +49,8 @@ export interface TestApp {
   accountTokenJobs: AccountTokenEmailPayload[];
   /** Pemberitahuan ke Owner: email pengirim diubah pengguna lain. */
   emailSettingsNotices: EmailSettingsChangedEmailPayload[];
+  /** Pemberitahuan ke Owner: channel diubah pengguna selain Owner. */
+  channelChangeNotices: ChannelChangedEmailPayload[];
 }
 
 const healthy = () => Promise.resolve();
@@ -117,6 +120,7 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<TestAp
   const invitationJobs: InvitationEmailPayload[] = [];
   const accountTokenJobs: AccountTokenEmailPayload[] = [];
   const emailSettingsNotices: EmailSettingsChangedEmailPayload[] = [];
+  const channelChangeNotices: ChannelChangedEmailPayload[] = [];
   const record =
     <T>(list: T[]) =>
     (payload: T) => {
@@ -141,6 +145,7 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<TestAp
       invitation: record(invitationJobs),
       accountToken: record(accountTokenJobs),
       emailSettingsChanged: record(emailSettingsNotices),
+      channelChanged: record(channelChangeNotices),
     },
     overrides: {
       ...options.overrides,
@@ -156,6 +161,7 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<TestAp
     invitationJobs,
     accountTokenJobs,
     emailSettingsNotices,
+    channelChangeNotices,
   };
 }
 

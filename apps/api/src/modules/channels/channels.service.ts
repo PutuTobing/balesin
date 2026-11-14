@@ -17,7 +17,14 @@ import {
   type PhoneNumberDetails,
   type SecretBox,
 } from '@balesin/core';
-import { isPgError, newId, PG_ERROR_CODES, type Channel, type Database } from '@balesin/db';
+import {
+  isPgError,
+  newId,
+  PG_ERROR_CODES,
+  type Channel,
+  type Database,
+  type DbExecutor,
+} from '@balesin/db';
 import {
   CHANNEL_TEST_MESSAGES,
   MAX_CHANNELS_PER_ORGANIZATION,
@@ -43,9 +50,15 @@ import {
 import type { FastifyBaseLogger } from 'fastify';
 
 import type { ClientInfo } from '../../http/client-info';
+import type { EmailNotifier } from '../../queues/email-queue';
 import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
 import type { AuthContext } from '../auth/session.service';
 import type { TwoFactorService } from '../two-factor/two-factor.service';
+import {
+  noticeMetadata,
+  queueChannelChangeNotices,
+  type ChannelChangeActor,
+} from './channel-change-notice';
 import {
   SUBSCRIBE_FIELDS,
   toChannelSummary,
@@ -128,6 +141,8 @@ export interface ChannelsServiceDeps {
   secretBox: SecretBox | null;
   meta: MetaGraphClient;
   twoFactor: Pick<TwoFactorService, 'confirmIdentity'>;
+  /** Pemberitahuan ke Owner saat channel diubah selain Owner (`channel-change-notice.ts`). */
+  notifier: Pick<EmailNotifier, 'channelChanged'>;
   /** Alamat publik API (untuk URL webhook). */
   apiUrl: string;
   now?: () => Date;
@@ -214,8 +229,21 @@ function metaRequestFailed(error: MetaApiError): AppError {
 }
 
 export function createChannelsService(deps: ChannelsServiceDeps): ChannelsService {
-  const { db, secretBox, meta, twoFactor, apiUrl } = deps;
+  const { db, secretBox, meta, twoFactor, notifier, apiUrl } = deps;
   const now = deps.now ?? (() => new Date());
+
+  const actorOf = (auth: AuthContext): ChannelChangeActor => ({
+    userId: auth.user.id,
+    role: auth.user.role,
+  });
+
+  /** Owner aktif diberi tahu (bila pelakunya bukan Owner) — di dalam transaksi `tx`. */
+  const notifyOwners = (tx: DbExecutor, auth: AuthContext, auditLogId: string) =>
+    queueChannelChangeNotices(tx, notifier, {
+      organizationId: auth.organizationId,
+      actor: actorOf(auth),
+      auditLogId,
+    });
 
   function requireBox(): SecretBox {
     if (!secretBox) throw new AppError('SERVICE_UNAVAILABLE', { message: NO_MASTER_KEY_MESSAGE });
@@ -404,7 +432,7 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
             createdByUserId: auth.user.id,
             updatedByUserId: auth.user.id,
           });
-          await recordAudit(tx, {
+          const auditLogId = await recordAudit(tx, {
             organizationId: auth.organizationId,
             actorUserId: auth.user.id,
             action: AUDIT_ACTIONS.channelCreated,
@@ -415,9 +443,11 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
               name: input.name,
               phoneNumberId: input.phoneNumberId,
               wabaId: input.wabaId,
+              ...noticeMetadata(actorOf(auth), 'created'),
             },
             client: context.client,
           });
+          await notifyOwners(tx, auth, auditLogId);
           return inserted;
         })
         .catch(rethrowConflict);
@@ -485,7 +515,8 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
             updatedByUserId: auth.user.id,
           });
           if (!next) throw notFound();
-          await recordAudit(tx, {
+          const credentialsChanged = changed.length > 0;
+          const auditLogId = await recordAudit(tx, {
             organizationId: auth.organizationId,
             actorUserId: auth.user.id,
             action: AUDIT_ACTIONS.channelUpdated,
@@ -499,9 +530,14 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
               phoneNumberId: next.waPhoneNumberId,
               previousPhoneNumberId: changed.includes('phoneNumberId') ? row.waPhoneNumberId : null,
               wabaId: next.waBusinessAccountId,
+              // Ganti nama saja tidak diberitahukan ke Owner.
+              ...(credentialsChanged
+                ? noticeMetadata(actorOf(auth), 'credentials_changed')
+                : { actorRole: auth.user.role }),
             },
             client: context.client,
           });
+          if (credentialsChanged) await notifyOwners(tx, auth, auditLogId);
           return next;
         })
         .catch(rethrowConflict);
@@ -517,15 +553,23 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
           updatedByUserId: auth.user.id,
         });
         if (!next) throw notFound();
-        await recordAudit(tx, {
+        const auditLogId = await recordAudit(tx, {
           organizationId: auth.organizationId,
           actorUserId: auth.user.id,
           action: enabled ? AUDIT_ACTIONS.channelEnabled : AUDIT_ACTIONS.channelDisabled,
           targetType: 'channel',
           targetId: row.id,
-          metadata: { name: row.name, phoneNumberId: row.waPhoneNumberId },
+          metadata: {
+            name: row.name,
+            phoneNumberId: row.waPhoneNumberId,
+            // Mengaktifkan kembali tidak diberitahukan ke Owner.
+            ...(enabled
+              ? { actorRole: auth.user.role }
+              : noticeMetadata(actorOf(auth), 'disabled')),
+          },
           client: context.client,
         });
+        if (!enabled) await notifyOwners(tx, auth, auditLogId);
         return next;
       });
       return toWhatsAppChannel(updated, apiUrl);
@@ -547,7 +591,7 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
           updatedByUserId: auth.user.id,
         });
         if (!deleted) throw notFound();
-        await recordAudit(tx, {
+        const auditLogId = await recordAudit(tx, {
           organizationId: auth.organizationId,
           actorUserId: auth.user.id,
           action: AUDIT_ACTIONS.channelDeleted,
@@ -557,9 +601,11 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
             name: row.name,
             phoneNumberId: row.waPhoneNumberId,
             wabaId: row.waBusinessAccountId,
+            ...noticeMetadata(actorOf(auth), 'deleted'),
           },
           client: context.client,
         });
+        await notifyOwners(tx, auth, auditLogId);
       });
     },
 
@@ -633,15 +679,20 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
           updatedByUserId: auth.user.id,
         });
         if (!next) throw notFound();
-        await recordAudit(tx, {
+        const auditLogId = await recordAudit(tx, {
           organizationId: auth.organizationId,
           actorUserId: auth.user.id,
           action: AUDIT_ACTIONS.channelVerifyTokenRotated,
           targetType: 'channel',
           targetId: row.id,
-          metadata: { name: row.name },
+          metadata: {
+            name: row.name,
+            phoneNumberId: row.waPhoneNumberId,
+            ...noticeMetadata(actorOf(auth), 'verify_token_rotated'),
+          },
           client: context.client,
         });
+        await notifyOwners(tx, auth, auditLogId);
         return next;
       });
       return webhookView(updated, box);

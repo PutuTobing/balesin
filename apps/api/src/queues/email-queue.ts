@@ -5,6 +5,7 @@ import {
   QUEUE_PREFIX,
   accountLockedEmailPayloadSchema,
   accountTokenEmailPayloadSchema,
+  channelChangedEmailPayloadSchema,
   emailSettingsChangedEmailPayloadSchema,
   invitationEmailPayloadSchema,
   securityNoticeAdminEmailPayloadSchema,
@@ -12,6 +13,7 @@ import {
   withTimeout,
   type AccountLockedEmailPayload,
   type AccountTokenEmailPayload,
+  type ChannelChangedEmailPayload,
   type EmailSettingsChangedEmailPayload,
   type InvitationEmailPayload,
   type Redis,
@@ -39,6 +41,8 @@ export interface EmailNotifier {
   accountToken(payload: AccountTokenEmailPayload): Promise<void>;
   /** Antrekan pemberitahuan ke SATU Owner: email pengirim diubah pengguna lain. */
   emailSettingsChanged(payload: EmailSettingsChangedEmailPayload): Promise<void>;
+  /** Antrekan pemberitahuan ke SATU Owner: channel diubah pengguna selain Owner. */
+  channelChanged(payload: ChannelChangedEmailPayload): Promise<void>;
 }
 
 export interface EmailQueue {
@@ -87,6 +91,7 @@ export function createEmailQueue(options: EmailQueueOptions): EmailQueue {
         EMAIL_JOBS.emailSettingsChanged,
         emailSettingsChangedEmailPayloadSchema,
       ),
+      channelChanged: enqueue(EMAIL_JOBS.channelChanged, channelChangedEmailPayloadSchema),
     },
     close: () => queue.close(),
   };

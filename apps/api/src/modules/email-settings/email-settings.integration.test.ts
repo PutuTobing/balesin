@@ -782,6 +782,7 @@ describe('pemberitahuan ke Owner saat email pengirim diubah pengguna lain (revie
         invitation: () => Promise.resolve(),
         accountToken: () => Promise.resolve(),
         emailSettingsChanged: () => Promise.reject(new Error('antrian mati')),
+        channelChanged: () => Promise.reject(new Error('antrian mati')),
       },
     });
 
