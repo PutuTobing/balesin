@@ -114,6 +114,20 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'GET /api/v1/audit-logs': 'audit.view',
   'GET /api/v1/audit-logs/export': 'audit.view',
   'GET /api/v1/audit-logs/security-summary': 'audit.view',
+  // channel: nama untuk inbox = semua peran yang melihat inbox; pengaturan + rahasia = Owner/Admin
+  'GET /api/v1/channels': 'inbox.view',
+  'GET /api/v1/settings/channels': 'channels.manage',
+  'POST /api/v1/settings/channels': 'channels.manage',
+  'GET /api/v1/settings/channels/:channelId': 'channels.manage',
+  'PATCH /api/v1/settings/channels/:channelId': 'channels.manage',
+  'DELETE /api/v1/settings/channels/:channelId': 'channels.manage',
+  'POST /api/v1/settings/channels/:channelId/disable': 'channels.manage',
+  'POST /api/v1/settings/channels/:channelId/enable': 'channels.manage',
+  'POST /api/v1/settings/channels/:channelId/test': 'channels.manage',
+  'GET /api/v1/settings/channels/:channelId/webhook': 'channels.manage',
+  'POST /api/v1/settings/channels/:channelId/webhook/verify-token': 'channels.manage',
+  'GET /api/v1/settings/channels/:channelId/business-profile': 'channels.manage',
+  'PUT /api/v1/settings/channels/:channelId/business-profile': 'channels.manage',
 };
 
 const LOGOUT = 'POST /api/v1/auth/logout';
@@ -191,6 +205,7 @@ const SAMPLE_PARAMS: Readonly<Record<string, string>> = {
   template: 'invitation',
   userId: '00000000-0000-4000-8000-0000000000bb',
   sessionId: '00000000-0000-4000-8000-0000000000cc',
+  channelId: '00000000-0000-4000-8000-0000000000dd',
 };
 
 function concreteUrl(pattern: string): string {

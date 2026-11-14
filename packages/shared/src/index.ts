@@ -8,6 +8,7 @@ export * from './api-routes';
 export * from './audit';
 export * from './auth';
 export * from './branding';
+export * from './channels';
 export * from './email';
 export * from './email-settings';
 export * from './email-templates';

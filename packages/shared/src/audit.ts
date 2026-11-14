@@ -65,6 +65,17 @@ export const AUDIT_ACTIONS = {
   sessionsRevokedAll: 'auth.sessions.revoked_all',
   /** Audit log diekspor ke CSV. */
   auditExported: 'audit.exported',
+  // ── Channel (Fase 2 butir 1–2) — metadata tidak pernah memuat token/App Secret/verify token ──
+  channelCreated: 'channel.created',
+  /** Nama atau kredensial diubah; `changedFields` menyebut isian yang diganti (tanpa nilainya). */
+  channelUpdated: 'channel.updated',
+  channelDisabled: 'channel.disabled',
+  channelEnabled: 'channel.enabled',
+  /** Channel dihapus: kredensialnya dimusnahkan dari database. */
+  channelDeleted: 'channel.deleted',
+  channelTested: 'channel.tested',
+  channelVerifyTokenRotated: 'channel.webhook_verify_token_rotated',
+  channelBusinessProfileUpdated: 'channel.business_profile_updated',
 } as const;
 
 export type AuditActionKey = keyof typeof AUDIT_ACTIONS;
@@ -115,6 +126,14 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'auth.session.revoked': 'Sesi dikeluarkan',
   'auth.sessions.revoked_all': 'Semua sesi dikeluarkan',
   'audit.exported': 'Audit log diekspor',
+  'channel.created': 'Channel ditambahkan',
+  'channel.updated': 'Channel diubah',
+  'channel.disabled': 'Channel dinonaktifkan',
+  'channel.enabled': 'Channel diaktifkan kembali',
+  'channel.deleted': 'Channel dihapus',
+  'channel.tested': 'Koneksi channel dites',
+  'channel.webhook_verify_token_rotated': 'Verify token webhook dibuat ulang',
+  'channel.business_profile_updated': 'Profil bisnis WhatsApp diubah',
 };
 
 /** Label untuk aksi yang mungkin belum dikenal klien (versi lama): tampilkan kodenya apa adanya. */
@@ -134,6 +153,7 @@ export const AUDIT_TARGET_TYPES = [
   'permission',
   'rule',
   'audit_log',
+  'channel',
 ] as const;
 export const auditTargetTypeSchema = z.enum(AUDIT_TARGET_TYPES, {
   error: 'Jenis target tidak dikenal.',
@@ -149,6 +169,7 @@ export const AUDIT_TARGET_TYPE_LABELS: Readonly<Record<AuditTargetType, string>>
   permission: 'Izin',
   rule: 'Aturan akses',
   audit_log: 'Audit log',
+  channel: 'Channel',
 };
 
 // ── GET /audit-logs ─────────────────────────────────────────────────────────

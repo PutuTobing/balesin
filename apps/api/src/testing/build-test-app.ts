@@ -1,4 +1,5 @@
 import {
+  DEFAULT_META_GRAPH_VERSION,
   Secret,
   type AccountLockedEmailPayload,
   type AccountTokenEmailPayload,
@@ -51,6 +52,18 @@ export interface TestApp {
 
 const healthy = () => Promise.resolve();
 
+/**
+ * Tes TIDAK PERNAH memanggil Meta sungguhan (kredensial belum ada; BUTUH-TOBING #3): hanya server
+ * tiruan di 127.0.0.1 yang boleh dituju. Selain itu permintaan gagal seperti jaringan putus.
+ */
+const offlineMetaFetch: typeof fetch = (input, init) => {
+  const url = new URL(input instanceof Request ? input.url : String(input));
+  if (url.hostname !== '127.0.0.1' && url.hostname !== 'localhost') {
+    return Promise.reject(new TypeError('Tes tidak boleh memanggil Graph API Meta sungguhan'));
+  }
+  return fetch(input, init);
+};
+
 export function defaultTestConfig(): AppConfig {
   return {
     appUrl: TEST_APP_ORIGIN,
@@ -63,6 +76,11 @@ export function defaultTestConfig(): AppConfig {
     masterKey: null,
     smtpFallback: null,
     smtpAllowedPorts: [...SMTP_ALLOWED_PORTS, 1025],
+    apiUrl: 'http://localhost:3000',
+    metaGraphVersion: DEFAULT_META_GRAPH_VERSION,
+    // Tes memakai server Meta tiruan (`testing/fake-meta.ts`) bila perlu; panggilan lain diblokir
+    // `offlineMetaFetch` di bawah.
+    metaGraphBaseUrl: null,
   };
 }
 
@@ -124,7 +142,10 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<TestAp
       accountToken: record(accountTokenJobs),
       emailSettingsChanged: record(emailSettingsNotices),
     },
-    overrides: options.overrides,
+    overrides: {
+      ...options.overrides,
+      meta: { fetch: offlineMetaFetch, ...options.overrides?.meta },
+    },
   });
   return {
     app,

@@ -5,6 +5,7 @@
  */
 export * from './account-tokens';
 export * from './audit-logs';
+export * from './channels';
 export * from './email-settings';
 export * from './email-settings-change-notices';
 export * from './installation';

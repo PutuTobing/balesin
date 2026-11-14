@@ -1,5 +1,7 @@
 import {
   allowedSmtpPorts,
+  DEFAULT_META_GRAPH_VERSION,
+  META_GRAPH_VERSION_PATTERN,
   baseEnvShape,
   envDefault,
   envOptional,
@@ -62,8 +64,17 @@ export interface ApiConfig {
    * ditambah 1025, port penangkap email lokal (Mailpit) dari `pnpm db:up`.
    */
   smtpAllowedPorts: number[];
-  /** Versi Graph API Meta yang dikunci, mis. `v21.0`. */
-  metaGraphVersion: string | null;
+  /**
+   * Versi Graph API Meta yang dikunci, mis. `v26.0`. Kosong di .env = `DEFAULT_META_GRAPH_VERSION`
+   * (`@balesin/core`). Dinaikkan dengan sengaja, tidak pernah otomatis.
+   */
+  metaGraphVersion: string;
+  /**
+   * HANYA development/test: alamat server Meta tiruan di mesin sendiri (mis. `http://127.0.0.1:4010`)
+   * supaya wizard bisa dicoba tanpa kredensial Meta sungguhan. Production menolak start bila diisi;
+   * tidak bisa diubah dari UI. `null` = graph.facebook.com.
+   */
+  metaGraphBaseUrl: string | null;
   mediaDir: string;
   /** IP/CIDR privat yang boleh dituju webhook keluar (SECURITY.md §6). */
   outboundPrivateAllowlist: string[];
@@ -89,6 +100,28 @@ function parseTrustProxy(production: boolean) {
     const proxies = envParse.list(envParse.ipOrCidr)(raw);
     if (production && proxies?.some((proxy) => proxy.endsWith('/0'))) return undefined;
     return proxies;
+  };
+}
+
+/**
+ * `META_GRAPH_BASE_URL` (server Meta tiruan): hanya di luar production, dan hanya alamat loopback
+ * (localhost/127.0.0.1/[::1]) tanpa kredensial, path, atau query — tidak bisa dipakai membelokkan
+ * token Meta ke server lain.
+ */
+function parseMetaGraphBaseUrl(production: boolean) {
+  return (raw: string): string | undefined => {
+    if (production) return undefined;
+    try {
+      const url = new URL(raw);
+      const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+      const bare =
+        !url.username && !url.password && !url.search && !url.hash && url.pathname === '/';
+      return (url.protocol === 'http:' || url.protocol === 'https:') && loopback && bare
+        ? url.origin
+        : undefined;
+    } catch {
+      return undefined;
+    }
   };
 }
 
@@ -123,9 +156,16 @@ function apiEnvSchema(production: boolean) {
     ),
     SETUP_TOKEN: envOptional(envParse.strongSecret(32), STRONG_SECRET_HINT),
     ...smtpFallbackEnvShape(),
-    META_GRAPH_VERSION: envOptional(
-      (raw) => (/^v\d{1,3}\.\d{1,2}$/.test(raw) ? raw : undefined),
-      'harus berformat vNN.0, contoh: v21.0',
+    META_GRAPH_VERSION: envDefault(
+      (raw) => (META_GRAPH_VERSION_PATTERN.test(raw) ? raw : undefined),
+      DEFAULT_META_GRAPH_VERSION,
+      `harus berformat vNN.0, contoh: ${DEFAULT_META_GRAPH_VERSION}`,
+    ),
+    META_GRAPH_BASE_URL: envOptional(
+      parseMetaGraphBaseUrl(production),
+      production
+        ? 'hanya untuk development/test (server Meta tiruan) — kosongkan di production'
+        : 'harus berupa alamat http(s) di mesin ini tanpa path, contoh: http://127.0.0.1:4010',
     ),
     MEDIA_DIR: envDefault(envParse.text, './media', 'harus berupa path folder'),
     OUTBOUND_PRIVATE_ALLOWLIST: envDefault(envParse.list(envParse.ipOrCidr), [], IP_LIST_MESSAGE),
@@ -161,6 +201,7 @@ export function loadConfig(source: EnvSource): ApiConfig {
     smtpFallback,
     smtpAllowedPorts: allowedSmtpPorts(isProduction),
     metaGraphVersion: env.META_GRAPH_VERSION,
+    metaGraphBaseUrl: env.META_GRAPH_BASE_URL,
     mediaDir: env.MEDIA_DIR,
     outboundPrivateAllowlist: env.OUTBOUND_PRIVATE_ALLOWLIST,
   };

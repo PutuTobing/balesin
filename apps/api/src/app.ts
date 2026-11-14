@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import {
+  createMetaGraphClient,
   createSecretBox,
   deriveKey,
   plaintextLoginPolicy,
@@ -8,6 +9,7 @@ import {
   Secret,
   type HostLookup,
   type Logger,
+  type MetaGraphClientOptions,
   type Redis,
   type SmtpTimeouts,
 } from '@balesin/core';
@@ -53,6 +55,8 @@ import { createInvitationService } from './modules/invitations/invitations.servi
 import { passwordResetRoutes } from './modules/password-reset/password-reset.routes';
 import { createPasswordResetService } from './modules/password-reset/password-reset.service';
 import { auditRoutes } from './modules/audit/audit.routes';
+import { channelsRoutes } from './modules/channels/channels.routes';
+import { createChannelsService } from './modules/channels/channels.service';
 import { createAuditService } from './modules/audit/audit.service';
 import { sessionsRoutes } from './modules/sessions/sessions.routes';
 import { createOwnSessionsService } from './modules/sessions/sessions.service';
@@ -75,6 +79,9 @@ export type AppConfig = Pick<
   | 'masterKey'
   | 'smtpFallback'
   | 'smtpAllowedPorts'
+  | 'apiUrl'
+  | 'metaGraphVersion'
+  | 'metaGraphBaseUrl'
 >;
 
 export interface AppDeps {
@@ -96,6 +103,8 @@ export interface AppDeps {
     mailLookup?: HostLookup;
     mailDns?: MailDns;
     smtpTimeouts?: Partial<SmtpTimeouts>;
+    /** Klien Graph API (mis. `sleep` instan supaya backoff tidak memperlambat tes). */
+    meta?: Partial<Omit<MetaGraphClientOptions, 'version' | 'baseUrl'>>;
   };
 }
 
@@ -256,6 +265,25 @@ export async function buildApp(deps: AppDeps) {
   });
   const audit = createAuditService({ db, limiter });
 
+  // Server Meta tiruan hanya untuk development/test (config sudah menolaknya di production; ini
+  // lapis kedua bila AppConfig dirakit di luar `loadConfig`).
+  if (config.isProduction && config.metaGraphBaseUrl !== null) {
+    throw new Error('META_GRAPH_BASE_URL tidak boleh diisi di production');
+  }
+  const meta = createMetaGraphClient({
+    version: config.metaGraphVersion,
+    baseUrl: config.metaGraphBaseUrl,
+    logger: app.log,
+    ...deps.overrides?.meta,
+  });
+  const channels = createChannelsService({
+    db,
+    secretBox,
+    meta,
+    twoFactor,
+    apiUrl: config.apiUrl,
+  });
+
   // Pekerjaan latar belakang (mis. minta atur ulang password) ditunggu selesai saat ditutup.
   app.decorate('backgroundTasks', background);
   app.addHook('onClose', () => background.drain());
@@ -303,6 +331,7 @@ export async function buildApp(deps: AppDeps) {
   });
   await app.register(teamRoutes, { team, cookieSecure: config.cookieSecure });
   await app.register(auditRoutes, { audit });
+  await app.register(channelsRoutes, { channels, limiter, cookieSecure: config.cookieSecure });
 
   // Harus setelah SEMUA rute modul didaftarkan (lihat http/method-not-allowed.ts).
   registerMethodNotAllowedRoutes();

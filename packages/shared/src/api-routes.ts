@@ -129,6 +129,30 @@ export const API_ROUTES = {
     /** GET — pratinjau template email (`:template` = `EMAIL_TEMPLATE_IDS`). */
     emailTemplatePreview: `${API_PREFIX}/settings/email/templates/:template/preview`,
   },
+  /**
+   * Channel (docs/KONTRAK-API-CHANNEL.md). `list` = izin `inbox.view` (semua peran, nama saja);
+   * sisanya `channels.manage` (Owner/Admin). Path ber-`:channelId` disusun dengan `apiPath`.
+   */
+  channels: {
+    /** GET — ringkasan channel untuk inbox/filter (tanpa ID Meta maupun petunjuk rahasia). */
+    list: `${API_PREFIX}/channels`,
+    /** GET — semua channel + status; POST — buat channel (wizard). */
+    settings: `${API_PREFIX}/settings/channels`,
+    /** GET — satu channel; PATCH — ubah; DELETE — hapus (+ konfirmasi ulang identitas). */
+    channel: `${API_PREFIX}/settings/channels/:channelId`,
+    /** POST — nonaktifkan. */
+    disable: `${API_PREFIX}/settings/channels/:channelId/disable`,
+    /** POST — aktifkan kembali. */
+    enable: `${API_PREFIX}/settings/channels/:channelId/enable`,
+    /** POST — tes koneksi ke Graph API (memperbarui status + data nomor). */
+    test: `${API_PREFIX}/settings/channels/:channelId/test`,
+    /** GET — URL webhook + verify token. */
+    webhook: `${API_PREFIX}/settings/channels/:channelId/webhook`,
+    /** POST — buat ulang verify token. */
+    rotateVerifyToken: `${API_PREFIX}/settings/channels/:channelId/webhook/verify-token`,
+    /** GET — profil bisnis dari Meta; PUT — ubah profil bisnis. */
+    businessProfile: `${API_PREFIX}/settings/channels/:channelId/business-profile`,
+  },
 } as const;
 
 /**

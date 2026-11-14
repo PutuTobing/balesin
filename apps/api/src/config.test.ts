@@ -2,7 +2,12 @@ import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 
-import { EnvValidationError, REDACTED, type EnvSource } from '@balesin/core';
+import {
+  DEFAULT_META_GRAPH_VERSION,
+  EnvValidationError,
+  REDACTED,
+  type EnvSource,
+} from '@balesin/core';
 import { describe, expect, it } from 'vitest';
 
 import { loadConfig } from './config';
@@ -72,7 +77,8 @@ describe('loadConfig', () => {
       sessionSecret: null,
       setupToken: null,
       smtpFallback: null,
-      metaGraphVersion: null,
+      metaGraphVersion: DEFAULT_META_GRAPH_VERSION,
+      metaGraphBaseUrl: null,
       mediaDir: './media',
       outboundPrivateAllowlist: [],
     });
@@ -300,6 +306,53 @@ describe('loadConfig', () => {
         }
       },
     );
+  });
+
+  describe('Meta Graph API', () => {
+    it('versi kosong = bawaan yang tercatat; versi diisi = dipakai apa adanya', () => {
+      expect(loadConfig(developmentEnv).metaGraphVersion).toBe(DEFAULT_META_GRAPH_VERSION);
+      expect(DEFAULT_META_GRAPH_VERSION).toMatch(/^v\d+\.0$/);
+      expect(loadConfig({ ...developmentEnv, META_GRAPH_VERSION: 'v27.0' }).metaGraphVersion).toBe(
+        'v27.0',
+      );
+    });
+
+    it('server Meta tiruan hanya boleh di loopback, dan hanya di luar production', () => {
+      expect(
+        loadConfig({ ...developmentEnv, META_GRAPH_BASE_URL: 'http://127.0.0.1:4010' })
+          .metaGraphBaseUrl,
+      ).toBe('http://127.0.0.1:4010');
+      expect(
+        loadConfig({ ...developmentEnv, META_GRAPH_BASE_URL: 'http://localhost:4010/' })
+          .metaGraphBaseUrl,
+      ).toBe('http://localhost:4010');
+
+      for (const value of [
+        'http://graph.evil.example',
+        'http://10.0.0.5:4010',
+        'http://127.0.0.1:4010/v26.0',
+        'http://user:pass@127.0.0.1:4010',
+        'ftp://127.0.0.1',
+        'bukan-url',
+      ]) {
+        const error = captureError({ ...developmentEnv, META_GRAPH_BASE_URL: value });
+        expect(
+          error.problems.map((problem) => problem.variable),
+          value,
+        ).toEqual(['META_GRAPH_BASE_URL']);
+      }
+
+      const production = captureError({
+        ...productionEnv,
+        META_GRAPH_BASE_URL: 'http://127.0.0.1:4010',
+      });
+      expect(production.problems).toEqual([
+        {
+          variable: 'META_GRAPH_BASE_URL',
+          message: 'hanya untuk development/test (server Meta tiruan) — kosongkan di production',
+        },
+      ]);
+    });
   });
 
   it('SMTP cadangan: SMTP_FROM wajib bila SMTP_HOST diisi', () => {

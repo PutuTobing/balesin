@@ -9,6 +9,7 @@ export * from './env';
 export * from './errors';
 export * from './logger';
 export * from './mail';
+export * from './meta';
 export * from './queues';
 export * from './redact';
 export * from './redis';

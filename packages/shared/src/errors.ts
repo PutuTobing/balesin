@@ -27,6 +27,11 @@ export const ERROR_CODES = [
   'UNSUPPORTED_MEDIA_TYPE',
   'RATE_LIMITED',
   'INTERNAL_ERROR',
+  /**
+   * Graph API Meta menolak/gagal menjawab permintaan yang diteruskan server (mis. baca/ubah profil
+   * bisnis). `message` menjelaskan penyebab + langkah perbaikan (`META_ERROR_MESSAGES`).
+   */
+  'META_REQUEST_FAILED',
   'SERVICE_UNAVAILABLE',
 ] as const;
 
@@ -52,6 +57,7 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
   UNSUPPORTED_MEDIA_TYPE: 415,
   RATE_LIMITED: 429,
   INTERNAL_ERROR: 500,
+  META_REQUEST_FAILED: 502,
   SERVICE_UNAVAILABLE: 503,
 };
 
@@ -84,6 +90,7 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   UNSUPPORTED_MEDIA_TYPE: 'Format data yang dikirim tidak didukung.',
   RATE_LIMITED: 'Terlalu banyak permintaan. Coba lagi beberapa saat lagi.',
   INTERNAL_ERROR: 'Terjadi kesalahan di server. Coba lagi beberapa saat lagi.',
+  META_REQUEST_FAILED: 'Permintaan ke Meta gagal. Coba lagi beberapa saat lagi.',
   SERVICE_UNAVAILABLE: 'Layanan sedang tidak tersedia. Coba lagi beberapa saat lagi.',
 };
 

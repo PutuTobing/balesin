@@ -57,6 +57,13 @@
       "when": 1794635474574,
       "tag": "0007_batas_daftar_2fa_isi_awal",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794640488944,
+      "tag": "0008_channel_whatsapp_cloud_api",
+      "breakpoints": true
     }
   ]
 }

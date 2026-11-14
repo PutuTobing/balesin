@@ -110,6 +110,7 @@ Tugas BELUM selesai sampai semua ini benar:
 | `docs/PENGATURAN-UI.md` | Aturan wajib: semua koneksi/konfigurasi diisi lewat UI, bukan kode/`.env` |
 | `docs/API-N8N.md` | API & webhook, termasuk mode kompatibel MobiChat |
 | `docs/KONTRAK-API-AUTH.md` | Kontrak API setup, login, branding, email pengirim (Fase 1) |
+| `docs/KONTRAK-API-CHANNEL.md` | Kontrak API channel WhatsApp (wizard, tes koneksi, profil bisnis) |
 | `docs/SETUP-META.md` | Teks wizard koneksi WhatsApp (dipakai di UI) |
 | `docs/BRANDING-PROMPTS.md` | Prompt gambar Kak Sky & logo |
 | `docs/KONTEKS-SKYTECH.md` | Konteks operasional Sky Tech |
