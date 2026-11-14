@@ -99,7 +99,10 @@ describe('bawaan tolak: celah pendaftaran rute', () => {
     await expect(harness.app.ready()).rejects.toThrow(/akses yang tidak dikenal/);
   });
 
-  it('rute modul yang juga menerima OPTIONS: handler tidak pernah jalan tanpa sesi/izin', async () => {
+  // Info 1 ditutup: rute modul yang menerima OPTIONS kini membuat aplikasi MENOLAK START (lebih kuat
+  // dari "handler tidak pernah jalan" yang sebelumnya bergantung pada plugin CORS). Asersi lama tidak
+  // bisa dipertahankan karena `inject` pertama sudah gagal di `ready()`.
+  it('rute modul yang juga menerima OPTIONS: aplikasi menolak start, handler tidak pernah jalan', async () => {
     let handled = 0;
     await harness.rebuild();
     harness.app.route({
@@ -112,18 +115,13 @@ describe('bawaan tolak: celah pendaftaran rute', () => {
         return { ok: true };
       },
     });
-    const cs = await signIn('cs');
-    const variants: Array<Record<string, string>> = [
-      {},
-      { origin: TEST_APP_ORIGIN },
-      { cookie: cs.signed.cookie, origin: TEST_APP_ORIGIN },
-      { cookie: cs.signed.cookie, origin: TEST_APP_ORIGIN, 'access-control-request-method': 'GET' },
-      { origin: 'https://jahat.test', 'access-control-request-method': 'GET' },
-    ];
-    for (const headers of variants) {
-      const response = await harness.app.inject({ method: 'OPTIONS', url: '/__tes/opsi', headers });
-      expect(response.statusCode, JSON.stringify(headers)).not.toBe(200);
-    }
+    await expect(
+      harness.app.inject({
+        method: 'OPTIONS',
+        url: '/__tes/opsi',
+        headers: { origin: TEST_APP_ORIGIN, 'access-control-request-method': 'GET' },
+      }),
+    ).rejects.toThrow(/menerima OPTIONS/);
     expect(handled).toBe(0);
   });
 });
@@ -141,15 +139,12 @@ describe('matriks: pencarian izin tidak boleh tertipu kunci prototipe', () => {
   // R2: `ROLE_PERMISSIONS[role]` adalah objek biasa (`{}`), jadi kunci warisan Object.prototype
   // dianggap izin yang dipegang. Hanya terjangkau bila string di luar PERMISSIONS lolos ke
   // `hasPermission`/`permissionScope` (mis. `as Permission`, JSON, atau kode JS polos).
-  it.fails(
-    'hasPermission/permissionScope: kunci prototipe ("toString", "constructor") = tidak boleh',
-    () => {
-      for (const key of ['toString', 'constructor', '__proto__', 'hasOwnProperty']) {
-        expect(hasPermission('cs', key as Permission), key).toBe(false);
-        expect(permissionScope('teknisi', key as Permission), key).toBeNull();
-      }
-    },
-  );
+  it('hasPermission/permissionScope: kunci prototipe ("toString", "constructor") = tidak boleh', () => {
+    for (const key of ['toString', 'constructor', '__proto__', 'hasOwnProperty']) {
+      expect(hasPermission('cs', key as Permission), key).toBe(false);
+      expect(permissionScope('teknisi', key as Permission), key).toBeNull();
+    }
+  });
 });
 
 // ── Sesi & perubahan peran ──────────────────────────────────────────────────
@@ -230,7 +225,7 @@ describe('Admin dan email pengirim (settings.email.manage)', () => {
   // undangan Admin buatan Owner, pemberitahuan 2FA/kode cadangan ke Owner) lewat server miliknya,
   // tanpa Owner tahu. Minimal: Owner diberi tahu setiap kali sambungan/pengirim diubah orang lain.
   // Bila perbaikannya memakai jenis job baru, sesuaikan sumber yang diperiksa — bukan intinya.
-  it.fails('Admin mengubah sambungan SMTP: Owner menerima pemberitahuan', async () => {
+  it('Admin mengubah sambungan SMTP: Owner menerima pemberitahuan', async () => {
     const first = await call(
       harness.app,
       'PUT',
@@ -255,7 +250,9 @@ describe('Admin dan email pengirim (settings.email.manage)', () => {
 
     await harness.app.backgroundTasks.drain();
     // Pemberitahuan "2FA Admin aktif" dari login Admin di atas tidak dihitung.
+    // Perbaikan S1 memakai job baru `email-settings-changed` (satu per Owner) → sumbernya ditambah.
     const notices = JSON.stringify([
+      ...harness.emailSettingsNotices,
       ...harness.securityNotices,
       ...harness.adminNotices.filter((notice) => notice.event !== 'two_factor_enabled'),
     ]);
@@ -268,7 +265,7 @@ describe('Admin dan email pengirim (settings.email.manage)', () => {
 describe('audit penolakan (R8)', () => {
   // R1: penolakan aturan rinci modul (Admin mencoba membuat undangan Admin = upaya menaikkan
   // wewenang) tidak meninggalkan jejak; penolakan izin rute meninggalkan `auth.access.denied`.
-  it.fails('Admin mencoba mengundang Admin: 403 DAN tercatat di audit', async () => {
+  it('Admin mencoba mengundang Admin: 403 DAN tercatat di audit', async () => {
     const admin = await signIn('admin');
     const response = await call(
       harness.app,

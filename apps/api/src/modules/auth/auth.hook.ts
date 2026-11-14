@@ -5,7 +5,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { clientInfo } from '../../http/client-info';
 import { clearedSessionCookie, readSessionToken } from '../../http/cookies';
 import { allowsTwoFactorEnrollment } from '../../http/route-access';
-import type { AccessDeniedRecorder } from './access-denied';
+import { fetchSiteOf, type AccessDeniedRecorder } from './access-denied';
 import type { CsrfProtection } from './csrf';
 import type { AuthContext, SessionService } from './session.service';
 
@@ -120,6 +120,7 @@ export function registerAuthHook(app: FastifyInstance, options: AuthHookOptions)
         method: request.method,
         route: request.routeOptions.url ?? '',
         client: clientInfo(request),
+        fetchSite: fetchSiteOf(request),
       });
       throw new AppError('FORBIDDEN');
     }

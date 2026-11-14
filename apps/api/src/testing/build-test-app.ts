@@ -2,6 +2,7 @@ import {
   Secret,
   type AccountLockedEmailPayload,
   type AccountTokenEmailPayload,
+  type EmailSettingsChangedEmailPayload,
   type InvitationEmailPayload,
   type SecurityNoticeAdminEmailPayload,
   type SecurityNoticeEmailPayload,
@@ -44,6 +45,8 @@ export interface TestApp {
   invitationJobs: InvitationEmailPayload[];
   /** Job email atur ulang password / verifikasi email. */
   accountTokenJobs: AccountTokenEmailPayload[];
+  /** Pemberitahuan ke Owner: email pengirim diubah pengguna lain. */
+  emailSettingsNotices: EmailSettingsChangedEmailPayload[];
 }
 
 const healthy = () => Promise.resolve();
@@ -95,6 +98,7 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<TestAp
   const adminNotices: SecurityNoticeAdminEmailPayload[] = [];
   const invitationJobs: InvitationEmailPayload[] = [];
   const accountTokenJobs: AccountTokenEmailPayload[] = [];
+  const emailSettingsNotices: EmailSettingsChangedEmailPayload[] = [];
   const record =
     <T>(list: T[]) =>
     (payload: T) => {
@@ -118,6 +122,7 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<TestAp
       securityNoticeAdmin: record(adminNotices),
       invitation: record(invitationJobs),
       accountToken: record(accountTokenJobs),
+      emailSettingsChanged: record(emailSettingsNotices),
     },
     overrides: options.overrides,
   });
@@ -129,6 +134,7 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<TestAp
     adminNotices,
     invitationJobs,
     accountTokenJobs,
+    emailSettingsNotices,
   };
 }
 

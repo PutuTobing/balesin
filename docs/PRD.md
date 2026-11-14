@@ -162,12 +162,13 @@ Reviews (tidak dibuat).
 | Undang/nonaktifkan pengguna | ✅ | ✅ | – | – | – |
 | API key & webhook | ✅ | ✅ | – | – | – |
 | Email pengirim & template email (PENGATURAN-UI) | ✅ | ✅ | – | – | – |
-| Lanjutkan pengiriman setelah rem darurat | ✅ | ✅ | – | – | – |
+| Atur batas kirim, ambang persetujuan broadcast, rem darurat, alarm biaya (diaudit + Owner diberi tahu) | ✅ | ✅ | – | – | – |
 | Buat broadcast | ✅ | ✅ | ✅ | – | – |
 | Setujui broadcast > ambang | ✅ | ✅ | – | – | – |
 | Kelola template (template Meta & template percakapan/quick reply) | ✅ | ✅ | ✅ | – | – |
 | Lihat semua percakapan | ✅ | ✅ | ✅ | ✅ | – |
-| Balas percakapan | ✅ | ✅ | ✅ | ✅ | hanya yang di-assign / terkait tiketnya |
+| Balas percakapan yang sudah ada | ✅ | ✅ | ✅ | ✅ | hanya yang di-assign / terkait tiketnya |
+| Mulai percakapan / kirim template ke nomor baru (batas harian per pengguna) | ✅ | ✅ | ✅ | – | – |
 | Assign / alihkan / ambil chat | ✅ | ✅ | ✅ | ✅ | hanya mengembalikan chat miliknya ke antrian |
 | Lihat & ubah kontak | ✅ | ✅ | ✅ | ✅ | lihat kontak terkait tugasnya |
 | Impor/ekspor kontak massal | ✅ | ✅ | ✅ | – | – |
@@ -177,7 +178,7 @@ Reviews (tidak dibuat).
 | Lihat laporan (termasuk biaya pesan Meta tingkat organisasi) | ✅ | ✅ | ✅ | milik sendiri | milik sendiri |
 | Audit log | ✅ | ✅ | – | – | – |
 
-Sumber kebenaran teknisnya: `packages/shared/src/permissions.ts` (izin bernama + cakupan all/assigned/own), ditegakkan di server untuk setiap rute. "Akses departemen sendiri" (§3.6) adalah penyempitan cakupan per pengguna, bukan peran baru.
+Sumber kebenaran teknisnya: `packages/shared/src/permissions.ts` (izin bernama + cakupan all/assigned/own), ditegakkan di server untuk setiap rute. "Akses departemen sendiri" (§3.6) adalah penyempitan cakupan per pengguna, bukan peran baru. Admin boleh mengubah email pengirim, tetapi setiap perubahan jalur kirim oleh selain Owner selalu diberitahukan ke semua Owner lewat pengaturan lama.
 
 Teknisi membalas **dari nomor perusahaan yang sama**; pesan diberi penanda nama
 pengirim internal (opsional ditampilkan ke pelanggan sebagai "— Teknisi Arya").

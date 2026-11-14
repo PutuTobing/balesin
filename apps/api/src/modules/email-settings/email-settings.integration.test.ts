@@ -2,7 +2,7 @@ import { createServer, type AddressInfo, type Server } from 'node:net';
 
 import { Secret } from '@balesin/core';
 import { TEST_MAIL, waitForCapturedMail } from '@balesin/core/testing';
-import { auditLogs, emailSettings, organizations } from '@balesin/db';
+import { auditLogs, emailSettings, emailSettingsChangeNotices, organizations } from '@balesin/db';
 import { insertUser, uniqueSuffix } from '@balesin/db/testing';
 import {
   API_ROUTES,
@@ -676,6 +676,121 @@ describe('cadangan SMTP dari .env', () => {
 
     await save(mailpitSettings());
     expect((await view()).source).toBe('database');
+    await harness.rebuild();
+  });
+});
+
+describe('pemberitahuan ke Owner saat email pengirim diubah pengguna lain (review RBAC S1)', () => {
+  async function signInAdmin() {
+    const password = 'sandi-uji-admin-pengirim-1';
+    const user = await insertUser(harness.db, owner.session.organization.id, {
+      role: 'admin',
+      email: 'admin.pengirim@majujaya.test',
+      passwordHash: await hasher.hash(password),
+    });
+    return { user, signed: await login(harness.app, { email: user.email, password }) };
+  }
+  const notices = () => harness.db.select().from(emailSettingsChangeNotices);
+
+  it('Admin mengganti server: satu job per Owner + salinan pengaturan LAMA (teks sandi apa adanya)', async () => {
+    expect((await save(mailpitSettings())).statusCode).toBe(200);
+    const before = await storedRow();
+    const admin = await signInAdmin();
+    harness.emailSettingsNotices.length = 0;
+
+    const changed = await save(
+      mailpitSettings({ host: '127.0.0.2', password: 'sandi-smtp-penyerang-99' }),
+      admin.signed,
+    );
+
+    expect(changed.statusCode).toBe(200);
+    const [notice, ...others] = await notices();
+    expect(others).toEqual([]);
+    expect(harness.emailSettingsNotices).toEqual([
+      {
+        organizationId: owner.session.organization.id,
+        recipientUserId: owner.session.user.id,
+        noticeId: notice?.id,
+      },
+    ]);
+    expect(notice).toMatchObject({
+      actorUserId: admin.user.id,
+      previousHost: before?.host,
+      previousPort: before?.port,
+      previousSecurity: before?.security,
+      previousUsername: before?.username,
+      previousFromAddress: before?.fromAddress,
+      previousPasswordEncrypted: before?.passwordEncrypted,
+      newHost: '127.0.0.2',
+      pendingDeliveries: 1,
+    });
+    expect((await storedRow())?.host).toBe('127.0.0.2');
+    const [audit] = await harness.db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.id, notice?.auditLogId ?? ''));
+    expect(audit?.action).toBe('settings.email.updated');
+    expect(audit?.metadata).toMatchObject({ ownersNotified: true, previousHost: before?.host });
+    expect(JSON.stringify(harness.emailSettingsNotices)).not.toContain('sandi-smtp');
+  });
+
+  it('Admin mengubah alamat pengirim / balas-ke juga memicu; nama pengirim saja tidak', async () => {
+    await save(mailpitSettings());
+    const admin = await signInAdmin();
+    const { password: _password, ...keep } = mailpitSettings();
+
+    await save({ ...keep, fromName: 'Nama Baru Saja' }, admin.signed);
+    expect(await notices()).toHaveLength(0);
+    await save({ ...keep, fromName: 'Nama Baru Saja', replyTo: 'balas@lain.test' }, admin.signed);
+    await save(
+      {
+        ...keep,
+        fromName: 'Nama Baru Saja',
+        replyTo: 'balas@lain.test',
+        fromAddress: 'x@lain.test',
+      },
+      admin.signed,
+    );
+    expect(await notices()).toHaveLength(2);
+  });
+
+  it('Owner sendiri yang mengubah: tidak ada pemberitahuan', async () => {
+    await save(mailpitSettings());
+    await save(mailpitSettings({ host: '127.0.0.3' }));
+    expect(await notices()).toEqual([]);
+    expect(harness.emailSettingsNotices).toEqual([]);
+  });
+
+  it('Admin mengatur email pertama kali: pemberitahuan tanpa salinan lama (dikirim lewat pengaturan baru)', async () => {
+    const admin = await signInAdmin();
+    expect((await save(mailpitSettings(), admin.signed)).statusCode).toBe(200);
+    const [notice] = await notices();
+    expect(notice?.previousHost).toBeNull();
+    expect(notice?.previousPasswordEncrypted).toBeNull();
+    expect(harness.emailSettingsNotices).toHaveLength(1);
+  });
+
+  it('pemberitahuan tidak bisa diantrekan: perubahan BATAL (503), pengaturan lama tetap', async () => {
+    await save(mailpitSettings());
+    const before = await storedRow();
+    const admin = await signInAdmin();
+    await harness.rebuild({
+      notifier: {
+        accountLocked: () => Promise.resolve(),
+        securityNotice: () => Promise.resolve(),
+        securityNoticeAdmin: () => Promise.resolve(),
+        invitation: () => Promise.resolve(),
+        accountToken: () => Promise.resolve(),
+        emailSettingsChanged: () => Promise.reject(new Error('antrian mati')),
+      },
+    });
+
+    const response = await save(mailpitSettings({ host: '127.0.0.2' }), admin.signed);
+
+    expect(response.statusCode).toBe(503);
+    expect(errorOf(response).message).toContain('pemberitahuan ke Owner');
+    expect((await storedRow())?.host).toBe(before?.host);
+    expect(await notices()).toEqual([]);
     await harness.rebuild();
   });
 });

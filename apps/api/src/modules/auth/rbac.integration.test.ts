@@ -120,6 +120,7 @@ describe('audit penolakan izin (R8)', () => {
       route: '/api/v1/invitations/:invitationId',
       role: 'cs',
       sessionRef: expect.any(String) as string,
+      fetchSite: null,
     });
     const stored = JSON.stringify(row);
     expect(stored).not.toContain(secretish);
@@ -157,6 +158,79 @@ describe('audit penolakan izin (R8)', () => {
     expect(await expireDeniedFlags(cs.user.id)).toBe(2);
     await call(harness.app, 'GET', API_ROUTES.settings.email, undefined, as(cs.signed));
     expect(await deniedRows(cs.user.id)).toHaveLength(3);
+  });
+
+  it('Sec-Fetch-Site dicatat (membedakan navigasi lintas situs yang membawa cookie korban); nilai asing → "lainnya"', async () => {
+    const { user, signed } = await signIn('cs');
+    await call(harness.app, 'GET', API_ROUTES.settings.email, undefined, {
+      ...as(signed),
+      headers: { 'sec-fetch-site': 'cross-site' },
+    });
+    await call(harness.app, 'GET', API_ROUTES.invitations.collection, undefined, {
+      ...as(signed),
+      headers: { 'sec-fetch-site': '<script>' },
+    });
+    const rows = await deniedRows(user.id);
+    expect(rows.map((row) => [row.metadata.permission, row.metadata.fetchSite])).toEqual([
+      ['settings.email.manage', 'cross-site'],
+      ['team.invite', 'lainnya'],
+    ]);
+  });
+
+  it('aturan turunan (R1): Admin mengelola undangan Admin → 403 + audit "rule", dibatasi per aturan', async () => {
+    const admin = await signIn('admin');
+    const ownerInvite = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.invitations.collection,
+      { email: 'calon-admin@majujaya.test', role: 'admin' },
+      as(owner),
+    );
+    expect(ownerInvite.statusCode).toBe(201);
+    const invitationId = ownerInvite.json<{ invitation: { id: string } }>().invitation.id;
+
+    const attempts = [
+      await call(
+        harness.app,
+        'POST',
+        API_ROUTES.invitations.collection,
+        { email: 'admin-kedua@majujaya.test', role: 'admin' },
+        as(admin.signed),
+      ),
+      await call(
+        harness.app,
+        'POST',
+        apiPath(API_ROUTES.invitations.resend, { invitationId }),
+        undefined,
+        as(admin.signed),
+      ),
+      await call(
+        harness.app,
+        'DELETE',
+        apiPath(API_ROUTES.invitations.revoke, { invitationId }),
+        undefined,
+        as(admin.signed),
+      ),
+    ];
+    for (const response of attempts) {
+      expect(response.statusCode).toBe(403);
+      // Pesan khusus aturan tetap sama seperti sebelumnya.
+      expect(errorEnvelopeSchema.parse(response.json()).error.message).toContain(
+        'Undangan Admin hanya bisa dibuat Owner',
+      );
+    }
+    const rows = await deniedRows(admin.user.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.targetType).toBe('rule');
+    expect(rows[0]?.targetId).toBe('team.invite.role');
+    expect(rows[0]?.metadata).toEqual({
+      rule: 'team.invite.role',
+      operation: 'create',
+      targetRole: 'admin',
+      role: 'admin',
+      sessionRef: expect.any(String) as string,
+    });
+    expect(JSON.stringify(rows)).not.toContain('admin-kedua@majujaya.test');
   });
 
   it('penolakan yang BUKAN karena izin tidak dicatat sebagai access.denied', async () => {

@@ -6,6 +6,7 @@
 export * from './account-tokens';
 export * from './audit-logs';
 export * from './email-settings';
+export * from './email-settings-change-notices';
 export * from './installation';
 export * from './invitations';
 export * from './organization-logos';

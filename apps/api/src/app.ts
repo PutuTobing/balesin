@@ -173,6 +173,7 @@ export async function buildApp(deps: AppDeps) {
     lookup: deps.overrides?.mailLookup,
     dns: deps.overrides?.mailDns,
     timeouts: deps.overrides?.smtpTimeouts,
+    notifier: deps.notifier,
   });
   const twoFactor = createTwoFactorService({
     db,
@@ -206,6 +207,7 @@ export async function buildApp(deps: AppDeps) {
     }),
   });
 
+  const accessDenied = createAccessDeniedRecorder({ db, limiter, logger: app.log });
   const delivery = createTokenDelivery({ secretBox, fallback: config.smtpFallback });
   const background = createBackgroundTasks();
   const invitations = createInvitationService({
@@ -217,6 +219,7 @@ export async function buildApp(deps: AppDeps) {
     sessions,
     devices,
     delivery,
+    accessDenied,
   });
   const passwordReset = createPasswordResetService({
     db,
@@ -253,7 +256,7 @@ export async function buildApp(deps: AppDeps) {
     cookieSecure: config.cookieSecure,
     sessions,
     csrf,
-    accessDenied: createAccessDeniedRecorder({ db, limiter, logger: app.log }),
+    accessDenied,
   });
 
   // ── Rute ──────────────────────────────────────────────────────────────────

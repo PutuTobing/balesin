@@ -39,6 +39,7 @@ describe('migrasi dari nol', () => {
       'account_tokens',
       'audit_logs',
       'email_settings',
+      'email_settings_change_notices',
       'installation',
       'organization_logos',
       'organizations',

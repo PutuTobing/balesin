@@ -124,8 +124,8 @@ function hasResponseSchema(route: RouteDefinition): boolean {
  * (Sengaja tidak melempar langsung di hook `onRoute`: lemparan sinkron di dalam plugin Fastify
  * menjadi galat tak tertangani, bukan kegagalan start yang rapi.)
  *
- * Panggil setelah plugin CORS (rute `OPTIONS *` miliknya tidak ikut diperiksa) dan sebelum
- * rute pertama aplikasi. Mengembalikan daftar (hidup) semua rute yang lolos pemeriksaan.
+ * Panggil setelah plugin CORS (rute `OPTIONS *` miliknya didaftarkan lebih dulu, jadi tidak ikut
+ * diperiksa) dan sebelum rute pertama aplikasi. Rute apa pun yang memuat OPTIONS sesudahnya ditolak. Mengembalikan daftar (hidup) semua rute yang lolos pemeriksaan.
  */
 export function enforceRouteDeclarations(
   app: Pick<FastifyInstance, 'addHook'>,
@@ -135,10 +135,17 @@ export function enforceRouteDeclarations(
 
   app.addHook('onRoute', (route: RouteDefinition) => {
     const methods = [route.method].flat().map((method) => method.toUpperCase());
-    // Preflight CORS: tidak membawa kredensial dan tidak menjalankan handler aplikasi.
-    if (methods.every((method) => method === 'OPTIONS')) return;
-
     const label = `${methods.join('/')} ${route.url}`;
+    // OPTIONS milik plugin CORS (`OPTIONS *`, didaftarkan SEBELUM penjaga ini) tidak pernah sampai
+    // ke sini. Rute aplikasi yang menerima OPTIONS ditolak: hook auth melewati OPTIONS (preflight),
+    // jadi handlernya hanya terlindung perilaku plugin pihak ketiga (review RBAC, Info 1).
+    if (methods.includes('OPTIONS')) {
+      problems.push(
+        `${label} menerima OPTIONS: rute aplikasi tidak boleh menangani OPTIONS (preflight milik CORS)`,
+      );
+      return;
+    }
+
     const access = route.config?.access;
     if (!access) {
       problems.push(

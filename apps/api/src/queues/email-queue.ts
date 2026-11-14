@@ -5,12 +5,14 @@ import {
   QUEUE_PREFIX,
   accountLockedEmailPayloadSchema,
   accountTokenEmailPayloadSchema,
+  emailSettingsChangedEmailPayloadSchema,
   invitationEmailPayloadSchema,
   securityNoticeAdminEmailPayloadSchema,
   securityNoticeEmailPayloadSchema,
   withTimeout,
   type AccountLockedEmailPayload,
   type AccountTokenEmailPayload,
+  type EmailSettingsChangedEmailPayload,
   type InvitationEmailPayload,
   type Redis,
   type SecurityNoticeAdminEmailPayload,
@@ -35,6 +37,8 @@ export interface EmailNotifier {
   invitation(payload: InvitationEmailPayload): Promise<void>;
   /** Antrekan tautan atur ulang password / verifikasi email. */
   accountToken(payload: AccountTokenEmailPayload): Promise<void>;
+  /** Antrekan pemberitahuan ke SATU Owner: email pengirim diubah pengguna lain. */
+  emailSettingsChanged(payload: EmailSettingsChangedEmailPayload): Promise<void>;
 }
 
 export interface EmailQueue {
@@ -79,6 +83,10 @@ export function createEmailQueue(options: EmailQueueOptions): EmailQueue {
       ),
       invitation: enqueue(EMAIL_JOBS.invitation, invitationEmailPayloadSchema),
       accountToken: enqueue(EMAIL_JOBS.accountToken, accountTokenEmailPayloadSchema),
+      emailSettingsChanged: enqueue(
+        EMAIL_JOBS.emailSettingsChanged,
+        emailSettingsChangedEmailPayloadSchema,
+      ),
     },
     close: () => queue.close(),
   };

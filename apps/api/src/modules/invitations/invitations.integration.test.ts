@@ -242,6 +242,7 @@ describe('membuat undangan tanpa email pengirim (tautan disalin)', () => {
         securityNoticeAdmin: () => Promise.resolve(),
         invitation: () => Promise.reject(new Error('antrian mati')),
         accountToken: () => Promise.resolve(),
+        emailSettingsChanged: () => Promise.resolve(),
       },
     });
     const body = await invited(owner, 'tono@majujaya.test', 'teknisi');

@@ -203,6 +203,7 @@ describe('minta tautan', () => {
         securityNoticeAdmin: () => Promise.resolve(),
         invitation: () => Promise.resolve(),
         accountToken: () => blocked,
+        emailSettingsChanged: () => Promise.resolve(),
       },
     });
     const started = Date.now();

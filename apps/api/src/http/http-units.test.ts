@@ -179,8 +179,10 @@ describe('deklarasi akses rute (bawaan tolak)', () => {
     await expect(raw.ready()).resolves.toBeDefined();
   });
 
-  it('rute yang lengkap diterima untuk ketiga jenis akses; rute OPTIONS dilewati', async () => {
+  it('rute yang lengkap diterima untuk ketiga jenis akses; OPTIONS milik CORS (sebelum penjaga) dilewati', async () => {
     const app = plain();
+    // Seperti plugin CORS di buildApp: didaftarkan SEBELUM penjaga dipasang.
+    app.options('*', ok);
     const declarations = enforceRouteDeclarations(app);
     app.get('/publik', { config: { access: PUBLIC }, schema: { response } }, ok);
     app.get('/masuk', { config: { access: AUTHENTICATED }, schema: { response } }, ok);
@@ -189,7 +191,6 @@ describe('deklarasi akses rute (bawaan tolak)', () => {
       { config: { access: requirePermission('settings.email.manage') }, schema: { response } },
       ok,
     );
-    app.options('*', ok);
 
     await expect(app.ready()).resolves.toBeDefined();
     expect(declarations).toEqual(
@@ -229,6 +230,26 @@ describe('deklarasi akses rute (bawaan tolak)', () => {
 
     expect(failure?.message).toContain('GET /izin-asing menyatakan akses yang tidak dikenal');
     expect(failure?.message).toContain('GET /peran-langsung menyatakan akses yang tidak dikenal');
+  });
+
+  it('rute aplikasi yang menerima OPTIONS (sendiri atau bersama metode lain): menolak start', async () => {
+    const app = guarded();
+    app.route({
+      method: ['GET', 'OPTIONS'],
+      url: '/campur-opsi',
+      config: { access: PUBLIC },
+      schema: { response },
+      handler: ok,
+    });
+    app.options('/opsi-saja', { config: { access: PUBLIC }, schema: { response } }, ok);
+
+    const failure = await app.ready().then(
+      () => undefined,
+      (error: unknown) => error as Error,
+    );
+
+    expect(failure?.message).toContain('GET/OPTIONS /campur-opsi menerima OPTIONS');
+    expect(failure?.message).toContain('OPTIONS /opsi-saja menerima OPTIONS');
   });
 
   it('berlaku juga untuk rute di dalam plugin ber-prefix', async () => {

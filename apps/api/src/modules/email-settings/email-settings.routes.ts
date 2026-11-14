@@ -51,6 +51,7 @@ const errors = {
   401: errorEnvelopeSchema,
   403: errorEnvelopeSchema,
   429: errorEnvelopeSchema,
+  503: errorEnvelopeSchema,
 };
 
 /**
@@ -92,7 +93,7 @@ export const emailSettingsRoutes: FastifyPluginCallbackZod<EmailSettingsRoutesOp
     async (request, reply) => {
       const auth = requireAuth(request);
       const saved = await emailSettings.save(
-        { organizationId: auth.organizationId, userId: auth.user.id },
+        { organizationId: auth.organizationId, userId: auth.user.id, role: auth.user.role },
         request.body,
         { client: clientInfo(request), log: request.log },
       );

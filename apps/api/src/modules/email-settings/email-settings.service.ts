@@ -29,11 +29,14 @@ import {
   type EmailTestCode,
   type EmailTestResult,
   type ErrorDetail,
+  type UserRole,
 } from '@balesin/shared';
 import type { FastifyBaseLogger } from 'fastify';
 
 import type { ClientInfo } from '../../http/client-info';
+import type { EmailNotifier } from '../../queues/email-queue';
 import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
+import { deliveryPathChanged, queueOwnerChangeNotices } from './change-notice';
 import { detectEmailHost, systemMailDns, type MailDns } from './email-host-detection';
 import {
   findEmailSettings,
@@ -71,8 +74,12 @@ export interface EmailSettingsService {
   /** `true` bila server bisa mengenkripsi rahasia (`BALESIN_MASTER_KEY` terisi). */
   readonly canStoreSecrets: boolean;
   view(organizationId: string): Promise<EmailSettingsResponse>;
+  /**
+   * Menyimpan. Bila pelakunya BUKAN Owner dan jalur kirim berubah (server, login, alamat
+   * pengirim/balas-ke), semua Owner diberi tahu lewat pengaturan LAMA (`change-notice.ts`).
+   */
   save(
-    actor: EmailSettingsActor,
+    actor: EmailSettingsActor & { role: UserRole },
     input: EmailSettingsInput,
     context: EmailOperationContext,
   ): Promise<EmailSettingsResponse>;
@@ -122,6 +129,8 @@ export interface EmailSettingsServiceDeps {
   lookup?: HostLookup;
   timeouts?: Partial<SmtpTimeouts>;
   dns?: MailDns;
+  /** Pengantre pemberitahuan ke Owner (perubahan email pengirim oleh pengguna lain). */
+  notifier: EmailNotifier;
 }
 
 const NO_MASTER_KEY_MESSAGE =
@@ -469,7 +478,10 @@ export function createEmailSettingsService(deps: EmailSettingsServiceDeps): Emai
           updatedByUserId: actor.userId,
           resetTestResult: connectionChanged,
         });
-        await recordAudit(tx, {
+        const notifyOwners =
+          actor.role !== 'owner' &&
+          deliveryPathChanged(stored, values, prepared.passwordSource === 'new');
+        const auditLogId = await recordAudit(tx, {
           organizationId: actor.organizationId,
           actorUserId: actor.userId,
           action: AUDIT_ACTIONS.emailSettingsUpdated,
@@ -484,9 +496,20 @@ export function createEmailSettingsService(deps: EmailSettingsServiceDeps): Emai
             replyTo: values.replyTo,
             loginChanged: prepared.passwordSource === 'new',
             created: !stored,
+            previousHost: stored?.host ?? null,
+            ownersNotified: notifyOwners,
           },
           client: context.client,
         });
+        if (notifyOwners) {
+          await queueOwnerChangeNotices(tx, deps.notifier, {
+            organizationId: actor.organizationId,
+            actor: { userId: actor.userId, role: actor.role },
+            stored,
+            values,
+            auditLogId,
+          });
+        }
         return view(actor.organizationId, tx);
       });
     },

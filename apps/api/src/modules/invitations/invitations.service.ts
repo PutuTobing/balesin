@@ -34,6 +34,7 @@ import {
   type TokenDelivery,
 } from '../account-tokens/token-delivery';
 import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
+import { ACCESS_RULES, forbidByRule, type AccessDeniedRecorder } from '../auth/access-denied';
 import type { PasswordHasher } from '../auth/password-hasher';
 import { checkPassword } from '../auth/password-policy';
 import { findActiveSession } from '../auth/session.repo';
@@ -109,6 +110,8 @@ export interface InvitationServiceDeps {
   sessions: SessionService;
   devices: TrustedDevices;
   delivery: TokenDelivery;
+  /** Audit penolakan aturan turunan (Admin + undangan Admin), lihat `forbidByRule`. */
+  accessDenied: AccessDeniedRecorder;
 }
 
 /** Undangan dibuat/dikirim ulang per pengundang. */
@@ -158,18 +161,30 @@ function fieldError(field: string, message: string, code: 'VALIDATION_ERROR' | '
   return new AppError(code, { message, details: [{ location: 'body', field, message }] });
 }
 
-function forbiddenRole(actor: UserRole): AppError {
-  const allowed = INVITE_PERMISSIONS[actor];
-  return new AppError('FORBIDDEN', {
-    message:
-      allowed.length === 0
-        ? 'Peranmu tidak bisa mengundang pengguna.'
-        : 'Admin hanya bisa mengundang dan mengelola undangan Supervisor, CS, dan Teknisi. Undangan Admin hanya bisa dibuat Owner.',
-  });
+function forbiddenRoleMessage(actor: UserRole): string {
+  return INVITE_PERMISSIONS[actor].length === 0
+    ? 'Peranmu tidak bisa mengundang pengguna.'
+    : 'Admin hanya bisa mengundang dan mengelola undangan Supervisor, CS, dan Teknisi. Undangan Admin hanya bisa dibuat Owner.';
 }
 
 export function createInvitationService(deps: InvitationServiceDeps): InvitationService {
-  const { db, appUrl, hasher, limiter, notifier, sessions, devices, delivery } = deps;
+  const { db, appUrl, hasher, limiter, notifier, sessions, devices, delivery, accessDenied } = deps;
+
+  /** 403 aturan turunan + audit `auth.access.denied` (pola wajib, `access-denied.ts`). */
+  function forbidRole(
+    auth: AuthContext,
+    operation: 'create' | 'replace' | 'resend' | 'revoke',
+    targetRole: UserRole,
+    client: ClientInfo,
+  ): Promise<never> {
+    return forbidByRule(accessDenied, {
+      auth,
+      rule: ACCESS_RULES.invitationRole,
+      client,
+      details: { operation, targetRole },
+      message: forbiddenRoleMessage(auth.user.role),
+    });
+  }
 
   function view(row: OpenInvitation, actorRole: UserRole): Invitation {
     return {
@@ -262,14 +277,16 @@ export function createInvitationService(deps: InvitationServiceDeps): Invitation
     },
 
     async create(auth, input, context) {
-      if (!canInviteRole(auth.user.role, input.role)) throw forbiddenRole(auth.user.role);
+      if (!canInviteRole(auth.user.role, input.role)) {
+        await forbidRole(auth, 'create', input.role, context.client);
+      }
       const organizationId = auth.organizationId;
       // Undangan terbuka untuk email yang sama yang TIDAK boleh dikelola pemanggil (mis. undangan
       // Admin buatan Owner, dilihat Admin) tidak boleh tergantikan lewat jalur "buat baru" —
       // aturannya sama dengan kirim ulang/batalkan (review undangan R1). Sebelum kuota terpakai.
       const existing = await findOpenInvitationByEmail(db, organizationId, input.email);
       if (existing && !canInviteRole(auth.user.role, existing.role)) {
-        throw forbiddenRole(auth.user.role);
+        await forbidRole(auth, 'replace', existing.role, context.client);
       }
       await consumeInviteQuota(auth, input.email);
 
@@ -368,7 +385,9 @@ export function createInvitationService(deps: InvitationServiceDeps): Invitation
       const organizationId = auth.organizationId;
       const current = await findOpenInvitation(db, organizationId, invitationId);
       if (!current) throw new AppError('NOT_FOUND', { message: NOT_FOUND_MESSAGE });
-      if (!canInviteRole(auth.user.role, current.role)) throw forbiddenRole(auth.user.role);
+      if (!canInviteRole(auth.user.role, current.role)) {
+        await forbidRole(auth, 'resend', current.role, context.client);
+      }
       await consumeInviteQuota(auth, current.email);
 
       const emailAvailable = await delivery.emailAvailable(db, organizationId);
@@ -428,7 +447,9 @@ export function createInvitationService(deps: InvitationServiceDeps): Invitation
       const organizationId = auth.organizationId;
       const current = await findOpenInvitation(db, organizationId, invitationId);
       if (!current) throw new AppError('NOT_FOUND', { message: NOT_FOUND_MESSAGE });
-      if (!canInviteRole(auth.user.role, current.role)) throw forbiddenRole(auth.user.role);
+      if (!canInviteRole(auth.user.role, current.role)) {
+        await forbidRole(auth, 'revoke', current.role, context.client);
+      }
       await db.transaction(async (tx) => {
         if (!(await revokeInvitation(tx, organizationId, invitationId, auth.user.id))) {
           throw new AppError('NOT_FOUND', { message: NOT_FOUND_MESSAGE });

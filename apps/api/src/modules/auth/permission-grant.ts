@@ -6,9 +6,11 @@ import {
   type PermissionScope,
   type ScopeTarget,
 } from '@balesin/shared';
+import { eq, or, sql, type Column, type SQL } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 
 import { clientInfo } from '../../http/client-info';
+import { fetchSiteOf } from './access-denied';
 import { requireAuth } from './auth.hook';
 import type { AuthContext } from './session.service';
 
@@ -20,11 +22,10 @@ import type { AuthContext } from './session.service';
  * memakai hasil fungsi ini untuk menyaring data:
  *
  *   const grant = await permissionGrant(request, 'inbox.view');
- *   // daftar: filter SQL dari grant.scope —
- *   //   'all'      → hanya organization_id;
- *   //   'assigned' → + (assignee = grant.userId OR ada tiket tertaut dengan assignee = grant.userId);
- *   //   'own'      → + (pemegang = grant.userId).
- *   // satu data: assertWithinScope(grant, { holderUserIds, linkedTicketHolderUserIds }) → 404 bila di luar.
+ *   // DAFTAR (dan hitungan/badge, mis. jumlah "Belum dilayani"): repo WAJIB menerima `grant`
+ *   // (bukan `organizationId` lepas) dan menyaring di SQL —
+ *   //   where(and(eq(t.organizationId, grant.organizationId), scopeCondition(grant, { holder: t.assigneeUserId, linkedTicketHolder })))
+ *   // SATU DATA: assertWithinScope(grant, { holderUserIds, linkedTicketHolderUserIds }) → 404 bila di luar.
  *
  * Juga dipakai untuk izin TAMBAHAN di luar izin rute (mis. rute `inbox.reply` yang mengirim
  * template ke banyak penerima juga butuh `broadcast.send`). Penolakan dicatat di audit seperti
@@ -61,6 +62,7 @@ export async function permissionGrant(
       method: request.method,
       route: request.routeOptions.url ?? '',
       client: clientInfo(request),
+      fetchSite: fetchSiteOf(request),
     });
     throw new AppError('FORBIDDEN');
   }
@@ -73,4 +75,47 @@ export async function permissionGrant(
  */
 export function assertWithinScope(grant: PermissionGrant, target: ScopeTarget): void {
   if (!isWithinScope(grant.scope, grant.userId, target)) throw new AppError('NOT_FOUND');
+}
+
+/** Cara repo menyatakan "pemegang" data untuk filter cakupan. */
+export interface ScopeColumns {
+  /**
+   * Pemegang LANGSUNG: kolom ID pengguna (mis. `conversations.assigneeUserId`), atau kondisi untuk
+   * pemegang jamak (mis. `exists (select 1 from peserta where … user_id = ${userId})`).
+   */
+  holder: Column | ((userId: string) => SQL);
+  /**
+   * Kondisi "terkait tiket yang dipegang pengguna ini" (mis. `exists (select 1 from tiket …)`).
+   * Hanya dipakai cakupan `assigned`. Tanpa ini, `assigned` = pemegang langsung saja.
+   */
+  linkedTicketHolder?: (userId: string) => SQL;
+}
+
+/**
+ * Kondisi Drizzle untuk DAFTAR bercakupan — padanan SQL `isWithinScope`. Selalu mengembalikan
+ * kondisi (cakupan `all` = `true`), jadi selalu digabung dengan filter `organization_id`:
+ *
+ *   and(eq(table.organizationId, grant.organizationId), scopeCondition(grant, { holder: table.assigneeUserId }))
+ *
+ * `switch` lengkap: nilai cakupan baru (mis. departemen, Fase 5) gagal saat kompilasi di sini.
+ */
+export function scopeCondition(grant: PermissionGrant, columns: ScopeColumns): SQL {
+  const held = (userId: string): SQL =>
+    typeof columns.holder === 'function' ? columns.holder(userId) : eq(columns.holder, userId);
+  switch (grant.scope) {
+    case 'all':
+      return sql`true`;
+    case 'assigned': {
+      const direct = held(grant.userId);
+      return columns.linkedTicketHolder
+        ? (or(direct, columns.linkedTicketHolder(grant.userId)) as SQL)
+        : direct;
+    }
+    case 'own':
+      return held(grant.userId);
+    default: {
+      const unknownScope: never = grant.scope;
+      throw new Error(`Cakupan izin tidak dikenal: ${String(unknownScope)}`);
+    }
+  }
 }

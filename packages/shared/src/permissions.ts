@@ -50,9 +50,17 @@ export const PERMISSIONS = [
   'settings.email.manage',
   /**
    * Pengaturan kerja tim: departemen, jam kerja (tim & bot), alokasi agen + kapasitas, tag,
-   * pesan otomatis, CSAT, ambang persetujuan broadcast, batas kirim harian, ambang alarm/biaya.
+   * pesan otomatis, CSAT. BUKAN rem pengiriman — itu `sending.limits.manage`.
    */
   'settings.workspace.manage',
+  /**
+   * Rem pengiriman (SECURITY.md §5): ambang persetujuan broadcast, batas kirim harian per
+   * pengguna/organisasi, ambang rem darurat, ambang alarm biaya. Dipisah dari
+   * `settings.workspace.manage` supaya memberi peran lain wewenang mengatur jam kerja/departemen
+   * tidak ikut memberi kendali atas batas yang melindungi nomor (review RBAC R3). Modulnya WAJIB
+   * mengaudit setiap perubahan dan memberi tahu semua Owner.
+   */
+  'sending.limits.manage',
   /** API key (scope, kedaluwarsa, cabut). */
   'api_keys.manage',
   /** Bot eksternal (n8n), webhook keluar, allowlist IP privat, konektor billing, alarm Telegram. */
@@ -83,10 +91,18 @@ export const PERMISSIONS = [
   /** Baca percakapan, pesan, media, panel detail. Bercakupan. */
   'inbox.view',
   /**
-   * Balas pelanggan dan kerjakan percakapan: kirim pesan/template, catatan internal, tag,
-   * tandai selesai/buka lagi, saklar bot per percakapan. Bercakupan.
+   * Kerjakan percakapan YANG SUDAH ADA (dalam cakupan): balas pesan/template di percakapan itu,
+   * catatan internal, tag, tandai selesai/buka lagi, saklar bot per percakapan. Bercakupan.
+   * TIDAK mencakup memulai percakapan ke nomor yang belum punya percakapan — itu `inbox.initiate`.
    */
   'inbox.reply',
+  /**
+   * Memulai percakapan baru / mengirim template ke nomor yang belum punya percakapan terbuka.
+   * Dipisah dari `inbox.reply` supaya akun CS yang dibobol tidak bisa mengirim template satu per
+   * satu ke ribuan nomor (broadcast terselubung yang melewati `broadcast.send` + persetujuan,
+   * review RBAC S2). Modulnya WAJIB menerapkan batas harian per pengguna sejak hari pertama.
+   */
+  'inbox.initiate',
   /** Assign/alihkan percakapan ke agen lain, ambil dari antrian terbuka, ambil alih. */
   'inbox.assign',
   // ── CRM ───────────────────────────────────────────────────────────────────
@@ -139,6 +155,7 @@ const MATRIX: Readonly<Record<Permission, Row>> = {
   'channels.manage': [Y, Y, N, N, N],
   'settings.email.manage': [Y, Y, N, N, N],
   'settings.workspace.manage': [Y, Y, N, N, N],
+  'sending.limits.manage': [Y, Y, N, N, N],
   'api_keys.manage': [Y, Y, N, N, N],
   'integrations.manage': [Y, Y, N, N, N],
   'team.invite': [Y, Y, N, N, N],
@@ -151,6 +168,7 @@ const MATRIX: Readonly<Record<Permission, Row>> = {
   'quick_replies.manage': [Y, Y, Y, N, N],
   'inbox.view': [Y, Y, Y, Y, 'assigned'],
   'inbox.reply': [Y, Y, Y, Y, 'assigned'],
+  'inbox.initiate': [Y, Y, Y, N, N],
   'inbox.assign': [Y, Y, Y, Y, N],
   'contacts.view': [Y, Y, Y, Y, 'assigned'],
   'contacts.manage': [Y, Y, Y, Y, N],
@@ -165,10 +183,15 @@ function buildRolePermissions(): Record<
   UserRole,
   Readonly<Partial<Record<Permission, PermissionScope>>>
 > {
-  const byRole = Object.fromEntries(USER_ROLES.map((role) => [role, {}])) as Record<
+  // Objek TANPA prototipe: kunci warisan (`toString`, `constructor`, `__proto__`) tidak pernah
+  // terbaca sebagai izin yang dipegang (review RBAC R2).
+  const byRole = Object.create(null) as Record<
     UserRole,
     Partial<Record<Permission, PermissionScope>>
   >;
+  for (const role of USER_ROLES) {
+    byRole[role] = Object.create(null) as Partial<Record<Permission, PermissionScope>>;
+  }
   for (const permission of PERMISSIONS) {
     MATRIX[permission].forEach((grant, index) => {
       const role = USER_ROLES[index];
@@ -186,7 +209,15 @@ export const ROLE_PERMISSIONS: Readonly<
 
 /** Cakupan izin untuk peran ini, atau `null` bila tidak boleh sama sekali. */
 export function permissionScope(role: UserRole, permission: Permission): PermissionScope | null {
-  return ROLE_PERMISSIONS[role][permission] ?? null;
+  // Lapis kedua selain objek tanpa prototipe: hanya kunci MILIK baris itu sendiri yang dihitung,
+  // juga untuk peran/izin yang lolos dari pemeriksaan tipe (JSON, parameter, JavaScript polos).
+  if (!Object.hasOwn(ROLE_PERMISSIONS, role)) return null;
+  const row = ROLE_PERMISSIONS[role];
+  if (!Object.hasOwn(row, permission)) return null;
+  const scope = row[permission];
+  return scope !== undefined && (PERMISSION_SCOPES as readonly string[]).includes(scope)
+    ? scope
+    : null;
 }
 
 /** Peran ini boleh melakukan aksi ini (pada cakupan apa pun). */
@@ -259,6 +290,7 @@ export const PERMISSION_LABELS: Readonly<Record<Permission, string>> = {
   'channels.manage': 'Kelola channel dan kredensial Meta',
   'settings.email.manage': 'Atur email pengirim',
   'settings.workspace.manage': 'Atur departemen, jam kerja, alokasi agen, dan tag',
+  'sending.limits.manage': 'Atur batas kirim, ambang persetujuan, dan alarm biaya',
   'api_keys.manage': 'Kelola API key',
   'integrations.manage': 'Kelola webhook, bot, dan integrasi',
   'team.invite': 'Undang anggota tim',
@@ -270,7 +302,8 @@ export const PERMISSION_LABELS: Readonly<Record<Permission, string>> = {
   'templates.manage': 'Kelola template pesan',
   'quick_replies.manage': 'Kelola template percakapan',
   'inbox.view': 'Lihat percakapan',
-  'inbox.reply': 'Balas percakapan',
+  'inbox.reply': 'Balas percakapan yang sudah ada',
+  'inbox.initiate': 'Mulai percakapan ke nomor baru',
   'inbox.assign': 'Assign dan alihkan percakapan',
   'contacts.view': 'Lihat kontak',
   'contacts.manage': 'Ubah kontak',

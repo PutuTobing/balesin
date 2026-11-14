@@ -68,6 +68,11 @@ export const EMAIL_JOBS = {
   invitation: 'invitation',
   /** Tautan atur ulang password / verifikasi email. Token dari salinan terenkripsi di `account_tokens`. */
   accountToken: 'account-token',
+  /**
+   * Ke satu Owner: sambungan/alamat email pengirim diubah pengguna selain Owner. Dikirim lewat
+   * pengaturan SEBELUM perubahan (salinan di `email_settings_change_notices`), bukan yang baru.
+   */
+  emailSettingsChanged: 'email-settings-changed',
 } as const;
 export type EmailJobName = (typeof EMAIL_JOBS)[keyof typeof EMAIL_JOBS];
 
@@ -139,6 +144,18 @@ export const securityNoticeAdminEmailPayloadSchema = z.strictObject({
   auditLogId: z.uuid().optional(),
 });
 export type SecurityNoticeAdminEmailPayload = z.infer<typeof securityNoticeAdminEmailPayloadSchema>;
+
+/** Satu email per Owner penerima; isi pemberitahuan dan salinan pengaturan lama ada di barisnya. */
+export const emailSettingsChangedEmailPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  /** Owner penerima (diperiksa ulang saat mengirim: masih aktif dan masih Owner). */
+  recipientUserId: z.uuid(),
+  /** `email_settings_change_notices.id`. */
+  noticeId: z.uuid(),
+});
+export type EmailSettingsChangedEmailPayload = z.infer<
+  typeof emailSettingsChangedEmailPayloadSchema
+>;
 
 export const invitationEmailPayloadSchema = z.strictObject({
   organizationId: z.uuid(),

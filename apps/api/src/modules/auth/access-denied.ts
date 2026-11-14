@@ -1,6 +1,7 @@
-import type { Logger } from '@balesin/core';
+import { AppError, type Logger } from '@balesin/core';
 import type { Database } from '@balesin/db';
 import type { Permission } from '@balesin/shared';
+import type { FastifyRequest } from 'fastify';
 
 import type { ClientInfo } from '../../http/client-info';
 import type { RateLimiter } from '../../http/rate-limit';
@@ -8,22 +9,48 @@ import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
 import type { AuthContext } from './session.service';
 
 /**
- * Jejak audit untuk permintaan yang DITOLAK karena izin (temuan R8 review Fase 1): akun CS yang
- * dibobol dan sedang memetakan endpoint Owner/Admin meninggalkan jejak yang bisa dipantau.
+ * Jejak audit untuk permintaan yang DITOLAK (temuan R8 review Fase 1, R1 review RBAC): akun yang
+ * dibobol dan sedang memetakan endpoint, atau mencoba menaikkan wewenangnya, meninggalkan jejak
+ * yang bisa dipantau Owner. Dua sumber, satu aksi audit `auth.access.denied`:
  *
- * - Hanya penolakan izin pada pengguna yang SUDAH masuk (sesi penuh). Tanpa sesi (401), CSRF
- *   salah, dan sesi terbatas 2FA tidak dicatat di sini: pelakunya tidak pasti, atau penyebabnya
- *   biasanya token basi setelah API dijalankan ulang (bukan niat).
- * - Isinya: izin, metode, POLA rute (`/invitations/:invitationId`, bukan URL lengkap — tanpa query,
- *   body, maupun parameter), peran saat itu, ID sesi internal. Tidak ada rahasia.
- * - Pembatas: paling banyak SATU entri per pengguna × izin per `ACCESS_DENIED_AUDIT_WINDOW_SECONDS`
- *   (penanda Redis SET NX), supaya audit tidak bisa dibanjiri.
+ *  1. **Izin rute** — peran tidak memegang izin rute (`record`, dipanggil hook auth dan
+ *     `permissionGrant`). `targetType = 'permission'`.
+ *  2. **Aturan turunan** — izin rutenya dipegang, tetapi aturan rinci modul menolak (mis. Admin
+ *     mengundang/mengelola undangan Admin). `targetType = 'rule'`.
+ *
+ * POLA WAJIB untuk aturan turunan: setiap 403 dari aturan rinci di service DILEMPAR LEWAT
+ * `forbidByRule(...)` (bukan `throw new AppError('FORBIDDEN')` langsung), dengan nama aturan yang
+ * terdaftar di `ACCESS_RULES`. Dengan begitu tidak ada penolakan wewenang yang lupa diaudit.
+ *
+ * - Hanya pengguna yang SUDAH masuk (sesi penuh). Tanpa sesi (401), CSRF salah, dan sesi terbatas
+ *   2FA tidak dicatat: pelakunya tidak pasti, atau penyebabnya biasanya token basi.
+ * - Isi: izin/aturan, metode + POLA rute (tanpa query, body, parameter), peran, ID sesi internal,
+ *   `fetchSite` (header `Sec-Fetch-Site` bila ada — membedakan navigasi lintas situs yang membawa
+ *   cookie korban dari permintaan aplikasi sendiri). Tidak ada rahasia.
+ * - Pembatas: paling banyak SATU entri per pengguna × izin (atau × aturan) per
+ *   `ACCESS_DENIED_AUDIT_WINDOW_SECONDS` (penanda Redis SET NX), supaya audit tidak bisa dibanjiri.
  * - Tidak pernah mengubah jawaban: bila Redis/DB bermasalah, entri dilewati (dicatat di log) dan
- *   permintaan tetap dijawab 403.
+ *   permintaan tetap ditolak 403.
  */
 
 export const ACCESS_DENIED_AUDIT_WINDOW_SECONDS = 60;
 export const ACCESS_DENIED_FLAG = 'akses-ditolak';
+
+/** Aturan turunan yang bisa menolak di service. Tambahkan di sini setiap ada aturan baru. */
+export const ACCESS_RULES = {
+  /** Peran pemanggil tidak boleh mengundang/mengelola undangan peran itu (`INVITE_PERMISSIONS`). */
+  invitationRole: 'team.invite.role',
+} as const;
+export type AccessRule = (typeof ACCESS_RULES)[keyof typeof ACCESS_RULES];
+
+/** Nilai `Sec-Fetch-Site` yang dikenal; lainnya dicatat `lainnya`, tidak ada = `null`. */
+const FETCH_SITES = new Set(['same-origin', 'same-site', 'cross-site', 'none']);
+
+export function fetchSiteOf(request: Pick<FastifyRequest, 'headers'>): string | null {
+  const value = request.headers['sec-fetch-site'];
+  if (typeof value !== 'string') return null;
+  return FETCH_SITES.has(value) ? value : 'lainnya';
+}
 
 export interface AccessDeniedEvent {
   auth: AuthContext;
@@ -32,11 +59,22 @@ export interface AccessDeniedEvent {
   /** Pola rute Fastify (`request.routeOptions.url`). */
   route: string;
   client: ClientInfo;
+  fetchSite?: string | null;
+}
+
+export interface RuleDeniedEvent {
+  auth: AuthContext;
+  rule: AccessRule;
+  client: ClientInfo;
+  /** Keterangan singkat TANPA rahasia/data pribadi (mis. `{ operation: 'create', targetRole: 'admin' }`). */
+  details?: Readonly<Record<string, string>>;
 }
 
 export interface AccessDeniedRecorder {
-  /** `true` bila entri audit ditulis (bukan dilewati karena pembatas atau galat). */
+  /** Penolakan izin rute. `true` bila entri audit ditulis (bukan dilewati pembatas/galat). */
   record(event: AccessDeniedEvent): Promise<boolean>;
+  /** Penolakan aturan turunan di service. Pakai lewat `forbidByRule`. */
+  recordRule(event: RuleDeniedEvent): Promise<boolean>;
 }
 
 export function createAccessDeniedRecorder(deps: {
@@ -45,38 +83,79 @@ export function createAccessDeniedRecorder(deps: {
   logger: Pick<Logger, 'warn'>;
 }): AccessDeniedRecorder {
   const { db, limiter, logger } = deps;
+
+  async function write(
+    auth: AuthContext,
+    flagKey: string,
+    target: { type: 'permission' | 'rule'; id: string },
+    metadata: Record<string, unknown>,
+    client: ClientInfo,
+  ): Promise<boolean> {
+    try {
+      const first = await limiter.claimFlag(
+        ACCESS_DENIED_FLAG,
+        `${auth.user.id}:${flagKey}`,
+        ACCESS_DENIED_AUDIT_WINDOW_SECONDS,
+      );
+      if (!first) return false;
+      await recordAudit(db, {
+        organizationId: auth.organizationId,
+        actorUserId: auth.user.id,
+        action: AUDIT_ACTIONS.accessDenied,
+        targetType: target.type,
+        targetId: target.id,
+        metadata: { ...metadata, role: auth.user.role, sessionRef: auth.sessionRef },
+        client,
+      });
+      return true;
+    } catch (err) {
+      logger.warn(
+        { err, userRef: auth.user.id, [target.type]: target.id },
+        'Audit penolakan akses tidak tercatat',
+      );
+      return false;
+    }
+  }
+
   return {
-    async record({ auth, permission, method, route, client }) {
-      try {
-        const first = await limiter.claimFlag(
-          ACCESS_DENIED_FLAG,
-          `${auth.user.id}:${permission}`,
-          ACCESS_DENIED_AUDIT_WINDOW_SECONDS,
-        );
-        if (!first) return false;
-        await recordAudit(db, {
-          organizationId: auth.organizationId,
-          actorUserId: auth.user.id,
-          action: AUDIT_ACTIONS.accessDenied,
-          targetType: 'permission',
-          targetId: permission,
-          metadata: {
-            permission,
-            method,
-            route: route.slice(0, 200),
-            role: auth.user.role,
-            sessionRef: auth.sessionRef,
-          },
-          client,
-        });
-        return true;
-      } catch (err) {
-        logger.warn(
-          { err, userRef: auth.user.id, permission, route },
-          'Audit penolakan akses tidak tercatat',
-        );
-        return false;
-      }
-    },
+    record: ({ auth, permission, method, route, client, fetchSite }) =>
+      write(
+        auth,
+        permission,
+        { type: 'permission', id: permission },
+        { permission, method, route: route.slice(0, 200), fetchSite: fetchSite ?? null },
+        client,
+      ),
+
+    recordRule: ({ auth, rule, client, details }) =>
+      write(
+        auth,
+        `rule:${rule}`,
+        { type: 'rule', id: rule },
+        {
+          rule,
+          ...Object.fromEntries(
+            Object.entries(details ?? {}).map(([k, v]) => [k, v.slice(0, 100)]),
+          ),
+        },
+        client,
+      ),
   };
+}
+
+/**
+ * Menolak dengan 403 `FORBIDDEN` karena aturan turunan, SETELAH mencatat audit (dibatasi). Satu-
+ * satunya cara yang benar untuk 403 aturan rinci di service — lihat komentar berkas.
+ *
+ *   if (!canInviteRole(auth.user.role, input.role)) {
+ *     await forbidByRule(accessDenied, { auth, rule: ACCESS_RULES.invitationRole, client, message });
+ *   }
+ */
+export async function forbidByRule(
+  recorder: AccessDeniedRecorder,
+  event: RuleDeniedEvent & { message: string },
+): Promise<never> {
+  const { message, ...rest } = event;
+  await recorder.recordRule(rest);
+  throw new AppError('FORBIDDEN', { message });
 }

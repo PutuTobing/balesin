@@ -6,12 +6,14 @@ import {
   accountLockedEmailPayloadSchema,
   accountTokenDeliveryContext,
   accountTokenEmailPayloadSchema,
+  emailSettingsChangedEmailPayloadSchema,
   fallbackEmailSettings,
   invitationDeliveryContext,
   invitationEmailPayloadSchema,
   openStoredEmailSettings,
   renderAccountLockedEmail,
   renderAdminTwoFactorNoticeEmail,
+  renderEmailSettingsChangedEmail,
   renderEmailVerificationEmail,
   renderInvitationEmail,
   renderPasswordResetEmail,
@@ -38,6 +40,7 @@ import {
   accountTokens,
   auditLogs,
   emailSettings,
+  emailSettingsChangeNotices,
   organizationLogos,
   organizations,
   userInvitations,
@@ -163,7 +166,17 @@ async function deliver(
   job: EmailJob,
   deps: EmailJobDeps,
 ): Promise<EmailJobResult> {
-  const transport = await resolveTransport(organizationId, deps);
+  return deliverVia(await resolveTransport(organizationId, deps), organizationId, mail, job, deps);
+}
+
+/** Mengirim lewat sambungan yang sudah ditentukan (mis. salinan pengaturan LAMA). */
+async function deliverVia(
+  transport: ResolvedTransport,
+  organizationId: string,
+  mail: MailContent,
+  job: EmailJob,
+  deps: EmailJobDeps,
+): Promise<EmailJobResult> {
   if (transport.kind === 'not_configured') {
     deps.logger.info(
       { jobId: job.id, jobName: job.name, organizationId },
@@ -629,12 +642,150 @@ async function sendAccountToken(job: EmailJob, deps: EmailJobDeps): Promise<Emai
   );
 }
 
+/**
+ * Ke satu Owner: email pengirim diubah pengguna lain (review RBAC S1). Dikirim lewat SALINAN
+ * pengaturan sebelum perubahan; hanya bila salinan itu tidak bisa dipakai (tidak ada, gagal
+ * permanen, atau percobaan terakhir gagal) baru lewat pengaturan yang berlaku sekarang. Begitu job
+ * selesai, hitungan `pending_deliveries` turun; yang terakhir menghapus salinan teks sandi password.
+ */
+async function sendEmailSettingsChanged(
+  job: EmailJob,
+  deps: EmailJobDeps,
+): Promise<EmailJobResult> {
+  const payload = emailSettingsChangedEmailPayloadSchema.safeParse(job.data);
+  if (!payload.success) {
+    throw new UnrecoverableError('Payload job email:email-settings-changed tidak valid');
+  }
+  const { organizationId, recipientUserId, noticeId } = payload.data;
+  const [notice] = await deps.db
+    .select()
+    .from(emailSettingsChangeNotices)
+    .where(
+      and(
+        eq(emailSettingsChangeNotices.organizationId, organizationId),
+        eq(emailSettingsChangeNotices.id, noticeId),
+      ),
+    )
+    .limit(1);
+  // Job diantrekan sebelum transaksi penyimpanan selesai: baris bisa belum terlihat. Diulang.
+  if (!notice) throw new Error('Pemberitahuan perubahan email pengirim belum tersedia');
+
+  const settle = async () => {
+    await deps.db
+      .update(emailSettingsChangeNotices)
+      .set({
+        pendingDeliveries: sql`greatest(${emailSettingsChangeNotices.pendingDeliveries} - 1, 0)`,
+        previousPasswordEncrypted: sql`case when ${emailSettingsChangeNotices.pendingDeliveries} <= 1 then null else ${emailSettingsChangeNotices.previousPasswordEncrypted} end`,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(emailSettingsChangeNotices.id, notice.id));
+  };
+
+  const recipient = await findActiveUser(organizationId, recipientUserId, deps);
+  const [actor] = await deps.db
+    .select({ name: users.name, email: users.email, role: users.role })
+    .from(users)
+    .where(and(eq(users.organizationId, organizationId), eq(users.id, notice.actorUserId)))
+    .limit(1);
+  const branding = await loadOrganizationBrand(deps.db, organizationId);
+  // Penerima diperiksa ulang saat mengirim: yang sudah bukan Owner dilewati.
+  if (!recipient || recipient.role !== 'owner' || !actor || !branding) {
+    await settle();
+    return { status: 'skipped', reason: 'recipient_unavailable' };
+  }
+  const origin = await findAuditOrigin(organizationId, notice.auditLogId, deps);
+  const body = renderEmailSettingsChangedEmail({
+    brand: branding.brand,
+    timeZone: branding.timeZone,
+    recipientName: recipient.name,
+    actor,
+    previous:
+      notice.previousHost !== null && notice.previousPort !== null && notice.previousFromAddress
+        ? {
+            host: notice.previousHost,
+            port: notice.previousPort,
+            fromAddress: notice.previousFromAddress,
+          }
+        : null,
+    next: { host: notice.newHost, port: notice.newPort, fromAddress: notice.newFromAddress },
+    occurredAt: notice.createdAt,
+    ...(origin ? { origin } : {}),
+  });
+  const mail: MailContent = { to: recipient.email, ...body, inlineImages: branding.inlineImages };
+
+  const previous = previousTransport(notice, deps);
+  let result: EmailJobResult | undefined;
+  try {
+    if (previous) {
+      try {
+        result = await deliverVia(previous, organizationId, mail, job, deps);
+      } catch (error) {
+        if (!(error instanceof UnrecoverableError) && !isFinalAttempt(job)) throw error;
+        deps.logger.warn(
+          { jobId: job.id, jobName: job.name, organizationId },
+          'Pengaturan email lama tidak bisa dipakai; pemberitahuan dikirim lewat pengaturan sekarang',
+        );
+      }
+    }
+    result ??= await deliver(organizationId, mail, job, deps);
+  } catch (error) {
+    if (error instanceof UnrecoverableError || isFinalAttempt(job)) await settle();
+    throw error;
+  }
+  await settle();
+  return result;
+}
+
+/** Salinan pengaturan sebelum perubahan, siap dipakai mengirim; `undefined` bila tidak ada/tidak terbuka. */
+function previousTransport(
+  notice: typeof emailSettingsChangeNotices.$inferSelect,
+  deps: EmailJobDeps,
+): ResolvedTransport | undefined {
+  if (
+    notice.previousHost === null ||
+    notice.previousPort === null ||
+    notice.previousSecurity === null ||
+    notice.previousFromAddress === null ||
+    notice.previousFromName === null
+  ) {
+    return undefined;
+  }
+  // Teks sandinya sama persis dengan `email_settings` (konteks organisasi + tujuan), jadi
+  // dibuka dengan cara yang sama. Password sudah dihapus (job lain selesai) = login tidak lengkap.
+  const opened = openStoredEmailSettings(
+    {
+      organizationId: notice.organizationId,
+      fromName: notice.previousFromName,
+      fromAddress: notice.previousFromAddress,
+      replyTo: notice.previousReplyTo,
+      host: notice.previousHost,
+      port: notice.previousPort,
+      security: notice.previousSecurity,
+      username: notice.previousPasswordEncrypted === null ? null : notice.previousUsername,
+      passwordEncrypted: notice.previousPasswordEncrypted,
+    },
+    deps.secretBox,
+  );
+  if (!opened.ok) return undefined;
+  return {
+    kind: 'ready',
+    settings: opened.settings,
+    policy: {
+      lookup: deps.lookup,
+      timeouts: deps.timeouts,
+      plaintextLogin: deps.plaintextLogin,
+      allowedPorts: deps.allowedPorts,
+    },
+  };
+}
+
 const PROCESSORS: Record<string, (job: EmailJob, deps: EmailJobDeps) => Promise<EmailJobResult>> = {
   [EMAIL_JOBS.accountLocked]: sendAccountLocked,
   [EMAIL_JOBS.securityNotice]: sendSecurityNotice,
   [EMAIL_JOBS.securityNoticeAdmin]: sendSecurityNoticeAdmin,
   [EMAIL_JOBS.invitation]: sendInvitation,
   [EMAIL_JOBS.accountToken]: sendAccountToken,
+  [EMAIL_JOBS.emailSettingsChanged]: sendEmailSettingsChanged,
 };
 
 /**

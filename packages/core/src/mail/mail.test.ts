@@ -21,6 +21,7 @@ import {
   escapeHtml,
   renderAccountLockedEmail,
   renderAdminTwoFactorNoticeEmail,
+  renderEmailSettingsChangedEmail,
   renderEmailVerificationEmail,
   renderInvitationEmail,
   renderPasswordResetEmail,
@@ -768,6 +769,38 @@ describe('template email', () => {
     expect(mail.text).toContain('Perangkat: Safari di iPhone');
     expect(mail.html).toContain('Budi &lt;Admin&gt;');
     expect(mail.html).not.toContain('Budi <Admin>');
+  });
+
+  it('email pengirim diubah (ke Owner): pelaku, server lama → baru, IP; nilai pengguna di-escape', () => {
+    const mail = renderEmailSettingsChangedEmail({
+      brand: brand(),
+      timeZone: 'Asia/Jakarta',
+      recipientName: 'Rina',
+      actor: { name: 'Adi <Admin>', email: 'adi@contoh.test', role: 'admin' },
+      previous: { host: 'mail.maju.test', port: 465, fromAddress: 'cs@maju.test' },
+      next: { host: 'smtp.<lain>.test', port: 587, fromAddress: 'x@lain.test' },
+      occurredAt: at,
+      origin: { ip: '198.51.100.7', userAgent: null },
+    });
+    expect(mail.subject).toContain('diubah oleh Adi <Admin> (Admin)');
+    expect(mail.text).toContain('mail.maju.test:465');
+    expect(mail.text).toContain('smtp.<lain>.test:587');
+    expect(mail.text).toContain('cs@maju.test → x@lain.test');
+    expect(mail.text).toContain('Alamat IP: 198.51.100.7');
+    expect(mail.text).toContain('pengaturan yang LAMA');
+    expect(mail.html).toContain('smtp.&lt;lain&gt;.test');
+    expect(mail.html).not.toContain('Adi <Admin>');
+
+    const first = renderEmailSettingsChangedEmail({
+      brand: brand(),
+      timeZone: 'Asia/Jakarta',
+      recipientName: null,
+      actor: { name: 'Adi', email: 'adi@contoh.test', role: 'admin' },
+      previous: null,
+      next: { host: 'smtp.maju.test', port: 587, fromAddress: 'cs@maju.test' },
+      occurredAt: at,
+    });
+    expect(first.text).toContain('Server sebelumnya: Belum diatur');
   });
 
   it('perkiraan perangkat dari user agent', () => {

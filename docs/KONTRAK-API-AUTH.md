@@ -527,7 +527,8 @@ setiap permintaan; web hanya menyembunyikan menu/tombol.
 | `backup.manage` | ✅ | – | – | – | – | Fase 7 |
 | `channels.manage` | ✅ | ✅ | – | – | – | Fase 2 |
 | `settings.email.manage` | ✅ | ✅ | – | – | – | **sekarang**: `/settings/email*` |
-| `settings.workspace.manage` | ✅ | ✅ | – | – | – | Fase 4–5 |
+| `settings.workspace.manage` | ✅ | ✅ | – | – | – | Fase 5 (departemen, jam kerja, alokasi, tag, pesan otomatis, CSAT) |
+| `sending.limits.manage` | ✅ | ✅ | – | – | – | Fase 4 (ambang persetujuan, batas harian, rem darurat, alarm biaya; wajib audit + beri tahu Owner) |
 | `api_keys.manage` | ✅ | ✅ | – | – | – | Fase 3 |
 | `integrations.manage` | ✅ | ✅ | – | – | – | Fase 3–4 |
 | `team.invite` | ✅ | ✅ | – | – | – | **sekarang**: `/invitations*` |
@@ -539,7 +540,8 @@ setiap permintaan; web hanya menyembunyikan menu/tombol.
 | `templates.manage` | ✅ | ✅ | ✅ | – | – | Fase 4 |
 | `quick_replies.manage` | ✅ | ✅ | ✅ | – | – | Fase 2 |
 | `inbox.view` | ✅ | ✅ | ✅ | ✅ | di-assign/tiketnya | Fase 2 |
-| `inbox.reply` | ✅ | ✅ | ✅ | ✅ | di-assign/tiketnya | Fase 2 |
+| `inbox.reply` | ✅ | ✅ | ✅ | ✅ | di-assign/tiketnya | Fase 2 — hanya percakapan yang SUDAH ADA |
+| `inbox.initiate` | ✅ | ✅ | ✅ | – | – | Fase 2 — mulai percakapan / kirim template ke nomor baru (batas harian per pengguna) |
 | `inbox.assign` | ✅ | ✅ | ✅ | ✅ | – | Fase 2 |
 | `contacts.view` | ✅ | ✅ | ✅ | ✅ | di-assign/tiketnya | Fase 2/5 |
 | `contacts.manage` | ✅ | ✅ | ✅ | ✅ | – | Fase 5 |
@@ -562,11 +564,33 @@ Rute yang cukup dengan sesi (data milik sendiri, tanpa izin): `/auth/me`, `/auth
   `NOT_FOUND`**, bukan 403; daftar hanya memuat data dalam cakupan.
 - Metode salah (405): rute pelengkap di alamat yang semua rutenya butuh izin yang sama kini juga butuh
   izin itu — peran tanpa izin mendapat 403, bukan 405 + `Allow` (mis. CS `DELETE /settings/email`).
-- Setiap penolakan izin dicatat di audit log `auth.access.denied` (izin, metode, pola rute, peran, sesi;
-  tanpa body/query/parameter), paling banyak satu entri per pengguna × izin per menit.
+- Setiap penolakan izin dicatat di audit log `auth.access.denied` (izin, metode, pola rute, peran, sesi,
+  `fetchSite` = header `Sec-Fetch-Site` bila ada; tanpa body/query/parameter), paling banyak satu entri per
+  pengguna × izin per menit. Penolakan **aturan turunan** di modul (mis. Admin mengundang/mengirim ulang/
+  membatalkan undangan Admin) juga dicatat dengan aksi yang sama (`targetType: "rule"`, `targetId:
+  "team.invite.role"`), satu entri per pengguna × aturan per menit; jawabannya tidak berubah (403 dengan
+  pesan khusus).
+- Rute aplikasi yang menerima `OPTIONS` membuat API menolak start (preflight hanya milik CORS).
 
 ### Perubahan perilaku pada bagian yang sudah ada
 
 - **Pengaturan → Email pengirim + pratinjau template**: kini **Owner dan Admin** (sebelumnya khusus Owner;
   `PENGATURAN-UI.md` menyebut Owner/Admin). Supervisor/CS/Teknisi tetap 403.
 - Penerima email "2FA aktif" peran wajib = pemegang `team.manage` (tetap Owner/Admin).
+
+### Perubahan setelah review keamanan RBAC (bentuk respons tidak berubah)
+
+- **Izin baru** di `PERMISSIONS` (ikut muncul di `permissions` sesi Owner/Admin/Supervisor sesuai matriks):
+  `sending.limits.manage` (setelah `settings.workspace.manage`) dan `inbox.initiate` (setelah
+  `inbox.reply`). Label: "Atur batas kirim, ambang persetujuan, dan alarm biaya", "Mulai percakapan ke
+  nomor baru"; label `inbox.reply` kini "Balas percakapan yang sudah ada".
+- **PUT `/settings/email` oleh selain Owner** (Admin) yang mengubah server, port, keamanan, username,
+  password, alamat pengirim, atau balas-ke → setiap Owner aktif mendapat email "Email pengirim diubah oleh
+  …" yang **dikirim lewat pengaturan SEBELUM perubahan** (salinannya disimpan di
+  `email_settings_change_notices`; jatuh ke pengaturan baru hanya bila yang lama gagal permanen/percobaan
+  terakhir). Bila pemberitahuan tidak bisa diantrekan, perubahan **batal** dan jawabannya **503
+  `SERVICE_UNAVAILABLE`** "Perubahan email pengirim belum disimpan karena pemberitahuan ke Owner tidak bisa
+  dikirim sekarang…" — tampilkan pesannya, isian form tetap. Perubahan nama pengirim saja, atau perubahan
+  oleh Owner, tidak memicu pemberitahuan. Audit `settings.email.updated` kini memuat `previousHost` dan
+  `ownersNotified`. Saran teks di form untuk Admin: "Owner akan diberi tahu lewat email bila server atau
+  alamat pengirim diubah." 

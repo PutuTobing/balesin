@@ -31,6 +31,7 @@ const EXPECTED: Record<Permission, string> = {
   'channels.manage': 'all  all      -    -    -',
   'settings.email.manage': 'all  all      -    -    -',
   'settings.workspace.manage': 'all  all      -    -    -',
+  'sending.limits.manage': 'all  all      -    -    -',
   'api_keys.manage': 'all  all      -    -    -',
   'integrations.manage': 'all  all      -    -    -',
   'team.invite': 'all  all      -    -    -',
@@ -43,6 +44,7 @@ const EXPECTED: Record<Permission, string> = {
   'quick_replies.manage': 'all  all      all  -    -',
   'inbox.view': 'all  all      all  all  assigned',
   'inbox.reply': 'all  all      all  all  assigned',
+  'inbox.initiate': 'all  all      all  -    -',
   'inbox.assign': 'all  all      all  all  -',
   'contacts.view': 'all  all      all  all  assigned',
   'contacts.manage': 'all  all      all  all  -',
@@ -116,6 +118,11 @@ describe('matriks izin', () => {
     expect(rolesWithPermission('broadcast.send')).toEqual(['owner', 'admin', 'supervisor']);
     expect(rolesWithPermission('broadcast.approve')).toEqual(['owner', 'admin']);
     expect(rolesWithPermission('sending.resume')).toEqual(['owner', 'admin']);
+    expect(rolesWithPermission('sending.limits.manage')).toEqual(['owner', 'admin']);
+    // Memulai percakapan ke nomor baru (kirim template ke nomor tanpa percakapan) = setara
+    // broadcast satu per satu; CS/Teknisi hanya membalas percakapan yang sudah ada (review S2).
+    expect(rolesWithPermission('inbox.initiate')).toEqual(['owner', 'admin', 'supervisor']);
+    expect(hasPermission('cs', 'inbox.reply')).toBe(true);
   });
 
   it('SECURITY.md §2: Teknisi hanya percakapan yang di-assign/terkait tiketnya', () => {
@@ -134,6 +141,17 @@ describe('matriks izin', () => {
     for (const role of USER_ROLES) {
       expect(INVITE_PERMISSIONS[role].length > 0, role).toBe(hasPermission(role, 'team.invite'));
     }
+  });
+
+  it('kunci prototipe / nilai asing bukan izin (review R2)', () => {
+    for (const key of ['toString', 'constructor', '__proto__', 'hasOwnProperty', 'valueOf']) {
+      for (const role of USER_ROLES) {
+        expect(hasPermission(role, key as Permission), `${role} × ${key}`).toBe(false);
+        expect(permissionScope(role, key as Permission), `${role} × ${key}`).toBeNull();
+      }
+      expect(hasPermission(key as UserRole, 'inbox.view'), key).toBe(false);
+    }
+    expect(Object.getPrototypeOf(ROLE_PERMISSIONS.cs)).toBeNull();
   });
 
   it('permissionsForRole berurutan seperti PERMISSIONS dan tidak bisa diubah dari luar', () => {

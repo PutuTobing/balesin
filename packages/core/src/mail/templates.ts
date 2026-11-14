@@ -611,3 +611,56 @@ export function renderAdminTwoFactorNoticeEmail(input: AdminTwoFactorNoticeEmail
     ],
   });
 }
+
+export interface EmailSettingsChangedEmailInput {
+  brand: EmailBrand;
+  timeZone: string;
+  recipientName: string | null;
+  actor: { name: string; email: string; role: UserRole };
+  /** `null` = sebelumnya belum ada pengaturan tersimpan. */
+  previous: { host: string; port: number; fromAddress: string } | null;
+  next: { host: string; port: number; fromAddress: string };
+  occurredAt: Date;
+  origin?: EventOrigin;
+}
+
+/**
+ * Ke Owner: email pengirim (server SMTP / alamat pengirim) diubah pengguna lain. Dikirim lewat
+ * pengaturan LAMA — bila perubahannya bukan dari orang yang berhak, server baru bisa menelan
+ * semua email keamanan berikutnya (atur ulang password, undangan, pemberitahuan 2FA).
+ */
+export function renderEmailSettingsChangedEmail(input: EmailSettingsChangedEmailInput): MailBody {
+  const product = singleLine(input.brand.productName);
+  const name = singleLine(input.actor.name);
+  const role = USER_ROLE_LABELS[input.actor.role];
+  const when = formatLocalTime(input.occurredAt, input.timeZone);
+  const server = (value: { host: string; port: number }) =>
+    `${singleLine(value.host)}:${String(value.port)}`;
+  return compose(input.brand, {
+    subject: `Email pengirim ${product} diubah oleh ${name} (${role})`,
+    preheader: `Server email pengirim sekarang ${server(input.next)}.`,
+    heading: 'Email pengirim diubah',
+    paragraphs: [
+      hello(input.recipientName),
+      `${name} (${singleLine(input.actor.email)}, peran ${role}) baru saja mengubah pengaturan email pengirim. Semua email dari ${product} — undangan, atur ulang password, dan pemberitahuan keamanan — sekarang dikirim lewat server yang baru.`,
+      'Kamu menerima email ini karena kamu Owner. Email ini sengaja dikirim lewat pengaturan yang LAMA.',
+    ],
+    details: [
+      {
+        label: 'Server sebelumnya',
+        value: input.previous ? server(input.previous) : 'Belum diatur',
+      },
+      { label: 'Server sekarang', value: server(input.next) },
+      {
+        label: 'Alamat pengirim',
+        value: input.previous
+          ? `${singleLine(input.previous.fromAddress)} → ${singleLine(input.next.fromAddress)}`
+          : singleLine(input.next.fromAddress),
+      },
+      ...originDetails(when, input.origin),
+    ],
+    notes: [
+      `Kalau perubahan ini tidak kamu duga, masuk ke ${product} sekarang, periksa Pengaturan → Email pengirim, dan nonaktifkan akun ${name} bila perlu. Server email yang salah bisa membaca tautan atur ulang password dan undangan.`,
+    ],
+  });
+}
