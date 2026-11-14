@@ -11,12 +11,13 @@ import { BASE_URL, VIEWPORTS, webServer } from './viewports';
  *  3. `desktop-1440` dan `hp-390` — semua tes lain, memakai sesi Owner itu (tes tamu
  *     mengosongkan sesinya sendiri lewat `test.use({ storageState })`). Di sini
  *     `email-pengirim.spec.ts` mengatur email pengirim organisasi.
- *  4. `dengan-email` — undangan, lupa/atur ulang password, verifikasi email lewat Mailpit.
+ *  4. `dengan-email` — undangan, lupa/atur ulang password, verifikasi email lewat Mailpit; banner
+ *     keamanan Owner setelah Admin mengubah email pengirim (`keamanan-dengan-email.spec.ts`).
  *
  * Proyek 2 dan 4 bergantung pada pengaturan email organisasi yang dibagi bersama, jadi masing-
  * masing berjalan sendiri di sela proyek paralel, tidak bersamaan dengannya.
  */
-const sharedEmailSpecs = /tim-(tanpa|dengan)-email\.spec\.ts$/;
+const sharedEmailSpecs = /(tim-tanpa|tim-dengan|keamanan-dengan)-email\.spec\.ts$/;
 const desktop = { ...devices['Desktop Chrome'], viewport: VIEWPORTS.desktop };
 const hp = {
   ...devices['Desktop Chrome'],
@@ -66,7 +67,7 @@ export default defineConfig({
     {
       name: 'dengan-email',
       dependencies: ['desktop-1440', 'hp-390'],
-      testMatch: /tim-dengan-email\.spec\.ts$/,
+      testMatch: /(tim|keamanan)-dengan-email\.spec\.ts$/,
       use: { ...desktop, storageState: OWNER_STATE_PATH },
     },
   ],

@@ -21,6 +21,7 @@ import {
   wizardTo,
 } from './mocks';
 import { accountScreens } from './screens-akun';
+import { teamScreens } from './screens-tim';
 
 export interface Screen {
   /** Nama berkas: e2e/screenshots/<name>--<viewport>-<tema>.png */
@@ -958,4 +959,7 @@ export const screens: Screen[] = [
 
   // Fase 1 butir 4: Tim, undangan, lupa/atur ulang password, verifikasi email, pratinjau.
   ...accountScreens,
+
+  // Fase 1 butir 6: anggota tim, detail anggota, sesi aktif, audit log, banner keamanan.
+  ...teamScreens,
 ];

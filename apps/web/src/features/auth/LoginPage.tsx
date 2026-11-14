@@ -214,6 +214,13 @@ function LoginForm({
     if (returning) passwordRef.current?.focus();
   }, [returning]);
 
+  // Baru saja mengganti password: email sudah terisi, jadi langsung ke isian password (S2).
+  useEffect(() => {
+    if (notice === 'password-reset' && email) passwordRef.current?.focus();
+    // Hanya saat layar dibuka.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (retypePassword === 0) return;
     passwordRef.current?.focus();
@@ -368,6 +375,15 @@ function LoginForm({
 
 function LoginError({ error }: { error: Error }) {
   const message = isApiError(error) ? error.message : t.api.network;
+  if (isApiError(error) && error.code === 'TWO_FACTOR_ENROLLMENT_EXPIRED') {
+    // Password benar, tetapi batas pendaftaran 2FA peran wajib sudah lewat. Pesan server sudah
+    // menjelaskan langkah berikutnya (minta Owner/Admin membuka lagi); tanpa coba ulang otomatis.
+    return (
+      <Notice tone="warning" role="alert" title={t.auth.login.enrollmentExpiredTitle}>
+        {message}
+      </Notice>
+    );
+  }
   if (isApiError(error) && error.status === 429) {
     // Pesan server tetap jadi isi: membedakan kunci akun dan kunci jaringan.
     return (

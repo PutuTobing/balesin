@@ -12,7 +12,6 @@ import { Button } from '../../components/ui/Button';
 import { PasswordField } from '../../components/ui/Field';
 import { Notice } from '../../components/ui/Notice';
 import { PasswordStrength, type ServerPasswordCheck } from '../../components/ui/PasswordStrength';
-import { Skeleton } from '../../components/ui/Skeleton';
 import { SubmitButton } from '../../components/ui/SubmitButton';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
@@ -52,6 +51,7 @@ function ResetLink({ token }: { token: string | null }) {
         documentTitle={copy.title}
         title={copy.invalidTitle}
         message={state.kind === 'missing' ? copy.missing : state.message}
+        tall
       >
         <Button asChild variant="primary" size="lg">
           <Link to="/lupa-password">{copy.requestNew}</Link>
@@ -62,7 +62,7 @@ function ResetLink({ token }: { token: string | null }) {
   }
   if (state.kind === 'failed') {
     return (
-      <LinkFailed documentTitle={copy.title} error={state.error} lock={lock} onRetry={retry} />
+      <LinkFailed documentTitle={copy.title} error={state.error} lock={lock} onRetry={retry} tall />
     );
   }
   return (
@@ -100,13 +100,12 @@ function ResetScreen({
       tall
     >
       <ResetForm token={token} reset={reset} onInvalid={onInvalid} />
-      <div className={styles.footnote}>
-        {reset ? (
+      {/* Bergantung data: baru tampil setelah tautan diperiksa (di bawah isian, tidak menggeser). */}
+      {reset ? (
+        <div className={styles.footnote}>
           <p>{copy.expires(formatTime(reset.expiresAt))}</p>
-        ) : (
-          <Skeleton className={layout.skeletonText} />
-        )}
-      </div>
+        </div>
+      ) : null}
     </AuthLayout>
   );
 }
@@ -288,15 +287,17 @@ function ResetForm({
           />
         </div>
       ) : null}
-      <SubmitButton
-        className={styles.submit}
-        pending={pending}
-        pendingLabel={copy.submitting}
-        lock={lock}
-        disabled={reset === null}
-      >
-        {copy.submit}
-      </SubmitButton>
+      {/* Blok 2FA dan tombol bergantung data: dirender setelah tiba, di bawah isian (kritikus W2). */}
+      {reset ? (
+        <SubmitButton
+          className={styles.submit}
+          pending={pending}
+          pendingLabel={copy.submitting}
+          lock={lock}
+        >
+          {copy.submit}
+        </SubmitButton>
+      ) : null}
       {error ? (
         <Notice
           tone={lock.locked ? 'warning' : 'danger'}

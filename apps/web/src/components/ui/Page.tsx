@@ -13,6 +13,7 @@ const parents: Record<PageParent, { to: NonNullable<LinkProps['to']>; label: str
   more: { to: '/lainnya', label: t.nav.more },
   settings: { to: '/pengaturan', label: t.nav.settings },
   security: { to: '/pengaturan/keamanan', label: t.security.title },
+  team: { to: '/pengaturan/tim', label: t.team.title },
 };
 
 interface PageHeaderProps {

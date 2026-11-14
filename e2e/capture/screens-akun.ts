@@ -153,7 +153,7 @@ export const accountScreens: Screen[] = [
     prepare: async (page) => {
       await submitInvitation(page, 'citra@majujaya.co.id', 'CS');
       await page.getByRole('dialog').getByRole('button', { name: 'Selesai' }).click();
-      await page.getByRole('button', { name: 'Tutup saja' }).waitFor();
+      await page.getByRole('button', { name: 'Tutup tanpa menyalin' }).waitFor();
     },
   },
   {
@@ -170,7 +170,10 @@ export const accountScreens: Screen[] = [
     name: 'tim-memuat',
     path: '/pengaturan/tim',
     waitUntil: 'domcontentloaded',
-    before: (page) => hang(page, '/invitations'),
+    before: async (page) => {
+      await hang(page, '/invitations');
+      await hang(page, '/users');
+    },
     waitFor: '[role="status"]',
   },
   {

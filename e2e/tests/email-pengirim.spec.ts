@@ -46,7 +46,7 @@ test('Owner mengatur email pengirim ke Mailpit dan email tes tiba', async ({
   await page.getByLabel('Alamat email pengirim').fill(sender);
   await page.getByLabel('Host SMTP').fill(MAILPIT_SMTP.host);
   await page.getByLabel('Port').fill(MAILPIT_SMTP.port);
-  await page.getByLabel('Keamanan').selectOption({ label: 'Tanpa enkripsi' });
+  await page.getByLabel('Keamanan', { exact: true }).selectOption({ label: 'Tanpa enkripsi' });
   await page.getByLabel('Username').fill(MAILPIT_SMTP.username);
 
   // "Tanpa enkripsi" + username → peringatan password terkirim polos.
@@ -152,7 +152,7 @@ test('HP: form email pengirim muat di 390px dan menandai isian salah sebelum dik
   await expect(guide).toHaveCount(1);
   await expect(guide).not.toHaveAttribute('open', '');
   await guide.getByText('Panduan singkat').click();
-  await expect(guide.getByText(/Pilih penyedia emailmu/)).toBeVisible();
+  await expect(guide.getByText(/Pilih penyedia email-mu/)).toBeVisible();
   // Panduan ada di dalam form, tepat di bawah pilihan penyedia (seperti wizard), bukan di atas
   // kartu status: langkah khusus penyedia terlihat saat penyedianya dipilih.
   await expect(page.locator('form details')).toHaveCount(1);
@@ -173,7 +173,7 @@ test('HP: form email pengirim muat di 390px dan menandai isian salah sebelum dik
   await expect(page.getByText('Port wajib diisi dengan angka.')).toBeVisible();
   await expect(page.getByLabel('Host SMTP')).toHaveAttribute('aria-invalid', 'true');
 
-  await page.getByLabel('Keamanan').selectOption({ label: 'Tanpa enkripsi' });
+  await page.getByLabel('Keamanan', { exact: true }).selectOption({ label: 'Tanpa enkripsi' });
   await page.getByLabel('Username').fill('pengguna');
   await expect(page.getByText(/Tanpa enkripsi, password email terkirim tanpa/)).toBeVisible();
   await expectNoHorizontalScroll(page);

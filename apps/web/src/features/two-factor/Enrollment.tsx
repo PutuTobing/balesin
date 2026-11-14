@@ -15,6 +15,7 @@ import {
   type FormEvent,
   type ReactNode,
   type Ref,
+  type RefObject,
 } from 'react';
 import { useBrand } from '../../brand/brand';
 import { Button } from '../../components/ui/Button';
@@ -30,7 +31,7 @@ import { endpoints } from '../../lib/api/endpoints';
 import { cx } from '../../lib/cx';
 import { media, useMediaQuery } from '../../lib/media';
 import { useLock, type Lock } from '../../lib/use-lock';
-import { useAnySession } from '../auth/session';
+import { useAnySession, useLogout } from '../auth/session';
 import { CodeField } from './CodeField';
 import { QrCode } from './QrCode';
 import styles from './TwoFactor.module.css';
@@ -57,6 +58,8 @@ type EnrollmentState =
   | { kind: 'password'; message: PasswordStepMessage | null; pending: boolean }
   | { kind: 'starting' }
   | { kind: 'start-failed'; error: unknown }
+  /** Batas waktu pendaftaran 2FA peran wajib sudah lewat (403 `TWO_FACTOR_ENROLLMENT_EXPIRED`). */
+  | { kind: 'closed'; error: unknown }
   | { kind: 'ready'; enrollment: StartTwoFactorEnrollmentResponse; receivedAt: number }
   | { kind: 'expired' }
   | { kind: 'done' };
@@ -130,6 +133,11 @@ export function EnrollmentSteps({ mode, onConfirmed, onAlreadyEnabled }: Enrollm
         onAlreadyEnabled();
         return;
       }
+      if (isApiError(error) && error.code === 'TWO_FACTOR_ENROLLMENT_EXPIRED') {
+        setState({ kind: 'closed', error });
+        focusLater('action');
+        return;
+      }
       if (isApiError(error) && error.status === 429 && error.retryAfterSeconds) {
         startLock.lockFor(error.retryAfterSeconds);
       }
@@ -172,6 +180,9 @@ export function EnrollmentSteps({ mode, onConfirmed, onAlreadyEnabled }: Enrollm
   }, [receivedAt]);
 
   if (state.kind === 'done') return null;
+  if (state.kind === 'closed') {
+    return <EnrollmentClosed error={state.error} actionRef={actionRef} />;
+  }
   if (state.kind === 'password') {
     return (
       <PasswordStep
@@ -564,5 +575,38 @@ function PasswordStep({
         </Notice>
       ) : null}
     </form>
+  );
+}
+
+/**
+ * Pendaftaran ditutup karena batas waktunya lewat: tidak ada yang bisa dilakukan di layar ini selain
+ * keluar. Pesan server menjelaskan langkahnya (minta Owner/Admin membuka lagi pendaftarannya).
+ */
+function EnrollmentClosed({
+  error,
+  actionRef,
+}: {
+  error: unknown;
+  actionRef: RefObject<HTMLButtonElement | null>;
+}) {
+  const logout = useLogout();
+  return (
+    <Notice
+      tone="warning"
+      role="alert"
+      title={copy.closedTitle}
+      actions={
+        <Button
+          ref={actionRef}
+          variant="primary"
+          onClick={() => logout.mutate()}
+          loading={logout.isPending}
+        >
+          {logout.isPending ? t.auth.userMenu.loggingOut : t.auth.userMenu.logout}
+        </Button>
+      }
+    >
+      {isApiError(error) ? error.message : t.api.network}
+    </Notice>
   );
 }

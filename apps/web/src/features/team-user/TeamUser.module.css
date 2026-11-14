@@ -1,0 +1,285 @@
+/* Pengaturan → Tim → detail anggota. Kartu mengikuti halaman Pengaturan (lebar, garis, jarak). */
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  width: 100%;
+  max-width: 42rem;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding: var(--space-24);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.cardHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.cardTitle {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+}
+
+.cardTitle:focus {
+  outline: none;
+}
+
+.hint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.dangerText {
+  color: var(--danger-ink);
+}
+
+/* Pesan hasil aksi: difokus terprogram (tombol asalnya bisa hilang), tanpa cincin. */
+.result:focus {
+  outline: none;
+}
+
+/* ---------- Profil ---------- */
+
+.profile {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-16);
+}
+
+.avatar {
+  width: var(--space-48);
+  height: var(--space-48);
+  font-size: var(--text-16);
+}
+
+.identity {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.name {
+  font-size: var(--text-20);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-title);
+  overflow-wrap: anywhere;
+}
+
+.email {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  overflow-wrap: anywhere;
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-16);
+  min-height: var(--space-24);
+}
+
+.role {
+  color: var(--ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.badge {
+  font-size: var(--text-13);
+}
+
+/* Fakta akun: dua kolom label/nilai di desktop, bertumpuk di HP. */
+.facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-16) var(--space-24);
+  margin: 0;
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--line);
+}
+
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.factLabel {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.factValue {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--text-14);
+  text-wrap: pretty;
+}
+
+.inlineLink {
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+/* Ubah peran: pilihan selebar isi wajar (bukan selebar kartu), tombol di bawahnya. */
+.roleForm {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-16);
+}
+
+.roleSelect {
+  width: 100%;
+  max-width: 20rem;
+}
+
+/* ---------- Riwayat aktivitas ---------- */
+
+.activity {
+  margin: 0 calc(var(--space-24) * -1);
+  border-top: 1px solid var(--line);
+}
+
+ol.activity {
+  margin: 0 calc(var(--space-24) * -1);
+}
+
+.activityItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-12) var(--space-24);
+}
+
+.activityItem + .activityItem {
+  border-top: 1px solid var(--line);
+}
+
+.activityAction {
+  color: var(--ink);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.activityMeta {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.activityFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  margin: 0 calc(var(--space-24) * -1) calc(var(--space-24) * -1);
+  padding: var(--space-12) var(--space-24);
+  border-top: 1px solid var(--line);
+}
+
+/* ---------- Kerangka memuat (ukuran = elemen jadi) ---------- */
+
+.skeletonAvatar {
+  display: block;
+  flex: none;
+  width: var(--space-48);
+  height: var(--space-48);
+  border-radius: var(--radius-pill);
+}
+
+.skeletonName {
+  display: block;
+  width: 12rem;
+  max-width: 100%;
+  height: calc(var(--text-20) * var(--leading-title));
+}
+
+.skeletonEmail {
+  display: block;
+  width: 15rem;
+  max-width: 100%;
+  height: calc(var(--text-14) * var(--leading-text));
+}
+
+.skeletonBadges {
+  display: block;
+  width: 14rem;
+  max-width: 100%;
+  height: var(--space-24);
+}
+
+.skeletonValue {
+  display: block;
+  width: 8rem;
+  height: calc(var(--text-14) * var(--leading-text));
+}
+
+.skeletonLabel {
+  display: block;
+  width: 5rem;
+  height: calc(var(--text-12) * var(--leading-text));
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: var(--space-16);
+  }
+
+  .profile {
+    gap: var(--space-12);
+  }
+
+  .facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-12);
+  }
+
+  .actions > * {
+    flex: 1;
+  }
+
+  .roleForm {
+    align-items: stretch;
+  }
+
+  .roleSelect {
+    max-width: none;
+  }
+
+  .activity,
+  ol.activity {
+    margin: 0 calc(var(--space-16) * -1);
+  }
+
+  .activityItem {
+    padding: var(--space-12) var(--space-16);
+  }
+
+  .activityFooter {
+    margin: 0 calc(var(--space-16) * -1) calc(var(--space-16) * -1);
+    padding: var(--space-12) var(--space-16);
+  }
+}

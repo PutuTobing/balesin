@@ -11,12 +11,15 @@ import {
   apiError,
   fakeInvitation,
   fakeInvitationList,
+  fakeSelfUser,
   fakeSession,
+  fakeTeamUser,
   json,
   type FakeApiOptions,
 } from '../../test/fake-api';
 import { renderApp } from '../../test/render-app';
 import { defaultInviteRole, inviteRoleOptions } from './invite-roles';
+import { filterMembers, memberBadges, viewOnlyReason } from './member-status';
 
 const copy = t.team;
 const LINK = 'http://localhost:5173/undangan#token=Q2FrU2t5LVRlcy1Ub2tlbi1Db250b2gtVHVqdWFuLTEyMz';
@@ -268,16 +271,22 @@ describe('Pengaturan → Tim', () => {
     // Tutup tanpa menyalin → peringatan dulu.
     fireEvent.click(within(dialog).getByRole('button', { name: copy.linkDialog.done }));
     expect(within(dialog).getByRole('alert')).toHaveTextContent(copy.linkDialog.notCopied);
-    await waitFor(() =>
-      expect(within(dialog).getByRole('button', { name: copy.linkDialog.back })).toHaveFocus(),
-    );
-    fireEvent.click(within(dialog).getByRole('button', { name: copy.linkDialog.back }));
+    // Fokus ke aksi aman: "Salin tautan" (satu-satunya tombol berwarna); "Tutup tanpa menyalin"
+    // berupa teks bahaya tanpa latar.
+    const copyButton = within(dialog).getByRole('button', { name: copy.linkDialog.copy });
+    await waitFor(() => expect(copyButton).toHaveFocus());
+    expect(copyButton.className).toMatch(/primary/);
+    expect(
+      within(dialog).getByRole('button', { name: copy.linkDialog.closeAnyway }).className,
+    ).toMatch(/ghost/);
 
-    // Salin → "Selesai" langsung menutup.
-    fireEvent.click(within(dialog).getByRole('button', { name: copy.linkDialog.copy }));
+    // Salin dari peringatan → kembali ke pasangan biasa, fokus ke "Selesai" yang langsung menutup.
+    fireEvent.click(copyButton);
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(LINK));
-    await screen.findByRole('button', { name: copy.linkDialog.copied });
-    fireEvent.click(within(dialog).getByRole('button', { name: copy.linkDialog.done }));
+    const done = within(dialog).getByRole('button', { name: copy.linkDialog.done });
+    await waitFor(() => expect(done).toHaveFocus());
+    expect(within(dialog).queryByRole('alert')).toBeNull();
+    fireEvent.click(done);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
     // Tidak bisa dilihat lagi dan tidak ada di cache.
@@ -308,10 +317,13 @@ describe('Pengaturan → Tim', () => {
       expect(within(row).getByRole('button', { name: copy.list.resend })).toHaveFocus(),
     );
 
-    // Batalkan: konfirmasi dulu ("Jangan batalkan" mendapat fokus), lalu baris hilang.
+    // Batalkan: konfirmasi dulu ("Kembali" mendapat fokus, sekunder; hanya aksi merah yang
+    // berwarna), lalu baris hilang.
     fireEvent.click(within(row).getByRole('button', { name: copy.list.revoke }));
     const confirm = await screen.findByRole('dialog', { name: copy.list.revokeTitle });
-    expect(within(confirm).getByRole('button', { name: copy.list.keep })).toHaveFocus();
+    const keep = within(confirm).getByRole('button', { name: copy.list.keep });
+    expect(keep).toHaveFocus();
+    expect(keep.className).toMatch(/secondary/);
     expect(
       view.api.requests.some((r) => r.method === 'DELETE'),
       'belum dibatalkan sebelum dikonfirmasi',
@@ -341,5 +353,116 @@ describe('Pengaturan → Tim', () => {
     const locked = screen.getByRole('button', { name: /2:00|1:59/ });
     expect(locked).toBeDisabled();
     expect(locked).toHaveAttribute('data-locked');
+  });
+});
+
+describe('anggota tim: lencana & alasan hanya dilihat', () => {
+  const base = fakeTeamUser();
+  it('lencana urut perhatian: nonaktif/terkunci, 2FA, email belum diverifikasi', () => {
+    expect(memberBadges(base).map((badge) => badge.label)).toEqual([copy.badges.twoFactorOff]);
+    const admin = fakeTeamUser({
+      role: 'admin',
+      status: 'locked',
+      emailVerified: false,
+      twoFactor: { ...base.twoFactor, required: true, enrollmentExpired: true },
+    });
+    expect(memberBadges(admin)).toEqual([
+      { tone: 'warning', label: copy.badges.locked },
+      { tone: 'danger', label: copy.badges.twoFactorExpired },
+      { tone: 'warning', label: copy.badges.emailUnverified },
+    ]);
+    expect(
+      memberBadges(fakeTeamUser({ twoFactor: { ...base.twoFactor, enabled: true } }))[0]?.label,
+    ).toBe(copy.badges.twoFactorOn);
+  });
+
+  it('alasan tidak bisa dikelola mengikuti canManage dari server', () => {
+    expect(viewOnlyReason(base, 'owner')).toBeNull();
+    expect(viewOnlyReason({ ...base, canManage: false, isSelf: true }, 'owner')).toBe('self');
+    expect(viewOnlyReason({ ...base, canManage: false, role: 'owner' }, 'admin')).toBe(
+      'adminLimit',
+    );
+    expect(viewOnlyReason({ ...base, canManage: false }, 'owner')).toBe('other');
+  });
+
+  it('pencarian nama/email tanpa membedakan huruf besar-kecil', () => {
+    const users = [
+      base,
+      fakeTeamUser({ id: 'x', name: 'Tono Saputra', email: 'tono@majujaya.co.id' }),
+    ];
+    expect(filterMembers(users, 'TONO').map((user) => user.name)).toEqual(['Tono Saputra']);
+    expect(filterMembers(users, '  ')).toHaveLength(2);
+  });
+});
+
+describe('Pengaturan → Tim → daftar anggota', () => {
+  it('daftar: baris sendiri ke Keamanan akun, anggota lain ke detail, nonaktif di kelompok sendiri', async () => {
+    const session = fakeSession('admin', 'Dimas Pratama');
+    const owner = fakeTeamUser({
+      id: '0b0e2d8c-6d3f-4b8a-9d55-5e2f8a1c0009',
+      name: 'Rina Kartika',
+      role: 'owner',
+      canManage: false,
+      assignableRoles: [],
+    });
+    const off = fakeTeamUser({
+      id: '0b0e2d8c-6d3f-4b8a-9d55-5e2f8a1c0010',
+      name: 'Tono Saputra',
+      role: 'teknisi',
+      status: 'disabled',
+      disabledAt: '2026-11-13T00:00:00.000Z',
+      activeSessions: 0,
+      lastLoginAt: null,
+    });
+    await openTeam('admin', {
+      session,
+      teamUsers: {
+        users: [owner, fakeSelfUser(session), fakeTeamUser(), off],
+        manageableRoles: ['supervisor', 'cs', 'teknisi'],
+      },
+    });
+    const list = screen.getByRole('list', { name: copy.members.listLabel });
+    const rows = within(list).getAllByRole('link');
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toHaveTextContent(copy.members.viewOnly);
+    expect(rows[1]).toHaveAttribute('href', '/pengaturan/keamanan');
+    expect(rows[1]).toHaveTextContent(copy.members.you);
+    expect(rows[2]).toHaveAttribute('href', `/pengaturan/tim/${fakeTeamUser().id}`);
+    expect(rows[2]).toHaveTextContent(copy.members.sessions(1));
+    const disabled = screen.getByRole('list', { name: copy.members.disabledGroup(1) });
+    expect(disabled).toHaveTextContent(copy.badges.disabled);
+    expect(disabled).toHaveTextContent(copy.members.neverLoggedIn);
+    // Pencarian baru muncul untuk tim besar.
+    expect(screen.queryByRole('searchbox', { name: copy.members.searchLabel })).toBeNull();
+  });
+
+  it('tim besar: kolom cari menyaring daftar, dengan pesan bila tidak ada yang cocok', async () => {
+    const users = Array.from({ length: 10 }, (_, index) =>
+      fakeTeamUser({
+        id: `3f6a2b1c-9d8e-4f7a-8b6c-5d4e3f2a1c${String(index).padStart(2, '0')}`,
+        name: index === 3 ? 'Sari Wulandari' : `Anggota ${index}`,
+        email: `anggota${index}@majujaya.co.id`,
+      }),
+    );
+    await openTeam('owner', { teamUsers: { users, manageableRoles: ['cs'] } });
+    const search = screen.getByRole('searchbox', { name: copy.members.searchLabel });
+    fireEvent.change(search, { target: { value: 'sari' } });
+    const list = screen.getByRole('list', { name: copy.members.listLabel });
+    expect(within(list).getAllByRole('link')).toHaveLength(1);
+    fireEvent.change(search, { target: { value: 'zzz' } });
+    expect(screen.getByText(copy.members.searchEmpty('zzz'))).toBeVisible();
+  });
+
+  it('menu Pengaturan menyebut jumlah anggota dan undangan terbuka', async () => {
+    await renderApp('/pengaturan', {
+      session: fakeSession('owner'),
+      invitations: fakeInvitationList({ invitations: [fakeInvitation()] }),
+    });
+    const menu = await screen.findByRole('link', { name: new RegExp(`^${copy.title}`) });
+    await waitFor(() => expect(menu).toHaveTextContent('1 anggota · 1 undangan terbuka'));
+    expect(screen.getByRole('link', { name: new RegExp(t.audit.title) })).toHaveAttribute(
+      'href',
+      '/pengaturan/audit',
+    );
   });
 });

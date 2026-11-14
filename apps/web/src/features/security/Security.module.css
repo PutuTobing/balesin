@@ -56,6 +56,13 @@
   font-size: var(--text-13);
 }
 
+/* Paragraf penjelasan di badan kartu: sama dengan deskripsi kartu (13 px), bukan 14 px. */
+.description {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
 .emailAddress {
   color: var(--ink);
   font-size: var(--text-14);
@@ -82,6 +89,11 @@
 .explainIcon {
   flex: none;
   color: var(--success-ink);
+}
+
+/* Aksi merusak yang bukan aksi utama kartu: tombol biasa berteks bahaya. */
+.dangerText {
+  color: var(--danger-ink);
 }
 
 .actions {

@@ -148,7 +148,7 @@ test('wizard: token lewat tautan, lalu pesan error per isian salah di setiap lan
     await expect(result.getByText(expected)).toBeVisible({ timeout: 20_000 });
   };
   await page.getByLabel('Host SMTP').fill(MAILPIT_SMTP.host);
-  await page.getByLabel('Keamanan').selectOption({ label: 'Tanpa enkripsi' });
+  await page.getByLabel('Keamanan', { exact: true }).selectOption({ label: 'Tanpa enkripsi' });
   await page.getByLabel('Username').fill(MAILPIT_SMTP.username);
   await page.getByLabel('Password', { exact: true }).fill(MAILPIT_SMTP.password);
   // "Tanpa enkripsi" + username: peringatan password terkirim polos.
@@ -278,7 +278,7 @@ test('setup dari nol sampai Owner mendaftar 2FA, masuk dua langkah, lalu terkunc
   await page.getByLabel('Alamat email pengirim').fill('cs@majujaya.test');
   await page.getByLabel('Host SMTP').fill(MAILPIT_SMTP.host);
   await page.getByLabel('Port').fill(MAILPIT_SMTP.port);
-  await page.getByLabel('Keamanan').selectOption({ label: 'Tanpa enkripsi' });
+  await page.getByLabel('Keamanan', { exact: true }).selectOption({ label: 'Tanpa enkripsi' });
   await page.getByLabel('Username').fill(MAILPIT_SMTP.username);
   await page.getByLabel('Password', { exact: true }).fill(MAILPIT_SMTP.password);
   await page.getByRole('button', { name: 'Tes koneksi' }).click();

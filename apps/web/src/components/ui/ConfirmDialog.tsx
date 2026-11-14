@@ -70,7 +70,12 @@ export function ConfirmDialog({
             <Button variant={confirmVariant} onClick={onConfirm}>
               {confirmLabel}
             </Button>
-            <Button ref={cancelRef} variant="primary" onClick={onCancel}>
+            {/* Satu tombol berwarna per dialog: aksi merusak sudah merah, batal jadi sekunder. */}
+            <Button
+              ref={cancelRef}
+              variant={confirmVariant === 'danger' ? 'secondary' : 'primary'}
+              onClick={onCancel}
+            >
               {cancelLabel}
             </Button>
           </div>

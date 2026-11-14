@@ -84,14 +84,17 @@ function Unverified({
 
   if (!status.canSend) {
     return canSetUpSender ? (
-      <p className={styles.text}>
-        {copy.noSenderCanSetUp}{' '}
-        <Link to="/pengaturan/email" className={styles.inlineLink}>
-          {copy.setUpSender}
-        </Link>
-      </p>
+      <>
+        <p className={styles.description}>{copy.noSenderCanSetUp}</p>
+        {/* Satu-satunya aksi kartu: tombol (44 px di HP), bukan tautan sebaris (P5). */}
+        <div className={styles.actions}>
+          <Button asChild variant="secondary">
+            <Link to="/pengaturan/email">{copy.setUpSender}</Link>
+          </Button>
+        </div>
+      </>
     ) : (
-      <p className={styles.text}>{copy.noSender}</p>
+      <p className={styles.description}>{copy.noSender}</p>
     );
   }
 
@@ -120,7 +123,7 @@ function Unverified({
 
   return (
     <>
-      <p className={styles.text}>{copy.unverifiedBody}</p>
+      <p className={styles.description}>{copy.unverifiedBody}</p>
       <div className={styles.actions}>
         <SubmitButton
           type="button"

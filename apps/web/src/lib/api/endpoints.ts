@@ -1,7 +1,9 @@
 import {
   API_ROUTES,
   acceptInvitationResponseSchema,
+  activeSessionListResponseSchema,
   apiPath,
+  auditLogListResponseSchema,
   brandingResponseSchema,
   completePasswordResetResponseSchema,
   completeSetupResponseSchema,
@@ -24,14 +26,24 @@ import {
   regenerateBackupCodesResponseSchema,
   requestPasswordResetResponseSchema,
   revokeInvitationResponseSchema,
+  revokeSessionResponseSchema,
+  revokeSessionsResponseSchema,
+  securitySummaryResponseSchema,
   sendEmailVerificationResponseSchema,
   setupStatusResponseSchema,
   startTwoFactorEnrollmentResponseSchema,
+  teamUserActionResponseSchema,
+  teamUserListResponseSchema,
+  teamUserResponseSchema,
   twoFactorStatusResponseSchema,
   verifyEmailResponseSchema,
   verifySetupTokenResponseSchema,
   verifyTwoFactorResponseSchema,
   type AcceptInvitationRequest,
+  type AuditLogFilter,
+  type AuditLogListQuery,
+  type IdentityConfirmation,
+  type InvitableRole,
   type CheckSetupPasswordRequest,
   type CompletePasswordResetRequest,
   type CreateInvitationRequest,
@@ -46,6 +58,16 @@ import {
   type VerifyTwoFactorRequest,
 } from '@balesin/shared';
 import { api, type ApiClient } from './client';
+
+/** Saringan audit log → query string (nilai kosong tidak dikirim). */
+export function auditQueryString(query: AuditLogListQuery | AuditLogFilter): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== null && value !== '') params.set(key, String(value));
+  }
+  const text = params.toString();
+  return text ? `?${text}` : '';
+}
 
 /**
  * Semua endpoint yang dipakai web, satu fungsi per endpoint. Skema respons diambil dari
@@ -235,6 +257,112 @@ export function createEndpoints(client: ApiClient) {
           method: 'POST',
           body: { token },
           schema: verifyEmailResponseSchema,
+        }),
+    },
+    /**
+     * Manajemen pengguna (izin `team.manage`). Aksi kelola wajib konfirmasi ulang identitas
+     * pelaku (password + kode 2FA): isian itu tidak boleh disimpan di cache Query/mutasi atau
+     * storage, jadi pemanggil memanggil fungsi ini langsung (bukan lewat `useMutation`).
+     */
+    team: {
+      list: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.team.users, { schema: teamUserListResponseSchema, signal }),
+      get: (userId: string, signal?: AbortSignal) =>
+        client.request(apiPath(API_ROUTES.team.user, { userId }), {
+          schema: teamUserResponseSchema,
+          signal,
+        }),
+      changeRole: (userId: string, role: InvitableRole, identity: IdentityConfirmation) =>
+        client.request(apiPath(API_ROUTES.team.role, { userId }), {
+          method: 'PUT',
+          body: { ...identity, role },
+          schema: teamUserActionResponseSchema,
+        }),
+      disable: (userId: string, identity: IdentityConfirmation) =>
+        client.request(apiPath(API_ROUTES.team.disable, { userId }), {
+          method: 'POST',
+          body: identity,
+          schema: teamUserActionResponseSchema,
+        }),
+      enable: (userId: string, identity: IdentityConfirmation) =>
+        client.request(apiPath(API_ROUTES.team.enable, { userId }), {
+          method: 'POST',
+          body: identity,
+          schema: teamUserActionResponseSchema,
+        }),
+      resetTwoFactor: (userId: string, identity: IdentityConfirmation) =>
+        client.request(apiPath(API_ROUTES.team.resetTwoFactor, { userId }), {
+          method: 'POST',
+          body: identity,
+          schema: teamUserActionResponseSchema,
+        }),
+      reopenTwoFactorEnrollment: (userId: string, identity: IdentityConfirmation) =>
+        client.request(apiPath(API_ROUTES.team.reopenTwoFactorEnrollment, { userId }), {
+          method: 'POST',
+          body: identity,
+          schema: teamUserActionResponseSchema,
+        }),
+      unlock: (userId: string, identity: IdentityConfirmation) =>
+        client.request(apiPath(API_ROUTES.team.unlock, { userId }), {
+          method: 'POST',
+          body: identity,
+          schema: teamUserActionResponseSchema,
+        }),
+      sessions: (userId: string, signal?: AbortSignal) =>
+        client.request(apiPath(API_ROUTES.team.sessions, { userId }), {
+          schema: activeSessionListResponseSchema,
+          signal,
+        }),
+      revokeSession: (userId: string, sessionId: string) =>
+        client.request(apiPath(API_ROUTES.team.revokeSession, { userId, sessionId }), {
+          method: 'DELETE',
+          schema: revokeSessionResponseSchema,
+        }),
+      revokeAllSessions: (userId: string, identity: IdentityConfirmation) =>
+        client.request(apiPath(API_ROUTES.team.revokeAllSessions, { userId }), {
+          method: 'POST',
+          body: identity,
+          schema: revokeSessionsResponseSchema,
+        }),
+    },
+    /** Sesi aktif milik sendiri (cukup sesi penuh). */
+    sessions: {
+      list: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.sessions.list, {
+          schema: activeSessionListResponseSchema,
+          signal,
+        }),
+      /**
+       * Sesi yang lebih baru dari sesi ini (`confirmationRequired`) wajib konfirmasi identitas di
+       * body; sesi yang lebih lama cukup tanpa body.
+       */
+      revoke: (sessionId: string, identity?: IdentityConfirmation) =>
+        client.request(apiPath(API_ROUTES.sessions.revoke, { sessionId }), {
+          method: 'DELETE',
+          body: identity,
+          schema: revokeSessionResponseSchema,
+        }),
+      revokeOthers: (identity: IdentityConfirmation) =>
+        client.request(API_ROUTES.sessions.revokeOthers, {
+          method: 'POST',
+          body: identity,
+          schema: revokeSessionsResponseSchema,
+        }),
+    },
+    /** Audit log (izin `audit.view`). */
+    audit: {
+      list: (query: AuditLogListQuery, signal?: AbortSignal) =>
+        client.request(`${API_ROUTES.audit.list}${auditQueryString(query)}`, {
+          schema: auditLogListResponseSchema,
+          signal,
+        }),
+      /** CSV lewat `fetch` (cookie sesi), bukan membuka URL di tab baru. */
+      exportCsv: (filter: AuditLogFilter, signal?: AbortSignal) =>
+        client.download(`${API_ROUTES.audit.export}${auditQueryString(filter)}`, { signal }),
+      securitySummary: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.audit.securitySummary, {
+          schema: securitySummaryResponseSchema,
+          signal,
         }),
     },
     branding: {

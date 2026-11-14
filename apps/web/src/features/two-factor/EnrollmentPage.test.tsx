@@ -4,7 +4,7 @@ import {
   type ConfirmTwoFactorEnrollmentResponse,
 } from '@balesin/shared';
 import type { QueryClient } from '@tanstack/react-query';
-import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { t } from '../../i18n/id';
 import {
@@ -304,6 +304,27 @@ describe('pendaftaran 2FA wajib', () => {
   it('Keluar dari layar pendaftaran → halaman masuk', async () => {
     const { router } = await openEnrollment();
     fireEvent.click(screen.getByRole('button', { name: t.auth.userMenu.logout }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/masuk'));
+  });
+
+  it('403 batas daftar lewat saat membuat QR → pendaftaran ditutup: pesan server + Keluar, tanpa langkah', async () => {
+    const { router } = await openEnrollment({
+      routes: {
+        [`POST ${API_ROUTES.twoFactor.enroll}`]: () =>
+          apiError(
+            403,
+            'TWO_FACTOR_ENROLLMENT_EXPIRED',
+            'Batas waktu mendaftarkan verifikasi dua langkah untuk akunmu sudah lewat. Minta Owner atau Admin di tempatmu membuka lagi pendaftarannya, lalu masuk kembali.',
+          ),
+      },
+    });
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(copy.closedTitle);
+    expect(alert).toHaveTextContent('membuka lagi pendaftarannya');
+    expect(screen.queryByRole('list', { name: copy.stepsLabel })).toBeNull();
+    const logout = within(alert).getByRole('button', { name: t.auth.userMenu.logout });
+    await waitFor(() => expect(logout).toHaveFocus());
+    fireEvent.click(logout);
     await waitFor(() => expect(router.state.location.pathname).toBe('/masuk'));
   });
 });

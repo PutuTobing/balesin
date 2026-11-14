@@ -1,6 +1,16 @@
 import {
   API_ROUTES,
   INVITE_PERMISSIONS,
+  MANAGE_PERMISSIONS,
+  SECURITY_EVENT_KINDS,
+  type SecurityEventKind,
+  type ActiveSession,
+  type ActiveSessionListResponse,
+  type AuditLogEntry,
+  type AuditLogListResponse,
+  type SecuritySummaryResponse,
+  type TeamUser,
+  type TeamUserListResponse,
   permissionsForRole,
   isTwoFactorRequired,
   type AuthenticatedSession,
@@ -27,6 +37,8 @@ export interface FakeRequest {
   path: string;
   headers: Record<string, string>;
   body: unknown;
+  /** Parameter query (mis. saringan audit log). */
+  query: URLSearchParams;
 }
 
 export type FakeHandler = (request: FakeRequest) => Response | Promise<Response>;
@@ -198,7 +210,105 @@ export function fakeInvitationList(
   };
 }
 
+/** Anggota tim contoh (bawaan: CS aktif tanpa 2FA yang bisa dikelola Owner). */
+export function fakeTeamUser(overrides: Partial<TeamUser> = {}): TeamUser {
+  return {
+    id: '3f6a2b1c-9d8e-4f7a-8b6c-5d4e3f2a1b01',
+    name: 'Citra Maharani',
+    email: 'citra@majujaya.co.id',
+    role: 'cs',
+    status: 'active',
+    disabledAt: null,
+    lockedUntil: null,
+    emailVerified: true,
+    lastLoginAt: '2026-11-14T02:15:00.000Z',
+    createdAt: '2026-11-10T03:00:00.000Z',
+    twoFactor: {
+      enabled: false,
+      required: false,
+      enabledAt: null,
+      enrollmentDueAt: null,
+      enrollmentExpired: false,
+    },
+    activeSessions: 1,
+    isSelf: false,
+    canManage: true,
+    assignableRoles: ['admin', 'supervisor', 'cs', 'teknisi'],
+    ...overrides,
+  };
+}
+
+/** Diri sendiri di daftar Tim (dari sesi tiruan). */
+export function fakeSelfUser(session: AuthenticatedSession): TeamUser {
+  return fakeTeamUser({
+    id: session.user.id,
+    name: session.user.name,
+    email: session.user.email,
+    role: session.user.role,
+    isSelf: true,
+    canManage: false,
+    assignableRoles: [],
+    twoFactor: {
+      enabled: isTwoFactorRequired(session.user.role),
+      required: isTwoFactorRequired(session.user.role),
+      enabledAt: '2026-11-13T03:00:00.000Z',
+      enrollmentDueAt: null,
+      enrollmentExpired: false,
+    },
+  });
+}
+
+export function fakeActiveSession(overrides: Partial<ActiveSession> = {}): ActiveSession {
+  return {
+    id: '5a4b3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c01',
+    device: 'Chrome di Windows',
+    ipAddress: '203.0.113.*',
+    createdAt: '2026-11-13T01:00:00.000Z',
+    lastSeenAt: '2026-11-14T02:30:00.000Z',
+    current: true,
+    limited: false,
+    ...overrides,
+  };
+}
+
+export function fakeAuditEntry(overrides: Partial<AuditLogEntry> = {}): AuditLogEntry {
+  return {
+    id: '9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c01',
+    createdAt: '2026-11-14T02:00:00.000Z',
+    action: 'user.role_changed',
+    actor: {
+      id: '0b0e2d8c-6d3f-4b8a-9d55-5e2f8a1c0001',
+      name: 'Rina Kartika',
+      email: 'rina@majujaya.co.id',
+      role: 'owner',
+    },
+    target: { type: 'user', id: '3f6a2b1c-9d8e-4f7a-8b6c-5d4e3f2a1b01', name: 'Citra Maharani' },
+    metadata: { from: 'cs', to: 'supervisor' },
+    ipAddress: '203.0.113.7',
+    device: 'Chrome di Windows',
+    ...overrides,
+  };
+}
+
+export const emptySecuritySummary: SecuritySummaryResponse = {
+  since: '2026-11-07T00:00:00.000Z',
+  events: [],
+  counts: Object.fromEntries(SECURITY_EVENT_KINDS.map((kind) => [kind, 0])) as Record<
+    SecurityEventKind,
+    number
+  >,
+  latestWarningAt: null,
+};
+
 export interface FakeApiOptions {
+  /** Bawaan: hanya diri sendiri (dari sesi). */
+  teamUsers?: TeamUserListResponse;
+  /** Bawaan: satu sesi (sesi ini). */
+  sessions?: ActiveSessionListResponse;
+  /** Bawaan: kosong. */
+  auditLog?: AuditLogListResponse;
+  /** Bawaan: tanpa kejadian. */
+  securitySummary?: SecuritySummaryResponse;
   /** `null` = belum masuk (401). Sesi terbatas (`two_factor_enrollment_required`) juga bisa. */
   session?: MeResponse | null;
   /** Bawaan: `fakeTwoFactorStatus(peran sesi)`. */
@@ -270,6 +380,23 @@ export function installFakeApi(options: FakeApiOptions = {}): FakeApi {
           }),
       ),
     ),
+    [`GET ${API_ROUTES.team.users}`]: fullSessionOnly(() =>
+      json(
+        options.teamUsers ?? {
+          users: session?.status === 'authenticated' ? [fakeSelfUser(session)] : [],
+          manageableRoles: [...MANAGE_PERMISSIONS[session?.user.role ?? 'cs']],
+        },
+      ),
+    ),
+    [`GET ${API_ROUTES.sessions.list}`]: fullSessionOnly(() =>
+      json(options.sessions ?? { sessions: [fakeActiveSession()] }),
+    ),
+    [`GET ${API_ROUTES.audit.list}`]: fullSessionOnly(() =>
+      json(options.auditLog ?? { entries: [], nextCursor: null }),
+    ),
+    [`GET ${API_ROUTES.audit.securitySummary}`]: fullSessionOnly(() =>
+      json(options.securitySummary ?? emptySecuritySummary),
+    ),
     [`GET ${API_ROUTES.passwordReset.status}`]: () =>
       json({ available: options.passwordResetAvailable ?? true }),
     [`POST ${API_ROUTES.auth.logout}`]: () => {
@@ -294,7 +421,7 @@ export function installFakeApi(options: FakeApiOptions = {}): FakeApi {
         ]),
       );
       const body = typeof init.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined;
-      const request = { method, path: url.pathname, headers, body };
+      const request = { method, path: url.pathname, headers, body, query: url.searchParams };
       requests.push(request);
       const handler = routes.get(`${method} ${url.pathname}`);
       if (!handler) {

@@ -48,12 +48,12 @@
   white-space: nowrap;
 }
 
-/* Jumlah undangan di samping judul: angka kecil di pil netral. */
+/* Jumlah di samping judul: angka kecil di pil netral, tidak lebih tinggi dari baris judul. */
 .count {
   display: inline-grid;
   place-items: center;
-  min-width: var(--space-24);
-  height: var(--space-24);
+  min-width: var(--size-icon-md);
+  height: var(--size-icon-md);
   padding: 0 var(--space-8);
   border-radius: var(--radius-pill);
   background: var(--surface-2);
@@ -178,6 +178,118 @@
   padding-bottom: var(--space-8);
 }
 
+/* ---------- Daftar anggota ---------- */
+
+/* Beberapa daftar (aktif, nonaktif) di dalam satu `.list` yang merapat ke tepi kartu. */
+.card .memberList {
+  margin: 0;
+}
+
+.memberItem + .memberItem {
+  border-top: 1px solid var(--line);
+}
+
+.memberLink {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-12);
+  padding: var(--space-16) var(--space-24);
+  color: var(--ink);
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.memberLink:hover {
+  background: var(--surface-2);
+  text-decoration: none;
+}
+
+.memberLink:focus-visible {
+  outline-offset: -2px;
+}
+
+/* Baris terakhir kartu membulat mengikuti sudut kartu (latar hover tidak keluar sudut). */
+.list > :last-child > .memberItem:last-child .memberLink {
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+}
+
+.memberAvatar {
+  width: var(--size-control);
+  height: var(--size-control);
+  font-size: var(--text-13);
+}
+
+.memberMain {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.memberName {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: calc(var(--text-14) * var(--leading-title));
+}
+
+.memberNameText {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+  overflow-wrap: anywhere;
+}
+
+.youTag {
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-text);
+}
+
+.memberEmail {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  overflow-wrap: anywhere;
+}
+
+/* Peran + lencana (lencana punya titik sendiri, jadi tanpa pemisah "·" yang bisa yatim). */
+.memberMeta {
+  gap: var(--space-4) var(--space-16);
+}
+
+.memberDetail {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.memberDetail .separator {
+  white-space: pre;
+}
+
+.chevron {
+  flex: none;
+  align-self: center;
+  color: var(--ink-2);
+}
+
+.groupTitle {
+  padding: var(--space-12) var(--space-24) var(--space-8);
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.groupTitle + .memberList {
+  border-top: 1px solid var(--line);
+}
+
 /* ---------- Dialog tautan sekali tampil ---------- */
 
 .linkBlock {
@@ -279,6 +391,20 @@
   height: calc(var(--text-13) * var(--leading-text));
 }
 
+.skeletonAvatar {
+  display: block;
+  flex: none;
+  width: var(--size-control);
+  height: var(--size-control);
+  border-radius: var(--radius-pill);
+}
+
+.skeletonName {
+  display: block;
+  width: 9rem;
+  height: calc(var(--text-14) * var(--leading-title));
+}
+
 .skeletonButtons {
   display: block;
   width: 11rem;
@@ -314,6 +440,14 @@
 
   .rowActions > * {
     flex: 1;
+  }
+
+  .memberLink {
+    padding: var(--space-16);
+  }
+
+  .groupTitle {
+    padding: var(--space-12) var(--space-16) var(--space-8);
   }
 
   .skeletonHintHp {

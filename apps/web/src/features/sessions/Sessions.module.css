@@ -1,0 +1,140 @@
+/*
+ * Daftar sesi aktif (Keamanan akun dan detail anggota). Baris merapat ke tepi kartu seperti daftar
+ * undangan; kartu pemakainya memberi padding 24 (desktop) / 16 (HP).
+ */
+
+.list {
+  margin: 0 calc(var(--space-24) * -1);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+/* `ul[class]` di base.css mereset margin: selektor ganda supaya margin negatif tetap berlaku. */
+ul.list {
+  margin: 0 calc(var(--space-24) * -1);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-8) var(--space-12);
+  padding: var(--space-12) var(--space-24);
+}
+
+.row + .row {
+  border-top: 1px solid var(--line);
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  width: var(--size-control);
+  height: var(--size-control);
+  border-radius: var(--radius-input);
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.device {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-8);
+}
+
+.deviceName {
+  color: var(--ink);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+  overflow-wrap: anywhere;
+}
+
+/* "Sesi ini": pil lembut primary; "Pendaftaran 2FA": pil netral. */
+.tag,
+.tagMuted {
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-text);
+  white-space: nowrap;
+}
+
+.tag {
+  background: var(--primary-soft);
+  color: var(--ink);
+}
+
+.tagMuted {
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.meta {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+/* Tiap keterangan patah sebagai satu kesatuan bila muat. */
+.segment {
+  display: inline-block;
+}
+
+/* Keluarkan: jalan keluar yang merusak tetapi ringan → teks bahaya tanpa latar. */
+.revoke {
+  color: var(--danger-ink);
+}
+
+.rowError {
+  grid-column: 1 / -1;
+}
+
+.skeletonIcon {
+  display: block;
+  width: var(--size-control);
+  height: var(--size-control);
+  border-radius: var(--radius-input);
+}
+
+.skeletonDevice {
+  display: block;
+  width: 10rem;
+  height: calc(var(--text-14) * var(--leading-title));
+}
+
+.skeletonMeta {
+  display: block;
+  width: 18rem;
+  max-width: 100%;
+  height: calc(var(--text-13) * var(--leading-text));
+}
+
+@media (max-width: 640px) {
+  .list,
+  ul.list {
+    margin: 0 calc(var(--space-16) * -1);
+  }
+
+  .row {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    padding: var(--space-12) var(--space-16);
+  }
+
+  /* HP: tombol di bawah keterangan, sejajar teks (bukan ikon), selebar sisa baris. */
+  .revoke {
+    grid-column: 2;
+    justify-self: start;
+    margin-left: calc(var(--space-16) * -1);
+  }
+}

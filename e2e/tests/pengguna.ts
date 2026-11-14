@@ -126,3 +126,51 @@ export async function nextTotp(
   if (waitMs > 0) await sleep(waitMs);
   return { code: totpAtStep(secret, step), step };
 }
+
+/**
+ * Mendaftarkan 2FA untuk peran WAJIB (Admin/Supervisor) yang belum punya: masuk → sesi terbatas
+ * pendaftaran → rahasia → kode pertama. Mengembalikan rahasia, langkah waktu terpakai, dan kode
+ * cadangan (dipakai sebagai kode konfirmasi identitas berikutnya tanpa menunggu 30 detik).
+ */
+export async function enrollRequiredTwoFactorViaApi(
+  user: ExtraUser,
+): Promise<{ secret: string; lastStep: number; backupCodes: string[] }> {
+  const api = await request.newContext({
+    baseURL: BASE_URL,
+    extraHTTPHeaders: { origin: BASE_URL },
+    storageState: { cookies: [], origins: [] },
+  });
+  try {
+    const loginResponse = await api.post('/api/v1/auth/login', {
+      data: { email: user.email, password: user.password },
+    });
+    const login = (await loginResponse.json()) as { status: string; csrfToken: string };
+    if (login.status !== 'two_factor_enrollment_required') {
+      throw new Error(`Login API (wajib daftar 2FA): ${login.status}`);
+    }
+    const headers = { 'x-csrf-token': login.csrfToken };
+    const enroll = await api.post('/api/v1/auth/2fa/enroll', { headers, data: {} });
+    if (!enroll.ok()) throw new Error(`Daftar 2FA (${enroll.status()}): ${await enroll.text()}`);
+    const { secret } = (await enroll.json()) as { secret: string };
+    const step = totpStep();
+    const confirm = await api.post('/api/v1/auth/2fa/enroll/confirm', {
+      headers,
+      data: { code: totpAtStep(secret, step) },
+    });
+    if (!confirm.ok()) {
+      throw new Error(`Konfirmasi 2FA (${confirm.status()}): ${await confirm.text()}`);
+    }
+    const body = (await confirm.json()) as { backupCodes: { codes: string[] } };
+    return { secret, lastStep: step, backupCodes: body.backupCodes.codes };
+  } finally {
+    await api.dispose();
+  }
+}
+
+/** ID pengguna E2E dari email-nya. */
+export async function userId(email: string): Promise<string> {
+  const rows = await e2eSql<{ id: string }>('select id from users where email = $1', [email]);
+  const id = rows[0]?.id;
+  if (!id) throw new Error(`Pengguna ${email} tidak ada`);
+  return id;
+}

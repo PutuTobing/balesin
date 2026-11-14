@@ -3,6 +3,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { redirect } from '@tanstack/react-router';
 import {
   brandingQuery,
+  securitySummaryQuery,
   sessionQuery,
   setupStatusQuery,
   twoFactorStatusQuery,
@@ -47,6 +48,25 @@ function toEnrollment(href: string | undefined): never {
   });
 }
 
+/** Batas tunggu ringkasan keamanan saat aplikasi dibuka (jangan menahan aplikasi lebih lama). */
+const SUMMARY_WAIT_MS = 1_500;
+
+/**
+ * Pemegang `audit.view`: ringkasan keamanan dimuat SEBELUM kerangka aplikasi tampil, supaya
+ * banner peringatan sudah ada di render pertama dan tidak mendorong isi halaman ke bawah (CLS).
+ * Gagal atau lambat → aplikasi tetap dibuka; banner menyusul bila datanya tiba.
+ */
+async function prepareSecuritySummary(
+  queryClient: QueryClient,
+  session: AuthenticatedSession,
+): Promise<void> {
+  if (!sessionCan(session, 'audit.view')) return;
+  await Promise.race([
+    queryClient.ensureQueryData(securitySummaryQuery).catch(() => null),
+    new Promise((resolve) => setTimeout(resolve, SUMMARY_WAIT_MS)),
+  ]);
+}
+
 /** Tanpa sesi: wizard setup pada instalasi baru, selain itu halaman masuk. */
 async function toLoginOrSetup(queryClient: QueryClient, href: string | undefined): Promise<never> {
   const status = await queryClient.ensureQueryData(setupStatusQuery).catch(() => null);
@@ -67,7 +87,10 @@ export async function requireSession(
   href: string,
 ): Promise<{ session: AuthenticatedSession }> {
   const session = await queryClient.ensureQueryData(sessionQuery);
-  if (session?.status === 'authenticated') return { session };
+  if (session?.status === 'authenticated') {
+    await prepareSecuritySummary(queryClient, session);
+    return { session };
+  }
   if (session) return toEnrollment(href);
   return toLoginOrSetup(queryClient, href);
 }
@@ -122,6 +145,17 @@ export async function guardSetup(queryClient: QueryClient): Promise<void> {
  */
 export function guardPermission(session: AuthenticatedSession, permission: Permission): void {
   if (!sessionCan(session, permission)) {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error -- pola resmi TanStack Router
+    throw redirect({ to: '/pengaturan', replace: true });
+  }
+}
+
+/** Halaman yang cukup dengan salah satu izin (mis. Tim = `team.invite` atau `team.manage`). */
+export function guardAnyPermission(
+  session: AuthenticatedSession,
+  permissions: readonly Permission[],
+): void {
+  if (!permissions.some((permission) => sessionCan(session, permission))) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error -- pola resmi TanStack Router
     throw redirect({ to: '/pengaturan', replace: true });
   }

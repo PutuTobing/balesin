@@ -29,16 +29,26 @@ import { SecuritySkeleton } from '../features/security/SecuritySkeleton';
 import { SetupSkeleton } from '../features/setup/SetupSkeleton';
 import { SetupStatusError } from '../features/setup/SetupStatusError';
 import { TeamSkeleton } from '../features/team/TeamSkeleton';
+import { TeamUserSkeleton } from '../features/team-user/TeamUserSkeleton';
+import { AuditSkeleton } from '../features/audit/AuditSkeleton';
+import { parseAuditSearch } from '../features/audit/audit-search';
+import { sessionCan } from '../features/auth/session';
 import { EnrollmentSkeleton } from '../features/two-factor/EnrollmentSkeleton';
 import { t } from '../i18n/id';
 import {
   emailSettingsQuery,
   emailVerificationQuery,
   invitationsQuery,
+  sessionsQuery,
+  teamUserQuery,
+  teamUsersQuery,
   twoFactorStatusQuery,
+  userAuditQuery,
+  userSessionsQuery,
 } from '../lib/api/queries';
 import { createPreviewRoutes } from './preview-routes';
 import {
+  guardAnyPermission,
   guardEnrollment,
   guardLogin,
   guardPermission,
@@ -237,15 +247,60 @@ const emailSettingsRoute = createRoute({
   pendingComponent: EmailSettingsSkeleton,
 });
 
-/** Pengaturan → Tim: izin `team.invite` (Owner, Admin; peran lain dialihkan ke Pengaturan). */
+/**
+ * Pengaturan → Tim: izin `team.invite` (undangan) dan/atau `team.manage` (daftar anggota) — Owner,
+ * Admin; peran lain dialihkan ke Pengaturan.
+ */
 const teamRoute = createRoute({
   getParentRoute,
   path: 'pengaturan/tim',
   staticData: { page: { title: t.team.title, parent: 'settings' } },
-  beforeLoad: ({ context }) => guardPermission(context.session, 'team.invite'),
-  loader: ({ context }) => context.queryClient.ensureQueryData(invitationsQuery),
+  beforeLoad: ({ context }) => guardAnyPermission(context.session, ['team.invite', 'team.manage']),
+  loader: async ({ context }) => {
+    const { queryClient, session } = context;
+    await Promise.all([
+      sessionCan(session, 'team.invite') ? queryClient.ensureQueryData(invitationsQuery) : null,
+      sessionCan(session, 'team.manage') ? queryClient.ensureQueryData(teamUsersQuery) : null,
+    ]);
+  },
   component: lazyRouteComponent(() => import('../features/team/TeamPage'), 'TeamPage'),
   pendingComponent: TeamSkeleton,
+});
+
+/**
+ * Pengaturan → Tim → detail anggota: izin `team.manage`. Data yang gagal dimuat (mis. 404) tidak
+ * menggagalkan rute: halamannya sendiri menampilkan "tidak ditemukan" / gagal + coba lagi.
+ */
+const teamUserRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/tim/$userId',
+  staticData: { page: { title: t.teamUser.title, parent: 'team' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'team.manage'),
+  loader: async ({ context, params }) => {
+    const { queryClient, session } = context;
+    if (sessionCan(session, 'audit.view')) {
+      void queryClient.prefetchInfiniteQuery(userAuditQuery(params.userId));
+    }
+    const user = await queryClient
+      .ensureQueryData(teamUserQuery(params.userId, queryClient))
+      .catch(() => null);
+    // Sesi pengguna lain termasuk "kelola": hanya dimuat bila pemanggil boleh mengelolanya
+    // (selain itu server menjawab 403).
+    if (user?.canManage) void queryClient.prefetchQuery(userSessionsQuery(params.userId));
+  },
+  component: lazyRouteComponent(() => import('../features/team-user/TeamUserPage'), 'TeamUserPage'),
+  pendingComponent: TeamUserSkeleton,
+});
+
+/** Pengaturan → Audit log: izin `audit.view` (Owner, Admin). Saringan di parameter URL. */
+const auditRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/audit',
+  staticData: { page: { title: t.audit.title, parent: 'settings' } },
+  validateSearch: parseAuditSearch,
+  beforeLoad: ({ context }) => guardPermission(context.session, 'audit.view'),
+  component: lazyRouteComponent(() => import('../features/audit/AuditPage'), 'AuditPage'),
+  pendingComponent: AuditSkeleton,
 });
 
 /** Pengaturan → Keamanan akun: semua peran. */
@@ -256,8 +311,9 @@ const securityRoute = createRoute({
   loader: async ({ context }) => {
     // Status email dimuat bersamaan; bila gagal, kartunya sendiri yang menampilkan error.
     const email = context.queryClient.ensureQueryData(emailVerificationQuery).catch(() => null);
+    const sessions = context.queryClient.ensureQueryData(sessionsQuery).catch(() => null);
     await context.queryClient.ensureQueryData(twoFactorStatusQuery);
-    await email;
+    await Promise.all([email, sessions]);
   },
   component: lazyRouteComponent(() => import('../features/security/SecurityPage'), 'SecurityPage'),
   pendingComponent: SecuritySkeleton,
@@ -299,6 +355,8 @@ const appChildren = [
   settingsRoute,
   emailSettingsRoute,
   teamRoute,
+  teamUserRoute,
+  auditRoute,
   securityRoute,
   securityEnrollRoute,
   moreRoute,

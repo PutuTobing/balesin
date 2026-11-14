@@ -14,6 +14,12 @@
   }
 }
 
+/* Halaman tautan panjang: subjudul minimal 2 baris (= kerangkanya), supaya isian tidak bergeser
+   saat data tiba walau subjudulnya muat satu baris. */
+.subtitleReserve {
+  min-height: calc(2 * var(--text-14) * var(--leading-text));
+}
+
 /* Judul difokus secara terprogram saat keadaan berganti; bukan kontrol, jadi tanpa cincin. */
 .title:focus {
   outline: none;

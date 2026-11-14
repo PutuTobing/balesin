@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ChevronRight, Mail, ShieldCheck, UsersRound } from 'lucide-react';
+import { ChevronRight, History, Mail, ShieldCheck, UsersRound } from 'lucide-react';
 import { RadioGroup } from 'radix-ui';
 import { useBrand } from '../../brand/brand';
 import { Icon } from '../../components/ui/Icon';
@@ -13,7 +13,12 @@ import { useTheme } from '../../theme/theme-context';
 import { themeOptions } from '../../theme/theme-options';
 import { useCan } from '../auth/session';
 import { EmailStatusBadge } from '../email-settings/EmailStatusBadge';
-import { emailSettingsQuery, invitationsQuery, twoFactorStatusQuery } from '../../lib/api/queries';
+import {
+  emailSettingsQuery,
+  invitationsQuery,
+  teamUsersQuery,
+  twoFactorStatusQuery,
+} from '../../lib/api/queries';
 import { TwoFactorBadge } from '../security/TwoFactorBadge';
 import styles from './Settings.module.css';
 
@@ -30,14 +35,23 @@ const ACCOUNT_HEADING_ID = 'pengaturan-akun';
 export function SettingsPage() {
   const { preference, setPreference } = useTheme();
   const { productName } = useBrand();
-  const canTeam = useCan('team.invite');
+  const canInvite = useCan('team.invite');
+  const canManageTeam = useCan('team.manage');
+  const canTeam = canInvite || canManageTeam;
   const canEmail = useCan('settings.email.manage');
+  const canAudit = useCan('audit.view');
 
   return (
     <Page>
       <div className={styles.content}>
-        {canTeam || canEmail ? (
-          <OrganizationSettings showTeam={canTeam} showEmail={canEmail} />
+        {canTeam || canEmail || canAudit ? (
+          <OrganizationSettings
+            showTeam={canTeam}
+            showEmail={canEmail}
+            showAudit={canAudit}
+            canInvite={canInvite}
+            canManageTeam={canManageTeam}
+          />
         ) : null}
         <AccountSettings />
         <section className={styles.card} aria-labelledby={APPEARANCE_HEADING_ID}>
@@ -112,7 +126,19 @@ function Scene({ theme, split = false }: { theme: ResolvedTheme; split?: boolean
 /**
  * Menu pengaturan organisasi sesuai izin (Tim, Email pengirim), lengkap dengan status tiap baris.
  */
-function OrganizationSettings({ showTeam, showEmail }: { showTeam: boolean; showEmail: boolean }) {
+function OrganizationSettings({
+  showTeam,
+  showEmail,
+  showAudit,
+  canInvite,
+  canManageTeam,
+}: {
+  showTeam: boolean;
+  showEmail: boolean;
+  showAudit: boolean;
+  canInvite: boolean;
+  canManageTeam: boolean;
+}) {
   return (
     <section className={styles.card} aria-labelledby={ORGANIZATION_HEADING_ID}>
       <div className={styles.cardHead}>
@@ -121,15 +147,27 @@ function OrganizationSettings({ showTeam, showEmail }: { showTeam: boolean; show
         </h2>
       </div>
       <ul className={styles.menu}>
-        {showTeam ? <TeamMenuItem /> : null}
+        {showTeam ? <TeamMenuItem canInvite={canInvite} canManage={canManageTeam} /> : null}
         {showEmail ? <EmailMenuItem /> : null}
+        {showAudit ? <AuditMenuItem /> : null}
       </ul>
     </section>
   );
 }
 
-function TeamMenuItem() {
-  const team = useQuery(invitationsQuery);
+function TeamMenuItem({ canInvite, canManage }: { canInvite: boolean; canManage: boolean }) {
+  const team = useQuery({ ...invitationsQuery, enabled: canInvite });
+  const users = useQuery({ ...teamUsersQuery, enabled: canManage });
+  const parts = [
+    canManage && users.data ? t.team.menuMembers(users.data.users.length) : null,
+    canInvite && team.data ? t.team.menuStatus(team.data.invitations.length) : null,
+  ]
+    .filter((part) => part !== null)
+    // "3 anggota · belum ada undangan terbuka": bagian kedua di tengah kalimat.
+    .map((part, index) =>
+      index === 0 ? part : part.charAt(0).toLocaleLowerCase('id-ID') + part.slice(1),
+    );
+  const loading = (canInvite && team.isPending) || (canManage && users.isPending);
   return (
     <li>
       <Link to="/pengaturan/tim" className={styles.menuLink}>
@@ -141,12 +179,10 @@ function TeamMenuItem() {
           <span className={styles.menuHint}>{t.team.menuHint}</span>
         </span>
         <span className={styles.menuStatus}>
-          {team.data ? (
-            <span className={styles.menuCount}>
-              {t.team.menuStatus(team.data.invitations.length)}
-            </span>
-          ) : team.isPending ? (
+          {loading ? (
             <Skeleton className={styles.statusSkeleton} />
+          ) : parts.length > 0 ? (
+            <span className={styles.menuCount}>{parts.join(' · ')}</span>
           ) : null}
         </span>
         <Icon icon={ChevronRight} size={16} className={styles.chevron} />
@@ -184,6 +220,23 @@ function EmailMenuItem() {
           ) : email.isPending ? (
             <Skeleton className={styles.statusSkeleton} />
           ) : null}
+        </span>
+        <Icon icon={ChevronRight} size={16} className={styles.chevron} />
+      </Link>
+    </li>
+  );
+}
+
+function AuditMenuItem() {
+  return (
+    <li>
+      <Link to="/pengaturan/audit" className={styles.menuLink}>
+        <span className={styles.menuIcon}>
+          <Icon icon={History} size={20} />
+        </span>
+        <span className={styles.menuText}>
+          <span className={styles.menuLabel}>{t.audit.title}</span>
+          <span className={styles.menuHint}>{t.audit.menuHint}</span>
         </span>
         <Icon icon={ChevronRight} size={16} className={styles.chevron} />
       </Link>

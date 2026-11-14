@@ -89,8 +89,20 @@ export interface ApiClientOptions {
   fetch?: typeof fetch;
 }
 
+/** Hasil unduhan berkas (mis. ekspor CSV): isi + header jawaban. */
+export interface BlobResult {
+  blob: Blob;
+  headers: Headers;
+}
+
 export interface ApiClient {
   request<S extends z.ZodType>(path: string, options: RequestOptions<S>): Promise<z.output<S>>;
+  /**
+   * GET yang jawabannya berkas, bukan JSON (ekspor CSV). Membawa header CSRF (rute ekspor
+   * mewajibkannya walau GET). Error tetap amplop JSON biasa dan diperlakukan sama dengan
+   * `request` (401/403/429). Tanpa token di URL: sesi lewat cookie.
+   */
+  download(path: string, options?: { signal?: AbortSignal }): Promise<BlobResult>;
   setCsrfToken(token: string | null): void;
   getCsrfToken(): string | null;
   /** Dipanggil saat API menjawab 401 `UNAUTHENTICATED` (sesi habis/dicabut). */
@@ -108,10 +120,18 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
   const forbiddenListeners = new Set<(error: ApiError) => void>();
   const doFetch: typeof fetch = (...args) => (options.fetch ?? globalThis.fetch)(...args);
 
-  async function send(path: string, method: HttpMethod, body: unknown, signal?: AbortSignal) {
-    const headers: Record<string, string> = { accept: 'application/json' };
+  async function send(
+    path: string,
+    method: HttpMethod,
+    body: unknown,
+    signal?: AbortSignal,
+    accept = 'application/json',
+    /** GET ber-efek-samping (ekspor) juga wajib CSRF (docs/KONTRAK-API-AUTH.md, review butir 6 R3). */
+    forceCsrf = false,
+  ) {
+    const headers: Record<string, string> = { accept };
     if (body !== undefined) headers['content-type'] = 'application/json';
-    if (MUTATING.has(method) && csrfToken) headers[CSRF_HEADER_NAME] = csrfToken;
+    if ((MUTATING.has(method) || forceCsrf) && csrfToken) headers[CSRF_HEADER_NAME] = csrfToken;
     try {
       return await doFetch(path, {
         method,
@@ -202,6 +222,26 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     return parsed.data;
   }
 
+  async function download(path: string, { signal }: { signal?: AbortSignal } = {}) {
+    const accept = 'text/csv, application/json';
+    let response = await send(path, 'GET', undefined, signal, accept, true);
+    if (!response.ok) {
+      let error = await toError(response);
+      // Token CSRF basi: ambil yang baru dari /auth/me, ulangi sekali (sama dengan `request`).
+      if (error.code === 'CSRF_INVALID' && (await refreshCsrf())) {
+        response = await send(path, 'GET', undefined, signal, accept, true);
+        if (!response.ok) error = await toError(response);
+      }
+      if (!response.ok) throw handleFailure(error);
+    }
+    try {
+      return { blob: await response.blob(), headers: response.headers };
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      throw new ApiError({ status: 0, code: 'NETWORK_ERROR', message: t.api.network });
+    }
+  }
+
   function handleFailure(error: ApiError): ApiError {
     if (error.status === 401 && error.code === 'UNAUTHENTICATED') {
       csrfToken = null;
@@ -218,6 +258,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
   return {
     request,
+    download,
     setCsrfToken(token) {
       csrfToken = token;
     },

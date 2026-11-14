@@ -411,18 +411,21 @@ export async function invitationList(
 
 /** `POST /invitations` tiruan: undangan baru, dengan tautan sekali tampil bila tanpa email. */
 export async function mockCreateInvitation(page: Page, withLink: boolean): Promise<void> {
-  await page.route(`${API}/invitations`, (route) => {
+  await page.route(`${API}/invitations`, async (route) => {
     if (route.request().method() !== 'POST') return route.fallback();
     const body = route.request().postDataJSON() as { email: string; role: InvitationRole };
+    const invitation = photoInvitation(9, {
+      email: body.email,
+      role: body.role,
+      deliveryStatus: withLink ? 'link' : 'queued',
+      ageHours: 0,
+    });
+    // Daftar yang dimuat ulang setelahnya ikut memuat undangan baru (seperti API sungguhan).
+    await invitationList(page, { emailDelivery: !withLink, invitations: [invitation] });
     return json(
       route,
       {
-        invitation: photoInvitation(9, {
-          email: body.email,
-          role: body.role,
-          deliveryStatus: withLink ? 'link' : 'queued',
-          ageHours: 0,
-        }),
+        invitation,
         link: withLink ? `http://localhost:5180/undangan#token=${PHOTO_LINK_TOKEN}` : null,
       },
       201,

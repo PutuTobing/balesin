@@ -13,7 +13,6 @@ import { Button } from '../../components/ui/Button';
 import { PasswordField, TextField } from '../../components/ui/Field';
 import { Notice } from '../../components/ui/Notice';
 import { PasswordStrength, type ServerPasswordCheck } from '../../components/ui/PasswordStrength';
-import { Skeleton } from '../../components/ui/Skeleton';
 import { SubmitButton } from '../../components/ui/SubmitButton';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
@@ -54,6 +53,7 @@ function InvitationLink({ token }: { token: string | null }) {
         documentTitle={copy.documentTitle}
         title={copy.invalidTitle}
         message={state.kind === 'missing' ? copy.missing : state.message}
+        tall
       >
         <ToLoginButton />
       </LinkProblem>
@@ -66,6 +66,7 @@ function InvitationLink({ token }: { token: string | null }) {
         error={state.error}
         lock={lock}
         onRetry={retry}
+        tall
       />
     );
   }
@@ -116,13 +117,12 @@ function InvitationScreen({
     >
       <SignedInWarning />
       <AcceptForm token={token} invitation={invitation} onInvalid={onInvalid} />
-      <div className={styles.footnote}>
-        {invitation ? (
+      {/* Bergantung data: baru tampil setelah undangan tiba (di bawah isian, tidak menggeser). */}
+      {invitation ? (
+        <div className={styles.footnote}>
           <p>{copy.expires(formatTime(invitation.expiresAt))}</p>
-        ) : (
-          <Skeleton className={layout.skeletonText} />
-        )}
-      </div>
+        </div>
+      ) : null}
     </AuthLayout>
   );
 }
@@ -296,9 +296,6 @@ function AcceptForm({
 
   return (
     <form ref={formRef} className={styles.form} onSubmit={(event) => void submit(event)} noValidate>
-      {invitation?.twoFactorRequired ? (
-        <Notice tone="info">{copy.twoFactor(USER_ROLE_LABELS[invitation.role])}</Notice>
-      ) : null}
       <TextField
         size="lg"
         label={copy.email}
@@ -357,15 +354,24 @@ function AcceptForm({
         error={errors.repeat}
         disabled={disabled}
       />
-      <SubmitButton
-        className={styles.submit}
-        pending={pending}
-        pendingLabel={copy.submitting}
-        lock={lock}
-        disabled={invitation === null}
-      >
-        {copy.submit}
-      </SubmitButton>
+      {/*
+        Yang bergantung data undangan (kotak 2FA, tombol) baru dirender setelah data tiba, di bawah
+        isian yang sudah tampil di kerangka: tidak ada yang bergeser (kritikus W1). Kotak 2FA dibaca
+        tepat sebelum menekan tombol.
+      */}
+      {invitation?.twoFactorRequired ? (
+        <Notice tone="info">{copy.twoFactor(USER_ROLE_LABELS[invitation.role])}</Notice>
+      ) : null}
+      {invitation ? (
+        <SubmitButton
+          className={styles.submit}
+          pending={pending}
+          pendingLabel={copy.submitting}
+          lock={lock}
+        >
+          {copy.submit}
+        </SubmitButton>
+      ) : null}
       {/* Pesan server di bawah tombol: judul, isian, dan tombol tidak bergeser (kritikus W1). */}
       {error ? (
         <Notice

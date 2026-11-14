@@ -120,7 +120,7 @@ function VerifyLink({ token }: { token: string | null }) {
       );
     case 'loading':
       return (
-        <AuthLayout documentTitle={copy.title} loading={{ subtitleLines: 1 }}>
+        <AuthLayout documentTitle={copy.title} loading={{ subtitleLines: 2 }}>
           <div className={layout.actions}>
             <Skeleton className={layout.skeletonButton} />
           </div>

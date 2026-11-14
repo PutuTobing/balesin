@@ -17,11 +17,14 @@ export function LinkProblem({
   documentTitle,
   title,
   message,
+  tall = false,
   children,
 }: {
   documentTitle: string;
   title: string;
   message: string;
+  /** Halaman form panjang (undangan, atur ulang): posisi kolom sama dengan kerangkanya. */
+  tall?: boolean;
   /** Tombol langkah berikutnya (utama dulu). */
   children: ReactNode;
 }) {
@@ -30,7 +33,13 @@ export function LinkProblem({
     titleRef.current?.focus();
   }, [title, message]);
   return (
-    <AuthLayout documentTitle={documentTitle} title={title} subtitle={message} titleRef={titleRef}>
+    <AuthLayout
+      documentTitle={documentTitle}
+      title={title}
+      subtitle={message}
+      titleRef={titleRef}
+      tall={tall}
+    >
       <div className={layout.actions}>{children}</div>
     </AuthLayout>
   );
@@ -54,11 +63,13 @@ export function LinkFailed({
   error,
   lock,
   onRetry,
+  tall = false,
 }: {
   documentTitle: string;
   error: unknown;
   lock: Lock;
   onRetry: () => void;
+  tall?: boolean;
 }) {
   const limited = isApiError(error) && error.status === 429;
   return (
@@ -66,6 +77,7 @@ export function LinkFailed({
       documentTitle={documentTitle}
       title={limited ? t.links.lockedTitle : t.links.failedTitle}
       message={isApiError(error) ? error.message : t.api.network}
+      tall={tall}
     >
       <SubmitButton type="button" onClick={onRetry} pending={false} pendingLabel="" lock={lock}>
         {t.common.retry}

@@ -61,3 +61,12 @@ export function formatDate(iso: string): string {
   if (Number.isNaN(date.getTime())) return iso;
   return dateFormat.format(date);
 }
+
+/**
+ * `formatDateTime` untuk di tengah kalimat: "Masuk hari ini, 09.15", "Aktif kemarin, 21.40",
+ * "Masuk 13 Nov 2026, 22.03" (hanya huruf pertama yang dikecilkan).
+ */
+export function formatDateTimeInline(iso: string, now = new Date()): string {
+  const text = formatDateTime(iso, now);
+  return text.charAt(0).toLocaleLowerCase('id-ID') + text.slice(1);
+}

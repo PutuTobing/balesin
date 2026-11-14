@@ -76,7 +76,9 @@ export function AuthLayout({
             <h1 ref={titleRef} tabIndex={-1} className={cx(styles.title, layout.title)}>
               {title}
             </h1>
-            {subtitle ? <p className={styles.subtitle}>{subtitle}</p> : null}
+            {subtitle ? (
+              <p className={cx(styles.subtitle, tall && layout.subtitleReserve)}>{subtitle}</p>
+            ) : null}
           </>
         )}
       </div>
@@ -115,7 +117,7 @@ export function AuthRouteSkeleton({
   tall?: boolean;
 }) {
   return (
-    <AuthLayout documentTitle={documentTitle} loading={{ subtitleLines: 1 }} tall={tall}>
+    <AuthLayout documentTitle={documentTitle} loading={{ subtitleLines: tall ? 2 : 1 }} tall={tall}>
       <div className={styles.form}>
         {[0, 1].map((index) => (
           <div key={index} className={layout.skeletonField}>

@@ -1,11 +1,5 @@
 import { CircleAlert, Eye, EyeOff } from 'lucide-react';
-import {
-  useId,
-  useState,
-  type ComponentPropsWithRef,
-  type ReactNode,
-  type SelectHTMLAttributes,
-} from 'react';
+import { useId, useState, type ComponentPropsWithRef, type ReactNode } from 'react';
 import { t } from '../../i18n/id';
 import { cx } from '../../lib/cx';
 import { describedBy } from '../../lib/form';
@@ -159,7 +153,7 @@ export function PasswordField(props: PasswordFieldProps) {
 }
 
 export interface SelectFieldProps
-  extends FieldFrameProps, Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size'> {
+  extends FieldFrameProps, Omit<ComponentPropsWithRef<'select'>, 'size'> {
   options: readonly { value: string; label: string }[];
 }
 

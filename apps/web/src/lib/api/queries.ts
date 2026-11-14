@@ -1,5 +1,12 @@
-import { type EmailTemplateId, type MeResponse } from '@balesin/shared';
-import { queryOptions, type QueryClient } from '@tanstack/react-query';
+import {
+  AUDIT_LOG_PAGE_DEFAULT,
+  type AuditLogFilter,
+  type EmailTemplateId,
+  type MeResponse,
+  type TeamUser,
+  type TeamUserListResponse,
+} from '@balesin/shared';
+import { infiniteQueryOptions, queryOptions, type QueryClient } from '@tanstack/react-query';
 import { api, isApiError } from './client';
 import { endpoints } from './endpoints';
 
@@ -13,6 +20,14 @@ export const queryKeys = {
   emailVerification: ['auth', 'email-verification'] as const,
   invitations: ['team', 'invitations'] as const,
   passwordResetStatus: ['password-reset', 'status'] as const,
+  teamUsers: ['team', 'users'] as const,
+  teamUser: (userId: string) => ['team', 'users', userId] as const,
+  userSessions: (userId: string) => ['team', 'users', userId, 'sessions'] as const,
+  /** Riwayat audit satu pengguna (detail pengguna). */
+  userAudit: (userId: string) => ['audit', 'user', userId] as const,
+  sessions: ['auth', 'sessions'] as const,
+  auditLog: (filter: AuditLogFilter) => ['audit', 'list', filter] as const,
+  securitySummary: ['audit', 'security-summary'] as const,
   emailTemplatePreview: (template: EmailTemplateId) =>
     ['settings', 'email', 'template', template] as const,
 };
@@ -89,6 +104,86 @@ export const invitationsQuery = queryOptions({
       ? 3_000
       : false,
 });
+
+/** Semua pengguna organisasi (Pengaturan → Tim; izin `team.manage`). */
+export const teamUsersQuery = queryOptions({
+  queryKey: queryKeys.teamUsers,
+  queryFn: ({ signal }) => endpoints.team.list(signal),
+});
+
+/** Satu pengguna (detail anggota). Data awal diambil dari daftar bila sudah dimuat. */
+export function teamUserQuery(userId: string, queryClient?: QueryClient) {
+  return queryOptions({
+    queryKey: queryKeys.teamUser(userId),
+    queryFn: async ({ signal }) => (await endpoints.team.get(userId, signal)).user,
+    initialData: () =>
+      queryClient
+        ?.getQueryData<TeamUserListResponse>(queryKeys.teamUsers)
+        ?.users.find((user) => user.id === userId),
+    initialDataUpdatedAt: () => queryClient?.getQueryState(queryKeys.teamUsers)?.dataUpdatedAt,
+  });
+}
+
+/** Sesi aktif pengguna lain (detail anggota). */
+export function userSessionsQuery(userId: string) {
+  return queryOptions({
+    queryKey: queryKeys.userSessions(userId),
+    queryFn: ({ signal }) => endpoints.team.sessions(userId, signal),
+  });
+}
+
+/** Sesi aktif milik sendiri (Keamanan akun). */
+export const sessionsQuery = queryOptions({
+  queryKey: queryKeys.sessions,
+  queryFn: ({ signal }) => endpoints.sessions.list(signal),
+});
+
+/** Audit log bersaring, per halaman dengan kursor ("Muat lagi"). */
+export function auditLogQuery(filter: AuditLogFilter, limit = AUDIT_LOG_PAGE_DEFAULT) {
+  return infiniteQueryOptions({
+    queryKey: [...queryKeys.auditLog(filter), limit] as const,
+    queryFn: ({ signal, pageParam }) =>
+      endpoints.audit.list({ ...filter, limit, cursor: pageParam ?? undefined }, signal),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.nextCursor,
+  });
+}
+
+/** Riwayat aktivitas satu pengguna (oleh ATAU terhadap dia) di detail anggota. */
+export function userAuditQuery(userId: string) {
+  return infiniteQueryOptions({
+    queryKey: queryKeys.userAudit(userId),
+    queryFn: ({ signal, pageParam }) =>
+      endpoints.audit.list({ userId, limit: 10, cursor: pageParam ?? undefined }, signal),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.nextCursor,
+  });
+}
+
+/**
+ * Ringkasan kejadian keamanan 7 hari (banner Owner/Admin). Dimuat sekali per kunjungan dan saat
+ * tab kembali dibuka setelah lama; bukan polling.
+ */
+export const securitySummaryQuery = queryOptions({
+  queryKey: queryKeys.securitySummary,
+  queryFn: ({ signal }) => endpoints.audit.securitySummary(signal),
+  staleTime: 5 * 60_000,
+  retry: false,
+});
+
+/**
+ * Simpan hasil aksi kelola (data pengguna sesudahnya) ke cache daftar dan detail, lalu tandai
+ * keduanya basi supaya dimuat ulang dari server.
+ */
+export function storeTeamUser(queryClient: QueryClient, user: TeamUser): void {
+  queryClient.setQueryData(queryKeys.teamUser(user.id), user);
+  queryClient.setQueryData<TeamUserListResponse>(queryKeys.teamUsers, (old) =>
+    old ? { ...old, users: old.users.map((item) => (item.id === user.id ? user : item)) } : old,
+  );
+  // Daftar saja (urutan, jumlah sesi); detail barusan diisi dari jawaban server.
+  void queryClient.invalidateQueries({ queryKey: queryKeys.teamUsers, exact: true });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.userAudit(user.id) });
+}
 
 /** Atur ulang password lewat email tersedia (email pengirim instalasi sudah diatur). */
 export const passwordResetStatusQuery = queryOptions({

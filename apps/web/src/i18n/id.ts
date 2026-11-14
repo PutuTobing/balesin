@@ -10,6 +10,7 @@ export const t = {
     skipToContent: 'Lewati ke konten',
     loading: 'Memuat…',
     retry: 'Coba lagi',
+    close: 'Tutup',
     backToInbox: 'Kembali ke Inbox',
     backTo: (page: string) => `Kembali ke ${page}`,
     documentTitle: (page: string, product: string) => `${page} · ${product}`,
@@ -180,7 +181,7 @@ export const t = {
   password: {
     strength: {
       label: 'Kekuatan password',
-      empty: 'Minimal 10 karakter.',
+      empty: 'Ketik password untuk melihat kekuatannya.',
       tooShort: (missing: number) => `Kurang ${missing} karakter lagi.`,
       weak: 'Lumayan. Tambah panjang atau campur kata yang tidak umum.',
       good: 'Bagus.',
@@ -205,6 +206,7 @@ export const t = {
       noAccount:
         'Belum punya akun? Akun dibuat lewat undangan. Minta Owner atau Admin timmu mengirim undangan.',
       lockedTitle: 'Masuk dikunci sementara',
+      enrollmentExpiredTitle: 'Pendaftaran 2FA sudah ditutup',
       countdownButton: (clock: string) => `Coba lagi dalam ${clock}`,
       unlocked: 'Kamu sudah bisa mencoba masuk lagi.',
       sessionEnded: 'Sesimu sudah berakhir. Masuk lagi untuk melanjutkan.',
@@ -238,7 +240,7 @@ export const t = {
     eyebrow: 'Undangan bergabung',
     title: (organization: string) => `Bergabung dengan ${organization}`,
     subtitle: (inviter: string, role: string, product: string) =>
-      `${inviter} mengundangmu sebagai ${role} di ${product}. Lengkapi namamu dan buat password untuk akunmu.`,
+      `${inviter} mengundangmu sebagai ${role} di ${product}.`,
     email: 'Email',
     emailHint: 'Dari undangan, tidak bisa diubah. Dipakai untuk masuk.',
     expires: (time: string) => `Undangan berlaku sampai ${time}.`,
@@ -277,7 +279,7 @@ export const t = {
     otherEmail: 'Pakai email lain',
     unavailableTitle: 'Atur ulang password belum tersedia',
     unavailable:
-      'Atur ulang password lewat email belum tersedia karena email pengirim belum diatur. Minta Owner atau Admin di tempatmu untuk membantu.',
+      'Email pengirim di tempatmu belum diatur, jadi tautan atur ulang tidak bisa dikirim. Minta Owner atau Admin untuk membantu.',
     back: 'Kembali ke halaman masuk',
     lockedTitle: 'Permintaan dibatasi sementara',
     loadFailedTitle: 'Halaman ini belum bisa dimuat',
@@ -287,7 +289,7 @@ export const t = {
     title: 'Atur ulang password',
     heading: 'Buat password baru',
     subtitle: (email: string) =>
-      `Untuk akun ${email}. Setelah diganti, semua perangkat yang sedang masuk ke akun ini dikeluarkan.`,
+      `Untuk akun ${email}. Semua perangkat yang sedang masuk akan dikeluarkan.`,
     expires: (time: string) => `Tautan berlaku sampai ${time}.`,
     password: 'Password baru',
     repeat: 'Ulangi password baru',
@@ -308,7 +310,8 @@ export const t = {
   verifyEmail: {
     title: 'Verifikasi email',
     doneTitle: 'Email sudah terverifikasi',
-    done: (email: string) => `Email ${email} sudah terverifikasi. Terima kasih!`,
+    done: (email: string) =>
+      `Mulai sekarang, pemberitahuan keamanan dan tautan atur ulang password dikirim ke ${email}.`,
     toApp: 'Buka aplikasi',
     invalidTitle: 'Tautan verifikasi tidak bisa dipakai',
     missing:
@@ -319,9 +322,10 @@ export const t = {
   /** Pengaturan → Tim (Owner & Admin). */
   team: {
     title: 'Tim',
-    menuHint: 'Undang anggota tim dan kelola undangan',
+    menuHint: 'Anggota, peran, sesi, dan undangan',
     menuStatus: (count: number) =>
       count === 0 ? 'Belum ada undangan terbuka' : `${count} undangan terbuka`,
+    menuMembers: (count: number) => `${count} anggota`,
     invite: {
       title: 'Undang anggota tim',
       viaEmail:
@@ -354,7 +358,10 @@ export const t = {
         'Undangan yang belum diterima tampil di sini, lengkap dengan status pengiriman email-nya.',
       expired: 'Kedaluwarsa',
       expiresAt: (date: string) => `berlaku sampai ${date}`,
-      expiredAt: (date: string) => `kedaluwarsa sejak ${date}`,
+      expiredAt: (date: string) =>
+        date.startsWith('pukul')
+          ? `kedaluwarsa sejak hari ini ${date}`
+          : `kedaluwarsa sejak ${date}`,
       invitedBy: (name: string) => `Diundang ${name}`,
       resend: 'Kirim ulang',
       resending: 'Mengirim…',
@@ -363,7 +370,7 @@ export const t = {
       revokeBody: (email: string) =>
         `Tautan undangan untuk ${email} langsung tidak berlaku. Kamu bisa mengundangnya lagi kapan saja.`,
       revokeConfirm: 'Batalkan undangan',
-      keep: 'Jangan batalkan',
+      keep: 'Kembali',
       revoked: (email: string) => `Undangan untuk ${email} sudah dibatalkan.`,
       resent: (email: string) =>
         `Undangan baru untuk ${email} sedang dikirim. Tautan lama sudah tidak berlaku.`,
@@ -376,10 +383,35 @@ export const t = {
       },
       actionsFor: (email: string) => `Undangan untuk ${email}`,
     },
+    members: {
+      title: 'Anggota tim',
+      hint: 'Buka anggota untuk mengubah peran, mengeluarkan sesinya, atau menonaktifkan akunnya.',
+      listLabel: 'Daftar anggota tim',
+      searchLabel: 'Cari anggota',
+      searchPlaceholder: 'Cari nama atau email',
+      searchEmpty: (query: string) => `Tidak ada anggota dengan nama atau email “${query}”.`,
+      disabledGroup: (count: number) => `Nonaktif (${count})`,
+      you: 'Kamu',
+      lastLogin: (time: string) => `Terakhir masuk ${time}`,
+      neverLoggedIn: 'Belum pernah masuk',
+      sessions: (count: number) => (count === 0 ? 'Tanpa sesi aktif' : `${count} sesi aktif`),
+      viewOnly: 'Hanya dilihat',
+      loadFailedTitle: 'Daftar anggota belum bisa dimuat',
+    },
+    /** Lencana status anggota (daftar & detail). */
+    badges: {
+      locked: 'Terkunci sementara',
+      disabled: 'Nonaktif',
+      twoFactorOn: '2FA aktif',
+      twoFactorOff: 'Tanpa 2FA',
+      twoFactorPending: 'Belum daftar 2FA',
+      twoFactorExpired: 'Batas daftar 2FA lewat',
+      emailUnverified: 'Email belum diverifikasi',
+    },
     linkDialog: {
       title: 'Salin tautan undangan',
       body: (email: string) =>
-        `Kirim tautan ini sendiri ke ${email} lewat jalur yang aman. Tautan hanya ditampilkan sekarang dan berlaku 72 jam.`,
+        `Kirim tautan ini sendiri ke ${email}. Tautan hanya ditampilkan sekarang dan berlaku 72 jam.`,
       keyTitle: 'Tautan ini setara kunci akses',
       keyBody: (role: string) =>
         `Siapa pun yang membukanya bisa membuat akun ${role} di organisasimu. Kirim langsung ke orangnya lewat chat pribadi, jangan di grup atau tempat umum.`,
@@ -390,8 +422,7 @@ export const t = {
       done: 'Selesai',
       notCopied:
         'Tautan belum disalin. Setelah dialog ini ditutup, tautan tidak bisa dilihat lagi; untuk tautan baru, kirim ulang undangannya.',
-      closeAnyway: 'Tutup saja',
-      back: 'Kembali',
+      closeAnyway: 'Tutup tanpa menyalin',
     },
   },
 
@@ -476,6 +507,8 @@ export const t = {
       restart: 'Buat kode QR baru',
       restarting: 'Membuat…',
       startFailedTitle: 'Kode QR belum bisa dibuat',
+      /** Sama dengan halaman masuk; pesan server menjelaskan langkahnya (tanpa kalimat tambahan). */
+      closedTitle: 'Pendaftaran 2FA sudah ditutup',
       lockedTitle: 'Pendaftaran dikunci sementara',
       password: {
         title: 'Konfirmasi password',
@@ -528,7 +561,7 @@ export const t = {
   /** Pengaturan → Keamanan akun (semua peran). */
   security: {
     title: 'Keamanan akun',
-    menuHint: 'Email, verifikasi dua langkah, dan kode cadangan',
+    menuHint: 'Verifikasi dua langkah, kode cadangan, email, dan sesi aktif',
     sectionTitle: 'Akunmu',
     email: {
       title: 'Email akun',
@@ -589,6 +622,295 @@ export const t = {
       cancel: 'Batal',
       lockedTitle: 'Konfirmasi dikunci sementara',
     },
+    sessions: {
+      title: 'Sesi aktif',
+      hint: 'Perangkat yang sedang masuk ke akunmu. Keluarkan yang tidak kamu kenali.',
+      onlyThis: 'Hanya sesi ini yang aktif. Akunmu tidak sedang dibuka di perangkat lain.',
+      revokeOthers: 'Keluarkan semua sesi lain',
+      revokeOthersTitle: 'Keluarkan semua sesi lain?',
+      revokeOthersBody:
+        'Semua perangkat lain langsung keluar dari akunmu, termasuk login yang sedang menunggu kode verifikasi. Sesi ini tetap berjalan.',
+      revokeOthersConfirm: 'Keluarkan sesi lain',
+      revokeOthersPending: 'Mengeluarkan…',
+      revokedOthers: (count: number) =>
+        count === 0
+          ? 'Tidak ada sesi lain yang perlu dikeluarkan.'
+          : `${count} sesi lain sudah dikeluarkan.`,
+      loadFailedTitle: 'Sesi aktif belum bisa dimuat',
+      revokeNewerTitle: (device: string) => `Keluarkan sesi ${device}?`,
+      revokeNewerBody:
+        'Sesi itu dibuka setelah sesi yang sedang kamu pakai. Perangkat itu langsung keluar dari akunmu.',
+      revokeNewerConfirm: 'Keluarkan sesi',
+    },
+  },
+
+  /** Dialog konfirmasi ulang identitas (password + kode 2FA) sebelum aksi sensitif. */
+  identity: {
+    password: 'Password-mu',
+    code: 'Kode verifikasi',
+    codeHint: '6 digit dari aplikasi autentikator, atau salah satu kode cadangan.',
+    codeRequired: 'Masukkan kode dari aplikasi autentikator atau salah satu kode cadangan.',
+    why: 'Konfirmasi dulu bahwa ini memang kamu.',
+    cancel: 'Batal',
+    lockedTitle: 'Konfirmasi dikunci sementara',
+  },
+
+  /** Sesi aktif (daftar milik sendiri dan milik anggota lain). */
+  sessions: {
+    listLabel: 'Daftar sesi aktif',
+    current: 'Sesi ini',
+    limited: 'Pendaftaran 2FA',
+    unknownIp: 'IP tidak tercatat',
+    ip: (ip: string) => `IP ${ip}`,
+    signedIn: (time: string) => `Masuk ${time}`,
+    lastSeen: (time: string) => `Aktif ${time}`,
+    revoke: 'Keluarkan',
+    revoking: 'Mengeluarkan…',
+    revokeLabel: (device: string) => `Keluarkan sesi ${device}`,
+    revoked: (device: string) => `Sesi ${device} sudah dikeluarkan.`,
+  },
+
+  /** Pengaturan → Tim → detail anggota. */
+  teamUser: {
+    title: 'Detail anggota',
+    notFoundTitle: 'Anggota tidak ditemukan',
+    notFoundBody:
+      'Mungkin alamatnya salah ketik. Anggota tidak pernah dihapus, hanya dinonaktifkan, jadi cari dari daftar Tim.',
+    backToTeam: 'Lihat daftar anggota',
+    loadFailedTitle: 'Data anggota belum bisa dimuat',
+    facts: {
+      role: 'Peran',
+      joined: 'Bergabung',
+      lastLogin: 'Terakhir masuk',
+      never: 'Belum pernah',
+      twoFactor: 'Verifikasi dua langkah',
+      twoFactorSince: (date: string) => `Aktif sejak ${date}`,
+      twoFactorOff: 'Belum aktif',
+      twoFactorDue: (time: string) => `Belum aktif, wajib didaftarkan sebelum ${time}`,
+      twoFactorExpired: 'Belum aktif, batas waktu pendaftarannya sudah lewat',
+      twoFactorRequiredNoDue: 'Belum aktif, wajib didaftarkan saat masuk berikutnya',
+      email: 'Email',
+      emailVerified: 'Terverifikasi',
+      emailUnverified:
+        'Belum diverifikasi. Tautan atur ulang password tetap dikirim ke alamat ini.',
+    },
+    viewOnly: {
+      self: 'Ini akunmu. Akun sendiri dikelola dari Keamanan akun.',
+      selfLink: 'Buka Keamanan akun',
+      adminLimit:
+        'Admin hanya bisa mengelola Supervisor, CS, dan Teknisi. Akun Owner dan Admin dikelola Owner.',
+      other: 'Kamu bisa melihat anggota ini, tetapi tidak bisa mengelolanya.',
+    },
+    done: {
+      role: (name: string, role: string, sessions: number) =>
+        sessions > 0
+          ? `Peran ${name} sekarang ${role}. ${sessions} sesinya dikeluarkan, jadi ia perlu masuk lagi.`
+          : `Peran ${name} sekarang ${role}.`,
+      invitationsRevoked: (count: number) =>
+        `${count} undangan terbitannya dibatalkan karena tidak lagi sesuai perannya.`,
+      disabled: (name: string) =>
+        `Akun ${name} sudah dinonaktifkan dan dikeluarkan dari semua perangkat.`,
+      enabled: (name: string) => `Akun ${name} aktif lagi. Ia sudah bisa masuk.`,
+      twoFactorReset: (name: string) =>
+        `Verifikasi dua langkah ${name} sudah diatur ulang. Ia perlu mendaftarkan aplikasi autentikator lagi saat masuk.`,
+      reopened: (name: string) =>
+        `Pendaftaran verifikasi dua langkah ${name} dibuka lagi selama 72 jam. Minta ia masuk sekarang.`,
+      unlocked: (name: string) => `Kunci akun ${name} sudah dibuka. Ia bisa mencoba masuk lagi.`,
+      stillLocked:
+        'Kunci ini karena terlalu banyak kode verifikasi salah dalam 24 jam. Atur ulang verifikasi dua langkah bila pemiliknya kehilangan aplikasi autentikator.',
+      sessionsRevoked: (name: string, count: number) =>
+        count === 0
+          ? `${name} tidak punya sesi aktif.`
+          : `${count} sesi ${name} sudah dikeluarkan.`,
+    },
+    locked: {
+      title: 'Akun terkunci sementara',
+      body: (time: string) =>
+        `Terlalu banyak percobaan masuk atau kode yang salah. Kunci terbuka sendiri ${time}, atau buka sekarang bila kamu yakin itu memang dia.`,
+      action: 'Buka kunci',
+      dialogTitle: 'Buka kunci akun?',
+      dialogBody: (name: string) =>
+        `${name} bisa langsung mencoba masuk lagi. Bila percobaan tadi bukan olehnya, atur ulang password-nya juga.`,
+      confirm: 'Buka kunci',
+      pending: 'Membuka…',
+    },
+    expired: {
+      title: 'Batas waktu daftar 2FA sudah lewat',
+      body: (name: string) =>
+        `${name} tidak bisa masuk sampai pendaftaran verifikasi dua langkahnya dibuka lagi. Setelah dibuka, ia punya 72 jam untuk mendaftar.`,
+      action: 'Buka lagi pendaftaran',
+      dialogTitle: 'Buka lagi pendaftaran 2FA?',
+      dialogBody: (name: string) =>
+        `${name} mendapat 72 jam baru untuk mendaftarkan aplikasi autentikator. Pastikan ia sendiri yang akan masuk.`,
+      confirm: 'Buka lagi',
+      pending: 'Membuka…',
+    },
+    disabledNotice: {
+      title: 'Akun nonaktif',
+      body: (time: string) =>
+        `Dinonaktifkan ${time}. Ia tidak bisa masuk sampai akunnya diaktifkan lagi.`,
+    },
+    role: {
+      title: 'Peran',
+      hint: 'Menentukan apa saja yang bisa ia buka dan kerjakan.',
+      label: 'Peran baru',
+      submit: 'Ubah peran',
+      same: 'Pilih peran yang berbeda dari peran sekarang.',
+      dialogTitle: (role: string) => `Ubah peran menjadi ${role}?`,
+      dialogBody: (name: string) =>
+        `${name} langsung dikeluarkan dari semua perangkat dan perlu masuk lagi dengan peran barunya.`,
+      dialogBody2fa: (name: string) =>
+        `${name} langsung dikeluarkan dari semua perangkat. Peran baru ini wajib verifikasi dua langkah, jadi ia perlu mendaftarkannya dalam 72 jam setelah masuk.`,
+      confirm: 'Ubah peran',
+      pending: 'Mengubah…',
+      ownerFixed: 'Peran Owner tidak bisa diubah dari sini.',
+    },
+    twoFactor: {
+      title: 'Verifikasi dua langkah',
+      hintOn: 'Atur ulang bila ponselnya hilang atau aplikasi autentikatornya terhapus.',
+      hintRequired: 'Wajib untuk perannya. Ia diminta mendaftar saat masuk.',
+      hintOptional:
+        'Tidak wajib untuk perannya. Ia bisa mengaktifkannya sendiri dari Keamanan akun.',
+      reset: 'Atur ulang 2FA',
+      resetTitle: 'Atur ulang verifikasi dua langkah?',
+      resetBody: (name: string) =>
+        `Aplikasi autentikator dan kode cadangan ${name} dihapus, dan ia dikeluarkan dari semua perangkat. Ia dan Owner lain diberi tahu lewat email.`,
+      resetConfirm: 'Atur ulang 2FA',
+      resetPending: 'Mengatur ulang…',
+    },
+    sessions: {
+      title: 'Sesi aktif',
+      hint: (name: string) => `Perangkat tempat ${name} sedang masuk.`,
+      empty: 'Tidak ada sesi aktif. Ia sedang tidak masuk di perangkat mana pun.',
+      revokeAll: 'Keluarkan semua sesi',
+      revokeAllTitle: 'Keluarkan semua sesinya?',
+      revokeAllBody: (name: string) =>
+        `${name} langsung keluar dari semua perangkat, termasuk login yang sedang menunggu kode verifikasi.`,
+      revokeAllConfirm: 'Keluarkan semua',
+      revokeAllPending: 'Mengeluarkan…',
+      loadFailed: 'Sesi aktif belum bisa dimuat.',
+    },
+    access: {
+      title: 'Akses akun',
+      disableHint:
+        'Menonaktifkan akun mengeluarkannya dari semua perangkat dan membatalkan undangan terbitannya. Data dan riwayatnya tetap tersimpan.',
+      enableHint: 'Mengaktifkan lagi membuatnya bisa masuk dengan password lamanya.',
+      disable: 'Nonaktifkan akun',
+      disableTitle: 'Nonaktifkan akun ini?',
+      disableBody: (name: string) =>
+        `${name} langsung keluar dari semua perangkat dan tidak bisa masuk. Tautan atur ulang password dan undangan terbitannya ikut dibatalkan.`,
+      disableConfirm: 'Nonaktifkan',
+      disablePending: 'Menonaktifkan…',
+      enable: 'Aktifkan lagi',
+      enableTitle: 'Aktifkan lagi akun ini?',
+      enableBody: (name: string) =>
+        `${name} bisa masuk lagi dengan password lamanya. Bila perannya wajib verifikasi dua langkah dan belum mendaftar, ia punya 72 jam untuk mendaftar.`,
+      enableConfirm: 'Aktifkan',
+      enablePending: 'Mengaktifkan…',
+    },
+    activity: {
+      title: 'Riwayat aktivitas',
+      hint: 'Tindakan oleh dan terhadap anggota ini, terbaru dulu.',
+      empty: 'Belum ada aktivitas tercatat.',
+      openAll: 'Buka di Audit log',
+      loadFailed: 'Riwayat aktivitas belum bisa dimuat.',
+    },
+  },
+
+  /** Pengaturan → Audit log (Owner & Admin). */
+  audit: {
+    title: 'Audit log',
+    menuHint: 'Siapa melakukan apa, kapan, dan dari mana',
+    filters: {
+      label: 'Saringan audit log',
+      toggle: 'Saringan',
+      toggleCount: (count: number) => `Saringan (${count})`,
+      actor: 'Pelaku',
+      anyActor: 'Semua pelaku',
+      action: 'Aksi',
+      anyAction: 'Semua aksi',
+      target: 'Jenis target',
+      anyTarget: 'Semua target',
+      from: 'Dari tanggal',
+      to: 'Sampai tanggal',
+      rangeError: 'Tanggal akhir tidak boleh sebelum tanggal mulai.',
+      clear: 'Hapus saringan',
+      chipUser: (name: string) => `Terkait ${name}`,
+      chipTarget: (id: string) => `Target ${id}`,
+      removeChip: (label: string) => `Hapus saringan ${label}`,
+    },
+    columns: {
+      time: 'Waktu',
+      action: 'Aksi',
+      actor: 'Pelaku',
+      target: 'Target',
+      origin: 'Asal',
+    },
+    listLabel: 'Entri audit log',
+    system: 'Sistem',
+    unknownTarget: '—',
+    noOrigin: 'Tidak tercatat',
+    details: 'Rincian',
+    yes: 'Ya',
+    no: 'Tidak',
+    emptyValue: '—',
+    loadMore: 'Muat lagi',
+    loadingMore: 'Memuat…',
+    shown: (count: number) => `${count} entri ditampilkan`,
+    end: 'Sudah semua entri yang cocok.',
+    emptyTitle: 'Belum ada aktivitas tercatat',
+    emptyBody: 'Masuk, perubahan pengaturan, dan pengelolaan tim tercatat di sini.',
+    noMatchTitle: 'Tidak ada entri yang cocok',
+    noMatchBody: 'Coba longgarkan saringan atau perluas rentang tanggalnya.',
+    loadFailedTitle: 'Audit log belum bisa dimuat',
+    lockedTitle: 'Terlalu sering memuat',
+    export: 'Ekspor CSV',
+    exporting: 'Mengekspor…',
+    exported: (rows: number) =>
+      rows === 0
+        ? 'Berkas CSV diunduh, tetapi tidak ada entri yang cocok dengan saringan.'
+        : `Berkas CSV berisi ${rows.toLocaleString('id-ID')} entri sudah diunduh.`,
+    exportTruncated: (max: number) =>
+      `Hanya ${max.toLocaleString('id-ID')} entri terbaru yang ikut. Persempit rentang tanggal untuk mengekspor sisanya.`,
+    exportLockedTitle: 'Ekspor dibatasi sementara',
+    exportFailedTitle: 'Ekspor gagal',
+    fileName: (product: string, date: string) => `audit-log-${product}-${date}.csv`,
+    /** Label kunci rincian yang dikenal; kunci lain tampil apa adanya. */
+    metadata: {
+      from: 'Dari',
+      to: 'Menjadi',
+      reason: 'Alasan',
+      scope: 'Cakupan',
+      lockedUntil: 'Terkunci sampai',
+      revokedSessions: 'Sesi dikeluarkan',
+      revokedInvitations: 'Undangan dibatalkan',
+      twoFactorEnrollmentRequired: 'Wajib daftar 2FA',
+      twoFactorEnrollmentPending: 'Belum daftar 2FA',
+      previousHost: 'Server sebelumnya',
+      host: 'Server',
+      port: 'Port',
+      fromAddress: 'Alamat pengirim',
+      ownersNotified: 'Owner diberi tahu',
+      permission: 'Izin',
+      method: 'Metode',
+      role: 'Peran',
+      email: 'Email',
+      by: 'Oleh',
+      rows: 'Jumlah baris',
+      truncated: 'Terpotong',
+      cleared: 'Kunci dilepas',
+    } as Readonly<Record<string, string>>,
+  },
+
+  /** Banner peringatan keamanan untuk Owner/Admin (ringkasan 7 hari). */
+  securityBanner: {
+    label: 'Peringatan keamanan',
+    title: (count: number) =>
+      count === 1 ? 'Ada 1 kejadian keamanan baru' : `Ada ${count} kejadian keamanan baru`,
+    latest: (label: string, time: string) => `Terbaru: ${label}, ${time}.`,
+    by: (name: string, role: string) => `Oleh ${name} (${role}).`,
+    review: 'Periksa di Audit log',
+    dismiss: 'Tutup peringatan keamanan',
   },
 
   setup: {
@@ -716,7 +1038,7 @@ export const t = {
 
   emailSettings: {
     title: 'Email pengirim',
-    menuHint: 'Untuk undangan tim, reset password, dan notifikasi.',
+    menuHint: 'Untuk undangan tim, reset password, dan notifikasi',
     presetLabel: 'Penyedia email',
     senderLegend: 'Pengirim',
     fromName: 'Nama pengirim',
@@ -745,7 +1067,7 @@ export const t = {
     useSuggestion: 'Pakai saran ini',
     suggestionUsed: 'Saran dipakai',
     noSuggestion: (domain: string) =>
-      `Tidak ada saran untuk ${domain}. Isi host dan port sesuai petunjuk penyedia emailmu.`,
+      `Tidak ada saran untuk ${domain}. Isi host dan port sesuai petunjuk penyedia email-mu.`,
     testTitle: 'Tes pengaturan',
     testBody: 'Tes dulu sebelum disimpan supaya email undangan pasti terkirim.',
     testConnection: 'Tes koneksi',
@@ -777,7 +1099,7 @@ export const t = {
     guideTitle: 'Panduan singkat',
     guideSetupTitle: 'Lihat panduan langkah demi langkah',
     guide: (context: 'setup' | 'settings') => [
-      'Pilih penyedia emailmu. Host, port, dan keamanan terisi otomatis.',
+      'Pilih penyedia email-mu. Host, port, dan keamanan terisi otomatis.',
       'Isi alamat email pengirim. Kami coba tebak server SMTP dari domainnya.',
       'Masukkan password email. Untuk Gmail dan Microsoft 365, buat app password dulu.',
       'Tekan “Tes koneksi”. Bila berhasil, kirim email tes ke dirimu sendiri.',
@@ -796,7 +1118,7 @@ export const t = {
         'Wajib memakai app password (16 karakter), bukan password akun Google. Caranya ada di panduan.',
       outlook:
         'Perlu Authenticated SMTP aktif, dan app password bila akun memakai verifikasi 2 langkah. Caranya ada di panduan.',
-      other: 'Isi host, port, dan keamanan sesuai petunjuk penyedia emailmu.',
+      other: 'Isi host, port, dan keamanan sesuai petunjuk penyedia email-mu.',
     },
     /** Langkah khusus penyedia; `link` tampil tepat di bawah langkah yang menyebut halamannya. */
     guidePreset: {

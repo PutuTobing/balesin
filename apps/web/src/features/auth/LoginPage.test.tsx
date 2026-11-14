@@ -188,4 +188,31 @@ describe('halaman masuk', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(t.api.network);
     await waitFor(() => expect(screen.getByLabelText(t.auth.login.password)).toHaveFocus());
   });
+
+  it('403 batas daftar 2FA lewat: pesan server apa adanya dengan judul, tanpa coba ulang otomatis', async () => {
+    const view = await renderApp('/masuk', {
+      session: null,
+      routes: {
+        [`POST ${API_ROUTES.auth.login}`]: () =>
+          apiError(
+            403,
+            'TWO_FACTOR_ENROLLMENT_EXPIRED',
+            'Batas waktu mendaftarkan verifikasi dua langkah untuk akunmu sudah lewat. Minta Owner atau Admin di tempatmu membuka lagi pendaftarannya, lalu masuk kembali.',
+          ),
+      },
+    });
+    await screen.findByRole('heading', { level: 1 });
+    fill('agus@majujaya.co.id', 'Kopi-Senja-Tenang-42');
+    submit();
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(t.auth.login.enrollmentExpiredTitle);
+    expect(alert).toHaveTextContent(
+      'Minta Owner atau Admin di tempatmu membuka lagi pendaftarannya',
+    );
+    expect(view.router.state.location.pathname).toBe('/masuk');
+    expect(
+      view.api.requests.filter((request) => request.path === API_ROUTES.auth.login),
+    ).toHaveLength(1);
+    await waitFor(() => expect(screen.getByLabelText(t.auth.login.password)).toHaveFocus());
+  });
 });

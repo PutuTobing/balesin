@@ -1,7 +1,7 @@
 import { useMatch } from '@tanstack/react-router';
 
 /** Layar induk di HP (layar bertumpuk): menentukan tujuan tombol kembali. */
-export type PageParent = 'more' | 'settings' | 'security';
+export type PageParent = 'more' | 'settings' | 'security' | 'team';
 
 /**
  * Keterangan halaman yang sudah diketahui dari rute, sebelum isinya dimuat. Ditulis satu

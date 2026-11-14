@@ -22,13 +22,14 @@ import { SubmitButton } from '../../components/ui/SubmitButton';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
-import { invitationsQuery, queryKeys } from '../../lib/api/queries';
+import { invitationsQuery, queryKeys, teamUsersQuery } from '../../lib/api/queries';
 import { formatTime } from '../../lib/format';
 import { apiFieldErrors, zodFieldErrors, type FieldErrors } from '../../lib/form';
 import { useLock } from '../../lib/use-lock';
 import { useCan, useSession } from '../auth/session';
 import { defaultInviteRole, inviteRoleOptions } from './invite-roles';
 import { LinkDialog, type IssuedLink } from './LinkDialog';
+import { MembersCard } from './MembersCard';
 import styles from './Team.module.css';
 
 const copy = t.team;
@@ -37,20 +38,36 @@ const LIST_HEADING_ID = 'tim-undangan';
 
 /**
  * Pengaturan → Tim (Owner & Admin): undang anggota tim, daftar undangan terbuka (menunggu,
- * kedaluwarsa, status email), kirim ulang, dan batalkan. Daftar anggota & manajemen pengguna
- * menyusul di butir manajemen pengguna (belum ada API daftar pengguna).
+ * kedaluwarsa, status email), kirim ulang, dan batalkan (`team.invite`); lalu daftar anggota
+ * (`team.manage`) yang tiap barisnya membuka detail anggota. Urutan sengaja: form dan undangan
+ * (tinggi pasti) di atas, daftar anggota yang panjangnya tak tentu di bawah — kerangka memuat
+ * tidak membuat kartu lain melompat.
  *
  * Tautan undangan sekali tampil (tanpa email pengirim) TIDAK lewat `useMutation` dan tidak masuk
  * cache Query: permintaan buat/kirim ulang dipanggil langsung, hanya data undangannya yang disimpan
  * ke cache, tautannya hanya di state dialog.
  */
 export function TeamPage() {
-  const { data } = useSuspenseQuery(invitationsQuery);
+  const canInvite = useCan('team.invite');
+  const canManage = useCan('team.manage');
   return (
     <Page>
-      <TeamScreen data={data} />
+      <div className={styles.content}>
+        {canInvite ? <InvitationSection /> : null}
+        {canManage ? <MembersSection /> : null}
+      </div>
     </Page>
   );
+}
+
+function InvitationSection() {
+  const { data } = useSuspenseQuery(invitationsQuery);
+  return <TeamScreen data={data} />;
+}
+
+function MembersSection() {
+  const { data } = useSuspenseQuery(teamUsersQuery);
+  return <MembersCard users={data.users} />;
 }
 
 type ReturnFocus = () => HTMLElement | null;
@@ -98,7 +115,7 @@ function TeamScreen({ data }: { data: InvitationListResponse }) {
   };
 
   return (
-    <div className={styles.content}>
+    <>
       <InviteCard
         data={data}
         canSetUpEmail={canSetUpEmail}
@@ -114,7 +131,7 @@ function TeamScreen({ data }: { data: InvitationListResponse }) {
           requestAnimationFrame(() => target?.()?.focus());
         }}
       />
-    </div>
+    </>
   );
 }
 

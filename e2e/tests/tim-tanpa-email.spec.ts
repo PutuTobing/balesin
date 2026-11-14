@@ -48,7 +48,7 @@ test('Owner mengundang CS dan Admin tanpa email pengirim: tautan tampil sekali u
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await openApp(page, '/pengaturan');
   const menu = page.getByRole('link', { name: /^Tim/ });
-  await expect(menu).toContainText('Belum ada undangan terbuka');
+  await expect(menu).toContainText('1 anggota · belum ada undangan terbuka');
   await menu.click();
   await expect(page).toHaveURL(/\/pengaturan\/tim$/);
   await expect(page.getByRole('heading', { level: 1, name: 'Tim' })).toBeVisible();
@@ -73,7 +73,7 @@ test('Owner mengundang CS dan Admin tanpa email pengirim: tautan tampil sekali u
   links.admin = ((await dialog.locator('code').textContent()) ?? '').trim();
   await page.keyboard.press('Escape');
   await expect(dialog.getByRole('alert')).toContainText('Tautan belum disalin');
-  await dialog.getByRole('button', { name: 'Tutup saja' }).click();
+  await dialog.getByRole('button', { name: 'Tutup tanpa menyalin' }).click();
   await expect(dialog).toBeHidden();
 
   // Tautan tidak pernah disimpan browser dan tidak tampil lagi setelah dimuat ulang.

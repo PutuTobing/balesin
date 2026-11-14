@@ -64,6 +64,48 @@ describe('klien API', () => {
     expect(client.getCsrfToken()).toBe('token-baru');
   });
 
+  it('unduhan (ekspor CSV): GET tetap membawa CSRF; token basi diperbarui lalu diulang sekali', async () => {
+    const fresh = { ...fakeSession(), csrfToken: 'token-baru' };
+    const csv = () =>
+      new Response('"Waktu (UTC)"\r\n', {
+        status: 200,
+        headers: { 'content-type': 'text/csv; charset=utf-8', 'x-export-rows': '0' },
+      });
+    const { fetch, calls } = fakeFetch([
+      () => apiError(403, 'CSRF_INVALID', 'Halaman ini sudah terlalu lama terbuka.'),
+      () => json(fresh),
+      csv,
+    ]);
+    const client = createApiClient({ fetch });
+    client.setCsrfToken('token-lama');
+
+    const result = await client.download(API_ROUTES.audit.export);
+
+    expect(await result.blob.text()).toContain('Waktu (UTC)');
+    expect(result.headers.get('x-export-rows')).toBe('0');
+    expect(calls.map((call) => call.init.method)).toEqual(['GET', 'GET', 'GET']);
+    expect(headerOf(calls[0], CSRF_HEADER_NAME)).toBe('token-lama');
+    expect(headerOf(calls[2], CSRF_HEADER_NAME)).toBe('token-baru');
+    expect(calls[2]?.init.credentials).toBe('include');
+  });
+
+  it('unduhan gagal: amplop error JSON jadi ApiError (429 membawa detik tunggu)', async () => {
+    const { fetch } = fakeFetch([
+      () =>
+        apiError(429, 'RATE_LIMITED', 'Terlalu banyak ekspor. Coba lagi nanti.', {
+          retryAfter: 120,
+        }),
+    ]);
+    const client = createApiClient({ fetch });
+    client.setCsrfToken('token-a');
+
+    await expect(client.download(API_ROUTES.audit.export)).rejects.toMatchObject({
+      status: 429,
+      message: 'Terlalu banyak ekspor. Coba lagi nanti.',
+      retryAfterSeconds: 120,
+    });
+  });
+
   it('CSRF_INVALID kedua kali tidak diulang lagi', async () => {
     const { fetch, calls } = fakeFetch([
       () => apiError(403, 'CSRF_INVALID', 'a'),

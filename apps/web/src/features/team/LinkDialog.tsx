@@ -31,17 +31,23 @@ export function LinkDialog({
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const copyRef = useRef<HTMLButtonElement>(null);
-  const backRef = useRef<HTMLButtonElement>(null);
+  const doneRef = useRef<HTMLButtonElement>(null);
+  // Tersalin dari peringatan "belum disalin": tombolnya berganti, fokus ke "Selesai".
+  const [focusDone, setFocusDone] = useState(0);
   const labelId = useId();
 
-  // Peringatan "belum disalin" muncul → fokus ke "Kembali" (aksi aman), bukan ke <body>.
+  // Peringatan "belum disalin" muncul → fokus ke "Salin tautan" (aksi aman), bukan ke <body>.
   useEffect(() => {
-    if (confirming) backRef.current?.focus();
+    if (confirming) copyRef.current?.focus();
   }, [confirming]);
+  useEffect(() => {
+    if (focusDone > 0) doneRef.current?.focus();
+  }, [focusDone]);
 
   const close = () => {
     setCopied(false);
     setConfirming(false);
+    setFocusDone(0);
     onClose();
   };
   const requestClose = () => {
@@ -70,28 +76,36 @@ export function LinkDialog({
           </div>
           {confirming ? (
             <>
-              <Notice tone="danger" role="alert">
+              <Notice tone="warning" role="alert">
                 {copy.notCopied}
               </Notice>
+              {/* Satu tombol berwarna: menyalin tetap aksi utama; menutup = teks bahaya. */}
               <DialogActions>
-                <Button variant="danger" onClick={close}>
+                <Button variant="ghost" className={styles.revoke} onClick={close}>
                   {copy.closeAnyway}
                 </Button>
-                <Button
-                  ref={backRef}
+                <CopyButton
+                  ref={copyRef}
+                  text={issued.link}
+                  label={copy.copy}
+                  copiedLabel={copy.copied}
+                  announcement={copy.copiedAnnouncement}
                   variant="primary"
-                  onClick={() => {
+                  onCopied={() => {
+                    setCopied(true);
                     setConfirming(false);
-                    copyRef.current?.focus();
+                    setFocusDone((tick) => tick + 1);
                   }}
-                >
-                  {copy.back}
-                </Button>
+                />
               </DialogActions>
             </>
           ) : (
             <DialogActions>
-              <Button variant={copied ? 'primary' : 'secondary'} onClick={requestClose}>
+              <Button
+                ref={doneRef}
+                variant={copied ? 'primary' : 'secondary'}
+                onClick={requestClose}
+              >
                 {copy.done}
               </Button>
               <CopyButton

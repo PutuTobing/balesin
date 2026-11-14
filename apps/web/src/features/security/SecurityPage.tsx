@@ -23,6 +23,8 @@ import { BackupCodesPanel } from '../two-factor/BackupCodesPanel';
 import { BACKUP_CODES_LOW } from '../two-factor/constants';
 import { EmailCard, EmailCardSkeleton } from './EmailCard';
 import { ReauthForm } from './ReauthForm';
+import { SessionsCard } from './SessionsCard';
+import { SessionListSkeleton } from '../sessions/SessionList';
 import { TwoFactorBadge } from './TwoFactorBadge';
 import styles from './Security.module.css';
 
@@ -69,6 +71,8 @@ export function SecurityPage() {
           />
         ) : null}
         <EmailCard />
+        {/* Paling bawah: panjangnya tergantung jumlah perangkat, kartu lain tidak ikut bergeser. */}
+        <SessionsCard requireCode={status.enabled} />
       </div>
     </Page>
   );
@@ -88,6 +92,13 @@ export function SecurityCardsSkeleton() {
       <TwoFactorCard status={null} required={required} roleLabel={USER_ROLE_LABELS[role]} />
       {required ? <BackupCodesCard status={null} email="" /> : null}
       <EmailCardSkeleton />
+      <section className={styles.card}>
+        <div className={styles.cardHead}>
+          <h2 className={styles.cardTitle}>{t.security.sessions.title}</h2>
+          <p className={styles.text}>{t.security.sessions.hint}</p>
+        </div>
+        <SessionListSkeleton rows={1} />
+      </section>
     </div>
   );
 }
@@ -144,7 +155,7 @@ function TwoFactorCard({
         </p>
       ) : !enabled ? (
         <>
-          <p className={styles.text}>{copy.twoFactor.recommended}</p>
+          <p className={styles.description}>{copy.twoFactor.recommended}</p>
           <div className={styles.actions}>
             {loading ? (
               <Skeleton className={styles.skeletonButtonLg} />
