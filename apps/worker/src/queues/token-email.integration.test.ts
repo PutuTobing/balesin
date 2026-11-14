@@ -31,6 +31,7 @@ import {
   emailSettings,
   organizationLogos,
   userInvitations,
+  users,
   type Database,
 } from '@balesin/db';
 import { insertOrganization, insertUser, uniqueSuffix } from '@balesin/db/testing';
@@ -468,4 +469,41 @@ describe('pemberitahuan keamanan dengan IP dan perangkat', () => {
     expect(result).toBeInstanceOf(Error);
     expect(String(result)).toContain('tidak valid');
   });
+});
+
+describe('penerbit token undangan tidak lagi berhak (review R2)', () => {
+  it('pengirim terakhir nonaktif atau perannya diturunkan → tidak dikirim, salinan token dihapus', async () => {
+    const { organization, owner } = await organizationWithEmail();
+    const admin = await insertUser(db, organization.id, {
+      role: 'admin',
+      email: `adm-${uniqueSuffix()}@maju.test`,
+    });
+    const disabled = await seedInvitation(organization.id, admin.id, { role: 'cs' });
+    await db.update(users).set({ disabledAt: new Date() }).where(eq(users.id, admin.id));
+    const demotedAdmin = await insertUser(db, organization.id, {
+      role: 'cs',
+      email: `turun-${uniqueSuffix()}@maju.test`,
+    });
+    const demoted = await seedInvitation(organization.id, demotedAdmin.id, { role: 'supervisor' });
+    // Kontrol: dibuat orang yang tidak berhak, tetapi dikirim ulang Owner → tetap dikirim.
+    const adopted = await seedInvitation(organization.id, admin.id, {
+      role: 'cs',
+      lastSentByUserId: owner.id,
+    });
+
+    for (const { row } of [disabled, demoted]) {
+      expect(await processEmailJob(invitationJob(organization.id, row.id), deps)).toEqual({
+        status: 'skipped',
+        reason: 'no_longer_valid',
+      });
+      expect(await invitationRow(row.id)).toMatchObject({
+        deliveryStatus: 'skipped',
+        deliveryTokenEncrypted: null,
+      });
+      expect(await capturedMailFor(row.email)).toEqual([]);
+    }
+    expect(await processEmailJob(invitationJob(organization.id, adopted.row.id), deps)).toEqual({
+      status: 'sent',
+    });
+  }, 30_000);
 });

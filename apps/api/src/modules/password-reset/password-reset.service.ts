@@ -22,6 +22,7 @@ import {
   consumeAccountToken,
   findAccountTokenByHash,
   insertAccountToken,
+  lockAccountTokens,
   markAccountTokenUndelivered,
   revokeAccountToken,
   revokeLiveAccountTokens,
@@ -110,11 +111,28 @@ export const PASSWORD_RESET_IP_RULE: RateLimitRule = {
   limit: 10,
   windowSeconds: 15 * 60,
 };
-/** Permintaan tautan per email yang DIKETIK (di-hash) — terdaftar atau tidak, sama. */
-export const PASSWORD_RESET_EMAIL_RULE: RateLimitRule = {
-  name: 'reset-email',
+/**
+ * Permintaan tautan per (email yang DIKETIK, jaringan IP/64) — terdaftar atau tidak, sama. Yang
+ * ditolak 429 hanya peminta dari jaringan itu: orang lain yang menebar permintaan untuk email
+ * korban tidak bisa membuat pemilik akun (dari jaringannya sendiri) mendapat 429 (review R4).
+ */
+export const PASSWORD_RESET_SOURCE_RULE: RateLimitRule = {
+  name: 'reset-email-asal',
   limit: 3,
   windowSeconds: 60 * 60,
+};
+/**
+ * Plafon email atur ulang password per email (dari mana pun), DIPERIKSA DI LATAR BELAKANG: lewat
+ * batas ini permintaan tetap dijawab 202 yang sama, hanya saja tidak ada tautan baru yang dibuat
+ * atau dikirim. Jendelanya sama dengan umur tautan (30 menit) dan tautan terakhir TIDAK dibatalkan,
+ * jadi pemilik akun selalu punya tautan berlaku di kotak masuknya — justru dari permintaan
+ * penyerang itu sendiri — sementara kotak masuknya tidak bisa dibanjiri (≤ 5 email / 30 menit).
+ * Penyerang tidak bisa mengamati kapan plafon ini tercapai.
+ */
+export const PASSWORD_RESET_DELIVERY_RULE: RateLimitRule = {
+  name: 'reset-email-kirim',
+  limit: 5,
+  windowSeconds: PASSWORD_RESET_VALID_MINUTES * 60,
 };
 
 function invalid(message: string): AppError {
@@ -164,7 +182,25 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps): Pass
     email: string,
     context: PasswordResetContext,
   ): Promise<void> {
+    // Plafon pengiriman per email: dihitung untuk SEMUA email yang diketik (terdaftar atau tidak)
+    // sebelum mencari akun, dan tidak pernah mengubah jawaban (lihat PASSWORD_RESET_DELIVERY_RULE).
+    const deliveryQuota = await limiter.consume(
+      PASSWORD_RESET_DELIVERY_RULE,
+      sha256Hex(`reset|${email}`).slice(0, 40),
+    );
     const user = await findUserForLogin(db, organization.id, email);
+    if (user && user.disabledAt === null && !deliveryQuota.allowed) {
+      await recordAudit(db, {
+        organizationId: organization.id,
+        actorUserId: null,
+        action: AUDIT_ACTIONS.passwordResetRequested,
+        targetType: 'user',
+        targetId: user.id,
+        metadata: { matched: true, throttled: true },
+        client: context.client,
+      });
+      return;
+    }
     if (!user || user.disabledAt !== null) {
       await recordAudit(db, {
         organizationId: organization.id,
@@ -179,6 +215,7 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps): Pass
     const { token, tokenHash } = issueLinkToken();
     const tokenId = newId();
     await db.transaction(async (tx) => {
+      await lockAccountTokens(tx, organization.id, user.id, 'password_reset');
       const replaced = await revokeLiveAccountTokens(
         tx,
         organization.id,
@@ -266,12 +303,13 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps): Pass
         ipRateLimitKey(context.client),
         () => 'Terlalu banyak permintaan atur ulang password dari jaringanmu.',
       );
-      // Per email yang DIKETIK: email tak terdaftar dihitung sama persis dengan akun sungguhan.
+      // Per email yang DIKETIK + jaringan: email tak terdaftar dihitung sama persis dengan akun
+      // sungguhan, dan peminta dari jaringan lain tidak bisa menghabiskan jatah pemilik akun.
       await enforceRateLimit(
         limiter,
-        PASSWORD_RESET_EMAIL_RULE,
-        sha256Hex(`reset|${email}`).slice(0, 40),
-        () => 'Terlalu banyak permintaan atur ulang password untuk email ini.',
+        PASSWORD_RESET_SOURCE_RULE,
+        sha256Hex(`reset|${email}|${ipRateLimitKey(context.client)}`).slice(0, 40),
+        () => 'Terlalu banyak permintaan atur ulang password untuk email ini dari jaringanmu.',
       );
       const organization = await availableFor();
       if (!organization) {
@@ -393,19 +431,9 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps): Pass
         'Password diatur ulang; semua sesi dicabut',
       );
 
-      // Kunci login karena tebakan password dilepas: tebakan itu untuk password lama. Kunci
-      // perangkat lama tidak perlu — cookie perangkat lama sudah tidak diakui. Kunci langkah
-      // kedua (2FA) TIDAK dilepas.
-      const accountKey = loginAccountKey(user.email);
-      const sourceKey = sha256Hex(`login|${user.email}|${ipRateLimitKey(context.client)}`).slice(
-        0,
-        40,
-      );
-      await limiter.clearFlag(ACCOUNT_LOCK_FLAG, accountKey);
-      await limiter.reset(LOGIN_ACCOUNT_RULE, accountKey);
-      await limiter.clearFlag(SOURCE_LOCK_FLAG, sourceKey);
-      await limiter.reset(LOGIN_SOURCE_RULE, sourceKey);
-
+      // Password SUDAH berganti (transaksi selesai). Langkah berikutnya tidak boleh membuat jawaban
+      // gagal (review R5): email "password diganti" — deteksi bila reset dilakukan orang lain —
+      // diantrekan LEBIH DULU, dan pembersihan kunci yang gagal hanya dicatat.
       const notify = (promise: Promise<void>) =>
         void promise.catch((err: unknown) => {
           context.log.warn({ err, userId: user.id }, 'Gagal mengantre email pemberitahuan');
@@ -421,6 +449,27 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps): Pass
       );
       if (backupCodesRemaining !== undefined) {
         twoFactor.notifyBackupCodeUsed(user, backupCodesRemaining, context.log);
+      }
+
+      // Kunci login karena tebakan password dilepas: tebakan itu untuk password lama. Kunci
+      // perangkat lama tidak perlu — cookie perangkat lama sudah tidak diakui. Kunci langkah
+      // kedua (2FA) TIDAK dilepas. Bila Redis bermasalah, kunci yang tersisa hanya membuat
+      // pemilik akun menunggu ≤ 15 menit — tidak berbahaya, jadi cukup dicatat.
+      const accountKey = loginAccountKey(user.email);
+      const sourceKey = sha256Hex(`login|${user.email}|${ipRateLimitKey(context.client)}`).slice(
+        0,
+        40,
+      );
+      try {
+        await limiter.clearFlag(ACCOUNT_LOCK_FLAG, accountKey);
+        await limiter.reset(LOGIN_ACCOUNT_RULE, accountKey);
+        await limiter.clearFlag(SOURCE_LOCK_FLAG, sourceKey);
+        await limiter.reset(LOGIN_SOURCE_RULE, sourceKey);
+      } catch (err) {
+        context.log.warn(
+          { err, userId: user.id },
+          'Kunci login tidak bisa dilepas setelah atur ulang password',
+        );
       }
     },
   };

@@ -21,7 +21,7 @@ import {
   type UserRole,
 } from '@balesin/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   call,
@@ -577,5 +577,109 @@ describe('menyelesaikan atur ulang password', () => {
     }
     expect(statuses.slice(0, 30).every((status) => status === 410)).toBe(true);
     expect(statuses[30]).toBe(429);
+  });
+});
+
+describe('ketahanan permintaan atur ulang password (review R4, R5, Info 2)', () => {
+  async function liveTokens(email: string) {
+    return harness.db
+      .select()
+      .from(accountTokens)
+      .where(
+        and(
+          eq(accountTokens.email, email),
+          isNull(accountTokens.usedAt),
+          isNull(accountTokens.revokedAt),
+        ),
+      );
+  }
+
+  it('R4: penyerang dari jaringan lain tidak bisa membuat pemilik akun mendapat 429; plafon kirim diam-diam, tautan terakhir tetap berlaku', async () => {
+    const owner = await completeSetup(harness.app);
+    await configureEmail(owner);
+    const attacker = { ip: '198.51.100.31' };
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      statuses.push((await requestReset(OWNER.email, attacker)).statusCode);
+    }
+    expect(statuses).toEqual([202, 202, 202, 429]);
+    await harness.app.backgroundTasks.drain();
+    expect(harness.accountTokenJobs).toHaveLength(3);
+
+    // Pemilik akun dari jaringannya sendiri: tetap 202 dan tautan baru dikirim (4 ≤ 5).
+    expect((await requestReset(OWNER.email, { ip: '203.0.113.200' })).statusCode).toBe(202);
+    await harness.app.backgroundTasks.drain();
+    expect(harness.accountTokenJobs).toHaveLength(4);
+
+    // Penyerang pindah jaringan: permintaan ke-5 masih mengirim tautan; sesudah plafon jawaban tetap
+    // 202, tetapi tidak ada tautan baru dan tautan terakhir TIDAK dibatalkan.
+    expect((await requestReset(OWNER.email, { ip: '198.51.100.32' })).statusCode).toBe(202);
+    await harness.app.backgroundTasks.drain();
+    const [before] = await liveTokens(OWNER.email);
+    for (const ip of ['198.51.100.33', '198.51.100.34']) {
+      expect((await requestReset(OWNER.email, { ip })).statusCode).toBe(202);
+    }
+    await harness.app.backgroundTasks.drain();
+    expect(harness.accountTokenJobs).toHaveLength(5);
+    const after = await liveTokens(OWNER.email);
+    expect(after.map((row) => row.id)).toEqual([before?.id]);
+    const throttled = (
+      await harness.db
+        .select()
+        .from(auditLogs)
+        .where(eq(auditLogs.action, 'auth.password_reset.requested'))
+    ).filter((row) => row.metadata.throttled === true);
+    expect(throttled).toHaveLength(2);
+
+    // Email tak terdaftar: jawabannya sama persis.
+    for (let attempt = 0; attempt < 7; attempt += 1) {
+      expect(
+        (await requestReset('tidak.ada@majujaya.test', { ip: `198.51.100.${40 + attempt}` }))
+          .statusCode,
+      ).toBe(202);
+    }
+  });
+
+  it('Info 2: dua permintaan beruntun dikerjakan bersamaan di latar belakang → tidak bertabrakan, satu tautan hidup', async () => {
+    const owner = await completeSetup(harness.app);
+    await configureEmail(owner);
+    await Promise.all([
+      requestReset(OWNER.email, { ip: '198.51.100.51' }),
+      requestReset(OWNER.email, { ip: '198.51.100.52' }),
+      requestReset(OWNER.email, { ip: '198.51.100.53' }),
+    ]);
+    await harness.app.backgroundTasks.drain();
+    expect(await liveTokens(OWNER.email)).toHaveLength(1);
+    expect(await harness.db.select().from(accountTokens)).toHaveLength(3);
+    expect(harness.logs.text()).not.toContain('Pekerjaan latar belakang gagal');
+  });
+
+  it('R5: Redis gagal saat melepas kunci sesudah password berganti → tetap 200, email "password diganti" tetap diantrekan', async () => {
+    const owner = await completeSetup(harness.app);
+    await configureEmail(owner);
+    const cs = await addUser(owner, 'cs', 'sandi-cs-redis-mati-01');
+    const token = await resetToken(cs.email);
+    // Akun tanpa 2FA: `del` Redis hanya dipakai pembersihan kunci sesudah transaksi.
+    const spy = vi.spyOn(harness.redis, 'del').mockRejectedValue(new Error('redis mati'));
+    try {
+      const done = await complete({ token, password: NEW_PASSWORD });
+      expect(done.statusCode).toBe(200);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(harness.securityNotices.at(-1)).toMatchObject({
+      event: 'password_changed',
+      userId: cs.id,
+    });
+    expect(
+      harness.logs
+        .entries()
+        .some(
+          (entry) => entry.msg === 'Kunci login tidak bisa dilepas setelah atur ulang password',
+        ),
+    ).toBe(true);
+    expect(
+      (await login(harness.app, { email: cs.email, password: NEW_PASSWORD })).session.user.id,
+    ).toBe(cs.id);
   });
 });

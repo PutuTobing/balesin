@@ -6,8 +6,10 @@ import type { FastifyBaseLogger } from 'fastify';
  * dan pengantrean email untuk email terdaftar TIDAK boleh membuat jawabannya lebih lambat
  * daripada untuk email tak terdaftar (cegah enumerasi lewat waktu, SECURITY.md §1).
  *
- * Kegagalan hanya dicatat di log (pemanggil sudah mendapat jawaban). Saat aplikasi ditutup,
- * pekerjaan yang masih berjalan ditunggu sampai selesai.
+ * Kegagalan dicatat di log level `error` (pemanggil sudah mendapat jawaban). Pekerjaan yang bisa
+ * bertabrakan dengan dirinya sendiri harus menyerialkan diri (mis. `lockAccountTokens` untuk
+ * penerbitan token akun), bukan mengandalkan log ini. Saat aplikasi ditutup, pekerjaan yang masih
+ * berjalan ditunggu sampai selesai.
  */
 export interface BackgroundTasks {
   run(name: string, task: () => Promise<void>, log: FastifyBaseLogger): void;
@@ -22,6 +24,8 @@ export function createBackgroundTasks(): BackgroundTasks {
       const promise: Promise<void> = new Promise<void>((resolve) => setImmediate(resolve))
         .then(task)
         .catch((err: unknown) => {
+          // `err` lewat serializer logger bersama (@balesin/core): parameter query Drizzle,
+          // `detail`/`where` Postgres, dan pola rahasia disensor — termasuk di rantai `cause`.
           log.error({ err, task: name }, 'Pekerjaan latar belakang gagal');
         })
         .finally(() => running.delete(promise));

@@ -326,7 +326,7 @@ Error membuat/mengirim ulang/membatalkan:
 | Kasus | Respons |
 |---|---|
 | Email tidak valid / memuat baris baru, peran bukan Admin/Supervisor/CS/Teknisi (termasuk `owner`) | 400 `VALIDATION_ERROR` field `email` / `role` |
-| Admin mengundang/mengelola undangan Admin | 403 `FORBIDDEN` "Admin hanya bisa mengundang dan mengelola undangan Supervisor, CS, dan Teknisi…" |
+| Admin mengundang/mengelola undangan Admin — termasuk membuat undangan untuk email yang masih punya undangan Admin terbuka (berlaku atau kedaluwarsa) | 403 `FORBIDDEN` "Admin hanya bisa mengundang dan mengelola undangan Supervisor, CS, dan Teknisi…" (tidak memakai kuota) |
 | Supervisor/CS/Teknisi | 403 `FORBIDDEN` (deklarasi rute) |
 | Email sudah dipakai pengguna organisasi (aktif atau nonaktif) | 409 `CONFLICT` field `email` "Email ini sudah terdaftar sebagai pengguna di organisasimu." |
 | Masih ada undangan berlaku untuk email itu | 409 `CONFLICT` field `email` "…Kirim ulang dari daftar undangan bila perlu." (Undangan yang sudah kedaluwarsa otomatis diganti yang baru.) |
@@ -354,7 +354,7 @@ Error penerima:
 
 | Kasus | Respons |
 |---|---|
-| Token tidak dikenal / sudah diganti kirim ulang / undangan dibatalkan | 410 `TOKEN_INVALID` "Tautan undangan ini tidak berlaku. Buka tautan dari email undangan terbaru…" |
+| Token tidak dikenal / sudah diganti kirim ulang / undangan dibatalkan / penerbit tautannya (pembuat atau pengirim ulang terakhir) sudah dinonaktifkan atau perannya tidak lagi boleh mengundang peran itu | 410 `TOKEN_INVALID` "Tautan undangan ini tidak berlaku. Buka tautan dari email undangan terbaru…" (kirim ulang oleh Owner/Admin yang berhak membuat tautan baru yang berlaku) |
 | Kedaluwarsa (72 jam) | 410 `TOKEN_INVALID` "Undangan ini sudah kedaluwarsa. Minta Owner atau Admin … mengirim ulang…" |
 | Sudah dipakai / email sudah punya akun | 410 `TOKEN_INVALID` "…Masuk dengan email dan password-mu." → tombol ke halaman masuk |
 | Nama kosong/terlalu pendek/memuat baris baru | 400 field `name` |
@@ -382,7 +382,8 @@ baru membatalkan yang lama; tautan batal bila email akun berubah.
    - `available: true` → form email.
 2. `POST …/request` → 202 SELALU sama untuk email terdaftar, tidak terdaftar, maupun akun nonaktif (waktu
    jawabannya juga sama: pencarian akun dikerjakan setelah menjawab). Tampilkan: "Kalau {email} terdaftar,
-   tautan atur ulang password sudah dikirim. Periksa kotak masuk dan folder spam. Tautan berlaku 30 menit."
+   tautan atur ulang password sudah dikirim. Periksa kotak masuk dan folder spam. Tautan berlaku 30 menit.
+   Kalau ada beberapa email, pakai yang terbaru."
    Jangan menulis "email terkirim".
 3. Tautan email → `/atur-ulang-password#token=…` → baca + buang fragment → `POST …/inspect`.
 4. Form password baru (`PASSWORD_RULES_HINT`); bila `twoFactorRequired`, juga isian kode
@@ -401,7 +402,8 @@ tetap butuh kode 2FA bila aktif.
 |---|---|
 | Email pengirim belum diatur (`request`) | 503 `SERVICE_UNAVAILABLE` (pesan sama untuk email apa pun) |
 | Email tidak valid | 400 field `email` |
-| > 3 permintaan/jam untuk email yang sama (terdaftar atau tidak, sama), > 10/15 menit per jaringan | 429 + `Retry-After` |
+| > 3 permintaan/jam untuk email yang sama **dari jaringan yang sama** (IP, atau /64 IPv6; terdaftar atau tidak, sama), > 10/15 menit per jaringan | 429 + `Retry-After` — pesan "…untuk email ini dari jaringanmu." Permintaan dari jaringan lain untuk email yang sama tidak terkena. |
+| > 5 permintaan / 30 menit untuk email yang sama dari mana pun | **tetap 202 yang sama** (tidak terlihat): tidak ada tautan baru yang dibuat/dikirim, tautan terakhir tetap berlaku. Mencegah kotak masuk dibanjiri tanpa membuat pemilik akun terkunci. |
 | Token tidak dikenal / dibatalkan / email akun berubah / akun nonaktif | 410 `TOKEN_INVALID` "Tautan atur ulang password ini tidak berlaku. Minta tautan baru…" |
 | Kedaluwarsa | 410 `TOKEN_INVALID` "…sudah kedaluwarsa (berlaku 30 menit)…" |
 | Sudah dipakai | 410 `TOKEN_INVALID` "Tautan ini sudah dipakai…" |
@@ -460,6 +462,19 @@ percobaan masuk, dan email tes memakai satu kerangka: logo (PNG/JPEG inline; Web
 nama produk, nama organisasi, warna tombol dari warna utama organisasi bila kontras ≥ 4,5:1, versi HTML +
 teks polos, sapaan "kamu", semua nilai pengguna di-escape. Email keamanan memuat waktu, alamat IP, dan
 perkiraan perangkat ("Chrome di Windows") dari audit log.
+
+## Perubahan setelah review keamanan butir 4 (path & bentuk tidak berubah)
+
+- **Undangan (R2):** tautan undangan kini 410 `TOKEN_INVALID` (pesan umum "tidak berlaku") bila yang
+  menerbitkan tautan itu — pembuat, atau pengirim ulang terakhir — sudah dinonaktifkan atau perannya tidak
+  lagi boleh mengundang peran tersebut. Email undangan semacam itu juga tidak dikirim (status `skipped`).
+  Undangan tetap tampil di daftar; Owner/Admin yang berhak bisa "Kirim ulang" untuk tautan baru yang berlaku.
+- **Undangan (R1):** membuat undangan untuk email yang masih punya undangan terbuka yang tidak boleh dikelola
+  pemanggil (Admin + undangan Admin, berlaku atau kedaluwarsa) → 403, bukan menggantikannya.
+- **Minta atur ulang password (R4):** 429 per email hanya untuk peminta dari jaringan yang sama (3/jam). Plafon
+  5 email / 30 menit per email berlaku diam-diam (jawaban tetap 202).
+- **Selesai atur ulang password (R5):** bila Redis bermasalah sesudah password berganti, jawabannya tetap 200
+  dan email "Password sudah diganti" tetap diantrekan (sebelumnya bisa 503).
 
 ## Perubahan pada bagian yang sudah ada (Fase 1 butir 4)
 

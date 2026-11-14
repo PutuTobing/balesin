@@ -46,6 +46,7 @@ import {
   type SignedIn,
 } from '../../testing/integration';
 import { createPasswordHasher } from '../auth/password-hasher';
+import { revokeInvitationsIssuedBy } from './invitations.repo';
 
 let harness: IntegrationHarness;
 const hasher = createPasswordHasher();
@@ -795,5 +796,96 @@ describe('batas laju', () => {
     expect(statuses[30]).toBe(429);
     // Jaringan lain tidak terpengaruh.
     expect((await inspect(valid, { ip: '198.51.100.78' })).statusCode).toBe(200);
+  });
+});
+
+describe('penerbit token undangan harus tetap berhak (review R2)', () => {
+  it('pembuat dinonaktifkan → 410 + audit; Owner mengirim ulang → tautan baru berlaku lagi', async () => {
+    const owner = await completeSetup(harness.app);
+    const admin = await adminSession(owner);
+    const body = await invited(admin, 'kenalan@majujaya.test', 'supervisor');
+    const token = tokenFromLink(body.link);
+    await harness.db
+      .update(users)
+      .set({ disabledAt: sql`now()` })
+      .where(eq(users.id, admin.session.user.id));
+
+    const rejected = await inspect(token);
+    expect(rejected.statusCode).toBe(410);
+    expect(errorOf(rejected).message).toContain('tidak berlaku');
+    const [audit] = await auditOf('user.invitation.rejected');
+    expect(audit?.metadata).toEqual({ reason: 'inviter_unavailable' });
+
+    const resent = await call(
+      harness.app,
+      'POST',
+      apiPath(routes.resend, { invitationId: body.invitation.id }),
+      undefined,
+      as(owner),
+    );
+    expect(resent.statusCode).toBe(200);
+    const fresh = tokenFromLink(invitationIssuedResponseSchema.parse(resent.json()).link);
+    expect((await inspect(token)).statusCode).toBe(410);
+    expect((await inspect(fresh)).statusCode).toBe(200);
+  });
+
+  it('peran pengirim diturunkan (Admin → CS): undangan Supervisor-nya tidak bisa diterima', async () => {
+    const owner = await completeSetup(harness.app);
+    const admin = await adminSession(owner);
+    const body = await invited(admin, 'turun@majujaya.test', 'cs');
+    await harness.db.update(users).set({ role: 'cs' }).where(eq(users.id, admin.session.user.id));
+    const response = await accept({
+      token: tokenFromLink(body.link),
+      name: 'Calon Pengguna',
+      password: STRONG_PASSWORD,
+    });
+    expect(response.statusCode).toBe(410);
+    expect(
+      await harness.db.select().from(users).where(eq(users.email, 'turun@majujaya.test')),
+    ).toEqual([]);
+  });
+
+  it('revokeInvitationsIssuedBy (untuk butir 6) membatalkan undangan terbuka buatan/kiriman pengguna itu saja', async () => {
+    const owner = await completeSetup(harness.app);
+    const admin = await adminSession(owner);
+    const byAdmin = await invited(admin, 'a1@majujaya.test', 'cs');
+    const byOwner = await invited(owner, 'a2@majujaya.test', 'cs');
+    const ids = await revokeInvitationsIssuedBy(
+      harness.db,
+      owner.session.organization.id,
+      admin.session.user.id,
+      owner.session.user.id,
+    );
+    expect(ids).toEqual([byAdmin.invitation.id]);
+    expect((await invitationRow(byAdmin.invitation.id)).revokedByUserId).toBe(
+      owner.session.user.id,
+    );
+    expect((await invitationRow(byOwner.invitation.id)).revokedAt).toBeNull();
+  });
+});
+
+describe('membuat undangan tidak bisa menggantikan undangan yang tidak boleh dikelola (review R1)', () => {
+  it('Admin + undangan Admin (masih berlaku atau kedaluwarsa) untuk email yang sama → 403, kuota tidak terpakai', async () => {
+    const owner = await completeSetup(harness.app);
+    const admin = await adminSession(owner);
+    const ownerInvite = await invited(owner, 'calon@majujaya.test', 'admin');
+    expect((await invite(admin, 'calon@majujaya.test', 'cs')).statusCode).toBe(403);
+    await harness.db
+      .update(userInvitations)
+      .set({ expiresAt: sql`now() - interval '1 minute'` })
+      .where(eq(userInvitations.id, ownerInvite.invitation.id));
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      expect((await invite(admin, 'calon@majujaya.test', 'cs')).statusCode).toBe(403);
+    }
+    expect((await invitationRow(ownerInvite.invitation.id)).revokedAt).toBeNull();
+    // Kuota per email tujuan tidak terpakai oleh penolakan: Owner masih bisa mengirim ulang.
+    const resend = await call(
+      harness.app,
+      'POST',
+      apiPath(routes.resend, { invitationId: ownerInvite.invitation.id }),
+      undefined,
+      as(owner),
+    );
+    expect(resend.statusCode).toBe(200);
   });
 });

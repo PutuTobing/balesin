@@ -4,7 +4,8 @@
  *
  * Pola: `it(...)` = penjaga regresi (perilaku aman yang sudah benar dan harus tetap benar);
  * `it.fails(...)` = celah yang masih terbuka. Setelah celahnya diperbaiki, Vitest melaporkan tes
- * `it.fails` itu gagal — hapus `.fails`-nya.
+ * `it.fails` itu gagal — hapus `.fails`-nya. Saat ini tidak ada `it.fails` di berkas ini: R1 dan R2
+ * sudah ditutup (asersinya tidak diubah).
  */
 import {
   accountTokenDeliveryContext,
@@ -128,67 +129,62 @@ async function resetTokenFor(email: string, options: CallOptions = {}): Promise<
 
 // ── Celah yang masih terbuka ────────────────────────────────────────────────
 
-describe('celah terbuka (it.fails)', () => {
-  it.fails(
-    'R1: Admin tidak bisa membatalkan undangan Admin buatan Owner dengan membuat undangan baru untuk email yang sama',
-    async () => {
-      const owner = await completeSetup(harness.app);
-      const admin = await sessionFor(owner, 'admin');
-      const ownerInvite = await invited(owner, 'calon-admin@majujaya.test', 'admin');
-      await harness.db
-        .update(userInvitations)
-        .set({ expiresAt: sql`now() - interval '1 minute'` })
-        .where(eq(userInvitations.id, ownerInvite.invitation.id));
+describe('celah yang sudah ditutup (dulu it.fails)', () => {
+  it('R1: Admin tidak bisa membatalkan undangan Admin buatan Owner dengan membuat undangan baru untuk email yang sama', async () => {
+    const owner = await completeSetup(harness.app);
+    const admin = await sessionFor(owner, 'admin');
+    const ownerInvite = await invited(owner, 'calon-admin@majujaya.test', 'admin');
+    await harness.db
+      .update(userInvitations)
+      .set({ expiresAt: sql`now() - interval '1 minute'` })
+      .where(eq(userInvitations.id, ownerInvite.invitation.id));
 
-      // Admin tidak boleh "mengelola" undangan Admin (kirim ulang/batalkan → 403)…
-      const resend = await call(
-        harness.app,
-        'POST',
-        apiPath(inv.resend, { invitationId: ownerInvite.invitation.id }),
-        undefined,
-        as(admin),
-      );
-      expect(resend.statusCode).toBe(403);
+    // Admin tidak boleh "mengelola" undangan Admin (kirim ulang/batalkan → 403)…
+    const resend = await call(
+      harness.app,
+      'POST',
+      apiPath(inv.resend, { invitationId: ownerInvite.invitation.id }),
+      undefined,
+      as(admin),
+    );
+    expect(resend.statusCode).toBe(403);
 
-      // …tetapi membuat undangan CS untuk email yang sama diam-diam membatalkan undangan Owner itu.
-      const replace = await call(
-        harness.app,
-        'POST',
-        inv.collection,
-        { email: 'calon-admin@majujaya.test', role: 'cs' },
-        as(admin),
-      );
-      const [row] = await harness.db
-        .select({ revokedAt: userInvitations.revokedAt })
-        .from(userInvitations)
-        .where(eq(userInvitations.id, ownerInvite.invitation.id));
-      expect(row?.revokedAt).toBeNull();
-      expect(replace.statusCode).toBe(403);
-    },
-  );
+    // …dan membuat undangan CS untuk email yang sama juga tidak boleh diam-diam membatalkan
+    // undangan Owner itu (dulu bisa).
+    const replace = await call(
+      harness.app,
+      'POST',
+      inv.collection,
+      { email: 'calon-admin@majujaya.test', role: 'cs' },
+      as(admin),
+    );
+    const [row] = await harness.db
+      .select({ revokedAt: userInvitations.revokedAt })
+      .from(userInvitations)
+      .where(eq(userInvitations.id, ownerInvite.invitation.id));
+    expect(row?.revokedAt).toBeNull();
+    expect(replace.statusCode).toBe(403);
+  });
 
-  it.fails(
-    'R2: undangan dari pengundang yang sudah dinonaktifkan tidak bisa dibuka/diterima',
-    async () => {
-      const owner = await completeSetup(harness.app);
-      const admin = await sessionFor(owner, 'admin');
-      const issued = await invited(admin, 'kenalan-admin@majujaya.test', 'supervisor');
-      const token = tokenFromLink(issued.link);
+  it('R2: undangan dari pengundang yang sudah dinonaktifkan tidak bisa dibuka/diterima', async () => {
+    const owner = await completeSetup(harness.app);
+    const admin = await sessionFor(owner, 'admin');
+    const issued = await invited(admin, 'kenalan-admin@majujaya.test', 'supervisor');
+    const token = tokenFromLink(issued.link);
 
-      // Akun Admin yang membuat undangan dinonaktifkan (mis. ketahuan dibobol).
-      await harness.db
-        .update(users)
-        .set({ disabledAt: sql`now()` })
-        .where(eq(users.id, admin.session.user.id));
+    // Akun Admin yang membuat undangan dinonaktifkan (mis. ketahuan dibobol).
+    await harness.db
+      .update(users)
+      .set({ disabledAt: sql`now()` })
+      .where(eq(users.id, admin.session.user.id));
 
-      const accepted = await call(harness.app, 'POST', inv.accept, {
-        token,
-        name: 'Kenalan Penyerang',
-        password: STRONG_PASSWORD,
-      });
-      expect(accepted.statusCode).toBe(410);
-    },
-  );
+    const accepted = await call(harness.app, 'POST', inv.accept, {
+      token,
+      name: 'Kenalan Penyerang',
+      password: STRONG_PASSWORD,
+    });
+    expect(accepted.statusCode).toBe(410);
+  });
 });
 
 // ── Penjaga regresi ─────────────────────────────────────────────────────────

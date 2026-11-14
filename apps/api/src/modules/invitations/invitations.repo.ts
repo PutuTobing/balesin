@@ -5,9 +5,14 @@ import {
   type DbExecutor,
   type UserInvitation,
 } from '@balesin/db';
-import { INVITATION_VALID_HOURS, type EmailDeliveryStatus, type UserRole } from '@balesin/shared';
+import {
+  INVITATION_VALID_HOURS,
+  invitationIssuerAuthorized,
+  type EmailDeliveryStatus,
+  type UserRole,
+} from '@balesin/shared';
 import { alias } from 'drizzle-orm/pg-core';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
 
 /**
  * Query undangan. Semua query memfilter `organization_id`, kecuali pencarian berdasarkan hash
@@ -18,6 +23,7 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 const VALID_INTERVAL = sql.raw(`interval '${INVITATION_VALID_HOURS} hours'`);
 
 const inviter = alias(users, 'inviter');
+const lastSender = alias(users, 'last_sender');
 
 /** Undangan terbuka (belum diterima, belum dibatalkan) + nama pengundang + kedaluwarsa (jam DB). */
 export interface OpenInvitation {
@@ -252,6 +258,34 @@ export async function revokeInvitation(
   return rows.length > 0;
 }
 
+/**
+ * Membatalkan semua undangan terbuka yang dibuat ATAU terakhir dikirim ulang oleh `userId`. Untuk
+ * butir 6 (manajemen pengguna): dipanggil di transaksi yang sama dengan menonaktifkan/menurunkan
+ * peran pengguna itu (review undangan R2.2). Mengembalikan ID undangan yang dibatalkan.
+ */
+export async function revokeInvitationsIssuedBy(
+  db: DbExecutor,
+  organizationId: string,
+  userId: string,
+  actorUserId: string,
+): Promise<string[]> {
+  const rows = await db
+    .update(userInvitations)
+    .set({ revokedAt: sql`now()`, revokedByUserId: actorUserId, deliveryTokenEncrypted: null })
+    .where(
+      and(
+        eq(userInvitations.organizationId, organizationId),
+        or(
+          eq(userInvitations.invitedByUserId, userId),
+          eq(userInvitations.lastSentByUserId, userId),
+        ),
+        openOnly(),
+      ),
+    )
+    .returning({ id: userInvitations.id });
+  return rows.map((row) => row.id);
+}
+
 /** Pengantrean email gagal: tandai gagal dan buang salinan token (generasi token ini saja). */
 export async function markInvitationUndelivered(
   db: DbExecutor,
@@ -279,7 +313,14 @@ export interface InvitationByToken {
   role: Exclude<UserRole, 'owner'>;
   expiresAt: Date;
   deliveryStatus: EmailDeliveryStatus;
-  state: 'open' | 'accepted' | 'revoked' | 'expired';
+  /**
+   * `inviter_unavailable` = undangan masih terbuka, tetapi yang menerbitkan token SEKARANG
+   * (`last_sent_by`: pembuat, atau pengirim ulang terakhir) sudah dinonaktifkan atau perannya tidak
+   * lagi boleh mengundang peran ini — undangannya diperlakukan batal (review undangan R2: akun Admin
+   * dibobol lalu dinonaktifkan). Kirim ulang oleh orang yang berhak menerbitkan token baru yang
+   * tidak pernah dipegang penerbit lama, jadi undangan itu berlaku lagi.
+   */
+  state: 'open' | 'accepted' | 'revoked' | 'expired' | 'inviter_unavailable';
   inviterName: string;
   organization: { id: string; name: string; timezone: string; productName: string | null };
 }
@@ -300,16 +341,29 @@ export async function findInvitationByTokenHash(
       revoked: sql<boolean>`${userInvitations.revokedAt} is not null`,
       expired: sql<boolean>`${userInvitations.expiresAt} <= now()`,
       inviterName: inviter.name,
+      senderRole: lastSender.role,
+      senderDisabledAt: lastSender.disabledAt,
       organizationName: organizations.name,
       organizationTimezone: organizations.timezone,
       productName: organizations.productName,
     })
     .from(userInvitations)
     .innerJoin(inviter, joinInviter())
+    .innerJoin(
+      lastSender,
+      and(
+        eq(lastSender.organizationId, userInvitations.organizationId),
+        eq(lastSender.id, userInvitations.lastSentByUserId),
+      ),
+    )
     .innerJoin(organizations, eq(organizations.id, userInvitations.organizationId))
     .where(eq(userInvitations.tokenHash, tokenHash))
     .limit(1);
   if (!row || row.role === 'owner') return undefined;
+  const authorized = invitationIssuerAuthorized(row.role, {
+    role: row.senderRole,
+    disabledAt: row.senderDisabledAt,
+  });
   return {
     id: row.id,
     organizationId: row.organizationId,
@@ -317,7 +371,15 @@ export async function findInvitationByTokenHash(
     role: row.role,
     expiresAt: row.expiresAt,
     deliveryStatus: row.deliveryStatus,
-    state: row.accepted ? 'accepted' : row.revoked ? 'revoked' : row.expired ? 'expired' : 'open',
+    state: row.accepted
+      ? 'accepted'
+      : row.revoked
+        ? 'revoked'
+        : !authorized
+          ? 'inviter_unavailable'
+          : row.expired
+            ? 'expired'
+            : 'open',
     inviterName: row.inviterName,
     organization: {
       id: row.organizationId,

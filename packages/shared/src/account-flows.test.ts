@@ -13,6 +13,7 @@ import {
   completePasswordResetRequestSchema,
   createInvitationRequestSchema,
   emailTemplateIdSchema,
+  invitationIssuerAuthorized,
   linkTokenSchema,
   readTokenFromFragment,
   requestPasswordResetRequestSchema,
@@ -68,6 +69,17 @@ describe('matriks undangan', () => {
     expect(canInviteRole('admin', 'admin')).toBe(false);
     expect(canInviteRole('owner', 'admin')).toBe(true);
     expect(canInviteRole('cs', 'teknisi')).toBe(false);
+  });
+
+  it('penerbit tautan undangan harus aktif dan perannya sekarang masih boleh mengundang peran itu', () => {
+    const active = { disabledAt: null };
+    expect(invitationIssuerAuthorized('admin', { role: 'owner', ...active })).toBe(true);
+    expect(invitationIssuerAuthorized('cs', { role: 'admin', ...active })).toBe(true);
+    // Diturunkan: Admin → CS tidak lagi boleh menerbitkan undangan apa pun; Admin tidak boleh Admin.
+    expect(invitationIssuerAuthorized('cs', { role: 'cs', ...active })).toBe(false);
+    expect(invitationIssuerAuthorized('admin', { role: 'admin', ...active })).toBe(false);
+    // Nonaktif: tidak berlaku walau perannya masih cukup.
+    expect(invitationIssuerAuthorized('cs', { role: 'owner', disabledAt: new Date() })).toBe(false);
   });
 
   it('skema: email dibakukan, peran Owner ditolak, nama satu baris, password minimal 10', () => {

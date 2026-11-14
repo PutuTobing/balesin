@@ -49,11 +49,13 @@ import {
   LOGIN_LOCK_MINUTES,
   LOGIN_MAX_FAILED_ATTEMPTS,
   buildTokenLink,
+  invitationIssuerAuthorized,
   isTwoFactorRequired,
   type EmailDeliveryStatus,
 } from '@balesin/shared';
 import { UnrecoverableError, Worker } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 
 import type { QueueConnectionOptions } from './system';
 
@@ -226,6 +228,8 @@ interface OrganizationBrand {
 }
 
 const LOGO_CID = 'logo@balesin';
+/** Pengirim (ulang) terakhir undangan — penerbit token yang berlaku sekarang. */
+const lastSender = alias(users, 'last_sender');
 /** WebP tidak tampil di sebagian aplikasi email (mis. Outlook desktop): pakai nama produk saja. */
 const EMAIL_LOGO_TYPES: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg' };
 
@@ -439,6 +443,8 @@ async function sendInvitation(job: EmailJob, deps: EmailJobDeps): Promise<EmailJ
       sealed: userInvitations.deliveryTokenEncrypted,
       open: sql<boolean>`${userInvitations.acceptedAt} is null and ${userInvitations.revokedAt} is null and ${userInvitations.expiresAt} > now()`,
       inviterName: users.name,
+      senderRole: lastSender.role,
+      senderDisabledAt: lastSender.disabledAt,
     })
     .from(userInvitations)
     .innerJoin(
@@ -446,6 +452,13 @@ async function sendInvitation(job: EmailJob, deps: EmailJobDeps): Promise<EmailJ
       and(
         eq(users.organizationId, userInvitations.organizationId),
         eq(users.id, userInvitations.invitedByUserId),
+      ),
+    )
+    .innerJoin(
+      lastSender,
+      and(
+        eq(lastSender.organizationId, userInvitations.organizationId),
+        eq(lastSender.id, userInvitations.lastSentByUserId),
       ),
     )
     .where(
@@ -473,8 +486,15 @@ async function sendInvitation(job: EmailJob, deps: EmailJobDeps): Promise<EmailJ
 
   // Sudah diganti tautan baru (kirim ulang): job tautan baru yang mengirim.
   if (!row || row.sendCount !== sendCount) return { status: 'skipped', reason: 'no_longer_valid' };
-  if (!row.open || row.sealed === null) {
-    if (row.sealed !== null) await settle('skipped');
+  // Penerbit token ini (pembuat / pengirim ulang terakhir) sudah dinonaktifkan atau tidak lagi
+  // boleh mengundang peran ini: undangan dianggap batal, sama seperti di API (review undangan R2).
+  const issuerAuthorized = invitationIssuerAuthorized(row.role, {
+    role: row.senderRole,
+    disabledAt: row.senderDisabledAt,
+  });
+  const sealed = row.sealed;
+  if (!row.open || sealed === null || !issuerAuthorized) {
+    if (sealed !== null) await settle('skipped');
     return { status: 'skipped', reason: 'no_longer_valid' };
   }
   const branding = await loadOrganizationBrand(deps.db, organizationId);
@@ -484,7 +504,7 @@ async function sendInvitation(job: EmailJob, deps: EmailJobDeps): Promise<EmailJ
   try {
     token = openDeliveryToken(
       deps,
-      row.sealed,
+      sealed,
       invitationDeliveryContext(organizationId, invitationId, sendCount),
     );
   } catch (error) {

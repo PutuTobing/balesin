@@ -42,6 +42,19 @@ export function canInviteRole(actor: UserRole, role: UserRole): boolean {
 }
 
 /**
+ * Tautan undangan hanya berlaku selama PENERBIT tautannya (pembuat, atau pengirim ulang terakhir)
+ * masih aktif dan perannya SEKARANG masih boleh mengundang peran itu. Bila tidak, undangan
+ * dianggap batal: API menjawab 410, worker tidak mengirim. Kirim ulang oleh orang yang berhak
+ * menerbitkan tautan baru yang tidak pernah dipegang penerbit lama.
+ */
+export function invitationIssuerAuthorized(
+  role: UserRole,
+  issuer: { role: UserRole; disabledAt: Date | null },
+): boolean {
+  return issuer.disabledAt === null && canInviteRole(issuer.role, role);
+}
+
+/**
  * Token sekali pakai dari tautan email (fragment `#token=…`, lihat `links.ts`). Bentuknya hanya
  * diperiksa kasar; token yang salah/kedaluwarsa dijawab 410 `TOKEN_INVALID`.
  */

@@ -16,6 +16,7 @@ import {
   consumeAccountToken,
   findAccountTokenByHash,
   insertAccountToken,
+  lockAccountTokens,
   markAccountTokenUndelivered,
   revokeLiveAccountTokens,
 } from '../account-tokens/account-tokens.repo';
@@ -123,6 +124,7 @@ export function createEmailVerificationService(
       const tokenId = newId();
       const organizationId = auth.organizationId;
       const issued = await db.transaction(async (tx) => {
+        await lockAccountTokens(tx, organizationId, user.id, 'email_verification');
         await revokeLiveAccountTokens(tx, organizationId, user.id, 'email_verification');
         const row = await insertAccountToken(tx, {
           id: tokenId,

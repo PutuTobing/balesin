@@ -69,6 +69,22 @@ export async function findAccountTokenByHash(
   };
 }
 
+/**
+ * Kunci transaksi per (pengguna, tujuan): dua penerbitan token bersamaan (mis. dua permintaan
+ * atur ulang password beruntun yang dikerjakan di latar belakang, atau klik ganda "kirim email
+ * verifikasi") diantrekan, bukan bertabrakan di indeks unik `account_tokens_live_unique` — yang
+ * datang belakangan membatalkan token yang lebih dulu, lalu menerbitkan miliknya.
+ */
+export async function lockAccountTokens(
+  tx: DbExecutor,
+  organizationId: string,
+  userId: string,
+  purpose: AccountTokenPurpose,
+): Promise<void> {
+  const key = `account_tokens|${organizationId}|${userId}|${purpose}`;
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+}
+
 /** Membatalkan token hidup pengguna untuk satu tujuan (sebelum menerbitkan yang baru). */
 export async function revokeLiveAccountTokens(
   db: DbExecutor,

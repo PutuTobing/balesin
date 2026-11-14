@@ -146,7 +146,8 @@ function invalidFor(state: InvitationByToken['state'] | 'unknown'): AppError {
         'Undangan ini sudah kedaluwarsa. Minta Owner atau Admin di tempatmu mengirim ulang undangannya.',
       );
     default:
-      // Token tidak dikenal, sudah diganti (dikirim ulang), atau undangan dibatalkan: sama.
+      // Token tidak dikenal, sudah diganti (dikirim ulang), undangan dibatalkan, atau pengundangnya
+      // sudah tidak aktif/tidak berhak lagi: sama.
       return invalid(
         'Tautan undangan ini tidak berlaku. Buka tautan dari email undangan terbaru, atau minta Owner atau Admin di tempatmu mengirim undangan baru.',
       );
@@ -262,9 +263,16 @@ export function createInvitationService(deps: InvitationServiceDeps): Invitation
 
     async create(auth, input, context) {
       if (!canInviteRole(auth.user.role, input.role)) throw forbiddenRole(auth.user.role);
+      const organizationId = auth.organizationId;
+      // Undangan terbuka untuk email yang sama yang TIDAK boleh dikelola pemanggil (mis. undangan
+      // Admin buatan Owner, dilihat Admin) tidak boleh tergantikan lewat jalur "buat baru" —
+      // aturannya sama dengan kirim ulang/batalkan (review undangan R1). Sebelum kuota terpakai.
+      const existing = await findOpenInvitationByEmail(db, organizationId, input.email);
+      if (existing && !canInviteRole(auth.user.role, existing.role)) {
+        throw forbiddenRole(auth.user.role);
+      }
       await consumeInviteQuota(auth, input.email);
 
-      const organizationId = auth.organizationId;
       if (await isEmailRegistered(db, organizationId, input.email)) {
         throw fieldError(
           'email',
@@ -272,7 +280,6 @@ export function createInvitationService(deps: InvitationServiceDeps): Invitation
           'CONFLICT',
         );
       }
-      const existing = await findOpenInvitationByEmail(db, organizationId, input.email);
       if (existing && !existing.expired) {
         throw fieldError(
           'email',
