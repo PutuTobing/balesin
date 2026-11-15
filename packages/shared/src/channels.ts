@@ -637,12 +637,17 @@ export const BUSINESS_PROFILE_FIELDS = [
 export type BusinessProfileField = (typeof BUSINESS_PROFILE_FIELDS)[number];
 
 /**
- * Isian profil bisnis yang mengarahkan pelanggan ke luar (tautan/alamat kontak): mengubahnya oleh
- * selain Owner WAJIB `confirmation` — sesi Admin curian tidak bisa memasang tautan penipuan.
+ * Isian profil bisnis yang tampil ke semua pelanggan sebagai teks/tautan (website, email, Info,
+ * alamat, deskripsi): mengubahnya WAJIB `confirmation` untuk semua peran, Owner juga — sesi curian
+ * tidak bisa memasang tautan atau teks penipuan ("transfer hanya ke rekening …") di profil resmi
+ * (review channel S1; review akhir Fase 1 S1 & putaran 2 N1). Kategori (`vertical`) saja tidak.
  */
 export const BUSINESS_PROFILE_CONFIRMED_FIELDS = [
   'websites',
   'email',
+  'about',
+  'address',
+  'description',
 ] as const satisfies readonly BusinessProfileField[];
 
 export const BUSINESS_PROFILE_FIELD_LABELS: Readonly<Record<BusinessProfileField, string>> = {

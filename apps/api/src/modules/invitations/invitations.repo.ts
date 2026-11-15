@@ -297,25 +297,41 @@ export async function revokeInvitationsIssuedBy(
 }
 
 /**
- * Membatalkan undangan terbuka yang tokennya diterbitkan dari salah satu sesi `sessionIds` (sesi itu
- * baru saja dicabut paksa). `revokedByUserId` = pemilik sesi (penerbitnya sendiri). Mengembalikan
- * undangan yang dibatalkan.
+ * Membatalkan undangan terbuka yang token berlakunya diterbitkan `issuerUserId` (pemulihan akun):
+ *  - `{ sessionIds }` — hanya yang diterbitkan dari sesi-sesi itu;
+ *  - `{ exceptSessionId }` — semua KECUALI yang diterbitkan dari sesi itu (sesi pelaku pemulihan),
+ *    termasuk yang dari sesi yang sudah keluar/kedaluwarsa dan baris lama tanpa sesi;
+ *  - `{}` — semua.
+ * Mengembalikan undangan yang dibatalkan.
  */
-export async function revokeInvitationsIssuedFromSessions(
+export async function revokeOpenInvitationsOfIssuer(
   db: DbExecutor,
-  organizationId: string,
-  issuerUserId: string,
-  sessionIds: readonly string[],
+  input: {
+    organizationId: string;
+    issuerUserId: string;
+    revokedByUserId: string;
+    sessionIds?: readonly string[];
+    exceptSessionId?: string;
+  },
 ): Promise<Array<{ id: string; role: UserRole }>> {
-  if (sessionIds.length === 0) return [];
+  if (input.sessionIds?.length === 0) return [];
   return db
     .update(userInvitations)
-    .set({ revokedAt: sql`now()`, revokedByUserId: issuerUserId, deliveryTokenEncrypted: null })
+    .set({
+      revokedAt: sql`now()`,
+      revokedByUserId: input.revokedByUserId,
+      deliveryTokenEncrypted: null,
+    })
     .where(
       and(
-        eq(userInvitations.organizationId, organizationId),
-        eq(userInvitations.lastSentByUserId, issuerUserId),
-        inArray(userInvitations.issuedSessionId, [...sessionIds]),
+        eq(userInvitations.organizationId, input.organizationId),
+        eq(userInvitations.lastSentByUserId, input.issuerUserId),
+        input.sessionIds
+          ? inArray(userInvitations.issuedSessionId, [...input.sessionIds])
+          : undefined,
+        input.exceptSessionId === undefined
+          ? undefined
+          : sql`${userInvitations.issuedSessionId} is distinct from ${input.exceptSessionId}`,
         openOnly(),
       ),
     )

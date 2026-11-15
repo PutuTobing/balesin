@@ -30,6 +30,7 @@ import {
 } from '../auth/session.repo';
 import type { AuthContext, SessionService } from '../auth/session.service';
 import { revokeInvitationsIssuedBy } from '../invitations/invitations.repo';
+import { revokeInvitationsOnRecovery } from '../invitations/session-revocation';
 import { toActiveSession } from '../sessions/session-view';
 import { SESSION_NOT_FOUND_MESSAGE } from '../sessions/sessions.service';
 import { deleteBackupCodes, deleteChallenges } from '../two-factor/two-factor.repo';
@@ -374,6 +375,26 @@ export function createTeamService(deps: TeamServiceDeps): TeamService {
     return revoked.length;
   }
 
+  /**
+   * Pemulihan oleh Owner/Admin ("keluarkan sesi", "keluarkan semua sesi", atur ulang 2FA): undangan
+   * terbuka terbitan sasaran ikut batal (review akhir Fase 1 putaran 2 N2). Bukan untuk ubah peran.
+   */
+  function cancelInvitationsOnRecovery(
+    tx: DbExecutor,
+    auth: AuthContext,
+    userId: string,
+    scope: { sessionIds: readonly string[] } | Record<string, never>,
+    context: TeamContext,
+  ) {
+    return revokeInvitationsOnRecovery(tx, {
+      organizationId: auth.organizationId,
+      issuerUserId: userId,
+      scope,
+      actorUserId: auth.user.id,
+      client: context.client,
+    });
+  }
+
   /** Semua sesi + tantangan langkah kedua pengguna ini dicabut (ia harus masuk lagi). */
   async function signOutEverywhere(tx: DbExecutor, auth: AuthContext, userId: string) {
     const revoked = await sessions.revokeAllForUser(tx, auth.organizationId, userId);
@@ -622,6 +643,7 @@ export function createTeamService(deps: TeamServiceDeps): TeamService {
         if (!reset) throw conflict(CHANGED_MESSAGE);
         await deleteBackupCodes(tx, auth.organizationId, target.id);
         const revoked = await signOutEverywhere(tx, auth, target.id);
+        await cancelInvitationsOnRecovery(tx, auth, target.id, {}, context);
         const auditId = await recordAudit(tx, {
           organizationId: auth.organizationId,
           actorUserId: auth.user.id,
@@ -754,6 +776,13 @@ export function createTeamService(deps: TeamServiceDeps): TeamService {
         if (!(await revokeSessionOfUser(tx, auth.organizationId, target.id, sessionId))) {
           throw new AppError('NOT_FOUND', { message: SESSION_NOT_FOUND_MESSAGE });
         }
+        await cancelInvitationsOnRecovery(
+          tx,
+          auth,
+          target.id,
+          { sessionIds: [sessionId] },
+          context,
+        );
         await recordAudit(tx, {
           organizationId: auth.organizationId,
           actorUserId: auth.user.id,
@@ -772,6 +801,7 @@ export function createTeamService(deps: TeamServiceDeps): TeamService {
       return db.transaction(async (tx) => {
         await lockManaged(tx, auth, target, 'revoke_all_sessions', context);
         const revoked = await signOutEverywhere(tx, auth, target.id);
+        await cancelInvitationsOnRecovery(tx, auth, target.id, {}, context);
         await recordAudit(tx, {
           organizationId: auth.organizationId,
           actorUserId: auth.user.id,

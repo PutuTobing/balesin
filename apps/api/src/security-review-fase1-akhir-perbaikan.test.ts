@@ -174,7 +174,7 @@ describe('T1 — undangan wajib konfirmasi identitas, juga untuk Owner', () => {
     expect(summary.counts.member_joined).toBe(1);
   });
 
-  it('"keluarkan sesi lain" membatalkan undangan terbuka dari sesi itu; keluar biasa tidak', async () => {
+  it('"keluarkan sesi lain" membatalkan undangan dari sesi lain — juga yang sudah keluar; keluar biasa sendiri tidak', async () => {
     // Sesi A menerbitkan dua undangan; sesi B (pemilik akun di perangkat lain) memulihkan akun.
     await invite(owner, 'dari.sesi.a@majujaya.test');
     const other = await login(harness.app);
@@ -194,14 +194,30 @@ describe('T1 — undangan wajib konfirmasi identitas, juga untuk Owner', () => {
       as(recovery),
     );
     expect(revoked.statusCode, revoked.body).toBe(200);
+    // Semua undangan terbitannya selain dari sesi pemulih batal — juga dari sesi B yang sudah keluar
+    // lebih dulu (review akhir Fase 1 putaran 2 N2).
     expect((await invitationRow('dari.sesi.a@majujaya.test'))?.revokedAt).not.toBeNull();
-    // Sesi B sudah keluar sebelumnya (bukan dicabut di sini): undangannya tidak tersentuh.
-    expect((await invitationRow('dari.sesi.b@majujaya.test'))?.revokedAt).toBeNull();
+    expect((await invitationRow('dari.sesi.b@majujaya.test'))?.revokedAt).not.toBeNull();
     const audits = await harness.db
       .select()
       .from(auditLogs)
       .where(eq(auditLogs.action, AUDIT_ACTIONS.invitationRevoked));
-    expect(audits.map((row) => row.metadata.reason)).toEqual(['issuer_session_revoked']);
+    expect(audits.map((row) => row.metadata.reason)).toEqual([
+      'issuer_session_revoked',
+      'issuer_session_revoked',
+    ]);
+
+    // Undangan dari sesi pemulih sendiri tetap berlaku.
+    await invite(recovery, 'dari.sesi.pemulih@majujaya.test');
+    const again = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.sessions.revokeOthers,
+      await confirmationOf(recovery),
+      as(recovery),
+    );
+    expect(again.statusCode, again.body).toBe(200);
+    expect((await invitationRow('dari.sesi.pemulih@majujaya.test'))?.revokedAt).toBeNull();
   });
 });
 
@@ -222,8 +238,10 @@ describe('R3 — pelaku diperiksa ulang di transaksi tulis terakhir', () => {
     } as unknown as AuthContext;
   }
 
+  const warnings: Array<Record<string, unknown>> = [];
+  const log = { warn: (object: Record<string, unknown>) => warnings.push(object) };
   const check = (auth: AuthContext) =>
-    harness.db.transaction((tx) => assertActorStillAuthorized(tx, auth, 'channels.manage'));
+    harness.db.transaction((tx) => assertActorStillAuthorized(tx, auth, 'channels.manage', log));
 
   it('masih berhak → peran terbaru; diturunkan → 403; sesi dicabut / akun nonaktif → 401', async () => {
     const password = 'sandi-uji-r3-admin-01';
@@ -262,6 +280,9 @@ describe('R3 — pelaku diperiksa ulang di transaksi tulis terakhir', () => {
       .where(eq(userSessions.id, auth.sessionRef));
     await harness.db.update(users).set({ disabledAt: new Date() }).where(scope);
     expect(await statusOf()).toBe('UNAUTHENTICATED');
+    // Setiap penolakan dicatat `warn` dengan ID + alasan saja (tanpa email/nama).
+    expect(warnings.map((entry) => entry.reason ?? entry.role)).toEqual(['cs', 'session', 'user']);
+    expect(JSON.stringify(warnings)).not.toContain(admin.email);
   });
 });
 

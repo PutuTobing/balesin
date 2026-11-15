@@ -47,6 +47,7 @@ import {
 } from '../auth/login-rules';
 import type { PasswordHasher } from '../auth/password-hasher';
 import { checkPassword } from '../auth/password-policy';
+import { revokeInvitationsOnRecovery } from '../invitations/session-revocation';
 import { detectResetBurst } from './reset-burst';
 import type { SessionService } from '../auth/session.service';
 import {
@@ -429,9 +430,13 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps): Pass
               emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())`,
             })
             .where(and(eq(users.organizationId, organizationId), eq(users.id, user.id)));
-          // Memulihkan akun: undangan dari sesi-sesi lama ikut batal (review akhir Fase 1 T1).
-          const revoked = await sessions.revokeAllForUser(tx, organizationId, user.id, undefined, {
-            cancelIssuedInvitations: true,
+          const revoked = await sessions.revokeAllForUser(tx, organizationId, user.id);
+          // Memulihkan akun: SEMUA undangan terbuka terbitannya ikut batal (akhir Fase 1 T1/N2).
+          await revokeInvitationsOnRecovery(tx, {
+            organizationId,
+            issuerUserId: user.id,
+            scope: {},
+            client: context.client,
           });
           await deleteChallenges(tx, organizationId, user.id);
           const auditId = await recordAudit(tx, {

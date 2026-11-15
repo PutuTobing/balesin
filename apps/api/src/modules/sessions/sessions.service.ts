@@ -6,7 +6,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import type { ClientInfo } from '../../http/client-info';
 import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
 import { listActiveSessions, revokeSessionOfUser } from '../auth/session.repo';
-import { revokeInvitationsFromRevokedSessions } from '../invitations/session-revocation';
+import { revokeInvitationsOnRecovery } from '../invitations/session-revocation';
 import type { AuthContext, SessionService } from '../auth/session.service';
 import { deleteChallenges } from '../two-factor/two-factor.repo';
 import type { TwoFactorService } from '../two-factor/two-factor.service';
@@ -96,9 +96,12 @@ export function createOwnSessionsService(deps: {
           throw new AppError('NOT_FOUND', { message: SESSION_NOT_FOUND_MESSAGE });
         }
         // Sesi lain dikeluarkan pemiliknya (mis. dicurigai dicuri): undangannya ikut batal (T1).
-        await revokeInvitationsFromRevokedSessions(tx, auth.organizationId, auth.user.id, [
-          sessionId,
-        ]);
+        await revokeInvitationsOnRecovery(tx, {
+          organizationId: auth.organizationId,
+          issuerUserId: auth.user.id,
+          scope: { sessionIds: [sessionId] },
+          client: context.client,
+        });
         await recordAudit(tx, {
           organizationId: auth.organizationId,
           actorUserId: auth.user.id,
@@ -124,14 +127,20 @@ export function createOwnSessionsService(deps: {
         context,
       );
       const revoked = await db.transaction(async (tx) => {
-        // Sesi lain dikeluarkan (mis. cookie dicurigai dicuri): undangan terbitannya ikut batal (T1).
         const count = await sessions.revokeAllForUser(
           tx,
           auth.organizationId,
           auth.user.id,
           auth.sessionRef,
-          { cancelIssuedInvitations: true },
         );
+        // Pemulihan: SEMUA undangan terbuka terbitannya selain dari sesi ini ikut batal — juga yang
+        // dari sesi yang sudah keluar/kedaluwarsa (review akhir Fase 1 T1, putaran 2 N2).
+        await revokeInvitationsOnRecovery(tx, {
+          organizationId: auth.organizationId,
+          issuerUserId: auth.user.id,
+          scope: { exceptSessionId: auth.sessionRef },
+          client: context.client,
+        });
         await deleteChallenges(tx, auth.organizationId, auth.user.id);
         await recordAudit(tx, {
           organizationId: auth.organizationId,

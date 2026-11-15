@@ -93,48 +93,42 @@ describe('N2 — pembatalan undangan saat pemulihan hanya mengenai sesi yang MAS
     expect(await revokedAtOf('bayangan-1@penyerang.test')).not.toBeNull();
   });
 
-  it.fails(
-    'penyerang KELUAR dulu setelah mengundang → "keluarkan sesi lain" korban tetap membatalkan undangannya',
-    async () => {
-      const intruder = await login(harness.app);
-      await invite(intruder, 'bayangan-2@penyerang.test', 'admin');
-      // Penyerang menutup jejak: sesinya dicabut lewat keluar biasa (atau dibiarkan kedaluwarsa).
-      const logout = await call(harness.app, 'POST', API_ROUTES.auth.logout, {}, as(intruder));
-      expect(logout.statusCode).toBeLessThan(300);
+  it('penyerang KELUAR dulu setelah mengundang → "keluarkan sesi lain" korban tetap membatalkan undangannya', async () => {
+    const intruder = await login(harness.app);
+    await invite(intruder, 'bayangan-2@penyerang.test', 'admin');
+    // Penyerang menutup jejak: sesinya dicabut lewat keluar biasa (atau dibiarkan kedaluwarsa).
+    const logout = await call(harness.app, 'POST', API_ROUTES.auth.logout, {}, as(intruder));
+    expect(logout.statusCode).toBeLessThan(300);
 
-      const revoked = await call(
-        harness.app,
-        'POST',
-        API_ROUTES.sessions.revokeOthers,
-        await confirmationOf(owner),
-        as(owner),
-      );
-      expect(revoked.statusCode).toBe(200);
+    const revoked = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.sessions.revokeOthers,
+      await confirmationOf(owner),
+      as(owner),
+    );
+    expect(revoked.statusCode).toBe(200);
 
-      // Celah: hanya sesi yang dicabut OLEH pemulihan ini yang dihitung; sesi penerbit sudah mati,
-      // jadi undangan Admin buatan penyerang tetap terbuka dan bisa diterima.
-      expect(await revokedAtOf('bayangan-2@penyerang.test')).not.toBeNull();
-    },
-  );
+    // Celah: hanya sesi yang dicabut OLEH pemulihan ini yang dihitung; sesi penerbit sudah mati,
+    // jadi undangan Admin buatan penyerang tetap terbuka dan bisa diterima.
+    expect(await revokedAtOf('bayangan-2@penyerang.test')).not.toBeNull();
+  });
 
-  it.fails(
-    'Owner mengeluarkan semua sesi Admin yang dicurigai → undangan yang diterbitkan sesi-sesi itu batal',
-    async () => {
-      const admin = await member('admin');
-      await invite(admin, 'bayangan-3@penyerang.test', 'supervisor');
+  it('Owner mengeluarkan semua sesi Admin yang dicurigai → undangan yang diterbitkan sesi-sesi itu batal', async () => {
+    const admin = await member('admin');
+    await invite(admin, 'bayangan-3@penyerang.test', 'supervisor');
 
-      const response = await call(
-        harness.app,
-        'POST',
-        apiPath(API_ROUTES.team.revokeAllSessions, { userId: admin.id }),
-        await confirmationOf(owner),
-        as(owner),
-      );
-      expect(response.statusCode).toBe(200);
+    const response = await call(
+      harness.app,
+      'POST',
+      apiPath(API_ROUTES.team.revokeAllSessions, { userId: admin.id }),
+      await confirmationOf(owner),
+      as(owner),
+    );
+    expect(response.statusCode).toBe(200);
 
-      // Celah: `signOutEverywhere` (team) tidak memakai `cancelIssuedInvitations`, padahal ini
-      // langkah pemulihan yang paling mungkin dilakukan Owner sebelum (atau tanpa) menonaktifkan.
-      expect(await revokedAtOf('bayangan-3@penyerang.test')).not.toBeNull();
-    },
-  );
+    // Celah: `signOutEverywhere` (team) tidak memakai `cancelIssuedInvitations`, padahal ini
+    // langkah pemulihan yang paling mungkin dilakukan Owner sebelum (atau tanpa) menonaktifkan.
+    expect(await revokedAtOf('bayangan-3@penyerang.test')).not.toBeNull();
+  });
 });

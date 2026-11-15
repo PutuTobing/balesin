@@ -20,6 +20,8 @@ export async function assertActorStillAuthorized(
   tx: DbExecutor,
   auth: AuthContext,
   permission: Permission,
+  /** Penolakan dicatat `warn` (hanya ID + alasan, tanpa data pribadi). */
+  log?: { warn(object: Record<string, unknown>, message: string): void },
 ): Promise<{ role: UserRole }> {
   const [row] = await tx
     .select({
@@ -46,9 +48,24 @@ export async function assertActorStillAuthorized(
     .for('share', { of: users })
     .limit(1);
   if (!row || row.sessionLive !== true) {
+    log?.warn(
+      {
+        userId: auth.user.id,
+        sessionRef: auth.sessionRef,
+        permission,
+        reason: row ? 'session' : 'user',
+      },
+      'Pelaku tidak lagi aktif/bersesi saat transaksi tulis: perubahan dibatalkan',
+    );
     throw new AppError('UNAUTHENTICATED');
   }
-  if (!hasPermission(row.role, permission)) throw authorityChanged();
+  if (!hasPermission(row.role, permission)) {
+    log?.warn(
+      { userId: auth.user.id, sessionRef: auth.sessionRef, permission, role: row.role },
+      'Wewenang pelaku berubah saat transaksi tulis: perubahan dibatalkan',
+    );
+    throw authorityChanged();
+  }
   return { role: row.role };
 }
 

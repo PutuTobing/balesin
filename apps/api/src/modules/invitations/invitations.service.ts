@@ -209,8 +209,13 @@ export function createInvitationService(deps: InvitationServiceDeps): Invitation
   }
 
   /** Di transaksi tulis: pelaku masih aktif, sesinya hidup, dan masih boleh mengundang peran ini. */
-  async function assertStillIssuer(tx: DbExecutor, auth: AuthContext, role: UserRole) {
-    const { role: currentRole } = await assertActorStillAuthorized(tx, auth, 'team.invite');
+  async function assertStillIssuer(
+    tx: DbExecutor,
+    auth: AuthContext,
+    role: UserRole,
+    log: FastifyBaseLogger,
+  ) {
+    const { role: currentRole } = await assertActorStillAuthorized(tx, auth, 'team.invite', log);
     if (!canInviteRole(currentRole, role))
       throw authorityChanged(forbiddenRoleMessage(currentRole));
   }
@@ -397,7 +402,7 @@ export function createInvitationService(deps: InvitationServiceDeps): Invitation
 
       try {
         await db.transaction(async (tx) => {
-          await assertStillIssuer(tx, auth, input.role);
+          await assertStillIssuer(tx, auth, input.role, context.log);
           // Undangan lama yang sudah kedaluwarsa untuk email yang sama diganti (dibatalkan).
           if (existing) {
             await revokeInvitation(tx, organizationId, existing.id, auth.user.id);
@@ -484,7 +489,7 @@ export function createInvitationService(deps: InvitationServiceDeps): Invitation
       const deliveryStatus: EmailDeliveryStatus = emailAvailable ? 'queued' : 'link';
 
       await db.transaction(async (tx) => {
-        await assertStillIssuer(tx, auth, current.role);
+        await assertStillIssuer(tx, auth, current.role, context.log);
         const updated = await reissueInvitation(tx, {
           organizationId,
           invitationId,

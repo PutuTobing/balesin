@@ -508,7 +508,7 @@ export function createEmailSettingsService(deps: EmailSettingsServiceDeps): Emai
 
       return db.transaction(async (tx) => {
         // Pelaku diperiksa ulang di transaksi tulis (review akhir Fase 1 R3).
-        await assertActorStillAuthorized(tx, auth, 'settings.email.manage');
+        await assertActorStillAuthorized(tx, auth, 'settings.email.manage', context.log);
         const stored = await findEmailSettings(tx, actor.organizationId);
         const prepared = prepare(input, stored, '');
         const values = toValues(actor.organizationId, prepared, stored);

@@ -891,7 +891,7 @@ pelaku aktif — selalu untuk Owner/Admin):
 | POST `/invitations` | `{ email, role, confirmation }` | 400 `confirmation.password` |
 | POST `/invitations/:invitationId/resend` | `{ confirmation }` (sebelumnya tanpa body) | 400 `confirmation.password` |
 | PUT `/settings/email` | isian lama + `confirmation` bila jalur kirim berubah (juga simpan pertama kali) | 400 `confirmation.password` |
-| POST `/settings/channels`, PUT `…/business-profile` (website/email) | lihat `KONTRAK-API-CHANNEL.md` — kini juga untuk Owner | 400 `confirmation.password` |
+| POST `/settings/channels`, PUT `…/business-profile` (semua isian teks; kategori saja tidak) | lihat `KONTRAK-API-CHANNEL.md` — kini juga untuk Owner | 400 `confirmation.password` |
 
 Semua kesalahan konfirmasi memakai field berawalan `confirmation.` (`confirmation.password`,
 `confirmation.code`); 429 + `Retry-After` setelah 5 salah per 15 menit (ember bersama halaman Keamanan akun).
@@ -919,10 +919,16 @@ Keduanya juga dikirim lewat email ke **semua Owner aktif** ("Anggota baru di {pr
   kejadian lain tidak tergeser (`counts.account_locked` tetap menghitung semuanya).
 
 **Perilaku lain:**
-- Undangan terbuka **dibatalkan** saat sesi yang menerbitkannya (pembuatan/kirim ulang terakhir) dicabut
-  untuk memulihkan akun: "keluarkan sesi ini" / "keluarkan sesi lain" di Keamanan akun, dan atur ulang
-  password. Keluar biasa, mendaftar 2FA, dan ubah peran tidak. Audit `user.invitation.revoked`
-  `{ reason: "issuer_session_revoked" }`. Web: setelah "keluarkan sesi", muat ulang daftar undangan.
+- Undangan terbuka (token berlakunya diterbitkan pengguna itu) **dibatalkan saat akun dipulihkan**
+  (putaran 2 N2):
+  - "keluarkan sesi ini" (Keamanan akun, atau Owner/Admin di Tim) → undangan dari sesi itu;
+  - "keluarkan sesi lain" (Keamanan akun) → SEMUA undangan terbitannya kecuali yang diterbitkan dari sesi
+    yang sedang dipakai — termasuk dari sesi yang sudah keluar atau kedaluwarsa;
+  - atur ulang password, "keluarkan semua sesi" dan atur ulang 2FA oleh Owner/Admin → semua undangan
+    terbitannya.
+  Keluar biasa, mendaftar 2FA, dan ubah peran tidak membatalkan. Audit `user.invitation.revoked`
+  `{ reason: "issuer_session_revoked", issuerRef }`. Web: setelah aksi-aksi itu, muat ulang daftar undangan
+  (dan beri tahu di dialog konfirmasi: "Undangan yang dibuat dari sesi lain ikut dibatalkan.").
 - R3: aksi tulis undangan, email pengirim, dan channel memeriksa ulang pelaku di transaksi terakhir. Bila
   akun dinonaktifkan / sesinya dicabut di tengah jalan → 401 `UNAUTHENTICATED`; bila perannya tidak lagi
   memegang izin → 403 `FORBIDDEN` "Wewenangmu baru saja berubah, jadi perubahan ini tidak disimpan. Muat

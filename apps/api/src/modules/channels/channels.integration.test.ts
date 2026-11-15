@@ -1102,6 +1102,7 @@ describe('pemberitahuan ke Owner bila channel diubah selain Owner', () => {
       fake.requests.length = 0;
       const profile = await send(admin, 'PUT', path(routes.businessProfile, channel.id), {
         about: 'Diambil alih',
+        confirmation: await confirm(),
       });
       expect(profile.statusCode).toBe(503);
       expect(fake.requests.map((request) => request.method)).toEqual(['GET']);
@@ -1181,9 +1182,19 @@ describe('profil bisnis oleh selain Owner (review S1)', () => {
     const { channel } = await createChannel(owner);
     const admin = await member(owner, 'admin');
 
-    // Deskripsi saja: tanpa konfirmasi, tetapi tetap diberitahukan.
+    // Deskripsi juga wajib konfirmasi (review akhir Fase 1 putaran 2 N1); kategori saja tidak.
+    const unconfirmed = await send(admin, 'PUT', path(routes.businessProfile, channel.id), {
+      description: 'Bayar tagihan lewat tautan di profil',
+    });
+    expect(unconfirmed.statusCode).toBe(400);
+    expect(errorOf(unconfirmed).details?.[0]?.field).toBe('confirmation.password');
+    const categorized = await send(admin, 'PUT', path(routes.businessProfile, channel.id), {
+      vertical: 'RETAIL',
+    });
+    expect(categorized.statusCode, categorized.body).toBe(200);
     const described = await send(admin, 'PUT', path(routes.businessProfile, channel.id), {
       description: 'Bayar tagihan lewat tautan di profil',
+      confirmation: await memberConfirmation(admin),
     });
     expect(described.statusCode, described.body).toBe(200);
     const sited = await send(admin, 'PUT', path(routes.businessProfile, channel.id), {
@@ -1193,7 +1204,7 @@ describe('profil bisnis oleh selain Owner (review S1)', () => {
     expect(sited.statusCode, sited.body).toBe(200);
 
     const audits = await businessAudits();
-    expect(audits).toHaveLength(2);
+    expect(audits).toHaveLength(3);
     const siteAudit = audits.find((row) =>
       (row.metadata.changedFields as string[]).includes('websites'),
     );
@@ -1218,8 +1229,8 @@ describe('profil bisnis oleh selain Owner (review S1)', () => {
     const summaryResponse = await send(owner, 'GET', API_ROUTES.audit.securitySummary);
     const summary = securitySummaryResponseSchema.parse(summaryResponse.json());
     const events = summary.events.filter((event) => event.kind === 'business_profile_changed');
-    expect(events).toHaveLength(2);
-    expect(summary.counts.business_profile_changed).toBe(2);
+    expect(events).toHaveLength(3);
+    expect(summary.counts.business_profile_changed).toBe(3);
     // Hanya channel buatan Owner (`info`).
     expect(summary.counts.channel_changed).toBe(1);
     for (const event of events) {
@@ -1239,6 +1250,7 @@ describe('profil bisnis oleh selain Owner (review S1)', () => {
 
     const response = await send(admin, 'PUT', path(routes.businessProfile, channel.id), {
       about: 'Diambil alih',
+      confirmation: await memberConfirmation(admin),
     });
     expect(response.statusCode).toBe(502);
     expect(errorOf(response).code).toBe('META_REQUEST_FAILED');

@@ -167,12 +167,14 @@ hasilnya `network_error`. Tampilkan indikator proses selama itu.
 - **GET** wajib header `X-CSRF-Token` (rute ini memakai jatah batas laju dan memanggil Meta, jadi tidak
   boleh terpicu tautan dari situs lain) — panggil lewat `fetch`, bukan membuka URL.
 - `profile`: `{about, address, description, email, websites[], vertical}`; isian kosong = `null`/`[]`.
-- **PUT yang mengubah `websites` atau `email`** (termasuk mengosongkannya), oleh peran apa pun — Owner
-  juga sejak review akhir Fase 1 S1 — wajib
-  `confirmation: { password, code }` di body yang sama (`BUSINESS_PROFILE_CONFIRMED_FIELDS`): tanpa itu →
-  400 `confirmation.password`, salah → 400 `confirmation.password`/`confirmation.code`, 429 setelah 5
-  salah. Isian lain (Info, alamat, deskripsi, kategori) tidak butuh konfirmasi. Profil bisnis tampil
-  ke semua pelanggan, jadi tautan/email di sana bisa dipakai menipu.
+- **PUT yang mengubah `websites`, `email`, `about` (Info), `address`, atau `description`** (termasuk
+  mengosongkannya), oleh peran apa pun — Owner juga — wajib `confirmation: { password, code }` di body
+  yang sama (`BUSINESS_PROFILE_CONFIRMED_FIELDS`; review akhir Fase 1 S1 + putaran 2 N1): tanpa itu →
+  400 `confirmation.password` "Masukkan password-mu (dan kode verifikasi dua langkah) untuk mengubah
+  profil bisnis.", salah → 400 `confirmation.password`/`confirmation.code`, 429 setelah 5 salah. Hanya
+  mengubah kategori (`vertical`) tidak butuh konfirmasi. Web: paling sederhana, minta konfirmasi setiap
+  kali menyimpan profil bisnis. Profil bisnis tampil ke semua pelanggan, jadi teks/tautan di sana bisa
+  dipakai menipu.
 - Server membaca profil lama dulu (dicatat di audit), lalu mengirim perubahan, lalu membaca ulang.
   Bila profil lama tidak bisa dibaca → 502 dan tidak ada yang diubah. Satu PUT paling lama ±25 detik.
 - **PUT**: kirim hanya isian yang diubah. `""`/`[]` = kosongkan di Meta. Batas (aturan Meta,
@@ -277,3 +279,5 @@ saja hanya memuat `actorRole`.
   bisnis) memeriksa ulang pelaku di transaksi terakhir: akun dinonaktifkan / sesi dicabut di tengah jalan
   → 401 `UNAUTHENTICATED`; peran tidak lagi memegang `channels.manage` → 403 `FORBIDDEN` "Wewenangmu baru
   saja berubah, jadi perubahan ini tidak disimpan. Muat ulang halaman untuk melihat aksesmu sekarang."
+- Putaran 2 (N1): konfirmasi profil bisnis kini juga untuk Info, alamat, dan deskripsi (lihat bagian
+  Profil bisnis); hanya kategori yang bebas konfirmasi.
