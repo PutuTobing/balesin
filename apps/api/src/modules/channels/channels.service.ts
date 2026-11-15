@@ -53,6 +53,7 @@ import {
 } from '@balesin/shared';
 import { sql } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
+import { z } from 'zod';
 
 import type { ClientInfo } from '../../http/client-info';
 import type { EmailNotifier } from '../../queues/email-queue';
@@ -200,6 +201,8 @@ function profileValue(
   return Array.isArray(value) ? value.join(', ') : String(value);
 }
 
+const CHANNEL_ID_FORMAT = z.uuid();
+
 function notFound(): AppError {
   return new AppError('NOT_FOUND', { message: NOT_FOUND_MESSAGE });
 }
@@ -292,6 +295,9 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
   }
 
   async function load(auth: AuthContext, channelId: string): Promise<Channel> {
+    // Bukan UUID = 404 yang sama dengan ID tak dikenal (format tidak dibocorkan, Postgres tidak
+    // pernah menerima teks yang bukan UUID).
+    if (!CHANNEL_ID_FORMAT.safeParse(channelId).success) throw notFound();
     const row = await findChannel(db, auth.organizationId, channelId);
     if (!row || row.type !== 'whatsapp') throw notFound();
     return row;
@@ -597,6 +603,7 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
         await assertActorStillAuthorized(tx, auth, 'channels.manage', context.log);
         const next = await updateChannel(tx, auth.organizationId, row.id, {
           enabled,
+          disabledAt: enabled ? null : now(),
           updatedByUserId: auth.user.id,
         });
         if (!next) throw notFound();
@@ -630,6 +637,7 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
         const deleted = await updateChannel(tx, auth.organizationId, row.id, {
           deletedAt: now(),
           enabled: false,
+          disabledAt: row.disabledAt ?? now(),
           waAccessTokenEncrypted: null,
           waAccessTokenTail: null,
           waAppSecretEncrypted: null,

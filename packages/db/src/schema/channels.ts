@@ -45,6 +45,12 @@ export const channels = pgTable(
     name: text('name').notNull(),
     /** `false` = dinonaktifkan Owner/Admin: tidak menerima/mengirim pesan. */
     enabled: boolean('enabled').notNull().default(true),
+    /**
+     * Kapan dinonaktifkan (UI: "dinonaktifkan sejak …"); `null` saat aktif. Diisi bersama
+     * `enabled = false` dan dikosongkan saat diaktifkan kembali. Bisa `null` untuk channel nonaktif
+     * yang dibuat langsung di database (data uji), jadi tidak dikunci CHECK.
+     */
+    disabledAt: timestamptz('disabled_at'),
 
     // ── WhatsApp Cloud API ────────────────────────────────────────────────
     /** Phone Number ID dari Meta (angka; BUKAN UUID). */

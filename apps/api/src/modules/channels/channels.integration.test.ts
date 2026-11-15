@@ -26,6 +26,7 @@ import {
   MAX_CHANNELS_PER_ORGANIZATION,
   securitySummaryResponseSchema,
   updateBusinessProfileResponseSchema,
+  WEBHOOK_ROUTES,
   type ErrorEnvelope,
   type UserRole,
 } from '@balesin/shared';
@@ -574,13 +575,41 @@ describe('ubah, nonaktifkan, hapus', () => {
     expect(updates.map((row) => row.metadata.changedFields)).toEqual([['name'], ['accessToken']]);
   });
 
-  it('nonaktifkan / aktifkan tercatat di audit', async () => {
+  it('nonaktifkan / aktifkan tercatat di audit; disabledAt diisi lalu dikosongkan', async () => {
     const owner = await completeSetup(harness.app);
     const { channel } = await createChannel(owner);
-    const disabled = await send(owner, 'POST', path(routes.disable, channel.id));
-    expect(channelResponseSchema.parse(disabled.json()).channel.enabled).toBe(false);
-    const enabled = await send(owner, 'POST', path(routes.enable, channel.id));
-    expect(channelResponseSchema.parse(enabled.json()).channel.enabled).toBe(true);
+    expect(channel.disabledAt).toBeNull();
+
+    const before = Date.now();
+    const disabled = channelResponseSchema.parse(
+      (await send(owner, 'POST', path(routes.disable, channel.id))).json(),
+    ).channel;
+    expect(disabled.enabled).toBe(false);
+    expect(disabled.disabledAt).not.toBeNull();
+    const disabledAt = Date.parse(disabled.disabledAt ?? '');
+    expect(disabledAt).toBeGreaterThanOrEqual(before - 1_000);
+    expect(disabledAt).toBeLessThanOrEqual(Date.now() + 1_000);
+    expect((await channelRow(channel.id)).disabledAt?.toISOString()).toBe(disabled.disabledAt);
+    // Menonaktifkan lagi tidak menggeser waktunya; daftar & detail memuat nilai yang sama.
+    const again = channelResponseSchema.parse(
+      (await send(owner, 'POST', path(routes.disable, channel.id))).json(),
+    ).channel;
+    expect(again.disabledAt).toBe(disabled.disabledAt);
+    const listed = channelSettingsListResponseSchema.parse(
+      (await send(owner, 'GET', routes.settings)).json(),
+    ).channels;
+    expect(listed.map((item) => item.disabledAt)).toEqual([disabled.disabledAt]);
+    expect(
+      channelResponseSchema.parse(
+        (await send(owner, 'GET', path(routes.channel, channel.id))).json(),
+      ).channel.disabledAt,
+    ).toBe(disabled.disabledAt);
+
+    const enabled = channelResponseSchema.parse(
+      (await send(owner, 'POST', path(routes.enable, channel.id))).json(),
+    ).channel;
+    expect(enabled).toMatchObject({ enabled: true, disabledAt: null });
+    expect((await channelRow(channel.id)).disabledAt).toBeNull();
     const actions = (await harness.db.select().from(auditLogs)).map((row) => row.action);
     expect(actions).toEqual(expect.arrayContaining(['channel.disabled', 'channel.enabled']));
   });
@@ -859,6 +888,63 @@ describe('penyalahgunaan & isolasi', () => {
     expect(fake.requests).toHaveLength(0);
     const row = await channelRow(foreignId);
     expect(row).toMatchObject({ name: 'Milik organisasi lain', enabled: true, deletedAt: null });
+  });
+
+  it('ID bukan UUID = 404 yang sama persis dengan ID tak dikenal di semua endpoint (format tidak dibocorkan)', async () => {
+    const owner = await completeSetup(harness.app);
+    await createChannel(owner);
+    const confirmation = await ownerConfirmation();
+    const endpoints = (id: string) =>
+      [
+        ['GET', path(routes.channel, id), undefined],
+        ['PATCH', path(routes.channel, id), { name: 'Diubah' }],
+        ['DELETE', path(routes.channel, id), confirmation],
+        ['POST', path(routes.disable, id), undefined],
+        ['POST', path(routes.enable, id), undefined],
+        ['POST', path(routes.test, id), undefined],
+        ['GET', path(routes.webhook, id), undefined],
+        ['POST', path(routes.rotateVerifyToken, id), undefined],
+        ['GET', path(routes.businessProfile, id), undefined],
+        ['PUT', path(routes.businessProfile, id), { about: 'Diubah' }],
+      ] as const;
+
+    const metaCalls = fake.requests.length;
+    const unknown = await send(owner, 'GET', path(routes.channel, newId()));
+    expect(unknown.statusCode).toBe(404);
+    const expected = errorOf(unknown);
+    expect(expected.code).toBe('NOT_FOUND');
+
+    for (const id of [
+      'bukan-uuid',
+      '123',
+      "1' or '1'='1",
+      '0190f000-0000-7000-8000-00000000abcz',
+    ]) {
+      for (const [method, url, body] of endpoints(id)) {
+        const response = await send(owner, method, url, body);
+        expect(response.statusCode, `${method} ${url}`).toBe(404);
+        const error = errorOf(response);
+        expect({ code: error.code, message: error.message }, `${method} ${url}`).toEqual({
+          code: expected.code,
+          message: expected.message,
+        });
+        expect(error.details, `${method} ${url}`).toBeUndefined();
+      }
+    }
+    expect(fake.requests).toHaveLength(metaCalls);
+
+    // Penerima webhook (publik) sama: ID bukan UUID = 404 "tidak dikenal", bukan 400.
+    for (const method of ['GET', 'POST'] as const) {
+      const response = await harness.app.inject({
+        method,
+        url: apiPath(WEBHOOK_ROUTES.whatsapp, { channelId: 'bukan-uuid' }),
+        ...(method === 'POST'
+          ? { headers: { 'content-type': 'application/json' }, payload: '{}' }
+          : {}),
+      });
+      expect(response.statusCode, method).toBe(404);
+      expect(errorOf(response).code).toBe('NOT_FOUND');
+    }
   });
 
   it('token, App Secret, dan proof tidak pernah muncul di respons, log, maupun audit', async () => {

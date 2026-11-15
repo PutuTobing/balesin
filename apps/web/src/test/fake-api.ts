@@ -309,6 +309,7 @@ export function fakeChannel(overrides: Partial<WhatsAppChannel> = {}): WhatsAppC
     type: 'whatsapp',
     name: 'CS Utama',
     enabled: true,
+    disabledAt: null,
     status: 'connected',
     phoneNumberId: '106540352242922',
     wabaId: '102290129340398',

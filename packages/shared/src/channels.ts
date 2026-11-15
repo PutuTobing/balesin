@@ -156,8 +156,13 @@ export type UpdateChannelRequest = z.input<typeof updateChannelRequestSchema>;
 export const deleteChannelRequestSchema = identityConfirmationSchema;
 export type DeleteChannelRequest = z.input<typeof deleteChannelRequestSchema>;
 
+/**
+ * Format ID SENGAJA tidak divalidasi di sini: ID yang bukan UUID dijawab **404** yang sama dengan ID
+ * tak dikenal (bukan 400), supaya respons tidak membedakan "format salah" dari "tidak ada". API
+ * memeriksa formatnya sebelum query.
+ */
 export const channelIdParamsSchema = z.object({
-  channelId: z.uuid({ error: 'Channel tidak ditemukan.' }),
+  channelId: z.string(),
 });
 
 // ── Ringkasan nomor dari Graph API ──────────────────────────────────────────
@@ -445,6 +450,11 @@ export const whatsAppChannelSchema = z.object({
   name: z.string(),
   /** `false` = dinonaktifkan (tidak menerima/mengirim pesan; kredensial tetap tersimpan). */
   enabled: z.boolean(),
+  /**
+   * Kapan dinonaktifkan ("dinonaktifkan sejak …"). Selalu `null` bila `enabled`; bisa `null` juga
+   * untuk channel nonaktif yang waktunya tidak tercatat.
+   */
+  disabledAt: isoDateTimeSchema.nullable(),
   status: channelStatusSchema,
   phoneNumberId: z.string(),
   wabaId: z.string(),

@@ -50,6 +50,7 @@ export type ChannelChanges = Partial<
     NewChannel,
     | 'name'
     | 'enabled'
+    | 'disabledAt'
     | 'waPhoneNumberId'
     | 'waBusinessAccountId'
     | 'waAccessTokenEncrypted'

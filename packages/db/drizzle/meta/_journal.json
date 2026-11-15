@@ -78,6 +78,13 @@
       "when": 1794711574305,
       "tag": "0010_webhook_masuk_whatsapp",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794715849056,
+      "tag": "0011_channel_waktu_nonaktif",
+      "breakpoints": true
     }
   ]
 }

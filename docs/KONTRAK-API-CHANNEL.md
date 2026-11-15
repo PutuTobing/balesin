@@ -16,8 +16,10 @@ umum (cookie sesi, `X-CSRF-Token`, amplop error, 429 + `Retry-After`) sama denga
 | Semua peran yang melihat inbox (Owner, Admin, Supervisor, CS, Teknisi) | `inbox.view` | `GET /channels` saja: id, jenis, nama, aktif, nomor tampilan. Tanpa ID Meta, petunjuk rahasia, URL webhook. |
 | Owner, Admin | `channels.manage` | Semua rute `/settings/channels…`, termasuk melihat verify token. |
 
-Peran tanpa izin → 403 `FORBIDDEN` (pesan bawaan). Channel organisasi lain, channel terhapus, atau ID
-asal → 404 `NOT_FOUND` "Channel tidak ditemukan. Mungkin sudah dihapus."
+Peran tanpa izin → 403 `FORBIDDEN` (pesan bawaan). Channel organisasi lain, channel terhapus, ID
+asal, atau ID yang **bukan UUID** → 404 `NOT_FOUND` "Channel tidak ditemukan. Mungkin sudah dihapus."
+— jawabannya sama persis (tanpa `details`), jadi format ID tidak pernah dijawab 400. `channelIdParamsSchema`
+sengaja hanya `z.string()`; format diperiksa API sebelum query.
 
 ## Endpoint
 
@@ -41,7 +43,7 @@ Susun path ber-`:channelId` dengan `apiPath(API_ROUTES.channels.test, { channelI
 
 ### Bentuk `WhatsAppChannel` (`whatsAppChannelSchema`)
 
-`id, type:'whatsapp', name, enabled, status ('connected'|'failed'|'untested'), phoneNumberId, wabaId,
+`id, type:'whatsapp', name, enabled, disabledAt, status ('connected'|'failed'|'untested'), phoneNumberId, wabaId,
 accessTokenHint ('••••abcd'), appSecretHint, webhookUrl, lastTest {ok, code, message, testedAt} | null,
 number WhatsAppNumberSummary | null, warnings [{code, message}], credentialsUpdatedAt, createdAt,
 updatedAt`.
@@ -52,6 +54,11 @@ updatedAt`.
   Secret, Phone Number ID, atau WABA ID mengembalikan `status: 'untested'`, `lastTest: null`,
   `number: null` — minta pengguna menekan "Tes koneksi" lagi.
 - `enabled: false` = channel dinonaktifkan (tampilkan "Nonaktif" di atas status koneksi).
+- `disabledAt` (ISO | `null`) = kapan dinonaktifkan, untuk "Dinonaktifkan sejak …". Selalu `null` bila
+  `enabled: true`. Diisi saat `POST …/disable` (menonaktifkan lagi tidak menggeser waktunya),
+  dikosongkan saat `POST …/enable`. Bisa `null` walau `enabled: false` bila waktunya tidak tercatat —
+  tampilkan "Nonaktif" saja. Channel yang sudah nonaktif sebelum migrasi `0011` diisi `updated_at`
+  terakhirnya.
 - `number` (dari tes berhasil terakhir): `displayPhoneNumber`, `verifiedName`, `qualityRating`,
   `status`, `nameStatus`, `codeVerificationStatus`, `messagingLimit`, `throughputLevel`, `fetchedAt`.
   Nilainya mentah dari Meta — pakai `qualityRatingLabel`, `phoneNumberStatusLabel`,

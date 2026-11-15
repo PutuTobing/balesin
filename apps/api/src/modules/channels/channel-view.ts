@@ -69,6 +69,7 @@ export function toWhatsAppChannel(row: Channel, apiUrl: string): WhatsAppChannel
     type: 'whatsapp',
     name: row.name,
     enabled: row.enabled,
+    disabledAt: row.enabled ? null : (row.disabledAt?.toISOString() ?? null),
     status: statusOf(row),
     phoneNumberId: row.waPhoneNumberId,
     wabaId: row.waBusinessAccountId,
