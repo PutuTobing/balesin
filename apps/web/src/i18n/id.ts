@@ -943,8 +943,7 @@ export const t = {
     next: 'Lanjut',
     checking: 'Memeriksa…',
     skip: 'Lewati',
-    intro:
-      'Siapkan aplikasi untuk tim di tempatmu. Butuh sekitar 5 menit; email pengirim bisa diisi nanti.',
+    intro: 'Siapkan aplikasi untuk timmu. Butuh sekitar 5 menit; email pengirim bisa diisi nanti.',
     steps: {
       token: {
         nav: 'Token setup',
@@ -957,7 +956,7 @@ export const t = {
       organization: {
         nav: 'Organisasi',
         title: 'Tentang organisasimu',
-        body: 'Nama ini tampil di halaman masuk dan di email untuk tim di tempatmu.',
+        body: 'Nama ini tampil di halaman masuk dan di email untuk timmu.',
         name: 'Nama perusahaan',
         namePlaceholder: 'Contoh: PT Maju Jaya',
         timezone: 'Zona waktu',
@@ -1200,7 +1199,7 @@ export const t = {
       'Undangan tim dan tautan atur ulang password akan dikirim lewat pengaturan ini. Semua Owner diberi tahu lewat email.',
     preview: {
       title: 'Pratinjau email',
-      body: 'Contoh email yang dikirim ke tim di tempatmu, memakai nama aplikasi dan logo organisasimu. Isi dan tautannya hanya contoh.',
+      body: 'Contoh email yang dikirim ke timmu, memakai nama aplikasi dan logo organisasimu. Isi dan tautannya hanya contoh.',
       template: 'Template',
       subject: 'Subjek',
       viewLabel: 'Tampilan pratinjau',

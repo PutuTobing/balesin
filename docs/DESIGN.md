@@ -84,7 +84,7 @@ error API; hindari kata ganti bila kalimatnya tetap wajar.
 - "verifikasi dua langkah" di kalimat dan judul; "2FA" hanya di label ringkas (lencana, chip,
   tombol ≤ 3 kata, label sesi, rincian audit).
 - "atur ulang", bukan "reset"; "masuk"/"keluar" (atau "proses masuk"), bukan "login"/"logout".
-- Rujukan ke pengelola: "Owner atau Admin di tempatmu".
+- Rujukan ke pengelola: "Owner atau Admin di tempatmu" (hanya untuk rujukan ke pengelola; tim sendiri tetap "timmu").
 - Judul gagal: "… belum bisa dimuat". Judul batas: "… dikunci sementara" (tebakan kredensial) atau
   "… dibatasi sementara" (batas permintaan). Pesan 429 tidak menyebut durasi — hitung mundur
   `m:ss` tampil di tombol nonaktif (`FormErrorNotice`).

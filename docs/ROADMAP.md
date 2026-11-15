@@ -23,7 +23,7 @@ Orkestrator mengerjakan dari atas ke bawah. Tandai `[x]` saat Definition of Done
 - [x] Undangan via email, verifikasi email, reset password (template email bermerek)
 - [x] RBAC 5 peran + tes otorisasi per endpoint
 - [x] Manajemen pengguna & sesi aktif, audit log
-- [ ] Review `security` + `kritikus-desain` untuk semua layar auth
+- [x] Review `security` + `kritikus-desain` untuk semua layar auth
 
 ## Fase 2 — WhatsApp & Inbox inti
 - [ ] Wizard koneksi WhatsApp manual (teks dari `SETUP-META.md`), enkripsi kredensial, tes koneksi

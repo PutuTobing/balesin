@@ -1,123 +1,82 @@
 # Progress
 
-**Fase aktif:** 1 — Akun, peran, keamanan
-**Terakhir diperbarui:** 2026-11-15 malam (Fase 1 butir 1–6 selesai; butir 7 sedang diperbaiki)
+**Fase aktif:** 2 — WhatsApp & Inbox inti
+**Terakhir diperbarui:** 2026-11-16 (Fase 1 selesai; Fase 2 butir 1–2 backend sudah ada)
 
 ## Selesai
 
 ### Fase 0 — Fondasi (13 Nov 2026)
 - Monorepo pnpm 12: `apps/api`, `apps/web`, `apps/worker`, `packages/shared`, `packages/core`
   (khusus server), `packages/db`, `e2e`. TypeScript 6 strict, ESLint (type-checked), Prettier.
-- Dev lokal: `pnpm db:up` (Postgres 16 + Redis 7 lewat Docker), `.env.example` lengkap.
-- API: Fastify dasar — `/health`, `/ready`, amplop error seragam berbahasa Indonesia, validasi
-  Zod, logger pino dengan redaksi rahasia, header keamanan, CORS, 405 + `Allow`.
-- DB: Drizzle + migrasi awal (`organizations`, `users`, `user_sessions`, `audit_logs`).
-- Worker: kerangka BullMQ (antrian `system`).
-- Web: shell desktop (rail 64px) / HP (navigasi bawah), design token → CSS variables, font
-  self-host, tema Terang/Gelap/Ikuti sistem tanpa inline script, keadaan kosong/memuat/gagal/404.
-- Tes: Vitest (628 tes unit + integrasi terhadap Postgres/Redis sungguhan) dan Playwright
-  (123 tes E2E di 390px dan 1440px). Skrip screenshot: `pnpm screenshots`.
+- Dev lokal: `pnpm db:up` (Postgres 16 + Redis 7 + Mailpit lewat Docker), `.env.example` lengkap.
+- API Fastify dasar, Drizzle + migrasi, worker BullMQ, shell web desktop/HP dengan design token.
 - CI GitHub Actions + Dependabot; penjaga library WhatsApp tidak resmi (`pnpm check:deps`).
-- Hook Claude Code: Prettier + typecheck otomatis setelah setiap edit.
-- Riset: 12 usulan fitur dari MobiChat diputuskan dan masuk PRD/ROADMAP.
-- Review: `kritikus-desain` LOLOS (putaran 2), laporan di `docs/design-reviews/`;
-  `security` AMAN (putaran 2, tanpa temuan Kritis/Tinggi), laporan di `docs/security-reviews/`.
-- `pnpm audit`: 2 temuan sedang, hanya di dependensi dev (esbuild lewat drizzle-kit, minimatch
-  lewat eslint); `--prod` bersih. Diterima tanpa override.
+- Review: `kritikus-desain` LOLOS, `security` AMAN (`docs/design-reviews/`, `docs/security-reviews/`).
 
-### Fase 1 butir 1–2 — Setup & login (14 Nov 2026)
-- Wizard setup Owner (token setup, organisasi, Owner, nama produk + logo, email pengirim), halaman
-  masuk, menu akun + keluar, Pengaturan → Email pengirim (preset, panduan, tes koneksi, email tes).
-- Sesi ter-hash, CSRF terikat sesi, hook auth bawaan tolak, kunci login per email+asal + cookie
-  perangkat dikenal, audit log hanya-tambah, password SMTP terenkripsi. Kontrak:
-  `docs/KONTRAK-API-AUTH.md`.
-- Review: security AMAN (`docs/security-reviews/2026-11-13-fase1-setup-login.md`), QA bug QA1–QA6
-  diperbaiki, `kritikus-desain` LOLOS putaran 3 (`docs/design-reviews/2026-11-13-auth-fase1.md`).
-- Aset merek terpasang (logo, favicon, ikon PWA, ilustrasi login).
+### Fase 1 — Akun, peran, keamanan (16 Nov 2026)
+- **Setup & login**: wizard setup Owner (token setup, organisasi, Owner, nama produk + logo, email
+  pengirim), halaman masuk, sesi ter-hash, CSRF terikat sesi, hook auth bawaan tolak, kunci login
+  per email+asal + perangkat dikenal, jatah login per IP hanya untuk percobaan gagal.
+- **2FA TOTP + kode cadangan**, wajib untuk Owner/Admin/Supervisor; batas pendaftaran 72 jam.
+- **Undangan via email, verifikasi email, atur ulang password, template email bermerek** (token di
+  fragment URL; reset tidak bisa memotong 2FA; tanpa SMTP: tautan undangan disalin).
+- **RBAC 5 peran**: matriks izin tunggal `packages/shared/src/permissions.ts` (PRD §4), penegakan
+  bawaan-tolak + tes semua rute × peran, menu & rute web berbasis izin.
+- **Manajemen tim, sesi aktif, audit log** (ekspor CSV, ringkasan keamanan 7 hari → banner).
+- **Konfirmasi ulang identitas** (password + kode 2FA) untuk semua aksi sensitif, **termasuk
+  Owner**: kelola pengguna, undang/kirim ulang undangan, email pengirim, kredensial channel.
+- Pemberitahuan ke Owner untuk perubahan oleh Admin (email pengirim, tim, channel, profil bisnis),
+  anggota baru bergabung, reset password massal.
+- Kontrak: `docs/KONTRAK-API-AUTH.md`. Aturan istilah UI: `docs/DESIGN.md` §4.
+- Review akhir: security **AMAN** putaran 2 (`docs/security-reviews/2026-11-15-fase1-akhir.md`),
+  kritikus konsistensi **LOLOS** putaran 2 (`docs/design-reviews/2026-11-15-fase1-akhir.md`);
+  semua review per butir lolos (`docs/security-reviews/2026-11-1*`, `docs/design-reviews/2026-11-1*`).
+- Tes: Vitest (shared 97, core 445, db 86, web 467, worker 61, api 638) + **224 E2E** lulus.
 
-### Fase 1 butir 3 — 2FA TOTP + kode cadangan (14 Nov 2026)
-- Wajib untuk Owner/Admin/Supervisor (termasuk Owner hasil setup — sesi pendaftaran 30 menit),
-  login dua langkah dengan tantangan, kode cadangan (argon2id, tampil sekali + dialog tinggalkan),
-  Pengaturan → Keamanan akun, QR di browser, email pemberitahuan, audit. TOTP ditulis sendiri
-  (vektor RFC). Kontrak: `docs/KONTRAK-API-AUTH.md` bagian 2FA.
-- Review: security AMAN putaran 2 (`docs/security-reviews/2026-11-14-fase1-2fa.md`), QA bug
-  QA-2FA-1..5 diperbaiki, `kritikus-desain` LOLOS putaran 3 (`docs/design-reviews/2026-11-14-2fa.md`).
-- Tes: 1.238 Vitest + 176 E2E lulus.
+### Fase 2 (sebagian)
+- Butir 1–2 **backend**: channel WhatsApp Cloud API (kredensial terenkripsi, klien Graph v26.0
+  dengan `appsecret_proof`, tes koneksi, profil bisnis, pemberitahuan Owner), review security AMAN.
+  Kontrak: `docs/KONTRAK-API-CHANNEL.md`. **Layar web belum.**
 
-## Sedang dikerjakan (dihentikan 15 Nov malam — lanjut besok)
-
-**Selesai & di-commit:** Fase 1 butir 1–6 (dicentang di ROADMAP), backend channel WhatsApp +
-perbaikan security-nya (`19690a3`). Tinggal **butir 7** (review akhir) untuk menutup Fase 1.
-
-**Butir 7 — dua review akhir:**
-- Kritikus konsistensi lintas layar: **REVISI** (`docs/design-reviews/2026-11-15-fase1-akhir.md`).
-- Security akhir: **PERBAIKI**, 2 Tinggi (`docs/security-reviews/2026-11-15-fase1-akhir.md`):
-  T1 undangan tanpa konfirmasi identitas (cookie curian → akun Admin menetap), T2 Owner mengubah
-  SMTP tanpa konfirmasi/pemberitahuan; S1 pengecualian Owner di buat channel/profil bisnis;
-  R2 banjir `account_locked`, R3 cek ulang pelaku di transaksi, R5 reset massal. Tes pengunci:
-  `apps/api/src/security-review-fase1-akhir.test.ts` (5 `it.fails` + tes "BUKTI T1").
-
-**Di working tree, BELUM di-commit (setengah jadi — jangan commit apa adanya):**
-1. Backend (`apps/api`, `apps/worker`, `packages/*`, `docs/KONTRAK-API-*.md`), dua pekerjaan
-   bercampur:
-   - selesai: teks pesan API (label "Buka lagi pendaftaran", pesan 429 tanpa durasi, setiap 429
-     membawa `Retry-After`, tanpa "reset"/"login");
-   - **setengah jadi**: perbaikan T1, T2, S1, R2, R3, R5 (terakhir: memindahkan helper cek ulang
-     pelaku ke satu tempat dan memakainya di invitations & email-settings; jenis kejadian baru
-     `member_joined`, `password_reset_burst`). Saat berhenti, lint gagal di 2 berkas dan 137 tes
-     API merah.
-   Lanjutkan dengan agent `backend` (periksa `git diff`), tuntaskan sesuai laporan security akhir,
-   hapus `.fails`, ubah tes "BUKTI T1" menjadi penjaga, perbarui kontrak, pemeriksaan backend.
-2. Web (`apps/web`, `e2e`) — revisi konsistensi kritikus W1–W6, S1, S3 **selesai**: dialog,
-   `FormErrorNotice`, `IdentityDialog` di Keamanan, istilah, white-label, penjaga rute per izin.
-   Sisi web hijau (461 tes, build, 629 foto), tetapi E2E terblokir karena undangan kini menuntut
-   konfirmasi identitas. Setelah kontrak backend final: frontend memasang `IdentityDialog` untuk
-   undang/kirim ulang undangan dan simpan email pengirim (semua peran termasuk Owner), lalu
-   semua pemeriksaan root.
-
-**Urutan berikutnya:** backend T1/T2/… selesai → frontend dialog konfirmasi → root hijau → commit →
-security cek ulang T1/T2 → kritikus nilai ulang layar yang tersentuh → centang butir 7 → **tutup
-Fase 1** → Fase 2: frontend wizard WhatsApp, lalu webhook masuk (syarat di bagian D laporan
-security channel).
-
-- Owner lupa password tanpa SMTP butuh perintah CLI pemulihan → Fase 7 (wajib sebelum produksi).
-- Pose Kak Sky menunggu Tobing (BUTUH-TOBING #5). Kredensial Meta menunggu Tobing (#3).
-- Database dev `balesin` belum menerima migrasi 0003–0008 (jalankan `pnpm db:migrate`). E2E memakai
-  database `balesin_e2e`, Redis db 14, port API 3100 / web 5180.
+## Sedang dikerjakan
+- **Berikutnya — Fase 2 butir 1–2 web**: Pengaturan → Channel (daftar kartu + status), wizard 9
+  langkah dari `docs/SETUP-META.md` (simpan setelah langkah 6, URL webhook + verify token dengan
+  Salin, tes koneksi), halaman nomor (kualitas, status, batas pesan, ganti kredensial dengan
+  konfirmasi identitas, nonaktif/hapus), form profil bisnis (semua isian kecuali kategori butuh
+  konfirmasi identitas). Lalu kritikus + QA.
+- **Lalu Fase 2 butir 3 — webhook masuk**: syaratnya di bagian D
+  `docs/security-reviews/2026-11-15-fase2-channel-whatsapp.md` (verifikasi `X-Hub-Signature-256`
+  pada raw body, idempotensi `(channel_id, wamid)`, routing berdasar `phone_number_id`, batas body,
+  balas cepat) + sisa Rendah dari audit akhir Fase 1 (R1 audit penolakan CSRF bersesi, sisa R5
+  pemicu reset setelah email pengirim diubah, F.5 Origin WebSocket, F.11 keputusan RLS).
 
 ## Catatan untuk sesi berikutnya
 
 **Cara menjalankan**
 - `pnpm db:up` → salin `.env.example` ke `.env` (isi `BALESIN_MASTER_KEY`, `SESSION_SECRET`,
-  `SETUP_TOKEN`) → `pnpm db:migrate` → `pnpm dev` → buka `http://localhost:5173`.
+  `SETUP_TOKEN` — acak kuat, lihat komentar di berkas) → `pnpm db:migrate` → `pnpm dev` → buka
+  `http://localhost:5173`. Email tertangkap di Mailpit http://localhost:8025.
 - Pemeriksaan lengkap: `pnpm check` (format, lint, check:deps, typecheck, tes), `pnpm build`,
-  `pnpm e2e`.
-- Di Git Bash (Windows), nilai variabel lingkungan yang berawalan `/` diubah menjadi path
-  Windows; isi rahasia lewat `.env`, jangan `export` dari Git Bash.
+  `pnpm e2e` (stack E2E: database `balesin_e2e`, Redis db 14, API 3100 / web 5180),
+  `pnpm screenshots`. Tes API berat: `pnpm --filter @balesin/api exec vitest run --maxWorkers=3`.
+- Di Git Bash (Windows), nilai env berawalan `/` diubah jadi path Windows; isi rahasia lewat `.env`.
+- Kritikus memotret dari git worktree sementara dengan stack terpisah (3191/5191,
+  `balesin_kd_e2e`, Redis db 11) supaya tidak bentrok dengan pekerjaan yang belum di-commit.
 
-**Wajib diperhatikan saat membangun Fase 1** (rincian: bagian F laporan security Fase 0)
-- Cookie sesi berawalan `__Host-`; token CSRF terikat sesi (`SameSite=Lax` saja tidak cukup).
-- Setiap rute punya skema respons; RBAC bawaan menolak. Rate limit melempar
-  `AppError('RATE_LIMITED')`.
-- `request.ip` divalidasi `net.isIP` sebelum masuk kolom `inet`; tautan email selalu disusun
-  dari `config.appUrl`, bukan `request.host`.
-- Token tidak boleh berada di segmen path URL atau payload job (sensor log tidak menangkapnya).
-- Kunci log `sessionId` selalu disensor; untuk ID baris sesi pakai nama lain (mis. `sessionRef`).
-- Semua rute modul didaftarkan di `buildApp` **sebelum** `registerMethodNotAllowedRoutes()`.
-- Audit log hanya-tambah baru berupa konvensi; kunci di tingkat database (trigger/hak akses).
-- Auth dipasang sebagai hook `onRequest` di root dengan bawaan tolak + daftar rute publik
-  eksplisit; rute pelengkap 405 berada di luar scope plugin (temuan N1 security putaran 2).
-- Komponen modal Radix (Dialog, Select) menyuntikkan `<style>` inline yang ditolak CSP
-  `style-src 'self'`; perlu nonce atau keputusan CSP saat dialog pertama dibuat.
-- Data daftar dimuat lewat TanStack Query di dalam komponen (prop `loading`), bukan loader rute
-  — `pendingComponent` me-remount layar dan menghapus teks yang sedang diketik.
+**Pola wajib untuk fase berikutnya**
+- Setiap rute mendeklarasikan izin (`requirePermission`) + skema respons; GET berefek pakai
+  `requireCsrf`; penolakan aturan turunan lewat `forbidByRule()`.
+- Aksi tulis sensitif: konfirmasi identitas (`requireIdentityConfirmation`) dan cek ulang pelaku di
+  transaksi akhir (`assertActorStillAuthorized`). Data bercakupan: `permissionGrant` +
+  `scopeCondition` di repo daftar.
+- Kirim pesan: izin `inbox.reply` (percakapan yang ada) vs `inbox.initiate` (nomor baru, batas harian
+  per pengguna); Teknisi hanya data yang di-assign; batas laju Meta per kelompok `messaging`.
+- Payload antrian hanya ID; token tidak pernah di URL path/log; tautan dari `APP_URL`.
+- Data daftar dimuat lewat TanStack Query di komponen (bukan loader rute).
 
-**Poles desain yang ditunda** (laporan kritikus putaran 2)
-- Tab "Bot" di lebar 360px hanya 42px (target 44px); CSS perbaikannya ada di laporan.
-- Bedakan "inbox kosong" dari "belum memilih chat"; kerangka memuat per halaman begitu ada data.
-- Logo dan ilustrasi Kak Sky masih placeholder (BUTUH-TOBING #5): ganti di
-  `apps/web/src/brand/brand-mark-shape.ts` dan `components/illustrations/illustrations.tsx`.
-
-**Terblokir untuk Fase 1**
-- Kirim email sungguhan (undangan, reset password) butuh detail SMTP (BUTUH-TOBING #4). Fitur
-  tetap dibangun dan dites dengan penangkap email lokal; yang menunggu hanya uji kirim nyata.
+**Ditunda / menunggu**
+- Owner lupa password tanpa SMTP butuh perintah CLI pemulihan → Fase 7 (wajib sebelum produksi);
+  production wajib `BALESIN_MASTER_KEY`; catatan rilis migrasi 0007; CSP produksi (pratinjau email,
+  Radix `<style>`); peran DB runtime terpisah dari pemilik tabel (trigger audit).
+- Pose Kak Sky (BUTUH-TOBING #5), kredensial Meta (#3), detail SMTP (#4).
+- Poles desain: tab "Bot" di 360px 42px; bedakan "inbox kosong" vs "belum memilih chat".

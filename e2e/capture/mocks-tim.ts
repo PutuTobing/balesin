@@ -331,13 +331,9 @@ export async function auditListError(page: Page, status: number): Promise<void> 
     (url) => url.pathname === '/api/v1/audit-logs',
     (route) =>
       status === 429
-        ? apiError(
-            route,
-            429,
-            'RATE_LIMITED',
-            'Terlalu banyak permintaan dalam waktu singkat. Coba lagi dalam 1 menit.',
-            { 'retry-after': '60' },
-          )
+        ? apiError(route, 429, 'RATE_LIMITED', 'Terlalu banyak permintaan dalam waktu singkat.', {
+            'retry-after': '60',
+          })
         : apiError(
             route,
             503,
@@ -360,7 +356,7 @@ export async function auditExport(
           route,
           429,
           'RATE_LIMITED',
-          'Batas ekspor audit log (10 kali per jam) sudah tercapai. Coba lagi dalam 42 menit.',
+          'Batas ekspor audit log (10 kali per jam) sudah tercapai.',
           { 'retry-after': '2520' },
         );
       }
