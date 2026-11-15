@@ -980,8 +980,8 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
         limiter,
         TWO_FACTOR_ENROLL_RULE,
         user.id,
-        (wait) =>
-          `Terlalu sering mencoba mendaftarkan verifikasi dua langkah. Coba lagi dalam ${wait}.`,
+        // Tanpa durasi: web menampilkan hitung mundur dari `Retry-After`.
+        () => 'Terlalu sering mencoba mendaftarkan verifikasi dua langkah.',
       );
       // Batas waktu pendaftaran peran wajib (review undangan R3): juga untuk sesi terbatas yang
       // dibuat sebelum batasnya lewat.
@@ -1081,7 +1081,7 @@ export function createTwoFactorService(deps: TwoFactorServiceDeps): TwoFactorSer
         limiter,
         TWO_FACTOR_ENROLL_RULE,
         user.id,
-        (wait) => `Terlalu banyak percobaan kode. Coba lagi dalam ${wait}.`,
+        () => 'Terlalu banyak percobaan kode verifikasi.',
       );
       const pending = user.totpPendingSecretEncrypted;
       const expired = () =>

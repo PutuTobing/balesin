@@ -160,6 +160,11 @@ export const SECURITY_NOTICE_ADMIN_EVENTS = [
   // lama → baru dibaca worker dari baris audit `auditLogId` (review butir 6 Info 6).
   'role_changed',
   'user_disabled',
+  // Undangan diterima (semua peran): ke semua Owner aktif — akun baru dari cookie curian tidak
+  // boleh bergabung diam-diam (review akhir Fase 1 T1). Penerbit undangan dari baris audit.
+  'member_joined',
+  // Atur ulang password untuk banyak akun berbeda dalam satu jam: ke semua Owner aktif (R5).
+  'password_reset_burst',
 ] as const;
 export type SecurityNoticeAdminEvent = (typeof SECURITY_NOTICE_ADMIN_EVENTS)[number];
 

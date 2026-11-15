@@ -18,7 +18,9 @@ tidak terlihat dari skema. Semua path diawali `/api/v1`.
 - Tanpa sesi di rute terlindungi → 401 `UNAUTHENTICATED` (semua metode). Sesi kedaluwarsa/dicabut:
   cookie dihapus, pesan "Sesi kamu sudah berakhir…".
 - Dengan sesi, metode salah → 405 + header `Allow`.
-- 429 selalu membawa `Retry-After` (di-expose lewat CORS).
+- 429 selalu membawa `Retry-After` (di-expose lewat CORS; bawaan 60 bila sumbernya tidak menyebut waktu
+  tunggu). **Pesan 429 tidak pernah menyebut durasi** — hanya sebabnya; web menampilkan hitung mundur dari
+  `Retry-After`.
 - Isian opsional kosong (mis. `replyTo`, `username`) dikirim `null`, bukan `""`.
 - Cookie sesi: `__Host-balesin_session` (Secure) bila `APP_URL` https; `balesin_session` tanpa
   Secure bila `APP_URL` http (pengembangan lokal).
@@ -203,6 +205,14 @@ atau tunggu langkah berganti.
 - PUT `/settings/email` (`saveEmailSettingsRequestSchema`): `password` boleh tidak dikirim untuk
   memakai password tersimpan hanya bila host, port, keamanan, dan username tidak berubah; kalau
   berubah → 400 di field `password` ("Masukkan ulang password…"). 503 bila master key kosong.
+  - **`confirmation: { password, code }` wajib untuk SEMUA peran, Owner juga** (review akhir Fase 1 T2)
+    bila jalur kirim berubah: host, port, keamanan, username, password, alamat pengirim, atau balas-ke —
+    termasuk menyimpan **pertama kali** (belum ada pengaturan tersimpan). Mengubah nama pengirim saja
+    tidak butuh konfirmasi. Tanpa itu → 400 `details[0].field = "confirmation.password"` "Masukkan
+    password-mu (dan kode verifikasi dua langkah) untuk mengubah server atau alamat email pengirim.";
+    salah → 400 `confirmation.password` / `confirmation.code`; 429 setelah 5 salah. Web: minta lewat
+    `IdentityDialog` saat menyimpan (paling sederhana: selalu minta, kecuali yang berubah hanya nama
+    pengirim). Wizard setup (`/setup/complete`) tidak berubah.
 - POST `/settings/email/detect-host` (30×/5 menit per pengguna).
 - POST `/settings/email/test-connection` `{settings?}`: tanpa `settings` menguji pengaturan
   tersimpan dan mencatat status; dengan `settings` menguji draf form tanpa mengubah status.
@@ -241,7 +251,16 @@ atau tunggu langkah berganti.
   - verify per IP: "Terlalu banyak percobaan verifikasi dari jaringanmu."
   - login, akun dikunci: "Akun ini dikunci sementara karena terlalu banyak percobaan masuk yang gagal."
   - login per IP: "Terlalu banyak percobaan masuk dari jaringanmu."
-  - Pesan 429 lain (token setup, tes email, mulai/konfirmasi pendaftaran 2FA) tetap menyebut durasi.
+  - Sejak audit konsistensi akhir Fase 1, pesan 429 lain juga tanpa durasi:
+    - token setup: "Terlalu banyak percobaan token setup.";
+    - tes email / deteksi server: "Batas tes email (10 kali per 5 menit) sudah tercapai." /
+      "Batas deteksi server email (30 kali per 5 menit) sudah tercapai.";
+    - mulai/konfirmasi pendaftaran 2FA: "Terlalu sering mencoba mendaftarkan verifikasi dua langkah." /
+      "Terlalu banyak percobaan kode verifikasi.";
+    - kirim ulang verifikasi email: "Email verifikasi sudah dikirim 3 kali dalam satu jam terakhir.";
+    - ekspor audit log: "Batas ekspor audit log (10 kali per jam) sudah tercapai.";
+    - channel: "Batas tes koneksi (10 kali per 5 menit) sudah tercapai." /
+      "Batas permintaan profil bisnis (30 kali per 5 menit) sudah tercapai."
 - **Pendaftaran**: rahasia tertunda dipakai ulang di sesi yang sama (lihat langkah 2 bagian 2FA).
 - **Email**: email kunci langkah kedua membedakan sumbernya (masuk vs konfirmasi ulang di Keamanan
   akun); email 2FA tidak lagi menyarankan fitur yang belum ada (ganti password, reset 2FA oleh
@@ -292,8 +311,8 @@ terbatas) → 403 `TWO_FACTOR_ENROLLMENT_REQUIRED`.
 | Metode & path | Akses | Request | Respons 2xx |
 |---|---|---|---|
 | GET `/invitations` | `team.invite` (Owner/Admin) | – | `invitationListResponseSchema` `{ invitations, invitableRoles, emailDelivery }` |
-| POST `/invitations` | `team.invite` + CSRF | `createInvitationRequestSchema` `{ email, role }` | **201** `invitationIssuedResponseSchema` `{ invitation, link }` |
-| POST `/invitations/:invitationId/resend` | `team.invite` + CSRF | – | 200 `invitationIssuedResponseSchema` |
+| POST `/invitations` | `team.invite` + CSRF | `createInvitationRequestSchema` `{ email, role, confirmation }` | **201** `invitationIssuedResponseSchema` `{ invitation, link }` |
+| POST `/invitations/:invitationId/resend` | `team.invite` + CSRF | `resendInvitationRequestSchema` `{ confirmation }` | 200 `invitationIssuedResponseSchema` |
 | DELETE `/invitations/:invitationId` | `team.invite` + CSRF | – | 200 `{ status: "revoked" }` |
 | POST `/auth/invitation/inspect` | publik | `{ token }` | 200 `inspectInvitationResponseSchema` |
 | POST `/auth/invitation/accept` | publik | `acceptInvitationRequestSchema` `{ token, name, password }` | **201** `acceptInvitationResponseSchema` (= `meResponseSchema`) + cookie |
@@ -322,11 +341,17 @@ Undangan tetap dibuat, tetapi tidak ada email: respons buat/kirim ulang membawa 
 1. `GET /invitations` → daftar + pilihan peran dari `invitableRoles` (label `USER_ROLE_LABELS`) + mode
    `emailDelivery` (beri tahu di form: "Undangan dikirim ke email" vs "Tautan undangan akan ditampilkan
    untuk kamu salin").
-2. Form email + peran → `POST /invitations`. 201 → tambahkan ke daftar; bila `link` ≠ `null` buka dialog
-   salin tautan.
-3. Per baris: "Kirim ulang" (`POST …/resend`; tautan lama langsung batal, 72 jam lagi) dan "Batalkan"
-   (`DELETE`, minta konfirmasi). Sembunyikan keduanya bila `canManage: false`. Status `expired` → tampilkan
-   "Kedaluwarsa" + "Kirim ulang".
+2. Form email + peran → konfirmasi identitas (`IdentityDialog`: password + kode autentikator/kode
+   cadangan) → `POST /invitations { email, role, confirmation: { password, code } }`. 201 → tambahkan ke
+   daftar; bila `link` ≠ `null` buka dialog salin tautan.
+3. Per baris: "Kirim ulang" (konfirmasi identitas → `POST …/resend { confirmation: { password, code } }`;
+   tautan lama langsung batal, 72 jam lagi) dan "Batalkan" (`DELETE`, minta konfirmasi biasa — tanpa
+   password). Sembunyikan keduanya bila `canManage: false`. Status `expired` → tampilkan "Kedaluwarsa" +
+   "Kirim ulang".
+
+**Konfirmasi identitas wajib untuk SEMUA pelaku, Owner juga** (review akhir Fase 1 T1): undangan memberi
+akses yang menetap, jadi cookie sesi curian saja tidak boleh cukup. `confirmation` opsional di skema
+supaya klien lama mendapat pesan yang jelas, tetapi server menolak tanpa itu.
 
 Error membuat/mengirim ulang/membatalkan:
 
@@ -339,6 +364,9 @@ Error membuat/mengirim ulang/membatalkan:
 | Masih ada undangan berlaku untuk email itu | 409 `CONFLICT` field `email` "…Kirim ulang dari daftar undangan bila perlu." (Undangan yang sudah kedaluwarsa otomatis diganti yang baru.) |
 | Undangan tidak ada / sudah diterima / dibatalkan / milik organisasi lain | 404 `NOT_FOUND` |
 | Dua kirim ulang bersamaan | 409 `CONFLICT` "Undangan ini baru saja berubah…" |
+| Tanpa `confirmation` (buat / kirim ulang) | 400 `VALIDATION_ERROR` `details[0].field = "confirmation.password"` "Masukkan password-mu (dan kode verifikasi dua langkah) untuk mengirim undangan." (tidak memakai kuota) |
+| Password / kode konfirmasi salah | 400 `VALIDATION_ERROR` field `confirmation.password` / `confirmation.code`; 429 + `Retry-After` setelah 5 salah per 15 menit (ember yang sama dengan halaman Keamanan akun) |
+| Wewenang pelaku berubah di tengah permintaan (dinonaktifkan, diturunkan, sesi dicabut) | 401 `UNAUTHENTICATED` / 403 `FORBIDDEN` — tidak ada yang tersimpan |
 | Batas laju: 20/jam per pengundang, 50/jam per organisasi, 5/jam per email tujuan (buat + kirim ulang) | 429 + `Retry-After` |
 
 ### Alur penerima (`/undangan#token=…`)
@@ -594,10 +622,13 @@ Rute yang cukup dengan sesi (data milik sendiri, tanpa izin): `/auth/me`, `/auth
   `email_settings_change_notices`; jatuh ke pengaturan baru hanya bila yang lama gagal permanen/percobaan
   terakhir). Bila pemberitahuan tidak bisa diantrekan, perubahan **batal** dan jawabannya **503
   `SERVICE_UNAVAILABLE`** "Perubahan email pengirim belum disimpan karena pemberitahuan ke Owner tidak bisa
-  dikirim sekarang…" — tampilkan pesannya, isian form tetap. Perubahan nama pengirim saja, atau perubahan
-  oleh Owner, tidak memicu pemberitahuan. Audit `settings.email.updated` kini memuat `previousHost` dan
-  `ownersNotified`. Saran teks di form untuk Admin: "Owner akan diberi tahu lewat email bila server atau
-  alamat pengirim diubah." 
+  dikirim sekarang…" — tampilkan pesannya, isian form tetap. Perubahan nama pengirim saja tidak memicu
+  pemberitahuan. Audit `settings.email.updated` kini memuat `previousHost` dan `ownersNotified`.
+  - **Sejak review akhir Fase 1 (T2) berlaku juga untuk Owner:** perubahan jalur kirim oleh siapa pun
+    diberitahukan ke SEMUA Owner aktif — **termasuk pelakunya sendiri** (email ke kotak masuk Owner yang
+    asli adalah satu-satunya sinyal yang tidak bisa dibelokkan pencuri cookie) — dan muncul sebagai
+    `email_sender_changed` (`warning`) di ringkasan keamanan. Audit memuat `actorRole`. Saran teks di
+    form: "Semua Owner akan diberi tahu lewat email bila server atau alamat pengirim diubah." 
 
 ## Manajemen pengguna, sesi aktif & audit log (Fase 1 butir 6)
 
@@ -679,7 +710,7 @@ Efek tiap aksi (semua tercatat di audit):
 - **Atur ulang 2FA** (`user.2fa.reset`): autentikator + kode cadangan dibuang, sesi + tantangan dicabut, kunci
   langkah kedua lama dilepas. Peran wajib → login berikutnya wajib mendaftar ulang (batas 72 jam). Email ke
   sasaran ("…diatur ulang oleh {nama} ({peran})") dan ke **Owner lain** (bukan pelaku, bukan sasaran).
-- **Buka lagi pendaftaran 2FA** (`user.2fa.enrollment_reopened`): hanya peran wajib yang belum mendaftar;
+- **Buka lagi pendaftaran** (`user.2fa.enrollment_reopened`): hanya peran wajib yang belum mendaftar;
   batas baru = 72 jam dari sekarang.
 - **Buka kunci** (`user.unlocked` {cleared}): melepas kunci masuk (per jaringan, per akun, per perangkat
   dikenal) dan kunci langkah kedua 2FA, beserta hitungannya. Idempoten.
@@ -731,7 +762,7 @@ masih berlaku. Mengeluarkan sesi ini sendiri → 409 "…pakai tombol Keluar." S
   pendaftaran yang terbit sebelum batas: `POST /auth/2fa/enroll` → 403 kode yang sama. Tercatat
   `auth.2fa.enrollment_expired` (maks. 1×/menit/pengguna). Web (halaman masuk): tampilkan pesannya apa adanya,
   tanpa tombol coba lagi otomatis.
-- Pemulihan: Owner/Admin (sesuai matriks kelola) → "Buka lagi pendaftaran 2FA"
+- Pemulihan: Owner/Admin (sesuai matriks kelola) → "Buka lagi pendaftaran"
   (`POST /users/:userId/2fa/enrollment-window`). Daftar Tim menampilkan `enrollmentExpired: true`.
 - **Owner hasil wizard setup tidak punya batas** (`enrollmentDueAt: null`): wizard memaksa pendaftaran di sesi
   yang sama, dan tidak ada orang lain yang bisa membukakannya. Batas seorang Owner (mis. setelah 2FA-nya diatur
@@ -781,7 +812,8 @@ pengguna pelaku — web bisa menyembunyikan kejadian yang pelakunya pengguna yan
 `account_locked`: `scope`, `lockedUntil`). Jenis: `email_sender_changed` (server/alamat email pengirim diubah
 oleh selain Owner — review RBAC S1), `two_factor_reset`, `two_factor_enrollment_reopened`,
 `password_reset_without_two_factor`, `account_locked`, `role_changed`, `user_disabled`, serta
-`channel_changed` dan `business_profile_changed` (lihat `KONTRAK-API-CHANNEL.md`). Saran web: tampilkan
+`channel_changed` dan `business_profile_changed` (lihat `KONTRAK-API-CHANNEL.md`), `member_joined`, dan
+`password_reset_burst` (lihat "Perubahan review akhir Fase 1" di bawah). Saran web: tampilkan
 banner bila `latestWarningAt` lebih baru dari "terakhir ditutup" (simpan waktu itu di `localStorage` per
 pengguna — kenyamanan saja; server tidak menyimpan status "sudah dibaca"), tautan ke Audit log tersaring.
 
@@ -844,3 +876,56 @@ Sumber: `docs/security-reviews/2026-11-14-fase1-tim-audit.md` (R1–R4, Info 2, 
   langkah bila pemiliknya kehilangan aplikasi autentikator."
 - **Teks email**: subjek "akun {produk} kamu" kini "akun {produk}-mu" (nama produk dari branding); "kotak
   emailmu" → "kotak email-mu". `PASSWORD_RULES_HINT` dan pesan kode SMTP di shared kini "email-mu".
+
+## Perubahan review keamanan akhir Fase 1 (T1, T2, S1, R2, R3, R5)
+
+Sumber: `docs/security-reviews/2026-11-15-fase1-akhir.md`. Prinsip (DECISIONS): cookie sesi Owner/Admin
+curian **tidak boleh cukup** untuk mengambil alih tim atau membelokkan jalur komunikasi — konfirmasi ulang
+identitas berlaku juga untuk **Owner**.
+
+**Body baru** (`confirmation` = `identityConfirmationSchema` `{ password, code? }`; `code` wajib bila 2FA
+pelaku aktif — selalu untuk Owner/Admin):
+
+| Endpoint | Body | Tanpa `confirmation` |
+|---|---|---|
+| POST `/invitations` | `{ email, role, confirmation }` | 400 `confirmation.password` |
+| POST `/invitations/:invitationId/resend` | `{ confirmation }` (sebelumnya tanpa body) | 400 `confirmation.password` |
+| PUT `/settings/email` | isian lama + `confirmation` bila jalur kirim berubah (juga simpan pertama kali) | 400 `confirmation.password` |
+| POST `/settings/channels`, PUT `…/business-profile` (website/email) | lihat `KONTRAK-API-CHANNEL.md` — kini juga untuk Owner | 400 `confirmation.password` |
+
+Semua kesalahan konfirmasi memakai field berawalan `confirmation.` (`confirmation.password`,
+`confirmation.code`); 429 + `Retry-After` setelah 5 salah per 15 menit (ember bersama halaman Keamanan akun).
+
+**Jenis kejadian baru di ringkasan keamanan** (`SECURITY_EVENT_KINDS`, label `SECURITY_EVENT_LABELS`;
+`counts` selalu memuat keduanya):
+
+| `kind` | Kapan | `severity` | `details` | `actor` |
+|---|---|---|---|---|
+| `member_joined` | Undangan diterima (semua peran) | `warning` | `role`, `issuerRole` | anggota baru |
+| `password_reset_burst` | Tautan atur ulang password diantre untuk ≥ 3 akun berbeda dalam 60 menit (paling banyak sekali per 60 menit) | `warning` | `accounts`, `windowMinutes` | `null` |
+
+Keduanya juga dikirim lewat email ke **semua Owner aktif** ("Anggota baru di {produk}: {nama} ({peran})",
+"Banyak permintaan atur ulang password di {produk}"). Label: "Anggota baru bergabung lewat undangan",
+"Banyak permintaan atur ulang password".
+
+**Keparahan yang berubah:**
+- `email_sender_changed`: kini juga untuk perubahan oleh Owner (`warning`).
+- `channel_changed`, `business_profile_changed`: kini juga perubahan oleh Owner, dengan `severity: "info"`;
+  oleh selain Owner tetap `warning`. Label menjadi "Channel diubah" / "Profil bisnis WhatsApp diubah"
+  (tanpa "oleh selain Owner"). Pakai `event.severity` dari respons.
+- `account_locked` (R2): kunci per email + jaringan (`details.scope = "source"`) — bisa dipicu siapa pun
+  tanpa akun — kini `info`; kunci per akun (`account`), perangkat dikenal (`device`), dan langkah kedua
+  (`two_factor`) tetap `warning`. `events` memuat paling banyak **5** baris `account_locked` supaya
+  kejadian lain tidak tergeser (`counts.account_locked` tetap menghitung semuanya).
+
+**Perilaku lain:**
+- Undangan terbuka **dibatalkan** saat sesi yang menerbitkannya (pembuatan/kirim ulang terakhir) dicabut
+  untuk memulihkan akun: "keluarkan sesi ini" / "keluarkan sesi lain" di Keamanan akun, dan atur ulang
+  password. Keluar biasa, mendaftar 2FA, dan ubah peran tidak. Audit `user.invitation.revoked`
+  `{ reason: "issuer_session_revoked" }`. Web: setelah "keluarkan sesi", muat ulang daftar undangan.
+- R3: aksi tulis undangan, email pengirim, dan channel memeriksa ulang pelaku di transaksi terakhir. Bila
+  akun dinonaktifkan / sesinya dicabut di tengah jalan → 401 `UNAUTHENTICATED`; bila perannya tidak lagi
+  memegang izin → 403 `FORBIDDEN` "Wewenangmu baru saja berubah, jadi perubahan ini tidak disimpan. Muat
+  ulang halaman untuk melihat aksesmu sekarang." Tidak ada yang tersimpan.
+- Email "email pengirim diubah" ke Owner yang mengubahnya sendiri berisi saran "sesi akunmu mungkin
+  dicuri: keluarkan semua sesi, ganti password, kembalikan pengaturan".

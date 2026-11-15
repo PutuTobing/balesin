@@ -24,18 +24,23 @@ import {
   EMAIL_TEST_MESSAGES,
   type DetectEmailHostResponse,
   type EmailSettingsInput,
+  type IdentityConfirmation,
+  type SaveEmailSettingsRequest,
   type EmailSettingsResponse,
   type EmailSettingsView,
   type EmailTestCode,
   type EmailTestResult,
   type ErrorDetail,
-  type UserRole,
 } from '@balesin/shared';
 import type { FastifyBaseLogger } from 'fastify';
 
 import type { ClientInfo } from '../../http/client-info';
 import type { EmailNotifier } from '../../queues/email-queue';
 import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
+import { assertActorStillAuthorized } from '../auth/actor-check';
+import type { AuthContext } from '../auth/session.service';
+import { requireIdentityConfirmation } from '../two-factor/require-confirmation';
+import type { TwoFactorService } from '../two-factor/two-factor.service';
 import { deliveryPathChanged, queueOwnerChangeNotices } from './change-notice';
 import { detectEmailHost, systemMailDns, type MailDns } from './email-host-detection';
 import {
@@ -60,6 +65,8 @@ export interface EmailSettingsActor {
 export interface EmailOperationContext {
   client: ClientInfo;
   log: FastifyBaseLogger;
+  /** Cookie "perangkat dikenal" (ember batas laju konfirmasi identitas). */
+  presentedDeviceToken?: string;
 }
 
 /** Pengaturan dari form yang sudah lolos pemeriksaan dan siap dipakai/disimpan. */
@@ -75,12 +82,14 @@ export interface EmailSettingsService {
   readonly canStoreSecrets: boolean;
   view(organizationId: string): Promise<EmailSettingsResponse>;
   /**
-   * Menyimpan. Bila pelakunya BUKAN Owner dan jalur kirim berubah (server, login, alamat
-   * pengirim/balas-ke), semua Owner diberi tahu lewat pengaturan LAMA (`change-notice.ts`).
+   * Menyimpan. Bila jalur kirim berubah (server, login, alamat pengirim/balas-ke — termasuk
+   * menyimpan pertama kali), pelaku SIAPA PUN (Owner juga) wajib konfirmasi ulang identitas, dan
+   * semua Owner aktif — termasuk pelakunya — diberi tahu lewat pengaturan LAMA (`change-notice.ts`;
+   * review akhir Fase 1 T2).
    */
   save(
-    actor: EmailSettingsActor & { role: UserRole },
-    input: EmailSettingsInput,
+    auth: AuthContext,
+    input: SaveEmailSettingsRequest,
     context: EmailOperationContext,
   ): Promise<EmailSettingsResponse>;
   /**
@@ -129,8 +138,10 @@ export interface EmailSettingsServiceDeps {
   lookup?: HostLookup;
   timeouts?: Partial<SmtpTimeouts>;
   dns?: MailDns;
-  /** Pengantre pemberitahuan ke Owner (perubahan email pengirim oleh pengguna lain). */
+  /** Pengantre pemberitahuan ke Owner (perubahan jalur kirim email pengirim). */
   notifier: EmailNotifier;
+  /** Konfirmasi ulang identitas sebelum jalur kirim berubah (review akhir Fase 1 T2). */
+  twoFactor: Pick<TwoFactorService, 'confirmIdentity'>;
 }
 
 const NO_MASTER_KEY_MESSAGE =
@@ -453,6 +464,25 @@ export function createEmailSettingsService(deps: EmailSettingsServiceDeps): Emai
     };
   }
 
+  /**
+   * Konfirmasi ulang identitas sebelum jalur kirim berubah — untuk semua peran, Owner juga (review
+   * akhir Fase 1 T2). Kesalahan per isian diletakkan di bawah `confirmation.`.
+   */
+  async function confirmChange(
+    auth: AuthContext,
+    confirmation: IdentityConfirmation | undefined,
+    context: EmailOperationContext,
+  ): Promise<void> {
+    await requireIdentityConfirmation(
+      deps.twoFactor,
+      auth,
+      confirmation,
+      'email_settings.update',
+      context,
+      'Masukkan password-mu (dan kode verifikasi dua langkah) untuk mengubah server atau alamat email pengirim.',
+    );
+  }
+
   return {
     canStoreSecrets: secretBox !== null,
     view: (organizationId) => view(organizationId),
@@ -460,9 +490,25 @@ export function createEmailSettingsService(deps: EmailSettingsServiceDeps): Emai
     toValues,
     assertSecureLogin,
 
-    async save(actor, input, context) {
+    async save(auth, request, context) {
+      const { confirmation, ...input } = request;
+      const actor = { organizationId: auth.organizationId, userId: auth.user.id };
       await assertSecureLogin(input, '');
+
+      // Jalur kirim berubah → konfirmasi identitas DULU (di luar transaksi: memeriksa password
+      // mahal dan memakai ember batas lajunya sendiri). Diperiksa ulang di transaksi di bawah.
+      const before = await findEmailSettings(db, actor.organizationId);
+      const preview = prepare(input, before, '');
+      const confirmed = deliveryPathChanged(
+        before,
+        toValues(actor.organizationId, preview, before),
+        preview.passwordSource === 'new',
+      );
+      if (confirmed) await confirmChange(auth, confirmation, context);
+
       return db.transaction(async (tx) => {
+        // Pelaku diperiksa ulang di transaksi tulis (review akhir Fase 1 R3).
+        await assertActorStillAuthorized(tx, auth, 'settings.email.manage');
         const stored = await findEmailSettings(tx, actor.organizationId);
         const prepared = prepare(input, stored, '');
         const values = toValues(actor.organizationId, prepared, stored);
@@ -478,9 +524,10 @@ export function createEmailSettingsService(deps: EmailSettingsServiceDeps): Emai
           updatedByUserId: actor.userId,
           resetTestResult: connectionChanged,
         });
-        const notifyOwners =
-          actor.role !== 'owner' &&
-          deliveryPathChanged(stored, values, prepared.passwordSource === 'new');
+        // Semua pelaku (Owner juga): pemberitahuan lewat pengaturan LAMA ke semua Owner aktif.
+        const notifyOwners = deliveryPathChanged(stored, values, prepared.passwordSource === 'new');
+        // Pengaturan berubah di sela konfirmasi: perubahan ini ternyata membelokkan jalur kirim.
+        if (notifyOwners && !confirmed) await confirmChange(auth, confirmation, context);
         const auditLogId = await recordAudit(tx, {
           organizationId: actor.organizationId,
           actorUserId: actor.userId,
@@ -498,13 +545,14 @@ export function createEmailSettingsService(deps: EmailSettingsServiceDeps): Emai
             created: !stored,
             previousHost: stored?.host ?? null,
             ownersNotified: notifyOwners,
+            actorRole: auth.user.role,
           },
           client: context.client,
         });
         if (notifyOwners) {
           await queueOwnerChangeNotices(tx, deps.notifier, {
             organizationId: actor.organizationId,
-            actor: { userId: actor.userId, role: actor.role },
+            actor: { userId: actor.userId, role: auth.user.role },
             stored,
             values,
             auditLogId,

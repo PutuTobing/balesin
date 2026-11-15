@@ -358,6 +358,25 @@ async function findRoleChange(
   return from.success && to.success ? { from: from.data, to: to.data } : undefined;
 }
 
+/** Jumlah akun + jendela dari baris audit `auth.password_reset.burst` (bukan dari payload). */
+async function findResetBurst(
+  organizationId: string,
+  auditLogId: string | undefined,
+  deps: EmailJobDeps,
+): Promise<{ accounts: number; windowMinutes: number } | undefined> {
+  if (!auditLogId) return undefined;
+  const [row] = await deps.db
+    .select({ metadata: auditLogs.metadata })
+    .from(auditLogs)
+    .where(and(eq(auditLogs.organizationId, organizationId), eq(auditLogs.id, auditLogId)))
+    .limit(1);
+  const accounts = row?.metadata.accounts;
+  const windowMinutes = row?.metadata.windowMinutes;
+  return typeof accounts === 'number' && typeof windowMinutes === 'number'
+    ? { accounts, windowMinutes }
+    : undefined;
+}
+
 /** IP + user agent dari baris audit kejadian (untuk "dari mana" di email keamanan). */
 async function findAuditOrigin(
   organizationId: string,
@@ -473,7 +492,11 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
     payload.data;
 
   const ownersOnly =
-    event === 'two_factor_reset' || event === 'role_changed' || event === 'user_disabled';
+    event === 'two_factor_reset' ||
+    event === 'role_changed' ||
+    event === 'user_disabled' ||
+    event === 'member_joined' ||
+    event === 'password_reset_burst';
   const recipient = await findActiveUser(organizationId, recipientUserId, deps);
   // Pengguna yang baru dinonaktifkan tetap disebut di email "dinonaktifkan".
   const subject =
@@ -513,6 +536,10 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
       : undefined;
     const roleChange =
       event === 'role_changed' ? await findRoleChange(organizationId, auditLogId, deps) : undefined;
+    const burst =
+      event === 'password_reset_burst'
+        ? await findResetBurst(organizationId, auditLogId, deps)
+        : undefined;
     body = renderAdminAccountNoticeEmail({
       brand: branding.brand,
       timeZone: branding.timeZone,
@@ -522,6 +549,7 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
       occurredAt: new Date(occurredAt),
       ...(actor ? { actor: { name: actor.name, role: actor.role } } : {}),
       ...(roleChange ? { roleChange } : {}),
+      ...(burst ? { burst } : {}),
       ...(origin ? { origin } : {}),
     });
   }
@@ -802,6 +830,7 @@ async function sendEmailSettingsChanged(
     next: { host: notice.newHost, port: notice.newPort, fromAddress: notice.newFromAddress },
     occurredAt: notice.createdAt,
     ...(origin ? { origin } : {}),
+    recipientIsActor: recipientUserId === notice.actorUserId,
   });
   const mail: MailContent = { to: recipient.email, ...body, inlineImages: branding.inlineImages };
 

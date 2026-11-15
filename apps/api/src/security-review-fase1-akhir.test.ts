@@ -6,10 +6,10 @@
  * `it.fails(...)` = celah yang masih terbuka. Setelah celahnya diperbaiki, Vitest melaporkan tes
  * `it.fails` itu gagal: hapus `.fails`-nya, dan jangan melemahkan asersinya.
  *
- * Pengecualian: satu tes berawalan "BUKTI T1" memperagakan rantai serangan yang MASIH berhasil
- * (bukan perilaku yang diinginkan). Tes itu sengaja akan gagal begitu T1 ditutup (undangan tanpa
- * konfirmasi identitas ditolak) — saat itu ubah langkah pembuatan undangannya agar menyertakan
- * konfirmasi, atau hapus tesnya bila sudah tercakup tes `it.fails` di atasnya.
+ * T1 dan T2 sudah ditutup (undangan & email pengirim wajib konfirmasi identitas untuk semua peran;
+ * anggota baru dan perubahan jalur kirim oleh Owner tampil di ringkasan keamanan). Tes yang dulu
+ * "BUKTI T1" (rantai serangan yang masih berhasil) kini PENJAGA: rantai yang sama terbukti gagal.
+ * Aksi SAH di tes ini (oleh pemilik akun yang tahu password + kode) menyertakan `confirmation`.
  *
  * Model penyerang: cookie sesi Owner/Admin CURIAN (sesi penuh, token CSRF bisa dibaca dari
  * `GET /auth/me` oleh pemegang cookie) — TANPA password dan TANPA kode 2FA korban. Keputusan
@@ -20,7 +20,6 @@ import { insertUser } from '@balesin/db/testing';
 import {
   API_ROUTES,
   invitationIssuedResponseSchema,
-  meResponseSchema,
   readTokenFromFragment,
   securitySummaryResponseSchema,
   type UserRole,
@@ -33,10 +32,10 @@ import {
   call,
   completeSetup,
   createIntegrationHarness,
-  enrollTwoFactor,
   login,
+  confirmationOf,
   mailpitSettings,
-  sessionCookieOf,
+  withConfirmation,
   type IntegrationHarness,
   type SignedIn,
 } from './testing/integration';
@@ -89,45 +88,39 @@ async function securitySummary() {
 }
 
 describe('T1 — undangan dari cookie curian menjadi akun berwewenang yang menetap', () => {
-  it.fails(
-    'cookie Owner curian (tanpa password/kode) tidak bisa mengundang Admin baru',
-    async () => {
-      const email = 'admin-bayangan@penyerang.test';
-      const response = await call(
-        harness.app,
-        'POST',
-        API_ROUTES.invitations.collection,
-        { email, role: 'admin' },
-        stolen(owner),
-      );
+  it('cookie Owner curian (tanpa password/kode) tidak bisa mengundang Admin baru', async () => {
+    const email = 'admin-bayangan@penyerang.test';
+    const response = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.invitations.collection,
+      { email, role: 'admin' },
+      stolen(owner),
+    );
 
-      // Celah: 201 + tautan undangan (email pengirim belum diatur) atau email ke kotak masuk
-      // penyerang. Seharusnya: wajib konfirmasi ulang identitas seperti aksi kelola pengguna lain.
-      expect(response.statusCode).not.toBe(201);
-      expect(await invitationsFor(email)).toEqual([]);
-    },
-  );
+    // Celah: 201 + tautan undangan (email pengirim belum diatur) atau email ke kotak masuk
+    // penyerang. Seharusnya: wajib konfirmasi ulang identitas seperti aksi kelola pengguna lain.
+    expect(response.statusCode).not.toBe(201);
+    expect(await invitationsFor(email)).toEqual([]);
+  });
 
-  it.fails(
-    'cookie Admin curian (tanpa password/kode) tidak bisa mengundang Supervisor baru',
-    async () => {
-      const admin = await member('admin');
-      const email = 'supervisor-bayangan@penyerang.test';
-      const response = await call(
-        harness.app,
-        'POST',
-        API_ROUTES.invitations.collection,
-        { email, role: 'supervisor' },
-        stolen(admin),
-      );
+  it('cookie Admin curian (tanpa password/kode) tidak bisa mengundang Supervisor baru', async () => {
+    const admin = await member('admin');
+    const email = 'supervisor-bayangan@penyerang.test';
+    const response = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.invitations.collection,
+      { email, role: 'supervisor' },
+      stolen(admin),
+    );
 
-      expect(response.statusCode).not.toBe(201);
-      expect(await invitationsFor(email)).toEqual([]);
-    },
-  );
+    expect(response.statusCode).not.toBe(201);
+    expect(await invitationsFor(email)).toEqual([]);
+  });
 
-  it('BUKTI T1: Admin hasil undangan cookie Owner curian BERTAHAN setelah korban keluar', async () => {
-    // Rantai serangan yang masih berhasil (bukan perilaku yang diinginkan) — lihat kepala berkas.
+  it('penjaga (dulu BUKTI T1): rantai "cookie Owner curian → Admin bayangan yang menetap" kini gagal', async () => {
+    // Langkah 2 rantai lama: undangan dari cookie curian saja → ditolak, tidak ada yang tersimpan.
     const email = 'admin-bayangan@penyerang.test';
     const created = await call(
       harness.app,
@@ -136,100 +129,107 @@ describe('T1 — undangan dari cookie curian menjadi akun berwewenang yang menet
       { email, role: 'admin' },
       stolen(owner),
     );
-    expect(created.statusCode).toBe(201);
-    const { link } = invitationIssuedResponseSchema.parse(created.json());
-    const token = readTokenFromFragment(new URL(link ?? 'http://x.invalid').hash);
-    expect(token).not.toBeNull();
+    expect(created.statusCode).toBe(400);
+    expect(JSON.stringify(created.json())).toContain('confirmation.password');
+    expect(await invitationsFor(email)).toEqual([]);
 
-    // Pemulihan yang dilakukan korban: keluar (sesi curian ikut mati, token yang sama).
-    const logout = await call(harness.app, 'POST', API_ROUTES.auth.logout, {}, stolen(owner));
-    expect(logout.statusCode).toBeLessThan(300);
+    // Lapis kedua: undangan yang SEMPAT terbit dari sebuah sesi ikut batal begitu pemilik akun
+    // "mengeluarkan sesi lain" dari perangkat lain — tidak ada akses menetap yang tersisa.
+    const issued = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.invitations.collection,
+      await withConfirmation(owner, { email, role: 'admin' }),
+      stolen(owner),
+    );
+    expect(issued.statusCode).toBe(201);
+    const { link } = invitationIssuedResponseSchema.parse(issued.json());
+    const token = readTokenFromFragment(new URL(link ?? 'http://x.invalid').hash);
+    const recovery = await login(harness.app);
+    const revoked = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.sessions.revokeOthers,
+      await confirmationOf(recovery),
+      stolen(recovery),
+    );
+    expect(revoked.statusCode).toBe(200);
+    const [row] = await invitationsFor(email);
+    expect(row?.revokedAt).not.toBeNull();
 
     const accepted = await call(harness.app, 'POST', API_ROUTES.invitations.accept, {
       token,
       name: 'Admin Bayangan',
       password: ATTACKER_PASSWORD,
     });
-    expect(accepted.statusCode).toBe(201);
-    const enrolling = meResponseSchema.parse(accepted.json());
-    const full = await enrollTwoFactor(harness.app, {
-      cookie: sessionCookieOf(accepted),
-      csrf: enrolling.csrfToken,
-      session: enrolling,
-    });
-    expect(full.session.user.role).toBe('admin');
-    expect(full.session.permissions).toContain('channels.manage');
-    expect(full.session.permissions).toContain('settings.email.manage');
-
-    const [row] = await harness.db
-      .select({ disabledAt: users.disabledAt })
-      .from(users)
-      .where(eq(users.email, email));
-    expect(row?.disabledAt).toBeNull();
+    expect(accepted.statusCode).not.toBe(201);
+    expect(
+      await harness.db.select({ id: users.id }).from(users).where(eq(users.email, email)),
+    ).toEqual([]);
   });
 
-  it.fails(
-    'anggota baru dari undangan (pembuat bukan Owner) muncul di ringkasan keamanan Owner',
-    async () => {
-      const admin = await member('admin');
-      const email = 'cs-bayangan@penyerang.test';
-      const created = await call(
-        harness.app,
-        'POST',
-        API_ROUTES.invitations.collection,
-        { email, role: 'cs' },
-        stolen(admin),
-      );
-      expect(created.statusCode).toBe(201);
-      const { link } = invitationIssuedResponseSchema.parse(created.json());
-      const token = readTokenFromFragment(new URL(link ?? 'http://x.invalid').hash);
-      const accepted = await call(harness.app, 'POST', API_ROUTES.invitations.accept, {
-        token,
-        name: 'CS Bayangan',
-        password: ATTACKER_PASSWORD,
-      });
-      expect(accepted.statusCode).toBe(201);
+  it('anggota baru dari undangan (pembuat bukan Owner) muncul di ringkasan keamanan Owner', async () => {
+    const admin = await member('admin');
+    const email = 'cs-bayangan@penyerang.test';
+    const created = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.invitations.collection,
+      await withConfirmation(admin, { email, role: 'cs' }),
+      stolen(admin),
+    );
+    expect(created.statusCode).toBe(201);
+    const { link } = invitationIssuedResponseSchema.parse(created.json());
+    const token = readTokenFromFragment(new URL(link ?? 'http://x.invalid').hash);
+    const accepted = await call(harness.app, 'POST', API_ROUTES.invitations.accept, {
+      token,
+      name: 'CS Bayangan',
+      password: ATTACKER_PASSWORD,
+    });
+    expect(accepted.statusCode).toBe(201);
 
-      // Celah: tidak ada jenis kejadian untuk "undangan dibuat/diterima" — banner Owner diam,
-      // dan untuk peran tanpa 2FA wajib (CS/Teknisi) Owner juga tidak menerima email apa pun.
-      const summary = await securitySummary();
-      expect(summary.events.length).toBeGreaterThan(0);
-    },
-  );
+    // Celah: tidak ada jenis kejadian untuk "undangan dibuat/diterima" — banner Owner diam,
+    // dan untuk peran tanpa 2FA wajib (CS/Teknisi) Owner juga tidak menerima email apa pun.
+    const summary = await securitySummary();
+    expect(summary.events.length).toBeGreaterThan(0);
+  });
 });
 
 describe('T2 — cookie Owner curian membelokkan email pengirim diam-diam', () => {
-  async function saveAs(signed: SignedIn, overrides: Parameters<typeof mailpitSettings>[0] = {}) {
+  /** `confirmed`: pemilik akun sah (password + kode); tanpa itu = pemegang cookie curian. */
+  async function saveAs(
+    signed: SignedIn,
+    overrides: Parameters<typeof mailpitSettings>[0] = {},
+    confirmed = false,
+  ) {
+    const body = mailpitSettings(overrides);
     return call(
       harness.app,
       'PUT',
       API_ROUTES.settings.email,
-      mailpitSettings(overrides),
+      confirmed ? await withConfirmation(signed, body) : body,
       stolen(signed),
     );
   }
 
-  it.fails(
-    'mengganti server email pengirim wajib konfirmasi ulang identitas (juga Owner)',
-    async () => {
-      expect((await saveAs(owner)).statusCode).toBe(200);
+  it('mengganti server email pengirim wajib konfirmasi ulang identitas (juga Owner)', async () => {
+    expect((await saveAs(owner, {}, true)).statusCode).toBe(200);
 
-      const response = await saveAs(owner, { host: '127.0.0.2', password: 'sandi-smtp-penyerang' });
+    const response = await saveAs(owner, { host: '127.0.0.2', password: 'sandi-smtp-penyerang' });
 
-      // Celah: 200. Setelah ini SEMUA email (tautan undangan, tautan reset CS/Teknisi tanpa 2FA,
-      // pemberitahuan keamanan untuk Owner) lewat server penyerang.
-      expect(response.statusCode).not.toBe(200);
-      const [stored] = await harness.db
-        .select({ host: emailSettings.host })
-        .from(emailSettings)
-        .where(eq(emailSettings.organizationId, owner.session.organization.id));
-      expect(stored?.host).not.toBe('127.0.0.2');
-    },
-  );
+    // Celah: 200. Setelah ini SEMUA email (tautan undangan, tautan reset CS/Teknisi tanpa 2FA,
+    // pemberitahuan keamanan untuk Owner) lewat server penyerang.
+    expect(response.statusCode).not.toBe(200);
+    const [stored] = await harness.db
+      .select({ host: emailSettings.host })
+      .from(emailSettings)
+      .where(eq(emailSettings.organizationId, owner.session.organization.id));
+    expect(stored?.host).not.toBe('127.0.0.2');
+  });
 
-  it.fails('perubahan server email oleh Owner tetap tercatat di ringkasan keamanan', async () => {
-    expect((await saveAs(owner)).statusCode).toBe(200);
-    expect((await saveAs(owner, { host: '127.0.0.2' })).statusCode).toBe(200);
+  it('perubahan server email oleh Owner tetap tercatat di ringkasan keamanan', async () => {
+    expect((await saveAs(owner, {}, true)).statusCode).toBe(200);
+    expect((await saveAs(owner, { host: '127.0.0.2' }, true)).statusCode).toBe(200);
 
     // Celah: `email_sender_changed` hanya untuk pelaku selain Owner; tidak ada email ke Owner
     // (lain) juga. Pencuri cookie Owner tidak meninggalkan jejak di banner.
@@ -238,11 +238,11 @@ describe('T2 — cookie Owner curian membelokkan email pengirim diam-diam', () =
   });
 
   it('penjaga: perubahan oleh Admin tetap diberitahukan ke Owner lewat pengaturan LAMA', async () => {
-    expect((await saveAs(owner)).statusCode).toBe(200);
+    expect((await saveAs(owner, {}, true)).statusCode).toBe(200);
     const admin = await member('admin');
     harness.emailSettingsNotices.length = 0;
 
-    expect((await saveAs(admin, { host: '127.0.0.2' })).statusCode).toBe(200);
+    expect((await saveAs(admin, { host: '127.0.0.2' }, true)).statusCode).toBe(200);
 
     expect(harness.emailSettingsNotices).toHaveLength(1);
     const summary = await securitySummary();
@@ -258,7 +258,7 @@ describe('penjaga lintas fitur yang sudah benar', () => {
       harness.app,
       'POST',
       API_ROUTES.invitations.collection,
-      { email, role: 'teknisi' },
+      await withConfirmation(admin, { email, role: 'teknisi' }),
       stolen(admin),
     );
     expect(created.statusCode).toBe(201);

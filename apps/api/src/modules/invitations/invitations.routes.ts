@@ -9,12 +9,13 @@ import {
   invitationIdParamsSchema,
   invitationIssuedResponseSchema,
   invitationListResponseSchema,
+  resendInvitationRequestSchema,
   revokeInvitationResponseSchema,
 } from '@balesin/shared';
 import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod';
 
 import { clientInfo } from '../../http/client-info';
-import { readSessionToken } from '../../http/cookies';
+import { readDeviceToken, readSessionToken } from '../../http/cookies';
 import { PUBLIC, requirePermission } from '../../http/route-access';
 import { requireAuth } from '../auth/auth.hook';
 import { setSessionCookies } from '../auth/auth.routes';
@@ -91,6 +92,7 @@ export const invitationRoutes: FastifyPluginCallbackZod<InvitationRoutesOptions>
       const result = await invitations.create(requireAuth(request), request.body, {
         client: clientInfo(request),
         log: request.log,
+        presentedDeviceToken: readDeviceToken(request.headers.cookie, cookieSecure),
       });
       return reply.code(201).send(result);
     },
@@ -103,14 +105,21 @@ export const invitationRoutes: FastifyPluginCallbackZod<InvitationRoutesOptions>
       bodyLimit: BODY_LIMIT_BYTES,
       schema: {
         params: invitationIdParamsSchema,
+        body: resendInvitationRequestSchema,
         response: { 200: invitationIssuedResponseSchema, ...errors },
       },
     },
     async (request) =>
-      invitations.resend(requireAuth(request), request.params.invitationId, {
-        client: clientInfo(request),
-        log: request.log,
-      }),
+      invitations.resend(
+        requireAuth(request),
+        request.params.invitationId,
+        request.body?.confirmation,
+        {
+          client: clientInfo(request),
+          log: request.log,
+          presentedDeviceToken: readDeviceToken(request.headers.cookie, cookieSecure),
+        },
+      ),
   );
 
   app.delete(

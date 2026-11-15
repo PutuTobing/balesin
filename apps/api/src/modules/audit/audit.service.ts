@@ -62,55 +62,92 @@ export const AUDIT_EXPORT_RULE: RateLimitRule = {
 };
 
 /**
- * Aksi channel yang memberi tahu Owner bila pelakunya selain Owner (`ownersNotified: true` di
- * metadatanya, ditulis modul channels).
+ * Aksi channel yang tercatat sebagai `channel_changed` (selain profil bisnis, yang punya jenisnya
+ * sendiri). Hanya baris bermetadata `change` (ditulis modul channels) yang dihitung.
  */
-const NOTIFIED_CHANNEL_ACTIONS: readonly string[] = Object.values(
-  CHANNEL_CHANGE_AUDIT_ACTIONS,
-).filter((action) => action !== AUDIT_ACTIONS.channelBusinessProfileUpdated);
+const CHANNEL_EVENT_ACTIONS: readonly string[] = Object.values(CHANNEL_CHANGE_AUDIT_ACTIONS).filter(
+  (action) => action !== AUDIT_ACTIONS.channelBusinessProfileUpdated,
+);
+
+const HAS_CHANGE = sql`${auditLogs.metadata} ? 'change'`;
+const OWNERS_NOTIFIED = sql`${auditLogs.metadata} ->> 'ownersNotified' = 'true'`;
 
 /** Kondisi SQL per jenis kejadian keamanan (sama dengan `kindOf` di bawah). */
 const SECURITY_EVENT_CONDITIONS: Readonly<Record<SecurityEventKind, SQL>> = {
-  email_sender_changed: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.emailSettingsUpdated} and ${auditLogs.metadata} ->> 'ownersNotified' = 'true')`,
+  // Juga perubahan oleh Owner (review akhir Fase 1 T2): `ownersNotified` = jalur kirim berubah.
+  email_sender_changed: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.emailSettingsUpdated} and ${OWNERS_NOTIFIED})`,
   two_factor_reset: sql`${auditLogs.action} = ${AUDIT_ACTIONS.userTwoFactorReset}`,
   two_factor_enrollment_reopened: sql`${auditLogs.action} = ${AUDIT_ACTIONS.userTwoFactorEnrollmentReopened}`,
   password_reset_without_two_factor: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.passwordResetCompleted} and ${auditLogs.metadata} ->> 'twoFactorEnrollmentPending' = 'true')`,
   account_locked: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.accountLocked} and ${auditLogs.targetType} = 'user')`,
   role_changed: sql`${auditLogs.action} = ${AUDIT_ACTIONS.userRoleChanged}`,
   user_disabled: sql`${auditLogs.action} = ${AUDIT_ACTIONS.userDisabled}`,
-  channel_changed: sql`(${inArray(auditLogs.action, [...NOTIFIED_CHANNEL_ACTIONS])} and ${auditLogs.metadata} ->> 'ownersNotified' = 'true')`,
-  business_profile_changed: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.channelBusinessProfileUpdated} and ${auditLogs.metadata} ->> 'ownersNotified' = 'true')`,
+  // Juga oleh Owner (`info`); oleh selain Owner `warning` (review akhir Fase 1 S1).
+  channel_changed: sql`(${inArray(auditLogs.action, [...CHANNEL_EVENT_ACTIONS])} and ${HAS_CHANGE})`,
+  business_profile_changed: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.channelBusinessProfileUpdated} and ${HAS_CHANGE})`,
+  member_joined: sql`${auditLogs.action} = ${AUDIT_ACTIONS.invitationAccepted}`,
+  password_reset_burst: sql`${auditLogs.action} = ${AUDIT_ACTIONS.passwordResetBurst}`,
 };
 
+/** Baris `account_locked` maksimal di `events` ringkasan keamanan (review akhir R2). */
+const LOCK_EVENTS_MAX = 5;
+
+/** Kunci yang hanya bisa dipicu pemegang password/perangkat korban → `warning` (review akhir R2). */
+const SERIOUS_LOCK_SCOPES = ['account', 'device', 'two_factor'] as const;
+
 /**
- * Ubah peran / nonaktifkan oleh SELAIN Owner dinaikkan menjadi `warning` (review butir 6 Info 6).
- * Baris lama tanpa `actorRole` tetap `info`.
+ * Jenis yang keparahannya bergantung pada baris: `warning` bila syarat ini terpenuhi, selain itu
+ * `info`. SQL dan fungsi harus sepadan (dipakai `latestWarningAt` dan `events[].severity`).
+ *  - ubah peran / nonaktifkan oleh SELAIN Owner (review butir 6 Info 6; baris lama tanpa
+ *    `actorRole` tetap `info`);
+ *  - channel / profil bisnis oleh SELAIN Owner (yang oleh Owner tetap tercatat, `info`);
+ *  - kunci per akun, per perangkat dikenal, dan langkah kedua. Kunci per email+jaringan
+ *    (`source`) bisa dipicu siapa pun tanpa akun dari banyak IP — `info` supaya tidak membanjiri
+ *    banner Owner (review akhir R2).
  */
-const BY_NON_OWNER = sql`(${auditLogs.metadata} ->> 'actorRole' is not null and ${auditLogs.metadata} ->> 'actorRole' <> 'owner')`;
+const WARNING_WHEN: Partial<
+  Record<SecurityEventKind, { sql: SQL; test: (metadata: Record<string, unknown>) => boolean }>
+> = {
+  role_changed: {
+    sql: sql`(${auditLogs.metadata} ->> 'actorRole' is not null and ${auditLogs.metadata} ->> 'actorRole' <> 'owner')`,
+    test: (metadata) => typeof metadata.actorRole === 'string' && metadata.actorRole !== 'owner',
+  },
+  user_disabled: {
+    sql: sql`(${auditLogs.metadata} ->> 'actorRole' is not null and ${auditLogs.metadata} ->> 'actorRole' <> 'owner')`,
+    test: (metadata) => typeof metadata.actorRole === 'string' && metadata.actorRole !== 'owner',
+  },
+  channel_changed: { sql: OWNERS_NOTIFIED, test: (metadata) => metadata.ownersNotified === true },
+  business_profile_changed: {
+    sql: OWNERS_NOTIFIED,
+    test: (metadata) => metadata.ownersNotified === true,
+  },
+  account_locked: {
+    sql: sql`coalesce(${auditLogs.metadata} ->> 'scope', 'account') in ('account', 'device', 'two_factor')`,
+    test: (metadata) =>
+      (SERIOUS_LOCK_SCOPES as readonly unknown[]).includes(metadata.scope ?? 'account'),
+  },
+};
 
 function severityOf(kind: SecurityEventKind, row: AuditRow): 'warning' | 'info' {
-  if (kind === 'role_changed' || kind === 'user_disabled') {
-    const actorRole = row.metadata.actorRole;
-    return typeof actorRole === 'string' && actorRole !== 'owner'
-      ? 'warning'
-      : SECURITY_EVENT_SEVERITY[kind];
-  }
+  const when = WARNING_WHEN[kind];
+  if (when) return when.test(row.metadata) ? 'warning' : 'info';
   return SECURITY_EVENT_SEVERITY[kind];
 }
 
 /** Kondisi SQL "kejadian ini `warning`" — padanan `severityOf`. */
 function warningCondition(): SQL {
-  const conditions = SECURITY_EVENT_KINDS.map((kind) =>
-    SECURITY_EVENT_SEVERITY[kind] === 'warning'
+  const conditions = SECURITY_EVENT_KINDS.map((kind) => {
+    const when = WARNING_WHEN[kind];
+    if (when) return and(SECURITY_EVENT_CONDITIONS[kind], when.sql);
+    return SECURITY_EVENT_SEVERITY[kind] === 'warning'
       ? SECURITY_EVENT_CONDITIONS[kind]
-      : kind === 'role_changed' || kind === 'user_disabled'
-        ? (and(SECURITY_EVENT_CONDITIONS[kind], BY_NON_OWNER) as SQL)
-        : undefined,
-  ).filter((condition): condition is SQL => condition !== undefined);
+      : undefined;
+  }).filter((condition): condition is SQL => condition !== undefined);
   return or(...conditions) as SQL;
 }
 
 function kindOf(row: AuditRow): SecurityEventKind | undefined {
+  const hasChange = Object.hasOwn(row.metadata, 'change');
   switch (row.action) {
     case AUDIT_ACTIONS.emailSettingsUpdated:
       return row.metadata.ownersNotified === true ? 'email_sender_changed' : undefined;
@@ -134,9 +171,13 @@ function kindOf(row: AuditRow): SecurityEventKind | undefined {
     case AUDIT_ACTIONS.channelEnabled:
     case AUDIT_ACTIONS.channelDeleted:
     case AUDIT_ACTIONS.channelVerifyTokenRotated:
-      return row.metadata.ownersNotified === true ? 'channel_changed' : undefined;
+      return hasChange ? 'channel_changed' : undefined;
     case AUDIT_ACTIONS.channelBusinessProfileUpdated:
-      return row.metadata.ownersNotified === true ? 'business_profile_changed' : undefined;
+      return hasChange ? 'business_profile_changed' : undefined;
+    case AUDIT_ACTIONS.invitationAccepted:
+      return 'member_joined';
+    case AUDIT_ACTIONS.passwordResetBurst:
+      return 'password_reset_burst';
     default:
       return undefined;
   }
@@ -144,7 +185,7 @@ function kindOf(row: AuditRow): SecurityEventKind | undefined {
 
 /** Rincian yang berguna untuk banner (subset metadata, tanpa rahasia). */
 const DETAIL_KEYS: Readonly<Record<SecurityEventKind, readonly string[]>> = {
-  email_sender_changed: ['previousHost', 'host', 'port', 'fromAddress'],
+  email_sender_changed: ['previousHost', 'host', 'port', 'fromAddress', 'actorRole'],
   two_factor_reset: ['role'],
   two_factor_enrollment_reopened: ['role', 'dueAt'],
   password_reset_without_two_factor: [],
@@ -154,6 +195,8 @@ const DETAIL_KEYS: Readonly<Record<SecurityEventKind, readonly string[]>> = {
   channel_changed: ['change', 'name', 'phoneNumberId', 'changedFields', 'actorRole'],
   // Nilai lama/baru (`previous`/`next`) ada di Audit log; banner cukup menyebut isiannya.
   business_profile_changed: ['name', 'phoneNumberId', 'changedFields', 'actorRole'],
+  member_joined: ['role', 'issuerRole'],
+  password_reset_burst: ['accounts', 'windowMinutes'],
 };
 
 export function createAuditService(deps: { db: Database; limiter: RateLimiter }): AuditService {
@@ -191,7 +234,8 @@ export function createAuditService(deps: { db: Database; limiter: RateLimiter })
         limiter,
         AUDIT_EXPORT_RULE,
         auth.user.id,
-        (wait) => `Terlalu sering mengekspor audit log. Coba lagi dalam ${wait}.`,
+        // Tanpa durasi: web menampilkan hitung mundur dari `Retry-After`.
+        () => `Batas ekspor audit log (${AUDIT_EXPORT_RULE.limit} kali per jam) sudah tercapai.`,
       );
       const rows = await selectAuditRows(
         db,
@@ -226,17 +270,35 @@ export function createAuditService(deps: { db: Database; limiter: RateLimiter })
         eq(auditLogs.organizationId, auth.organizationId),
         gte(auditLogs.createdAt, since),
       ) as SQL;
-      const anyKind = or(...SECURITY_EVENT_KINDS.map((kind) => SECURITY_EVENT_CONDITIONS[kind]));
-      const [rows, counts, latestWarning] = await Promise.all([
-        selectAuditRows(db, auth.organizationId, and(inRange, anyKind) as SQL, {
+      // `account_locked` bisa dipicu siapa pun tanpa akun: paling banyak `LOCK_EVENTS_MAX` baris
+      // di daftar, supaya kejadian lain tidak tergeser (`counts` tetap menghitung semuanya).
+      const otherKinds = or(
+        ...SECURITY_EVENT_KINDS.filter((kind) => kind !== 'account_locked').map(
+          (kind) => SECURITY_EVENT_CONDITIONS[kind],
+        ),
+      );
+      const [otherRows, lockRows, counts, latestWarning] = await Promise.all([
+        selectAuditRows(db, auth.organizationId, and(inRange, otherKinds) as SQL, {
           limit: SECURITY_SUMMARY_MAX_EVENTS,
         }),
+        selectAuditRows(
+          db,
+          auth.organizationId,
+          and(inRange, SECURITY_EVENT_CONDITIONS.account_locked) as SQL,
+          { limit: LOCK_EVENTS_MAX },
+        ),
         countAuditRowsMatching(db, inRange, SECURITY_EVENT_CONDITIONS),
         selectAuditRows(db, auth.organizationId, and(inRange, warningCondition()) as SQL, {
           limit: 1,
         }),
       ]);
 
+      const rows = [...otherRows, ...lockRows]
+        .sort(
+          (left, right) =>
+            right.createdAt.getTime() - left.createdAt.getTime() || right.id.localeCompare(left.id),
+        )
+        .slice(0, SECURITY_SUMMARY_MAX_EVENTS);
       const events: SecurityEvent[] = [];
       for (const row of rows) {
         const kind = kindOf(row);

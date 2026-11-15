@@ -24,7 +24,6 @@ import type { FastifyBaseLogger } from 'fastify';
 import { ipRateLimitKey, type ClientInfo } from '../../http/client-info';
 import {
   enforceRateLimit,
-  formatWait,
   rateLimited,
   type RateLimitRule,
   type RateLimiter,
@@ -122,8 +121,8 @@ export function createSetupService(deps: SetupServiceDeps): SetupService {
     }
 
     const ipKey = ipRateLimitKey(context.client);
-    const tooMany = (wait: string) =>
-      `Terlalu banyak percobaan token setup. Coba lagi dalam ${wait}.`;
+    // Tanpa durasi: web menampilkan hitung mundur dari `Retry-After`.
+    const tooMany = () => 'Terlalu banyak percobaan token setup.';
     await enforceRateLimit(limiter, SETUP_TOKEN_IP_RULE, ipKey, tooMany);
 
     if (constantTimeEqual(presented, setupToken.reveal())) {
@@ -134,7 +133,7 @@ export function createSetupService(deps: SetupServiceDeps): SetupService {
     const global = await limiter.consume(SETUP_TOKEN_GLOBAL_RULE, GLOBAL_KEY);
     context.log.warn({ ip: context.client.ip }, 'Token setup salah');
     if (!global.allowed) {
-      throw rateLimited(global.retryAfterSeconds, tooMany(formatWait(global.retryAfterSeconds)));
+      throw rateLimited(global.retryAfterSeconds, tooMany());
     }
     throw new AppError('FORBIDDEN', {
       message:

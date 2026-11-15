@@ -26,6 +26,7 @@ import {
   login,
   mailpitSettings,
   setupBody,
+  withConfirmation,
   type IntegrationHarness,
   type SignedIn,
 } from '../../testing/integration';
@@ -61,8 +62,18 @@ const view = async (user: SignedIn = owner): Promise<EmailSettingsResponse> =>
     (await call(harness.app, 'GET', API_ROUTES.settings.email, undefined, as(user))).json(),
   );
 
-const save = (body: unknown, user: SignedIn = owner) =>
-  call(harness.app, 'PUT', API_ROUTES.settings.email, body, as(user));
+/**
+ * Simpan pengaturan. Mengubah jalur kirim wajib konfirmasi identitas untuk semua peran (review
+ * akhir Fase 1 T2): ditambahkan otomatis kecuali body sudah membawanya atau `confirm: false`.
+ */
+const save = async (body: object, user: SignedIn = owner, options: { confirm?: boolean } = {}) =>
+  call(
+    harness.app,
+    'PUT',
+    API_ROUTES.settings.email,
+    options.confirm === false || 'confirmation' in body ? body : await withConfirmation(user, body),
+    as(user),
+  );
 
 const testConnection = async (body: unknown = {}): Promise<EmailTestResult> =>
   emailTestResultSchema.parse(
@@ -680,7 +691,7 @@ describe('cadangan SMTP dari .env', () => {
   });
 });
 
-describe('pemberitahuan ke Owner saat email pengirim diubah pengguna lain (review RBAC S1)', () => {
+describe('pemberitahuan ke Owner saat jalur kirim email pengirim berubah (RBAC S1, akhir Fase 1 T2)', () => {
   async function signInAdmin() {
     const password = 'sandi-uji-admin-pengirim-1';
     const user = await insertUser(harness.db, owner.session.organization.id, {
@@ -690,7 +701,16 @@ describe('pemberitahuan ke Owner saat email pengirim diubah pengguna lain (revie
     });
     return { user, signed: await login(harness.app, { email: user.email, password }) };
   }
-  const notices = () => harness.db.select().from(emailSettingsChangeNotices);
+  /** Pemberitahuan atas perubahan oleh `actorUserId` (simpan awal oleh Owner juga memicu). */
+  const notices = (actorUserId?: string) =>
+    harness.db
+      .select()
+      .from(emailSettingsChangeNotices)
+      .where(
+        actorUserId === undefined
+          ? undefined
+          : eq(emailSettingsChangeNotices.actorUserId, actorUserId),
+      );
 
   it('Admin mengganti server: satu job per Owner + salinan pengaturan LAMA (teks sandi apa adanya)', async () => {
     expect((await save(mailpitSettings())).statusCode).toBe(200);
@@ -704,7 +724,7 @@ describe('pemberitahuan ke Owner saat email pengirim diubah pengguna lain (revie
     );
 
     expect(changed.statusCode).toBe(200);
-    const [notice, ...others] = await notices();
+    const [notice, ...others] = await notices(admin.user.id);
     expect(others).toEqual([]);
     expect(harness.emailSettingsNotices).toEqual([
       {
@@ -739,8 +759,12 @@ describe('pemberitahuan ke Owner saat email pengirim diubah pengguna lain (revie
     const admin = await signInAdmin();
     const { password: _password, ...keep } = mailpitSettings();
 
-    await save({ ...keep, fromName: 'Nama Baru Saja' }, admin.signed);
-    expect(await notices()).toHaveLength(0);
+    // Nama pengirim saja: tanpa konfirmasi, tanpa pemberitahuan.
+    const renamed = await save({ ...keep, fromName: 'Nama Baru Saja' }, admin.signed, {
+      confirm: false,
+    });
+    expect(renamed.statusCode, renamed.body).toBe(200);
+    expect(await notices(admin.user.id)).toHaveLength(0);
     await save({ ...keep, fromName: 'Nama Baru Saja', replyTo: 'balas@lain.test' }, admin.signed);
     await save(
       {
@@ -751,20 +775,43 @@ describe('pemberitahuan ke Owner saat email pengirim diubah pengguna lain (revie
       },
       admin.signed,
     );
-    expect(await notices()).toHaveLength(2);
+    expect(await notices(admin.user.id)).toHaveLength(2);
   });
 
-  it('Owner sendiri yang mengubah: tidak ada pemberitahuan', async () => {
-    await save(mailpitSettings());
-    await save(mailpitSettings({ host: '127.0.0.3' }));
-    expect(await notices()).toEqual([]);
-    expect(harness.emailSettingsNotices).toEqual([]);
+  it('Owner sendiri yang mengubah: wajib konfirmasi; semua Owner — termasuk dirinya — diberi tahu lewat pengaturan LAMA', async () => {
+    const first = await save(mailpitSettings(), owner, { confirm: false });
+    expect(first.statusCode).toBe(400);
+    expect(errorOf(first).details?.[0]?.field).toBe('confirmation.password');
+    expect(await storedRow()).toBeUndefined();
+
+    expect((await save(mailpitSettings())).statusCode).toBe(200);
+    const secondOwner = await insertUser(harness.db, owner.session.organization.id, {
+      role: 'owner',
+      email: 'owner.kedua@majujaya.test',
+    });
+    harness.emailSettingsNotices.length = 0;
+    const before = await storedRow();
+
+    const changed = await save(mailpitSettings({ host: '127.0.0.3' }));
+    expect(changed.statusCode, changed.body).toBe(200);
+    const [notice] = (await notices(owner.session.user.id)).filter(
+      (row) => row.newHost === '127.0.0.3',
+    );
+    expect(notice).toMatchObject({ previousHost: before?.host, pendingDeliveries: 2 });
+    expect(harness.emailSettingsNotices.map((job) => job.recipientUserId).sort()).toEqual(
+      [owner.session.user.id, secondOwner.id].sort(),
+    );
+    const [audit] = await harness.db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.id, notice?.auditLogId ?? ''));
+    expect(audit?.metadata).toMatchObject({ ownersNotified: true, actorRole: 'owner' });
   });
 
   it('Admin mengatur email pertama kali: pemberitahuan tanpa salinan lama (dikirim lewat pengaturan baru)', async () => {
     const admin = await signInAdmin();
     expect((await save(mailpitSettings(), admin.signed)).statusCode).toBe(200);
-    const [notice] = await notices();
+    const [notice] = await notices(admin.user.id);
     expect(notice?.previousHost).toBeNull();
     expect(notice?.previousPasswordEncrypted).toBeNull();
     expect(harness.emailSettingsNotices).toHaveLength(1);
@@ -791,7 +838,7 @@ describe('pemberitahuan ke Owner saat email pengirim diubah pengguna lain (revie
     expect(response.statusCode).toBe(503);
     expect(errorOf(response).message).toContain('pemberitahuan ke Owner');
     expect((await storedRow())?.host).toBe(before?.host);
-    expect(await notices()).toEqual([]);
+    expect(await notices(admin.user.id)).toEqual([]);
     await harness.rebuild();
   });
 });

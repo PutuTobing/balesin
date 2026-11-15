@@ -47,6 +47,7 @@ import {
 } from '../auth/login-rules';
 import type { PasswordHasher } from '../auth/password-hasher';
 import { checkPassword } from '../auth/password-policy';
+import { detectResetBurst } from './reset-burst';
 import type { SessionService } from '../auth/session.service';
 import {
   findInstallationOrganization,
@@ -250,7 +251,18 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps): Pass
     } catch (err) {
       context.log.warn({ err, tokenRef: tokenId }, 'Gagal mengantre email atur ulang password');
       await markAccountTokenUndelivered(db, organization.id, tokenId);
+      return;
     }
+    // Banyak akun berbeda dalam waktu singkat → kejadian keamanan + email ke Owner (review R5).
+    await detectResetBurst({
+      db,
+      limiter,
+      notifier,
+      organizationId: organization.id,
+      latestUserId: user.id,
+      client: context.client,
+      log: context.log,
+    });
   }
 
   /** Token sah + pengguna aktif dengan email yang sama seperti saat tautan dibuat. */
@@ -417,7 +429,10 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps): Pass
               emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())`,
             })
             .where(and(eq(users.organizationId, organizationId), eq(users.id, user.id)));
-          const revoked = await sessions.revokeAllForUser(tx, organizationId, user.id);
+          // Memulihkan akun: undangan dari sesi-sesi lama ikut batal (review akhir Fase 1 T1).
+          const revoked = await sessions.revokeAllForUser(tx, organizationId, user.id, undefined, {
+            cancelIssuedInvitations: true,
+          });
           await deleteChallenges(tx, organizationId, user.id);
           const auditId = await recordAudit(tx, {
             organizationId,

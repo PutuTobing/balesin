@@ -6,6 +6,7 @@ import {
   isoDateTimeSchema,
   singleLineText,
 } from './fields';
+import { identityConfirmationSchema } from './identity';
 
 /**
  * Email pengirim sistem (undangan, reset password, notifikasi) — docs/PENGATURAN-UI.md §1.
@@ -204,7 +205,7 @@ export const emailSettingsInputSchema = z.object({
   username: z
     .string()
     .trim()
-    .min(1, 'Username wajib diisi, atau kosongkan bila server tidak butuh login.')
+    .min(1, 'Username wajib diisi, atau kosongkan bila server tidak meminta username dan password.')
     .max(255, 'Username maksimal 255 karakter.')
     .refine((value) => !hasControlCharacters(value), 'Username tidak valid.')
     .nullish(),
@@ -268,11 +269,11 @@ export const EMAIL_TEST_MESSAGES: Record<EmailTestCode, string> = {
   auth_failed:
     'Username atau password ditolak server email. Periksa lagi keduanya. Untuk Gmail dan Microsoft 365, pakai app password, bukan password akun biasa.',
   auth_unsupported:
-    'Server email tidak menerima login dengan cara ini. Coba pilihan keamanan lain (SSL/TLS atau STARTTLS), atau hubungi penyedia email-mu.',
+    'Server email tidak menerima cara masuk ini. Coba pilihan keamanan lain (SSL/TLS atau STARTTLS), atau hubungi penyedia email-mu.',
   insecure_login:
     'Pilihan "Tanpa enkripsi" hanya untuk server email di jaringan lokal, karena password akan terkirim tanpa perlindungan. Pilih SSL/TLS (port 465) atau STARTTLS (port 587).',
   sender_rejected:
-    'Server menolak alamat pengirim. Pastikan alamat email pengirim sama dengan akun yang dipakai login.',
+    'Server menolak alamat pengirim. Pastikan alamat email pengirim sama dengan akun yang dipakai masuk ke server email.',
   recipient_rejected:
     'Server menolak alamat tujuan. Periksa lagi penulisan alamat tujuan email tes.',
   message_rejected:
@@ -348,8 +349,14 @@ export const emailSettingsResponseSchema = z.object({
 });
 export type EmailSettingsResponse = z.infer<typeof emailSettingsResponseSchema>;
 
-/** `PUT /settings/email` */
-export const saveEmailSettingsRequestSchema = emailSettingsInputSchema;
+/**
+ * `PUT /settings/email`. Mengubah jalur kirim (host, port, keamanan, username, password, alamat
+ * pengirim, balas-ke — termasuk menyimpan pertama kali) WAJIB `confirmation` untuk semua peran, Owner
+ * juga (review akhir Fase 1 T2). Mengubah nama pengirim saja tidak.
+ */
+export const saveEmailSettingsRequestSchema = emailSettingsInputSchema.extend({
+  confirmation: identityConfirmationSchema.optional(),
+});
 export type SaveEmailSettingsRequest = z.infer<typeof saveEmailSettingsRequestSchema>;
 
 /**

@@ -39,6 +39,7 @@ import {
   deviceCookieOf,
   login,
   mailpitSettings,
+  withConfirmation,
   sessionCookieOf,
   TEST_MASTER_KEY,
   type CallOptions,
@@ -75,12 +76,18 @@ const as = (signed: { cookie: string; csrf: string }): CallOptions => ({
   csrf: signed.csrf,
 });
 
-function invite(signed: SignedIn, email: string, role: InvitableRole, options: CallOptions = {}) {
+/** Buat undangan (dengan konfirmasi identitas pembuat — wajib untuk semua peran, T1). */
+async function invite(
+  signed: SignedIn,
+  email: string,
+  role: InvitableRole,
+  options: CallOptions = {},
+) {
   return call(
     harness.app,
     'POST',
     routes.collection,
-    { email, role },
+    await withConfirmation(signed, { email, role }),
     { ...as(signed), ...options },
   );
 }
@@ -131,7 +138,7 @@ async function configureEmail(owner: SignedIn) {
     harness.app,
     'PUT',
     API_ROUTES.settings.email,
-    mailpitSettings(),
+    await withConfirmation(owner, mailpitSettings()),
     as(owner),
   );
   if (saved.statusCode !== 200) throw new Error(`Simpan email gagal: ${saved.body}`);
@@ -302,7 +309,7 @@ describe('siapa boleh mengundang siapa', () => {
       harness.app,
       'POST',
       apiPath(routes.resend, { invitationId: id }),
-      undefined,
+      await withConfirmation(admin, {}),
       as(admin),
     );
     expect(resend.statusCode).toBe(403);
@@ -330,7 +337,7 @@ describe('siapa boleh mengundang siapa', () => {
           harness.app,
           'POST',
           apiPath(routes.resend, { invitationId: id }),
-          undefined,
+          await withConfirmation(signed, {}),
           as(signed),
         ),
         await call(
@@ -430,7 +437,7 @@ describe('email bentrok, kirim ulang, batalkan', () => {
       harness.app,
       'POST',
       apiPath(routes.resend, { invitationId: first.invitation.id }),
-      undefined,
+      await withConfirmation(owner, {}),
       as(owner),
     );
     expect(response.statusCode).toBe(200);
@@ -481,9 +488,10 @@ describe('email bentrok, kirim ulang, batalkan', () => {
       .returning();
     if (!foreign) throw new Error('gagal');
     const foreignUrl = apiPath(routes.resend, { invitationId: foreign.id });
-    expect((await call(harness.app, 'POST', foreignUrl, undefined, as(owner))).statusCode).toBe(
-      404,
-    );
+    expect(
+      (await call(harness.app, 'POST', foreignUrl, await withConfirmation(owner, {}), as(owner)))
+        .statusCode,
+    ).toBe(404);
     expect(
       (
         await call(
@@ -630,13 +638,23 @@ describe('membuka dan menerima undangan', () => {
       userId: user?.id,
       auditLogId: enabledAudit?.id,
     });
-    await expect.poll(() => harness.adminNotices.length).toBe(1);
-    expect(harness.adminNotices[0]).toMatchObject({
+    // Juga `member_joined` (undangan diterima → semua Owner, review akhir Fase 1 T1).
+    const twoFactorNotices = () =>
+      harness.adminNotices.filter((notice) => notice.event === 'two_factor_enabled');
+    await expect.poll(() => twoFactorNotices().length).toBe(1);
+    expect(twoFactorNotices()[0]).toMatchObject({
       recipientUserId: owner.session.user.id,
       subjectUserId: user?.id,
       event: 'two_factor_enabled',
       auditLogId: enabledAudit?.id,
     });
+    expect(harness.adminNotices.filter((notice) => notice.event === 'member_joined')).toEqual([
+      expect.objectContaining({
+        recipientUserId: owner.session.user.id,
+        subjectUserId: user?.id,
+        actorUserId: owner.session.user.id,
+      }),
+    ]);
   });
 
   it('CS yang mengaktifkan 2FA sendiri: tidak ada email ke Owner/Admin (bukan peran wajib)', async () => {
@@ -762,10 +780,19 @@ describe('batas laju', () => {
     const url = apiPath(routes.resend, { invitationId: body.invitation.id });
     const statuses: number[] = [];
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      statuses.push((await call(harness.app, 'POST', url, undefined, as(owner))).statusCode);
+      statuses.push(
+        (await call(harness.app, 'POST', url, await withConfirmation(owner, {}), as(owner)))
+          .statusCode,
+      );
     }
     expect(statuses).toEqual([200, 200, 200, 200, 429]);
-    const limited = await call(harness.app, 'POST', url, undefined, as(owner));
+    const limited = await call(
+      harness.app,
+      'POST',
+      url,
+      await withConfirmation(owner, {}),
+      as(owner),
+    );
     expect(limited.headers['retry-after']).toBeDefined();
     // Undangan lain tidak ikut terhambat.
     expect((await invite(owner, 'lain@majujaya.test', 'cs')).statusCode).toBe(201);
@@ -822,7 +849,7 @@ describe('penerbit token undangan harus tetap berhak (review R2)', () => {
       harness.app,
       'POST',
       apiPath(routes.resend, { invitationId: body.invitation.id }),
-      undefined,
+      await withConfirmation(owner, {}),
       as(owner),
     );
     expect(resent.statusCode).toBe(200);
@@ -885,7 +912,7 @@ describe('membuat undangan tidak bisa menggantikan undangan yang tidak boleh dik
       harness.app,
       'POST',
       apiPath(routes.resend, { invitationId: ownerInvite.invitation.id }),
-      undefined,
+      await withConfirmation(owner, {}),
       as(owner),
     );
     expect(resend.statusCode).toBe(200);

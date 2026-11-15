@@ -133,6 +133,20 @@ describe('batas laju — pesan', () => {
       error: { code: 'RATE_LIMITED', message: 'Terlalu sering. Coba lagi dalam 2 menit.' },
     });
   });
+
+  it('setiap 429 membawa Retry-After, juga yang tidak berasal dari rateLimited()', async () => {
+    const { app } = await buildTestApp();
+    app.get('/__tes/batas-lain', TEST_ROUTE, () => {
+      // Mis. 429 dari Fastify/plugin (kode `FST_…`) tanpa waktu tunggu sendiri.
+      throw Object.assign(new Error('terlalu sering'), { statusCode: 429, code: 'FST_TES_BATAS' });
+    });
+    const response = await app.inject({ method: 'GET', url: '/__tes/batas-lain' });
+    await app.close();
+
+    expect(response.statusCode).toBe(429);
+    expect(response.json()).toMatchObject({ error: { code: 'RATE_LIMITED' } });
+    expect(Number(response.headers['retry-after'])).toBeGreaterThan(0);
+  });
 });
 
 describe('deklarasi akses rute (bawaan tolak)', () => {

@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { meResponseSchema, type MeResponse } from './auth';
 import { emailAddressSchema, isoDateTimeSchema, personNameSchema } from './fields';
+import { identityConfirmationSchema } from './identity';
 import { newPasswordSchema } from './password';
 import type { UserRole } from './roles';
 
@@ -120,12 +121,25 @@ export const invitationListResponseSchema = z.object({
 });
 export type InvitationListResponse = z.infer<typeof invitationListResponseSchema>;
 
-/** `POST /invitations` */
+/**
+ * `POST /invitations`. `confirmation` (password + kode 2FA pelaku) WAJIB untuk semua pelaku, Owner
+ * juga — undangan memberi akses yang menetap, jadi cookie sesi curian saja tidak boleh cukup (review
+ * akhir Fase 1 T1). Opsional di skema supaya klien lama mendapat 400 `confirmation.password` yang
+ * jelas dari server, bukan error validasi umum.
+ */
 export const createInvitationRequestSchema = z.object({
   email: emailAddressSchema,
   role: invitableRoleSchema,
+  confirmation: identityConfirmationSchema.optional(),
 });
 export type CreateInvitationRequest = z.infer<typeof createInvitationRequestSchema>;
+
+/** `POST /invitations/:invitationId/resend` — `confirmation` wajib (lihat pembuatan undangan). */
+// `nullish`: Fastify memberi `null`/`undefined` untuk POST tanpa body.
+export const resendInvitationRequestSchema = z
+  .object({ confirmation: identityConfirmationSchema.optional() })
+  .nullish();
+export type ResendInvitationRequest = z.infer<typeof resendInvitationRequestSchema>;
 
 /**
  * Respons buat / kirim ulang undangan. `link` HANYA terisi bila email pengirim belum diatur

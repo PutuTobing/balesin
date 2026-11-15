@@ -23,6 +23,7 @@ import {
   login,
   mailpitSettings,
   type CallOptions,
+  withConfirmation,
   type IntegrationHarness,
   type SignedIn,
 } from '../../testing/integration';
@@ -350,7 +351,7 @@ describe('ringkasan kejadian keamanan (banner)', () => {
       harness.app,
       'PUT',
       API_ROUTES.settings.email,
-      mailpitSettings(),
+      await withConfirmation(admin, mailpitSettings()),
       as(admin),
     );
     expect(saved.statusCode).toBe(200);
@@ -378,12 +379,12 @@ describe('ringkasan kejadian keamanan (banner)', () => {
         metadata: { scope: 'source', lockRef: 'abc', lockedUntil: new Date().toISOString() },
       },
     ]);
-    // Perubahan oleh Owner tidak memicu peringatan.
+    // Perubahan jalur kirim oleh Owner juga tercatat (review akhir Fase 1 T2).
     await call(
       harness.app,
       'PUT',
       API_ROUTES.settings.email,
-      mailpitSettings({ port: 2525 }),
+      await withConfirmation(owner, mailpitSettings({ port: 2525 })),
       as(owner),
     );
 
@@ -392,7 +393,7 @@ describe('ringkasan kejadian keamanan (banner)', () => {
     expect(response.body).not.toContain('lockRef');
     const summary = securitySummaryResponseSchema.parse(response.json());
     expect(summary.counts).toMatchObject({
-      email_sender_changed: 1,
+      email_sender_changed: 2,
       two_factor_reset: 1,
       account_locked: 1,
       role_changed: 0,
@@ -401,12 +402,19 @@ describe('ringkasan kejadian keamanan (banner)', () => {
     expect(kinds).toEqual(
       expect.arrayContaining(['email_sender_changed', 'two_factor_reset', 'account_locked']),
     );
-    const sender = summary.events.find((event) => event.kind === 'email_sender_changed');
+    const senders = summary.events.filter((event) => event.kind === 'email_sender_changed');
+    expect(senders.map((event) => [event.actor?.role, event.severity])).toEqual([
+      ['owner', 'warning'],
+      ['admin', 'warning'],
+    ]);
+    const sender = senders.find((event) => event.actor?.role === 'admin');
     expect(sender).toMatchObject({
       severity: 'warning',
       actor: { id: adminUser.id, role: 'admin' },
       details: { host: mailpitSettings().host },
     });
+    // Kunci per email+jaringan (bisa dipicu siapa pun tanpa akun) cukup `info` (review akhir R2).
+    expect(summary.events.find((event) => event.kind === 'account_locked')?.severity).toBe('info');
     const resetEvent = summary.events.find((event) => event.kind === 'two_factor_reset');
     expect(resetEvent?.subject).toEqual({
       id: supervisorUser.id,

@@ -25,7 +25,7 @@ asal → 404 `NOT_FOUND` "Channel tidak ditemukan. Mungkin sudah dihapus."
 |---|---|---|
 | GET `/channels` | – | `channelSummaryListResponseSchema` `{channels: [{id, type, name, enabled, displayPhoneNumber}]}` |
 | GET `/settings/channels` | – | `channelSettingsListResponseSchema` `{channels: WhatsAppChannel[], canStoreSecrets, maxChannels}` |
-| POST `/settings/channels` | `createChannelRequestSchema` `{type:'whatsapp', name, phoneNumberId, wabaId, accessToken, appSecret, confirmation?}` (`confirmation` wajib untuk selain Owner) | **201** `createChannelResponseSchema` `{channel, webhook}` |
+| POST `/settings/channels` | `createChannelRequestSchema` `{type:'whatsapp', name, phoneNumberId, wabaId, accessToken, appSecret, confirmation?}` (`confirmation` wajib untuk semua peran, Owner juga) | **201** `createChannelResponseSchema` `{channel, webhook}` |
 | GET `/settings/channels/:channelId` | – | `channelResponseSchema` `{channel}` |
 | PATCH `/settings/channels/:channelId` | `updateChannelRequestSchema` (isian opsional + `confirmation`) | `{channel}` |
 | DELETE `/settings/channels/:channelId` | `deleteChannelRequestSchema` `{password, code}` | `{status:'deleted'}` |
@@ -75,11 +75,11 @@ Teks tiap langkah dari `SETUP-META.md`. Server tidak menyimpan langkah wizard �
 5. **Langkah 6 — App Secret**: isian *App Secret* (tipe password). Lalu **simpan**:
    `POST /settings/channels`. Error 400 dipetakan ke isian lewat `details[].field` (`name`,
    `phoneNumberId`, `wabaId`, `accessToken`, `appSecret`).
-   - **Selain Owner (Admin) wajib konfirmasi identitas** di langkah simpan: kirim
-     `confirmation: { password, code }` (password + kode autentikator/kode cadangan pelaku), sama
-     seperti ganti kredensial. Tanpa itu → 400 `details[0].field = "confirmation.password"`; salah →
-     400 `confirmation.password` / `confirmation.code`; 429 setelah 5 salah. Owner tidak perlu (isian
-     boleh tidak ditampilkan untuk Owner; kalau dikirim, diabaikan).
+   - **Semua peran wajib konfirmasi identitas, Owner juga** (review akhir Fase 1 S1) di langkah
+     simpan: kirim `confirmation: { password, code }` (password + kode autentikator/kode cadangan
+     pelaku), sama seperti ganti kredensial. Tanpa itu → 400 `details[0].field = "confirmation.password"`
+     "Masukkan password-mu (dan kode verifikasi dua langkah) untuk menambahkan channel."; salah → 400
+     `confirmation.password` / `confirmation.code`; 429 setelah 5 salah.
    - Nama channel (dan semua teks satu baris lain) menolak karakter tak terlihat: kendali C0/C1,
      pemisah baris Unicode, pengubah arah (U+202E, U+2066–U+2069), lebar-nol (U+200B, U+2060), BOM.
      ZWJ untuk emoji tetap boleh. Pesan: "Tidak boleh memuat baris baru atau karakter khusus tak
@@ -125,8 +125,8 @@ Server memakai kredensial TERSIMPAN (tidak menerima isian form), memanggil:
 | `secret_unavailable` | Kredensial tersimpan tak bisa dibuka (master key berubah) | Masukkan ulang token + App Secret |
 | `unknown` | Ditolak tanpa alasan yang dikenali | Coba lagi |
 
-Error HTTP: 404 (channel tidak ada), 429 setelah **10 tes per 5 menit per pengguna** ("Terlalu banyak
-tes koneksi…"). Hasil yang selesai setelah kredensial diganti di tengah jalan tidak mengubah status.
+Error HTTP: 404 (channel tidak ada), 429 setelah **10 tes per 5 menit per pengguna** ("Batas tes koneksi
+(10 kali per 5 menit) sudah tercapai." — tanpa durasi tunggu; hitung mundur dari `Retry-After`). Hasil yang selesai setelah kredensial diganti di tengah jalan tidak mengubah status.
 Satu tes paling lama **±25 detik** (tenggat total semua panggilan Meta-nya); bila Meta terlalu lambat,
 hasilnya `network_error`. Tampilkan indikator proses selama itu.
 
@@ -167,11 +167,12 @@ hasilnya `network_error`. Tampilkan indikator proses selama itu.
 - **GET** wajib header `X-CSRF-Token` (rute ini memakai jatah batas laju dan memanggil Meta, jadi tidak
   boleh terpicu tautan dari situs lain) — panggil lewat `fetch`, bukan membuka URL.
 - `profile`: `{about, address, description, email, websites[], vertical}`; isian kosong = `null`/`[]`.
-- **PUT oleh selain Owner yang mengubah `websites` atau `email`** (termasuk mengosongkannya) wajib
+- **PUT yang mengubah `websites` atau `email`** (termasuk mengosongkannya), oleh peran apa pun — Owner
+  juga sejak review akhir Fase 1 S1 — wajib
   `confirmation: { password, code }` di body yang sama (`BUSINESS_PROFILE_CONFIRMED_FIELDS`): tanpa itu →
   400 `confirmation.password`, salah → 400 `confirmation.password`/`confirmation.code`, 429 setelah 5
-  salah. Isian lain (Info, alamat, deskripsi, kategori) tidak butuh konfirmasi. Owner tidak pernah
-  butuh. Profil bisnis tampil ke semua pelanggan, jadi tautan/email di sana bisa dipakai menipu.
+  salah. Isian lain (Info, alamat, deskripsi, kategori) tidak butuh konfirmasi. Profil bisnis tampil
+  ke semua pelanggan, jadi tautan/email di sana bisa dipakai menipu.
 - Server membaca profil lama dulu (dicatat di audit), lalu mengirim perubahan, lalu membaca ulang.
   Bila profil lama tidak bisa dibaca → 502 dan tidak ada yang diubah. Satu PUT paling lama ±25 detik.
 - **PUT**: kirim hanya isian yang diubah. `""`/`[]` = kosongkan di Meta. Batas (aturan Meta,
@@ -186,15 +187,18 @@ hasilnya `network_error`. Tampilkan indikator proses selama itu.
 - Error: 400 per isian; **502 `META_REQUEST_FAILED`** dengan `message` Indonesia yang menjelaskan
   penyebab + solusi (token kedaluwarsa, izin kurang, nomor tidak ditemukan, dsb.; `Retry-After` bila
   Meta membatasi laju); 503 bila kredensial tak bisa dibuka atau (oleh selain Owner) pemberitahuan ke
-  Owner tidak bisa diantrekan; 429 setelah **30 permintaan profil per 5 menit per pengguna**.
+  Owner tidak bisa diantrekan; 429 setelah **30 permintaan profil per 5 menit per pengguna** ("Batas permintaan profil bisnis
+  (30 kali per 5 menit) sudah tercapai.", hitung mundur dari `Retry-After`).
 
-## Pemberitahuan ke Owner (perubahan oleh selain Owner)
+## Pemberitahuan ke Owner & ringkasan keamanan
 
 Bila **Admin** (siapa pun selain Owner) melakukan salah satu perubahan di bawah, **semua Owner aktif**
 menerima email (nama produk dari branding; isi: pelaku + perannya, channel, apa yang berubah, waktu,
 IP, perangkat — tanpa nilai rahasia apa pun), dan kejadiannya muncul di ringkasan keamanan
 (`GET /audit-logs/security-summary`, banner Owner/Admin) sebagai **`channel_changed` (`warning`)**,
-atau **`business_profile_changed` (`warning`)** untuk profil bisnis.
+atau **`business_profile_changed` (`warning`)** untuk profil bisnis. Perubahan yang sama oleh **Owner**
+tidak dikirim lewat email, tetapi sejak review akhir Fase 1 tetap muncul di ringkasan keamanan dengan
+`severity: "info"`.
 
 | Perubahan (`change`) | Pemicu |
 |---|---|
@@ -206,8 +210,8 @@ atau **`business_profile_changed` (`warning`)** untuk profil bisnis.
 | `deleted` | `DELETE …/:channelId` |
 | `business_profile_changed` | `PUT …/business-profile` (isian apa pun). Email memuat nilai lama → baru sebagai teks yang "dijinakkan" (`https[:]//contoh[.]com`), bukan tautan. Kejadian ringkasan keamanan: `business_profile_changed` |
 
-- **Tidak** diberitahukan: ganti nama saja, tes koneksi, dan semua perubahan oleh Owner (tetap
-  tercatat di audit seperti biasa).
+- **Tidak** diberitahukan lewat email: ganti nama saja, tes koneksi, dan perubahan oleh Owner (Owner:
+  kejadian `info` di ringkasan keamanan; ganti nama saja dan tes koneksi: hanya audit).
 - Profil bisnis: audit + antrean dicatat sebelum perubahan dikirim ke Meta; email baru dikirim ±30 detik
   kemudian, dan dilewati bila Meta menolak perubahan itu (baris audit
   `channel.business_profile_update_failed`). Kejadian di ringkasan keamanan tetap muncul (percobaan
@@ -220,14 +224,14 @@ atau **`business_profile_changed` (`warning`)** untuk profil bisnis.
 - Rincian kejadian di ringkasan keamanan (`details`): `change`, `name`, `phoneNumberId`,
   `actorRole`, dan untuk `credentials_changed` juga `changedFields` (teks JSON nama isian, mis.
   `'["phoneNumberId","accessToken"]'`). `subject` selalu `null`; `actor` = pelakunya. Label:
-  `SECURITY_EVENT_LABELS.channel_changed` ("Channel diubah oleh selain Owner"), label tiap perubahan
+  `SECURITY_EVENT_LABELS.channel_changed` ("Channel diubah"), label tiap perubahan
   `CHANNEL_CHANGE_LABELS`, label isian `CHANNEL_CREDENTIAL_FIELD_LABELS`. `channel_changed` mencakup
   enam aksi audit (`CHANNEL_CHANGE_AUDIT_ACTIONS` selain profil bisnis), jadi tautan dari banner cukup
   memakai saringan `targetType=channel` + tanggal.
 - `business_profile_changed`: `details` = `name`, `phoneNumberId`, `changedFields` (teks JSON, mis.
   `'["websites"]'`, label `BUSINESS_PROFILE_FIELD_LABELS`), `actorRole`. Nilai lama/baru ada di Audit
   log (aksi `channel.business_profile_updated`). Label `SECURITY_EVENT_LABELS.business_profile_changed`
-  ("Profil bisnis WhatsApp diubah oleh selain Owner").
+  ("Profil bisnis WhatsApp diubah").
 - `counts` di ringkasan keamanan selalu memuat kunci `channel_changed` dan `business_profile_changed`
   (rekaman/mock respons harus ikut memuatnya — skema `counts` lengkap per jenis).
 
@@ -261,3 +265,15 @@ saja hanya memuat `actorRole`.
   NODE_ENV development/test.
 - Menambah channel dibatasi 20 per organisasi; pembuatan bersamaan diurutkan dengan kunci per
   organisasi (tidak bisa melewati batas).
+
+## Perubahan review keamanan akhir Fase 1 (S1, R3)
+
+- `POST /settings/channels` dan `PUT …/business-profile` yang mengubah `websites`/`email` kini wajib
+  `confirmation` untuk **Owner juga** (sebelumnya hanya selain Owner). Error sama: 400
+  `confirmation.password` / `confirmation.code`, 429 setelah 5 salah.
+- `channel_changed` dan `business_profile_changed` di ringkasan keamanan kini juga mencakup perubahan oleh
+  Owner (`severity: "info"`; oleh selain Owner tetap `warning`).
+- Semua aksi tulis channel (buat, ubah, nonaktifkan/aktifkan, hapus, buat ulang verify token, profil
+  bisnis) memeriksa ulang pelaku di transaksi terakhir: akun dinonaktifkan / sesi dicabut di tengah jalan
+  → 401 `UNAUTHENTICATED`; peran tidak lagi memegang `channels.manage` → 403 `FORBIDDEN` "Wewenangmu baru
+  saja berubah, jadi perubahan ini tidak disimpan. Muat ulang halaman untuk melihat aksesmu sekarang."

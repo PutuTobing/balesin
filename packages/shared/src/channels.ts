@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { AUDIT_ACTIONS, type AuditAction } from './audit';
 import { hasControlCharacters, isoDateTimeSchema, singleLineText } from './fields';
-import { identityConfirmationSchema } from './team';
+import { identityConfirmationSchema } from './identity';
 
 /**
  * Channel (PRD §3.2, docs/PENGATURAN-UI.md §3, docs/SETUP-META.md) — kontrak API untuk wizard

@@ -34,6 +34,7 @@ import {
   freshTotpCode,
   login,
   mailpitSettings,
+  withConfirmation,
   type IntegrationHarness,
   type SignedIn,
 } from './testing/integration';
@@ -220,7 +221,7 @@ describe('penjaga: R3 tidak bisa dipotong lewat atur ulang password', () => {
       harness.app,
       'PUT',
       API_ROUTES.settings.email,
-      mailpitSettings(),
+      await withConfirmation(owner, mailpitSettings()),
       as(owner),
     );
     expect(saved.statusCode).toBe(200);

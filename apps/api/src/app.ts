@@ -180,6 +180,15 @@ export async function buildApp(deps: AppDeps) {
   const redisPrefix = deps.overrides?.rateLimitPrefix ?? 'balesin';
   const limiter = createRateLimiter(deps.redis, { prefix: redisPrefix });
   const secretBox = config.masterKey ? createSecretBox(config.masterKey) : null;
+  const twoFactor = createTwoFactorService({
+    db,
+    secretBox,
+    hasher,
+    limiter,
+    notifier: deps.notifier,
+    sessions,
+    devices,
+  });
   const emailSettings = createEmailSettingsService({
     db,
     secretBox,
@@ -190,15 +199,7 @@ export async function buildApp(deps: AppDeps) {
     dns: deps.overrides?.mailDns,
     timeouts: deps.overrides?.smtpTimeouts,
     notifier: deps.notifier,
-  });
-  const twoFactor = createTwoFactorService({
-    db,
-    secretBox,
-    hasher,
-    limiter,
-    notifier: deps.notifier,
-    sessions,
-    devices,
+    twoFactor,
   });
   const auth = createAuthService({
     db,
@@ -236,6 +237,7 @@ export async function buildApp(deps: AppDeps) {
     devices,
     delivery,
     accessDenied,
+    twoFactor,
   });
   const passwordReset = createPasswordResetService({
     db,
@@ -320,7 +322,12 @@ export async function buildApp(deps: AppDeps) {
   await app.register(authRoutes, { auth, cookieSecure: config.cookieSecure });
   await app.register(twoFactorRoutes, { twoFactor, cookieSecure: config.cookieSecure });
   await app.register(brandingRoutes, { db });
-  await app.register(emailSettingsRoutes, { emailSettings, templatePreview, limiter });
+  await app.register(emailSettingsRoutes, {
+    emailSettings,
+    templatePreview,
+    limiter,
+    cookieSecure: config.cookieSecure,
+  });
   await app.register(invitationRoutes, { invitations, cookieSecure: config.cookieSecure });
   await app.register(passwordResetRoutes, { passwordReset, cookieSecure: config.cookieSecure });
   await app.register(emailVerificationRoutes, { emailVerification });

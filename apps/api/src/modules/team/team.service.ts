@@ -606,7 +606,7 @@ export function createTeamService(deps: TeamServiceDeps): TeamService {
       if (target.totpEnabledAt === null) {
         throw conflict(
           isTwoFactorRequired(target.role)
-            ? `${target.name} belum mendaftarkan verifikasi dua langkah. Kalau batas waktunya sudah lewat, pakai "Buka lagi pendaftaran 2FA".`
+            ? `${target.name} belum mendaftarkan verifikasi dua langkah. Kalau batas waktunya sudah lewat, pakai "Buka lagi pendaftaran".`
             : `${target.name} belum mengaktifkan verifikasi dua langkah.`,
         );
       }

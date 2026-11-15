@@ -13,7 +13,7 @@ import {
   type UserRole,
 } from '@balesin/shared';
 import { alias } from 'drizzle-orm/pg-core';
-import { and, desc, eq, isNull, notInArray, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 
 /**
  * Query undangan. Semua query memfilter `organization_id`, kecuali pencarian berdasarkan hash
@@ -177,6 +177,8 @@ export async function insertInvitation(
     deliveryStatus: EmailDeliveryStatus;
     deliveryTokenEncrypted: string | null;
     actorUserId: string;
+    /** Sesi penerbit (lihat `issuedSessionId`). */
+    sessionRef: string;
   },
 ): Promise<UserInvitation> {
   const [row] = await db
@@ -192,6 +194,7 @@ export async function insertInvitation(
       deliveryTokenEncrypted: input.deliveryTokenEncrypted,
       invitedByUserId: input.actorUserId,
       lastSentByUserId: input.actorUserId,
+      issuedSessionId: input.sessionRef,
     })
     .returning();
   if (!row) throw new Error('Undangan tidak tersimpan');
@@ -213,6 +216,7 @@ export async function reissueInvitation(
     deliveryStatus: EmailDeliveryStatus;
     deliveryTokenEncrypted: string | null;
     actorUserId: string;
+    sessionRef: string;
   },
 ): Promise<UserInvitation | undefined> {
   const [row] = await db
@@ -226,6 +230,7 @@ export async function reissueInvitation(
       deliveredAt: null,
       deliveryTokenEncrypted: input.deliveryTokenEncrypted,
       lastSentByUserId: input.actorUserId,
+      issuedSessionId: input.sessionRef,
     })
     .where(
       and(
@@ -291,6 +296,32 @@ export async function revokeInvitationsIssuedBy(
   return rows;
 }
 
+/**
+ * Membatalkan undangan terbuka yang tokennya diterbitkan dari salah satu sesi `sessionIds` (sesi itu
+ * baru saja dicabut paksa). `revokedByUserId` = pemilik sesi (penerbitnya sendiri). Mengembalikan
+ * undangan yang dibatalkan.
+ */
+export async function revokeInvitationsIssuedFromSessions(
+  db: DbExecutor,
+  organizationId: string,
+  issuerUserId: string,
+  sessionIds: readonly string[],
+): Promise<Array<{ id: string; role: UserRole }>> {
+  if (sessionIds.length === 0) return [];
+  return db
+    .update(userInvitations)
+    .set({ revokedAt: sql`now()`, revokedByUserId: issuerUserId, deliveryTokenEncrypted: null })
+    .where(
+      and(
+        eq(userInvitations.organizationId, organizationId),
+        eq(userInvitations.lastSentByUserId, issuerUserId),
+        inArray(userInvitations.issuedSessionId, [...sessionIds]),
+        openOnly(),
+      ),
+    )
+    .returning({ id: userInvitations.id, role: userInvitations.role });
+}
+
 /** Pengantrean email gagal: tandai gagal dan buang salinan token (generasi token ini saja). */
 export async function markInvitationUndelivered(
   db: DbExecutor,
@@ -327,6 +358,8 @@ export interface InvitationByToken {
    */
   state: 'open' | 'accepted' | 'revoked' | 'expired' | 'inviter_unavailable';
   inviterName: string;
+  /** Penerbit token yang berlaku sekarang (pembuat / pengirim ulang terakhir). */
+  issuer: { id: string; role: UserRole };
   organization: { id: string; name: string; timezone: string; productName: string | null };
 }
 
@@ -346,6 +379,7 @@ export async function findInvitationByTokenHash(
       revoked: sql<boolean>`${userInvitations.revokedAt} is not null`,
       expired: sql<boolean>`${userInvitations.expiresAt} <= now()`,
       inviterName: inviter.name,
+      senderId: lastSender.id,
       senderRole: lastSender.role,
       senderDisabledAt: lastSender.disabledAt,
       organizationName: organizations.name,
@@ -386,6 +420,7 @@ export async function findInvitationByTokenHash(
             ? 'expired'
             : 'open',
     inviterName: row.inviterName,
+    issuer: { id: row.senderId, role: row.senderRole },
     organization: {
       id: row.organizationId,
       name: row.organizationName,

@@ -204,15 +204,14 @@ export async function revokeSession(
 
 /**
  * Mencabut semua sesi aktif seorang pengguna, kecuali `exceptSessionId` bila diberikan.
- * Dipakai saat password/peran berubah atau akun dinonaktifkan. Mengembalikan jumlah sesi
- * yang dicabut.
+ * Dipakai saat password/peran berubah atau akun dinonaktifkan. Mengembalikan ID sesi yang dicabut.
  */
 export async function revokeUserSessions(
   db: DbExecutor,
   organizationId: string,
   userId: string,
   exceptSessionId?: string,
-): Promise<number> {
+): Promise<string[]> {
   const rows = await db
     .update(userSessions)
     .set({ revokedAt: sql`now()` })
@@ -225,7 +224,7 @@ export async function revokeUserSessions(
       ),
     )
     .returning({ id: userSessions.id });
-  return rows.length;
+  return rows.map((row) => row.id);
 }
 
 /** Satu sesi yang masih berlaku, untuk daftar "sesi aktif" (tanpa token/hash). */

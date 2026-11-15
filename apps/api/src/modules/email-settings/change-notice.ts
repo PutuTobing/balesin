@@ -12,19 +12,21 @@ import type { EmailNotifier } from '../../queues/email-queue';
 import type { EmailSettingsValues } from './email-settings.repo';
 
 /**
- * Pemberitahuan ke semua Owner saat email pengirim diubah pengguna SELAIN Owner (review keamanan
- * RBAC S1). Admin memegang `settings.email.manage`; sesi Admin yang dibobol bisa mengganti server
- * SMTP ke milik penyerang lalu membaca tautan atur ulang password CS/Teknisi, undangan Admin buatan
- * Owner, dan menelan pemberitahuan keamanan ke Owner.
+ * Pemberitahuan ke semua Owner aktif saat jalur kirim email pengirim berubah (review keamanan RBAC
+ * S1; review akhir Fase 1 T2). Sesi Owner/Admin yang dibobol bisa mengganti server SMTP ke milik
+ * penyerang lalu membaca tautan atur ulang password CS/Teknisi, undangan, dan menelan pemberitahuan
+ * keamanan ke Owner.
  *
  * - Pemicu: sambungan (host, port, keamanan, username, password) ATAU alamat pengirim/balas-ke
- *   berubah, oleh peran selain Owner. Perubahan nama pengirim saja tidak.
+ *   berubah, oleh SIAPA PUN (Owner juga). Perubahan nama pengirim saja tidak.
+ * - Penerima: semua Owner aktif, TERMASUK pelakunya sendiri — bila cookie Owner dicuri, email ke
+ *   kotak masuk Owner yang asli (lewat pengaturan lama) adalah satu-satunya sinyal yang tidak bisa
+ *   dibelokkan penyerang.
  * - Dikirim lewat pengaturan SEBELUM perubahan: salinannya (termasuk teks sandi password apa adanya)
  *   disimpan di `email_settings_change_notices`, worker mengirim lewat salinan itu.
  * - Dijalankan DI DALAM transaksi penyimpanan dan diantrekan sebelum commit: bila pemberitahuan tidak
  *   bisa diantrekan, perubahannya ikut batal (503). Worker yang mengambil job sebelum commit akan
  *   mengulang (baris belum terlihat).
- * - Owner tidak memberi tahu dirinya sendiri; perubahan Owner tetap tercatat di audit seperti biasa.
  */
 
 /** Perubahan yang mengubah KE MANA dan LEWAT MANA email keamanan dikirim. */
@@ -77,7 +79,6 @@ export async function queueOwnerChangeNotices(
   notifier: EmailNotifier,
   input: ChangeNoticeInput,
 ): Promise<number> {
-  if (input.actor.role === 'owner') return 0;
   const owners = await findActiveOwnerIds(tx, input.organizationId);
   if (owners.length === 0) return 0;
 

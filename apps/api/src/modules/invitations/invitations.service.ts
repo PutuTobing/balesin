@@ -1,5 +1,12 @@
 import { AppError, sha256Hex } from '@balesin/core';
-import { PG_ERROR_CODES, isPgError, newId, users, type Database } from '@balesin/db';
+import {
+  PG_ERROR_CODES,
+  isPgError,
+  newId,
+  users,
+  type Database,
+  type DbExecutor,
+} from '@balesin/db';
 import {
   DEFAULT_PRODUCT_NAME,
   INVITE_PERMISSIONS,
@@ -8,6 +15,7 @@ import {
   isTwoFactorRequired,
   type AcceptInvitationRequest,
   type CreateInvitationRequest,
+  type IdentityConfirmation,
   type EmailDeliveryStatus,
   type InspectInvitationResponse,
   type Invitation,
@@ -15,7 +23,7 @@ import {
   type InvitationListResponse,
   type UserRole,
 } from '@balesin/shared';
-import { sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 
 import { ipRateLimitKey, type ClientInfo } from '../../http/client-info';
@@ -35,11 +43,14 @@ import {
 } from '../account-tokens/token-delivery';
 import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
 import { ACCESS_RULES, forbidByRule, type AccessDeniedRecorder } from '../auth/access-denied';
+import { assertActorStillAuthorized, authorityChanged } from '../auth/actor-check';
 import type { PasswordHasher } from '../auth/password-hasher';
 import { checkPassword } from '../auth/password-policy';
 import { findActiveSession } from '../auth/session.repo';
 import type { AuthContext, IssuedSession, SessionService } from '../auth/session.service';
 import type { TrustedDevices } from '../auth/trusted-device';
+import { requireIdentityConfirmation } from '../two-factor/require-confirmation';
+import type { TwoFactorService } from '../two-factor/two-factor.service';
 import { enrollmentDueAtValue } from '../two-factor/enrollment-window';
 import {
   findInvitationByTokenHash,
@@ -73,6 +84,8 @@ import {
 export interface InvitationContext {
   client: ClientInfo;
   log: FastifyBaseLogger;
+  /** Cookie "perangkat dikenal" (ember batas laju konfirmasi identitas). */
+  presentedDeviceToken?: string;
 }
 
 export interface AcceptContext extends InvitationContext {
@@ -95,6 +108,7 @@ export interface InvitationService {
   resend(
     auth: AuthContext,
     invitationId: string,
+    confirmation: IdentityConfirmation | undefined,
     context: InvitationContext,
   ): Promise<InvitationIssuedResponse>;
   revoke(auth: AuthContext, invitationId: string, context: InvitationContext): Promise<void>;
@@ -113,6 +127,8 @@ export interface InvitationServiceDeps {
   delivery: TokenDelivery;
   /** Audit penolakan aturan turunan (Admin + undangan Admin), lihat `forbidByRule`. */
   accessDenied: AccessDeniedRecorder;
+  /** Konfirmasi ulang identitas pembuat/pengirim ulang undangan (review akhir Fase 1 T1). */
+  twoFactor: Pick<TwoFactorService, 'confirmIdentity'>;
 }
 
 /** Undangan dibuat/dikirim ulang per pengundang. */
@@ -170,6 +186,73 @@ function forbiddenRoleMessage(actor: UserRole): string {
 
 export function createInvitationService(deps: InvitationServiceDeps): InvitationService {
   const { db, appUrl, hasher, limiter, notifier, sessions, devices, delivery, accessDenied } = deps;
+  const { twoFactor } = deps;
+
+  /**
+   * Konfirmasi ulang identitas untuk SEMUA pelaku, Owner juga: undangan memberi akses menetap, jadi
+   * cookie sesi curian saja tidak boleh cukup (review akhir Fase 1 T1). Sebelum kuota terpakai.
+   */
+  async function confirmIssuer(
+    auth: AuthContext,
+    confirmation: IdentityConfirmation | undefined,
+    action: 'invitation.create' | 'invitation.resend',
+    context: InvitationContext,
+  ): Promise<void> {
+    await requireIdentityConfirmation(
+      twoFactor,
+      auth,
+      confirmation,
+      action,
+      context,
+      'Masukkan password-mu (dan kode verifikasi dua langkah) untuk mengirim undangan.',
+    );
+  }
+
+  /** Di transaksi tulis: pelaku masih aktif, sesinya hidup, dan masih boleh mengundang peran ini. */
+  async function assertStillIssuer(tx: DbExecutor, auth: AuthContext, role: UserRole) {
+    const { role: currentRole } = await assertActorStillAuthorized(tx, auth, 'team.invite');
+    if (!canInviteRole(currentRole, role))
+      throw authorityChanged(forbiddenRoleMessage(currentRole));
+  }
+
+  /**
+   * Undangan diterima → email ke semua Owner aktif (semua peran; review akhir Fase 1 T1). Setelah
+   * commit, tanpa menggagalkan penerimaan: kejadiannya tetap tampil di ringkasan keamanan.
+   */
+  function notifyOwnersOfNewMember(
+    organizationId: string,
+    newUserId: string,
+    issuerUserId: string,
+    auditLogId: string,
+    log: FastifyBaseLogger,
+  ): void {
+    const occurredAt = new Date().toISOString();
+    void (async () => {
+      const owners = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(
+          and(
+            eq(users.organizationId, organizationId),
+            eq(users.role, 'owner'),
+            isNull(users.disabledAt),
+          ),
+        );
+      for (const owner of owners) {
+        await notifier.securityNoticeAdmin({
+          organizationId,
+          recipientUserId: owner.id,
+          subjectUserId: newUserId,
+          event: 'member_joined',
+          occurredAt,
+          auditLogId,
+          actorUserId: issuerUserId,
+        });
+      }
+    })().catch((err: unknown) => {
+      log.warn({ err, userId: newUserId }, 'Gagal mengantre email anggota baru ke Owner');
+    });
+  }
 
   /** 403 aturan turunan + audit `auth.access.denied` (pola wajib, `access-denied.ts`). */
   function forbidRole(
@@ -289,6 +372,7 @@ export function createInvitationService(deps: InvitationServiceDeps): Invitation
       if (existing && !canInviteRole(auth.user.role, existing.role)) {
         await forbidRole(auth, 'replace', existing.role, context.client);
       }
+      await confirmIssuer(auth, input.confirmation, 'invitation.create', context);
       await consumeInviteQuota(auth, input.email);
 
       if (await isEmailRegistered(db, organizationId, input.email)) {
@@ -313,6 +397,7 @@ export function createInvitationService(deps: InvitationServiceDeps): Invitation
 
       try {
         await db.transaction(async (tx) => {
+          await assertStillIssuer(tx, auth, input.role);
           // Undangan lama yang sudah kedaluwarsa untuk email yang sama diganti (dibatalkan).
           if (existing) {
             await revokeInvitation(tx, organizationId, existing.id, auth.user.id);
@@ -337,6 +422,7 @@ export function createInvitationService(deps: InvitationServiceDeps): Invitation
               ? delivery.sealInvitationToken(organizationId, invitationId, 1, token)
               : null,
             actorUserId: auth.user.id,
+            sessionRef: auth.sessionRef,
           });
           await recordAudit(tx, {
             organizationId,
@@ -382,13 +468,14 @@ export function createInvitationService(deps: InvitationServiceDeps): Invitation
       };
     },
 
-    async resend(auth, invitationId, context) {
+    async resend(auth, invitationId, confirmation, context) {
       const organizationId = auth.organizationId;
       const current = await findOpenInvitation(db, organizationId, invitationId);
       if (!current) throw new AppError('NOT_FOUND', { message: NOT_FOUND_MESSAGE });
       if (!canInviteRole(auth.user.role, current.role)) {
         await forbidRole(auth, 'resend', current.role, context.client);
       }
+      await confirmIssuer(auth, confirmation, 'invitation.resend', context);
       await consumeInviteQuota(auth, current.email);
 
       const emailAvailable = await delivery.emailAvailable(db, organizationId);
@@ -397,6 +484,7 @@ export function createInvitationService(deps: InvitationServiceDeps): Invitation
       const deliveryStatus: EmailDeliveryStatus = emailAvailable ? 'queued' : 'link';
 
       await db.transaction(async (tx) => {
+        await assertStillIssuer(tx, auth, current.role);
         const updated = await reissueInvitation(tx, {
           organizationId,
           invitationId,
@@ -407,6 +495,7 @@ export function createInvitationService(deps: InvitationServiceDeps): Invitation
             ? delivery.sealInvitationToken(organizationId, invitationId, sendCount, token)
             : null,
           actorUserId: auth.user.id,
+          sessionRef: auth.sessionRef,
         });
         if (!updated) {
           throw new AppError('CONFLICT', {
@@ -508,6 +597,7 @@ export function createInvitationService(deps: InvitationServiceDeps): Invitation
       const emailVerified = row.deliveryStatus === 'sent';
 
       let issued: IssuedSession;
+      let acceptedAuditLogId = '';
       try {
         issued = await db.transaction(async (tx) => {
           const [user] = await tx
@@ -535,13 +625,20 @@ export function createInvitationService(deps: InvitationServiceDeps): Invitation
           if (!marked) throw invalidFor('unknown');
           if (previous) await sessions.revoke(tx, previous.organizationId, previous.id);
 
-          await recordAudit(tx, {
+          acceptedAuditLogId = await recordAudit(tx, {
             organizationId: organization.id,
             actorUserId: user.id,
             action: AUDIT_ACTIONS.invitationAccepted,
             targetType: 'invitation',
             targetId: row.id,
-            metadata: { userRef: user.id, role: user.role, emailVerified },
+            metadata: {
+              userRef: user.id,
+              role: user.role,
+              emailVerified,
+              // Kejadian `member_joined` di ringkasan keamanan + email ke semua Owner.
+              issuerRef: row.issuer.id,
+              issuerRole: row.issuer.role,
+            },
             client: context.client,
           });
           const session = await sessions.issue(tx, {
@@ -582,6 +679,13 @@ export function createInvitationService(deps: InvitationServiceDeps): Invitation
         throw error;
       }
 
+      notifyOwnersOfNewMember(
+        organization.id,
+        issued.auth.user.id,
+        row.issuer.id,
+        acceptedAuditLogId,
+        context.log,
+      );
       return {
         ...issued,
         // Cookie perangkat dikenal hanya setelah SEMUA langkah masuk selesai (peran wajib 2FA:

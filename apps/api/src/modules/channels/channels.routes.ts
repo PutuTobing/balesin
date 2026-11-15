@@ -56,10 +56,11 @@ export const CHANNEL_META_RULE: RateLimitRule = {
   windowSeconds: 300,
 };
 
-const testLimitMessage = (wait: string) =>
-  `Terlalu banyak tes koneksi dalam waktu singkat. Coba lagi dalam ${wait}.`;
-const metaLimitMessage = (wait: string) =>
-  `Terlalu banyak permintaan profil bisnis dalam waktu singkat. Coba lagi dalam ${wait}.`;
+// Tanpa durasi tunggu: web menampilkan hitung mundur dari `Retry-After`.
+const testLimitMessage = () =>
+  `Batas tes koneksi (${CHANNEL_TEST_RULE.limit} kali per 5 menit) sudah tercapai.`;
+const metaLimitMessage = () =>
+  `Batas permintaan profil bisnis (${CHANNEL_META_RULE.limit} kali per 5 menit) sudah tercapai.`;
 
 /** Body terbesar: token System User (≤ 4 KB) + konfirmasi identitas. */
 const BODY_LIMIT_BYTES = 16 * 1024;

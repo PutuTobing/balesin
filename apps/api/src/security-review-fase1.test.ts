@@ -31,6 +31,7 @@ import {
   mailpitSettings,
   OWNER,
   setCookies,
+  withConfirmation,
   type IntegrationHarness,
   type SignedIn,
 } from './testing/integration';
@@ -135,10 +136,13 @@ describe('RBAC email pengirim: peran selain Owner/Admin ditolak di server (model
 
 describe('password SMTP tersimpan tidak bisa dibelokkan ke host lain', () => {
   beforeEach(async () => {
-    const saved = await call(harness.app, 'PUT', API_ROUTES.settings.email, mailpitSettings(), {
-      cookie: owner.cookie,
-      csrf: owner.csrf,
-    });
+    const saved = await call(
+      harness.app,
+      'PUT',
+      API_ROUTES.settings.email,
+      await withConfirmation(owner, mailpitSettings()),
+      { cookie: owner.cookie, csrf: owner.csrf },
+    );
     expect(saved.statusCode).toBe(200);
   });
 

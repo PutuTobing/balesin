@@ -126,6 +126,7 @@ export async function createIntegrationHarness(
       await database.reset();
       if (redis) await deleteRedisKeys(redis, rateLimitPrefix);
       totpSecrets.clear();
+      knownPasswords.clear();
       if (built) {
         await built.app.backgroundTasks.drain();
         built.lockedNotifications.length = 0;
@@ -283,6 +284,8 @@ export interface SignedInWithTwoFactor extends SignedIn {
 // sesungguhnya diuji langsung di `two-factor.integration.test.ts` tanpa helper ini.
 
 const totpSecrets = new Map<string, string>();
+/** Password pengguna yang pernah masuk/setup lewat helper (untuk `confirmationOf`). */
+const knownPasswords = new Map<string, string>();
 let activeDb: Database | undefined;
 
 /** Rahasia TOTP yang tercatat untuk email ini (didaftarkan lewat helper). */
@@ -299,6 +302,36 @@ export async function freshTotpCode(email: string): Promise<string> {
     await activeDb.update(users).set({ totpLastUsedStep: null }).where(eq(users.email, email));
   }
   return generateTotp(secret);
+}
+
+/**
+ * Konfirmasi ulang identitas (`{ password, code }`) untuk pengguna yang 2FA-nya didaftarkan lewat
+ * helper — dipakai body aksi yang wajib konfirmasi (undangan, email pengirim, channel, …).
+ */
+export async function confirmationFor(
+  credentials: { email: string; password: string } = OWNER,
+): Promise<{ password: string; code?: string }> {
+  return totpSecrets.has(credentials.email)
+    ? { password: credentials.password, code: await freshTotpCode(credentials.email) }
+    : { password: credentials.password };
+}
+
+/** Konfirmasi identitas milik pemegang sesi `signed` (password dicatat saat masuk lewat helper). */
+export async function confirmationOf(signed: {
+  session: { user: { email: string } };
+}): Promise<{ password: string; code?: string }> {
+  const email = signed.session.user.email;
+  const password = knownPasswords.get(email);
+  if (password === undefined) throw new Error(`Password ${email} tidak tercatat di helper tes`);
+  return confirmationFor({ email, password });
+}
+
+/** `body` + `confirmation` pemegang sesi `signed`. */
+export async function withConfirmation<T extends object>(
+  signed: { session: { user: { email: string } } },
+  body: T,
+): Promise<T & { confirmation: { password: string; code?: string } }> {
+  return { ...body, confirmation: await confirmationOf(signed) };
 }
 
 function enrollmentSignedIn(response: InjectResponse): EnrollmentSignedIn {
@@ -359,6 +392,8 @@ export async function completeSetupWithoutTwoFactor(
   app: App,
   overrides: Partial<CompleteSetupRequest> = {},
 ): Promise<EnrollmentSignedIn> {
+  const owner = setupBody(overrides).owner;
+  knownPasswords.set(owner.email, owner.password);
   const response = await call(app, 'POST', API_ROUTES.setup.complete, setupBody(overrides));
   if (response.statusCode !== 201) {
     throw new Error(`Setup gagal (${response.statusCode}): ${response.body}`);
@@ -403,6 +438,7 @@ export async function loginResponse(
   credentials: { email: string; password: string } = OWNER,
   options: CallOptions = {},
 ): Promise<InjectResponse> {
+  knownPasswords.set(credentials.email, credentials.password);
   const { response, body } = await startLogin(app, credentials, options);
   if (body.status !== 'two_factor_required') return response;
   const verify = await call(

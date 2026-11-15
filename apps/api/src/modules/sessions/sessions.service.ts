@@ -6,6 +6,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import type { ClientInfo } from '../../http/client-info';
 import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
 import { listActiveSessions, revokeSessionOfUser } from '../auth/session.repo';
+import { revokeInvitationsFromRevokedSessions } from '../invitations/session-revocation';
 import type { AuthContext, SessionService } from '../auth/session.service';
 import { deleteChallenges } from '../two-factor/two-factor.repo';
 import type { TwoFactorService } from '../two-factor/two-factor.service';
@@ -94,6 +95,10 @@ export function createOwnSessionsService(deps: {
         if (!(await revokeSessionOfUser(tx, auth.organizationId, auth.user.id, sessionId))) {
           throw new AppError('NOT_FOUND', { message: SESSION_NOT_FOUND_MESSAGE });
         }
+        // Sesi lain dikeluarkan pemiliknya (mis. dicurigai dicuri): undangannya ikut batal (T1).
+        await revokeInvitationsFromRevokedSessions(tx, auth.organizationId, auth.user.id, [
+          sessionId,
+        ]);
         await recordAudit(tx, {
           organizationId: auth.organizationId,
           actorUserId: auth.user.id,
@@ -119,11 +124,13 @@ export function createOwnSessionsService(deps: {
         context,
       );
       const revoked = await db.transaction(async (tx) => {
+        // Sesi lain dikeluarkan (mis. cookie dicurigai dicuri): undangan terbitannya ikut batal (T1).
         const count = await sessions.revokeAllForUser(
           tx,
           auth.organizationId,
           auth.user.id,
           auth.sessionRef,
+          { cancelIssuedInvitations: true },
         );
         await deleteChallenges(tx, auth.organizationId, auth.user.id);
         await recordAudit(tx, {

@@ -56,6 +56,13 @@ export const userInvitations = pgTable(
     deliveryTokenEncrypted: text('delivery_token_encrypted'),
     invitedByUserId: uuid('invited_by_user_id').notNull(),
     lastSentByUserId: uuid('last_sent_by_user_id').notNull(),
+    /**
+     * Sesi yang menerbitkan token yang berlaku sekarang (dibuat/dikirim ulang terakhir). Bila sesi
+     * itu dicabut paksa (keluarkan semua sesi, atur ulang/ganti password, aksi Owner/Admin), undangan
+     * terbuka ini ikut dibatalkan — cookie curian tidak meninggalkan akses menetap (review akhir
+     * Fase 1 T1). `null` untuk baris lama.
+     */
+    issuedSessionId: uuid('issued_session_id'),
     acceptedAt: timestamptz('accepted_at'),
     acceptedUserId: uuid('accepted_user_id'),
     revokedAt: timestamptz('revoked_at'),

@@ -14,6 +14,7 @@ import {
 import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod';
 
 import { clientInfo } from '../../http/client-info';
+import { readDeviceToken } from '../../http/cookies';
 import { enforceRateLimit, type RateLimitRule, type RateLimiter } from '../../http/rate-limit';
 import { requirePermission } from '../../http/route-access';
 import { requireAuth } from '../auth/auth.hook';
@@ -24,6 +25,7 @@ export interface EmailSettingsRoutesOptions {
   emailSettings: EmailSettingsService;
   templatePreview: EmailTemplatePreview;
   limiter: RateLimiter;
+  cookieSecure: boolean;
 }
 
 /**
@@ -41,10 +43,11 @@ export const EMAIL_DETECT_RULE: RateLimitRule = {
   windowSeconds: 300,
 };
 
-export const emailTestLimitMessage = (wait: string) =>
-  `Terlalu banyak tes email dalam waktu singkat. Coba lagi dalam ${wait}.`;
-export const emailDetectLimitMessage = (wait: string) =>
-  `Terlalu banyak permintaan deteksi server email. Coba lagi dalam ${wait}.`;
+// Tanpa durasi tunggu: web menampilkan hitung mundur dari `Retry-After`.
+export const emailTestLimitMessage = () =>
+  `Batas tes email (${EMAIL_TEST_RULE.limit} kali per 5 menit) sudah tercapai.`;
+export const emailDetectLimitMessage = () =>
+  `Batas deteksi server email (${EMAIL_DETECT_RULE.limit} kali per 5 menit) sudah tercapai.`;
 
 const errors = {
   400: errorEnvelopeSchema,
@@ -69,7 +72,7 @@ export const emailSettingsRoutes: FastifyPluginCallbackZod<EmailSettingsRoutesOp
   options,
   done,
 ) => {
-  const { emailSettings, templatePreview, limiter } = options;
+  const { emailSettings, templatePreview, limiter, cookieSecure } = options;
 
   app.get(
     API_ROUTES.settings.email,
@@ -91,12 +94,11 @@ export const emailSettingsRoutes: FastifyPluginCallbackZod<EmailSettingsRoutesOp
       },
     },
     async (request, reply) => {
-      const auth = requireAuth(request);
-      const saved = await emailSettings.save(
-        { organizationId: auth.organizationId, userId: auth.user.id, role: auth.user.role },
-        request.body,
-        { client: clientInfo(request), log: request.log },
-      );
+      const saved = await emailSettings.save(requireAuth(request), request.body, {
+        client: clientInfo(request),
+        log: request.log,
+        presentedDeviceToken: readDeviceToken(request.headers.cookie, cookieSecure),
+      });
       return reply.send(saved);
     },
   );

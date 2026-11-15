@@ -33,6 +33,7 @@ import {
   createIntegrationHarness,
   login,
   mailpitSettings,
+  withConfirmation,
   type IntegrationHarness,
   type SignedIn,
 } from './testing/integration';
@@ -190,7 +191,7 @@ describe('Admin dan email pengirim (settings.email.manage)', () => {
       harness.app,
       'PUT',
       API_ROUTES.settings.email,
-      mailpitSettings(),
+      await withConfirmation(owner, mailpitSettings()),
       as(owner),
     );
     expect(saved.statusCode).toBe(200);
@@ -230,7 +231,7 @@ describe('Admin dan email pengirim (settings.email.manage)', () => {
       harness.app,
       'PUT',
       API_ROUTES.settings.email,
-      mailpitSettings(),
+      await withConfirmation(owner, mailpitSettings()),
       as(owner),
     );
     expect(first.statusCode).toBe(200);
@@ -243,7 +244,10 @@ describe('Admin dan email pengirim (settings.email.manage)', () => {
       harness.app,
       'PUT',
       API_ROUTES.settings.email,
-      mailpitSettings({ username: 'pengirim-lain', password: 'sandi-smtp-baru-1234' }),
+      await withConfirmation(
+        admin.signed,
+        mailpitSettings({ username: 'pengirim-lain', password: 'sandi-smtp-baru-1234' }),
+      ),
       as(admin.signed),
     );
     expect(changed.statusCode).toBe(200);

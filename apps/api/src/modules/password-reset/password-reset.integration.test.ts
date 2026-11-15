@@ -36,6 +36,7 @@ import {
   startLogin,
   TEST_MASTER_KEY,
   type CallOptions,
+  withConfirmation,
   type IntegrationHarness,
   type SignedIn,
   type SignedInWithTwoFactor,
@@ -74,7 +75,7 @@ async function configureEmail(owner: SignedIn) {
     harness.app,
     'PUT',
     API_ROUTES.settings.email,
-    mailpitSettings(),
+    await withConfirmation(owner, mailpitSettings()),
     as(owner),
   );
   if (saved.statusCode !== 200) throw new Error(`Simpan email gagal: ${saved.body}`);

@@ -117,7 +117,9 @@ export function createEmailVerificationService(
         limiter,
         EMAIL_VERIFICATION_SEND_RULE,
         user.id,
-        (wait) => `Email verifikasi sudah dikirim beberapa kali. Coba lagi dalam ${wait}.`,
+        // Tanpa durasi: web menampilkan hitung mundur dari `Retry-After`.
+        () =>
+          `Email verifikasi sudah dikirim ${EMAIL_VERIFICATION_SEND_RULE.limit} kali dalam satu jam terakhir.`,
       );
 
       const { token, tokenHash } = issueLinkToken();

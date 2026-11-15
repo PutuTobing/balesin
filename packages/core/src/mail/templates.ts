@@ -661,12 +661,22 @@ export interface AdminAccountNoticeEmailInput {
   timeZone: string;
   recipientName: string;
   event:
-    'two_factor_reset' | 'password_reset_without_two_factor' | 'role_changed' | 'user_disabled';
+    | 'two_factor_reset'
+    | 'password_reset_without_two_factor'
+    | 'role_changed'
+    | 'user_disabled'
+    | 'member_joined'
+    | 'password_reset_burst';
   subject: { name: string; email: string; role: UserRole };
-  /** Untuk `two_factor_reset`, `role_changed`, `user_disabled`: pelakunya. */
+  /**
+   * Untuk `two_factor_reset`, `role_changed`, `user_disabled`: pelakunya. Untuk `member_joined`:
+   * penerbit undangan (pembuat / pengirim ulang terakhir).
+   */
   actor?: { name: string; role: UserRole };
   /** Untuk `role_changed`: peran lama → baru. */
   roleChange?: { from: UserRole; to: UserRole };
+  /** Untuk `password_reset_burst`: jumlah akun berbeda dalam jendela itu. */
+  burst?: { accounts: number; windowMinutes: number };
   occurredAt: Date;
   origin?: EventOrigin;
 }
@@ -689,6 +699,43 @@ export function renderAdminAccountNoticeEmail(input: AdminAccountNoticeEmailInpu
     { label: 'Akun', value: `${name} · ${role}` },
     ...originDetails(when, input.origin),
   ];
+  if (input.event === 'member_joined') {
+    const by = input.actor
+      ? `${singleLine(input.actor.name)} (${USER_ROLE_LABELS[input.actor.role]})`
+      : 'Owner atau Admin';
+    return compose(input.brand, {
+      subject: `Anggota baru di ${product}: ${name} (${role})`,
+      preheader: `${name} bergabung sebagai ${role} lewat undangan dari ${by}.`,
+      heading: 'Anggota baru bergabung',
+      paragraphs: [
+        hello(input.recipientName),
+        `${account} baru saja menerima undangan dari ${by} dan sekarang bisa masuk ke ${product}.`,
+        'Kamu menerima email ini karena kamu Owner. Setiap anggota baru selalu diberitahukan.',
+      ],
+      details,
+      notes: [
+        `Kalau kamu tidak mengenal anggota ini, nonaktifkan akunnya dari halaman Tim di ${product} sekarang, lalu periksa Audit log dan sesi aktif ${by}.`,
+      ],
+    });
+  }
+  if (input.event === 'password_reset_burst') {
+    const accounts = input.burst?.accounts ?? 0;
+    const minutes = input.burst?.windowMinutes ?? 60;
+    return compose(input.brand, {
+      subject: `Banyak permintaan atur ulang password di ${product}`,
+      preheader: `Tautan atur ulang password diminta untuk ${String(accounts)} akun dalam ${String(minutes)} menit.`,
+      heading: 'Banyak permintaan atur ulang password',
+      paragraphs: [
+        hello(input.recipientName),
+        `Dalam ${String(minutes)} menit terakhir, tautan atur ulang password diminta untuk ${String(accounts)} akun berbeda, terakhir untuk ${account}. Pola ini bisa berarti seseorang sedang mencoba mengambil alih akun-akun tim lewat email.`,
+        'Kamu menerima email ini karena kamu Owner.',
+      ],
+      details,
+      notes: [
+        `Periksa Pengaturan → Email pengirim di ${product} (pastikan servernya milik perusahaanmu) dan Audit log. Kalau bukan anggota tim yang memintanya, hubungi mereka lewat jalur lain.`,
+      ],
+    });
+  }
   if (input.event === 'role_changed' || input.event === 'user_disabled') {
     const by = input.actor
       ? `${singleLine(input.actor.name)} (${USER_ROLE_LABELS[input.actor.role]})`
@@ -766,6 +813,8 @@ export interface EmailSettingsChangedEmailInput {
   next: { host: string; port: number; fromAddress: string };
   occurredAt: Date;
   origin?: EventOrigin;
+  /** Penerima = pelakunya sendiri (Owner): isi disesuaikan — bisa jadi sesinya dicuri. */
+  recipientIsActor?: boolean;
 }
 
 /**
@@ -804,7 +853,9 @@ export function renderEmailSettingsChangedEmail(input: EmailSettingsChangedEmail
       ...originDetails(when, input.origin),
     ],
     notes: [
-      `Kalau perubahan ini tidak kamu duga, masuk ke ${product} sekarang, periksa Pengaturan → Email pengirim, dan nonaktifkan akun ${name} bila perlu. Server email yang salah bisa membaca tautan atur ulang password dan undangan.`,
+      input.recipientIsActor
+        ? `Kalau bukan kamu yang mengubahnya, sesi akunmu mungkin dicuri: masuk ke ${product} sekarang, keluarkan semua sesi dari halaman Keamanan akun, ganti password-mu, lalu kembalikan Pengaturan → Email pengirim. Server email yang salah bisa membaca tautan atur ulang password dan undangan.`
+        : `Kalau perubahan ini tidak kamu duga, masuk ke ${product} sekarang, periksa Pengaturan → Email pengirim, dan nonaktifkan akun ${name} bila perlu. Server email yang salah bisa membaca tautan atur ulang password dan undangan.`,
     ],
   });
 }

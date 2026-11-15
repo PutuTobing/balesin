@@ -82,6 +82,11 @@ export const AUDIT_ACTIONS = {
   channelBusinessProfileUpdated: 'channel.business_profile_updated',
   /** Meta menolak perubahan profil bisnis yang sudah tercatat (`auditLogId` = baris yang batal). */
   channelBusinessProfileUpdateFailed: 'channel.business_profile_update_failed',
+  /**
+   * Atur ulang password diminta (dan diantre) untuk banyak akun berbeda dalam satu jam
+   * (`accounts`, `windowMinutes`). Paling banyak sekali per jam per organisasi.
+   */
+  passwordResetBurst: 'auth.password_reset.burst',
 } as const;
 
 export type AuditActionKey = keyof typeof AUDIT_ACTIONS;
@@ -141,6 +146,7 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'channel.webhook_verify_token_rotated': 'Verify token webhook dibuat ulang',
   'channel.business_profile_updated': 'Profil bisnis WhatsApp diubah',
   'channel.business_profile_update_failed': 'Perubahan profil bisnis ditolak Meta',
+  'auth.password_reset.burst': 'Banyak permintaan atur ulang password',
 };
 
 /** Label untuk aksi yang mungkin belum dikenal klien (versi lama): tampilkan kodenya apa adanya. */
@@ -302,7 +308,14 @@ export const SECURITY_SUMMARY_MAX_EVENTS = 20;
  *    dinonaktifkan, diaktifkan kembali, atau dihapus oleh SELAIN Owner (semua Owner juga diberi tahu
  *    lewat email);
  *  - `business_profile_changed` — profil bisnis WhatsApp (tampil ke semua pelanggan) diubah oleh
- *    SELAIN Owner (semua Owner juga diberi tahu lewat email).
+ *    SELAIN Owner (semua Owner juga diberi tahu lewat email);
+ *  - `member_joined` — undangan diterima: akun baru bergabung (semua Owner diberi tahu lewat email);
+ *  - `password_reset_burst` — atur ulang password diminta untuk banyak akun berbeda dalam waktu
+ *    singkat (pola pengambilalihan massal setelah email pengirim dibelokkan).
+ *
+ * Perubahan channel/profil bisnis oleh Owner sendiri juga tercatat (`info`); oleh selain Owner
+ * `warning`. `account_locked` per email+jaringan (bisa dipicu siapa pun tanpa akun) `info`; kunci
+ * per akun / langkah kedua `warning`.
  */
 export const SECURITY_EVENT_KINDS = [
   'email_sender_changed',
@@ -314,6 +327,8 @@ export const SECURITY_EVENT_KINDS = [
   'user_disabled',
   'channel_changed',
   'business_profile_changed',
+  'member_joined',
+  'password_reset_burst',
 ] as const;
 export const securityEventKindSchema = z.enum(SECURITY_EVENT_KINDS);
 export type SecurityEventKind = z.infer<typeof securityEventKindSchema>;
@@ -333,6 +348,8 @@ export const SECURITY_EVENT_SEVERITY: Readonly<Record<SecurityEventKind, 'warnin
   user_disabled: 'info',
   channel_changed: 'warning',
   business_profile_changed: 'warning',
+  member_joined: 'warning',
+  password_reset_burst: 'warning',
 };
 
 export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> = {
@@ -345,6 +362,8 @@ export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> 
   user_disabled: 'Pengguna dinonaktifkan',
   channel_changed: 'Channel diubah',
   business_profile_changed: 'Profil bisnis WhatsApp diubah',
+  member_joined: 'Anggota baru bergabung lewat undangan',
+  password_reset_burst: 'Banyak permintaan atur ulang password',
 };
 
 export const securityEventSchema = z.object({

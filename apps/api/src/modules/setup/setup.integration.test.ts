@@ -184,7 +184,8 @@ describe('token setup', () => {
     // Selama diblokir, token yang BENAR pun tidak diperiksa.
     expect(blocked.statusCode).toBe(429);
     expect(errorOf(blocked).code).toBe('RATE_LIMITED');
-    expect(errorOf(blocked).message).toMatch(/Coba lagi dalam \d+ menit\./);
+    // Tanpa durasi di pesan: web menampilkan hitung mundur dari `Retry-After`.
+    expect(errorOf(blocked).message).toBe('Terlalu banyak percobaan token setup.');
     expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);
     expect(Number(blocked.headers['retry-after'])).toBeLessThanOrEqual(900);
     expect(elsewhere.statusCode).toBe(200);

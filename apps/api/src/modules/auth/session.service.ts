@@ -10,6 +10,7 @@ import {
 } from '@balesin/shared';
 
 import type { ClientInfo } from '../../http/client-info';
+import { revokeInvitationsFromRevokedSessions } from '../invitations/session-revocation';
 import type { CsrfProtection } from './csrf';
 import {
   findActiveSession,
@@ -85,11 +86,18 @@ export interface SessionService {
    */
   issue(executor: DbExecutor, input: IssueSessionInput): Promise<IssuedSession>;
   revoke(executor: DbExecutor, organizationId: string, sessionRef: string): Promise<boolean>;
+  /**
+   * Mencabut semua sesi pengguna (kecuali `exceptSessionRef`). `cancelIssuedInvitations`: pencabutan
+   * untuk MEMULIHKAN akun (keluarkan sesi lain, atur ulang password) — undangan terbuka yang
+   * diterbitkan dari sesi-sesi itu ikut batal (review akhir Fase 1 T1). Bukan untuk ubah peran /
+   * daftar 2FA (undangan yang masih boleh diterbitkan tetap berlaku).
+   */
   revokeAllForUser(
     executor: DbExecutor,
     organizationId: string,
     userId: string,
     exceptSessionRef?: string,
+    options?: { cancelIssuedInvitations?: boolean },
   ): Promise<number>;
 }
 
@@ -175,8 +183,13 @@ export function createSessionService(db: Database, csrf: CsrfProtection): Sessio
     revoke: (executor, organizationId, sessionRef) =>
       revokeSession(executor, organizationId, sessionRef),
 
-    revokeAllForUser: (executor, organizationId, userId, exceptSessionRef) =>
-      revokeUserSessions(executor, organizationId, userId, exceptSessionRef),
+    async revokeAllForUser(executor, organizationId, userId, exceptSessionRef, options = {}) {
+      const revoked = await revokeUserSessions(executor, organizationId, userId, exceptSessionRef);
+      if (options.cancelIssuedInvitations) {
+        await revokeInvitationsFromRevokedSessions(executor, organizationId, userId, revoked);
+      }
+      return revoked.length;
+    },
   };
 }
 

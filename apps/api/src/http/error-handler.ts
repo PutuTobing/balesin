@@ -54,6 +54,9 @@ const FASTIFY_ERRORS: Record<string, { code: ErrorCode; message?: string }> = {
   FST_ERR_VALIDATION: { code: 'VALIDATION_ERROR' },
 };
 
+/** `Retry-After` untuk 429 yang tidak membawa waktu tunggu sendiri. */
+const DEFAULT_RETRY_AFTER_SECONDS = 60;
+
 const CODE_BY_STATUS: Record<number, ErrorCode> = {
   400: 'BAD_REQUEST',
   401: 'UNAUTHENTICATED',
@@ -156,6 +159,9 @@ export function handleError(error: unknown, request: FastifyRequest, reply: Fast
 
   if (error instanceof AppError && error.retryAfterSeconds !== undefined) {
     void reply.header('retry-after', String(error.retryAfterSeconds));
+  } else if (response.statusCode === 429) {
+    // Setiap 429 membawa `Retry-After` (web menampilkan hitung mundur dari header ini).
+    void reply.header('retry-after', String(DEFAULT_RETRY_AFTER_SECONDS));
   }
   return reply.status(response.statusCode).send(envelope(response, request.id));
 }

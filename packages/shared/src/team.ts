@@ -1,10 +1,9 @@
 import { z } from 'zod';
 
 import { isoDateTimeSchema } from './fields';
+import { identityConfirmationSchema } from './identity';
 import { INVITE_PERMISSIONS, invitableRoleSchema, type InvitableRole } from './invitations';
-import { loginPasswordSchema } from './password';
 import { userRoleSchema, type UserRole } from './roles';
-import { twoFactorCodeSchema } from './two-factor';
 
 /**
  * Manajemen pengguna & sesi aktif (Fase 1 butir 6). Alur & error per kasus:
@@ -56,16 +55,8 @@ export const TWO_FACTOR_ENROLLMENT_WINDOW_HOURS = 72;
 
 // ── Konfirmasi ulang identitas pelaku ───────────────────────────────────────
 
-/**
- * Password pelaku + kode 2FA pelaku (autentikator atau kode cadangan). `code` wajib bila 2FA pelaku
- * aktif — selalu begitu untuk Owner/Admin. Salah password/kode memakai ember yang sama dengan
- * halaman Keamanan akun (5 salah → 429; kode salah ikut mengunci langkah kedua 15 menit).
- */
-export const identityConfirmationSchema = z.object({
-  password: loginPasswordSchema,
-  code: twoFactorCodeSchema.optional(),
-});
-export type IdentityConfirmation = z.input<typeof identityConfirmationSchema>;
+// Konfirmasi ulang identitas (password + kode 2FA pelaku): lihat `identity.ts`.
+export { identityConfirmationSchema, type IdentityConfirmation } from './identity';
 
 // ── Pengguna ────────────────────────────────────────────────────────────────
 
@@ -106,7 +97,7 @@ export const teamUserSchema = z.object({
      * wizard setup, atau tidak wajib/sudah aktif).
      */
     enrollmentDueAt: isoDateTimeSchema.nullable(),
-    /** Batas waktunya sudah lewat: perlu "Buka lagi pendaftaran 2FA" sebelum bisa masuk. */
+    /** Batas waktunya sudah lewat: perlu "Buka lagi pendaftaran" sebelum bisa masuk. */
     enrollmentExpired: z.boolean(),
   }),
   /** Jumlah sesi yang sedang berlaku. */

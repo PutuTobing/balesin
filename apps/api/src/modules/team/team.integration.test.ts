@@ -39,6 +39,7 @@ import {
   startLogin,
   TEST_MASTER_KEY,
   type CallOptions,
+  withConfirmation,
   type IntegrationHarness,
   type SignedIn,
 } from '../../testing/integration';
@@ -143,7 +144,10 @@ async function invitationBy(signed: SignedIn, role: InvitableRole) {
     harness.app,
     'POST',
     API_ROUTES.invitations.collection,
-    { email: `undangan-${Math.random().toString(36).slice(2, 8)}@majujaya.test`, role },
+    await withConfirmation(signed, {
+      email: `undangan-${Math.random().toString(36).slice(2, 8)}@majujaya.test`,
+      role,
+    }),
     as(signed),
   );
   if (response.statusCode !== 201) throw new Error(`Undangan gagal: ${response.body}`);
@@ -796,7 +800,7 @@ describe('R3: batas waktu pendaftaran 2FA 72 jam (jam digeser)', () => {
       harness.app,
       'PUT',
       API_ROUTES.settings.email,
-      mailpitSettings(),
+      await withConfirmation(owner, mailpitSettings()),
       as(owner),
     );
     expect(saved.statusCode).toBe(200);

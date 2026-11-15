@@ -64,6 +64,13 @@
       "when": 1794640488944,
       "tag": "0008_channel_whatsapp_cloud_api",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794691835060,
+      "tag": "0009_undangan_sesi_penerbit",
+      "breakpoints": true
     }
   ]
 }

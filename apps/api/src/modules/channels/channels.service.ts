@@ -57,6 +57,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import type { ClientInfo } from '../../http/client-info';
 import type { EmailNotifier } from '../../queues/email-queue';
 import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
+import { assertActorStillAuthorized } from '../auth/actor-check';
 import type { AuthContext } from '../auth/session.service';
 import type { TwoFactorService } from '../two-factor/two-factor.service';
 import {
@@ -445,11 +446,10 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
 
     async create(auth, input, context) {
       const box = requireBox();
-      // Channel baru dengan App Secret milik orang lain = pesan masuk bisa dipalsukan (review R2).
-      if (auth.user.role !== 'owner') {
-        if (!input.confirmation) throw confirmationRequired(CONFIRMATION_REQUIRED.create);
-        await confirm(auth, input.confirmation, 'channel.create', context, 'confirmation.');
-      }
+      // Channel baru dengan App Secret milik orang lain = pesan masuk bisa dipalsukan (review
+      // channel R2). Semua peran, Owner juga: cookie Owner curian tidak cukup (review akhir S1).
+      if (!input.confirmation) throw confirmationRequired(CONFIRMATION_REQUIRED.create);
+      await confirm(auth, input.confirmation, 'channel.create', context, 'confirmation.');
       const id = newId();
       const owner = { id, organizationId: auth.organizationId };
       const createdAt = now();
@@ -457,6 +457,7 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
 
       const row = await db
         .transaction(async (tx) => {
+          await assertActorStillAuthorized(tx, auth, 'channels.manage');
           // Pembuatan bersamaan berurutan per organisasi: batas jumlah channel tidak terlewati.
           await tx.execute(
             sql`select pg_advisory_xact_lock(hashtextextended(${`channels-create|${auth.organizationId}`}, 0))`,
@@ -554,6 +555,7 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
 
       const updated = await db
         .transaction(async (tx) => {
+          await assertActorStillAuthorized(tx, auth, 'channels.manage');
           const next = await updateChannel(tx, auth.organizationId, row.id, {
             ...changes,
             updatedByUserId: auth.user.id,
@@ -592,6 +594,7 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
       const row = await load(auth, channelId);
       if (row.enabled === enabled) return toWhatsAppChannel(row, apiUrl);
       const updated = await db.transaction(async (tx) => {
+        await assertActorStillAuthorized(tx, auth, 'channels.manage');
         const next = await updateChannel(tx, auth.organizationId, row.id, {
           enabled,
           updatedByUserId: auth.user.id,
@@ -622,6 +625,7 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
       const row = await load(auth, channelId);
       await confirm(auth, confirmation, 'channel.delete', context);
       await db.transaction(async (tx) => {
+        await assertActorStillAuthorized(tx, auth, 'channels.manage');
         // Rahasia dimusnahkan; baris tetap untuk rujukan riwayat percakapan (fase berikutnya).
         const deleted = await updateChannel(tx, auth.organizationId, row.id, {
           deletedAt: now(),
@@ -711,6 +715,7 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
       const row = await load(auth, channelId);
       const rotatedAt = now();
       const updated = await db.transaction(async (tx) => {
+        await assertActorStillAuthorized(tx, auth, 'channels.manage');
         const next = await updateChannel(tx, auth.organizationId, row.id, {
           waVerifyTokenEncrypted: sealChannelSecret(
             box,
@@ -761,11 +766,9 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
       const phoneNumberId = row.waPhoneNumberId ?? '';
       const changedFields = BUSINESS_PROFILE_FIELDS.filter((field) => input[field] !== undefined);
 
-      // Website/email mengarahkan pelanggan ke luar: selain Owner wajib konfirmasi (review S1).
-      if (
-        auth.user.role !== 'owner' &&
-        BUSINESS_PROFILE_CONFIRMED_FIELDS.some((field) => input[field] !== undefined)
-      ) {
+      // Website/email mengarahkan pelanggan ke luar: wajib konfirmasi untuk semua peran, Owner
+      // juga (review channel S1; review akhir Fase 1 S1).
+      if (BUSINESS_PROFILE_CONFIRMED_FIELDS.some((field) => input[field] !== undefined)) {
         if (!input.confirmation) throw confirmationRequired(CONFIRMATION_REQUIRED.businessProfile);
         await confirm(
           auth,
@@ -792,6 +795,7 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
       // ditarik kembali): bila antrean mati, tidak ada yang berubah (503). Job baru diambil worker
       // setelah tenggat Meta lewat, jadi penolakan Meta (baris `…_update_failed`) sudah tercatat.
       const auditLogId = await db.transaction(async (tx) => {
+        await assertActorStillAuthorized(tx, auth, 'channels.manage');
         const id = await recordAudit(tx, {
           organizationId: auth.organizationId,
           actorUserId: auth.user.id,

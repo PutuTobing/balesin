@@ -871,6 +871,51 @@ describe('template email', () => {
     }
   });
 
+  it('anggota baru bergabung dan atur ulang password massal (ke Owner)', () => {
+    const joined = renderAdminAccountNoticeEmail({
+      brand: brand(),
+      timeZone: 'Asia/Jakarta',
+      recipientName: 'Rina',
+      event: 'member_joined',
+      subject: { name: 'Tono <CS>', email: 'tono@contoh.test', role: 'cs' },
+      actor: { name: 'Adi', role: 'admin' },
+      occurredAt: at,
+      origin: { ip: '198.51.100.7', userAgent: null },
+    });
+    expect(joined.subject).toBe('Anggota baru di Balesin: Tono <CS> (CS)');
+    expect(joined.text).toContain('menerima undangan dari Adi (Admin)');
+    expect(joined.text).toContain('Setiap anggota baru selalu diberitahukan');
+    expect(joined.text).toContain('Alamat IP: 198.51.100.7');
+    expect(joined.html).not.toContain('Tono <CS>');
+
+    const burst = renderAdminAccountNoticeEmail({
+      brand: brand(),
+      timeZone: 'Asia/Jakarta',
+      recipientName: 'Rina',
+      event: 'password_reset_burst',
+      subject: { name: 'Tono', email: 'tono@contoh.test', role: 'cs' },
+      burst: { accounts: 3, windowMinutes: 60 },
+      occurredAt: at,
+    });
+    expect(burst.subject).toBe('Banyak permintaan atur ulang password di Balesin');
+    expect(burst.text).toContain('diminta untuk 3 akun berbeda');
+    expect(burst.text).toContain('Pengaturan → Email pengirim');
+    for (const mail of [joined, burst]) expect(mail.text).not.toMatch(/\bAnda\b/i);
+
+    const self = renderEmailSettingsChangedEmail({
+      brand: brand(),
+      timeZone: 'Asia/Jakarta',
+      recipientName: 'Rina',
+      actor: { name: 'Rina', email: 'rina@contoh.test', role: 'owner' },
+      previous: { host: 'mail.maju.test', port: 465, fromAddress: 'cs@maju.test' },
+      next: { host: 'smtp.lain.test', port: 587, fromAddress: 'cs@maju.test' },
+      occurredAt: at,
+      recipientIsActor: true,
+    });
+    expect(self.text).toContain('sesi akunmu mungkin dicuri');
+    expect(self.text).not.toContain('nonaktifkan akun Rina');
+  });
+
   it('perubahan tim oleh Admin (ke Owner): ubah peran dengan peran lama → baru, nonaktifkan', () => {
     const changed = renderAdminAccountNoticeEmail({
       brand: brand(),

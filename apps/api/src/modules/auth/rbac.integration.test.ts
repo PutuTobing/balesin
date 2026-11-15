@@ -33,6 +33,7 @@ import {
   login,
   sessionCookieOf,
   startLogin,
+  withConfirmation,
   type IntegrationHarness,
   type SignedIn,
 } from '../../testing/integration';
@@ -183,7 +184,7 @@ describe('audit penolakan izin (R8)', () => {
       harness.app,
       'POST',
       API_ROUTES.invitations.collection,
-      { email: 'calon-admin@majujaya.test', role: 'admin' },
+      await withConfirmation(owner, { email: 'calon-admin@majujaya.test', role: 'admin' }),
       as(owner),
     );
     expect(ownerInvite.statusCode).toBe(201);
@@ -194,14 +195,14 @@ describe('audit penolakan izin (R8)', () => {
         harness.app,
         'POST',
         API_ROUTES.invitations.collection,
-        { email: 'admin-kedua@majujaya.test', role: 'admin' },
+        await withConfirmation(admin.signed, { email: 'admin-kedua@majujaya.test', role: 'admin' }),
         as(admin.signed),
       ),
       await call(
         harness.app,
         'POST',
         apiPath(API_ROUTES.invitations.resend, { invitationId }),
-        undefined,
+        await withConfirmation(admin.signed, {}),
         as(admin.signed),
       ),
       await call(

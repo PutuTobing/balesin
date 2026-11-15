@@ -39,6 +39,7 @@ import {
   call,
   completeSetup,
   createIntegrationHarness,
+  withConfirmation,
   freshTotpCode,
   login,
   type CallOptions,
@@ -156,8 +157,13 @@ const wizardBody = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+/** Buat channel lewat wizard; konfirmasi identitas pembuat ditambahkan bila tidak diberikan. */
 async function createChannel(owner: SignedIn, overrides: Record<string, unknown> = {}) {
-  const response = await send(owner, 'POST', routes.settings, wizardBody(overrides));
+  const body =
+    'confirmation' in overrides
+      ? wizardBody(overrides)
+      : await withConfirmation(owner, wizardBody(overrides));
+  const response = await send(owner, 'POST', routes.settings, body);
   expect(response.statusCode, response.body).toBe(201);
   return createChannelResponseSchema.parse(response.json());
 }
@@ -282,7 +288,12 @@ describe('wizard: buat channel', () => {
   it('409 bila Phone Number ID sudah menjadi channel lain; setelah dihapus boleh dibuat lagi', async () => {
     const owner = await completeSetup(harness.app);
     const { channel } = await createChannel(owner);
-    const duplicate = await send(owner, 'POST', routes.settings, wizardBody({ name: 'Kembar' }));
+    const duplicate = await send(
+      owner,
+      'POST',
+      routes.settings,
+      await withConfirmation(owner, wizardBody({ name: 'Kembar' })),
+    );
     expect(duplicate.statusCode).toBe(409);
     expect(errorOf(duplicate).details?.[0]?.field).toBe('phoneNumberId');
 
@@ -672,11 +683,17 @@ describe('profil bisnis', () => {
     });
 
     fake.requests.length = 0;
-    const updated = await send(owner, 'PUT', path(routes.businessProfile, channel.id), {
-      description: 'Internet rumahan 😊\nBuka 08.00–17.00',
-      email: 'CS@MajuJaya.test',
-      websites: [],
-    });
+    // Email/website: konfirmasi identitas wajib, juga untuk Owner (review akhir Fase 1 S1).
+    const updated = await send(
+      owner,
+      'PUT',
+      path(routes.businessProfile, channel.id),
+      await withConfirmation(owner, {
+        description: 'Internet rumahan 😊\nBuka 08.00–17.00',
+        email: 'CS@MajuJaya.test',
+        websites: [],
+      }),
+    );
     expect(updated.statusCode, updated.body).toBe(200);
     const body = updateBusinessProfileResponseSchema.parse(updated.json());
     expect(body.profile).toMatchObject({
@@ -1048,9 +1065,11 @@ describe('pemberitahuan ke Owner bila channel diubah selain Owner', () => {
     for (const row of audits) {
       expect(row.metadata).toMatchObject({ ownersNotified: false, actorRole: 'owner' });
     }
+    // Tetap tercatat di ringkasan keamanan, tetapi `info` (review akhir Fase 1 S1).
     const summary = await summaryOf(owner);
-    expect(summary.counts.channel_changed).toBe(0);
-    expect(summary.events.filter((event) => event.kind === 'channel_changed')).toEqual([]);
+    expect(summary.counts.channel_changed).toBe(5);
+    const events = summary.events.filter((event) => event.kind === 'channel_changed');
+    expect(events.map((event) => event.severity)).toEqual(Array<string>(5).fill('info'));
   });
 
   it('pemberitahuan tidak bisa diantrekan: perubahan oleh Admin BATAL (503); oleh Owner tetap jalan', async () => {
@@ -1141,10 +1160,18 @@ describe('profil bisnis oleh selain Owner (review S1)', () => {
     expect(await businessAudits()).toEqual([]);
     expect(harness.channelChangeNotices).toEqual([]);
 
-    // Owner tidak perlu konfirmasi dan tidak memberi tahu dirinya sendiri.
-    const byOwner = await send(owner, 'PUT', path(routes.businessProfile, channel.id), {
+    // Owner juga wajib konfirmasi (review akhir Fase 1 S1), tetapi tidak memberi tahu dirinya.
+    const unconfirmedOwner = await send(owner, 'PUT', path(routes.businessProfile, channel.id), {
       websites: ['https://majujaya.co.id'],
     });
+    expect(unconfirmedOwner.statusCode).toBe(400);
+    expect(errorOf(unconfirmedOwner).details?.[0]?.field).toBe('confirmation.password');
+    const byOwner = await send(
+      owner,
+      'PUT',
+      path(routes.businessProfile, channel.id),
+      await withConfirmation(owner, { websites: ['https://majujaya.co.id'] }),
+    );
     expect(byOwner.statusCode, byOwner.body).toBe(200);
     expect(harness.channelChangeNotices).toEqual([]);
   });
@@ -1193,7 +1220,8 @@ describe('profil bisnis oleh selain Owner (review S1)', () => {
     const events = summary.events.filter((event) => event.kind === 'business_profile_changed');
     expect(events).toHaveLength(2);
     expect(summary.counts.business_profile_changed).toBe(2);
-    expect(summary.counts.channel_changed).toBe(0);
+    // Hanya channel buatan Owner (`info`).
+    expect(summary.counts.channel_changed).toBe(1);
     for (const event of events) {
       expect(event).toMatchObject({ severity: 'warning', actor: { id: admin.session.user.id } });
     }
@@ -1253,10 +1281,19 @@ describe('batas jumlah channel', () => {
         waVerifyTokenRotatedAt: new Date(),
       });
     }
-    const responses = await Promise.all(
-      ['106540352240001', '106540352240002', '106540352240003'].map((phoneNumberId) =>
-        send(owner, 'POST', routes.settings, wizardBody({ phoneNumberId })),
+    // Tiga Admin berbeda (kode 2FA yang sama tidak bisa dipakai dua kali bersamaan).
+    const admins = [
+      await member(owner, 'admin'),
+      await member(owner, 'admin'),
+      await member(owner, 'admin'),
+    ];
+    const bodies = await Promise.all(
+      ['106540352240001', '106540352240002', '106540352240003'].map((phoneNumberId, index) =>
+        withConfirmation(admins[index] ?? owner, wizardBody({ phoneNumberId })),
       ),
+    );
+    const responses = await Promise.all(
+      bodies.map((body, index) => send(admins[index] ?? owner, 'POST', routes.settings, body)),
     );
     expect(responses.map((response) => response.statusCode).sort()).toEqual([201, 409, 409]);
     expect(await harness.db.select().from(channels)).toHaveLength(MAX_CHANNELS_PER_ORGANIZATION);

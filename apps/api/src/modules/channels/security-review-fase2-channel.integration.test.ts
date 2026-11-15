@@ -26,6 +26,7 @@ import {
   freshTotpCode,
   login,
   OWNER,
+  withConfirmation,
   type IntegrationHarness,
   type SignedIn,
 } from '../../testing/integration';
@@ -92,14 +93,20 @@ async function member(owner: SignedIn, role: UserRole): Promise<SignedIn> {
 }
 
 async function createChannel(signed: SignedIn) {
-  const response = await send(signed, 'POST', routes.settings, {
-    type: 'whatsapp',
-    name: 'CS Utama',
-    phoneNumberId: PHONE_ID,
-    wabaId: WABA_ID,
-    accessToken: TOKEN,
-    appSecret: APP_SECRET,
-  });
+  // Menambah channel kini wajib konfirmasi identitas untuk semua peran (review akhir Fase 1 S1).
+  const response = await send(
+    signed,
+    'POST',
+    routes.settings,
+    await withConfirmation(signed, {
+      type: 'whatsapp',
+      name: 'CS Utama',
+      phoneNumberId: PHONE_ID,
+      wabaId: WABA_ID,
+      accessToken: TOKEN,
+      appSecret: APP_SECRET,
+    }),
+  );
   expect(response.statusCode, response.body).toBe(201);
   return createChannelResponseSchema.parse(response.json());
 }
@@ -184,14 +191,19 @@ describe('review fase 2 — penjaga regresi', () => {
     const owner = await completeSetup(harness.app);
     const first = await createChannel(owner);
     fake.phoneNumbers.set('106540352249999', { id: '106540352249999', wabaId: WABA_ID });
-    const second = await send(owner, 'POST', routes.settings, {
-      type: 'whatsapp',
-      name: 'CS Kedua',
-      phoneNumberId: '106540352249999',
-      wabaId: WABA_ID,
-      accessToken: TOKEN,
-      appSecret: APP_SECRET,
-    });
+    const second = await send(
+      owner,
+      'POST',
+      routes.settings,
+      await withConfirmation(owner, {
+        type: 'whatsapp',
+        name: 'CS Kedua',
+        phoneNumberId: '106540352249999',
+        wabaId: WABA_ID,
+        accessToken: TOKEN,
+        appSecret: APP_SECRET,
+      }),
+    );
     expect(second.statusCode, second.body).toBe(201);
     const secondToken = createChannelResponseSchema.parse(second.json()).webhook.verifyToken;
 

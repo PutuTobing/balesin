@@ -13,6 +13,8 @@ const ALLOWED: Record<string, string> = {
   'http/security.ts': 'Origin/preflight asing — sebelum sesi dibaca, pelaku tidak pasti',
   'modules/auth/auth.hook.ts': 'Origin asing / tanpa deklarasi akses; izin rute diaudit di sini',
   'modules/auth/access-denied.ts': 'forbidByRule itu sendiri',
+  'modules/auth/actor-check.ts':
+    'wewenang berubah DI TENGAH permintaan (review akhir R3): ditolak di transaksi yang dibatalkan; perubahan peran/nonaktifnya sudah diaudit',
   'modules/auth/permission-grant.ts': 'izin tambahan di handler — diaudit lewat record()',
   'modules/setup/setup.service.ts': 'token setup salah (publik, tanpa pengguna)',
   'modules/two-factor/two-factor.service.ts':

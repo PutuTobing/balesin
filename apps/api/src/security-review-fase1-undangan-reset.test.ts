@@ -38,6 +38,7 @@ import {
   mailpitSettings,
   TEST_MASTER_KEY,
   type CallOptions,
+  withConfirmation,
   type IntegrationHarness,
   type SignedIn,
 } from './testing/integration';
@@ -67,7 +68,13 @@ const as = (signed: { cookie: string; csrf: string }): CallOptions => ({
 });
 
 async function invited(signed: SignedIn, email: string, role: InvitableRole) {
-  const response = await call(harness.app, 'POST', inv.collection, { email, role }, as(signed));
+  const response = await call(
+    harness.app,
+    'POST',
+    inv.collection,
+    await withConfirmation(signed, { email, role }),
+    as(signed),
+  );
   if (response.statusCode !== 201) throw new Error(`Undangan gagal: ${response.body}`);
   return invitationIssuedResponseSchema.parse(response.json());
 }
@@ -99,7 +106,7 @@ async function configureEmail(owner: SignedIn) {
     harness.app,
     'PUT',
     API_ROUTES.settings.email,
-    mailpitSettings(),
+    await withConfirmation(owner, mailpitSettings()),
     as(owner),
   );
   if (saved.statusCode !== 200) throw new Error(`Simpan email gagal: ${saved.body}`);
@@ -144,7 +151,7 @@ describe('celah yang sudah ditutup (dulu it.fails)', () => {
       harness.app,
       'POST',
       apiPath(inv.resend, { invitationId: ownerInvite.invitation.id }),
-      undefined,
+      await withConfirmation(admin, {}),
       as(admin),
     );
     expect(resend.statusCode).toBe(403);
@@ -155,7 +162,7 @@ describe('celah yang sudah ditutup (dulu it.fails)', () => {
       harness.app,
       'POST',
       inv.collection,
-      { email: 'calon-admin@majujaya.test', role: 'cs' },
+      await withConfirmation(admin, { email: 'calon-admin@majujaya.test', role: 'cs' }),
       as(admin),
     );
     const [row] = await harness.db
@@ -198,7 +205,7 @@ describe('eskalasi peran lewat undangan', () => {
       harness.app,
       'POST',
       inv.collection,
-      { email: 'x1@majujaya.test', role: 'admin' },
+      await withConfirmation(admin, { email: 'x1@majujaya.test', role: 'admin' }),
       as(admin),
     );
     expect(asAdmin.statusCode).toBe(403);
@@ -207,7 +214,7 @@ describe('eskalasi peran lewat undangan', () => {
         harness.app,
         'POST',
         inv.collection,
-        { email: 'x2@majujaya.test', role: 'owner' },
+        await withConfirmation(signed, { email: 'x2@majujaya.test', role: 'owner' }),
         as(signed),
       );
       expect(asOwner.statusCode).toBe(400);
@@ -218,7 +225,7 @@ describe('eskalasi peran lewat undangan', () => {
       harness.app,
       'POST',
       apiPath(inv.resend, { invitationId: cs.invitation.id }),
-      { role: 'admin', email: 'lain@majujaya.test' },
+      await withConfirmation(admin, { role: 'admin', email: 'lain@majujaya.test' }),
       as(admin),
     );
     expect(resent.statusCode).toBe(200);
@@ -281,7 +288,7 @@ describe('pengambilalihan akun lewat undangan', () => {
       harness.app,
       'POST',
       inv.collection,
-      { email: '  SARI@MajuJaya.TEST ', role: 'cs' },
+      await withConfirmation(owner, { email: '  SARI@MajuJaya.TEST ', role: 'cs' }),
       as(owner),
     );
     // Email Owner (sari@majujaya.test) sudah terdaftar.
@@ -291,7 +298,7 @@ describe('pengambilalihan akun lewat undangan', () => {
         harness.app,
         'POST',
         inv.collection,
-        { email, role: 'cs' },
+        await withConfirmation(owner, { email, role: 'cs' }),
         as(owner),
       );
       expect(response.statusCode, email).toBe(400);
@@ -446,7 +453,7 @@ describe('kebocoran token dan tautan', () => {
       harness.app,
       'POST',
       inv.collection,
-      { email: 'bocor@majujaya.test', role: 'cs' },
+      await withConfirmation(owner, { email: 'bocor@majujaya.test', role: 'cs' }),
       spoofed,
     );
     expect(created.statusCode).toBe(201);
