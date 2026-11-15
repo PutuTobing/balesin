@@ -128,6 +128,9 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'POST /api/v1/settings/channels/:channelId/webhook/verify-token': 'channels.manage',
   'GET /api/v1/settings/channels/:channelId/business-profile': 'channels.manage',
   'PUT /api/v1/settings/channels/:channelId/business-profile': 'channels.manage',
+  // penerima webhook Meta: publik — keaslian dari verify token (GET) / tanda tangan App Secret (POST)
+  'GET /webhooks/whatsapp/:channelId': 'public',
+  'POST /webhooks/whatsapp/:channelId': 'public',
 };
 
 const LOGOUT = 'POST /api/v1/auth/logout';

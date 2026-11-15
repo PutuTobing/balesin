@@ -228,3 +228,6 @@ export async function startFakeMeta(): Promise<FakeMeta> {
       }),
   };
 }
+
+// Notifikasi webhook tiruan bertanda tangan (pesan masuk, status, error) — untuk tes & E2E.
+export * from './fake-meta-webhooks';

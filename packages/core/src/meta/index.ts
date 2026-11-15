@@ -3,3 +3,5 @@ export * from './errors';
 export * from './graph-client';
 export * from './whatsapp';
 export * from './credentials';
+export * from './webhook-signature';
+export * from './webhook-payload';

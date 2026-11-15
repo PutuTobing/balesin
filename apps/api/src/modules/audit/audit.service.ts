@@ -87,6 +87,7 @@ const SECURITY_EVENT_CONDITIONS: Readonly<Record<SecurityEventKind, SQL>> = {
   business_profile_changed: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.channelBusinessProfileUpdated} and ${HAS_CHANGE})`,
   member_joined: sql`${auditLogs.action} = ${AUDIT_ACTIONS.invitationAccepted}`,
   password_reset_burst: sql`${auditLogs.action} = ${AUDIT_ACTIONS.passwordResetBurst}`,
+  webhook_signature_failed: sql`${auditLogs.action} = ${AUDIT_ACTIONS.channelWebhookSignatureRejected}`,
 };
 
 /** Baris `account_locked` maksimal di `events` ringkasan keamanan (review akhir R2). */
@@ -178,6 +179,8 @@ function kindOf(row: AuditRow): SecurityEventKind | undefined {
       return 'member_joined';
     case AUDIT_ACTIONS.passwordResetBurst:
       return 'password_reset_burst';
+    case AUDIT_ACTIONS.channelWebhookSignatureRejected:
+      return 'webhook_signature_failed';
     default:
       return undefined;
   }
@@ -197,6 +200,7 @@ const DETAIL_KEYS: Readonly<Record<SecurityEventKind, readonly string[]>> = {
   business_profile_changed: ['name', 'phoneNumberId', 'changedFields', 'actorRole'],
   member_joined: ['role', 'issuerRole'],
   password_reset_burst: ['accounts', 'windowMinutes'],
+  webhook_signature_failed: ['name', 'phoneNumberId', 'failures', 'windowMinutes', 'reason'],
 };
 
 export function createAuditService(deps: { db: Database; limiter: RateLimiter }): AuditService {

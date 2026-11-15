@@ -3,6 +3,7 @@ import type { Worker } from 'bullmq';
 
 import { createEmailWorker, type EmailJobDeps } from './queues/email';
 import { createSystemWorker, type QueueConnectionOptions } from './queues/system';
+import { createWebhookWorker, type WebhookJobDeps } from './queues/webhooks';
 
 export interface WorkerRuntime {
   workers: Worker[];
@@ -14,6 +15,8 @@ export interface WorkerRuntime {
 export interface WorkerServices {
   /** Untuk antrian `email` (database, kotak rahasia, cadangan SMTP). */
   email: Omit<EmailJobDeps, 'logger'>;
+  /** Untuk antrian `webhooks` (kejadian webhook masuk yang sudah tersimpan). */
+  webhooks: Omit<WebhookJobDeps, 'logger'>;
 }
 
 const ERROR_LOG_INTERVAL_MS = 30_000;
@@ -30,6 +33,7 @@ export function startWorkers(
   const workers = [
     createSystemWorker(options, { logger }),
     createEmailWorker(options, { ...services.email, logger }),
+    createWebhookWorker(options, { ...services.webhooks, logger }),
   ];
 
   for (const worker of workers) {

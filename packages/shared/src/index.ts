@@ -25,4 +25,5 @@ export * from './roles';
 export * from './setup';
 export * from './team';
 export * from './two-factor';
+export * from './webhooks';
 export * from './zod-locale';

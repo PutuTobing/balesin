@@ -14,6 +14,7 @@ import { closeDb, createDb, pingDb } from '@balesin/db';
 import { buildApp } from './app';
 import { loadConfig, type ApiConfig } from './config';
 import { createEmailQueue } from './queues/email-queue';
+import { createWebhookQueue } from './queues/webhook-queue';
 
 /** Titik masuk proses API: baca konfigurasi → sambungkan dependensi → dengarkan port. */
 async function main(config: ApiConfig): Promise<void> {
@@ -56,6 +57,7 @@ async function main(config: ApiConfig): Promise<void> {
     logger,
   });
   const emailQueue = createEmailQueue({ connection: queueRedis });
+  const webhookQueue = createWebhookQueue({ connection: queueRedis });
 
   const app = await buildApp({
     config,
@@ -67,6 +69,7 @@ async function main(config: ApiConfig): Promise<void> {
     db,
     redis,
     notifier: emailQueue.notifier,
+    webhookQueue: webhookQueue.enqueuer,
   });
 
   const shutdown = createShutdown({
@@ -74,6 +77,7 @@ async function main(config: ApiConfig): Promise<void> {
     steps: [
       { name: 'http', run: () => app.close() },
       { name: 'antrian', run: () => emailQueue.close() },
+      { name: 'antrian-webhook', run: () => webhookQueue.close() },
       { name: 'postgres', run: () => closeDb(db) },
       { name: 'redis', run: () => closeRedis(redis) },
       { name: 'redis-antrian', run: () => closeRedis(queueRedis) },

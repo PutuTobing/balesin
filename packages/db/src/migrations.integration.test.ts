@@ -49,6 +49,7 @@ describe('migrasi dari nol', () => {
       'user_invitations',
       'user_sessions',
       'users',
+      'webhook_events',
     ]);
 
     const { rows: roles } = await client.query<{ enumlabel: string }>(
@@ -88,7 +89,12 @@ describe('migrasi dari nol', () => {
     expect(columnsOf('audit_logs')).not.toContain('updated_at');
   });
 
-  const EXTERNAL_ID_COLUMNS = new Set(['wa_phone_number_id', 'wa_business_account_id']);
+  // `external_id` = wamid pesan dari Meta (`webhook_events`).
+  const EXTERNAL_ID_COLUMNS = new Set([
+    'wa_phone_number_id',
+    'wa_business_account_id',
+    'external_id',
+  ]);
 
   it('semua kolom waktu bertipe timestamptz dan semua id bertipe uuid', async () => {
     const { rows } = await client.query<{ column_name: string; data_type: string }>(
@@ -102,7 +108,7 @@ describe('migrasi dari nol', () => {
       if (row.column_name === 'id' || row.column_name.endsWith('_id')) {
         // target_id sengaja teks: target audit tidak selalu baris ber-UUID.
         if (row.column_name === 'target_id') continue;
-        // ID objek Meta (Phone Number ID, WABA ID) berupa deret angka dari Meta, bukan UUID kita.
+        // ID objek Meta (Phone Number ID, WABA ID, wamid) berasal dari Meta, bukan UUID kita.
         if (EXTERNAL_ID_COLUMNS.has(row.column_name)) continue;
         expect(row.data_type, row.column_name).toBe('uuid');
       }

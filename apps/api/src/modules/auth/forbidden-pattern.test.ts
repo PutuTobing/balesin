@@ -19,6 +19,8 @@ const ALLOWED: Record<string, string> = {
   'modules/setup/setup.service.ts': 'token setup salah (publik, tanpa pengguna)',
   'modules/two-factor/two-factor.service.ts':
     'kebijakan 2FA (peran wajib tidak boleh menonaktifkan 2FA miliknya), bukan wewenang atas data lain',
+  'modules/webhooks/webhook-guard.ts':
+    'webhook Meta publik: tanda tangan/verify token salah (tanpa pengguna); dicatat lewat recordRejection + kejadian keamanan',
 };
 
 function sourceFiles(dir: string): string[] {

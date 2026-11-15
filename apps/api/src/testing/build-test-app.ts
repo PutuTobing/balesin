@@ -8,6 +8,7 @@ import {
   type InvitationEmailPayload,
   type SecurityNoticeAdminEmailPayload,
   type SecurityNoticeEmailPayload,
+  type WebhookEventJobPayload,
 } from '@balesin/core';
 import { createLogCapture, type LogCapture } from '@balesin/core/testing';
 import { createDb, type Database } from '@balesin/db';
@@ -17,6 +18,7 @@ import { Redis } from 'ioredis';
 import { buildApp, type App, type AppConfig, type AppDeps } from '../app';
 import type { ReadinessProbes } from '../modules/health/health.service';
 import type { EmailNotifier } from '../queues/email-queue';
+import type { WebhookEventEnqueuer } from '../queues/webhook-queue';
 
 export const TEST_APP_ORIGIN = 'http://localhost:5173';
 export const TEST_SESSION_SECRET = 'rahasia-sesi-khusus-tes-minimal-32-karakter';
@@ -30,6 +32,8 @@ export interface TestAppOptions {
   /** Redis sungguhan (tes integrasi). Bawaan: klien yang tidak pernah tersambung. */
   redis?: Redis;
   notifier?: EmailNotifier;
+  /** Pengganti pengantre kejadian webhook (bawaan: mencatat ke `webhookJobs`). */
+  webhookQueue?: WebhookEventEnqueuer;
   overrides?: AppDeps['overrides'];
 }
 
@@ -51,6 +55,8 @@ export interface TestApp {
   emailSettingsNotices: EmailSettingsChangedEmailPayload[];
   /** Pemberitahuan ke Owner: channel diubah pengguna selain Owner. */
   channelChangeNotices: ChannelChangedEmailPayload[];
+  /** Job kejadian webhook masuk yang diantrekan (bila `webhookQueue` tidak diganti). */
+  webhookJobs: WebhookEventJobPayload[];
 }
 
 const healthy = () => Promise.resolve();
@@ -121,6 +127,7 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<TestAp
   const accountTokenJobs: AccountTokenEmailPayload[] = [];
   const emailSettingsNotices: EmailSettingsChangedEmailPayload[] = [];
   const channelChangeNotices: ChannelChangedEmailPayload[] = [];
+  const webhookJobs: WebhookEventJobPayload[] = [];
   const record =
     <T>(list: T[]) =>
     (payload: T) => {
@@ -147,6 +154,12 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<TestAp
       emailSettingsChanged: record(emailSettingsNotices),
       channelChanged: record(channelChangeNotices),
     },
+    webhookQueue: options.webhookQueue ?? {
+      enqueue: (events) => {
+        webhookJobs.push(...events);
+        return Promise.resolve();
+      },
+    },
     overrides: {
       ...options.overrides,
       meta: { fetch: offlineMetaFetch, ...options.overrides?.meta },
@@ -162,6 +175,7 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<TestAp
     accountTokenJobs,
     emailSettingsNotices,
     channelChangeNotices,
+    webhookJobs,
   };
 }
 

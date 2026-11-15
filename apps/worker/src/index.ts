@@ -47,6 +47,7 @@ function main(config: WorkerConfig): void {
       allowedPorts: config.smtpAllowedPorts,
       plaintextLogin: plaintextLoginPolicy(config.isProduction),
     },
+    webhooks: { db },
   });
 
   const shutdown = createShutdown({

@@ -15,3 +15,4 @@ export * from './organizations';
 export * from './two-factor';
 export * from './user-sessions';
 export * from './users';
+export * from './webhook-events';

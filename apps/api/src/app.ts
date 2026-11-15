@@ -65,7 +65,11 @@ import { createLockInspector } from './modules/team/lock-state';
 import { teamRoutes } from './modules/team/team.routes';
 import { createTeamService } from './modules/team/team.service';
 import { createSetupService } from './modules/setup/setup.service';
+import { createWebhookGuard } from './modules/webhooks/webhook-guard';
+import { whatsAppWebhookRoutes } from './modules/webhooks/whatsapp-webhook.routes';
+import { createWhatsAppWebhookService } from './modules/webhooks/whatsapp-webhook.service';
 import type { EmailNotifier } from './queues/email-queue';
+import type { WebhookEventEnqueuer } from './queues/webhook-queue';
 
 export type AppConfig = Pick<
   ApiConfig,
@@ -96,6 +100,8 @@ export interface AppDeps {
   redis: Redis;
   /** Pengantre email notifikasi (dikirim worker). */
   notifier: EmailNotifier;
+  /** Pengantre kejadian webhook masuk (diproses worker). */
+  webhookQueue: WebhookEventEnqueuer;
   /** Titik ganti untuk tes. Tidak diisi di `index.ts`. */
   overrides?: {
     /** Awalan kunci Redis batas laju, supaya tes tidak saling mengganggu. */
@@ -285,6 +291,14 @@ export async function buildApp(deps: AppDeps) {
     apiUrl: config.apiUrl,
   });
 
+  const webhookGuard = createWebhookGuard({ db, limiter });
+  const whatsAppWebhooks = createWhatsAppWebhookService({
+    db,
+    secretBox,
+    guard: webhookGuard,
+    queue: deps.webhookQueue,
+  });
+
   // Pekerjaan latar belakang (mis. minta atur ulang password) ditunggu selesai saat ditutup.
   app.decorate('backgroundTasks', background);
   app.addHook('onClose', () => background.drain());
@@ -338,6 +352,8 @@ export async function buildApp(deps: AppDeps) {
   await app.register(teamRoutes, { team, cookieSecure: config.cookieSecure });
   await app.register(auditRoutes, { audit });
   await app.register(channelsRoutes, { channels, limiter, cookieSecure: config.cookieSecure });
+  // Publik: penerima webhook Meta (keaslian dari tanda tangan App Secret, bukan sesi).
+  await app.register(whatsAppWebhookRoutes, { guard: webhookGuard, webhooks: whatsAppWebhooks });
 
   // Harus setelah SEMUA rute modul didaftarkan (lihat http/method-not-allowed.ts).
   registerMethodNotAllowedRoutes();

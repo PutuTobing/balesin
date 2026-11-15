@@ -156,6 +156,17 @@ export const API_ROUTES = {
 } as const;
 
 /**
+ * Penerima webhook dari luar (Meta). SENGAJA di luar `API_PREFIX`: alamatnya ditempel pengguna di Meta
+ * App Dashboard (`<API_URL>/webhooks/whatsapp/<channelId>`, lihat `webhookUrlFor` di api), jadi tidak
+ * boleh ikut berubah bila versi API web naik. Publik (tanpa sesi/CSRF) — keasliannya dari tanda
+ * tangan Meta (docs/KONTRAK-API-CHANNEL.md bagian "Penerima webhook").
+ */
+export const WEBHOOK_ROUTES = {
+  /** GET — jabat tangan verifikasi Meta; POST — notifikasi (pesan masuk, status, error). */
+  whatsapp: '/webhooks/whatsapp/:channelId',
+} as const;
+
+/**
  * Mengisi parameter `:nama` di path `API_ROUTES`. Nilai di-encode; parameter yang tidak diisi
  * membuat fungsi melempar (salah pakai, bukan input pengguna).
  */

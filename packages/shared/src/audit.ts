@@ -83,6 +83,13 @@ export const AUDIT_ACTIONS = {
   /** Meta menolak perubahan profil bisnis yang sudah tercatat (`auditLogId` = baris yang batal). */
   channelBusinessProfileUpdateFailed: 'channel.business_profile_update_failed',
   /**
+   * Webhook WhatsApp channel ini ditolak berulang karena tanda tangan Meta tidak cocok/tidak ada
+   * (`failures`, `windowMinutes`, `reason`): App Secret di Balesin tidak sama dengan aplikasi Meta,
+   * atau ada pihak lain yang mencoba mengirim pesan palsu. Paling banyak sekali per jam per channel.
+   * Tanpa pelaku (`actorUserId: null`); IP = pengirim terakhir yang ditolak.
+   */
+  channelWebhookSignatureRejected: 'channel.webhook_signature_rejected',
+  /**
    * Atur ulang password diminta (dan diantre) untuk banyak akun berbeda dalam satu jam
    * (`accounts`, `windowMinutes`). Paling banyak sekali per jam per organisasi.
    */
@@ -146,6 +153,7 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'channel.webhook_verify_token_rotated': 'Verify token webhook dibuat ulang',
   'channel.business_profile_updated': 'Profil bisnis WhatsApp diubah',
   'channel.business_profile_update_failed': 'Perubahan profil bisnis ditolak Meta',
+  'channel.webhook_signature_rejected': 'Webhook WhatsApp ditolak berulang',
   'auth.password_reset.burst': 'Banyak permintaan atur ulang password',
 };
 
@@ -311,7 +319,9 @@ export const SECURITY_SUMMARY_MAX_EVENTS = 20;
  *    SELAIN Owner (semua Owner juga diberi tahu lewat email);
  *  - `member_joined` — undangan diterima: akun baru bergabung (semua Owner diberi tahu lewat email);
  *  - `password_reset_burst` — atur ulang password diminta untuk banyak akun berbeda dalam waktu
- *    singkat (pola pengambilalihan massal setelah email pengirim dibelokkan).
+ *    singkat (pola pengambilalihan massal setelah email pengirim dibelokkan);
+ *  - `webhook_signature_failed` — webhook WhatsApp sebuah channel ditolak berulang karena tanda
+ *    tangan Meta salah/tidak ada (App Secret tidak cocok, atau percobaan memalsukan pesan masuk).
  *
  * Perubahan channel/profil bisnis oleh Owner sendiri juga tercatat (`info`); oleh selain Owner
  * `warning`. `account_locked` per email+jaringan (bisa dipicu siapa pun tanpa akun) `info`; kunci
@@ -329,6 +339,7 @@ export const SECURITY_EVENT_KINDS = [
   'business_profile_changed',
   'member_joined',
   'password_reset_burst',
+  'webhook_signature_failed',
 ] as const;
 export const securityEventKindSchema = z.enum(SECURITY_EVENT_KINDS);
 export type SecurityEventKind = z.infer<typeof securityEventKindSchema>;
@@ -350,6 +361,7 @@ export const SECURITY_EVENT_SEVERITY: Readonly<Record<SecurityEventKind, 'warnin
   business_profile_changed: 'warning',
   member_joined: 'warning',
   password_reset_burst: 'warning',
+  webhook_signature_failed: 'warning',
 };
 
 export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> = {
@@ -364,6 +376,7 @@ export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> 
   business_profile_changed: 'Profil bisnis WhatsApp diubah',
   member_joined: 'Anggota baru bergabung lewat undangan',
   password_reset_burst: 'Banyak permintaan atur ulang password',
+  webhook_signature_failed: 'Webhook WhatsApp ditolak berulang',
 };
 
 export const securityEventSchema = z.object({

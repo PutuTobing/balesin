@@ -321,6 +321,8 @@ describe('deklarasi akses rute (bawaan tolak)', () => {
       '/api/v1/setup/verify-token',
       '/health',
       '/ready',
+      // Penerima webhook Meta (Fase 2): keaslian dari verify token / tanda tangan App Secret.
+      '/webhooks/whatsapp/:channelId',
     ]);
 
     // Semua rute lain menuntut sesi, dan rute pengaturan email (termasuk pelengkap 405-nya)

@@ -1,4 +1,4 @@
-# Kontrak API — Channel WhatsApp Cloud API (Fase 2 butir 1–2)
+# Kontrak API — Channel WhatsApp Cloud API (Fase 2 butir 1–3)
 
 Wizard koneksi WhatsApp (mode manual, teks `SETUP-META.md`), tes koneksi, URL webhook + verify token,
 halaman nomor (kualitas, status, batas pesan), dan profil bisnis. **Hanya WhatsApp Cloud API resmi
@@ -90,8 +90,9 @@ Teks tiap langkah dari `SETUP-META.md`. Server tidak menyimpan langkah wizard �
    dicentang di Meta. Bila `webhook.warning` tidak `null`, tampilkan sebagai peringatan (API_URL bukan
    https publik — Meta akan menolak URL itu). Anjurkan juga mengaktifkan **"Require App Secret
    Proof"** di Aplikasi → Pengaturan → Lanjutan (Balesin selalu mengirim `appsecret_proof`).
-   *Catatan*: penerima webhook (`/webhooks/whatsapp/:channelId`) dibangun di tugas berikutnya; sampai
-   itu ada, tombol "Verifikasi" di Meta akan gagal.
+   Penerima webhook (`/webhooks/whatsapp/:channelId`) sudah ada — lihat bagian "Penerima webhook".
+   Tombol "Verifikasi dan simpan" di Meta berhasil bila verify token ditempel persis dan URL bisa
+   dijangkau Meta (https publik).
 7. **Langkah 8 — Tes**: tombol **"Tes koneksi"** → `POST …/test`. Tampilkan `message` apa adanya
    (hijau bila `ok`, merah bila tidak), lalu kartu nomor dari `number` dan `warnings`. Hasil gagal tetap
    **200** dengan `ok: false` (bukan error HTTP).
@@ -281,3 +282,137 @@ saja hanya memuat `actorRole`.
   saja berubah, jadi perubahan ini tidak disimpan. Muat ulang halaman untuk melihat aksesmu sekarang."
 - Putaran 2 (N1): konfirmasi profil bisnis kini juga untuk Info, alamat, dan deskripsi (lihat bagian
   Profil bisnis); hanya kategori yang bebas konfirmasi.
+
+## Penerima webhook (Fase 2 butir 3)
+
+Dipanggil **Meta**, bukan web. Path di luar `/api/v1` (`WEBHOOK_ROUTES.whatsapp` di
+`packages/shared/src/api-routes.ts`): `<API_URL>/webhooks/whatsapp/<channelId>` — persis `webhookUrl` /
+`webhook.callbackUrl`. **Publik** (tanpa sesi, cookie, CSRF; Meta tidak mengirim `Origin`). Keaslian
+dari verify token (GET) dan tanda tangan App Secret (POST) — `:channelId` hanya menunjuk channel mana
+yang rahasianya dipakai, bukan autentikasi.
+
+### Jabat tangan — `GET /webhooks/whatsapp/:channelId`
+
+Meta memanggilnya saat pengguna menekan **"Verifikasi dan simpan"** di Meta App Dashboard
+(WhatsApp → Konfigurasi → Webhook): `?hub.mode=subscribe&hub.verify_token=…&hub.challenge=…`.
+
+| Kasus | Jawaban |
+|---|---|
+| `hub.mode = subscribe`, verify token = milik channel (perbandingan waktu-konstan), `hub.challenge` cocok `^[A-Za-z0-9_-]{1,128}$` | **200** `text/plain; charset=utf-8`, isi = `hub.challenge` apa adanya (`nosniff`, `no-store`) |
+| Selain itu (token salah, mode lain, challenge berisi karakter lain/terlalu panjang, parameter ganda/hilang) | **403** `FORBIDDEN` "Permintaan webhook ditolak." — tanpa alasan, tanpa memantulkan apa pun |
+| Channel tidak ada / ID bukan UUID / channel terhapus | **404** `NOT_FOUND` "Alamat webhook tidak dikenal." |
+| Verify token tersimpan tak bisa dibuka (master key kosong/berubah) | **503** — perbaiki master key atau buat ulang verify token |
+| Batas laju (lihat bawah) | **429** + `Retry-After` |
+
+Channel **nonaktif** tetap bisa diverifikasi (webhook boleh dipasang sebelum channel diaktifkan).
+`HEAD` tidak didukung (404).
+
+### Notifikasi — `POST /webhooks/whatsapp/:channelId`
+
+`Content-Type: application/json` (selain itu **415**), body **≤ 3 MiB** (batas payload Meta 3 MB;
+lebih → **413** sebelum diperiksa). Urutan pemeriksaan:
+
+1. **Sebelum body dibaca**: batas laju per IP; channel ada dan tidak terhapus (**404**); sumber ini
+   belum terlalu sering ditolak untuk channel ini (**429**).
+2. **Tanda tangan**: `X-Hub-Signature-256: sha256=<64 heks>` = HMAC-SHA256 atas **body mentah** (byte
+   persis kiriman Meta) dengan **App Secret channel**, dibandingkan waktu-konstan. Header tidak ada,
+   format lain, header ganda, atau tidak cocok → **403** "Permintaan webhook ditolak." (sama untuk
+   semua alasan). Body **tidak** di-`JSON.parse` sebelum tanda tangan lolos. App Secret tak bisa
+   dibuka → **503**.
+3. `JSON.parse` (kunci `__proto__`/`constructor` dibuang) lalu dipecah per kejadian dengan skema
+   **toleran** (`@balesin/core` `splitWhatsAppWebhook`): isian baru dari Meta dipertahankan, bagian
+   yang rusak dibuang tanpa menggagalkan bagian lain. Body bertanda tangan sah tetapi bukan JSON /
+   bukan `object: "whatsapp_business_account"` → **200**, diabaikan (dicatat `warn`).
+4. **Routing per kejadian** — Meta mengirim notifikasi SEMUA nomor milik satu aplikasi ke satu URL:
+   - `metadata.phone_number_id` + `entry[].id` (WABA) = channel di URL → channel itu;
+   - nomor milik channel **lain di organisasi yang sama** yang WABA-nya cocok **dan App Secret-nya
+     sama** (tanda tangan tadi juga sah untuknya) → disimpan untuk channel itu;
+   - selain itu (App Secret beda, nomor/WABA tak dikenal, channel organisasi lain) → **dibuang**
+     (log `warn` berisi jumlah saja);
+   - field tingkat WABA selain `messages` (`message_template_status_update`, `account_update`, …): hanya
+     bila `entry[].id` = WABA channel di URL.
+5. Kejadian untuk channel **nonaktif** → dibuang (tidak disimpan), tetap **200** supaya Meta berhenti
+   mengirim ulang. Kejadian dengan `timestamp` **lebih dari 8 hari** lalu → dibuang (lebih lama dari
+   jendela kirim ulang Meta 7 hari; mencegah pemutaran ulang rekaman lama).
+6. Simpan ke `webhook_events` (idempoten, lihat bawah) → antre job `webhooks:whatsapp-event` berisi
+   `{organizationId, eventId}` saja → **200** `{"status":"received"}`. Target < 1 detik.
+7. Database atau antrean gagal → **503**. Meta mengirim ulang; kejadian yang sudah tersimpan tidak
+   tergandakan dan yang masih `pending` diantre ulang.
+
+| Kasus | Jawaban | Disimpan |
+|---|---|---|
+| Tanda tangan sah, kejadian untuk channel ini/saudaranya | 200 | ya (`pending`; field lain `skipped`) |
+| Tanda tangan sah, kiriman ulang (duplikat) | 200 | tidak (yang `pending` diantre ulang) |
+| Tanda tangan sah, nomor/WABA bukan milik channel ini | 200 | tidak |
+| Tanda tangan sah, channel (tujuan) nonaktif | 200 | tidak |
+| Tanpa / salah tanda tangan (channel aktif maupun nonaktif) | 403 | tidak |
+| Channel tidak ada / terhapus | 404 (tanpa memeriksa rahasia) | tidak |
+| Body > 3 MiB / content-type bukan JSON | 413 / 415 | tidak |
+| Batas laju | 429 + `Retry-After` | tidak |
+| Rahasia tak bisa dibuka / database / antrean gagal | 503 | (bisa sudah tersimpan `pending`) |
+
+### Idempotensi (`webhook_events`, unik `(channel_id, dedup_key)`)
+
+| Jenis (`kind`) | Sumber | `dedup_key` | Arti |
+|---|---|---|---|
+| `message` | `value.messages[]` | `m:<wamid>` | pesan masuk unik per (channel, wamid) |
+| `status` | `value.statuses[]` | `s:<wamid>:<status>` | unik per (channel, wamid, status): `sent`, `delivered`, `read`, `played`, `failed` (nilai baru tetap disimpan) |
+| `error` | `value.errors[]` | `e:` + SHA-256 isi | error tingkat sistem/aplikasi/akun |
+| `other` | field selain `messages` | `o:<field>:` + SHA-256 isi | disimpan `skipped`, belum diproses |
+
+Kolom: `organization_id`, `channel_id` (channel pemilik nomor, FK komposit ke `channels`), `source`
+(`whatsapp`), `kind`, `field`, `dedup_key`, `external_id` (wamid), `payload` (bagian yang sudah
+divalidasi — **tanpa** header, tanda tangan, App Secret), `occurred_at` (cap waktu Meta),
+`received_at`, `status` (`pending`/`processed`/`failed`/`skipped`), `attempts`, `last_error` (kode
+singkat, bukan pesan mentah), `processed_at`. Retensi baris minimal **8 hari** (penghapusan berkala
+belum ada — diputuskan bersama retensi pesan).
+
+### Worker (`apps/worker/src/queues/webhooks.ts`)
+
+Job = ID kejadian (ID job `wa-event-<eventId>`, jadi mengantre ulang tidak menggandakan). Worker
+mengunci baris (`FOR UPDATE`), memproses hanya yang `pending`, menormalisasi
+(`normalizeInboundMessage` / `normalizeStatusUpdate` / `normalizeWebhookFailure` di `@balesin/core`),
+meneruskan ke `InboundEventHandlers`, lalu `processed`. Gagal → `attempts`+1, `last_error`, diulang
+**8 kali** dengan jeda eksponensial mulai 5 dtk (±10 menit); percobaan terakhir atau payload rusak →
+`failed`. *Butir ini baru menormalisasi; kontak, percakapan, jendela 24 jam, unduh media, dan
+WebSocket disambungkan lewat `InboundEventHandlers` di butir berikutnya.*
+
+### Batas laju & penyalahgunaan
+
+| Ember | Kunci | Batas | Dihitung dari |
+|---|---|---|---|
+| `webhook-ip` | IP | 3.000 / menit | semua permintaan |
+| `webhook-tak-dikenal-ip` | IP | 30 / 10 menit | ID channel yang tidak pernah ada (channel terhapus tidak dihitung) |
+| `webhook-tolak-ip` | IP + channel | 20 / 10 menit | tanda tangan / jabat tangan ditolak |
+| `webhook-channel` | channel | 12.000 / menit | notifikasi bertanda tangan sah |
+
+Ember "ditolak" hanya diisi kegagalan, jadi kiriman sah Meta tidak pernah tertahan karena percobaan
+palsu dari IP lain. **Wajib**: `TRUST_PROXY` diisi IP reverse proxy (mis. vm-nginx) supaya IP yang
+dihitung adalah IP Meta/penyerang, bukan IP proxy — tanpa itu semua kiriman terlihat dari satu IP dan
+batas per IP menjadi batas bersama.
+
+**Kejadian keamanan**: **10 tanda tangan salah dalam 10 menit pada satu channel** (semua IP) → audit
+`channel.webhook_signature_rejected` (tanpa pelaku; IP = pengirim terakhir; `details`: `name`,
+`phoneNumberId`, `failures`, `windowMinutes`, `reason`) dan kejadian **`webhook_signature_failed`
+(`warning`)** di `GET /audit-logs/security-summary` — paling banyak sekali per jam per channel. Label
+`SECURITY_EVENT_LABELS.webhook_signature_failed` ("Webhook WhatsApp ditolak berulang"). Artinya salah
+satu: App Secret di Balesin tidak sama dengan aplikasi Meta (pesan tidak masuk sama sekali — periksa
+Pengaturan → Channel), atau ada pihak yang mencoba memalsukan pesan masuk. Jabat tangan yang salah
+tidak memicu kejadian ini (biasanya salah tempel). `counts` ringkasan keamanan kini juga memuat kunci
+`webhook_signature_failed` (rekaman/mock harus ikut memuatnya).
+
+### Log & privasi
+
+Log hanya memuat ID channel, jumlah kejadian (tersimpan/duplikat/dibuang), dan alasan penolakan.
+**Tidak pernah**: body mentah, isi pesan, nomor/nama pelanggan, header tanda tangan, verify token
+(query string tidak di-log), App Secret. Isi pesan hanya ada di `webhook_events.payload` (data
+pribadi, UU PDP).
+
+### Alat uji
+
+`apps/api/src/testing/fake-meta-webhooks.ts` (diekspor ulang dari `testing/fake-meta.ts`):
+`textMessageNotification`, `imageMessageNotification`, `unsupportedMessageNotification`,
+`statusNotification({wamid, status})`, `errorNotification`, `templateStatusNotification`,
+`combinedNotification`, `signedWebhook` (body + header seperti Meta), `deliverWhatsAppWebhook(url, …)`
+(HTTP sungguhan ke stack E2E, hanya ke loopback), `handshakeQuery(verifyToken)`. Bentuknya mengikuti
+contoh resmi Meta; tidak pernah memanggil Meta.

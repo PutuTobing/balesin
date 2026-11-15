@@ -71,6 +71,13 @@
       "when": 1794691835060,
       "tag": "0009_undangan_sesi_penerbit",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794711574305,
+      "tag": "0010_webhook_masuk_whatsapp",
+      "breakpoints": true
     }
   ]
 }

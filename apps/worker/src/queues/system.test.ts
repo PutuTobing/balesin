@@ -84,8 +84,9 @@ describe('startWorkers saat Redis tidak bisa dihubungi', () => {
         fallback: null,
         allowedPorts: [],
       },
+      webhooks: { db },
     });
-    expect(runtime.workers.map((worker) => worker.name)).toEqual(['system', 'email']);
+    expect(runtime.workers.map((worker) => worker.name)).toEqual(['system', 'email', 'webhooks']);
 
     // Beri waktu beberapa percobaan sambung gagal — proses tidak boleh jatuh.
     await new Promise((resolve) => setTimeout(resolve, 400));

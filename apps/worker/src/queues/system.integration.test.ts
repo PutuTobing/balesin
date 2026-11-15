@@ -63,6 +63,7 @@ beforeAll(async () => {
       fallback: null,
       allowedPorts: [],
     },
+    webhooks: { db },
   });
 }, 30_000);
 

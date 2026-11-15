@@ -13,6 +13,11 @@ export const QUEUE_NAMES = {
   system: 'system',
   /** Email sistem: notifikasi keamanan akun, undangan, atur ulang password, verifikasi email. */
   email: 'email',
+  /**
+   * Kejadian webhook masuk (Meta) yang sudah tersimpan di `webhook_events`: diproses worker di luar
+   * permintaan HTTP supaya Meta dijawab cepat (ARCHITECTURE.md §4).
+   */
+  webhooks: 'webhooks',
 } as const;
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
@@ -23,6 +28,54 @@ export const DEFAULT_JOB_OPTIONS = {
   removeOnComplete: { age: 24 * 60 * 60, count: 1_000 },
   removeOnFail: { age: 7 * 24 * 60 * 60, count: 5_000 },
 };
+
+// ── Antrian `webhooks` ──────────────────────────────────────────────────────
+//
+// Payload HANYA ID baris `webhook_events` (+ organisasinya). Isi pesan pelanggan, App Secret, dan
+// header tidak pernah masuk Redis: worker membaca payload yang sudah divalidasi dari database.
+
+export const WEBHOOK_JOBS = {
+  /** Satu kejadian WhatsApp (pesan masuk / status / error / field lain). */
+  whatsappEvent: 'whatsapp-event',
+} as const;
+export type WebhookJobName = (typeof WEBHOOK_JOBS)[keyof typeof WEBHOOK_JOBS];
+
+export const webhookEventJobPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  /** `webhook_events.id`. */
+  eventId: z.uuid(),
+});
+export type WebhookEventJobPayload = z.infer<typeof webhookEventJobPayloadSchema>;
+
+/**
+ * 8 percobaan, jeda eksponensial mulai 5 detik (5 dtk, 10 dtk, … ±10 menit total): gangguan database
+ * sesaat tidak membuang pesan pelanggan. Riwayat gagal disimpan lebih lama untuk ditelusuri.
+ */
+export const WEBHOOK_JOB_OPTIONS = {
+  attempts: 8,
+  backoff: { type: 'exponential', delay: 5_000 },
+  removeOnComplete: { age: 24 * 60 * 60, count: 10_000 },
+  removeOnFail: { age: 14 * 24 * 60 * 60, count: 10_000 },
+};
+
+/**
+ * ID job = ID kejadian: kejadian yang diantrekan dua kali (Meta mengirim ulang sementara job pertama
+ * masih menunggu) tidak menjadi dua job. Pemroses tetap idempoten (status baris diperiksa) untuk
+ * kasus job lama sudah dibersihkan.
+ */
+export function webhookEventJobId(eventId: string): string {
+  return `wa-event-${eventId}`;
+}
+
+export const webhookEventJobResultSchema = z.object({
+  /**
+   * `processed` = dinormalisasi dan diteruskan; `skipped` = sudah diproses sebelumnya / tidak ada
+   * lagi / jenis yang belum ditangani.
+   */
+  status: z.enum(['processed', 'skipped']),
+  reason: z.enum(['already_done', 'not_found', 'unhandled']).optional(),
+});
+export type WebhookEventJobResult = z.infer<typeof webhookEventJobResultSchema>;
 
 // ── Antrian `system` ────────────────────────────────────────────────────────
 
