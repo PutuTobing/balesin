@@ -271,3 +271,122 @@ Meta, dan kunci dedup-nya disimpan lebih lama daripada payload.
 | `packages/db`: `vitest run src/webhook-events src/migrations` | 11/11 lulus |
 | ESLint + `tsc --noEmit` (apps/api) + Prettier untuk berkas tes baru | bersih |
 | `pnpm audit` | 2 **moderate**, keduanya dev-only: `esbuild` ≤ 0.24.2 (lewat `drizzle-kit` → `@esbuild-kit/*`, server dev) dan `minimatch` < 11.0.1 (lewat `eslint`/`typescript-eslint`). Tidak ada di dependensi runtime api/worker/web. Perbarui saat `drizzle-kit`/eslint merilis versi yang membawa perbaikannya |
+
+---
+
+## Putaran 2 — verifikasi perbaikan commit `2609aa2`
+
+### Putusan putaran 2: AMAN
+
+Saya memeriksa diff perbaikan (`git show 2609aa2`) dan menjalankan ulang tes. Hasilnya: S1, S2, R1, R2, R3, R4, dan Info 3
+**tertutup**. Kelima tes yang dulu `it.fails` kini `it` biasa dan lulus. Asersinya tidak dilemahkan (diff berkas tes
+hanya menghapus `.fails` dan komentar "saat ini …"). S3 (sisa: installer Fase 7) dan S4 (retensi, butir kontak) ditunda.
+Penundaan itu tercatat di `DECISIONS.md` 2026-11-16 dan bisa diterima sebagai **syarat rilis**, bukan syarat butir ini.
+Tidak ada temuan baru Kritis/Tinggi/Sedang. Ada dua catatan Rendah baru (N1, N2).
+
+| # | Status | Bukti |
+|---|---|---|
+| S1 | ✅ tertutup | Ember dipisah per metode: `WEBHOOK_REJECTED_HANDSHAKE_RULE` hanya untuk GET, `WEBHOOK_REJECTED_SOURCE_RULE` hanya untuk POST (`webhook-guard.ts` `rejectionRuleFor`, `admitFor('GET'/'POST')` di routes). `webhook-tak-dikenal-ip` hanya diperiksa/dihitung bila ID tidak ditemukan |
+| S2 | ✅ tertutup | Reviver membersihkan nilai DAN kunci (`toStorableText`: NUL dibuang, `toWellFormed`). `unixSeconds` ≤ 2100 + `storableDate`. INSERT per bagian → bila error data, diulang per baris (`insertChunkTolerant`, `db` bukan transaksi) |
+| R1 | ✅ | `distinctSources`, `topSource` (/24 atau /64), dan `topSourceFailures` masuk audit + ringkasan keamanan |
+| R2 | ✅ | Maks. 10.000 kejadian dan 50 `phone_number_id` per notifikasi. Channel saudara dimuat dengan satu query `inArray` |
+| R3 | ✅ | Worker: `SELECT enabled, deleted_at … FOR SHARE` di transaksi yang sama → `skipped` + `channel_inactive` |
+| R4 | ✅ | Lebih dari 1 jam ke depan dibuang (`future`). `receivedAt` = jam server, tercatat di `InboundEventContext` dan DECISIONS |
+| Info 3 | ✅ | `Object.hasOwn` untuk `message[rawType]` dan `body[kind]` |
+| S3 | ⏸ sebagian | Penjaga log (lihat butir 6). Sisanya Fase 7 |
+| S4 | ⏸ ditunda | DECISIONS 2026-11-16 → butir kontak & percakapan. **Tetap wajib sebelum produksi** |
+
+### Penilaian 6 hal yang ditandai backend
+
+1. **ID tak dikenal = satu query PK per permintaan, tanpa cache negatif — DITERIMA (Info).** Query-nya `SELECT` per
+   primary key UUID (indeks), sekitar 0,1 ms. Dari satu IP paling banyak 3.000/menit (≈ 50/detik). Penyerang dengan
+   banyak IP bisa melewati batas per IP, tetapi beban per permintaan sama kecilnya dengan 404 biasa, dan lebih murah
+   daripada permintaan TLS-nya sendiri. Cache negatif menambah rumit (invalidasi saat channel dibuat) tanpa manfaat
+   berarti. Satu hal kecil: permintaan yang ditolak 429 oleh `webhook-tak-dikenal-ip` tetap sudah menjalankan query lebih
+   dulu. Itu wajar karena ember ini kini sengaja tidak diperiksa sebelum pencarian (S1).
+
+2. **Baris yang dilewati per kode "data" (kelas 22, `23514`, `RangeError`; `23503`/`23505` → 503) — DITERIMA, dengan
+   catatan N2 (Rendah).**
+   - Pihak luar **tidak** bisa memakai jalur ini untuk menghilangkan pesan **orang lain**. Pengulangan per baris
+     mengisolasi baris beracun, dan baris lain tetap tersimpan (tes S2).
+   - Setelah pembersihan reviver, sumber kelas 22 dari data Meta praktis habis. NUL/surrogate sudah dibersihkan,
+     tanggal dibatasi 2100, ID/inet dibuat server, `text` tanpa batas panjang. Semua CHECK `webhook_events` bergantung
+     pada data yang sudah divalidasi skema.
+   - `RangeError` hanya muncul dari serialisasi Drizzle (Invalid Date, nesting terlalu dalam). Keduanya ditentukan oleh
+     data, bukan gangguan sementara.
+   - `23503` (FK channel/organisasi; channel hanya soft-delete) dan `23505` (bentrok PK UUIDv7) memang bukan kesalahan
+     data permanen, jadi 503 + ulang sudah tepat.
+   - **Risiko yang tersisa justru bug kode kita sendiri.** Contoh: migrasi berikutnya menambah CHECK/kolom yang ditolak
+     untuk SEMUA pesan. Akibatnya setiap pesan dibuang diam-diam, Meta menerima 200 dan tidak mengirim ulang, dan
+     satu-satunya jejak adalah log `warn`. Lihat N2.
+
+3. **`FOR SHARE` pada channel di transaksi worker — DITERIMA.**
+   - Pilihan kunci ini tepat. `FOR SHARE` bertabrakan dengan `FOR NO KEY UPDATE` milik `UPDATE channels`
+     (disable/rename/hapus), jadi channel tidak bisa dinonaktifkan di tengah pemrosesan. Kunci ini cocok dengan
+     `FOR KEY SHARE` dari pemeriksaan FK INSERT penerima, jadi penerima tidak tertahan. Banyak worker bisa memegang
+     `FOR SHARE` bersamaan.
+   - Postgres mengantrekan peminta kunci eksklusif lewat tuple lock, sehingga "nonaktifkan" hanya menunggu transaksi
+     yang sedang berjalan (milidetik), tidak kelaparan.
+   - Urutan kunci di worker: `webhook_events` FOR UPDATE → `channels` FOR SHARE. Modul channel tidak pernah menyentuh
+     `webhook_events`, jadi sekarang tidak ada siklus deadlock.
+   - Catatan N1 untuk butir berikutnya: handler **jangan** meng-`UPDATE channels` di transaksi ini (lihat N1).
+
+4. **Data IP di detail audit (/24, /64) + tally Redis IPv4 lengkap TTL 10 menit — DITERIMA.**
+   - Awalan /24 cukup untuk membedakan "banyak IP Meta (AS32934)" dari "satu jaringan kantor" tanpa menampilkan alamat
+     lengkap di banner.
+   - Baris audit itu sudah menyimpan IP lengkap pengirim terakhir di kolom `ip` (perilaku lama, dibatasi peran Audit
+     log). Untuk tujuan keamanan, itu kepentingan sah (UU PDP).
+   - Tally di Redis berupa hash, maks. 256 anggota, jendela tetap 10 menit. Isinya hanya alamat yang gagal tanda tangan,
+     bukan pelanggan. Penyerang dengan lebih dari 256 IP bisa memenuhi tally sehingga `distinctSources` mentok di 256,
+     tetapi angka itu tetap berarti "banyak sumber". Tidak ada kebocoran ke log.
+
+5. **Pembersihan teks di reviver setelah tanda tangan; hash dedup dari teks bersih; JSON sangat dalam → 200 diabaikan —
+   DITERIMA.**
+   - Urutannya benar: HMAC atas byte mentah dulu, baru pembersihan. Pembersihan bersifat deterministik, jadi kiriman
+     ulang Meta (byte sama) menghasilkan kunci `e:`/`o:` yang sama.
+   - Dua payload yang hanya berbeda NUL/surrogate akan mendapat kunci yang sama, dan yang kedua dibuang. Itu hanya bisa
+     dibuat pemegang App Secret, dan untuk `m:`/`s:` kuncinya dari wamid (pola tanpa karakter tersebut). Dampaknya
+     dapat diabaikan.
+   - Kunci yang setelah dibersihkan menjadi `__proto__`/`constructor` ikut dibuang.
+   - Kedalaman sudah saya uji di Node 22: reviver melempar `RangeError` pada < 3.000 tingkat, sedangkan `JSON.stringify`
+     baru gagal pada ±5.000. Postgres `jsonb` menerima 10.000 tingkat dan baru menolak (54001) pada 100.000. Jadi apa
+     pun yang lolos reviver juga lolos `digest()` dan INSERT. Tidak ada lagi jalur 500/503 berulang dari JSON dalam.
+     Membuang notifikasi bertanda tangan sah yang bersarang ribuan tingkat dengan 200 bisa diterima, karena Meta tidak
+     pernah mengirim bentuk itu.
+
+6. **Penjaga S3 hanya log — DITERIMA sebagai sementara, S3 tetap terbuka (Sedang, syarat rilis Fase 7).**
+   - Deteksinya (alamat privat/loopback/CGNAT + adanya `X-Forwarded-For`) mencakup mode A (vm-nginx), B (Caddy di
+     jaringan Docker), dan C (cloudflared lokal). Isi header tidak dibaca.
+   - Kelemahannya: hanya satu baris log `error` per proses, mudah terlewat.
+   - Dengan S1 diperbaiki, varian "ID acak menahan semua webhook" hilang walaupun konfigurasi salah. Yang tersisa
+     (akun CS yang tahu ID → 20 POST salah → channel itu tertahan untuk semua kiriman via proxy) masih nyata bila
+     `TRUST_PROXY` salah.
+   - Syarat rilis Fase 7 (tetap): installer mengisi `TRUST_PROXY`, peringatan di health check/banner Owner (bukan
+     hanya log), dan tes E2E deploy memastikan `request.ip` ≠ IP proxy.
+
+### Catatan baru (Rendah)
+
+**N1 — Rendah (butir kontak/percakapan) — Jangan menaikkan kunci channel di dalam handler.** Bila handler kelak
+meng-`UPDATE channels` (mis. kualitas nomor, `last_inbound_at`) di transaksi yang sudah memegang `FOR SHARE`, dua worker
+yang sama-sama memegang kunci bersama lalu meminta kunci eksklusif akan **deadlock** (concurrency 10). Pilihannya:
+perbarui channel lewat job terpisah, atau ganti kuncinya ke `FOR NO KEY UPDATE`, yang menserialkan pemrosesan per
+channel. Catat sebagai komentar di `InboundEventHandlers`.
+
+**N2 — Rendah — Baris yang ditolak database hanya terlihat di log `warn`.** Bila regresi skema membuat semua kejadian
+ditolak (bagian 2 di atas), pesan pelanggan hilang permanen tanpa alarm. **Perbaikan**: hitung `rejected` di Redis
+per channel/hari dan tampilkan di pemeriksaan kesehatan (dan di layar diagnosis webhook nanti). Alternatifnya, simpan
+baris "stub" tanpa payload (`status = 'failed'`, `last_error = <kode>`, `dedup_key`) supaya bisa dihitung dan dicari.
+Opsional: perlakukan `23514` sebagai 503 karena semua CHECK hanya bisa dilanggar oleh bug kode, bukan oleh data Meta.
+
+### Tes putaran 2
+
+| Perintah | Hasil |
+|---|---|
+| `apps/api`: `vitest run src/modules/webhooks src/http src/rbac-matrix src/modules/audit` | 129/129 lulus (11 berkas; termasuk 9 tes review ini, `webhook-events.repo` per baris, `forwarded-for-guard`, tally `rate-limit`) |
+| `apps/api`: `vitest run src/security-review src/modules/channels` | 161/161 lulus |
+| `packages/core`: `vitest run src/meta` (termasuk `webhook-hardening.test.ts`) | 96/96 lulus |
+| `apps/worker`: `vitest run src/queues` (termasuk `channel_inactive`) | 66/66 lulus |
+| `packages/db`: `vitest run src/webhook-events` | 3/3 lulus |
+| Uji kedalaman manual: Node `JSON.parse` + reviver / `JSON.stringify`, Postgres `::jsonb` (query `SELECT` saja, tanpa tabel) | reviver gagal < 3.000, stringify ±5.000, jsonb OK 10.000 / gagal 100.000 |
+
+Tidak ada kode produk yang diubah dan tidak ada commit. Stack E2E, `apps/web/`, dan `e2e/` tidak disentuh.
