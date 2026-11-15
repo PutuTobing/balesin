@@ -200,7 +200,18 @@ const DETAIL_KEYS: Readonly<Record<SecurityEventKind, readonly string[]>> = {
   business_profile_changed: ['name', 'phoneNumberId', 'changedFields', 'actorRole'],
   member_joined: ['role', 'issuerRole'],
   password_reset_burst: ['accounts', 'windowMinutes'],
-  webhook_signature_failed: ['name', 'phoneNumberId', 'failures', 'windowMinutes', 'reason'],
+  // Sumber berbeda + awalan IP terbanyak: membedakan "App Secret salah" (banyak IP Meta) dari orang
+  // dalam yang tahu ID channel (satu IP) — review webhook R1.
+  webhook_signature_failed: [
+    'name',
+    'phoneNumberId',
+    'failures',
+    'windowMinutes',
+    'reason',
+    'distinctSources',
+    'topSource',
+    'topSourceFailures',
+  ],
 };
 
 export function createAuditService(deps: { db: Database; limiter: RateLimiter }): AuditService {

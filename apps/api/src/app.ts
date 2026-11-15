@@ -24,6 +24,7 @@ import {
 
 import type { ApiConfig } from './config';
 import { handleError, handleNotFound } from './http/error-handler';
+import { createForwardedForGuard } from './http/forwarded-for-guard';
 import { trackRoutesForMethodNotAllowed } from './http/method-not-allowed';
 import { createRateLimiter } from './http/rate-limit';
 import { enforceRouteDeclarations } from './http/route-access';
@@ -165,6 +166,19 @@ export async function buildApp(deps: AppDeps) {
   app.removeContentTypeParser('text/plain');
 
   const registerMethodNotAllowedRoutes = trackRoutesForMethodNotAllowed(app);
+
+  // Production tanpa TRUST_PROXY di belakang proxy → log error sekali (review webhook S3).
+  const forwardedForGuard = createForwardedForGuard({
+    isProduction: config.isProduction,
+    trustProxy: config.trustProxy,
+    logger: app.log,
+  });
+  if (forwardedForGuard) {
+    app.addHook('onRequest', (request, _reply, done) => {
+      forwardedForGuard(request);
+      done();
+    });
+  }
 
   await app.register(securityPlugin, {
     appOrigin: config.appOrigin,

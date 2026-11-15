@@ -539,6 +539,10 @@ describe('batas laju & penyalahgunaan', () => {
         failures: 10,
         windowMinutes: 10,
         reason: 'signature_mismatch',
+        // R1: banyak IP berbeda (pola "App Secret salah"), awalan saja — bukan alamat lengkap.
+        distinctSources: 10,
+        topSource: '198.51.100.0/24',
+        topSourceFailures: 1,
       },
     });
     expect(JSON.stringify(rows[0])).not.toContain(SECRET_MESSAGE);
@@ -552,7 +556,13 @@ describe('batas laju & penyalahgunaan', () => {
     expect(parsed.events.find((event) => event.kind === 'webhook_signature_failed')).toMatchObject({
       severity: 'warning',
       actor: null,
-      details: { name: 'CS Utama', phoneNumberId: PHONE, failures: 10 },
+      details: {
+        name: 'CS Utama',
+        phoneNumberId: PHONE,
+        failures: 10,
+        distinctSources: 10,
+        topSource: '198.51.100.0/24',
+      },
     });
     expect(parsed.latestWarningAt).not.toBeNull();
   });
@@ -572,7 +582,7 @@ describe('batas laju & penyalahgunaan', () => {
     expect(alarms).toEqual([]);
   });
 
-  it('menebak ID channel dari satu IP → 429 setelah 30 percobaan; channel terhapus tidak dihitung', async () => {
+  it('menebak ID channel dari satu IP → 429 setelah 30 percobaan (hanya untuk ID tak dikenal); channel terhapus tidak dihitung', async () => {
     const deleted = await insertChannel({ phoneNumberId: PHONE_2, deleted: true });
     for (let attempt = 0; attempt < 40; attempt += 1) {
       expect((await post(deleted, textMessageNotification())).statusCode).toBe(404);
@@ -586,9 +596,108 @@ describe('batas laju & penyalahgunaan', () => {
       );
     }
     expect((await post(newId(), textMessageNotification(), { ip: scanner })).statusCode).toBe(429);
+    expect((await handshake(newId(), handshakeQuery('x'), scanner)).statusCode).toBe(429);
+    // Channel yang ADA tidak ikut tertahan (review webhook S1 butir 2).
     expect((await post(channelId, textMessageNotification(), { ip: scanner })).statusCode).toBe(
+      200,
+    );
+    expect((await handshake(channelId, handshakeQuery(VERIFY_TOKEN), scanner)).statusCode).toBe(
+      200,
+    );
+  });
+
+  it('tanda tangan POST salah hanya menahan POST: jabat tangan GET dari IP itu tetap dilayani (S1)', async () => {
+    const attacker = '203.0.113.20';
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      expectRejected(
+        await post(channelId, textMessageNotification(), {
+          secret: OTHER_APP_SECRET,
+          ip: attacker,
+        }),
+      );
+    }
+    expect((await post(channelId, textMessageNotification(), { ip: attacker })).statusCode).toBe(
       429,
     );
+    expect((await handshake(channelId, handshakeQuery(VERIFY_TOKEN), attacker)).statusCode).toBe(
+      200,
+    );
+  });
+
+  it('kejadian keamanan dari SATU IP: sumber berbeda 1, kegagalan terbanyak = semuanya (R1)', async () => {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await post(channelId, textMessageNotification(), {
+        secret: OTHER_APP_SECRET,
+        ip: '203.0.113.30',
+      });
+    }
+    const [alarm] = await harness.db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.action, AUDIT_ACTIONS.channelWebhookSignatureRejected));
+    expect(alarm?.metadata).toMatchObject({
+      failures: 10,
+      distinctSources: 1,
+      topSource: '203.0.113.0/24',
+      topSourceFailures: 10,
+    });
+    expect(JSON.stringify(alarm?.metadata)).not.toContain('203.0.113.30');
+  });
+});
+
+describe('pengerasan setelah review webhook (S2, R2, R4)', () => {
+  it('teks "beracun" disimpan dalam bentuk bersih (NUL dibuang, surrogate → U+FFFD)', async () => {
+    const wamid = fakeWamid();
+    const response = await post(
+      channelId,
+      textMessageNotification({
+        wamid,
+        body: 'halo\u0000kak \ud83d',
+        customer: { name: 'Bu\u0000di' },
+      }),
+    );
+    expect(response.statusCode, response.body).toBe(200);
+    const [event] = await eventsOf(channelId);
+    const payload = event?.payload as {
+      message: { text: { body: string } };
+      contact: { profile: { name: string } };
+    };
+    expect(payload.message.text.body).toBe('halokak \ufffd');
+    expect(payload.contact.profile.name).toBe('Budi');
+    expect(event?.externalId).toBe(wamid);
+  });
+
+  it('cap waktu > 1 jam di masa depan dibuang; sedikit di depan (jam Meta lebih cepat) diterima (R4)', async () => {
+    const future = unixTimestamp(new Date(Date.now() + 2 * 60 * 60 * 1000));
+    const nearFuture = unixTimestamp(new Date(Date.now() + 30 * 60 * 1000));
+    const far = fakeWamid();
+    const near = fakeWamid();
+    expect(
+      (await post(channelId, textMessageNotification({ wamid: far, timestamp: future })))
+        .statusCode,
+    ).toBe(200);
+    expect(
+      (await post(channelId, textMessageNotification({ wamid: near, timestamp: nearFuture })))
+        .statusCode,
+    ).toBe(200);
+    expect((await eventsOf(channelId)).map((event) => event.externalId)).toEqual([near]);
+    expect(harness.logs.text()).toContain('masa depan');
+  });
+
+  it('satu notifikasi untuk beberapa nomor: saudara dimuat sekaligus dan setiap kejadian ke pemiliknya (R2)', async () => {
+    const second = await insertChannel({ phoneNumberId: PHONE_2, name: 'CS Teknis' });
+    const third = await insertChannel({ phoneNumberId: PHONE_3, name: 'CS Tagihan' });
+    const notification = combinedNotification(
+      textMessageNotification(),
+      textMessageNotification({ phoneNumberId: PHONE_2 }),
+      textMessageNotification({ phoneNumberId: PHONE_3 }),
+      textMessageNotification({ phoneNumberId: '999999999999999' }),
+    );
+    expect((await post(channelId, notification)).statusCode).toBe(200);
+    expect(await eventsOf(channelId)).toHaveLength(1);
+    expect(await eventsOf(second)).toHaveLength(1);
+    expect(await eventsOf(third)).toHaveLength(1);
+    expect(harness.logs.text()).toContain('bukan milik channel ini');
   });
 });
 

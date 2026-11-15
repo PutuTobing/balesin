@@ -1,7 +1,7 @@
 /**
  * Review keamanan Fase 2 butir 3 — penerima webhook WhatsApp
- * (docs/security-reviews/2026-11-16-fase2-webhook.md). Penjaga regresi (`it`) + celah yang dikunci
- * `it.fails` (harus berubah menjadi `it` setelah diperbaiki). Notifikasi disusun dan ditandatangani
+ * (docs/security-reviews/2026-11-16-fase2-webhook.md). Penjaga regresi + celah S1/S2 yang dulu
+ * dikunci `it.fails` (kini `it` biasa setelah diperbaiki). Notifikasi disusun dan ditandatangani
  * `testing/fake-meta-webhooks.ts` — tidak pernah memanggil Meta.
  */
 import { createSecretBox, sealChannelSecret, Secret, type WhatsAppSecretKind } from '@balesin/core';
@@ -151,29 +151,23 @@ describe('S1 — kegagalan jabat tangan (bisa dipicu lewat server Meta) menahan 
   // asal. Setiap percobaan = GET jabat tangan GAGAL dari IP keluar Meta. Ember `webhook-tolak-ip`
   // (IP + channel) dan `webhook-tak-dikenal-ip` (IP) yang terisi lalu ikut menahan POST notifikasi
   // sah dari IP Meta yang sama.
-  it.fails(
-    '20 jabat tangan salah dari IP Meta tidak boleh menahan notifikasi bertanda tangan sah dari IP itu',
-    async () => {
-      for (let attempt = 0; attempt < 20; attempt += 1) {
-        expect((await handshake(channelId, handshakeQuery('tebakan-penyerang'))).statusCode).toBe(
-          403,
-        );
-      }
-      const legit = await post(channelId, textMessageNotification());
-      expect(legit.statusCode, legit.body).toBe(200); // saat ini 429
-    },
-  );
+  it('20 jabat tangan salah dari IP Meta tidak boleh menahan notifikasi bertanda tangan sah dari IP itu', async () => {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      expect((await handshake(channelId, handshakeQuery('tebakan-penyerang'))).statusCode).toBe(
+        403,
+      );
+    }
+    const legit = await post(channelId, textMessageNotification());
+    expect(legit.statusCode, legit.body).toBe(200);
+  });
 
-  it.fails(
-    '30 jabat tangan ke ID channel acak dari IP Meta tidak boleh menahan notifikasi channel yang ADA',
-    async () => {
-      for (let attempt = 0; attempt < 30; attempt += 1) {
-        expect((await handshake(newId(), handshakeQuery('apa-saja'))).statusCode).toBe(404);
-      }
-      const legit = await post(channelId, textMessageNotification());
-      expect(legit.statusCode, legit.body).toBe(200); // saat ini 429
-    },
-  );
+  it('30 jabat tangan ke ID channel acak dari IP Meta tidak boleh menahan notifikasi channel yang ADA', async () => {
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      expect((await handshake(newId(), handshakeQuery('apa-saja'))).statusCode).toBe(404);
+    }
+    const legit = await post(channelId, textMessageNotification());
+    expect(legit.statusCode, legit.body).toBe(200);
+  });
 });
 
 describe('S2 — satu kejadian "beracun" menggagalkan seluruh notifikasi (503 terus-menerus)', () => {
@@ -184,40 +178,37 @@ describe('S2 — satu kejadian "beracun" menggagalkan seluruh notifikasi (503 te
     ['karakter NUL (\\u0000)', 'halo\u0000kak'],
     ['surrogate tunggal (\\ud800)', 'halo\ud800kak'],
   ] as const) {
-    it.fails(`${label}: pesan lain tetap tersimpan, jawaban 200`, async () => {
+    it(`${label}: pesan lain tetap tersimpan, jawaban 200`, async () => {
       const clean = fakeWamid();
       const notification = combinedNotification(
         textMessageNotification({ wamid: clean, body: 'pesan biasa' }),
         textMessageNotification({ body: poison }),
       );
       const response = await post(channelId, notification);
-      expect(response.statusCode, response.body).toBe(200); // saat ini 503
+      expect(response.statusCode, response.body).toBe(200);
       const stored = await eventsOf(channelId);
       expect(stored.map((event) => event.externalId)).toContain(clean);
     });
   }
 
-  it.fails(
-    'timestamp angka (bilangan bulat aman) di luar rentang Date: bagian itu dibuang, bukan 503',
-    async () => {
-      const clean = fakeWamid();
-      const bad = JSON.stringify(textMessageNotification({ timestamp: '1' })).replace(
-        '"timestamp":"1"',
-        '"timestamp":9007199254740991',
-      );
-      const good = JSON.stringify(textMessageNotification({ wamid: clean }));
-      const rawBody = JSON.stringify(
-        combinedNotification(
-          JSON.parse(good) as Record<string, unknown>,
-          JSON.parse(bad) as Record<string, unknown>,
-        ),
-      );
-      const response = await post(channelId, undefined, {
-        rawBody,
-        signature: signWebhookBody(rawBody, APP_SECRET),
-      });
-      expect(response.statusCode, response.body).toBe(200); // saat ini 503
-      expect((await eventsOf(channelId)).map((event) => event.externalId)).toContain(clean);
-    },
-  );
+  it('timestamp angka (bilangan bulat aman) di luar rentang Date: bagian itu dibuang, bukan 503', async () => {
+    const clean = fakeWamid();
+    const bad = JSON.stringify(textMessageNotification({ timestamp: '1' })).replace(
+      '"timestamp":"1"',
+      '"timestamp":9007199254740991',
+    );
+    const good = JSON.stringify(textMessageNotification({ wamid: clean }));
+    const rawBody = JSON.stringify(
+      combinedNotification(
+        JSON.parse(good) as Record<string, unknown>,
+        JSON.parse(bad) as Record<string, unknown>,
+      ),
+    );
+    const response = await post(channelId, undefined, {
+      rawBody,
+      signature: signWebhookBody(rawBody, APP_SECRET),
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    expect((await eventsOf(channelId)).map((event) => event.externalId)).toContain(clean);
+  });
 });

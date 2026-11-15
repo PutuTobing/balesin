@@ -13,7 +13,13 @@ import {
   type NormalizedWebhookFailure,
   type WebhookEventJobResult,
 } from '@balesin/core';
-import { webhookEvents, type Database, type DbExecutor, type WebhookEvent } from '@balesin/db';
+import {
+  channels,
+  webhookEvents,
+  type Database,
+  type DbExecutor,
+  type WebhookEvent,
+} from '@balesin/db';
 import { UnrecoverableError, Worker } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
 
@@ -31,6 +37,11 @@ import type { QueueConnectionOptions } from './system';
  * Idempoten: baris dikunci (`FOR UPDATE`) dan hanya `pending` yang diproses, jadi job ganda (Meta
  * mengirim ulang setelah job lama dibersihkan, atau dua worker) tidak memproses dua kali.
  *
+ * Channel diperiksa ulang DI TRANSAKSI YANG SAMA (review webhook R3, baris channel dikunci
+ * `FOR SHARE` supaya tidak dinonaktifkan di tengah pemrosesan): kejadian `pending` untuk channel
+ * yang sudah dinonaktifkan/dihapus sejak diterima → `skipped` + `last_error = 'channel_inactive'`,
+ * tanpa handler. Channel yang sengaja dimatikan karena insiden tidak "hidup lagi" lewat antrean lama.
+ *
  * TITIK SAMBUNG butir berikutnya (kontak, percakapan, jendela 24 jam, unduh media, WebSocket, bot):
  * isi `InboundEventHandlers`. Handler berjalan DI DALAM transaksi yang sama dengan penandaan
  * `processed` — upsert kontak/percakapan/pesan ikut batal bila handler gagal, dan diulang utuh.
@@ -42,6 +53,10 @@ export interface InboundEventContext {
   organizationId: string;
   channelId: string;
   eventId: string;
+  /**
+   * Waktu diterima menurut jam SERVER. Jendela 24 jam / SLA wajib memakai ini, bukan cap waktu dari
+   * payload Meta (review webhook R4).
+   */
   receivedAt: Date;
   /** Transaksi yang mengunci baris kejadian. */
   tx: DbExecutor;
@@ -79,6 +94,9 @@ export interface WebhookJobDeps {
   handlers?: InboundEventHandlers;
   now?: () => Date;
 }
+
+/** `last_error` + alasan hasil job bila channel sudah nonaktif/dihapus saat diproses (R3). */
+const CHANNEL_INACTIVE = 'channel_inactive';
 
 /** Kode kesalahan singkat untuk `last_error` — TIDAK PERNAH pesan mentah (bisa memuat isi pesan). */
 export function errorCodeOf(error: unknown): string {
@@ -137,6 +155,29 @@ export async function processWebhookJob(
       const [event] = await tx.select().from(webhookEvents).where(where).limit(1).for('update');
       if (!event) return { status: 'skipped', reason: 'not_found' } as const;
       if (event.status !== 'pending') return { status: 'skipped', reason: 'already_done' } as const;
+
+      const [channel] = await tx
+        .select({ enabled: channels.enabled, deletedAt: channels.deletedAt })
+        .from(channels)
+        .where(and(eq(channels.organizationId, organizationId), eq(channels.id, event.channelId)))
+        .limit(1)
+        .for('share');
+      if (!channel || !channel.enabled || channel.deletedAt !== null) {
+        await tx
+          .update(webhookEvents)
+          .set({
+            status: 'skipped',
+            attempts: sql`${webhookEvents.attempts} + 1`,
+            lastError: CHANNEL_INACTIVE,
+            processedAt: now(),
+          })
+          .where(where);
+        logger.info(
+          { eventId, kind: event.kind, channelId: event.channelId },
+          'Kejadian webhook dilewati: channel sudah nonaktif atau dihapus',
+        );
+        return { status: 'skipped', reason: CHANNEL_INACTIVE } as const;
+      }
 
       const handled = await dispatch(event, handlers, {
         organizationId,

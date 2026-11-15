@@ -49,6 +49,19 @@ export interface RateLimiter {
   /** Sisa umur penanda dalam detik; 0 bila tidak ada. */
   flagTtl(name: string, key: string): Promise<number>;
   clearFlag(name: string, key: string): Promise<void>;
+  /**
+   * Menambah hitungan `member` di penghitung bernama (jendela tetap `ttlSeconds` sejak anggota
+   * pertama). Paling banyak `maxMembers` anggota berbeda; anggota baru setelah itu tidak dicatat.
+   * Dipakai untuk "berapa sumber berbeda" (mis. IP per channel) tanpa memindai Redis.
+   */
+  tally(
+    name: string,
+    key: string,
+    member: string,
+    options: { ttlSeconds: number; maxMembers: number },
+  ): Promise<void>;
+  /** Isi penghitung `tally` (anggota → hitungan); kosong bila tidak ada / kedaluwarsa. */
+  readTally(name: string, key: string): Promise<Record<string, number>>;
 }
 
 // Pesan error skrip tidak boleh disusun dari data (lihat catatan I8 review Fase 0).
@@ -69,6 +82,18 @@ const PEEK_SCRIPT = `
 local current = tonumber(redis.call('GET', KEYS[1]) or '0')
 local ttl = redis.call('PTTL', KEYS[1])
 return {current, ttl}
+`;
+
+const TALLY_SCRIPT = `
+local exists = redis.call('HEXISTS', KEYS[1], ARGV[1])
+if exists == 0 and redis.call('HLEN', KEYS[1]) >= tonumber(ARGV[3]) then
+  return 0
+end
+redis.call('HINCRBY', KEYS[1], ARGV[1], 1)
+if redis.call('PTTL', KEYS[1]) < 0 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[2])
+end
+return 1
 `;
 
 const REFUND_SCRIPT = `
@@ -97,6 +122,7 @@ export function createRateLimiter(redis: Redis, options: RateLimiterOptions = {}
   const prefix = `${options.prefix ?? 'balesin'}:rl`;
   const counterKey = (rule: RateLimitRule, key: string) => `${prefix}:${rule.name}:${key}`;
   const flagKey = (name: string, key: string) => `${prefix}:flag:${name}:${key}`;
+  const tallyKey = (name: string, key: string) => `${prefix}:tally:${name}:${key}`;
 
   async function guarded<T>(run: () => Promise<T>): Promise<T> {
     try {
@@ -164,6 +190,29 @@ export function createRateLimiter(redis: Redis, options: RateLimiterOptions = {}
     clearFlag: (name, key) =>
       guarded(async () => {
         await redis.del(flagKey(name, key));
+      }),
+
+    tally: (name, key, member, { ttlSeconds, maxMembers }) =>
+      guarded(async () => {
+        await redis.eval(
+          TALLY_SCRIPT,
+          1,
+          tallyKey(name, key),
+          member,
+          String(ttlSeconds * 1000),
+          String(maxMembers),
+        );
+      }),
+
+    readTally: (name, key) =>
+      guarded(async () => {
+        const raw = await redis.hgetall(tallyKey(name, key));
+        const counts: Record<string, number> = {};
+        for (const [member, value] of Object.entries(raw)) {
+          const count = Number(value);
+          if (Number.isSafeInteger(count) && count > 0) counts[member] = count;
+        }
+        return counts;
       }),
   };
 }

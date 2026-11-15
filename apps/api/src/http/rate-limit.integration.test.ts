@@ -137,6 +137,28 @@ describe('batas laju (Redis sungguhan)', () => {
   });
 });
 
+describe('penghitung per anggota (tally)', () => {
+  it('menghitung per anggota, membatasi jumlah anggota berbeda, dan kedaluwarsa', async () => {
+    const options = { ttlSeconds: 60, maxMembers: 2 };
+    expect(await limiter.readTally('uji-tally', 'kosong')).toEqual({});
+    await limiter.tally('uji-tally', 'c', '198.51.100.1', options);
+    await limiter.tally('uji-tally', 'c', '198.51.100.1', options);
+    await limiter.tally('uji-tally', 'c', '198.51.100.2', options);
+    // Anggota ketiga tidak dicatat (batas), anggota lama tetap dihitung.
+    await limiter.tally('uji-tally', 'c', '198.51.100.3', options);
+    await limiter.tally('uji-tally', 'c', '198.51.100.2', options);
+    expect(await limiter.readTally('uji-tally', 'c')).toEqual({
+      '198.51.100.1': 2,
+      '198.51.100.2': 2,
+    });
+    expect(await limiter.readTally('uji-tally', 'kunci-lain')).toEqual({});
+
+    await limiter.tally('uji-tally', 'singkat', 'a', { ttlSeconds: 1, maxMembers: 5 });
+    await new Promise((resolve) => setTimeout(resolve, 1_200));
+    expect(await limiter.readTally('uji-tally', 'singkat')).toEqual({});
+  });
+});
+
 describe('batas laju saat Redis mati', () => {
   it('gagal tertutup: SERVICE_UNAVAILABLE (503), bukan meloloskan permintaan', async () => {
     const offline = new IoRedis({
@@ -158,6 +180,8 @@ describe('batas laju saat Redis mati', () => {
       broken.setFlag('x', 'a', 10),
       broken.flagTtl('x', 'a'),
       broken.clearFlag('x', 'a'),
+      broken.tally('x', 'a', 'b', { ttlSeconds: 10, maxMembers: 1 }),
+      broken.readTally('x', 'a'),
     ]) {
       const error = await attempt.then(
         () => undefined,

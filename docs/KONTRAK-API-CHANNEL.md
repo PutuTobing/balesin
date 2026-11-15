@@ -313,31 +313,43 @@ Channel **nonaktif** tetap bisa diverifikasi (webhook boleh dipasang sebelum cha
 lebih → **413** sebelum diperiksa). Urutan pemeriksaan:
 
 1. **Sebelum body dibaca**: batas laju per IP; channel ada dan tidak terhapus (**404**); sumber ini
-   belum terlalu sering ditolak untuk channel ini (**429**).
+   belum terlalu sering ditolak **tanda tangan POST-nya** untuk channel ini (**429**). Jabat tangan GET
+   yang gagal tidak pernah menahan POST.
 2. **Tanda tangan**: `X-Hub-Signature-256: sha256=<64 heks>` = HMAC-SHA256 atas **body mentah** (byte
    persis kiriman Meta) dengan **App Secret channel**, dibandingkan waktu-konstan. Header tidak ada,
    format lain, header ganda, atau tidak cocok → **403** "Permintaan webhook ditolak." (sama untuk
    semua alasan). Body **tidak** di-`JSON.parse` sebelum tanda tangan lolos. App Secret tak bisa
    dibuka → **503**.
-3. `JSON.parse` (kunci `__proto__`/`constructor` dibuang) lalu dipecah per kejadian dengan skema
-   **toleran** (`@balesin/core` `splitWhatsAppWebhook`): isian baru dari Meta dipertahankan, bagian
-   yang rusak dibuang tanpa menggagalkan bagian lain. Body bertanda tangan sah tetapi bukan JSON /
-   bukan `object: "whatsapp_business_account"` → **200**, diabaikan (dicatat `warn`).
+3. `JSON.parse` (kunci `__proto__`/`constructor` dibuang; setiap teks — nilai **dan** kunci objek —
+   dibersihkan: `\u0000` dibuang, surrogate tunggal → U+FFFD, karena `jsonb` menolak keduanya) lalu
+   dipecah per kejadian dengan skema **toleran** (`@balesin/core` `splitWhatsAppWebhook`): isian baru
+   dari Meta dipertahankan, bagian yang rusak dibuang tanpa menggagalkan bagian lain. `timestamp` di
+   atas tahun 2100 (`WEBHOOK_MAX_UNIX_SECONDS`) = bagian rusak. Paling banyak **10.000 kejadian** dan
+   **50 `phone_number_id` berbeda** per notifikasi; kelebihannya dibuang (`overLimit`, log `warn`).
+   Body bertanda tangan sah tetapi bukan JSON / bukan `object: "whatsapp_business_account"` / bersarang
+   terlalu dalam → **200**, diabaikan (dicatat `warn`).
 4. **Routing per kejadian** — Meta mengirim notifikasi SEMUA nomor milik satu aplikasi ke satu URL:
    - `metadata.phone_number_id` + `entry[].id` (WABA) = channel di URL → channel itu;
    - nomor milik channel **lain di organisasi yang sama** yang WABA-nya cocok **dan App Secret-nya
-     sama** (tanda tangan tadi juga sah untuknya) → disimpan untuk channel itu;
+     sama** (tanda tangan tadi juga sah untuknya) → disimpan untuk channel itu (semua channel saudara
+     dimuat dengan **satu** query `inArray`);
    - selain itu (App Secret beda, nomor/WABA tak dikenal, channel organisasi lain) → **dibuang**
      (log `warn` berisi jumlah saja);
    - field tingkat WABA selain `messages` (`message_template_status_update`, `account_update`, …): hanya
      bila `entry[].id` = WABA channel di URL.
 5. Kejadian untuk channel **nonaktif** → dibuang (tidak disimpan), tetap **200** supaya Meta berhenti
    mengirim ulang. Kejadian dengan `timestamp` **lebih dari 8 hari** lalu → dibuang (lebih lama dari
-   jendela kirim ulang Meta 7 hari; mencegah pemutaran ulang rekaman lama).
+   jendela kirim ulang Meta 7 hari; mencegah pemutaran ulang rekaman lama). `timestamp` **lebih dari
+   1 jam di masa depan** → dibuang (`future`, log `warn`). Cap waktu payload hanya dipakai untuk dua
+   pemeriksaan ini: **jendela 24 jam dan SLA (butir berikutnya) wajib memakai `received_at`** (jam
+   server), bukan `occurred_at`.
 6. Simpan ke `webhook_events` (idempoten, lihat bawah) → antre job `webhooks:whatsapp-event` berisi
    `{organizationId, eventId}` saja → **200** `{"status":"received"}`. Target < 1 detik.
-7. Database atau antrean gagal → **503**. Meta mengirim ulang; kejadian yang sudah tersimpan tidak
-   tergandakan dan yang masih `pending` diantre ulang.
+7. Baris yang **ditolak database karena datanya** (kelas error 22 / CHECK `23514` / Invalid Date)
+   → bagian 500 baris itu diulang **per baris**, baris yang tetap gagal dilewati (log `warn`: jumlah +
+   kode Postgres, tanpa isi), sisanya tersimpan dan dijawab **200**. Database (koneksi/sementara) atau
+   antrean gagal → **503**. Meta mengirim ulang; kejadian yang sudah tersimpan tidak tergandakan dan
+   yang masih `pending` diantre ulang.
 
 | Kasus | Jawaban | Disimpan |
 |---|---|---|
@@ -345,6 +357,7 @@ lebih → **413** sebelum diperiksa). Urutan pemeriksaan:
 | Tanda tangan sah, kiriman ulang (duplikat) | 200 | tidak (yang `pending` diantre ulang) |
 | Tanda tangan sah, nomor/WABA bukan milik channel ini | 200 | tidak |
 | Tanda tangan sah, channel (tujuan) nonaktif | 200 | tidak |
+| Tanda tangan sah, kejadian basi (> 8 hari) / masa depan (> 1 jam) / melewati batas per notifikasi / ditolak database karena datanya | 200 | tidak (bagian lain tetap) |
 | Tanpa / salah tanda tangan (channel aktif maupun nonaktif) | 403 | tidak |
 | Channel tidak ada / terhapus | 404 (tanpa memeriksa rahasia) | tidak |
 | Body > 3 MiB / content-type bukan JSON | 413 / 415 | tidak |
@@ -374,32 +387,45 @@ mengunci baris (`FOR UPDATE`), memproses hanya yang `pending`, menormalisasi
 (`normalizeInboundMessage` / `normalizeStatusUpdate` / `normalizeWebhookFailure` di `@balesin/core`),
 meneruskan ke `InboundEventHandlers`, lalu `processed`. Gagal → `attempts`+1, `last_error`, diulang
 **8 kali** dengan jeda eksponensial mulai 5 dtk (±10 menit); percobaan terakhir atau payload rusak →
-`failed`. *Butir ini baru menormalisasi; kontak, percakapan, jendela 24 jam, unduh media, dan
-WebSocket disambungkan lewat `InboundEventHandlers` di butir berikutnya.*
+`failed`. Sebelum memproses, channel diperiksa ulang **di transaksi yang sama** (baris channel
+`FOR SHARE`): sudah dinonaktifkan/dihapus sejak diterima → `skipped`, `last_error = 'channel_inactive'`,
+hasil job `{status: 'skipped', reason: 'channel_inactive'}`, handler tidak dipanggil. *Butir ini baru
+menormalisasi; kontak, percakapan, jendela 24 jam (dari `received_at`), unduh media, dan WebSocket
+disambungkan lewat `InboundEventHandlers` di butir berikutnya.*
 
 ### Batas laju & penyalahgunaan
 
 | Ember | Kunci | Batas | Dihitung dari |
 |---|---|---|---|
 | `webhook-ip` | IP | 3.000 / menit | semua permintaan |
-| `webhook-tak-dikenal-ip` | IP | 30 / 10 menit | ID channel yang tidak pernah ada (channel terhapus tidak dihitung) |
-| `webhook-tolak-ip` | IP + channel | 20 / 10 menit | tanda tangan / jabat tangan ditolak |
+| `webhook-tak-dikenal-ip` | IP | 30 / 10 menit | ID channel yang tidak pernah ada (channel terhapus tidak dihitung); **hanya menahan ID tak dikenal berikutnya**, tidak pernah channel yang ada |
+| `webhook-tolak-jabat-tangan-ip` | IP + channel | 20 / 10 menit | jabat tangan GET ditolak; hanya menahan **GET** |
+| `webhook-tolak-ip` | IP + channel | 20 / 10 menit | tanda tangan POST ditolak; hanya menahan **POST** |
 | `webhook-channel` | channel | 12.000 / menit | notifikasi bertanda tangan sah |
 
 Ember "ditolak" hanya diisi kegagalan, jadi kiriman sah Meta tidak pernah tertahan karena percobaan
-palsu dari IP lain. **Wajib**: `TRUST_PROXY` diisi IP reverse proxy (mis. vm-nginx) supaya IP yang
+palsu dari IP lain. Ember dipisah per metode: siapa pun yang punya aplikasi Meta bisa membuat server
+Meta mengirim jabat tangan GET yang gagal ke URL kita (dari IP yang sama dengan notifikasi sah), jadi
+kegagalan GET tidak boleh menahan POST. **Wajib**: `TRUST_PROXY` diisi IP reverse proxy (mis. vm-nginx) supaya IP yang
 dihitung adalah IP Meta/penyerang, bukan IP proxy — tanpa itu semua kiriman terlihat dari satu IP dan
 batas per IP menjadi batas bersama.
 
 **Kejadian keamanan**: **10 tanda tangan salah dalam 10 menit pada satu channel** (semua IP) → audit
 `channel.webhook_signature_rejected` (tanpa pelaku; IP = pengirim terakhir; `details`: `name`,
-`phoneNumberId`, `failures`, `windowMinutes`, `reason`) dan kejadian **`webhook_signature_failed`
+`phoneNumberId`, `failures`, `windowMinutes`, `reason`, `distinctSources` (jumlah IP berbeda dalam
+jendela, maks. 256 dihitung), `topSource` (awalan IP terbanyak: IPv4 `/24`, IPv6 `/64` — bukan
+alamat lengkap), `topSourceFailures`) dan kejadian **`webhook_signature_failed`
 (`warning`)** di `GET /audit-logs/security-summary` — paling banyak sekali per jam per channel. Label
 `SECURITY_EVENT_LABELS.webhook_signature_failed` ("Webhook WhatsApp ditolak berulang"). Artinya salah
 satu: App Secret di Balesin tidak sama dengan aplikasi Meta (pesan tidak masuk sama sekali — periksa
 Pengaturan → Channel), atau ada pihak yang mencoba memalsukan pesan masuk. Jabat tangan yang salah
 tidak memicu kejadian ini (biasanya salah tempel). `counts` ringkasan keamanan kini juga memuat kunci
-`webhook_signature_failed` (rekaman/mock harus ikut memuatnya).
+`webhook_signature_failed` (rekaman/mock harus ikut memuatnya). Banyak sumber berbeda (IP Meta) =
+kemungkinan besar App Secret salah; satu sumber = kemungkinan orang dalam yang tahu ID channel.
+
+**Penjaga `TRUST_PROXY`**: di production dengan `TRUST_PROXY=false`, permintaan pertama yang datang
+dari alamat privat/loopback **dengan** `X-Forwarded-For` menulis log `error` sekali per proses (alamat
+proxy saja, isi header tidak dibaca) — tanda Balesin di belakang proxy tetapi IP klien tidak terbaca.
 
 ### Log & privasi
 

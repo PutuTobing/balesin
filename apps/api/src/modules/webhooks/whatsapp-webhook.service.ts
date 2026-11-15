@@ -16,7 +16,7 @@ import type { Channel, Database, NewWebhookEvent } from '@balesin/db';
 
 import type { ClientInfo } from '../../http/client-info';
 import type { WebhookEventEnqueuer } from '../../queues/webhook-queue';
-import { findLiveChannelByPhoneNumberId, insertWebhookEvents } from './webhook-events.repo';
+import { findLiveChannelsByPhoneNumberIds, insertWebhookEvents } from './webhook-events.repo';
 import { webhookRejected, webhookUnavailable, type WebhookGuard } from './webhook-guard';
 
 /**
@@ -26,11 +26,19 @@ import { webhookRejected, webhookUnavailable, type WebhookGuard } from './webhoo
  *  1. `admit` (sebelum body dibaca): batas laju, channel ada & tidak terhapus → 404/429.
  *  2. Tanda tangan `X-Hub-Signature-256` atas body MENTAH dengan App Secret channel → 403 bila
  *     tidak ada/salah. Body belum ditafsirkan sama sekali sebelum langkah ini lolos.
- *  3. `JSON.parse` + pemecahan per kejadian (skema toleran) → routing per `phone_number_id` + WABA.
+ *  3. `JSON.parse` (teks dibersihkan untuk jsonb) + pemecahan per kejadian (skema toleran, maks.
+ *     `WEBHOOK_MAX_EVENTS_PER_NOTIFICATION` kejadian & `WEBHOOK_MAX_PHONE_NUMBERS_PER_NOTIFICATION`
+ *     nomor) → routing per `phone_number_id` + WABA (channel saudara dimuat dengan SATU query).
  *  4. Kejadian untuk channel nonaktif → DIBUANG (tidak disimpan) tetapi tetap 200: Meta berhenti
  *     mengirim ulang; selama nonaktif channel memang tidak menerima pesan.
- *  5. Simpan `webhook_events` (idempoten) → antre ID → 200. Penyimpanan/antrean gagal → 503 (Meta
- *     mengirim ulang; yang sudah tersimpan tidak tergandakan dan diantre ulang).
+ *  5. Simpan `webhook_events` (idempoten) → antre ID → 200. Baris yang DITOLAK database karena
+ *     datanya (kelas 22/CHECK) dilewati satu per satu; sisanya tetap tersimpan (review webhook S2).
+ *     Penyimpanan (koneksi/sementara) atau antrean gagal → 503 (Meta mengirim ulang; yang sudah
+ *     tersimpan tidak tergandakan dan diantre ulang).
+ *
+ * Cap waktu dari payload (`occurredAt`) hanya dipakai untuk menolak kejadian basi (> 8 hari) dan dari
+ * masa depan (> 1 jam, review webhook R4). Jendela 24 jam / SLA di butir berikutnya WAJIB memakai
+ * `receivedAt` (jam server), bukan cap waktu payload.
  */
 
 /** Batas body (Meta: payload webhook ≤ 3 MB). */
@@ -43,6 +51,9 @@ export const WEBHOOK_BODY_LIMIT_BYTES = 3 * 1024 * 1024;
  */
 export const WEBHOOK_MAX_EVENT_AGE_MS = 8 * 24 * 60 * 60 * 1000;
 
+/** Kejadian bercap waktu lebih dari ini di depan jam server ditolak (`future`, review webhook R4). */
+export const WEBHOOK_MAX_FUTURE_SKEW_MS = 60 * 60 * 1000;
+
 export interface ReceiveSummary {
   /** Kejadian baru yang tersimpan. */
   stored: number;
@@ -54,6 +65,12 @@ export interface ReceiveSummary {
   stale: number;
   /** Bagian yang tidak lolos skema. */
   invalid: number;
+  /** Melewati batas kejadian / nomor berbeda per notifikasi (dibuang). */
+  overLimit: number;
+  /** Cap waktu lebih dari `WEBHOOK_MAX_FUTURE_SKEW_MS` di masa depan (dibuang). */
+  future: number;
+  /** Ditolak database karena datanya (dilewati per baris; tanpa isi di log). */
+  rejected: number;
   /** Untuk channel nonaktif: dibuang (tidak disimpan). */
   disabled: number;
 }
@@ -146,12 +163,16 @@ export function createWhatsAppWebhookService(deps: WhatsAppWebhookDeps): WhatsAp
         misrouted: 0,
         stale: 0,
         invalid: 0,
+        overLimit: 0,
+        future: 0,
+        rejected: 0,
         disabled: 0,
       };
 
       const body = parseWebhookJson(rawBody);
       const split = splitWhatsAppWebhook(body);
       summary.invalid = split.invalid;
+      summary.overLimit = split.overLimit;
       if (!split.recognized) {
         log.warn(
           { channelId: channel.id, bytes: rawBody.length },
@@ -159,31 +180,44 @@ export function createWhatsAppWebhookService(deps: WhatsAppWebhookDeps): WhatsAp
         );
         return summary;
       }
+      if (split.overLimit > 0) {
+        log.warn(
+          { channelId: channel.id, overLimit: split.overLimit, items: split.items.length },
+          'Webhook melewati batas kejadian/nomor per notifikasi — kelebihannya dibuang',
+        );
+      }
 
       // ── Routing: channel pemilik nomor, bukan sekadar channel di URL (review D.4) ──
       // Meta mengirim notifikasi SEMUA nomor milik satu aplikasi ke satu URL callback. Nomor lain di
       // organisasi yang sama hanya diterima bila channelnya hidup, aktif, WABA-nya sama, dan App
-      // Secret-nya SAMA (tanda tangan yang baru saja lolos juga sah untuk channel itu).
-      const siblings = new Map<string, Channel | null>();
-      async function siblingFor(phoneNumberId: string): Promise<Channel | null> {
-        const cached = siblings.get(phoneNumberId);
-        if (cached !== undefined) return cached;
-        const candidate = await findLiveChannelByPhoneNumberId(
-          db,
-          channel.organizationId,
-          phoneNumberId,
-        );
-        let accepted: Channel | null = null;
-        if (candidate && candidate.id !== channel.id) {
-          const secret = openSecret(candidate, 'appSecret');
-          if (secret && constantTimeEqual(secret.reveal(), appSecret.reveal()))
-            accepted = candidate;
+      // Secret-nya SAMA (tanda tangan yang baru saja lolos juga sah untuk channel itu). Semua nomor
+      // lain dimuat dengan SATU query (review webhook R2; jumlahnya dibatasi pemecah notifikasi).
+      const otherNumbers = new Set<string>();
+      for (const item of split.items) {
+        if (item.phoneNumberId !== null && item.phoneNumberId !== channel.waPhoneNumberId) {
+          otherNumbers.add(item.phoneNumberId);
         }
-        siblings.set(phoneNumberId, accepted);
-        return accepted;
+      }
+      const siblings = new Map<string, Channel>();
+      if (otherNumbers.size > 0) {
+        let candidates: Map<string, Channel>;
+        try {
+          candidates = await findLiveChannelsByPhoneNumberIds(db, channel.organizationId, [
+            ...otherNumbers,
+          ]);
+        } catch (error) {
+          throw webhookUnavailable(error);
+        }
+        for (const [phoneNumberId, candidate] of candidates) {
+          if (candidate.id === channel.id) continue;
+          const secret = openSecret(candidate, 'appSecret');
+          if (secret && constantTimeEqual(secret.reveal(), appSecret.reveal())) {
+            siblings.set(phoneNumberId, candidate);
+          }
+        }
       }
 
-      async function targetFor(item: WhatsAppWebhookItem): Promise<Channel | null> {
+      function targetFor(item: WhatsAppWebhookItem): Channel | null {
         if (item.kind === 'other') {
           return item.wabaId === channel.waBusinessAccountId ? channel : null;
         }
@@ -193,55 +227,65 @@ export function createWhatsAppWebhookService(deps: WhatsAppWebhookDeps): WhatsAp
         ) {
           return channel;
         }
-        const sibling = await siblingFor(item.phoneNumberId);
+        const sibling = siblings.get(item.phoneNumberId);
         return sibling && sibling.waBusinessAccountId === item.wabaId ? sibling : null;
       }
 
       const receivedAt = now();
       const oldest = receivedAt.getTime() - WEBHOOK_MAX_EVENT_AGE_MS;
+      const newest = receivedAt.getTime() + WEBHOOK_MAX_FUTURE_SKEW_MS;
       const rows: NewWebhookEvent[] = [];
-      try {
-        for (const item of split.items) {
-          if (item.occurredAt !== null && item.occurredAt.getTime() < oldest) {
+      for (const item of split.items) {
+        if (item.occurredAt !== null) {
+          const occurredAt = item.occurredAt.getTime();
+          if (occurredAt < oldest) {
             summary.stale += 1;
             continue;
           }
-          const target = await targetFor(item);
-          if (!target) {
-            summary.misrouted += 1;
+          if (occurredAt > newest) {
+            summary.future += 1;
             continue;
           }
-          // Channel nonaktif tidak menerima pesan: dibuang, tetapi tetap dijawab 200 supaya Meta
-          // berhenti mengirim ulang (KONTRAK-API-CHANNEL "Nonaktifkan").
-          if (!target.enabled) {
-            summary.disabled += 1;
-            continue;
-          }
-          const skipped = item.kind === 'other';
-          rows.push({
-            organizationId: target.organizationId,
-            channelId: target.id,
-            source: 'whatsapp',
-            kind: item.kind,
-            field: item.field,
-            dedupKey: item.dedupKey,
-            externalId: item.externalId,
-            payload: item.payload as unknown as Record<string, unknown>,
-            occurredAt: item.occurredAt,
-            receivedAt,
-            // Field selain `messages` belum punya pemroses: disimpan untuk fase berikutnya.
-            status: skipped ? 'skipped' : 'pending',
-            processedAt: skipped ? receivedAt : null,
-          });
         }
-      } catch (error) {
-        throw webhookUnavailable(error);
+        const target = targetFor(item);
+        if (!target) {
+          summary.misrouted += 1;
+          continue;
+        }
+        // Channel nonaktif tidak menerima pesan: dibuang, tetapi tetap dijawab 200 supaya Meta
+        // berhenti mengirim ulang (KONTRAK-API-CHANNEL "Nonaktifkan").
+        if (!target.enabled) {
+          summary.disabled += 1;
+          continue;
+        }
+        const skipped = item.kind === 'other';
+        rows.push({
+          organizationId: target.organizationId,
+          channelId: target.id,
+          source: 'whatsapp',
+          kind: item.kind,
+          field: item.field,
+          dedupKey: item.dedupKey,
+          externalId: item.externalId,
+          payload: item.payload as unknown as Record<string, unknown>,
+          occurredAt: item.occurredAt,
+          receivedAt,
+          // Field selain `messages` belum punya pemroses: disimpan untuk fase berikutnya.
+          status: skipped ? 'skipped' : 'pending',
+          processedAt: skipped ? receivedAt : null,
+        });
       }
 
       if (summary.misrouted > 0) {
         log.warn(
           { channelId: channel.id, misrouted: summary.misrouted },
           'Webhook memuat nomor/WABA yang bukan milik channel ini — dibuang',
+        );
+      }
+      if (summary.future > 0) {
+        log.warn(
+          { channelId: channel.id, future: summary.future },
+          'Webhook memuat kejadian bercap waktu di masa depan — dibuang',
         );
       }
 
@@ -254,6 +298,18 @@ export function createWhatsAppWebhookService(deps: WhatsAppWebhookDeps): WhatsAp
         }
         summary.stored = result.inserted.length;
         summary.duplicates = result.duplicates;
+        summary.rejected = result.rejectedCodes.length;
+        if (summary.rejected > 0) {
+          // Hanya jumlah + kode Postgres: isi pesan tidak pernah masuk log.
+          log.warn(
+            {
+              channelId: channel.id,
+              rejected: summary.rejected,
+              codes: [...new Set(result.rejectedCodes)].slice(0, 10),
+            },
+            'Sebagian kejadian webhook ditolak database karena datanya — dilewati',
+          );
+        }
         const jobs: WebhookEventJobPayload[] = [...result.inserted, ...result.pendingDuplicates]
           .filter((event) => event.status === 'pending')
           .map((event) => ({ organizationId: event.organizationId, eventId: event.id }));

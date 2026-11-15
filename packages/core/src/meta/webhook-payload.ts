@@ -44,8 +44,17 @@ const messageId = z
   .min(1)
   .max(256)
   .regex(/^[A-Za-z0-9._=+/:-]+$/);
+/**
+ * Batas atas cap waktu (1 Jan 2100, unix detik). Angka lebih besar membuat `new Date()` tidak sah
+ * (Invalid Date → Drizzle melempar saat menyimpan) — review webhook S2.
+ */
+export const WEBHOOK_MAX_UNIX_SECONDS = 4_102_444_800;
 /** Unix detik sebagai string (Meta) — angka juga diterima. */
-const unixSeconds = z.union([z.string().regex(/^[0-9]{1,12}$/), z.number().int().nonnegative()]);
+const unixSeconds = z
+  .union([z.string().regex(/^[0-9]{1,12}$/), z.number().int().nonnegative()])
+  .refine((value) => Number(value) <= WEBHOOK_MAX_UNIX_SECONDS, {
+    message: 'cap waktu di luar rentang',
+  });
 const shortText = (max: number) => z.string().max(max);
 
 export const whatsAppWebhookErrorSchema = z.looseObject({
@@ -125,6 +134,15 @@ const envelopeSchema = z.looseObject({
 
 // ── Pemecahan notifikasi → kejadian ─────────────────────────────────────────
 
+/**
+ * Batas kerja per notifikasi (review webhook R2). Meta membatasi payload 3 MB; status paling ringkas
+ * ±150–300 byte, jadi notifikasi sah tidak mendekati 10.000 kejadian. Batas nomor berbeda menjaga
+ * routing tetap satu query (`inArray`) yang kecil. Kelebihannya dibuang (`overLimit`), bukan 5xx —
+ * mengirim ulang byte yang sama tidak akan pernah berhasil.
+ */
+export const WEBHOOK_MAX_EVENTS_PER_NOTIFICATION = 10_000;
+export const WEBHOOK_MAX_PHONE_NUMBERS_PER_NOTIFICATION = 50;
+
 /** Payload tersimpan per jenis (bagian yang SUDAH divalidasi skema di atas). */
 export interface StoredMessageEvent {
   wabaId: string;
@@ -201,12 +219,23 @@ export interface WhatsAppWebhookSplit {
   items: WhatsAppWebhookItem[];
   /** Bagian yang tidak lolos skema (dibuang; hanya jumlahnya yang dicatat — tanpa isi). */
   invalid: number;
+  /**
+   * Bagian yang dibuang karena melewati `WEBHOOK_MAX_EVENTS_PER_NOTIFICATION` /
+   * `WEBHOOK_MAX_PHONE_NUMBERS_PER_NOTIFICATION`.
+   */
+  overLimit: number;
   /** `false` = bukan notifikasi WhatsApp Business Account sama sekali. */
   recognized: boolean;
 }
 
 function unixToDate(value: string | number): Date {
   return new Date(Number(value) * 1000);
+}
+
+/** Cap waktu yang bisa disimpan, atau `null` (Invalid Date tidak pernah sampai ke database). */
+function storableDate(value: string | number): Date | null {
+  const date = unixToDate(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function digest(value: unknown): string {
@@ -232,10 +261,13 @@ function pickContact(
  */
 export function splitWhatsAppWebhook(body: unknown): WhatsAppWebhookSplit {
   const envelope = envelopeSchema.safeParse(body);
-  if (!envelope.success) return { items: [], invalid: 1, recognized: false };
+  if (!envelope.success) return { items: [], invalid: 1, overLimit: 0, recognized: false };
 
   const items: WhatsAppWebhookItem[] = [];
+  const phoneNumbers = new Set<string>();
   let invalid = 0;
+  let overLimit = 0;
+  const full = () => items.length >= WEBHOOK_MAX_EVENTS_PER_NOTIFICATION;
 
   for (const rawEntry of envelope.data.entry) {
     const entry = entrySchema.safeParse(rawEntry);
@@ -254,6 +286,10 @@ export function splitWhatsAppWebhook(body: unknown): WhatsAppWebhookSplit {
       const { field, value } = change.data;
 
       if (field !== 'messages') {
+        if (full()) {
+          overLimit += 1;
+          continue;
+        }
         items.push({
           kind: 'other',
           field,
@@ -273,6 +309,14 @@ export function splitWhatsAppWebhook(body: unknown): WhatsAppWebhookSplit {
         continue;
       }
       const phoneNumberId = metadata.data.phone_number_id;
+      if (
+        !phoneNumbers.has(phoneNumberId) &&
+        phoneNumbers.size >= WEBHOOK_MAX_PHONE_NUMBERS_PER_NOTIFICATION
+      ) {
+        overLimit += 1;
+        continue;
+      }
+      phoneNumbers.add(phoneNumberId);
       const displayPhoneNumber = metadata.data.display_phone_number ?? null;
       const base = { field, wabaId, phoneNumberId, displayPhoneNumber };
 
@@ -297,9 +341,15 @@ export function splitWhatsAppWebhook(body: unknown): WhatsAppWebhookSplit {
           continue;
         }
         for (const raw of list) {
+          if (full()) {
+            // Tanpa validasi: sisa bagian hanya dihitung.
+            overLimit += 1;
+            continue;
+          }
           if (kind === 'message') {
             const message = whatsAppWebhookMessageSchema.safeParse(raw);
-            if (!message.success) {
+            const occurredAt = message.success ? storableDate(message.data.timestamp) : null;
+            if (!message.success || occurredAt === null) {
               invalid += 1;
               continue;
             }
@@ -307,7 +357,7 @@ export function splitWhatsAppWebhook(body: unknown): WhatsAppWebhookSplit {
               kind,
               ...base,
               externalId: message.data.id,
-              occurredAt: unixToDate(message.data.timestamp),
+              occurredAt,
               dedupKey: `m:${message.data.id}`,
               payload: {
                 wabaId,
@@ -319,7 +369,8 @@ export function splitWhatsAppWebhook(body: unknown): WhatsAppWebhookSplit {
             });
           } else if (kind === 'status') {
             const status = whatsAppWebhookStatusSchema.safeParse(raw);
-            if (!status.success) {
+            const occurredAt = status.success ? storableDate(status.data.timestamp) : null;
+            if (!status.success || occurredAt === null) {
               invalid += 1;
               continue;
             }
@@ -327,7 +378,7 @@ export function splitWhatsAppWebhook(body: unknown): WhatsAppWebhookSplit {
               kind,
               ...base,
               externalId: status.data.id,
-              occurredAt: unixToDate(status.data.timestamp),
+              occurredAt,
               dedupKey: `s:${status.data.id}:${status.data.status}`,
               payload: { wabaId, phoneNumberId, displayPhoneNumber, status: status.data },
             });
@@ -351,18 +402,54 @@ export function splitWhatsAppWebhook(body: unknown): WhatsAppWebhookSplit {
     }
   }
 
-  return { items, invalid, recognized: true };
+  return { items, invalid, overLimit, recognized: true };
+}
+
+/** `String.prototype.isWellFormed/toWellFormed` (ES2024, Node 20+); lib TS proyek masih ES2023. */
+interface WellFormedText {
+  isWellFormed(): boolean;
+  toWellFormed(): string;
+}
+
+/**
+ * Teks yang pasti diterima kolom `jsonb` Postgres (review webhook S2): `\u0000` dibuang dan surrogate
+ * tunggal (mis. emoji terpotong di tengah) diganti U+FFFD. Tanpa ini satu kejadian "beracun"
+ * menggagalkan INSERT seluruh notifikasi.
+ */
+export function toStorableText(value: string): string {
+  const withoutNul = value.includes('\u0000') ? value.replaceAll('\u0000', '') : value;
+  const text = withoutNul as unknown as WellFormedText;
+  return text.isWellFormed() ? withoutNul : text.toWellFormed();
+}
+
+const isForbiddenKey = (key: string) => key === '__proto__' || key === 'constructor';
+
+/** Objek dengan kunci yang sudah dibersihkan (objek yang sama bila tidak ada yang perlu diubah). */
+function withStorableKeys(value: Record<string, unknown>): Record<string, unknown> {
+  const keys = Object.keys(value);
+  if (keys.every((key) => toStorableText(key) === key)) return value;
+  const cleaned: Record<string, unknown> = {};
+  for (const key of keys) {
+    const clean = toStorableText(key);
+    // Kunci yang BARU menjadi `__proto__`/`constructor` setelah dibersihkan juga dibuang.
+    if (isForbiddenKey(clean)) continue;
+    cleaned[clean] = value[key];
+  }
+  return cleaned;
 }
 
 /**
  * `JSON.parse` yang membuang kunci `__proto__`/`constructor` (pencemaran prototipe lewat objek hasil
- * parse yang kemudian disalin). `undefined` bila bukan JSON.
+ * parse yang kemudian disalin) dan membersihkan setiap teks — nilai DAN kunci objek — dengan
+ * `toStorableText`. `undefined` bila bukan JSON (atau bersarang terlalu dalam).
  */
 export function parseWebhookJson(raw: Buffer): unknown {
   try {
-    return JSON.parse(raw.toString('utf8'), (key, value: unknown) =>
-      key === '__proto__' || key === 'constructor' ? undefined : value,
-    );
+    return JSON.parse(raw.toString('utf8'), (key, value: unknown) => {
+      if (isForbiddenKey(key)) return undefined;
+      if (typeof value === 'string') return toStorableText(value);
+      return isRecord(value) ? withStorableKeys(value) : value;
+    });
   } catch {
     return undefined;
   }
@@ -566,7 +653,10 @@ export function normalizeInboundMessage(payload: unknown): NormalizedInboundMess
   );
   const rawType = message.type;
   const type = inboundType(rawType);
-  const body = record((message as Record<string, unknown>)[rawType]);
+  // `Object.hasOwn`: `type` seperti `__proto__`/`toString` tidak membaca isian warisan prototipe.
+  const body = record(
+    Object.hasOwn(message, rawType) ? (message as Record<string, unknown>)[rawType] : undefined,
+  );
   const context = isRecord(message.context) ? message.context : null;
   const referral = isRecord(message.referral) ? message.referral : null;
 
@@ -631,7 +721,7 @@ export function normalizeInboundMessage(payload: unknown): NormalizedInboundMess
       break;
     case 'interactive': {
       const kind = text(body.type, 64);
-      const detail = kind ? record(body[kind]) : {};
+      const detail = kind && Object.hasOwn(body, kind) ? record(body[kind]) : {};
       reply = {
         kind:
           kind === 'button_reply' || kind === 'list_reply' || kind === 'nfm_reply' ? kind : 'other',

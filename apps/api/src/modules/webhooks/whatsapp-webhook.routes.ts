@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 import { clientInfo } from '../../http/client-info';
 import { PUBLIC } from '../../http/route-access';
-import type { WebhookGuard } from './webhook-guard';
+import type { WebhookGuard, WebhookMethod } from './webhook-guard';
 import { WEBHOOK_BODY_LIMIT_BYTES, type WhatsAppWebhookService } from './whatsapp-webhook.service';
 
 export interface WhatsAppWebhookRoutesOptions {
@@ -68,8 +68,10 @@ export const whatsAppWebhookRoutes: FastifyPluginCallbackZod<WhatsAppWebhookRout
   );
 
   // Sebelum body dibaca: batas laju + channel ada (banjir tidak memaksa server membaca 3 MB).
-  const admit = async (request: FastifyRequest) => {
-    request.webhookChannel = await guard.admit(channelIdOf(request), clientInfo(request));
+  // Ember penolakan dipisah per metode (review webhook S1): jabat tangan GET yang gagal tidak menahan
+  // notifikasi POST dari IP yang sama.
+  const admitFor = (method: WebhookMethod) => async (request: FastifyRequest) => {
+    request.webhookChannel = await guard.admit(channelIdOf(request), clientInfo(request), method);
   };
   const channelOf = (request: FastifyRequest): Channel => {
     if (!request.webhookChannel) throw new Error('Rute webhook tanpa channel yang lolos penjaga');
@@ -82,7 +84,7 @@ export const whatsAppWebhookRoutes: FastifyPluginCallbackZod<WhatsAppWebhookRout
       config: { access: PUBLIC, rawResponse: true },
       // HEAD tidak berguna untuk jabat tangan dan hanya akan memantulkan status tanpa isi.
       exposeHeadRoute: false,
-      onRequest: admit,
+      onRequest: admitFor('GET'),
     },
     async (request, reply) => {
       const challenge = await webhooks.handshake(
@@ -102,7 +104,7 @@ export const whatsAppWebhookRoutes: FastifyPluginCallbackZod<WhatsAppWebhookRout
     {
       config: { access: PUBLIC },
       bodyLimit: WEBHOOK_BODY_LIMIT_BYTES,
-      onRequest: admit,
+      onRequest: admitFor('POST'),
       schema: { response: { 200: webhookReceivedResponseSchema, ...errors } },
     },
     async (request) => {

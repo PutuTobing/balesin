@@ -388,3 +388,56 @@ describe('antrian webhooks (Redis sungguhan)', () => {
     expect(JSON.stringify(job)).not.toContain(SECRET_TEXT);
   }, 30_000);
 });
+
+describe('channel diperiksa ulang saat memproses (review webhook R3)', () => {
+  it.each([
+    ['dinonaktifkan', { enabled: false }],
+    ['dihapus', { deletedAt: new Date(), enabled: true }],
+  ] as const)(
+    'channel %s setelah kejadian diterima → skipped (channel_inactive) tanpa handler',
+    async (_label, change) => {
+      const target = await organizationWithChannel();
+      const [event] = await storeEvents(target, textMessage());
+      await db
+        .update(channels)
+        .set(
+          'deletedAt' in change
+            ? {
+                ...change,
+                // Channel terhapus: kredensial dimusnahkan (CHECK database).
+                waAccessTokenEncrypted: null,
+                waAppSecretEncrypted: null,
+                waVerifyTokenEncrypted: null,
+              }
+            : change,
+        )
+        .where(eq(channels.id, target.channelId));
+      const { messages, handlers } = recordingHandlers();
+
+      expect(
+        await processWebhookJob(jobFor(event!), { db, logger: logs.logger, handlers }),
+      ).toEqual({ status: 'skipped', reason: 'channel_inactive' });
+      expect(messages).toEqual([]);
+      const row = await rowOf(event!.id);
+      expect(row).toMatchObject({ status: 'skipped', lastError: 'channel_inactive', attempts: 1 });
+      expect(row?.processedAt).toBeInstanceOf(Date);
+
+      // Job ganda setelahnya tidak memproses apa pun.
+      expect(
+        await processWebhookJob(jobFor(event!), { db, logger: logs.logger, handlers }),
+      ).toEqual({ status: 'skipped', reason: 'already_done' });
+    },
+  );
+
+  it('channel aktif kembali sebelum diproses → diproses seperti biasa', async () => {
+    const target = await organizationWithChannel();
+    const [event] = await storeEvents(target, textMessage());
+    await db.update(channels).set({ enabled: false }).where(eq(channels.id, target.channelId));
+    await db.update(channels).set({ enabled: true }).where(eq(channels.id, target.channelId));
+    const { messages, handlers } = recordingHandlers();
+    expect(await processWebhookJob(jobFor(event!), { db, logger: logs.logger, handlers })).toEqual({
+      status: 'processed',
+    });
+    expect(messages).toHaveLength(1);
+  });
+});

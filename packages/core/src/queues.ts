@@ -70,10 +70,11 @@ export function webhookEventJobId(eventId: string): string {
 export const webhookEventJobResultSchema = z.object({
   /**
    * `processed` = dinormalisasi dan diteruskan; `skipped` = sudah diproses sebelumnya / tidak ada
-   * lagi / jenis yang belum ditangani.
+   * lagi / jenis yang belum ditangani / channel-nya sudah dinonaktifkan atau dihapus
+   * (`channel_inactive`, review webhook R3).
    */
   status: z.enum(['processed', 'skipped']),
-  reason: z.enum(['already_done', 'not_found', 'unhandled']).optional(),
+  reason: z.enum(['already_done', 'not_found', 'unhandled', 'channel_inactive']).optional(),
 });
 export type WebhookEventJobResult = z.infer<typeof webhookEventJobResultSchema>;
 
