@@ -8,8 +8,9 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest';
 import { t } from '../../i18n/id';
 import { media } from '../../lib/media';
-import { apiError, fakeSession, json } from '../../test/fake-api';
+import { apiError, defaultBranding, fakeSession, json } from '../../test/fake-api';
 import { setMediaQuery } from '../../test/match-media';
+import { TEST_CODE, TEST_PASSWORD, confirmIdentity } from '../../test/identity';
 import { renderApp } from '../../test/render-app';
 import {
   applyPreset,
@@ -17,6 +18,7 @@ import {
   emailFormFromView,
   emptyEmailForm,
   isEmailFormDirty,
+  needsIdentityToSave,
   toEmailInput,
   updateEmailForm,
 } from './email-form';
@@ -48,6 +50,16 @@ const savedResponse: EmailSettingsResponse = {
 };
 
 describe('aturan form email pengirim', () => {
+  it('konfirmasi identitas: simpan pertama kali atau jalur kirim berubah; ganti nama pengirim saja tidak', () => {
+    const form = emailFormFromView(saved);
+    expect(needsIdentityToSave(form, null)).toBe(true);
+    expect(needsIdentityToSave(form, saved)).toBe(false);
+    expect(needsIdentityToSave({ ...form, fromName: 'Nama Lain' }, saved)).toBe(false);
+    expect(needsIdentityToSave({ ...form, host: 'smtp.lain.test' }, saved)).toBe(true);
+    expect(needsIdentityToSave({ ...form, fromAddress: 'halo@majujaya.co.id' }, saved)).toBe(true);
+    expect(needsIdentityToSave({ ...form, password: 'rahasia-baru' }, saved)).toBe(true);
+  });
+
   it('username mengikuti alamat pengirim sampai diubah sendiri', () => {
     let values = updateEmailForm(emptyEmailForm, { fromAddress: 'cs@majujaya.co.id' });
     expect(values.username).toBe('cs@majujaya.co.id');
@@ -207,6 +219,61 @@ describe('Pengaturan → Email pengirim', () => {
     expect(screen.getByLabelText(t.emailSettings.fromName)).toHaveValue('CS Maju Jaya Baru');
   });
 
+  it('server email diganti → konfirmasi identitas (Owner juga); pesan konfirmasi salah di dialog', async () => {
+    let attempts = 0;
+    const view = await renderApp('/pengaturan/email', {
+      emailSettings: savedResponse,
+      routes: {
+        [`PUT ${API_ROUTES.settings.email}`]: () => {
+          attempts += 1;
+          return attempts === 1
+            ? apiError(400, 'VALIDATION_ERROR', 'Data tidak valid.', {
+                details: [{ field: 'confirmation.password', message: 'Password salah.' }],
+              })
+            : json(savedResponse);
+        },
+      },
+    });
+    await screen.findByRole('heading', { level: 1, name: t.emailSettings.title });
+    fireEvent.change(screen.getByLabelText(t.emailSettings.host), {
+      target: { value: 'smtp.lain.test' },
+    });
+    fireEvent.change(screen.getByLabelText(t.emailSettings.password, { exact: true }), {
+      target: { value: 'sandi-smtp-baru' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: t.emailSettings.save }));
+    expect(view.api.requests.some((r) => r.method === 'PUT')).toBe(false);
+
+    const dialog = await confirmIdentity(t.emailSettings.confirmTitle, t.emailSettings.save, {
+      password: 'salah',
+    });
+    expect(await within(dialog).findByText('Password salah.')).toBeVisible();
+    fireEvent.change(within(dialog).getByLabelText(t.identity.password), {
+      target: { value: TEST_PASSWORD },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: t.emailSettings.save }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await screen.findByText(t.emailSettings.saved)).toBeVisible();
+    const request = view.api.requests.findLast((r) => r.method === 'PUT');
+    expect(request?.body).toMatchObject({
+      host: 'smtp.lain.test',
+      confirmation: { password: TEST_PASSWORD, code: TEST_CODE },
+    });
+    // Password SMTP dan konfirmasi tidak tertinggal di cache Query/mutasi.
+    const cached = JSON.stringify([
+      view.queryClient
+        .getQueryCache()
+        .getAll()
+        .map((query) => query.state.data),
+      view.queryClient
+        .getMutationCache()
+        .getAll()
+        .map((mutation) => mutation.state.variables),
+    ]);
+    expect(cached).not.toContain(TEST_PASSWORD);
+    expect(cached).not.toContain('sandi-smtp-baru');
+  });
+
   it('Owner tidak melihat catatan pemberitahuan ke Owner', async () => {
     await renderApp('/pengaturan/email', { emailSettings: savedResponse });
     await screen.findByRole('heading', { level: 1, name: t.emailSettings.title });
@@ -303,6 +370,18 @@ describe('Pengaturan → Email pengirim', () => {
     expect(link).toHaveAttribute('href', 'https://myaccount.google.com/apppasswords');
     // Langkah umum tidak lagi menunjuk "(lihat di bawah)".
     expect(within(guide).queryByText(/lihat di bawah/)).toBeNull();
+  });
+
+  it('white-label: panduan Gmail menyebut nama produk dari branding, bukan nama bawaan', async () => {
+    const { container } = await renderApp('/pengaturan/email', {
+      emailSettings: savedResponse,
+      branding: { ...defaultBranding, productName: 'Layanan Prima' },
+    });
+    await screen.findByRole('heading', { level: 1, name: t.emailSettings.title });
+    fireEvent.click(screen.getByRole('radio', { name: 'Gmail / Google Workspace' }));
+    const guide = container.querySelector('details') as HTMLElement;
+    expect(guide).toHaveTextContent('beri nama “Layanan Prima”');
+    expect(guide).not.toHaveTextContent('Balesin');
   });
 
   it('N3 (desktop): panduan di kolom samping, terbuka, bukan di dalam form', async () => {

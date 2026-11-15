@@ -65,6 +65,17 @@ describe('Keamanan akun → Sesi aktif', () => {
     );
   });
 
+  it('setelah sesi dikeluarkan, daftar undangan di cache dimuat ulang (undangan dari sesi itu bisa batal)', async () => {
+    const { view } = await openSecurity('owner', {
+      [`DELETE ${apiPath(API_ROUTES.sessions.revoke, { sessionId: PHONE.id })}`]: () =>
+        json({ status: 'revoked' }),
+    });
+    view.queryClient.setQueryData(['team', 'invitations'], { stale: true });
+    fireEvent.click(screen.getByRole('button', { name: t.sessions.revokeLabel('Safari di iOS') }));
+    await screen.findByText(t.sessions.revoked('Safari di iOS'));
+    expect(view.queryClient.getQueryState(['team', 'invitations'])?.isInvalidated).toBe(true);
+  });
+
   it('keluarkan satu sesi lain tanpa konfirmasi identitas; fokus ke judul kartu', async () => {
     const { card } = await openSecurity('owner', {
       [`DELETE ${apiPath(API_ROUTES.sessions.revoke, { sessionId: PHONE.id })}`]: () =>

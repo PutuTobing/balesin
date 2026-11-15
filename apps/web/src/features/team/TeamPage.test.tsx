@@ -17,6 +17,7 @@ import {
   json,
   type FakeApiOptions,
 } from '../../test/fake-api';
+import { TEST_CODE, TEST_PASSWORD, confirmIdentity } from '../../test/identity';
 import { renderApp } from '../../test/render-app';
 import { defaultInviteRole, inviteRoleOptions } from './invite-roles';
 import { filterMembers, memberBadges, viewOnlyReason } from './member-status';
@@ -191,12 +192,21 @@ describe('Pengaturan → Tim', () => {
     expect(screen.getByText(copy.invite.viaEmail)).toBeVisible();
     invite('tono@majujaya.co.id', 'Teknisi');
     fireEvent.click(screen.getByRole('button', { name: copy.invite.submitEmail }));
+    // Konfirmasi identitas dulu (semua peran, Owner juga): belum ada yang dikirim.
+    expect(view.api.requests.some((r) => r.method === 'POST')).toBe(false);
+    await confirmIdentity(copy.invite.confirmTitle, copy.invite.submitEmail);
 
     expect(await screen.findByText(copy.invite.sent('tono@majujaya.co.id'))).toBeVisible();
     const request = view.api.requests.find(
       (r) => r.method === 'POST' && r.path === API_ROUTES.invitations.collection,
     );
-    expect(request?.body).toEqual({ email: 'tono@majujaya.co.id', role: 'teknisi' });
+    expect(request?.body).toEqual({
+      email: 'tono@majujaya.co.id',
+      role: 'teknisi',
+      confirmation: { password: TEST_PASSWORD, code: TEST_CODE },
+    });
+    // Isian konfirmasi tidak tertinggal di cache Query/mutasi.
+    expect(cacheText(view)).not.toContain(TEST_PASSWORD);
     expect(request?.headers[CSRF_HEADER_NAME.toLowerCase()]).toBe('csrf-tes-1');
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(
@@ -226,6 +236,8 @@ describe('Pengaturan → Tim', () => {
     });
     invite('rina@majujaya.co.id');
     fireEvent.click(screen.getByRole('button', { name: copy.invite.submitEmail }));
+    await confirmIdentity(copy.invite.confirmTitle, copy.invite.submitEmail);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     const email = screen.getByLabelText(copy.invite.email);
     await waitFor(() => expect(email).toHaveAttribute('aria-invalid', 'true'));
     expect(screen.getByText('Email ini sudah terdaftar.')).toBeVisible();
@@ -233,7 +245,34 @@ describe('Pengaturan → Tim', () => {
 
     invite('agus@majujaya.co.id');
     fireEvent.click(screen.getByRole('button', { name: copy.invite.submitEmail }));
+    await confirmIdentity(copy.invite.confirmTitle, copy.invite.submitEmail);
     expect(await screen.findByRole('alert')).toHaveTextContent(/Admin hanya bisa mengundang/);
+  });
+
+  it('konfirmasi identitas salah: pesan server di isian dialog; batal mengosongkan isiannya', async () => {
+    await openTeam('owner', {
+      routes: {
+        [`POST ${API_ROUTES.invitations.collection}`]: () =>
+          apiError(400, 'VALIDATION_ERROR', 'Data tidak valid.', {
+            details: [{ field: 'confirmation.code', message: 'Kode verifikasi salah.' }],
+          }),
+      },
+    });
+    invite('citra@majujaya.co.id');
+    fireEvent.click(screen.getByRole('button', { name: copy.invite.submitEmail }));
+    const dialog = await confirmIdentity(copy.invite.confirmTitle, copy.invite.submitEmail);
+    expect(await within(dialog).findByText('Kode verifikasi salah.')).toBeVisible();
+    const code = within(dialog).getByLabelText(t.identity.code);
+    expect(code).toHaveAttribute('aria-invalid', 'true');
+    await waitFor(() => expect(code).toHaveFocus());
+    fireEvent.click(within(dialog).getByRole('button', { name: t.identity.cancel }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: copy.invite.submitEmail })).toHaveFocus(),
+    );
+    fireEvent.click(screen.getByRole('button', { name: copy.invite.submitEmail }));
+    const reopened = await screen.findByRole('dialog', { name: copy.invite.confirmTitle });
+    expect(within(reopened).getByLabelText(t.identity.password)).toHaveValue('');
   });
 
   it('isian kosong / email salah ditolak di browser tanpa memanggil server', async () => {
@@ -257,6 +296,7 @@ describe('Pengaturan → Tim', () => {
     expect(screen.getByText(copy.invite.viaLink, { exact: false })).toBeVisible();
     invite('citra@majujaya.co.id');
     fireEvent.click(screen.getByRole('button', { name: copy.invite.submitLink }));
+    await confirmIdentity(copy.invite.confirmTitleLink, copy.invite.submitLink);
 
     const dialog = await screen.findByRole('dialog', { name: copy.linkDialog.title });
     expect(within(dialog).getByText(LINK)).toBeVisible();
@@ -308,7 +348,11 @@ describe('Pengaturan → Tim', () => {
     });
     const row = screen.getByRole('listitem', { name: copy.list.actionsFor(invitation.email) });
     fireEvent.click(within(row).getByRole('button', { name: copy.list.resend }));
+    await confirmIdentity(copy.list.resendTitle, copy.list.resend);
     const dialog = await screen.findByRole('dialog', { name: copy.linkDialog.title });
+    expect(
+      view.api.requests.find((r) => r.method === 'POST' && r.path.endsWith('/resend'))?.body,
+    ).toEqual({ confirmation: { password: TEST_PASSWORD, code: TEST_CODE } });
     fireEvent.click(within(dialog).getByRole('button', { name: copy.linkDialog.done }));
     fireEvent.click(within(dialog).getByRole('button', { name: copy.linkDialog.closeAnyway }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -338,7 +382,7 @@ describe('Pengaturan → Tim', () => {
     );
   });
 
-  it('429 saat mengundang: tombol terkunci dengan hitung mundur', async () => {
+  it('429 saat mengundang: dialog konfirmasi terkunci dengan hitung mundur', async () => {
     await openTeam('owner', {
       routes: {
         [`POST ${API_ROUTES.invitations.collection}`]: () =>
@@ -349,8 +393,9 @@ describe('Pengaturan → Tim', () => {
     });
     invite('citra@majujaya.co.id');
     fireEvent.click(screen.getByRole('button', { name: copy.invite.submitEmail }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(copy.invite.lockedTitle);
-    const locked = screen.getByRole('button', { name: /2:00|1:59/ });
+    const dialog = await confirmIdentity(copy.invite.confirmTitle, copy.invite.submitEmail);
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(t.identity.lockedTitle);
+    const locked = within(dialog).getByRole('button', { name: /2:00|1:59/ });
     expect(locked).toBeDisabled();
     expect(locked).toHaveAttribute('data-locked');
   });

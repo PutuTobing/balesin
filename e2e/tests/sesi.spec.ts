@@ -84,7 +84,7 @@ test('sesi dicabut di tengah pemakaian → halaman masuk dengan pesan, tanpa lay
     'Sesimu sudah berakhir. Masuk lagi untuk melanjutkan.',
   );
   const seen = await page.evaluate(() => (window as unknown as { __h1: string[] }).__h1);
-  expect(seen).not.toContain('Halaman ini gagal dimuat');
+  expect(seen).not.toContain('Halaman ini belum bisa dimuat');
 
   // Masuk lagi (dua langkah) → kembali ke tujuan semula.
   await submitLogin(page, owner.email, owner.password);

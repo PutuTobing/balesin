@@ -73,15 +73,13 @@
   font-size: var(--text-13);
 }
 
+/* Peran: teks polos seperti di daftar Tim dan detail anggota (pil hanya untuk "Kamu"/"Sesi ini"). */
 .role {
   flex: none;
-  padding: var(--space-4) var(--space-8);
-  border-radius: var(--radius-pill);
-  background: var(--surface-2);
   color: var(--ink);
-  font-size: var(--text-12);
+  font-size: var(--text-13);
   font-weight: var(--weight-semibold);
-  line-height: 1;
+  line-height: var(--leading-title);
 }
 
 .separator {

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 import { Button } from '../../components/ui/Button';
+import { FormErrorNotice } from '../../components/ui/FormErrorNotice';
 import { Notice } from '../../components/ui/Notice';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { StatusBadge } from '../../components/ui/StatusBadge';
@@ -142,13 +143,7 @@ function Unverified({
           {copy.sent(status.email)}
         </Notice>
       ) : error ? (
-        <Notice
-          tone={lock.locked ? 'warning' : 'danger'}
-          role="alert"
-          title={lock.locked ? copy.lockedTitle : undefined}
-        >
-          {isApiError(error) ? error.message : t.api.network}
-        </Notice>
+        <FormErrorNotice error={error} lock={lock} lockedTitle={copy.lockedTitle} />
       ) : null}
     </>
   );

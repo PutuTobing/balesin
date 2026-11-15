@@ -47,6 +47,7 @@ import {
   type CheckSetupPasswordRequest,
   type CompletePasswordResetRequest,
   type CreateInvitationRequest,
+  type SaveEmailSettingsRequest,
   type CompleteSetupRequest,
   type EmailSettingsInput,
   type EmailTemplateId,
@@ -186,9 +187,11 @@ export function createEndpoints(client: ApiClient) {
           body,
           schema: invitationIssuedResponseSchema,
         }),
-      resend: (invitationId: string) =>
+      /** Konfirmasi identitas pelaku wajib (semua peran, Owner juga — review akhir Fase 1 T1). */
+      resend: (invitationId: string, confirmation: IdentityConfirmation) =>
         client.request(apiPath(API_ROUTES.invitations.resend, { invitationId }), {
           method: 'POST',
+          body: { confirmation },
           schema: invitationIssuedResponseSchema,
         }),
       revoke: (invitationId: string) =>
@@ -372,7 +375,11 @@ export function createEndpoints(client: ApiClient) {
     emailSettings: {
       get: (signal?: AbortSignal) =>
         client.request(API_ROUTES.settings.email, { schema: emailSettingsResponseSchema, signal }),
-      save: (body: EmailSettingsInput) =>
+      /**
+       * `confirmation` wajib bila jalur kirim berubah atau simpan pertama kali (semua peran, Owner
+       * juga — review akhir Fase 1 T2); cukup tanpa bila hanya nama pengirim yang berubah.
+       */
+      save: (body: SaveEmailSettingsRequest) =>
         client.request(API_ROUTES.settings.email, {
           method: 'PUT',
           body,

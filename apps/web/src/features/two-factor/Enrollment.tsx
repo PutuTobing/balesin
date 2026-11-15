@@ -22,6 +22,7 @@ import { Button } from '../../components/ui/Button';
 import { CopyButton } from '../../components/ui/CopyButton';
 import { PasswordField } from '../../components/ui/Field';
 import { Icon } from '../../components/ui/Icon';
+import { FormErrorNotice } from '../../components/ui/FormErrorNotice';
 import { Notice } from '../../components/ui/Notice';
 import { Skeleton, SkeletonRegion } from '../../components/ui/Skeleton';
 import { SubmitButton } from '../../components/ui/SubmitButton';
@@ -242,7 +243,7 @@ export function EnrollmentSteps({
         ) : (
           <StartFailed
             error={state.error}
-            locked={startLock.locked}
+            lock={startLock}
             retry={
               <SubmitButton
                 ref={actionRef}
@@ -386,25 +387,15 @@ function AddAccount({ enrollment }: { enrollment: StartTwoFactorEnrollmentRespon
   );
 }
 
-function StartFailed({
-  error,
-  locked,
-  retry,
-}: {
-  error: unknown;
-  locked: boolean;
-  retry: ReactNode;
-}) {
-  const message = isApiError(error) ? error.message : t.api.network;
+function StartFailed({ error, lock, retry }: { error: unknown; lock: Lock; retry: ReactNode }) {
   return (
-    <Notice
-      tone={locked ? 'warning' : 'danger'}
-      role="alert"
-      title={locked ? copy.lockedTitle : copy.startFailedTitle}
+    <FormErrorNotice
+      error={error}
+      lock={lock}
+      lockedTitle={copy.lockedTitle}
+      failedTitle={copy.startFailedTitle}
       actions={retry}
-    >
-      {message}
-    </Notice>
+    />
   );
 }
 
@@ -495,15 +486,7 @@ function ConfirmForm({
       >
         {copy.confirm.submit}
       </SubmitButton>
-      {error ? (
-        <Notice
-          tone={isApiError(error) && error.status === 429 ? 'warning' : 'danger'}
-          role="alert"
-          title={isApiError(error) && error.status === 429 ? copy.lockedTitle : undefined}
-        >
-          {isApiError(error) ? error.message : t.api.network}
-        </Notice>
-      ) : null}
+      {error ? <FormErrorNotice error={error} lock={lock} lockedTitle={copy.lockedTitle} /> : null}
     </form>
   );
 }
@@ -580,15 +563,7 @@ function PasswordStep({
       >
         {copy.password.submit}
       </SubmitButton>
-      {error ? (
-        <Notice
-          tone={lock.locked ? 'warning' : 'danger'}
-          role="alert"
-          title={lock.locked ? copy.lockedTitle : undefined}
-        >
-          {isApiError(error) ? error.message : t.api.network}
-        </Notice>
-      ) : null}
+      {error ? <FormErrorNotice error={error} lock={lock} lockedTitle={copy.lockedTitle} /> : null}
     </form>
   );
 }

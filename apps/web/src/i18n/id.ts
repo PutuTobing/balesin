@@ -134,13 +134,15 @@ export const t = {
   },
 
   error: {
-    title: 'Halaman ini gagal dimuat',
+    title: 'Halaman ini belum bisa dimuat',
     body: 'Biasanya karena koneksi terputus. Periksa internetmu, lalu coba lagi.',
     details: 'Detail teknis',
   },
 
   api: {
     network: 'Tidak bisa terhubung ke server. Periksa koneksi internetmu, lalu coba lagi.',
+    /** Hitung mundur 429 sudah habis (pola semua form, kecuali halaman masuk yang punya teks sendiri). */
+    unlocked: 'Sudah bisa dicoba lagi.',
     unreachable: 'Server aplikasi belum bisa dihubungi. Coba lagi beberapa saat lagi.',
     invalidResponse: 'Jawaban server tidak bisa dibaca. Muat ulang halaman, lalu coba lagi.',
     retryIn: (wait: string) => `Bisa dicoba lagi dalam ${wait}.`,
@@ -204,9 +206,9 @@ export const t = {
       submit: 'Masuk',
       submitting: 'Memeriksa…',
       noAccount:
-        'Belum punya akun? Akun dibuat lewat undangan. Minta Owner atau Admin timmu mengirim undangan.',
+        'Belum punya akun? Akun dibuat lewat undangan. Minta Owner atau Admin di tempatmu mengirim undangan.',
       lockedTitle: 'Masuk dikunci sementara',
-      enrollmentExpiredTitle: 'Pendaftaran 2FA sudah ditutup',
+      enrollmentExpiredTitle: 'Pendaftaran verifikasi dua langkah sudah ditutup',
       countdownButton: (clock: string) => `Coba lagi dalam ${clock}`,
       unlocked: 'Kamu sudah bisa mencoba masuk lagi.',
       sessionEnded: 'Sesimu sudah berakhir. Masuk lagi untuk melanjutkan.',
@@ -347,6 +349,11 @@ export const t = {
       submitLink: 'Buat tautan undangan',
       submitting: 'Memproses…',
       lockedTitle: 'Undangan dibatasi sementara',
+      /** Konfirmasi identitas sebelum undangan dibuat (semua peran, Owner juga). */
+      confirmTitle: 'Kirim undangan ini?',
+      confirmTitleLink: 'Buat tautan undangan ini?',
+      confirmBody: (email: string, role: string) =>
+        `${email} bisa membuat akun sebagai ${role} di organisasimu.`,
       sent: (email: string) => `Undangan untuk ${email} dibuat dan email-nya sedang dikirim.`,
       created: (email: string) => `Undangan untuk ${email} dibuat.`,
     },
@@ -365,6 +372,9 @@ export const t = {
       invitedBy: (name: string) => `Diundang ${name}`,
       resend: 'Kirim ulang',
       resending: 'Mengirim…',
+      resendTitle: 'Kirim ulang undangan ini?',
+      resendBody: (email: string) =>
+        `Tautan lama untuk ${email} langsung tidak berlaku; tautan baru berlaku 72 jam.`,
       revoke: 'Batalkan',
       revokeTitle: 'Batalkan undangan?',
       revokeBody: (email: string) =>
@@ -446,7 +456,7 @@ export const t = {
       useTotpPrompt: 'Aplikasi autentikator sudah bisa dibuka?',
       useTotp: 'Pakai kode dari aplikasi',
       noBackupCodes:
-        'Kode cadanganmu sudah habis. Bila aplikasi autentikator tidak bisa dibuka, minta Owner atau Admin timmu mereset verifikasi dua langkahmu.',
+        'Kode cadanganmu sudah habis. Bila aplikasi autentikator tidak bisa dibuka, minta Owner atau Admin di tempatmu mengatur ulang verifikasi dua langkahmu.',
       back: 'Kembali ke email dan password',
       expired: 'Waktu memasukkan kode sudah habis. Masukkan password-mu lagi untuk melanjutkan.',
       lockedTitle: 'Verifikasi dikunci sementara',
@@ -508,7 +518,7 @@ export const t = {
       restarting: 'Membuat…',
       startFailedTitle: 'Kode QR belum bisa dibuat',
       /** Sama dengan halaman masuk; pesan server menjelaskan langkahnya (tanpa kalimat tambahan). */
-      closedTitle: 'Pendaftaran 2FA sudah ditutup',
+      closedTitle: 'Pendaftaran verifikasi dua langkah sudah ditutup',
       lockedTitle: 'Pendaftaran dikunci sementara',
       password: {
         title: 'Konfirmasi password',
@@ -603,24 +613,17 @@ export const t = {
       lowBody:
         'Kode cadangan tinggal sedikit. Buat kode baru supaya kamu tetap bisa masuk bila ponselmu hilang.',
       regenerate: 'Buat kode baru',
-      regenerateTitle: 'Buat kode cadangan baru',
-      regenerateBody:
-        'Semua kode cadangan lama langsung tidak berlaku. Konfirmasi dulu dengan password dan kode verifikasi.',
+      regenerateTitle: 'Buat kode cadangan baru?',
+      regenerateBody: 'Semua kode cadangan lama langsung tidak berlaku.',
       regenerating: 'Membuat…',
     },
     disable: {
       action: 'Nonaktifkan',
       title: 'Nonaktifkan verifikasi dua langkah',
-      body: 'Setelah dinonaktifkan, akunmu hanya dilindungi password dan semua kode cadangan dihapus. Konfirmasi dulu dengan password dan kode verifikasi.',
+      dialogTitle: 'Nonaktifkan verifikasi dua langkah?',
+      body: 'Setelah dinonaktifkan, akunmu hanya dilindungi password dan semua kode cadangan dihapus.',
       submitting: 'Menonaktifkan…',
       done: 'Verifikasi dua langkah sudah dinonaktifkan.',
-    },
-    reauth: {
-      password: 'Password',
-      code: 'Kode verifikasi',
-      codeHint: '6 digit dari aplikasi autentikator, atau salah satu kode cadangan.',
-      cancel: 'Batal',
-      lockedTitle: 'Konfirmasi dikunci sementara',
     },
     sessions: {
       title: 'Sesi aktif',
@@ -629,7 +632,7 @@ export const t = {
       revokeOthers: 'Keluarkan semua sesi lain',
       revokeOthersTitle: 'Keluarkan semua sesi lain?',
       revokeOthersBody:
-        'Semua perangkat lain langsung keluar dari akunmu, termasuk login yang sedang menunggu kode verifikasi. Sesi ini tetap berjalan.',
+        'Semua perangkat lain langsung keluar dari akunmu, termasuk proses masuk yang sedang menunggu kode verifikasi. Undangan yang dibuat dari sesi lain ikut dibatalkan. Sesi ini tetap berjalan.',
       revokeOthersConfirm: 'Keluarkan sesi lain',
       revokeOthersPending: 'Mengeluarkan…',
       revokedOthers: (count: number) =>
@@ -646,7 +649,7 @@ export const t = {
 
   /** Dialog konfirmasi ulang identitas (password + kode 2FA) sebelum aksi sensitif. */
   identity: {
-    password: 'Password-mu',
+    password: 'Password',
     code: 'Kode verifikasi',
     codeHint: '6 digit dari aplikasi autentikator, atau salah satu kode cadangan.',
     codeRequired: 'Masukkan kode dari aplikasi autentikator atau salah satu kode cadangan.',
@@ -741,11 +744,11 @@ export const t = {
       pending: 'Membuka…',
     },
     expired: {
-      title: 'Batas waktu daftar 2FA sudah lewat',
+      title: 'Batas waktu pendaftaran sudah lewat',
       body: (name: string) =>
         `${name} tidak bisa masuk sampai pendaftaran verifikasi dua langkahnya dibuka lagi. Setelah dibuka, ia punya 72 jam untuk mendaftar.`,
       action: 'Buka lagi pendaftaran',
-      dialogTitle: 'Buka lagi pendaftaran 2FA?',
+      dialogTitle: 'Buka lagi pendaftaran verifikasi dua langkah?',
       dialogBody: (name: string) =>
         `${name} mendapat 72 jam baru untuk mendaftarkan aplikasi autentikator. Pastikan ia sendiri yang akan masuk.`,
       confirm: 'Buka lagi',
@@ -792,7 +795,7 @@ export const t = {
       revokeAll: 'Keluarkan semua sesi',
       revokeAllTitle: 'Keluarkan semua sesinya?',
       revokeAllBody: (name: string) =>
-        `${name} langsung keluar dari semua perangkat, termasuk login yang sedang menunggu kode verifikasi.`,
+        `${name} langsung keluar dari semua perangkat, termasuk proses masuk yang sedang menunggu kode verifikasi.`,
       revokeAllConfirm: 'Keluarkan semua',
       revokeAllPending: 'Mengeluarkan…',
       loadFailed: 'Sesi aktif belum bisa dimuat.',
@@ -872,7 +875,7 @@ export const t = {
     noMatchTitle: 'Tidak ada entri yang cocok',
     noMatchBody: 'Coba longgarkan saringan atau perluas rentang tanggalnya.',
     loadFailedTitle: 'Audit log belum bisa dimuat',
-    lockedTitle: 'Terlalu sering memuat',
+    lockedTitle: 'Audit log dibatasi sementara',
     export: 'Ekspor CSV',
     exporting: 'Mengekspor…',
     exported: (rows: number) =>
@@ -921,6 +924,9 @@ export const t = {
       actor
         ? `Terbaru: ${label} oleh ${actor.name} (${actor.role}), ${time}.`
         : `Terbaru: ${label}, ${time}.`,
+    /** `member_joined`: pelakunya anggota baru itu sendiri, jadi bukan "… oleh …". */
+    latestJoined: (name: string, role: string, time: string) =>
+      `Terbaru: ${name} (${role}) bergabung lewat undangan, ${time}.`,
     review: 'Periksa di Audit log',
     dismiss: 'Tutup peringatan keamanan',
   },
@@ -937,7 +943,8 @@ export const t = {
     next: 'Lanjut',
     checking: 'Memeriksa…',
     skip: 'Lewati',
-    intro: 'Siapkan aplikasi untuk timmu. Butuh sekitar 5 menit; email pengirim bisa diisi nanti.',
+    intro:
+      'Siapkan aplikasi untuk tim di tempatmu. Butuh sekitar 5 menit; email pengirim bisa diisi nanti.',
     steps: {
       token: {
         nav: 'Token setup',
@@ -950,7 +957,7 @@ export const t = {
       organization: {
         nav: 'Organisasi',
         title: 'Tentang organisasimu',
-        body: 'Nama ini tampil di halaman masuk dan di email untuk timmu.',
+        body: 'Nama ini tampil di halaman masuk dan di email untuk tim di tempatmu.',
         name: 'Nama perusahaan',
         namePlaceholder: 'Contoh: PT Maju Jaya',
         timezone: 'Zona waktu',
@@ -988,8 +995,9 @@ export const t = {
       email: {
         nav: 'Email pengirim',
         title: 'Email pengirim',
-        body: 'Dipakai untuk mengirim undangan tim dan reset password. Boleh dilewati dan diisi nanti di Pengaturan → Email pengirim.',
-        skipNote: 'Tanpa email pengirim, undangan tim dan reset password belum bisa dikirim.',
+        body: 'Dipakai untuk mengirim undangan tim dan tautan atur ulang password. Boleh dilewati dan diisi nanti di Pengaturan → Email pengirim.',
+        skipNote:
+          'Tanpa email pengirim, undangan tim dan tautan atur ulang password belum bisa dikirim.',
         skipped: 'Dilewati. Bisa diisi nanti di Pengaturan.',
         noMasterKeyTitle: 'Email pengirim belum bisa disimpan',
         noMasterKeyBody:
@@ -1033,7 +1041,7 @@ export const t = {
       doneTitle: 'Setup sudah selesai',
       doneBody: 'Akun Owner sudah dibuat sebelumnya. Masuk dengan akun yang sudah ada.',
       goToLogin: 'Ke halaman masuk',
-      failedTitle: 'Status setup tidak bisa dimuat',
+      failedTitle: 'Status setup belum bisa dimuat',
       failedBody:
         'Halaman setup belum bisa menghubungi server. Periksa koneksi internet, atau tunggu sebentar bila server sedang dinyalakan ulang.',
     },
@@ -1050,7 +1058,8 @@ export const t = {
 
   emailSettings: {
     title: 'Email pengirim',
-    menuHint: 'Untuk undangan tim, reset password, dan notifikasi',
+    // Sepanjang teks lama: lebih panjang membuat baris menu patah saat statusnya dimuat (CLS).
+    menuHint: 'Untuk undangan, atur ulang password, dan notifikasi',
     presetLabel: 'Penyedia email',
     senderLegend: 'Pengirim',
     fromName: 'Nama pengirim',
@@ -1112,12 +1121,12 @@ export const t = {
     guideSetupTitle: 'Lihat panduan langkah demi langkah',
     guide: (context: 'setup' | 'settings') => [
       'Pilih penyedia email-mu. Host, port, dan keamanan terisi otomatis.',
-      'Isi alamat email pengirim. Kami coba tebak server SMTP dari domainnya.',
+      'Isi alamat email pengirim. Server SMTP ditebak otomatis dari domainnya.',
       'Masukkan password email. Untuk Gmail dan Microsoft 365, buat app password dulu.',
       'Tekan “Tes koneksi”. Bila berhasil, kirim email tes ke dirimu sendiri.',
       context === 'setup'
         ? 'Tekan “Lanjut”. Pengaturan disimpan saat setup selesai.'
-        : 'Tekan “Simpan”. Undangan tim dan reset password akan dikirim dari alamat ini.',
+        : 'Tekan “Simpan”. Undangan tim dan tautan atur ulang password akan dikirim dari alamat ini.',
     ],
     /**
      * Petunjuk singkat di bawah pilihan penyedia. Tidak mengulang langkah panduan; caranya
@@ -1129,7 +1138,7 @@ export const t = {
       gmail:
         'Wajib memakai app password (16 karakter), bukan password akun Google. Caranya ada di panduan.',
       outlook:
-        'Perlu Authenticated SMTP aktif, dan app password bila akun memakai verifikasi 2 langkah. Caranya ada di panduan.',
+        'Perlu Authenticated SMTP aktif, dan app password bila akun memakai verifikasi dua langkah. Caranya ada di panduan.',
       other: 'Isi host, port, dan keamanan sesuai petunjuk penyedia email-mu.',
     },
     /** Langkah khusus penyedia; `link` tampil tepat di bawah langkah yang menyebut halamannya. */
@@ -1139,7 +1148,9 @@ export const t = {
         steps: [
           { text: 'Buka Akun Google → Keamanan, lalu aktifkan Verifikasi 2 Langkah.' },
           {
-            text: 'Buka halaman Sandi aplikasi, beri nama “Balesin”, lalu tekan Buat.',
+            // Nama produk dari branding (white-label), bukan ditulis langsung.
+            text: (product: string) =>
+              `Buka halaman Sandi aplikasi, beri nama “${product}”, lalu tekan Buat.`,
             link: {
               label: 'Buka halaman sandi aplikasi Google',
               href: 'https://myaccount.google.com/apppasswords',
@@ -1155,7 +1166,7 @@ export const t = {
             text: 'Pastikan admin mengaktifkan Authenticated SMTP untuk kotak surat ini (Pusat admin Microsoft 365 → Pengguna → Email → Kelola aplikasi email).',
           },
           {
-            text: 'Bila akun memakai verifikasi 2 langkah, buat app password di Info keamanan.',
+            text: 'Bila akun memakai verifikasi dua langkah, buat app password di Info keamanan.',
             link: {
               label: 'Buka Info keamanan Microsoft',
               href: 'https://mysignins.microsoft.com/security-info',
@@ -1182,10 +1193,14 @@ export const t = {
       `Domain ini sepertinya memakai ${provider}. Ganti ke pengaturan ini?`,
     switchSuggestion: 'Ganti',
 
-    loadFailed: 'Pengaturan email tidak bisa dimuat',
+    loadFailed: 'Pengaturan email belum bisa dimuat',
+    /** Konfirmasi identitas saat jalur kirim berubah / simpan pertama kali (semua peran). */
+    confirmTitle: 'Simpan email pengirim?',
+    confirmBody:
+      'Undangan tim dan tautan atur ulang password akan dikirim lewat pengaturan ini. Semua Owner diberi tahu lewat email.',
     preview: {
       title: 'Pratinjau email',
-      body: 'Contoh email yang dikirim ke timmu, memakai nama aplikasi dan logo organisasimu. Isi dan tautannya hanya contoh.',
+      body: 'Contoh email yang dikirim ke tim di tempatmu, memakai nama aplikasi dan logo organisasimu. Isi dan tautannya hanya contoh.',
       template: 'Template',
       subject: 'Subjek',
       viewLabel: 'Tampilan pratinjau',

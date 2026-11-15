@@ -10,6 +10,7 @@ import { Link, useRouter } from '@tanstack/react-router';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { Button } from '../../components/ui/Button';
 import { PasswordField } from '../../components/ui/Field';
+import { FormErrorNotice } from '../../components/ui/FormErrorNotice';
 import { Notice } from '../../components/ui/Notice';
 import { PasswordStrength, type ServerPasswordCheck } from '../../components/ui/PasswordStrength';
 import { SubmitButton } from '../../components/ui/SubmitButton';
@@ -299,13 +300,7 @@ function ResetForm({
         </SubmitButton>
       ) : null}
       {error ? (
-        <Notice
-          tone={lock.locked ? 'warning' : 'danger'}
-          role="alert"
-          title={lock.locked ? t.links.lockedTitle : undefined}
-        >
-          {isApiError(error) ? error.message : t.api.network}
-        </Notice>
+        <FormErrorNotice error={error} lock={lock} lockedTitle={t.links.lockedTitle} />
       ) : null}
     </form>
   );

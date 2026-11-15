@@ -86,8 +86,8 @@ async function openMember(page: Page, user: ExtraUser): Promise<void> {
 
 async function confirm(page: Page, title: string, button: string, password: string, code: string) {
   const dialog = page.getByRole('dialog', { name: title });
-  await expect(dialog.getByLabel('Password-mu')).toBeFocused();
-  await dialog.getByLabel('Password-mu').fill(password);
+  await expect(dialog.getByLabel('Password', { exact: true })).toBeFocused();
+  await dialog.getByLabel('Password', { exact: true }).fill(password);
   await dialog.getByLabel('Kode verifikasi').fill(code);
   await dialog.getByRole('button', { name: button, exact: true }).click();
   await expect(dialog).toBeHidden();

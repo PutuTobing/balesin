@@ -13,7 +13,7 @@ test.describe.configure({ timeout: 90_000 });
 const ME = '/api/v1/auth/me';
 
 for (const role of ['cs', 'teknisi'] as const) {
-  test(`${role}: menu tanpa Broadcast; Inbox, Kontak, Tiket, Laporan, Pengaturan tetap`, async ({
+  test(`${role}: menu tanpa Broadcast (alamatnya dialihkan ke Inbox); menu lain tetap`, async ({
     browser,
     page: ownerPage,
   }) => {
@@ -44,6 +44,10 @@ for (const role of ['cs', 'teknisi'] as const) {
           await expect(nav.getByRole('link', { name, exact: true })).toBeVisible();
         }
       }
+      // Alamat langsung juga dijaga izin yang sama: dialihkan ke Inbox tanpa permintaan yang ditolak.
+      await page.goto('/broadcast');
+      await expect(page).toHaveURL(/\/inbox$/);
+      await expect(page.getByRole('heading', { level: 1, name: 'Inbox' })).toBeVisible();
       watched.expectClean();
     } finally {
       await watched.close();

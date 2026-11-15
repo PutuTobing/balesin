@@ -416,4 +416,22 @@ describe('atur ulang 2FA peran yang tidak wajib', () => {
       /perlu mendaftarkan aplikasi autentikator lagi saat masuk/,
     );
   });
+  it('setelah atur ulang 2FA, daftar undangan di cache dimuat ulang (undangan terbitannya bisa batal)', async () => {
+    const enabled = fakeTeamUser({
+      twoFactor: { ...CS.twoFactor, enabled: true, enabledAt: '2026-11-11T00:00:00.000Z' },
+    });
+    const view = await openUser(enabled, {
+      [`POST ${apiPath(API_ROUTES.team.resetTwoFactor, { userId: enabled.id })}`]: () =>
+        json(action({ ...enabled, twoFactor: { ...enabled.twoFactor, enabled: false } })),
+    });
+    view.queryClient.setQueryData(['team', 'invitations'], { stale: true });
+    fireEvent.click(screen.getByRole('button', { name: copy.twoFactor.reset }));
+    await screen.findByRole('dialog', { name: copy.twoFactor.resetTitle });
+    fillIdentity();
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: copy.twoFactor.resetConfirm }),
+    );
+    await screen.findByText(/sudah diatur ulang/);
+    expect(view.queryClient.getQueryState(['team', 'invitations'])?.isInvalidated).toBe(true);
+  });
 });

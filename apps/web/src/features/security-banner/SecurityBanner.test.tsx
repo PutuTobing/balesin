@@ -171,6 +171,22 @@ describe('banner peringatan keamanan', () => {
     );
   });
 
+  it('anggota baru bergabung: kalimat menyebut anggota itu, tautan ke undangan diterima', async () => {
+    const joined = event({
+      kind: 'member_joined',
+      actor: { ...WARNING.actor!, name: 'Citra Maharani', role: 'cs' },
+      subject: null,
+      details: { role: 'cs', issuerRole: 'admin' },
+    });
+    expect(auditSearchFor([joined], emptySecuritySummary.since)).toMatchObject({
+      action: 'user.invitation.accepted',
+    });
+    await renderApp('/inbox', { securitySummary: summary([joined]) });
+    const banner = await screen.findByRole('region', { name: copy.title(1) });
+    expect(banner).toHaveTextContent('Terbaru: Citra Maharani (CS) bergabung lewat undangan,');
+    expect(banner).not.toHaveTextContent(' oleh ');
+  });
+
   it('CS (tanpa audit.view): tidak memuat ringkasan dan tidak melihat banner', async () => {
     const view = await renderApp('/inbox', {
       session: fakeSession('cs'),

@@ -3,6 +3,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { t } from '../i18n/id';
 import { apiError, fakeEnrollmentSession, fakeSession, json } from '../test/fake-api';
+import { confirmIdentity } from '../test/identity';
 import { renderApp } from '../test/render-app';
 
 describe('penjaga rute', () => {
@@ -75,6 +76,7 @@ describe('penjaga rute', () => {
       target: { value: 'citra@majujaya.co.id' },
     });
     fireEvent.click(screen.getByRole('button', { name: t.team.invite.submitEmail }));
+    await confirmIdentity(t.team.invite.confirmTitle, t.team.invite.submitEmail);
     await waitFor(() => expect(view.router.state.location.pathname).toBe('/pengaturan'));
     expect(view.api.requests.filter((r) => r.path === API_ROUTES.auth.me).length).toBeGreaterThan(
       1,

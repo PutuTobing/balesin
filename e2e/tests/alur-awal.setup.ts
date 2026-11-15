@@ -509,7 +509,7 @@ test('setup dari nol sampai Owner mendaftar 2FA, masuk dua langkah, lalu terkunc
   await withOwnerCode(
     async ({ code }) => {
       await page.getByLabel('Kode verifikasi').fill(code);
-      await page.getByRole('button', { name: 'Buat kode baru' }).click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Buat kode baru' }).click();
       await expect(
         page.getByRole('heading', { level: 2, name: 'Kode cadangan baru' }),
       ).toBeFocused();

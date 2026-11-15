@@ -51,10 +51,16 @@ async function adminApi(admin: ExtraUser, backupCode: string) {
   return { api, csrfToken };
 }
 
-async function saveSettings(api: APIRequestContext, csrfToken: string, body: EmailSettingsBody) {
+/** Simpan email pengirim: jalur kirim berubah → konfirmasi identitas wajib (semua peran). */
+async function saveSettings(
+  api: APIRequestContext,
+  csrfToken: string,
+  body: EmailSettingsBody,
+  confirmation: { password: string; code: string },
+) {
   const response = await api.put('/api/v1/settings/email', {
     headers: { 'x-csrf-token': csrfToken },
-    data: body,
+    data: { ...body, confirmation },
   });
   expect(response.ok(), await response.text()).toBe(true);
 }
@@ -78,10 +84,12 @@ test('Admin mengubah alamat email pengirim → Owner melihat banner, membuka Aud
       security: current.settings.security,
       username: current.settings.username,
     };
-    await saveSettings(api, csrfToken, {
-      ...original,
-      fromAddress: `pengirim-${Date.now().toString(36)}@majujaya.test`,
-    });
+    await saveSettings(
+      api,
+      csrfToken,
+      { ...original, fromAddress: `pengirim-${Date.now().toString(36)}@majujaya.test` },
+      { password: admin.password, code: backupCodes[1] ?? '' },
+    );
 
     await openApp(page, '/inbox');
     const banner = page.getByRole('region', { name: /kejadian keamanan baru$/ });
@@ -108,7 +116,10 @@ test('Admin mengubah alamat email pengirim → Owner melihat banner, membuka Aud
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     await expect(page.getByRole('region', { name: /kejadian keamanan baru$/ })).toHaveCount(0);
 
-    await saveSettings(api, csrfToken, original);
+    await saveSettings(api, csrfToken, original, {
+      password: admin.password,
+      code: backupCodes[2] ?? '',
+    });
   } finally {
     await api.dispose();
   }
@@ -170,7 +181,7 @@ test('Admin mengatur ulang 2FA, mengubah peran, lalu menonaktifkan CS → email 
 
     const confirm = async (title: string, button: string) => {
       const dialog = ap.getByRole('dialog', { name: title });
-      await dialog.getByLabel('Password-mu').fill(admin.password);
+      await dialog.getByLabel('Password', { exact: true }).fill(admin.password);
       await dialog.getByLabel('Kode verifikasi').fill(next());
       await dialog.getByRole('button', { name: button, exact: true }).click();
       await expect(dialog).toBeHidden();

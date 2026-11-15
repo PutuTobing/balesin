@@ -55,6 +55,29 @@ export function LinkDialog({
     else setConfirming(true);
   };
 
+  const doneButton = (
+    <Button
+      key="selesai"
+      ref={doneRef}
+      variant={copied ? 'primary' : 'secondary'}
+      onClick={requestClose}
+    >
+      {copy.done}
+    </Button>
+  );
+  const copyButton = issued ? (
+    <CopyButton
+      key="salin"
+      ref={copyRef}
+      text={issued.link}
+      label={copy.copy}
+      copiedLabel={copy.copied}
+      announcement={copy.copiedAnnouncement}
+      variant={copied ? 'secondary' : 'primary'}
+      onCopied={() => setCopied(true)}
+    />
+  ) : null;
+
   return (
     <Dialog
       open={issued !== null}
@@ -100,23 +123,11 @@ export function LinkDialog({
               </DialogActions>
             </>
           ) : (
+            // Tombol berwarna selalu terakhir (kanan di desktop, atas di HP): "Salin tautan" sebelum
+            // tersalin, "Selesai" sesudahnya. `key` menjaga elemen (dan fokusnya) saat urutan berganti.
             <DialogActions>
-              <Button
-                ref={doneRef}
-                variant={copied ? 'primary' : 'secondary'}
-                onClick={requestClose}
-              >
-                {copy.done}
-              </Button>
-              <CopyButton
-                ref={copyRef}
-                text={issued.link}
-                label={copy.copy}
-                copiedLabel={copy.copied}
-                announcement={copy.copiedAnnouncement}
-                variant={copied ? 'secondary' : 'primary'}
-                onCopied={() => setCopied(true)}
-              />
+              {copied ? copyButton : doneButton}
+              {copied ? doneButton : copyButton}
             </DialogActions>
           )}
         </>

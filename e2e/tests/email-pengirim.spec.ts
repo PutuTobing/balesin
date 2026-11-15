@@ -1,5 +1,6 @@
 import { MAILPIT_API_URL, MAILPIT_SMTP } from '../stack/env';
 import { expect, expectNoHorizontalScroll, isHp, openApp, test } from './fixtures';
+import { confirmAsOwner } from './identitas';
 
 /**
  * Pengaturan → Email pengirim lewat UI dari nol (docs/PENGATURAN-UI.md, DoD tambahan):
@@ -85,6 +86,8 @@ test('Owner mengatur email pengirim ke Mailpit dan email tes tiba', async ({
   });
 
   await page.getByRole('button', { name: 'Simpan' }).click();
+  // Simpan pertama kali = jalur kirim baru → konfirmasi identitas (Owner juga).
+  await confirmAsOwner(page, 'Simpan email pengirim?', 'Simpan');
   await expect(page.getByText('Pengaturan email tersimpan.')).toBeVisible();
   await expect(page.getByText('Diatur di aplikasi')).toBeVisible();
   // Password tidak dikirim balik; kolom kosong dengan petunjuk "Tersimpan".
@@ -114,6 +117,8 @@ test('Owner mengatur email pengirim ke Mailpit dan email tes tiba', async ({
   // Simpan lagi tanpa mengubah password (hanya nama pengirim): password tersimpan tetap dipakai.
   await page.getByLabel('Nama pengirim').fill('CS Maju Jaya Baru');
   await page.getByRole('button', { name: 'Simpan' }).click();
+  // Hanya nama pengirim: tanpa dialog konfirmasi.
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByText('Pengaturan email tersimpan.')).toBeVisible();
   await expect(page.getByLabel('Nama pengirim')).toHaveValue('CS Maju Jaya Baru');
   await page.getByRole('button', { name: 'Tes koneksi' }).click();

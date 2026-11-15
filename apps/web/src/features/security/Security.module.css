@@ -37,6 +37,11 @@
   font-weight: var(--weight-semibold);
 }
 
+/* Pesan hasil yang difokus terprogram (tombol asalnya hilang): tanpa cincin. */
+.noticeFocus:focus {
+  outline: none;
+}
+
 .cardTitle:focus-visible {
   outline-offset: var(--space-4);
 }
@@ -121,45 +126,6 @@
   color: var(--warning-ink);
 }
 
-/* ---------- Konfirmasi ulang (password + kode) ---------- */
-
-.reauth {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-16);
-  padding-top: var(--space-16);
-  border-top: 1px solid var(--line);
-}
-
-.reauthHead {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.reauthTitle {
-  font-size: var(--text-14);
-  font-weight: var(--weight-semibold);
-}
-
-.reauthFields {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
-  gap: var(--space-16);
-}
-
-.reauthActions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-8);
-}
-
-/* Pesan error/kunci tidak menempel di tepi bawah area gulir (navigasi bawah HP). */
-.reauthNotice {
-  scroll-margin-bottom: var(--space-16);
-}
-
 /* ---------- Kerangka memuat (ukuran = elemen jadi) ---------- */
 
 /* Lencana "Aktif": teks 14px, tinggi baris 1.2. */
@@ -200,14 +166,6 @@
 @media (max-width: 640px) {
   .card {
     padding: var(--space-16);
-  }
-
-  .reauthFields {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .reauthActions > :first-child {
-    flex: 1;
   }
 
   .skeletonButton {

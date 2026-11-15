@@ -189,3 +189,16 @@ export function isEmailFormDirty(
       emailFormFingerprint({ ...emailFormFromView(saved), password: '' })
   );
 }
+
+/**
+ * Menyimpan butuh konfirmasi identitas (review akhir Fase 1 T2): simpan pertama kali, atau jalur
+ * kirim berubah (server, port, keamanan, username, password, alamat pengirim, balas-ke). Mengubah
+ * nama pengirim saja tidak.
+ */
+export function needsIdentityToSave(
+  values: EmailFormValues,
+  saved: EmailSettingsView | null,
+): boolean {
+  if (!saved) return true;
+  return isEmailFormDirty({ ...values, fromName: saved.fromName }, saved);
+}

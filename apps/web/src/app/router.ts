@@ -46,9 +46,11 @@ import {
   userAuditQuery,
   userSessionsQuery,
 } from '../lib/api/queries';
+import { navPermission } from '../components/shell/nav-items';
 import { createPreviewRoutes } from './preview-routes';
 import {
   guardAnyPermission,
+  guardNavRoute,
   guardEnrollment,
   guardLogin,
   guardPermission,
@@ -199,6 +201,7 @@ const contactsRoute = createRoute({
   getParentRoute,
   path: 'kontak',
   staticData: { page: { title: t.nav.contacts } },
+  beforeLoad: ({ context }) => guardNavRoute(context.session, navPermission('/kontak')),
   component: lazyRouteComponent(() => import('../features/contacts/ContactsPage'), 'ContactsPage'),
 });
 
@@ -206,6 +209,7 @@ const broadcastRoute = createRoute({
   getParentRoute,
   path: 'broadcast',
   staticData: { page: { title: t.nav.broadcast } },
+  beforeLoad: ({ context }) => guardNavRoute(context.session, navPermission('/broadcast')),
   component: lazyRouteComponent(
     () => import('../features/broadcast/BroadcastPage'),
     'BroadcastPage',
@@ -216,6 +220,7 @@ const ticketsRoute = createRoute({
   getParentRoute,
   path: 'tiket',
   staticData: { page: { title: t.nav.tickets, parent: 'more' } },
+  beforeLoad: ({ context }) => guardNavRoute(context.session, navPermission('/tiket')),
   component: lazyRouteComponent(() => import('../features/tickets/TicketsPage'), 'TicketsPage'),
 });
 
@@ -223,6 +228,7 @@ const reportsRoute = createRoute({
   getParentRoute,
   path: 'laporan',
   staticData: { page: { title: t.nav.reports, parent: 'more' } },
+  beforeLoad: ({ context }) => guardNavRoute(context.session, navPermission('/laporan')),
   component: lazyRouteComponent(() => import('../features/reports/ReportsPage'), 'ReportsPage'),
 });
 

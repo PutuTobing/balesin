@@ -19,7 +19,7 @@ import { useSession } from '../auth/session';
 import { BackupCodesPanel } from '../two-factor/BackupCodesPanel';
 import { BACKUP_CODES_LOW } from '../two-factor/constants';
 import { EmailCardSkeleton } from './EmailCardSkeleton';
-import { ReauthForm } from './ReauthForm';
+import { IdentityDialog } from '../identity/IdentityDialog';
 import { TwoFactorBadge } from './TwoFactorBadge';
 import styles from './Security.module.css';
 
@@ -70,11 +70,6 @@ export function TwoFactorCard({
 }) {
   const [disabling, setDisabling] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  // "Batal" → fokus kembali ke tombol yang membuka form (bukan ke <body>).
-  const [returnFocus, setReturnFocus] = useState(0);
-  useEffect(() => {
-    if (returnFocus > 0) triggerRef.current?.focus();
-  }, [returnFocus]);
   const loading = status === null;
   const enabled = loading ? required : status.enabled;
   const canDisable = !loading && status.enabled && !status.required;
@@ -122,30 +117,31 @@ export function TwoFactorCard({
       ) : null}
 
       {canDisable ? (
-        disabling ? (
-          <ReauthForm
-            title={copy.disable.title}
-            body={copy.disable.body}
-            submitLabel={copy.disable.action}
-            pendingLabel={copy.disable.submitting}
-            submitVariant="danger"
-            onSubmit={async (body) => {
-              await endpoints.twoFactor.disable(body);
-              setDisabling(false);
-              onDisabled?.();
-            }}
-            onCancel={() => {
-              setDisabling(false);
-              setReturnFocus((tick) => tick + 1);
-            }}
-          />
-        ) : (
+        <>
           <div className={styles.actions}>
             <Button ref={triggerRef} onClick={() => setDisabling(true)}>
               {copy.disable.title}
             </Button>
           </div>
-        )
+          {/* Konfirmasi identitas: dialog yang sama dengan semua aksi sensitif lain. */}
+          <IdentityDialog
+            open={disabling}
+            title={copy.disable.dialogTitle}
+            body={copy.disable.body}
+            confirmLabel={copy.disable.action}
+            pendingLabel={copy.disable.submitting}
+            variant="danger"
+            requireCode
+            returnFocusRef={triggerRef}
+            onCancel={() => setDisabling(false)}
+            onConfirm={async (identity) => {
+              // `requireCode`: dialog sudah memastikan kode terisi.
+              await endpoints.twoFactor.disable({ ...identity, code: identity.code ?? '' });
+              setDisabling(false);
+              onDisabled?.();
+            }}
+          />
+        </>
       ) : null}
     </section>
   );
@@ -166,6 +162,7 @@ export function BackupCodesCard({
   const [codes, setCodes] = useState<BackupCodes | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  // Panel kode baru ditutup → fokus ke judul kartu (tombolnya baru muncul lagi).
   const [returnFocus, setReturnFocus] = useState<{ tick: number; to: 'heading' | 'trigger' }>({
     tick: 0,
     to: 'heading',
@@ -236,23 +233,6 @@ export function BackupCodesCard({
         <div className={styles.actions}>
           <Skeleton className={styles.skeletonButton} />
         </div>
-      ) : regenerating ? (
-        <ReauthForm
-          title={copy.backupCodes.regenerateTitle}
-          body={copy.backupCodes.regenerateBody}
-          submitLabel={copy.backupCodes.regenerate}
-          pendingLabel={copy.backupCodes.regenerating}
-          onSubmit={async (body) => {
-            const result = await endpoints.twoFactor.regenerateBackupCodes(body);
-            setRegenerating(false);
-            setCodes(result);
-            onRegenerated?.();
-          }}
-          onCancel={() => {
-            setRegenerating(false);
-            setReturnFocus((value) => ({ tick: value.tick + 1, to: 'trigger' }));
-          }}
-        />
       ) : (
         <div className={styles.actions}>
           <Button
@@ -264,6 +244,28 @@ export function BackupCodesCard({
           </Button>
         </div>
       )}
+      {status !== null ? (
+        <IdentityDialog
+          open={regenerating}
+          title={copy.backupCodes.regenerateTitle}
+          body={copy.backupCodes.regenerateBody}
+          confirmLabel={copy.backupCodes.regenerate}
+          pendingLabel={copy.backupCodes.regenerating}
+          variant="primary"
+          requireCode
+          returnFocusRef={triggerRef}
+          onCancel={() => setRegenerating(false)}
+          onConfirm={async (identity) => {
+            const result = await endpoints.twoFactor.regenerateBackupCodes({
+              ...identity,
+              code: identity.code ?? '',
+            });
+            setRegenerating(false);
+            setCodes(result);
+            onRegenerated?.();
+          }}
+        />
+      ) : null}
     </section>
   );
 }

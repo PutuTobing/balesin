@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, type FormEvent, type RefObject } from 'rea
 import { Button } from '../../components/ui/Button';
 import { Dialog } from '../../components/ui/Dialog';
 import { PasswordField } from '../../components/ui/Field';
-import { Notice } from '../../components/ui/Notice';
+import { FormErrorNotice } from '../../components/ui/FormErrorNotice';
 import { SubmitButton } from '../../components/ui/SubmitButton';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
@@ -139,12 +139,15 @@ function IdentityForm({
       await onConfirm(parsed.data);
     } catch (caught) {
       setPending(false);
-      if (
-        isApiError(caught) &&
-        caught.code === 'VALIDATION_ERROR' &&
-        caught.details.some((detail) => detail.field === 'password' || detail.field === 'code')
-      ) {
-        setErrors(apiFieldErrors(caught.details));
+      // Isian dialog: `password`/`code` (aksi kelola), atau `confirmation.password`/`.code`
+      // (konfirmasi yang menempel di permintaan lain: undangan, email pengirim).
+      const identityErrors = isApiError(caught)
+        ? caught.details
+            .map((detail) => ({ ...detail, field: detail.field.replace(/^confirmation\./, '') }))
+            .filter((detail) => detail.field === 'password' || detail.field === 'code')
+        : [];
+      if (isApiError(caught) && caught.code === 'VALIDATION_ERROR' && identityErrors.length > 0) {
+        setErrors(apiFieldErrors(identityErrors));
         setInvalidTick((tick) => tick + 1);
         return;
       }
@@ -192,7 +195,8 @@ function IdentityForm({
         ) : null}
       </div>
       <div className={styles.actions}>
-        <Button variant="ghost" onClick={onCancel} disabled={pending}>
+        {/* Dialog: batal berbingkai, tombol berwarna terakhir (pola semua dialog). */}
+        <Button variant="secondary" onClick={onCancel} disabled={pending}>
           {copy.cancel}
         </Button>
         <SubmitButton
@@ -207,13 +211,7 @@ function IdentityForm({
       </div>
       {error ? (
         <div ref={noticeRef} className={styles.notice}>
-          <Notice
-            tone={lock.locked ? 'warning' : 'danger'}
-            role="alert"
-            title={lock.locked ? copy.lockedTitle : undefined}
-          >
-            {isApiError(error) ? error.message : t.api.network}
-          </Notice>
+          <FormErrorNotice error={error} lock={lock} lockedTitle={copy.lockedTitle} />
         </div>
       ) : null}
     </form>

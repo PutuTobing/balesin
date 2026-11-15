@@ -8,12 +8,13 @@ import {
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { getRouteApi } from '@tanstack/react-router';
 import { ChevronDown, Download, X } from 'lucide-react';
-import { useId, useRef, useState, type RefObject } from 'react';
+import { useEffect, useId, useRef, useState, type RefObject } from 'react';
 import { useBrand } from '../../brand/brand';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { SelectField, TextField } from '../../components/ui/Field';
 import { Icon } from '../../components/ui/Icon';
+import { FormErrorNotice } from '../../components/ui/FormErrorNotice';
 import { Notice } from '../../components/ui/Notice';
 import { Page } from '../../components/ui/Page';
 import { SkeletonRegion } from '../../components/ui/Skeleton';
@@ -80,11 +81,7 @@ export function AuditPage() {
           </Notice>
         ) : null}
         {exporter.result ? (
-          <ExportResult
-            result={exporter.result}
-            locked={exporter.lock.locked}
-            onClose={exporter.clear}
-          />
+          <ExportResult result={exporter.result} lock={exporter.lock} onClose={exporter.clear} />
         ) : null}
         <Filters search={search} />
         <AuditList search={search} filter={filter} />
@@ -163,11 +160,11 @@ function ExportButton({
 
 function ExportResult({
   result,
-  locked,
+  lock,
   onClose,
 }: {
   result: ExportOutcome;
-  locked: boolean;
+  lock: Lock;
   onClose: () => void;
 }) {
   const close = (
@@ -184,14 +181,13 @@ function ExportResult({
     );
   }
   return (
-    <Notice
-      tone={locked ? 'warning' : 'danger'}
-      role="alert"
-      title={locked ? copy.exportLockedTitle : copy.exportFailedTitle}
+    <FormErrorNotice
+      error={result.error}
+      lock={lock}
+      lockedTitle={copy.exportLockedTitle}
+      failedTitle={copy.exportFailedTitle}
       actions={close}
-    >
-      {isApiError(result.error) ? result.error.message : t.api.network}
-    </Notice>
+    />
   );
 }
 
@@ -336,20 +332,33 @@ function AuditList({
   const navigate = routeApi.useNavigate();
   const list = useInfiniteQuery({ ...auditLogQuery(filter), placeholderData: keepPreviousData });
   const retryLock = useLock();
+  const { lockFor } = retryLock;
   const listRef = useRef<HTMLOListElement>(null);
+  // 429 saat memuat: tombol "Coba lagi" terkunci dengan hitung mundur (sekali per jawaban error).
+  const limitedFor =
+    isApiError(list.error) && list.error.status === 429 ? list.error.retryAfterSeconds : undefined;
+  useEffect(() => {
+    if (limitedFor) lockFor(limitedFor);
+  }, [limitedFor, list.errorUpdatedAt, lockFor]);
   const entries = list.data?.pages.flatMap((page) => page.entries) ?? [];
 
   /**
    * "Muat lagi": setelah halaman berikutnya tiba, fokus ke entri pertama yang baru, supaya pembaca
    * melanjutkan dari situ — dan tidak jatuh ke <body> saat tombolnya hilang di halaman terakhir.
    */
-  const loadMore = async () => {
-    const firstNew = entries.length;
-    const result = await list.fetchNextPage();
-    if (result.isError) return;
-    requestAnimationFrame(() => {
-      const item = listRef.current?.children.item(firstNew);
-      if (item instanceof HTMLElement) item.focus();
+  // Indeks entri pertama yang baru: difokus begitu entri itu sudah dirender (efek di bawah).
+  const pendingFocus = useRef<number | null>(null);
+  useEffect(() => {
+    const index = pendingFocus.current;
+    if (index === null || entries.length <= index) return;
+    pendingFocus.current = null;
+    const item = listRef.current?.children.item(index);
+    if (item instanceof HTMLElement) item.focus();
+  }, [entries.length]);
+  const loadMore = () => {
+    pendingFocus.current = entries.length;
+    void list.fetchNextPage().then((result) => {
+      if (result.isError) pendingFocus.current = null;
     });
   };
   const filtered = activeFilterCount(search) > 0;
@@ -361,7 +370,14 @@ function AuditList({
         <EmptyState
           align="top"
           title={limited ? copy.lockedTitle : copy.loadFailedTitle}
-          body={isApiError(list.error) ? list.error.message : t.api.network}
+          body={
+            // Hitung mundur habis: pesan server yang menyebut durasi sudah basi.
+            limited && retryLock.unlocked
+              ? t.api.unlocked
+              : isApiError(list.error)
+                ? list.error.message
+                : t.api.network
+          }
           actions={
             <SubmitButton
               type="button"
@@ -434,7 +450,7 @@ function AuditList({
         </span>
         {list.hasNextPage ? (
           <Button
-            onClick={() => void loadMore()}
+            onClick={loadMore}
             loading={list.isFetchingNextPage}
             disabled={list.isPlaceholderData}
           >

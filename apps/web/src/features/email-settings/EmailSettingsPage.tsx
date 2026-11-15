@@ -1,7 +1,11 @@
-import type { EmailSettingsResponse } from '@balesin/shared';
-import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
+import type {
+  EmailSettingsInput,
+  EmailSettingsResponse,
+  IdentityConfirmation,
+} from '@balesin/shared';
+import { useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
 import { CircleCheck, Info } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { useBrand } from '../../brand/brand';
 import { Button } from '../../components/ui/Button';
 import { Icon } from '../../components/ui/Icon';
@@ -16,6 +20,8 @@ import { formatDateTime } from '../../lib/format';
 import { apiFieldErrors, type FieldErrors } from '../../lib/form';
 import { media, useMediaQuery } from '../../lib/media';
 import { useSession } from '../auth/session';
+import { isConfirmationError, needsConfirmation } from '../identity/confirmation-error';
+import { IdentityDialog } from '../identity/IdentityDialog';
 import styles from './EmailSettings.module.css';
 import { EmailGuide } from './EmailGuide';
 import { EmailSettingsFields } from './EmailSettingsFields';
@@ -26,6 +32,7 @@ import {
   emailFormFromView,
   emptyEmailForm,
   isEmailFormDirty,
+  needsIdentityToSave,
   toEmailInput,
   type EmailFormValues,
 } from './email-form';
@@ -52,21 +59,47 @@ function EmailSettingsScreen({ data }: { data: EmailSettingsResponse }) {
   );
   const [errors, setErrors] = useState<FieldErrors>({});
   const [justSaved, setJustSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveFailure, setSaveFailure] = useState<unknown>(null);
+  /** Isian yang menunggu konfirmasi identitas (dialog terbuka). */
+  const [confirming, setConfirming] = useState<EmailSettingsInput | null>(null);
+  const submitRef = useRef<HTMLButtonElement>(null);
 
-  const save = useMutation({
-    mutationFn: endpoints.emailSettings.save,
-    onSuccess: (response) => {
+  /**
+   * Simpan. Dipanggil langsung (bukan `useMutation`): isian konfirmasi identitas dan password SMTP
+   * tidak boleh tertinggal di cache mutasi. `identity` = konfirmasi dari dialog (wajib bila jalur
+   * kirim berubah atau simpan pertama kali — semua peran, Owner juga).
+   */
+  const persist = async (input: EmailSettingsInput, identity?: IdentityConfirmation) => {
+    setSaving(true);
+    setSaveFailure(null);
+    try {
+      const response = await endpoints.emailSettings.save(
+        identity ? { ...input, confirmation: identity } : input,
+      );
+      setConfirming(null);
       queryClient.setQueryData(queryKeys.emailSettings, response);
       // Password tidak pernah dikirim balik: kolomnya dikosongkan, petunjuk tersamar tampil.
       if (response.settings) setValues(emailFormFromView(response.settings));
       setJustSaved(true);
-    },
-    onError: (error) => {
-      if (isApiError(error) && error.code === 'VALIDATION_ERROR') {
-        setErrors(apiFieldErrors(error.details));
+    } catch (caught) {
+      // Password/kode salah atau dibatasi: tetap di dialog, pesannya di sana.
+      if (identity && isConfirmationError(caught)) throw caught;
+      // Server ternyata meminta konfirmasi (mis. pengaturan tersimpan berubah di tempat lain).
+      if (!identity && needsConfirmation(caught)) {
+        setConfirming(input);
+        return;
       }
-    },
-  });
+      setConfirming(null);
+      if (isApiError(caught) && caught.code === 'VALIDATION_ERROR') {
+        setErrors(apiFieldErrors(caught.details));
+      } else {
+        setSaveFailure(caught);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const change = (next: EmailFormValues) => {
     setValues(next);
@@ -82,7 +115,12 @@ function EmailSettingsScreen({ data }: { data: EmailSettingsResponse }) {
       return;
     }
     setErrors({});
-    save.mutate(result.input);
+    setSaveFailure(null);
+    if (needsIdentityToSave(values, saved)) {
+      setConfirming(result.input);
+      return;
+    }
+    void persist(result.input);
   };
 
   const runTest: RunEmailTest = async (kind, to) => {
@@ -107,12 +145,11 @@ function EmailSettingsScreen({ data }: { data: EmailSettingsResponse }) {
     }
   };
 
-  const saveError =
-    save.error && !(isApiError(save.error) && save.error.code === 'VALIDATION_ERROR')
-      ? isApiError(save.error)
-        ? save.error.message
-        : t.api.network
-      : null;
+  const saveError = saveFailure
+    ? isApiError(saveFailure)
+      ? saveFailure.message
+      : t.api.network
+    : null;
   const errorCount = Object.keys(errors).length;
 
   return (
@@ -143,7 +180,7 @@ function EmailSettingsScreen({ data }: { data: EmailSettingsResponse }) {
             errors={errors}
             saved={saved}
             detectHost={endpoints.emailSettings.detectHost}
-            disabled={save.isPending}
+            disabled={saving}
             // HP/tablet: panduan tepat di bawah pilihan penyedia (seperti wizard), supaya langkah
             // khusus penyedia terlihat saat memilihnya. Desktop: kolom kanan.
             guide={isDesktop ? undefined : <EmailGuide context="settings" preset={values.preset} />}
@@ -152,7 +189,7 @@ function EmailSettingsScreen({ data }: { data: EmailSettingsResponse }) {
             defaultRecipient={session?.user.email ?? ''}
             run={runTest}
             onFieldErrors={setErrors}
-            disabled={save.isPending}
+            disabled={saving}
             note={
               data.source === 'database' && isEmailFormDirty(values, saved)
                 ? t.emailSettings.unsavedTest
@@ -186,15 +223,29 @@ function EmailSettingsScreen({ data }: { data: EmailSettingsResponse }) {
               </span>
             ) : null}
             <Button
+              ref={submitRef}
               type="submit"
               variant="primary"
-              loading={save.isPending}
+              loading={saving}
               disabled={!data.canStoreSecrets}
             >
-              {save.isPending ? t.emailSettings.saving : t.emailSettings.save}
+              {saving ? t.emailSettings.saving : t.emailSettings.save}
             </Button>
           </div>
         </form>
+        <IdentityDialog
+          open={confirming !== null}
+          title={t.emailSettings.confirmTitle}
+          body={t.emailSettings.confirmBody}
+          confirmLabel={t.emailSettings.save}
+          pendingLabel={t.emailSettings.saving}
+          variant="primary"
+          // Pemegang `settings.email.manage` (Owner/Admin) selalu peran wajib 2FA.
+          requireCode
+          returnFocusRef={submitRef}
+          onCancel={() => setConfirming(null)}
+          onConfirm={(identity) => (confirming ? persist(confirming, identity) : Promise.resolve())}
+        />
         <EmailTemplatePreview />
       </div>
 

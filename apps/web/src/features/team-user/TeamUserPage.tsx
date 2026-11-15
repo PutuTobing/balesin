@@ -129,8 +129,16 @@ function TeamUserScreen({ user }: { user: TeamUser }) {
   };
 
   /** Hasil aksi: data pengguna sesudahnya ke cache, sesi pengguna itu dimuat ulang. */
+  /**
+   * Undangan yang diterbitkan anggota ini bisa batal saat sesinya dicabut atau perannya/2FA-nya
+   * berubah (review akhir Fase 1): daftar undangan di cache dimuat ulang.
+   */
+  const refreshInvitations = () =>
+    void queryClient.invalidateQueries({ queryKey: queryKeys.invitations });
+
   const applied = (response: TeamUserActionResponse, message: string, warning = false) => {
     storeTeamUser(queryClient, response.user);
+    refreshInvitations();
     void queryClient.invalidateQueries({ queryKey: queryKeys.userSessions(user.id) });
     const lines = [message];
     if (response.revokedInvitations > 0) {
@@ -215,6 +223,7 @@ function TeamUserScreen({ user }: { user: TeamUser }) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.teamUsers, exact: true });
         void queryClient.invalidateQueries({ queryKey: queryKeys.teamUser(user.id), exact: true });
         void queryClient.invalidateQueries({ queryKey: queryKeys.userAudit(user.id) });
+        refreshInvitations();
         showResult([copy.done.sessionsRevoked(name, response.revokedSessions)]);
         return;
       }
@@ -352,8 +361,7 @@ function twoFactorFact(user: TeamUser): string {
   }
   if (!twoFactor.required) return facts.twoFactorOff;
   if (twoFactor.enrollmentExpired) return facts.twoFactorExpired;
-  if (twoFactor.enrollmentDueAt)
-    return facts.twoFactorDue(formatDateTimeInline(twoFactor.enrollmentDueAt));
+  if (twoFactor.enrollmentDueAt) return facts.twoFactorDue(formatTime(twoFactor.enrollmentDueAt));
   return facts.twoFactorRequiredNoDue;
 }
 
@@ -629,8 +637,10 @@ function UserSessionsCard({ user, onRequest }: { user: TeamUser; onRequest: OnRe
       queryClient.setQueryData<ActiveSessionListResponse>(queryKeys.userSessions(user.id), (old) =>
         old ? { sessions: old.sessions.filter((item) => item.id !== session.id) } : old,
       );
-      // Hanya daftar (jumlah sesi); sesi pengguna ini sudah diperbarui di atas.
+      // Hanya daftar (jumlah sesi); sesi pengguna ini sudah diperbarui di atas. Undangan yang
+      // ia terbitkan dari sesi itu bisa batal: daftar undangan dimuat ulang.
       void queryClient.invalidateQueries({ queryKey: queryKeys.teamUsers, exact: true });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.invitations });
       setNotice(t.sessions.revoked(session.device));
       setFocusHeading((tick) => tick + 1);
     } catch (caught) {
@@ -742,13 +752,19 @@ function ActivityCard({ user }: { user: TeamUser }) {
   const listRef = useRef<HTMLOListElement>(null);
 
   /** "Muat lagi": fokus ke entri pertama yang baru (tombolnya hilang di halaman terakhir). */
-  const loadMore = async () => {
-    const firstNew = entries.length;
-    const result = await activity.fetchNextPage();
-    if (result.isError) return;
-    requestAnimationFrame(() => {
-      const item = listRef.current?.children.item(firstNew);
-      if (item instanceof HTMLElement) item.focus();
+  // Indeks entri pertama yang baru: difokus begitu entri itu sudah dirender (efek di bawah).
+  const pendingFocus = useRef<number | null>(null);
+  useEffect(() => {
+    const index = pendingFocus.current;
+    if (index === null || entries.length <= index) return;
+    pendingFocus.current = null;
+    const item = listRef.current?.children.item(index);
+    if (item instanceof HTMLElement) item.focus();
+  }, [entries.length]);
+  const loadMore = () => {
+    pendingFocus.current = entries.length;
+    void activity.fetchNextPage().then((result) => {
+      if (result.isError) pendingFocus.current = null;
     });
   };
   return (
@@ -793,7 +809,7 @@ function ActivityCard({ user }: { user: TeamUser }) {
       {activity.data && entries.length > 0 ? (
         <div className={styles.activityFooter}>
           {activity.hasNextPage ? (
-            <Button onClick={() => void loadMore()} loading={activity.isFetchingNextPage}>
+            <Button onClick={loadMore} loading={activity.isFetchingNextPage}>
               {activity.isFetchingNextPage ? t.audit.loadingMore : t.audit.loadMore}
             </Button>
           ) : (

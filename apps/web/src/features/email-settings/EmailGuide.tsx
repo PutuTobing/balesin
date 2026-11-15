@@ -1,5 +1,6 @@
 import type { SmtpPresetId } from '@balesin/shared';
 import { ChevronRight, ExternalLink } from 'lucide-react';
+import { useBrand } from '../../brand/brand';
 import { Icon } from '../../components/ui/Icon';
 import { t } from '../../i18n/id';
 import { cx } from '../../lib/cx';
@@ -21,6 +22,7 @@ interface EmailGuideProps {
  * (lihat DECISIONS). Tidak butuh data server, jadi juga tampil apa adanya di kerangka memuat.
  */
 export function EmailGuide({ context, preset, defaultOpen = false, className }: EmailGuideProps) {
+  const { productName } = useBrand();
   const specific = preset === 'other' ? null : t.emailSettings.guidePreset[preset];
   return (
     <details
@@ -48,10 +50,12 @@ export function EmailGuide({ context, preset, defaultOpen = false, className }: 
             <ol className={styles.list}>
               {specific.steps.map((step) => {
                 const link = 'link' in step ? step.link : null;
+                // Sebagian langkah menyebut nama produk (white-label): diisi dari branding.
+                const text = typeof step.text === 'function' ? step.text(productName) : step.text;
                 return (
-                  <li key={step.text} className={styles.item}>
+                  <li key={text} className={styles.item}>
                     <div className={styles.itemBody}>
-                      {step.text}
+                      {text}
                       {/* Tautan tepat di bawah langkah yang menyuruh membuka halamannya. */}
                       {link ? (
                         <a

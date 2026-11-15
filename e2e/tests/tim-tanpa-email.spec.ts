@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, expectNoHorizontalScroll, openApp, test } from './fixtures';
+import { confirmAsOwner } from './identitas';
 import { expectNoTokenInUrl, openWatchedPage } from './konteks';
 import { totpAtStep, totpStep } from './two-factor';
 
@@ -10,7 +11,8 @@ import { totpAtStep, totpStep } from './two-factor';
  * Proyek `tanpa-email` berjalan SEBELUM proyek desktop/HP (email pengirim baru diatur di
  * `email-pengirim.spec.ts`), satu per satu (serial), di 1440 px; penerima CS memakai HP 390 px.
  */
-test.describe.configure({ mode: 'serial' });
+// Konfirmasi identitas Owner memakai kode TOTP sekali pakai: bisa menunggu langkah 30 detik berikutnya.
+test.describe.configure({ mode: 'serial', timeout: 90_000 });
 
 const stamp = Date.now().toString(36);
 const CS_EMAIL = `citra-${stamp}@majujaya.test`;
@@ -24,6 +26,7 @@ async function inviteAndReadLink(page: Page, email: string, role: string): Promi
   await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByLabel('Peran').selectOption({ label: role });
   await page.getByRole('button', { name: 'Buat tautan undangan' }).click();
+  await confirmAsOwner(page, 'Buat tautan undangan ini?', 'Buat tautan undangan');
   const dialog = page.getByRole('dialog', { name: 'Salin tautan undangan' });
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText(`Kirim tautan ini sendiri ke ${email}`);
@@ -69,6 +72,7 @@ test('Owner mengundang CS dan Admin tanpa email pengirim: tautan tampil sekali u
   await page.getByLabel('Email', { exact: true }).fill(ADMIN_EMAIL);
   await page.getByLabel('Peran').selectOption({ label: 'Admin' });
   await page.getByRole('button', { name: 'Buat tautan undangan' }).click();
+  await confirmAsOwner(page, 'Buat tautan undangan ini?', 'Buat tautan undangan');
   const dialog = page.getByRole('dialog', { name: 'Salin tautan undangan' });
   links.admin = ((await dialog.locator('code').textContent()) ?? '').trim();
   await page.keyboard.press('Escape');

@@ -6,6 +6,8 @@ import {
   type Invitation,
   type InvitationIssuedResponse,
   type InvitationListResponse,
+  type CreateInvitationRequest,
+  type IdentityConfirmation,
   type InvitableRole,
 } from '@balesin/shared';
 import { useQueryClient, useSuspenseQuery, type QueryClient } from '@tanstack/react-query';
@@ -15,6 +17,7 @@ import { Button } from '../../components/ui/Button';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { SelectField, TextField } from '../../components/ui/Field';
+import { FormErrorNotice } from '../../components/ui/FormErrorNotice';
 import { Notice } from '../../components/ui/Notice';
 import { Page } from '../../components/ui/Page';
 import { StatusBadge, type StatusTone } from '../../components/ui/StatusBadge';
@@ -29,6 +32,8 @@ import { useLock } from '../../lib/use-lock';
 import { useCan, useSession } from '../auth/session';
 import { defaultInviteRole, inviteRoleOptions } from './invite-roles';
 import { LinkDialog, type IssuedLink } from './LinkDialog';
+import { isConfirmationError } from '../identity/confirmation-error';
+import { IdentityDialog } from '../identity/IdentityDialog';
 import { MembersCard } from './MembersCard';
 import styles from './Team.module.css';
 
@@ -156,9 +161,12 @@ function InviteCard({
   const [error, setError] = useState<unknown>(null);
   const [done, setDone] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  /** Undangan yang menunggu konfirmasi identitas (dialog terbuka). */
+  const [confirming, setConfirming] = useState<CreateInvitationRequest | null>(null);
   const lock = useLock();
   const formRef = useRef<HTMLFormElement>(null);
   const emailRef = useRef<HTMLInputElement>(null);
+  const submitRef = useRef<HTMLButtonElement>(null);
   // Naik setiap isian ditolak → fokus ke isian pertama yang salah (setelah isian aktif lagi).
   const [invalidTick, setInvalidTick] = useState(0);
   const [refocusTick, setRefocusTick] = useState(0);
@@ -174,7 +182,7 @@ function InviteCard({
     if (refocusTick > 0) emailRef.current?.focus();
   }, [refocusTick]);
 
-  const submit = async (event: FormEvent) => {
+  const submit = (event: FormEvent) => {
     event.preventDefault();
     if (pending || lock.locked) return;
     const parsed = createInvitationRequestSchema.safeParse({ email, role });
@@ -187,9 +195,15 @@ function InviteCard({
     setErrors({});
     setError(null);
     setDone(null);
+    // Konfirmasi identitas dulu (semua peran, Owner juga — review akhir Fase 1 T1).
+    setConfirming(parsed.data);
+  };
+
+  const create = async (request: CreateInvitationRequest, identity: IdentityConfirmation) => {
     setPending(true);
     try {
-      const response = await endpoints.invitations.create(parsed.data);
+      const response = await endpoints.invitations.create({ ...request, confirmation: identity });
+      setConfirming(null);
       setPending(false);
       setEmail('');
       setDone(
@@ -201,6 +215,9 @@ function InviteCard({
       if (!response.link) setRefocusTick((tick) => tick + 1);
     } catch (caught) {
       setPending(false);
+      // Password/kode salah atau dibatasi: tetap di dialog, pesannya di sana.
+      if (isConfirmationError(caught)) throw caught;
+      setConfirming(null);
       if (
         isApiError(caught) &&
         caught.details.some((detail) => Object.hasOwn(fieldNames, detail.field))
@@ -237,12 +254,7 @@ function InviteCard({
           ) : null}
         </p>
       </div>
-      <form
-        ref={formRef}
-        className={styles.form}
-        onSubmit={(event) => void submit(event)}
-        noValidate
-      >
+      <form ref={formRef} className={styles.form} onSubmit={submit} noValidate>
         <div className={styles.inviteRow}>
           <TextField
             ref={emailRef}
@@ -279,6 +291,7 @@ function InviteCard({
         </div>
         <div className={styles.formFooter}>
           <SubmitButton
+            ref={submitRef}
             size="md"
             pending={pending}
             pendingLabel={copy.invite.submitting}
@@ -290,19 +303,30 @@ function InviteCard({
         </div>
         {/* Pesan hasil di bawah tombol: isian dan tombol tidak bergeser. */}
         {error ? (
-          <Notice
-            tone={lock.locked ? 'warning' : 'danger'}
-            role="alert"
-            title={lock.locked ? copy.invite.lockedTitle : undefined}
-          >
-            {isApiError(error) ? error.message : t.api.network}
-          </Notice>
+          <FormErrorNotice error={error} lock={lock} lockedTitle={copy.invite.lockedTitle} />
         ) : done ? (
           <Notice tone="success" role="status">
             {done}
           </Notice>
         ) : null}
       </form>
+      <IdentityDialog
+        open={confirming !== null}
+        title={viaEmail ? copy.invite.confirmTitle : copy.invite.confirmTitleLink}
+        body={
+          confirming
+            ? copy.invite.confirmBody(confirming.email, USER_ROLE_LABELS[confirming.role])
+            : ''
+        }
+        confirmLabel={viaEmail ? copy.invite.submitEmail : copy.invite.submitLink}
+        pendingLabel={copy.invite.submitting}
+        variant="primary"
+        // Pemegang `team.invite` (Owner/Admin) selalu peran wajib 2FA.
+        requireCode
+        returnFocusRef={submitRef}
+        onCancel={() => setConfirming(null)}
+        onConfirm={(identity) => (confirming ? create(confirming, identity) : Promise.resolve())}
+      />
     </section>
   );
 }
@@ -339,6 +363,9 @@ function InvitationsCard({
    */
   const [gone, setGone] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<Invitation | null>(null);
+  /** Undangan yang menunggu konfirmasi identitas untuk dikirim ulang. */
+  const [resending, setResending] = useState<Invitation | null>(null);
+  const resendTrigger = useRef<HTMLElement | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [focusHeading, setFocusHeading] = useState(0);
 
@@ -363,18 +390,27 @@ function InvitationsCard({
     });
   };
 
-  const resend = async (invitation: Invitation) => {
-    setBusy({ id: invitation.id, action: 'resend' });
+  const requestResend = (invitation: Invitation) => {
     setRowError(null);
     setNotice(null);
     setGone(null);
+    resendTrigger.current = document.getElementById(resendButtonId(invitation.id));
+    setResending(invitation);
+  };
+
+  const resend = async (invitation: Invitation, identity: IdentityConfirmation) => {
+    setBusy({ id: invitation.id, action: 'resend' });
     try {
-      const response = await endpoints.invitations.resend(invitation.id);
+      const response = await endpoints.invitations.resend(invitation.id, identity);
+      setResending(null);
       setNotice(
         response.link ? copy.list.reissued(invitation.email) : copy.list.resent(invitation.email),
       );
       onIssued(response, () => document.getElementById(resendButtonId(invitation.id)));
     } catch (caught) {
+      // Password/kode salah atau dibatasi: tetap di dialog, pesannya di sana.
+      if (isConfirmationError(caught)) throw caught;
+      setResending(null);
       fail(invitation, caught);
     } finally {
       setBusy(null);
@@ -443,12 +479,24 @@ function InvitationsCard({
               busy={busy?.id === invitation.id ? busy.action : null}
               anyBusy={busy !== null}
               error={rowError?.id === invitation.id ? rowError.message : null}
-              onResend={() => void resend(invitation)}
+              onResend={() => requestResend(invitation)}
               onRevoke={() => setRevoking(invitation)}
             />
           ))}
         </ul>
       )}
+      <IdentityDialog
+        open={resending !== null}
+        title={copy.list.resendTitle}
+        body={resending ? copy.list.resendBody(resending.email) : ''}
+        confirmLabel={copy.list.resend}
+        pendingLabel={copy.list.resending}
+        variant="primary"
+        requireCode
+        returnFocusRef={resendTrigger}
+        onCancel={() => setResending(null)}
+        onConfirm={(identity) => (resending ? resend(resending, identity) : Promise.resolve())}
+      />
       <ConfirmDialog
         open={revoking !== null}
         title={copy.list.revokeTitle}

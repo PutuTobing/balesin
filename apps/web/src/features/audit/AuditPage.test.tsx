@@ -190,7 +190,7 @@ describe('Pengaturan → Audit log', () => {
     expect(screen.getByRole('button', { name: copy.export })).toBeDisabled();
   });
 
-  it('gagal memuat (429): pesan server dengan tombol coba lagi', async () => {
+  it('gagal memuat (429): pesan server, tombol coba lagi terkunci dengan hitung mundur', async () => {
     await openAudit('/pengaturan/audit', {
       [`GET ${API_ROUTES.audit.list}`]: () =>
         apiError(429, 'RATE_LIMITED', 'Terlalu sering memuat. Coba lagi sebentar lagi.', {
@@ -199,7 +199,11 @@ describe('Pengaturan → Audit log', () => {
     });
     expect(await screen.findByRole('heading', { name: copy.lockedTitle })).toBeVisible();
     expect(screen.getByText('Terlalu sering memuat. Coba lagi sebentar lagi.')).toBeVisible();
-    expect(screen.getByRole('button', { name: t.common.retry })).toBeVisible();
+    // Pola 429 semua form: tombol nonaktif "Coba lagi dalam 0:30" (kritikus akhir W2.1).
+    const locked = await screen.findByRole('button', {
+      name: t.auth.login.countdownButton('0:30'),
+    });
+    expect(locked).toBeDisabled();
   });
 
   it('CS tidak melihat menu Audit log dan dialihkan bila membuka alamatnya', async () => {

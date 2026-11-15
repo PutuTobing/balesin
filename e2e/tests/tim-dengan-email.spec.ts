@@ -2,6 +2,7 @@ import { request, type Page } from '@playwright/test';
 import { MAILPIT_SMTP, OWNER_STATE_PATH } from '../stack/env';
 import { BASE_URL } from '../viewports';
 import { expect, openApp, owner, submitLogin, test } from './fixtures';
+import { confirmAsOwner, withOwnerConfirmation } from './identitas';
 import { expectNoTokenInUrl, openWatchedPage } from './konteks';
 import { findMail, waitForTokenLink } from './mailpit';
 import { createUser, e2eSql, enableTwoFactorViaApi, nextTotp } from './pengguna';
@@ -14,7 +15,8 @@ import { wrongTotp } from './two-factor';
  * Proyek `dengan-email` berjalan SETELAH proyek desktop/HP (pengaturan email organisasi dibagi
  * bersama; `email-pengirim.spec.ts` memeriksa keadaan "Belum diatur" di awal), satu per satu.
  */
-test.describe.configure({ mode: 'serial' });
+// Konfirmasi identitas Owner memakai kode TOTP sekali pakai: bisa menunggu langkah 30 detik berikutnya.
+test.describe.configure({ mode: 'serial', timeout: 90_000 });
 
 const stamp = Date.now().toString(36);
 const PASSWORD = 'Teh-Manis-Hangat-77';
@@ -29,19 +31,23 @@ test.beforeAll(async () => {
   });
   try {
     const me = (await (await api.get('/api/v1/auth/me')).json()) as { csrfToken: string };
-    const saved = await api.put('/api/v1/settings/email', {
-      headers: { 'x-csrf-token': me.csrfToken },
-      data: {
-        fromName: 'CS Maju Jaya',
-        fromAddress: 'cs@majujaya.test',
-        replyTo: null,
-        host: MAILPIT_SMTP.host,
-        port: Number(MAILPIT_SMTP.port),
-        security: 'none',
-        username: MAILPIT_SMTP.username,
-        password: MAILPIT_SMTP.password,
-      },
-    });
+    // Jalur kirim berubah → konfirmasi identitas Owner wajib (review akhir Fase 1 T2).
+    const saved = await withOwnerConfirmation((confirmation) =>
+      api.put('/api/v1/settings/email', {
+        headers: { 'x-csrf-token': me.csrfToken },
+        data: {
+          fromName: 'CS Maju Jaya',
+          fromAddress: 'cs@majujaya.test',
+          replyTo: null,
+          host: MAILPIT_SMTP.host,
+          port: Number(MAILPIT_SMTP.port),
+          security: 'none',
+          username: MAILPIT_SMTP.username,
+          password: MAILPIT_SMTP.password,
+          confirmation,
+        },
+      }),
+    );
     if (!saved.ok()) throw new Error(`Simpan email (${saved.status()}): ${await saved.text()}`);
   } finally {
     await api.dispose();
@@ -72,6 +78,7 @@ test('Owner mengundang CS lewat email: email tiba, CS membuat akun, email-nya te
   await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByLabel('Peran').selectOption({ label: 'CS' });
   await page.getByRole('button', { name: 'Kirim undangan' }).click();
+  await confirmAsOwner(page, 'Kirim undangan ini?', 'Kirim undangan');
   await expect(page.getByText(`Undangan untuk ${email} dibuat`)).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   // Status pengiriman berganti sendiri setelah worker mengirim.
@@ -270,6 +277,7 @@ test('undangan Supervisor lewat 72 jam: penerima melihat "kedaluwarsa"; kirim ul
   await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByLabel('Peran').selectOption({ label: 'Supervisor' });
   await page.getByRole('button', { name: 'Kirim undangan' }).click();
+  await confirmAsOwner(page, 'Kirim undangan ini?', 'Kirim undangan');
   const row = page.getByRole('listitem', { name: `Undangan untuk ${email}` });
   await expect(row).toContainText('Email terkirim', { timeout: 30_000 });
   const oldLink = await waitForTokenLink(email, '/undangan', since);
@@ -298,6 +306,7 @@ test('undangan Supervisor lewat 72 jam: penerima melihat "kedaluwarsa"; kirim ul
     await expect(row).toContainText('Kedaluwarsa');
     const resendSince = new Date();
     await row.getByRole('button', { name: 'Kirim ulang' }).click();
+    await confirmAsOwner(page, 'Kirim ulang undangan ini?', 'Kirim ulang');
     await expect(row).not.toContainText('Kedaluwarsa');
     await expect(row).toContainText('Email terkirim', { timeout: 30_000 });
     const newLink = await waitForTokenLink(email, '/undangan', resendSince);

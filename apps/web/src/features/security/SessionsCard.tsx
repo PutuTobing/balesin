@@ -52,8 +52,16 @@ export function SessionsCard({ requireCode }: { requireCode: boolean }) {
     setFocusHeading((tick) => tick + 1);
   };
 
+  /**
+   * Undangan yang diterbitkan dari sesi yang dikeluarkan ikut batal (review akhir Fase 1): daftar
+   * undangan di cache dimuat ulang.
+   */
+  const refreshInvitations = () =>
+    void queryClient.invalidateQueries({ queryKey: queryKeys.invitations });
+
   const revoked = (session: ActiveSession) => {
     removeFromCache((item) => item.id !== session.id);
+    refreshInvitations();
     setNotice(t.sessions.revoked(session.device));
     // Barisnya hilang: fokus ke judul kartu (bukan <body>).
     setFocusHeading((tick) => tick + 1);
@@ -192,6 +200,7 @@ export function SessionsCard({ requireCode }: { requireCode: boolean }) {
           const result = await endpoints.sessions.revokeOthers(identity);
           setConfirming(false);
           removeFromCache((session) => session.current);
+          refreshInvitations();
           void queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
           setNotice(copy.revokedOthers(result.revokedSessions));
           setFocusHeading((tick) => tick + 1);

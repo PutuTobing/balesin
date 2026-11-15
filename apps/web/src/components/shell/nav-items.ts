@@ -96,6 +96,11 @@ export function allowedNavItems(
   return items.filter((item) => !item.permission || permissions.includes(item.permission));
 }
 
+/** Izin menu untuk sebuah alamat (penjaga rute memakai sumber yang sama dengan menu). */
+export function navPermission(to: string): Permission | undefined {
+  return navItems.find((item) => item.to === to)?.permission;
+}
+
 function pathMatches(pathname: string, to: string): boolean {
   return pathname === to || pathname.startsWith(`${to}/`);
 }

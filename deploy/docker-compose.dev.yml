@@ -59,6 +59,8 @@ services:
       MP_MAX_MESSAGES: '500'
       # Tanpa ini Mailpit menghubungi GitHub untuk mengecek versi terbaru.
       MP_DISABLE_VERSION_CHECK: 'true'
+      # Tanpa ini setiap sambungan SMTP menunggu reverse DNS (±1,3 dtk) dan antrean email tersumbat.
+      MP_SMTP_DISABLE_RDNS: 'true'
       TZ: UTC
     ports:
       - '127.0.0.1:1025:1025'

@@ -143,10 +143,17 @@ export async function guardSetup(queryClient: QueryClient): Promise<void> {
  * Halaman ber-izin (mis. Email pengirim = `settings.email.manage`, Tim = `team.invite`). Peran tanpa
  * izin dialihkan ke Pengaturan (menunya pun tidak tampil). Server tetap menegakkan izinnya.
  */
-export function guardPermission(session: AuthenticatedSession, permission: Permission): void {
+/** Tujuan pengalihan bila izin tidak ada: halaman yang selalu boleh dibuka peran itu. */
+type DeniedTarget = '/pengaturan' | '/inbox';
+
+export function guardPermission(
+  session: AuthenticatedSession,
+  permission: Permission,
+  to: DeniedTarget = '/pengaturan',
+): void {
   if (!sessionCan(session, permission)) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error -- pola resmi TanStack Router
-    throw redirect({ to: '/pengaturan', replace: true });
+    throw redirect({ to, replace: true });
   }
 }
 
@@ -154,11 +161,23 @@ export function guardPermission(session: AuthenticatedSession, permission: Permi
 export function guardAnyPermission(
   session: AuthenticatedSession,
   permissions: readonly Permission[],
+  to: DeniedTarget = '/pengaturan',
 ): void {
   if (!permissions.some((permission) => sessionCan(session, permission))) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error -- pola resmi TanStack Router
-    throw redirect({ to: '/pengaturan', replace: true });
+    throw redirect({ to, replace: true });
   }
+}
+
+/**
+ * Rute menu utama: izin dibaca dari `nav-items.ts` (sumber yang sama dengan menu), jadi menu yang
+ * disembunyikan juga tidak bisa dibuka lewat alamat. Tanpa izin → Inbox (semua peran boleh).
+ */
+export function guardNavRoute(
+  session: AuthenticatedSession,
+  permission: Permission | undefined,
+): void {
+  if (permission) guardPermission(session, permission, '/inbox');
 }
 
 /**

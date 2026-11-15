@@ -120,4 +120,6 @@ export const SECURITY_EVENT_FILTERS: Readonly<
   user_disabled: { action: 'user.disabled' },
   channel_changed: { targetType: 'channel' },
   business_profile_changed: { targetType: 'channel' },
+  member_joined: { action: 'user.invitation.accepted' },
+  password_reset_burst: { action: 'auth.password_reset.burst' },
 };

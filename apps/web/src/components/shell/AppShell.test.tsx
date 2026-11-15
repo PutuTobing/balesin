@@ -165,6 +165,19 @@ describe('menu mengikuti izin peran (permissions dari sesi)', () => {
     expect(menu.getByRole('link', { name: t.nav.reports })).toBeVisible();
   });
 
+  it('CS membuka /broadcast lewat alamat → dialihkan ke Inbox (rute dijaga izin yang sama)', async () => {
+    const { router } = await renderApp('/broadcast', { session: fakeSession('cs') });
+    expect(await screen.findByRole('heading', { level: 1, name: t.inbox.title })).toBeVisible();
+    expect(router.state.location.pathname).toBe('/inbox');
+    expect(screen.queryByRole('heading', { name: t.broadcast.emptyTitle })).toBeNull();
+  });
+
+  it('Supervisor (punya broadcast.send) tetap bisa membuka /broadcast', async () => {
+    const { router } = await renderApp('/broadcast', { session: fakeSession('supervisor') });
+    expect(await screen.findByRole('heading', { level: 1, name: t.nav.broadcast })).toBeVisible();
+    expect(router.state.location.pathname).toBe('/broadcast');
+  });
+
   it('item tanpa izin yang cocok disembunyikan; tanpa izin apa pun hanya Pengaturan & Lainnya', () => {
     const ids = (permissions: Parameters<typeof allowedNavItems>[1]) =>
       allowedNavItems(navItems, permissions).map((item) => item.id);

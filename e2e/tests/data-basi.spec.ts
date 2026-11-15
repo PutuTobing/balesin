@@ -2,6 +2,7 @@ import { request, type Browser } from '@playwright/test';
 import { OWNER_STATE_PATH } from '../stack/env';
 import { BASE_URL } from '../viewports';
 import { expect, isHp, openApp, submitLogin, test } from './fixtures';
+import { confirmAsOwner, withOwnerConfirmation } from './identitas';
 import { openWatchedPage, type WatchedPage } from './konteks';
 import { createUser, type ExtraUser } from './pengguna';
 
@@ -48,7 +49,9 @@ test('undangan dibatalkan di tab lain → "Kirim ulang" di daftar basi: pesan te
   const email = `basi-${tag}-${Date.now().toString(36)}@majujaya.test`;
   const { api, headers } = await ownerApi();
   try {
-    const created = await api.post('/api/v1/invitations', { headers, data: { email, role: 'cs' } });
+    const created = await withOwnerConfirmation((confirmation) =>
+      api.post('/api/v1/invitations', { headers, data: { email, role: 'cs', confirmation } }),
+    );
     expect(created.status()).toBe(201);
     const { invitation } = (await created.json()) as { invitation: { id: string } };
 
@@ -60,6 +63,8 @@ test('undangan dibatalkan di tab lain → "Kirim ulang" di daftar basi: pesan te
 
     expectHttpError(`/api/v1/invitations/${invitation.id}/resend`, 404);
     await row.getByRole('button', { name: 'Kirim ulang' }).click();
+    // Konfirmasi identitas dulu; server lalu menjawab 404 dan dialognya tertutup.
+    await confirmAsOwner(page, 'Kirim ulang undangan ini?', 'Kirim ulang');
     // Daftar dimuat ulang (benar) …
     await expect(row).toHaveCount(0);
     // … tetapi pesan server harus tetap terbaca di luar baris yang hilang.

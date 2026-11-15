@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Button } from '../../components/ui/Button';
 import { TextField } from '../../components/ui/Field';
 import { Icon } from '../../components/ui/Icon';
-import { Notice } from '../../components/ui/Notice';
+import { FormErrorNotice } from '../../components/ui/FormErrorNotice';
 import { SubmitButton } from '../../components/ui/SubmitButton';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
@@ -178,15 +178,7 @@ function RequestForm({
         {copy.submit}
       </SubmitButton>
       {/* Pesan server di bawah tombol: isian dan tombol tidak bergeser. */}
-      {error ? (
-        <Notice
-          tone={lock.locked ? 'warning' : 'danger'}
-          role="alert"
-          title={lock.locked ? copy.lockedTitle : undefined}
-        >
-          {isApiError(error) ? error.message : t.api.network}
-        </Notice>
-      ) : null}
+      {error ? <FormErrorNotice error={error} lock={lock} lockedTitle={copy.lockedTitle} /> : null}
     </form>
   );
 }

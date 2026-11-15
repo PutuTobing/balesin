@@ -32,6 +32,17 @@ export function ConfirmDialog({
   const cancelRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
   const bodyId = useId();
+  const confirmColored = confirmVariant === 'primary' || confirmVariant === 'danger';
+  const confirm = (
+    <Button variant={confirmVariant} onClick={onConfirm}>
+      {confirmLabel}
+    </Button>
+  );
+  const cancel = (
+    <Button ref={cancelRef} variant={confirmColored ? 'secondary' : 'primary'} onClick={onCancel}>
+      {cancelLabel}
+    </Button>
+  );
 
   useEffect(() => {
     const dialog = ref.current;
@@ -66,18 +77,14 @@ export function ConfirmDialog({
           <p id={bodyId} className={styles.body}>
             {body}
           </p>
+          {/*
+            Satu tombol berwarna per dialog, dan ia selalu TERAKHIR: kanan di desktop, paling atas di
+            HP (`column-reverse`). Aksi berwarna (primer/merah) → batal berbingkai di depannya; aksi
+            netral (mis. "Tinggalkan") → batal yang aman jadi tombol berwarna di belakangnya.
+          */}
           <div className={styles.actions}>
-            <Button variant={confirmVariant} onClick={onConfirm}>
-              {confirmLabel}
-            </Button>
-            {/* Satu tombol berwarna per dialog: aksi merusak sudah merah, batal jadi sekunder. */}
-            <Button
-              ref={cancelRef}
-              variant={confirmVariant === 'danger' ? 'secondary' : 'primary'}
-              onClick={onCancel}
-            >
-              {cancelLabel}
-            </Button>
+            {confirmColored ? cancel : confirm}
+            {confirmColored ? confirm : cancel}
           </div>
         </div>
       ) : null}

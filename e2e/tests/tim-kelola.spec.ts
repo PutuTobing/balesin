@@ -67,8 +67,8 @@ async function confirmIdentity(
 ): Promise<void> {
   const dialog = page.getByRole('dialog', { name: dialogName });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByLabel('Password-mu')).toBeFocused();
-  await dialog.getByLabel('Password-mu').fill(password);
+  await expect(dialog.getByLabel('Password', { exact: true })).toBeFocused();
+  await dialog.getByLabel('Password', { exact: true }).fill(password);
   if (code !== undefined) await dialog.getByLabel('Kode verifikasi').fill(code);
   await dialog.getByRole('button', { name: confirmLabel, exact: true }).click();
   await expect(dialog).toBeHidden();
@@ -109,7 +109,7 @@ test('Owner mengubah peran CS menjadi Supervisor (konfirmasi identitas); sesi la
   await page.getByRole('button', { name: 'Ubah peran', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Ubah peran menjadi Supervisor?' });
   await expect(dialog).toContainText('wajib verifikasi dua langkah');
-  await dialog.getByLabel('Password-mu').fill(owner.password);
+  await dialog.getByLabel('Password', { exact: true }).fill(owner.password);
   await withOwnerCode(async ({ code }) => {
     await dialog.getByLabel('Kode verifikasi').fill(code);
     await dialog.getByRole('button', { name: 'Ubah peran', exact: true }).click();
@@ -212,16 +212,16 @@ test('Admin: tidak bisa mengelola Owner/Admin; atur ulang 2FA Teknisi, nonaktif/
   await supBrowser.page.goto('/masuk');
   await submitLogin(supBrowser.page, supervisor.email, supervisor.password);
   const closed = supBrowser.page.getByRole('alert');
-  await expect(closed).toContainText('Pendaftaran 2FA sudah ditutup');
+  await expect(closed).toContainText('Pendaftaran verifikasi dua langkah sudah ditutup');
   await expect(closed).toContainText('Minta Owner atau Admin');
   await expect(supBrowser.page).toHaveURL(/\/masuk/);
 
   await openMember(page, supervisor.email, supervisor.name);
-  await expect(page.getByText('Batas waktu daftar 2FA sudah lewat')).toBeVisible();
+  await expect(page.getByText('Batas waktu pendaftaran sudah lewat')).toBeVisible();
   await page.getByRole('button', { name: 'Buka lagi pendaftaran' }).click();
   await confirmIdentity(
     page,
-    'Buka lagi pendaftaran 2FA?',
+    'Buka lagi pendaftaran verifikasi dua langkah?',
     'Buka lagi',
     admin.password,
     nextBackup(),

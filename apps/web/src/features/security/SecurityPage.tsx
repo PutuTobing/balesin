@@ -1,6 +1,6 @@
 import { USER_ROLE_LABELS } from '@balesin/shared';
 import { useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Notice } from '../../components/ui/Notice';
 import { Page } from '../../components/ui/Page';
 import { t } from '../../i18n/id';
@@ -24,20 +24,29 @@ export function SecurityPage() {
   const queryClient = useQueryClient();
   const [notice, setNotice] = useState<string | null>(null);
   const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.twoFactorStatus });
+  // Setelah 2FA dinonaktifkan, tombol pembukanya hilang: fokus ke pesan berhasil (bukan <body>).
+  const noticeRef = useRef<HTMLDivElement>(null);
+  const [focusNotice, setFocusNotice] = useState(0);
+  useEffect(() => {
+    if (focusNotice > 0) noticeRef.current?.focus();
+  }, [focusNotice]);
 
   return (
     <Page>
       <div className={styles.content}>
         {notice ? (
-          <Notice tone="success" role="status">
-            {notice}
-          </Notice>
+          <div ref={noticeRef} tabIndex={-1} className={styles.noticeFocus}>
+            <Notice tone="success" role="status">
+              {notice}
+            </Notice>
+          </div>
         ) : null}
         <TwoFactorCard
           status={status}
           roleLabel={session ? USER_ROLE_LABELS[session.user.role] : ''}
           onDisabled={() => {
             setNotice(copy.disable.done);
+            setFocusNotice((tick) => tick + 1);
             void refresh();
           }}
         />

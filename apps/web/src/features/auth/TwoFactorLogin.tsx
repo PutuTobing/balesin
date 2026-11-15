@@ -11,6 +11,7 @@ import { ArrowLeft, KeyRound, Smartphone } from 'lucide-react';
 import { useEffect, useEffectEvent, useRef, useState, type FormEvent } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Icon } from '../../components/ui/Icon';
+import { FormErrorNotice } from '../../components/ui/FormErrorNotice';
 import { Notice } from '../../components/ui/Notice';
 import { SubmitButton } from '../../components/ui/SubmitButton';
 import { t } from '../../i18n/id';
@@ -171,17 +172,7 @@ export function TwoFactorLoginForm({
           {copy.submit}
         </SubmitButton>
         {/* Pesan server di bawah tombol: isian dan tombol tidak bergeser (kritikus W1). */}
-        {serverError ? (
-          isApiError(serverError) && serverError.status === 429 ? (
-            <Notice tone="warning" role="alert" title={copy.lockedTitle}>
-              {serverError.message}
-            </Notice>
-          ) : (
-            <Notice tone="danger" role="alert">
-              {isApiError(serverError) ? serverError.message : t.api.network}
-            </Notice>
-          )
-        ) : null}
+        <FormErrorNotice error={serverError} lock={lock} lockedTitle={copy.lockedTitle} />
       </form>
       <div className={cx(styles.footnote, styles.alternatives)}>
         <p>

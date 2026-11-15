@@ -13,6 +13,7 @@ import {
   mockEnroll,
   mockVerifyWithBackupCode,
   savedEmailSettings,
+  fillIdentityDialog,
   sessionAs,
   toCodeStep,
   twoFactorChallenge,
@@ -521,6 +522,21 @@ export const screens: Screen[] = [
     },
   },
   {
+    // Server email diganti → konfirmasi identitas sebelum disimpan (semua peran, Owner juga).
+    name: 'email-pengirim-konfirmasi',
+    path: '/pengaturan/email',
+    before: savedEmailSettings,
+    waitFor: 'h1',
+    prepare: async (page) => {
+      await page.getByLabel('Host SMTP').fill('smtp.majujaya.co.id');
+      await page.getByLabel('Password', { exact: true }).fill('sandi-smtp-baru');
+      await page.getByRole('button', { name: 'Simpan' }).click();
+      await page.getByRole('dialog').waitFor();
+      await fillIdentityDialog(page);
+      await page.getByRole('dialog').getByLabel('Password', { exact: true }).focus();
+    },
+  },
+  {
     name: 'email-pengirim-password-ulang',
     path: '/pengaturan/email',
     before: savedEmailSettings,
@@ -822,9 +838,12 @@ export const screens: Screen[] = [
     path: '/pengaturan/keamanan',
     waitFor: 'h1',
     prepare: async (page) => {
+      // Konfirmasi identitas: dialog yang sama dengan semua aksi sensitif (kritikus akhir W3).
       await page.getByRole('button', { name: 'Buat kode baru' }).click();
-      await page.getByLabel('Password', { exact: true }).fill('Kopi-Senja-Tenang-42');
-      await page.getByRole('button', { name: 'Batal' }).scrollIntoViewIfNeeded();
+      await page
+        .getByRole('dialog')
+        .getByLabel('Password', { exact: true })
+        .fill('Kopi-Senja-Tenang-42');
     },
   },
   {
@@ -839,7 +858,7 @@ export const screens: Screen[] = [
       await page.getByRole('button', { name: 'Buat kode baru' }).click();
       await page.getByLabel('Password', { exact: true }).fill('Kopi-Senja-Tenang-42');
       await page.getByLabel('Kode verifikasi').fill('123456');
-      await page.getByRole('button', { name: 'Buat kode baru' }).click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Buat kode baru' }).click();
       await page.getByRole('heading', { level: 2, name: 'Kode cadangan baru' }).waitFor();
       await page.mouse.move(1, 1);
     },
@@ -858,7 +877,7 @@ export const screens: Screen[] = [
       await page.getByRole('button', { name: 'Buat kode baru' }).click();
       await page.getByLabel('Password', { exact: true }).fill('Kopi-Senja-Tenang-42');
       await page.getByLabel('Kode verifikasi').fill('123456');
-      await page.getByRole('button', { name: 'Buat kode baru' }).click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Buat kode baru' }).click();
       const alert = page.getByText('Konfirmasi dikunci sementara');
       await alert.waitFor();
       await alert.scrollIntoViewIfNeeded();
@@ -890,7 +909,7 @@ export const screens: Screen[] = [
     waitFor: 'h1',
     prepare: async (page) => {
       await page.getByRole('button', { name: 'Nonaktifkan verifikasi dua langkah' }).click();
-      await page.getByRole('button', { name: 'Batal' }).scrollIntoViewIfNeeded();
+      await page.getByRole('dialog').waitFor();
     },
   },
   {
@@ -930,7 +949,7 @@ export const screens: Screen[] = [
       await page.getByRole('button', { name: 'Buat kode baru' }).click();
       await page.getByLabel('Password', { exact: true }).fill('Kopi-Senja-Tenang-42');
       await page.getByLabel('Kode verifikasi').fill('123456');
-      await page.getByRole('button', { name: 'Buat kode baru' }).click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Buat kode baru' }).click();
       await page.getByRole('heading', { level: 2, name: 'Kode cadangan baru' }).waitFor();
       await page.getByRole('link', { name: 'Kembali ke Pengaturan' }).click();
       await page.getByRole('heading', { name: 'Tinggalkan kode cadangan?' }).waitFor();

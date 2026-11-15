@@ -388,6 +388,8 @@ const COUNTS = {
   user_disabled: 0,
   channel_changed: 0,
   business_profile_changed: 0,
+  member_joined: 0,
+  password_reset_burst: 0,
 };
 
 /** Ringkasan keamanan tiruan dengan kejadian `warning` (banner tampil untuk Owner/Admin). */

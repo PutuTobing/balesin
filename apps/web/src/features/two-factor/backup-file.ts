@@ -1,7 +1,7 @@
 import { t } from '../../i18n/id';
 import { formatDateTime } from '../../lib/format';
 
-/** `Balesin Maju Jaya` → `balesin-maju-jaya`; huruf beraksen dibuang aksennya. */
+/** `Layanan Maju Jaya` → `layanan-maju-jaya`; huruf beraksen dibuang aksennya. */
 export function fileSlug(text: string): string {
   const slug = text
     .normalize('NFKD')

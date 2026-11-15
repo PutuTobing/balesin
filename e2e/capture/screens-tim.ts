@@ -61,7 +61,7 @@ async function openRoleDialog(page: Page): Promise<void> {
 
 async function fillIdentity(page: Page, code = '481 902'): Promise<void> {
   const dialog = page.getByRole('dialog');
-  await dialog.getByLabel('Password-mu').fill('Kopi-Senja-Tenang-42');
+  await dialog.getByLabel('Password', { exact: true }).fill('Kopi-Senja-Tenang-42');
   await dialog.getByLabel('Kode verifikasi').fill(code);
 }
 
@@ -189,7 +189,7 @@ export const teamScreens: Screen[] = [
     prepare: async (page) => {
       await openRoleDialog(page);
       await fillIdentity(page, '');
-      await page.getByRole('dialog').getByLabel('Password-mu').focus();
+      await page.getByRole('dialog').getByLabel('Password', { exact: true }).focus();
     },
   },
   {
@@ -225,7 +225,8 @@ export const teamScreens: Screen[] = [
           route,
           429,
           'RATE_LIMITED',
-          'Terlalu banyak konfirmasi yang gagal. Tunggu 15 menit, lalu coba lagi.',
+          // Sama dengan API: sebab saja; durasi dari `Retry-After` di tombol hitung mundur.
+          'Terlalu banyak percobaan konfirmasi yang salah.',
           { 'retry-after': '900' },
         ),
       );
@@ -568,6 +569,6 @@ export const teamScreens: Screen[] = [
         ),
       );
     },
-    waitFor: 'h1:has-text("Pendaftaran 2FA sudah ditutup")',
+    waitFor: 'h1:has-text("Pendaftaran verifikasi dua langkah sudah ditutup")',
   },
 ];

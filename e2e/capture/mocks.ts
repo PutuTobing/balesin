@@ -433,11 +433,35 @@ export async function mockCreateInvitation(page: Page, withLink: boolean): Promi
   });
 }
 
-/** Isi form undangan lalu kirim. */
-export async function submitInvitation(page: Page, email: string, role: string): Promise<void> {
+const INVITE_BUTTON = /^(Kirim undangan|Buat tautan undangan)$/;
+
+/** Isi form undangan lalu tekan kirim: dialog konfirmasi identitas terbuka (belum dikirim). */
+export async function openInvitationConfirm(
+  page: Page,
+  email: string,
+  role: string,
+): Promise<void> {
   await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByLabel('Peran').selectOption({ label: role });
-  await page.getByRole('button', { name: /^(Kirim undangan|Buat tautan undangan)$/ }).click();
+  await page.getByRole('button', { name: INVITE_BUTTON }).click();
+  await page.getByRole('dialog').waitFor();
+}
+
+/** Isi dialog konfirmasi identitas yang terbuka (password + kode contoh). */
+export async function fillIdentityDialog(page: Page): Promise<void> {
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Password', { exact: true }).fill('Kopi-Senja-Tenang-42');
+  await dialog.getByLabel('Kode verifikasi').fill('481 902');
+}
+
+/**
+ * Isi form undangan, lalu konfirmasi identitas (wajib untuk semua peran, Owner juga) dan kirim.
+ * Server tiruan menerima konfirmasi apa pun.
+ */
+export async function submitInvitation(page: Page, email: string, role: string): Promise<void> {
+  await openInvitationConfirm(page, email, role);
+  await fillIdentityDialog(page);
+  await page.getByRole('dialog').getByRole('button', { name: INVITE_BUTTON }).click();
 }
 
 /** `POST /auth/invitation/inspect` tiruan. */

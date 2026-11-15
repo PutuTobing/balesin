@@ -11,6 +11,7 @@ import { useRouter } from '@tanstack/react-router';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { Button } from '../../components/ui/Button';
 import { PasswordField, TextField } from '../../components/ui/Field';
+import { FormErrorNotice } from '../../components/ui/FormErrorNotice';
 import { Notice } from '../../components/ui/Notice';
 import { PasswordStrength, type ServerPasswordCheck } from '../../components/ui/PasswordStrength';
 import { SubmitButton } from '../../components/ui/SubmitButton';
@@ -374,13 +375,7 @@ function AcceptForm({
       ) : null}
       {/* Pesan server di bawah tombol: judul, isian, dan tombol tidak bergeser (kritikus W1). */}
       {error ? (
-        <Notice
-          tone={lock.locked ? 'warning' : 'danger'}
-          role="alert"
-          title={lock.locked ? t.links.lockedTitle : undefined}
-        >
-          {isApiError(error) ? error.message : t.api.network}
-        </Notice>
+        <FormErrorNotice error={error} lock={lock} lockedTitle={t.links.lockedTitle} />
       ) : null}
     </form>
   );

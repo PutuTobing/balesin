@@ -27,7 +27,7 @@ test('Keamanan akun terbuka dari menu akun; Owner wajib 2FA tanpa tombol menonak
   await expect(page.getByText(/dari 10 kode tersisa/)).toBeVisible();
   await expectNoHorizontalScroll(page);
 
-  // Form konfirmasi terbuka dengan fokus di password; Batal menutupnya tanpa mengirim apa pun.
+  // Dialog konfirmasi terbuka dengan fokus di password; Batal menutupnya tanpa mengirim apa pun.
   await page.getByRole('button', { name: 'Buat kode baru' }).click();
   await expect(page.getByLabel('Password', { exact: true })).toBeFocused();
   // Bingkai isian: 44 px di HP (target sentuh), 36 px di desktop (sama dengan tombol halaman ini).

@@ -67,25 +67,41 @@ describe('Pengaturan → Keamanan akun', () => {
       },
     );
     fireEvent.click(screen.getByRole('button', { name: copy.backupCodes.regenerate }));
-    const password = screen.getByLabelText(copy.reauth.password);
+    const password = within(screen.getByRole('dialog')).getByLabelText(t.identity.password);
     expect(password).toHaveFocus();
 
     // Kosong → ditolak di browser.
-    fireEvent.click(screen.getByRole('button', { name: copy.backupCodes.regenerate }));
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: copy.backupCodes.regenerate,
+      }),
+    );
     expect(await screen.findByText('Password wajib diisi.')).toBeVisible();
-    expect(screen.getByText('Kode wajib diisi.')).toBeVisible();
+    expect(screen.getByText(t.identity.codeRequired)).toBeVisible();
 
     // Password salah → pesan server di isian password, fokus ke sana.
     fireEvent.change(password, { target: { value: 'salah' } });
-    fireEvent.change(screen.getByLabelText(copy.reauth.code), { target: { value: '123456' } });
-    fireEvent.click(screen.getByRole('button', { name: copy.backupCodes.regenerate }));
+    fireEvent.change(within(screen.getByRole('dialog')).getByLabelText(t.identity.code), {
+      target: { value: '123456' },
+    });
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: copy.backupCodes.regenerate,
+      }),
+    );
     expect(await screen.findByText('Password salah.')).toBeVisible();
-    await waitFor(() => expect(screen.getByLabelText(copy.reauth.password)).toHaveFocus());
+    await waitFor(() =>
+      expect(within(screen.getByRole('dialog')).getByLabelText(t.identity.password)).toHaveFocus(),
+    );
 
-    fireEvent.change(screen.getByLabelText(copy.reauth.password), {
+    fireEvent.change(within(screen.getByRole('dialog')).getByLabelText(t.identity.password), {
       target: { value: 'Kopi-Senja-Tenang-42' },
     });
-    fireEvent.click(screen.getByRole('button', { name: copy.backupCodes.regenerate }));
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: copy.backupCodes.regenerate,
+      }),
+    );
 
     const newCodesHeading = await screen.findByRole('heading', {
       level: 2,
@@ -139,23 +155,35 @@ describe('Pengaturan → Keamanan akun', () => {
       },
     );
     fireEvent.click(screen.getByRole('button', { name: copy.backupCodes.regenerate }));
-    fireEvent.change(screen.getByLabelText(copy.reauth.password), { target: { value: 'apa' } });
-    fireEvent.change(screen.getByLabelText(copy.reauth.code), { target: { value: '123456' } });
-    fireEvent.click(screen.getByRole('button', { name: copy.backupCodes.regenerate }));
+    fireEvent.change(within(screen.getByRole('dialog')).getByLabelText(t.identity.password), {
+      target: { value: 'apa' },
+    });
+    fireEvent.change(within(screen.getByRole('dialog')).getByLabelText(t.identity.code), {
+      target: { value: '123456' },
+    });
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: copy.backupCodes.regenerate,
+      }),
+    );
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent(copy.reauth.lockedTitle);
+    expect(alert).toHaveTextContent(t.identity.lockedTitle);
     const locked = screen.getByRole('button', { name: t.auth.login.countdownButton('15:00') });
     expect(locked).toBeDisabled();
     expect(locked).toHaveAttribute('data-locked');
     // Fokus tidak jatuh ke <body>: kembali ke isian kode setelah isian aktif lagi.
-    await waitFor(() => expect(screen.getByLabelText(copy.reauth.code)).toHaveFocus());
+    await waitFor(() =>
+      expect(within(screen.getByRole('dialog')).getByLabelText(t.identity.code)).toHaveFocus(),
+    );
   });
 
-  it('"Batal" menutup form dan mengembalikan fokus ke tombol pembukanya', async () => {
+  it('"Batal" menutup dialog dan mengembalikan fokus ke tombol pembukanya', async () => {
     await openSecurity('owner');
     fireEvent.click(screen.getByRole('button', { name: copy.backupCodes.regenerate }));
-    expect(screen.getByLabelText(copy.reauth.password)).toHaveFocus();
-    fireEvent.click(screen.getByRole('button', { name: copy.reauth.cancel }));
+    expect(within(screen.getByRole('dialog')).getByLabelText(t.identity.password)).toHaveFocus();
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: t.identity.cancel }),
+    );
     await waitFor(() =>
       expect(screen.getByRole('button', { name: copy.backupCodes.regenerate })).toHaveFocus(),
     );
@@ -171,9 +199,17 @@ describe('Pengaturan → Keamanan akun', () => {
       },
     );
     fireEvent.click(screen.getByRole('button', { name: copy.backupCodes.regenerate }));
-    fireEvent.change(screen.getByLabelText(copy.reauth.password), { target: { value: 'apa' } });
-    fireEvent.change(screen.getByLabelText(copy.reauth.code), { target: { value: '123456' } });
-    fireEvent.click(screen.getByRole('button', { name: copy.backupCodes.regenerate }));
+    fireEvent.change(within(screen.getByRole('dialog')).getByLabelText(t.identity.password), {
+      target: { value: 'apa' },
+    });
+    fireEvent.change(within(screen.getByRole('dialog')).getByLabelText(t.identity.code), {
+      target: { value: '123456' },
+    });
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: copy.backupCodes.regenerate,
+      }),
+    );
     await screen.findByRole('heading', { level: 2, name: t.twoFactor.backupCodes.newTitle });
 
     // Tombol kembali di header (navigasi di dalam aplikasi) → dialog, halaman tidak berpindah.
@@ -202,9 +238,17 @@ describe('Pengaturan → Keamanan akun', () => {
       },
     );
     fireEvent.click(screen.getByRole('button', { name: copy.backupCodes.regenerate }));
-    fireEvent.change(screen.getByLabelText(copy.reauth.password), { target: { value: 'apa' } });
-    fireEvent.change(screen.getByLabelText(copy.reauth.code), { target: { value: '123456' } });
-    fireEvent.click(screen.getByRole('button', { name: copy.backupCodes.regenerate }));
+    fireEvent.change(within(screen.getByRole('dialog')).getByLabelText(t.identity.password), {
+      target: { value: 'apa' },
+    });
+    fireEvent.change(within(screen.getByRole('dialog')).getByLabelText(t.identity.code), {
+      target: { value: '123456' },
+    });
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: copy.backupCodes.regenerate,
+      }),
+    );
     await screen.findByRole('heading', { level: 2, name: t.twoFactor.backupCodes.newTitle });
     fireEvent.click(screen.getByRole('checkbox', { name: t.twoFactor.backupCodes.confirm }));
     fireEvent.click(screen.getByRole('button', { name: t.twoFactor.backupCodes.done }));
@@ -242,11 +286,15 @@ describe('Pengaturan → Keamanan akun', () => {
       return json({ status: 'disabled' });
     });
     fireEvent.click(screen.getByRole('button', { name: copy.disable.title }));
-    fireEvent.change(screen.getByLabelText(copy.reauth.password), {
+    fireEvent.change(within(screen.getByRole('dialog')).getByLabelText(t.identity.password), {
       target: { value: 'Teh-Manis-Hangat-77' },
     });
-    fireEvent.change(screen.getByLabelText(copy.reauth.code), { target: { value: 'k7m2p-x9q4r' } });
-    fireEvent.click(screen.getByRole('button', { name: copy.disable.action }));
+    fireEvent.change(within(screen.getByRole('dialog')).getByLabelText(t.identity.code), {
+      target: { value: 'k7m2p-x9q4r' },
+    });
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: copy.disable.action }),
+    );
 
     expect(await screen.findByRole('status')).toHaveTextContent(copy.disable.done);
     await waitFor(() =>

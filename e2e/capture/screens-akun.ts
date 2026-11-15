@@ -16,6 +16,8 @@ import {
   photoInvitation,
   sessionAs,
   submitInvitation,
+  openInvitationConfirm,
+  fillIdentityDialog,
   validationError,
 } from './mocks';
 import type { Page } from '@playwright/test';
@@ -99,6 +101,18 @@ export const accountScreens: Screen[] = [
     prepare: async (page) => {
       await submitInvitation(page, 'tono@majujaya.co.id', 'Teknisi');
       await page.getByText('Undangan untuk tono@majujaya.co.id dibuat', { exact: false }).waitFor();
+    },
+  },
+  {
+    // Konfirmasi identitas sebelum undangan dibuat (semua peran, Owner juga).
+    name: 'tim-konfirmasi-undangan',
+    path: '/pengaturan/tim',
+    before: (page) => invitationList(page, { emailDelivery: true }),
+    waitFor: 'h1',
+    prepare: async (page) => {
+      await openInvitationConfirm(page, 'tono@majujaya.co.id', 'Teknisi');
+      await fillIdentityDialog(page);
+      await page.getByRole('dialog').getByLabel('Password', { exact: true }).focus();
     },
   },
   {

@@ -17,7 +17,7 @@ runs:
         # SMTP 1025 (login balesin/balesin, sama dengan compose dev) dan API HTTP 8025.
         docker run -d --name mailpit -p 127.0.0.1:1025:1025 -p 127.0.0.1:8025:8025 \
           -e MP_SMTP_AUTH=balesin:balesin -e MP_SMTP_AUTH_ALLOW_INSECURE=true \
-          -e MP_DISABLE_VERSION_CHECK=true -e TZ=UTC \
+          -e MP_DISABLE_VERSION_CHECK=true -e MP_SMTP_DISABLE_RDNS=true -e TZ=UTC \
           axllent/mailpit:v1.33.1
     - name: Tunggu layanan siap
       shell: bash
