@@ -5,6 +5,14 @@ import {
   apiPath,
   auditLogListResponseSchema,
   brandingResponseSchema,
+  businessProfileResponseSchema,
+  channelResponseSchema,
+  channelSettingsListResponseSchema,
+  channelTestResultSchema,
+  channelWebhookResponseSchema,
+  createChannelResponseSchema,
+  deleteChannelResponseSchema,
+  updateBusinessProfileResponseSchema,
   completePasswordResetResponseSchema,
   completeSetupResponseSchema,
   confirmTwoFactorEnrollmentResponseSchema,
@@ -47,6 +55,9 @@ import {
   type CheckSetupPasswordRequest,
   type CompletePasswordResetRequest,
   type CreateInvitationRequest,
+  type CreateChannelRequest,
+  type UpdateBusinessProfileRequest,
+  type UpdateChannelRequest,
   type SaveEmailSettingsRequest,
   type CompleteSetupRequest,
   type EmailSettingsInput,
@@ -371,6 +382,78 @@ export function createEndpoints(client: ApiClient) {
     branding: {
       get: (signal?: AbortSignal) =>
         client.request(API_ROUTES.branding.get, { schema: brandingResponseSchema, signal }),
+    },
+    /**
+     * Pengaturan → Channel (izin `channels.manage`, docs/KONTRAK-API-CHANNEL.md). Token System
+     * User dan App Secret hanya pernah dikirim KE server; jawaban hanya memuat petunjuk tersamar.
+     */
+    channels: {
+      list: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.channels.settings, {
+          schema: channelSettingsListResponseSchema,
+          signal,
+        }),
+      /** `confirmation` wajib untuk semua peran (Owner juga). */
+      create: (body: CreateChannelRequest) =>
+        client.request(API_ROUTES.channels.settings, {
+          method: 'POST',
+          body,
+          schema: createChannelResponseSchema,
+        }),
+      get: (channelId: string, signal?: AbortSignal) =>
+        client.request(apiPath(API_ROUTES.channels.channel, { channelId }), {
+          schema: channelResponseSchema,
+          signal,
+        }),
+      /** Hanya isian yang berubah; kredensial/ID Meta wajib `confirmation`. */
+      update: (channelId: string, body: UpdateChannelRequest) =>
+        client.request(apiPath(API_ROUTES.channels.channel, { channelId }), {
+          method: 'PATCH',
+          body,
+          schema: channelResponseSchema,
+        }),
+      remove: (channelId: string, identity: IdentityConfirmation) =>
+        client.request(apiPath(API_ROUTES.channels.channel, { channelId }), {
+          method: 'DELETE',
+          body: identity,
+          schema: deleteChannelResponseSchema,
+        }),
+      setEnabled: (channelId: string, enabled: boolean) =>
+        client.request(
+          apiPath(enabled ? API_ROUTES.channels.enable : API_ROUTES.channels.disable, {
+            channelId,
+          }),
+          { method: 'POST', schema: channelResponseSchema },
+        ),
+      /** Memakai kredensial tersimpan; hasil gagal tetap 200 dengan `ok: false`. */
+      test: (channelId: string) =>
+        client.request(apiPath(API_ROUTES.channels.test, { channelId }), {
+          method: 'POST',
+          schema: channelTestResultSchema,
+        }),
+      webhook: (channelId: string, signal?: AbortSignal) =>
+        client.request(apiPath(API_ROUTES.channels.webhook, { channelId }), {
+          schema: channelWebhookResponseSchema,
+          signal,
+        }),
+      rotateVerifyToken: (channelId: string) =>
+        client.request(apiPath(API_ROUTES.channels.rotateVerifyToken, { channelId }), {
+          method: 'POST',
+          schema: channelWebhookResponseSchema,
+        }),
+      /** GET ber-CSRF: memanggil Meta dan memakai jatah batas laju. */
+      businessProfile: (channelId: string, signal?: AbortSignal) =>
+        client.request(apiPath(API_ROUTES.channels.businessProfile, { channelId }), {
+          schema: businessProfileResponseSchema,
+          signal,
+          csrf: true,
+        }),
+      updateBusinessProfile: (channelId: string, body: UpdateBusinessProfileRequest) =>
+        client.request(apiPath(API_ROUTES.channels.businessProfile, { channelId }), {
+          method: 'PUT',
+          body,
+          schema: updateBusinessProfileResponseSchema,
+        }),
     },
     emailSettings: {
       get: (signal?: AbortSignal) =>

@@ -82,6 +82,11 @@ export interface RequestOptions<S extends z.ZodType> {
   /** Skema respons sukses. */
   schema: S;
   signal?: AbortSignal;
+  /**
+   * GET yang memakai jatah batas laju / memanggil layanan luar (mis. profil bisnis Meta) juga
+   * wajib header CSRF supaya tidak bisa dipicu tautan dari situs lain.
+   */
+  csrf?: boolean;
 }
 
 export interface ApiClientOptions {
@@ -186,14 +191,18 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
   async function request<S extends z.ZodType>(
     path: string,
-    { method = 'GET', body, schema, signal }: RequestOptions<S>,
+    { method = 'GET', body, schema, signal, csrf = false }: RequestOptions<S>,
   ): Promise<z.output<S>> {
-    let response = await send(path, method, body, signal);
+    let response = await send(path, method, body, signal, undefined, csrf);
 
     if (!response.ok) {
       let error = await toError(response);
-      if (error.code === 'CSRF_INVALID' && MUTATING.has(method) && (await refreshCsrf())) {
-        response = await send(path, method, body, signal);
+      if (
+        error.code === 'CSRF_INVALID' &&
+        (MUTATING.has(method) || csrf) &&
+        (await refreshCsrf())
+      ) {
+        response = await send(path, method, body, signal, undefined, csrf);
         error = response.ok ? error : await toError(response);
         if (!response.ok) throw handleFailure(error);
       } else {

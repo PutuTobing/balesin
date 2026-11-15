@@ -122,4 +122,8 @@ export const SECURITY_EVENT_FILTERS: Readonly<
   business_profile_changed: { targetType: 'channel' },
   member_joined: { action: 'user.invitation.accepted' },
   password_reset_burst: { action: 'auth.password_reset.burst' },
+  webhook_signature_failed: {
+    action: 'channel.webhook_signature_rejected',
+    targetType: 'channel',
+  },
 };

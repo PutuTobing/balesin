@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ChevronRight, History, Mail, ShieldCheck, UsersRound } from 'lucide-react';
+import { ChevronRight, History, Mail, ShieldCheck, Smartphone, UsersRound } from 'lucide-react';
 import { RadioGroup } from 'radix-ui';
 import { useEffect } from 'react';
 import { useBrand } from '../../brand/brand';
@@ -14,7 +14,9 @@ import { useTheme } from '../../theme/theme-context';
 import { themeOptions } from '../../theme/theme-options';
 import { useCan } from '../auth/session';
 import { EmailStatusBadge } from '../email-settings/EmailStatusBadge';
+import { ChannelsMenuStatus } from '../channels/ChannelsMenuStatus';
 import {
+  channelSettingsQuery,
   emailSettingsQuery,
   emailVerificationQuery,
   sessionsQuery,
@@ -30,9 +32,9 @@ const ORGANIZATION_HEADING_ID = 'pengaturan-organisasi';
 const ACCOUNT_HEADING_ID = 'pengaturan-akun';
 
 /**
- * Pengaturan. Bagian lain (channel, peran, jam kerja, dan seterusnya) ditambahkan
- * bersama fiturnya masing-masing. Pengaturan organisasi tampil sesuai izin sesi (`permissions`):
- * Tim = `team.invite`, Email pengirim = `settings.email.manage` (keduanya Owner dan Admin); peran
+ * Pengaturan. Bagian lain (peran, jam kerja, dan seterusnya) ditambahkan bersama fiturnya
+ * masing-masing. Pengaturan organisasi tampil sesuai izin sesi (`permissions`): Channel =
+ * `channels.manage`, Tim = `team.invite`, Email pengirim = `settings.email.manage` (keduanya Owner dan Admin); peran
  * lain tidak melihat menunya. Keamanan akun untuk semua peran.
  */
 export function SettingsPage() {
@@ -43,12 +45,14 @@ export function SettingsPage() {
   const canTeam = canInvite || canManageTeam;
   const canEmail = useCan('settings.email.manage');
   const canAudit = useCan('audit.view');
+  const canChannels = useCan('channels.manage');
 
   return (
     <Page>
       <div className={styles.content}>
-        {canTeam || canEmail || canAudit ? (
+        {canChannels || canTeam || canEmail || canAudit ? (
           <OrganizationSettings
+            showChannels={canChannels}
             showTeam={canTeam}
             showEmail={canEmail}
             showAudit={canAudit}
@@ -130,12 +134,14 @@ function Scene({ theme, split = false }: { theme: ResolvedTheme; split?: boolean
  * Menu pengaturan organisasi sesuai izin (Tim, Email pengirim), lengkap dengan status tiap baris.
  */
 function OrganizationSettings({
+  showChannels,
   showTeam,
   showEmail,
   showAudit,
   canInvite,
   canManageTeam,
 }: {
+  showChannels: boolean;
   showTeam: boolean;
   showEmail: boolean;
   showAudit: boolean;
@@ -150,6 +156,7 @@ function OrganizationSettings({
         </h2>
       </div>
       <ul className={styles.menu}>
+        {showChannels ? <ChannelsMenuItem /> : null}
         {showTeam ? <TeamMenuItem canInvite={canInvite} canManage={canManageTeam} /> : null}
         {showEmail ? <EmailMenuItem /> : null}
         {showAudit ? <AuditMenuItem /> : null}
@@ -186,6 +193,32 @@ function TeamMenuItem({ canInvite, canManage }: { canInvite: boolean; canManage:
             <Skeleton className={styles.statusSkeleton} />
           ) : parts.length > 0 ? (
             <span className={styles.menuCount}>{parts.join(' · ')}</span>
+          ) : null}
+        </span>
+        <Icon icon={ChevronRight} size={16} className={styles.chevron} />
+      </Link>
+    </li>
+  );
+}
+
+/** Channel: jumlah nomor + status terburuk (Gagal > Belum dites > Terhubung). */
+function ChannelsMenuItem() {
+  const channels = useQuery(channelSettingsQuery);
+  return (
+    <li>
+      <Link to="/pengaturan/channel" className={styles.menuLink}>
+        <span className={styles.menuIcon}>
+          <Icon icon={Smartphone} size={20} />
+        </span>
+        <span className={styles.menuText}>
+          <span className={styles.menuLabel}>{t.channels.title}</span>
+          <span className={styles.menuHint}>{t.channels.menuHint}</span>
+        </span>
+        <span className={styles.menuStatus}>
+          {channels.data ? (
+            <ChannelsMenuStatus channels={channels.data.channels} />
+          ) : channels.isPending ? (
+            <Skeleton className={styles.statusSkeleton} />
           ) : null}
         </span>
         <Icon icon={ChevronRight} size={16} className={styles.chevron} />

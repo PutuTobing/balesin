@@ -15,6 +15,8 @@ import {
   isTwoFactorRequired,
   type AuthenticatedSession,
   type BrandingResponse,
+  type ChannelSettingsListResponse,
+  type WhatsAppChannel,
   type EmailSettingsResponse,
   type EmailVerificationStatusResponse,
   type Invitation,
@@ -300,7 +302,47 @@ export const emptySecuritySummary: SecuritySummaryResponse = {
   latestWarningAt: null,
 };
 
+/** Channel WhatsApp contoh: terhubung, kualitas Tinggi. */
+export function fakeChannel(overrides: Partial<WhatsAppChannel> = {}): WhatsAppChannel {
+  return {
+    id: '6c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e01',
+    type: 'whatsapp',
+    name: 'CS Utama',
+    enabled: true,
+    status: 'connected',
+    phoneNumberId: '106540352242922',
+    wabaId: '102290129340398',
+    accessTokenHint: '••••Q2ZD',
+    appSecretHint: '••••91af',
+    webhookUrl: 'https://api.majujaya.co.id/webhooks/whatsapp/6c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e01',
+    lastTest: {
+      ok: true,
+      code: 'ok',
+      message: 'Koneksi berhasil. Token, App Secret, Phone Number ID, dan WABA ID cocok.',
+      testedAt: '2026-11-14T02:00:00.000Z',
+    },
+    number: {
+      displayPhoneNumber: '+62 811-7200-345',
+      verifiedName: 'Maju Jaya Net',
+      qualityRating: 'GREEN',
+      status: 'CONNECTED',
+      nameStatus: 'APPROVED',
+      codeVerificationStatus: 'VERIFIED',
+      messagingLimit: 'TIER_10K',
+      throughputLevel: 'STANDARD',
+      fetchedAt: '2026-11-14T02:00:00.000Z',
+    },
+    warnings: [],
+    credentialsUpdatedAt: '2026-11-10T02:00:00.000Z',
+    createdAt: '2026-11-10T02:00:00.000Z',
+    updatedAt: '2026-11-14T02:00:00.000Z',
+    ...overrides,
+  };
+}
+
 export interface FakeApiOptions {
+  /** Bawaan: belum ada channel, kunci enkripsi ada, batas 20. */
+  channelSettings?: ChannelSettingsListResponse;
   /** Bawaan: hanya diri sendiri (dari sesi). */
   teamUsers?: TeamUserListResponse;
   /** Bawaan: satu sesi (sesi ini). */
@@ -396,6 +438,9 @@ export function installFakeApi(options: FakeApiOptions = {}): FakeApi {
     ),
     [`GET ${API_ROUTES.audit.securitySummary}`]: fullSessionOnly(() =>
       json(options.securitySummary ?? emptySecuritySummary),
+    ),
+    [`GET ${API_ROUTES.channels.settings}`]: fullSessionOnly(() =>
+      json(options.channelSettings ?? { channels: [], canStoreSecrets: true, maxChannels: 20 }),
     ),
     [`GET ${API_ROUTES.passwordReset.status}`]: () =>
       json({ available: options.passwordResetAvailable ?? true }),

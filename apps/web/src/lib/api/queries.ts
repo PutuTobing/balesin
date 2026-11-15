@@ -1,6 +1,8 @@
 import {
   AUDIT_LOG_PAGE_DEFAULT,
   type AuditLogFilter,
+  type ChannelSettingsListResponse,
+  type WhatsAppChannel,
   type EmailTemplateId,
   type MeResponse,
   type TeamUser,
@@ -30,6 +32,11 @@ export const queryKeys = {
   securitySummary: ['audit', 'security-summary'] as const,
   emailTemplatePreview: (template: EmailTemplateId) =>
     ['settings', 'email', 'template', template] as const,
+  channels: ['settings', 'channels'] as const,
+  channel: (channelId: string) => ['settings', 'channels', channelId] as const,
+  channelWebhook: (channelId: string) => ['settings', 'channels', channelId, 'webhook'] as const,
+  businessProfile: (channelId: string) =>
+    ['settings', 'channels', channelId, 'business-profile'] as const,
 };
 
 /**
@@ -200,6 +207,68 @@ export function emailTemplatePreviewQuery(template: EmailTemplateId) {
     queryFn: ({ signal }) => endpoints.emailSettings.templatePreview(template, signal),
     staleTime: 60_000,
   });
+}
+
+/** Pengaturan → Channel: semua channel + `canStoreSecrets` + `maxChannels`. */
+export const channelSettingsQuery = queryOptions({
+  queryKey: queryKeys.channels,
+  queryFn: ({ signal }) => endpoints.channels.list(signal),
+});
+
+/** Satu channel (halaman nomor). Data awal diambil dari daftar bila sudah dimuat. */
+export function channelQuery(channelId: string, queryClient?: QueryClient) {
+  return queryOptions({
+    queryKey: queryKeys.channel(channelId),
+    queryFn: async ({ signal }) => (await endpoints.channels.get(channelId, signal)).channel,
+    initialData: () =>
+      queryClient
+        ?.getQueryData<ChannelSettingsListResponse>(queryKeys.channels)
+        ?.channels.find((channel) => channel.id === channelId),
+    initialDataUpdatedAt: () => queryClient?.getQueryState(queryKeys.channels)?.dataUpdatedAt,
+  });
+}
+
+/**
+ * URL webhook + verify token (hanya `channels.manage`). Verify token memang ditampilkan ke peran
+ * ini, tetapi tidak disimpan lebih lama dari halaman yang memakainya (`gcTime: 0`).
+ */
+export function channelWebhookQuery(channelId: string) {
+  return queryOptions({
+    queryKey: queryKeys.channelWebhook(channelId),
+    queryFn: ({ signal }) => endpoints.channels.webhook(channelId, signal),
+    gcTime: 0,
+  });
+}
+
+/**
+ * Profil bisnis dari Meta. Setiap pembacaan memanggil Meta dan memakai jatah batas laju
+ * (30 per 5 menit per pengguna), jadi tidak diulang otomatis saat gagal atau saat tab kembali
+ * dibuka.
+ */
+export function businessProfileQuery(channelId: string) {
+  return queryOptions({
+    queryKey: queryKeys.businessProfile(channelId),
+    queryFn: ({ signal }) => endpoints.channels.businessProfile(channelId, signal),
+    staleTime: 5 * 60_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** Simpan channel sesudah diubah ke cache detail dan daftar, lalu tandai daftar basi. */
+export function storeChannel(queryClient: QueryClient, channel: WhatsAppChannel): void {
+  queryClient.setQueryData(queryKeys.channel(channel.id), channel);
+  queryClient.setQueryData<ChannelSettingsListResponse>(queryKeys.channels, (old) =>
+    old
+      ? {
+          ...old,
+          channels: old.channels.some((item) => item.id === channel.id)
+            ? old.channels.map((item) => (item.id === channel.id ? channel : item))
+            : [...old.channels, channel],
+        }
+      : old,
+  );
+  void queryClient.invalidateQueries({ queryKey: queryKeys.channels, exact: true });
 }
 
 /**

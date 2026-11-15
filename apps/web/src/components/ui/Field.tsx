@@ -152,6 +152,48 @@ export function PasswordField(props: PasswordFieldProps) {
   );
 }
 
+export interface TextAreaFieldProps
+  extends FieldFrameProps, Omit<ComponentPropsWithRef<'textarea'>, 'size'> {}
+
+/** Teks panjang berbaris (mis. deskripsi profil bisnis). Tinggi awal 4 baris, bisa diperbesar. */
+export function TextAreaField({
+  label,
+  optional,
+  hint,
+  error,
+  className,
+  id,
+  rows = 4,
+  'aria-describedby': extraDescribedBy,
+  ...textarea
+}: TextAreaFieldProps) {
+  const ids = useFieldIds(id, hint, error);
+  return (
+    <FieldFrame
+      label={label}
+      optional={optional}
+      hint={hint}
+      error={error}
+      className={className}
+      ids={ids}
+    >
+      <div
+        className={cx(styles.control, styles.textareaControl)}
+        data-invalid={error ? '' : undefined}
+      >
+        <textarea
+          id={ids.inputId}
+          rows={rows}
+          className={cx(styles.input, styles.textarea)}
+          {...textarea}
+          aria-invalid={error ? true : textarea['aria-invalid']}
+          aria-describedby={describedBy(ids.errorId, ids.hintId, extraDescribedBy)}
+        />
+      </div>
+    </FieldFrame>
+  );
+}
+
 export interface SelectFieldProps
   extends FieldFrameProps, Omit<ComponentPropsWithRef<'select'>, 'size'> {
   options: readonly { value: string; label: string }[];

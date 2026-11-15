@@ -3,12 +3,15 @@
  * Menyalakan backend E2E dari keadaan bersih (dipanggil `webServer` Playwright):
  *   1. database `E2E_DATABASE_NAME` dihapus lalu dibuat ulang, dimigrasi dari nol;
  *   2. Redis E2E (database nomor 14) dikosongkan — batas percobaan & penguncian akun hilang;
- *   3. API dan worker dijalankan (tsx, tanpa watch) dengan env dari `stack/env.ts`.
+ *   3. server Meta TIRUAN dijalankan (`fake-meta-server.ts`, 127.0.0.1 port acak);
+ *   4. API dan worker dijalankan (tsx, tanpa watch) dengan env dari `stack/env.ts` ditambah
+ *      `META_GRAPH_BASE_URL` = alamat server tiruan. Tes E2E tidak pernah memanggil Meta sungguhan.
  *
  * Proses ini tetap hidup selama API & worker hidup. Playwright mematikannya (beserta anaknya)
  * setelah tes selesai; kalau salah satu anak mati, proses ini ikut keluar supaya tes gagal jelas.
  */
 import { spawn } from 'node:child_process';
+import { EOL } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -83,6 +86,57 @@ function run(name, args, { wait }) {
   return child;
 }
 
+/**
+ * Server Meta tiruan (TypeScript, lewat tsx paket api). Menunggu baris `FAKE_META_URL=…` di
+ * stdout-nya lalu mengembalikan alamat itu; keluaran lain diteruskan apa adanya.
+ * @returns {Promise<string>}
+ */
+function startFakeMeta() {
+  const script = path.join(root, 'e2e', 'stack', 'fake-meta-server.ts');
+  const args = ['--filter', '@balesin/api', 'exec', 'tsx', script];
+  const options = {
+    cwd: root,
+    env: process.env,
+    stdio: /** @type {const} */ (['ignore', 'pipe', 'inherit']),
+  };
+  const child = isWindows
+    ? spawn(`pnpm ${args.map((arg) => `"${arg}"`).join(' ')}`, { ...options, shell: true })
+    : spawn('pnpm', args, options);
+  children.push(child);
+  return new Promise((resolve, reject) => {
+    let buffer = '';
+    let ready = false;
+    const timer = setTimeout(
+      () => reject(new Error('server Meta tiruan tidak kunjung siap')),
+      60_000,
+    );
+    child.stdout?.setEncoding('utf8');
+    child.stdout?.on('data', (chunk) => {
+      buffer += chunk;
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() ?? '';
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (!ready && line.startsWith('FAKE_META_URL=')) {
+          ready = true;
+          clearTimeout(timer);
+          resolve(line.slice('FAKE_META_URL='.length));
+        } else if (line) {
+          process.stdout.write(`${line}${EOL}`);
+        }
+      }
+    });
+    child.on('exit', (code) => {
+      clearTimeout(timer);
+      if (!ready) reject(new Error(`server Meta tiruan berhenti (kode ${code})`));
+      else {
+        log(`server Meta tiruan berhenti (kode ${code}); backend E2E dimatikan`);
+        shutdown(code ?? 1);
+      }
+    });
+  });
+}
+
 /** @type {import('node:child_process').ChildProcess[]} */
 const children = [];
 let stopping = false;
@@ -110,6 +164,9 @@ try {
   await run('migrasi', ['--filter', '@balesin/db', 'exec', 'tsx', 'src/migrate.ts'], {
     wait: true,
   });
+  const fakeMetaUrl = await startFakeMeta();
+  process.env.META_GRAPH_BASE_URL = fakeMetaUrl;
+  log(`server Meta tiruan di ${fakeMetaUrl}`);
   children.push(
     run('api', ['--filter', '@balesin/api', 'exec', 'tsx', 'src/index.ts'], { wait: false }),
     run('worker', ['--filter', '@balesin/worker', 'exec', 'tsx', 'src/index.ts'], {

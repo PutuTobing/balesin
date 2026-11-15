@@ -927,6 +927,8 @@ export const t = {
     /** `member_joined`: pelakunya anggota baru itu sendiri, jadi bukan "… oleh …". */
     latestJoined: (name: string, role: string, time: string) =>
       `Terbaru: ${name} (${role}) bergabung lewat undangan, ${time}.`,
+    /** Kejadian tanpa pelaku pada satu channel (mis. webhook ditolak berulang). */
+    onChannel: (label: string, channel: string) => `${label} di channel ${channel}`,
     review: 'Periksa di Audit log',
     dismiss: 'Tutup peringatan keamanan',
   },
@@ -1212,6 +1214,376 @@ export const t = {
     ownersNotified: 'Owner akan diberi tahu lewat email bila server atau alamat pengirim diubah.',
     unsavedTest:
       'Tes memakai isian form di atas, termasuk yang belum disimpan. Status tersimpan berubah setelah kamu menyimpan lalu menguji.',
+  },
+
+  /**
+   * Pengaturan → Channel: daftar nomor, wizard tambah nomor (docs/SETUP-META.md), halaman nomor,
+   * dan profil bisnis. "WhatsApp" di sini nama layanan/channel Meta, bukan nama produk.
+   */
+  channels: {
+    title: 'Channel',
+    // Pendek: status di kanan tidak boleh membuat petunjuk patah baris saat dimuat (CLS).
+    menuHint: 'Nomor WhatsApp untuk inbox',
+    menuCount: (count: number) => `${count} nomor`,
+    /** Sama dengan pola Email pengirim ("Belum diatur · Atur sekarang"). */
+    menuNone: 'Belum diatur',
+    connectNow: 'Hubungkan',
+    disabled: 'Nonaktif',
+    newTab: '(membuka tab baru)',
+    ownersNotified: 'Owner akan diberi tahu lewat email tentang perubahan ini.',
+
+    list: {
+      sectionTitle: 'WhatsApp',
+      sectionHint: 'Lewat WhatsApp Cloud API resmi Meta. Satu channel untuk satu nomor.',
+      listLabel: 'Daftar nomor WhatsApp',
+      add: 'Tambah nomor',
+      noNumber: 'Nomor belum diketahui',
+      noNumberHint: 'Tes koneksi untuk mengambil data nomor dari Meta.',
+      quality: (label: string) => `Kualitas ${label}`,
+      emptyTitle: 'Belum ada nomor WhatsApp',
+      emptyBody:
+        'Hubungkan nomor WhatsApp Business lewat Cloud API resmi Meta, supaya chat pelanggan masuk ke inbox timmu.',
+      emptyAction: 'Hubungkan nomor pertama',
+      loadFailedTitle: 'Channel belum bisa dimuat',
+      limitTitle: 'Batas nomor sudah tercapai',
+      limitBody: (max: number) =>
+        `Satu organisasi bisa memakai paling banyak ${max} nomor. Hapus nomor yang tidak dipakai lagi untuk menambah yang baru.`,
+      noMasterKeyTitle: 'Token Meta belum bisa disimpan',
+      noMasterKeyBody:
+        '`BALESIN_MASTER_KEY` belum diisi di berkas `.env` server, jadi token dan App Secret tidak bisa disimpan terenkripsi. Isi dengan 32 byte acak (base64), nyalakan ulang server, lalu kembali ke halaman ini.',
+      deleted: (name: string) =>
+        `Channel ${name} sudah dihapus. Cabut juga webhook-nya di Meta (WhatsApp → Konfigurasi → Webhook).`,
+    },
+
+    /** Ringkasan nomor (kartu daftar, langkah Tes di wizard, halaman nomor). */
+    number: {
+      quality: 'Kualitas',
+      status: 'Status nomor',
+      limit: 'Batas pesan',
+      verifiedName: 'Nama tampilan',
+      lastTest: 'Tes terakhir',
+      neverTested: 'Belum pernah dites',
+      nameStatus: (label: string) => `Persetujuan nama: ${label}`,
+    },
+
+    test: {
+      action: 'Tes koneksi',
+      pending: 'Menguji…',
+      pendingNote: 'Menghubungi Meta. Paling lama sekitar 25 detik.',
+      lockedTitle: 'Tes koneksi dibatasi sementara',
+      failedTitle: 'Koneksi gagal',
+      warningsTitle: 'Perlu dibereskan di Meta',
+    },
+
+    webhook: {
+      title: 'Webhook',
+      hint: 'Meta mengirim pesan pelanggan ke alamat ini. Di WhatsApp → Konfigurasi → Webhook → Edit, tempel URL webhook ke Callback URL dan verify token ke Verify token, lalu tekan Verifikasi dan simpan.',
+      callbackUrl: 'URL webhook',
+      verifyToken: 'Verify token',
+      copy: 'Salin',
+      copied: 'Tersalin',
+      copyUrlLabel: 'Salin URL webhook',
+      copyTokenLabel: 'Salin verify token',
+      copiedUrl: 'URL webhook tersalin.',
+      copiedToken: 'Verify token tersalin.',
+      fieldsTitle: 'Langganan field ini',
+      fieldsHint:
+        'Setelah verifikasi, di daftar Kolom webhook klik Berlangganan pada ketiga field ini.',
+      notes: [
+        {
+          title: 'Beberapa nomor dalam satu aplikasi Meta',
+          body: 'Meta hanya punya satu Callback URL per aplikasi. Pakai App Secret yang sama di semua channel nomor itu; pesan tetap diarahkan ke channel yang benar. Nomor dari aplikasi Meta lain memakai URL-nya sendiri.',
+        },
+        {
+          title: 'Verifikasi berhasil, tetapi pesan tidak masuk?',
+          body: 'Biasanya App Secret di sini tidak sama dengan milik aplikasi Meta, dan banner keamanan menampilkan “Webhook WhatsApp ditolak berulang”. Ganti App Secret di Kredensial Meta pada halaman nomor.',
+        },
+      ],
+      warningTitle: 'URL ini belum bisa dipakai Meta',
+      proofTitle: 'Aktifkan juga “Require App Secret Proof”',
+      proofBody: (product: string) =>
+        `Di Pengaturan Aplikasi → Lanjutan. ${product} selalu mengirim appsecret_proof, jadi token yang bocor tidak bisa dipakai tanpa App Secret.`,
+      rotatedAt: (time: string) => `Dibuat ${time}`,
+      loadFailedTitle: 'Webhook belum bisa dimuat',
+      rotate: 'Buat ulang verify token',
+      rotating: 'Membuat…',
+      rotateTitle: 'Buat ulang verify token?',
+      rotateBody:
+        'Verify token lama langsung tidak berlaku. Setelah ini, tempel verify token baru di Meta (WhatsApp → Konfigurasi → Webhook → Edit).',
+      rotateConfirm: 'Buat ulang',
+      rotateCancel: 'Batal',
+      rotated:
+        'Verify token baru sudah dibuat. Tempel di Meta (WhatsApp → Konfigurasi → Webhook → Edit), lalu tekan Verifikasi dan simpan.',
+    },
+
+    wizard: {
+      title: 'Tambah nomor WhatsApp',
+      stepsLabel: 'Langkah menghubungkan nomor',
+      stepOf: (step: number, total: number) => `Langkah ${step} dari ${total}`,
+      stepCurrent: 'langkah sekarang',
+      stepDone: 'selesai',
+      next: 'Lanjut',
+      back: 'Kembali',
+      save: 'Simpan channel',
+      saving: 'Menyimpan…',
+      finish: 'Selesai',
+      savedNote: (name: string) =>
+        `Channel ${name} sudah tersimpan. Isian sebelumnya bisa diubah dari halaman nomor.`,
+      saveNote: 'Setelah disimpan, channel tercatat dengan status Belum dites.',
+      confirmTitle: 'Simpan channel baru?',
+      confirmBody:
+        'Token dan App Secret disimpan terenkripsi di server. Chat dari nomor ini akan masuk ke inbox timmu.',
+      leave: {
+        title: 'Tinggalkan wizard?',
+        body: 'Isian yang belum disimpan, termasuk token dan App Secret, akan hilang.',
+        stay: 'Tetap di sini',
+        leave: 'Tinggalkan',
+      },
+      steps: {
+        business: {
+          nav: 'Meta Business',
+          title: 'Siapkan Meta Business',
+          intro:
+            'Nomor dihubungkan lewat portofolio bisnis perusahaanmu di Meta. Pastikan aksesnya siap dulu.',
+          items: [
+            {
+              text: 'Masuk ke Meta Business Suite dengan akun yang menjadi admin portofolio bisnis perusahaan.',
+              link: { label: 'Buka business.facebook.com', href: 'https://business.facebook.com/' },
+            },
+            {
+              text: 'Disarankan sudah verifikasi bisnis (Pengaturan Bisnis → Pusat Keamanan). Tanpa verifikasi, batas pesan dan nama tampilan lebih terbatas.',
+              link: {
+                label: 'Buka Pusat Keamanan',
+                href: 'https://business.facebook.com/settings/security',
+              },
+            },
+          ],
+        },
+        app: {
+          nav: 'Aplikasi Meta',
+          title: 'Buat aplikasi Meta',
+          intro: 'Aplikasi Meta menjadi jalur resmi Cloud API untuk nomor ini.',
+          items: [
+            {
+              text: 'Buka Aplikasi Saya di Meta for Developers, lalu tekan Buat Aplikasi.',
+              link: {
+                label: 'Buka developers.facebook.com',
+                href: 'https://developers.facebook.com/apps/',
+              },
+            },
+            { text: 'Pilih tipe Business, lalu hubungkan ke portofolio bisnis perusahaanmu.' },
+            { text: 'Di dasbor aplikasi, tambahkan produk WhatsApp.' },
+          ],
+        },
+        number: {
+          nav: 'Pilih nomor',
+          title: 'Pilih nomor',
+          intro: 'Tentukan nomor yang dipakai timmu untuk membalas pelanggan.',
+          items: [
+            { text: 'Untuk uji coba, pakai nomor tes dari Meta di WhatsApp → Konfigurasi API.' },
+            {
+              text: 'Untuk produksi, tambahkan nomor sendiri. Nomor itu tidak boleh sedang aktif di aplikasi WhatsApp atau WhatsApp Business di HP.',
+            },
+            {
+              text: 'Verifikasi nomor dengan kode OTP, lalu atur PIN verifikasi dua langkah untuk nomor itu.',
+            },
+          ],
+        },
+        ids: {
+          nav: 'Salin ID',
+          title: 'Salin ID nomor',
+          intro:
+            'Buka WhatsApp → Konfigurasi API di dasbor aplikasi, pilih nomornya, lalu salin dua ID-nya ke sini.',
+          items: [],
+          name: 'Nama channel',
+          namePlaceholder: 'Contoh: CS Utama',
+          nameHint: 'Nama untuk timmu di inbox. Tidak tampil ke pelanggan.',
+          phoneNumberId: 'Phone Number ID',
+          phoneNumberIdHint: 'Angka di bawah nomor yang dipilih, contoh: 106540352242922.',
+          wabaId: 'WhatsApp Business Account ID',
+          wabaIdHint: 'Angka di halaman yang sama, di bawah nama akun WhatsApp Business.',
+        },
+        token: {
+          nav: 'Token permanen',
+          title: 'Buat token permanen',
+          intro:
+            'Token sementara di Konfigurasi API kedaluwarsa dalam 24 jam. Buat token permanen dari Pengguna Sistem.',
+          items: [
+            {
+              text: 'Buka Pengaturan Bisnis → Pengguna → Pengguna Sistem, lalu tambah pengguna sistem dengan peran Admin.',
+              link: {
+                label: 'Buka Pengguna Sistem',
+                href: 'https://business.facebook.com/settings/system-users',
+              },
+            },
+            {
+              text: 'Tetapkan aset: aplikasi tadi dan akun WhatsApp, masing-masing dengan kontrol penuh.',
+            },
+            {
+              text: 'Buat token untuk aplikasi itu dengan masa berlaku “Tidak pernah” dan izin `whatsapp_business_messaging` serta `whatsapp_business_management`.',
+            },
+          ],
+          label: 'Token System User',
+          hint: 'Disimpan terenkripsi di server dan tidak pernah ditampilkan lagi.',
+        },
+        secret: {
+          nav: 'App Secret',
+          title: 'Salin App Secret',
+          intro: 'App Secret dipakai untuk memastikan pesan yang masuk benar-benar dari Meta.',
+          items: [
+            { text: 'Di dasbor aplikasi, buka Pengaturan Aplikasi → Dasar.' },
+            {
+              text: 'Tekan Tampilkan di samping App Secret, masukkan password Facebook-mu, lalu salin.',
+            },
+          ],
+          label: 'App Secret',
+          hint: 'Biasanya 32 karakter huruf dan angka. Disimpan terenkripsi.',
+        },
+        webhook: {
+          nav: 'Webhook',
+          title: 'Pasang webhook',
+          intro:
+            'Alamat dan verify token ini dibuat khusus untuk channel ini. Di WhatsApp → Konfigurasi → Webhook → Edit, tempel URL webhook ke Callback URL dan verify token ke Verify token, lalu tekan Verifikasi dan simpan.',
+          items: [],
+        },
+        test: {
+          nav: 'Tes koneksi',
+          title: 'Tes koneksi',
+          intro:
+            'Tes memeriksa token, App Secret, Phone Number ID, dan WABA ID langsung ke Meta, lalu mengambil data nomornya.',
+          items: [],
+          failedHint:
+            'Perbaiki penyebabnya, lalu tes lagi. Isian yang salah bisa diganti dari halaman nomor setelah wizard ini.',
+        },
+        billing: {
+          nav: 'Pembayaran',
+          title: 'Tambahkan metode pembayaran',
+          intro:
+            'Template dan percakapan di luar kuota gratis ditagih Meta. Tanpa metode pembayaran, pengirimannya ditolak.',
+          items: [
+            {
+              text: 'Buka WhatsApp Manager → Pengaturan akun → Metode pembayaran.',
+              link: {
+                label: 'Buka WhatsApp Manager',
+                href: 'https://business.facebook.com/wa/manage/home/',
+              },
+            },
+            { text: 'Tambahkan kartu atau metode pembayaran lain yang tersedia untuk akunmu.' },
+          ],
+          done: 'Kualitas nomor, profil bisnis, dan kredensial bisa dikelola dari halaman nomor.',
+        },
+      },
+    },
+
+    detail: {
+      title: 'Nomor WhatsApp',
+      notFoundTitle: 'Channel tidak ditemukan',
+      notFoundBody: 'Mungkin sudah dihapus, atau alamatnya salah.',
+      backToList: 'Kembali ke Channel',
+      loadFailedTitle: 'Channel belum bisa dimuat',
+      untested:
+        'Belum dites. Tekan “Tes koneksi” untuk memeriksa kredensial dan mengambil data nomor dari Meta.',
+      lastFailedTitle: 'Tes terakhir gagal',
+      disabledTitle: 'Channel nonaktif',
+      disabledBody:
+        'Chat dari nomor ini tidak masuk ke inbox, dan timmu tidak bisa membalas lewat nomor ini. Kredensial tetap tersimpan.',
+      enable: 'Aktifkan lagi',
+      enabling: 'Mengaktifkan…',
+      enabled: 'Channel aktif lagi.',
+      disabledDone: 'Channel dinonaktifkan.',
+    },
+
+    rename: {
+      title: 'Nama channel',
+      hint: 'Nama untuk timmu di inbox. Tidak tampil ke pelanggan.',
+      label: 'Nama di inbox',
+      save: 'Simpan nama',
+      saving: 'Menyimpan…',
+      saved: 'Nama channel tersimpan.',
+      unchanged: 'Nama masih sama dengan yang tersimpan.',
+    },
+
+    credentials: {
+      title: 'Kredensial Meta',
+      hint: 'Dipakai server untuk memanggil Cloud API. Token dan App Secret tidak pernah ditampilkan lagi.',
+      phoneNumberId: 'Phone Number ID',
+      wabaId: 'WABA ID',
+      token: 'Token System User',
+      appSecret: 'App Secret',
+      updatedAt: 'Terakhir diganti',
+      stored: 'Tersimpan',
+      change: 'Ganti kredensial',
+      cancel: 'Batal',
+      formHint:
+        'Isi hanya yang ingin diganti. Token dan App Secret yang dikosongkan tetap memakai yang tersimpan.',
+      keepToken: (hint: string) => `Tersimpan (${hint}). Kosongkan untuk tetap memakai token ini.`,
+      keepSecret: (hint: string) =>
+        `Tersimpan (${hint}). Kosongkan untuk tetap memakai App Secret ini.`,
+      keepNoHint: 'Tersimpan. Kosongkan untuk tetap memakai yang ini.',
+      save: 'Simpan kredensial',
+      saving: 'Menyimpan…',
+      unchanged: 'Belum ada yang diganti. Ubah salah satu isian dulu.',
+      confirmTitle: 'Ganti kredensial channel?',
+      confirmBody: 'Status koneksi kembali ke Belum dites sampai kamu menekan “Tes koneksi” lagi.',
+      saved: 'Kredensial diganti. Tekan “Tes koneksi” untuk memastikan semuanya cocok.',
+    },
+
+    access: {
+      title: 'Akses channel',
+      disableHint:
+        'Nonaktifkan bila nomor ini sedang tidak dipakai. Kredensial tetap tersimpan dan bisa diaktifkan lagi kapan saja.',
+      enableHint: 'Aktifkan lagi supaya chat dari nomor ini masuk ke inbox.',
+      disable: 'Nonaktifkan channel',
+      disabling: 'Menonaktifkan…',
+      disableTitle: 'Nonaktifkan channel ini?',
+      disableBody:
+        'Chat dari nomor ini berhenti masuk ke inbox, dan timmu tidak bisa membalas lewat nomor ini sampai diaktifkan lagi.',
+      disableConfirm: 'Nonaktifkan',
+      disableCancel: 'Batal',
+      deleteTitleCard: 'Hapus channel',
+      deleteHint:
+        'Token, App Secret, dan verify token dimusnahkan dari server. Nomor yang sama boleh ditambahkan lagi nanti.',
+      delete: 'Hapus channel',
+      deleteTitle: (name: string) => `Hapus channel ${name}?`,
+      deleteBody:
+        'Kredensial dimusnahkan dan channel hilang dari semua daftar. Cabut juga webhook-nya di Meta (WhatsApp → Konfigurasi → Webhook) supaya Meta berhenti mengirim pesan ke alamat ini.',
+      deleteConfirm: 'Hapus channel',
+      deleting: 'Menghapus…',
+    },
+
+    profile: {
+      title: 'Profil bisnis',
+      hint: 'Tampil ke semua pelanggan di info kontak WhatsApp. Perubahan langsung dikirim ke Meta.',
+      about: 'Info',
+      aboutHint: 'Kalimat singkat di bawah nama. Tidak boleh kosong.',
+      address: 'Alamat',
+      description: 'Deskripsi',
+      email: 'Email',
+      emailPlaceholder: 'Contoh: cs@perusahaan.co.id',
+      websites: 'Website',
+      website: (index: number) => `Website ${index}`,
+      websitePlaceholder: 'https://perusahaan.co.id',
+      websitesHint: 'Paling banyak 2 alamat, diawali https://.',
+      vertical: 'Kategori',
+      verticalNone: 'Belum dipilih',
+      verticalUnknown: (value: string) => `${value} (dari Meta)`,
+      photo: 'Foto profil diubah lewat WhatsApp Manager untuk sementara.',
+      photoLink: 'Buka WhatsApp Manager',
+      counter: (used: number, max: number) => `${used}/${max} karakter`,
+      save: 'Simpan profil',
+      saving: 'Menyimpan…',
+      saved: 'Profil bisnis tersimpan di Meta.',
+      savedNoReload: 'Tersimpan. Muat ulang untuk melihat profil terbaru.',
+      reload: 'Muat ulang',
+      unchanged: 'Belum ada yang diubah.',
+      confirmTitle: 'Simpan profil bisnis?',
+      confirmBody:
+        'Info, alamat, deskripsi, email, dan website langsung tampil ke semua pelanggan yang membuka info kontak nomor ini.',
+      lockedTitle: 'Profil bisnis dibatasi sementara',
+      loadFailedTitle: 'Profil bisnis belum bisa dimuat',
+      needsConnection: 'Profil bisnis bisa dilihat dan diubah setelah tes koneksi berhasil.',
+      fetchedAt: (time: string) => `Dibaca dari Meta ${time}`,
+    },
   },
 
   settingsMenu: {

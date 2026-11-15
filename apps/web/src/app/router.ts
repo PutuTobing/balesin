@@ -21,6 +21,7 @@ import {
 } from '../features/auth/AuthPending';
 import { LoginSkeleton } from '../features/auth/LoginSkeleton';
 import { parseLoginSearch } from '../features/auth/login-search';
+import { ChannelDetailSkeleton, ChannelsSkeleton } from '../features/channels/ChannelsSkeleton';
 import { EmailSettingsSkeleton } from '../features/email-settings/EmailSettingsSkeleton';
 import { InboxPage } from '../features/inbox/InboxPage';
 import { InboxSkeleton } from '../features/inbox/InboxSkeleton';
@@ -33,9 +34,13 @@ import { TeamUserSkeleton } from '../features/team-user/TeamUserSkeleton';
 import { AuditSkeleton } from '../features/audit/AuditSkeleton';
 import { parseAuditSearch } from '../features/audit/audit-search';
 import { sessionCan } from '../features/auth/session';
+import { isChannelId } from '../features/channels/channel-status';
 import { EnrollmentSkeleton } from '../features/two-factor/EnrollmentSkeleton';
 import { t } from '../i18n/id';
 import {
+  channelQuery,
+  channelSettingsQuery,
+  channelWebhookQuery,
   emailSettingsQuery,
   emailVerificationQuery,
   invitationsQuery,
@@ -254,6 +259,54 @@ const emailSettingsRoute = createRoute({
 });
 
 /**
+ * Pengaturan → Channel: izin `channels.manage` (Owner, Admin); peran lain dialihkan ke Pengaturan.
+ * Data yang gagal dimuat tidak menggagalkan rute: halamannya sendiri menampilkan gagal + coba lagi.
+ */
+const channelsRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/channel',
+  staticData: { page: { title: t.channels.title, parent: 'settings' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'channels.manage'),
+  loader: ({ context }) =>
+    context.queryClient.ensureQueryData(channelSettingsQuery).catch(() => null),
+  component: lazyRouteComponent(() => import('../features/channels/ChannelsPage'), 'ChannelsPage'),
+  pendingComponent: ChannelsSkeleton,
+});
+
+/** Channel → Tambah nomor (wizard). Rute statis ini menang atas `$channelId`. */
+const channelWizardRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/channel/tambah',
+  staticData: { page: { title: t.channels.wizard.title, parent: 'channels' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'channels.manage'),
+  loader: ({ context }) =>
+    context.queryClient.ensureQueryData(channelSettingsQuery).catch(() => null),
+  component: lazyRouteComponent(
+    () => import('../features/channels/ChannelWizardPage'),
+    'ChannelWizardPage',
+  ),
+  pendingComponent: ChannelsSkeleton,
+});
+
+/** Channel → halaman nomor. */
+const channelRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/channel/$channelId',
+  staticData: { page: { title: t.channels.detail.title, parent: 'channels' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'channels.manage'),
+  loader: async ({ context, params }) => {
+    const { queryClient } = context;
+    if (!isChannelId(params.channelId)) return;
+    void queryClient.prefetchQuery(channelWebhookQuery(params.channelId));
+    await queryClient
+      .ensureQueryData(channelQuery(params.channelId, queryClient))
+      .catch(() => null);
+  },
+  component: lazyRouteComponent(() => import('../features/channels/ChannelPage'), 'ChannelPage'),
+  pendingComponent: ChannelDetailSkeleton,
+});
+
+/**
  * Pengaturan → Tim: izin `team.invite` (undangan) dan/atau `team.manage` (daftar anggota) — Owner,
  * Admin; peran lain dialihkan ke Pengaturan.
  */
@@ -360,6 +413,9 @@ const appChildren = [
   reportsRoute,
   settingsRoute,
   emailSettingsRoute,
+  channelsRoute,
+  channelWizardRoute,
+  channelRoute,
   teamRoute,
   teamUserRoute,
   auditRoute,

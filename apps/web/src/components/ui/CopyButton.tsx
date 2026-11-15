@@ -9,6 +9,11 @@ interface CopyButtonProps {
   /** Teks yang disalin ke clipboard. */
   text: string;
   label: string;
+  /**
+   * Nama tombol untuk pembaca layar bila ada beberapa tombol Salin di satu layar (mis. "Salin URL
+   * webhook"). Harus diawali label yang terlihat (WCAG 2.5.3).
+   */
+  ariaLabel?: string;
   /** Label sesaat setelah berhasil (mis. "Tersalin"). */
   copiedLabel: string;
   /** Diumumkan pembaca layar sekali setelah berhasil. */
@@ -29,6 +34,7 @@ interface CopyButtonProps {
 export function CopyButton({
   text,
   label,
+  ariaLabel,
   copiedLabel,
   announcement,
   size,
@@ -62,6 +68,7 @@ export function CopyButton({
         size={size}
         variant={variant}
         className={className}
+        aria-label={copied ? undefined : ariaLabel}
         onClick={() => void copy()}
       >
         <Icon icon={copied ? Check : Copy} size={16} />

@@ -74,7 +74,10 @@ export function SecurityBanner() {
                 formatDateTimeInline(latest.occurredAt),
               )
             : copy.latest(
-                SECURITY_EVENT_LABELS[latest.kind],
+                latest.kind === 'webhook_signature_failed' &&
+                  typeof latest.details.name === 'string'
+                  ? copy.onChannel(SECURITY_EVENT_LABELS[latest.kind], latest.details.name)
+                  : SECURITY_EVENT_LABELS[latest.kind],
                 formatDateTimeInline(latest.occurredAt),
                 latest.actor
                   ? { name: latest.actor.name, role: USER_ROLE_LABELS[latest.actor.role] }

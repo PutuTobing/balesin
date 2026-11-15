@@ -96,6 +96,19 @@
   cursor: not-allowed;
 }
 
+/* Teks berbaris: tinggi mengikuti isi (bukan tinggi kontrol satu baris). */
+.textareaControl {
+  height: auto;
+}
+
+.textarea {
+  font-family: var(--font-sans);
+  min-height: calc(var(--space-24) * 4);
+  padding: var(--space-8) var(--space-12);
+  line-height: var(--leading-text);
+  resize: vertical;
+}
+
 .selectControl {
   padding-right: var(--space-4);
 }
@@ -150,6 +163,10 @@
 @media (max-width: 640px), (pointer: coarse) {
   .control {
     height: var(--size-touch);
+  }
+
+  .textareaControl {
+    height: auto;
   }
 
   .reveal {

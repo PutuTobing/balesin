@@ -1,0 +1,827 @@
+/*
+ * Pengaturan → Channel: daftar nomor, wizard tambah nomor, halaman nomor. Kartu mengikuti
+ * halaman Pengaturan lain (lebar, garis, jarak) supaya terasa satu produk.
+ */
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  width: 100%;
+  max-width: 44rem;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding: var(--space-24);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.cardHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Judul kartu + aksi di kanan (desktop); aksi turun ke bawah judul di HP. */
+.cardHeadRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-12) var(--space-16);
+}
+
+.cardHeadRow > .cardHead {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.cardTitle {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.cardTitle:focus,
+.result:focus {
+  outline: none;
+}
+
+.hint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8) var(--space-12);
+}
+
+.note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.noteIcon {
+  flex: none;
+  margin-top: 1px;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+  overflow-wrap: anywhere;
+}
+
+/* Beberapa paragraf di dalam kotak pesan. */
+.paragraphs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Pesan berhasil kecil di samping tombol simpan. */
+.savedNote {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--success-ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+/* ---------- Fakta (label kecil + nilai) ---------- */
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-16) var(--space-24);
+  margin: 0;
+}
+
+.factsDivided {
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--line);
+}
+
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.factLabel {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.factValue {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--text-14);
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+
+.factSub {
+  display: block;
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+/* ---------- Daftar channel ---------- */
+
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12) var(--space-16);
+}
+
+.sectionHead > .cardHead {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+/* Baris merapat ke tepi kartu, dipisah garis (pola menu Pengaturan). */
+.card .channelList {
+  margin: 0 calc(var(--space-24) * -1) calc(var(--space-24) * -1);
+  border-top: 1px solid var(--line);
+}
+
+.channelList li + li {
+  border-top: 1px solid var(--line);
+}
+
+.channelLink {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-12) var(--space-16);
+  min-height: 4.5rem;
+  padding: var(--space-16) var(--space-24);
+  color: var(--ink);
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.channelList li:last-child .channelLink {
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+}
+
+.channelLink:hover {
+  background: var(--surface-2);
+  text-decoration: none;
+}
+
+.channelLink:focus-visible {
+  outline-offset: -2px;
+}
+
+.channelIcon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--size-control);
+  height: var(--size-control);
+  border-radius: var(--radius-input);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.channelIconOff {
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.channelText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.channelName {
+  overflow: hidden;
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channelMeta {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channelBadges {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-4);
+}
+
+.smallBadge {
+  font-size: var(--text-13);
+}
+
+.chevron {
+  color: var(--ink-2);
+}
+
+/* ---------- Langkah panduan (lingkaran nomor, tautan resmi) ---------- */
+
+.guide {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.guideItem {
+  display: flex;
+  gap: var(--space-12);
+  color: var(--ink);
+  font-size: var(--text-14);
+  counter-increment: step;
+}
+
+.guideItem::before {
+  content: counter(step);
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--space-24);
+  height: var(--space-24);
+  border-radius: var(--radius-pill);
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-bold);
+}
+
+.guideBody {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  min-width: 0;
+  padding-top: 1px;
+  text-wrap: pretty;
+}
+
+/*
+ * Tautan sebaris: bila labelnya patah dua baris, ikon tetap menempel di kata terakhir.
+ * Padding atas-bawah membuat satu baris setinggi kontrol (36px, 44px di HP) sebagai target sentuh.
+ */
+.guideLink {
+  display: inline-block;
+  padding-block: calc((var(--size-control) - var(--text-14) * var(--leading-text)) / 2);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-text);
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.linkIcon {
+  display: inline-block;
+  margin-left: var(--space-4);
+  vertical-align: text-bottom;
+}
+
+/* ---------- Wizard ---------- */
+
+.wizard {
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 44rem);
+  align-items: start;
+  gap: var(--space-24);
+  width: 100%;
+}
+
+.stepNav {
+  position: sticky;
+  top: 0;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stepButton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  width: 100%;
+  min-height: var(--size-control);
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  text-align: left;
+}
+
+button.stepButton:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.stepItem[data-state='current'] .stepButton {
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+}
+
+.stepItem[data-state='done'] .stepButton {
+  color: var(--ink);
+}
+
+.stepMarker {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--space-24);
+  height: var(--space-24);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-bold);
+}
+
+.stepItem[data-state='current'] .stepMarker {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.stepItem[data-state='done'] .stepMarker {
+  border-color: var(--success);
+  background: var(--success);
+  color: var(--on-primary);
+}
+
+.stepPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-24);
+}
+
+.stepHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.stepCount {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.stepTitle {
+  font-size: var(--text-20);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-title);
+}
+
+.stepTitle:focus {
+  outline: none;
+}
+
+.stepIntro {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  text-wrap: pretty;
+}
+
+/* Nomor langkah selalu ada; bilah kemajuan hanya di HP/tablet (desktop punya daftar langkah). */
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.progressBars {
+  display: none;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.progressBar {
+  height: var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--line);
+}
+
+.progressBar[data-on] {
+  background: var(--primary);
+}
+
+.fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.wizardActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--line);
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* ---------- Webhook ---------- */
+
+.copyRows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.copyRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.copyLabel {
+  color: var(--ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.copyBox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.copyValue {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--size-control);
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+  line-height: var(--leading-text);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.copyMeta {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+.fieldChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fieldChip {
+  padding: var(--space-4) var(--space-8);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+}
+
+.subSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.subTitle {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+/* ---------- Ringkasan nomor ---------- */
+
+.summaryHead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-16);
+}
+
+.summaryIcon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--space-48);
+  height: var(--space-48);
+  border-radius: var(--radius-card);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.summaryText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.summaryName {
+  font-size: var(--text-20);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-title);
+  overflow-wrap: anywhere;
+}
+
+.summaryNumber {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+}
+
+.summaryBadges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-16);
+  min-height: var(--space-24);
+}
+
+.warnings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ---------- Form di kartu ---------- */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-16);
+}
+
+.inlineForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding: var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--bg);
+}
+
+.renameRow {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-12);
+}
+
+.renameRow > :first-child {
+  flex: 1;
+}
+
+.formFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-8) var(--space-16);
+}
+
+.formFooterStart {
+  justify-content: flex-start;
+}
+
+.dangerZone {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12) var(--space-16);
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--line);
+}
+
+.dangerZone > div {
+  display: flex;
+  flex: 1 1 18rem;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.dangerTitle {
+  color: var(--danger-ink);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.photoNote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-12);
+  padding: var(--space-12) var(--space-16);
+  border-radius: var(--radius-input);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+/* ---------- Kerangka memuat ---------- */
+
+.skeletonTitle {
+  width: 9rem;
+  height: var(--space-16);
+}
+
+.skeletonHint {
+  width: 16rem;
+  max-width: 100%;
+  height: var(--space-12);
+}
+
+.skeletonIcon {
+  width: var(--size-control);
+  height: var(--size-control);
+}
+
+.skeletonBigIcon {
+  width: var(--space-48);
+  height: var(--space-48);
+  border-radius: var(--radius-card);
+}
+
+.skeletonName {
+  width: 10rem;
+  height: var(--space-16);
+}
+
+.skeletonBigName {
+  width: 12rem;
+  height: var(--space-24);
+}
+
+.skeletonMeta {
+  width: 8rem;
+  height: var(--space-12);
+}
+
+.skeletonBadge {
+  width: 6rem;
+  height: var(--space-16);
+}
+
+.skeletonValue {
+  width: 7rem;
+  height: var(--space-16);
+}
+
+.skeletonButton {
+  width: 8rem;
+  height: var(--size-control);
+}
+
+.skeletonInput {
+  width: 100%;
+  height: var(--size-control);
+}
+
+.skeletonLabel {
+  width: 5rem;
+  height: var(--space-12);
+}
+
+.skeletonText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+@media (max-width: 1023px) {
+  .wizard {
+    grid-template-columns: minmax(0, 44rem);
+  }
+
+  .stepNav {
+    display: none;
+  }
+
+  .progressBars {
+    display: grid;
+  }
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: var(--space-16);
+  }
+
+  .card .channelList {
+    margin: 0 calc(var(--space-16) * -1) calc(var(--space-16) * -1);
+  }
+
+  /* HP: status turun ke bawah nama, supaya nomor tidak terpotong. */
+  .channelLink {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: var(--space-8) var(--space-12);
+    padding: var(--space-12) var(--space-16);
+  }
+
+  .channelBadges {
+    grid-column: 2;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-4) var(--space-16);
+  }
+
+  .chevron {
+    display: none;
+  }
+
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .renameRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .guideLink {
+    padding-block: calc((var(--size-touch) - var(--text-14) * var(--leading-text)) / 2);
+  }
+
+  .copyBox {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .summaryHead {
+    gap: var(--space-12);
+  }
+}

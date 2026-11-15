@@ -160,6 +160,29 @@ export function ReportsIllustration() {
   );
 }
 
+/** Channel: HP dengan chat masuk, tersambung garis putus-putus ke kotak inbox. */
+export function ChannelIllustration() {
+  return (
+    <Frame>
+      <rect x={14} y={10} width={52} height={100} rx={10} className={styles.card} />
+      <rect x={32} y={18} width={16} height={4} rx={2} className={styles.soft} />
+      <path d={bubblePath(22, 34, 36, 18, 'left')} className={styles.soft} />
+      <path d={bubblePath(28, 58, 30, 16, 'right')} className={styles.tint} />
+      <path d={bubblePath(22, 80, 28, 16, 'left')} className={styles.soft} />
+      <path d="M70 60C86 60 84 42 100 42" className={styles.link} />
+      <circle cx={70} cy={60} r={3} className={styles.node} />
+      <rect x={100} y={22} width={48} height={76} rx={10} className={styles.card} />
+      <circle cx={114} cy={40} r={6} className={styles.tint} />
+      <Bar x={124} y={37.5} w={16} />
+      <circle cx={114} cy={60} r={6} className={styles.soft} />
+      <Bar x={124} y={57.5} w={12} className={styles.soft} />
+      <circle cx={114} cy={80} r={6} className={styles.soft} />
+      <Bar x={124} y={77.5} w={14} className={styles.soft} />
+      <circle cx={144} cy={24} r={4} className={styles.accent} />
+    </Frame>
+  );
+}
+
 /** Tidak ditemukan: bingkai kosong dan kaca pembesar. */
 export function NotFoundIllustration() {
   return (

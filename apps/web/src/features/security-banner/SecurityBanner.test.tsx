@@ -171,6 +171,25 @@ describe('banner peringatan keamanan', () => {
     );
   });
 
+  it('webhook ditolak berulang: tanpa pelaku, menyebut channel; tautan ke aksi auditnya', async () => {
+    const rejected = event({
+      kind: 'webhook_signature_failed',
+      actor: null,
+      subject: null,
+      details: { name: 'CS Utama', phoneNumberId: '106540352242922', failures: 10 },
+    });
+    expect(auditSearchFor([rejected], emptySecuritySummary.since)).toMatchObject({
+      action: 'channel.webhook_signature_rejected',
+      targetType: 'channel',
+    });
+    await renderApp('/inbox', { securitySummary: summary([rejected]) });
+    const banner = await screen.findByRole('region', { name: copy.title(1) });
+    expect(banner).toHaveTextContent(
+      /Terbaru: Webhook WhatsApp ditolak berulang di channel CS Utama, \S.*\./,
+    );
+    expect(banner).not.toHaveTextContent('oleh');
+  });
+
   it('anggota baru bergabung: kalimat menyebut anggota itu, tautan ke undangan diterima', async () => {
     const joined = event({
       kind: 'member_joined',
