@@ -143,3 +143,23 @@ ketersediaan, bukan kebocoran.
 | Sama, `it.fails` → `it` (salinan sementara, sudah dihapus) | gagal tepat di asersi R1 (draf tampil; media 0 permintaan) |
 | `apps/web`: `vitest run src/features/inbox src/app` | 100 lulus + 2 `it.fails`, 7 berkas |
 | ESLint + `tsc --noEmit` (apps/web) untuk berkas tes baru | bersih |
+
+---
+
+## Putaran 2 — verifikasi perbaikan commit `78a46dc`
+
+### Putusan putaran 2: AMAN
+
+R1, R2, dan Info 1 tertutup. Kedua tes R1 di `security-review-fase2-composer-web.test.tsx` kini `it` dan lulus. Diff
+hanya menghapus `.fails`, komentar "saat ini …", dan merapikan indentasi; asersi `queryByText(DRAFT)).toBeNull()` dan
+`toHaveLength(1)` tetap.
+
+| # | Status | Bukti |
+|---|---|---|
+| R1 cache dibuang saat keluar | ✅ | `lib/api/queries.ts`: `endSession` DAN `clearAppData` memanggil `resetOutbox()` (pratinjau dicabut) + `clearMediaCache()`. Jalur logout, sesi habis (401), dan 2FA berakhir melewati keduanya. Tes R1 ×2 lulus |
+| R2 batas memori | ✅ | `CACHE_MAX_BYTES` = 50 MB. Blob > 50 MB tidak di-cache. Yang terlama dibuang sampai jumlah ≤ 40 DAN total ≤ 50 MB. Unduhan dokumen (`downloadMessageMedia`) tidak memakai cache |
+| Info 1 Blob daftar putih | ✅ | `safeBlob`: tipe di luar daftar (gambar raster, audio, video yang didukung) → `application/octet-stream`. Parameter tipe dibuang, huruf kecil. Penjaga baru di `security-review-fase2-penanganan-template-web.test.tsx` |
+| Info 4 folder media E2E | ✅ | `start-backend.mjs` `resetMediaDir` (lihat Info 1 laporan penanganan & template web untuk pemeriksaan `startsWith`) |
+
+Info 2 (pratinjau lampiran yang BELUM dikirim tidak dicabut saat composer dilepas) tidak diubah. Itu hanya object URL
+berkas lokal milik pengguna sendiri, jadi kebocoran memorinya kecil.
