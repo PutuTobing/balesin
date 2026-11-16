@@ -126,3 +126,15 @@ header CSRF). Ubah `it.fails` R1 menjadi `it`.
 | `apps/api`: `vitest run src/modules/contacts src/modules/notifications src/modules/quick-replies src/modules/channels src/modules/inbox src/rbac-matrix src/modules/audit` | 142 lulus + 1 `it.fails`, 15 berkas |
 | ESLint + `tsc --noEmit` (apps/api) untuk berkas tes baru | bersih |
 | `pnpm audit` | 2 moderate dev-only, tidak ada yang baru |
+
+---
+
+## Putaran 2 — verifikasi perbaikan (commit `2f2d311`)
+
+| Butir | Bukti | Status |
+|---|---|---|
+| R1 CSRF ekspor kontak | `apps/api/src/modules/contacts/contacts.routes.ts:136` kini `requireCsrf: true`. Tes `security-review-fase2-hapus-ekspor.integration.test.ts:150` diubah dari `it.fails` ke `it` dengan asersi `403` yang sama, dan lulus | **Tertutup** |
+| Info 2: purge global | `contacts.service.ts:146-149,412` memanggil `purgeMedia(outcome.mediaFileIds)` → `outbound.purgeMediaFiles` (`outbound.service.ts:959-966`) yang hanya memproses ID media milik kontak yang dihapus (`inArray`, belum `deletedAt`) | **Tertutup** |
+| Info 1: `conversation.removed` ke semua `inbox.view` | `contacts.service.ts:425` menyertakan `previousAssigneeUserId`; `apps/api/src/modules/realtime/inbox-stream.ts:135-141` memakainya sebagai `assigneeUserId`, sehingga saringan cakupan biasa berlaku (Teknisi lain tidak menerima ID) | **Tertutup** |
+
+Hasil: tes hapus/ekspor 3 lulus (tanpa `it.fails` tersisa). Putusan tetap **AMAN**.
