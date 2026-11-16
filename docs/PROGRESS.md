@@ -49,9 +49,20 @@
   Kontrak: `docs/KONTRAK-API-INBOX.md`.
 
 ## Sedang dikerjakan
-- **Fase 2 butir 5 — inbox real-time (backend)**: WebSocket (cek Origin, sesi cookie, putus saat
-  sesi dicabut), pub/sub Redis disaring per RBAC, hitungan per tab, filter jendela 24 jam, tandai
-  dibaca, sisa Rendah audit akhir Fase 1 (R1 CSRF, R5, F.11 RLS). Lalu frontend layar inbox.
+- **Fase 2 butir 5 — inbox real-time**: backend SELESAI (72b4fd2, 320ae51; security AMAN putaran 2,
+  `docs/security-reviews/2026-11-16-fase2-inbox-realtime.md`). **Web layar inbox dihentikan di
+  tengah jalan** (belum di-commit: `apps/web/src/features/inbox/**`, `AppShell.module.css`,
+  `SearchField.tsx`, `id.ts`, `endpoints.ts`, `test/fake-inbox.ts`, `test/fake-socket.ts`): daftar +
+  tab + hitungan, cari, filter, hitung mundur 24 jam, ruang chat baca-saja, panel kontak, klien WS.
+  Lanjutkan: frontend menuntaskan (pasang di halaman + AppShell, mock E2E/screenshot inbox, E2E
+  webhook → tampil) → root checks → commit → kritikus → QA.
+- **Fase 2 butir 6 — ruang chat (backend) dihentikan di awal** (belum di-commit: migrasi
+  `0014_ruang_chat_media.sql`, `schema/media-files.ts`, `schema/messages.ts`, `organizations.ts`,
+  `packages/shared/src/{outbound,inbox,errors,api-routes}.ts`, `core/meta/graph-client.ts`,
+  `apps/api/package.json` + lockfile). Lingkup: kirim teks/balas/reaksi/lokasi/media via worker,
+  jendela 24 jam di server, peta error Meta → Indonesia + kirim ulang, upload (magic bytes) & unduh
+  media (host Meta saja, `filename*` RFC 5987), fake Meta, kontrak di KONTRAK-API-INBOX. Sisipkan
+  3 Info realtime putaran 2 (userId di sinyal revoke, penjaga checkClients, terbit setelah commit).
 - Saran desain Channel terbuka (tidak menahan): S3 tautan channel di banner webhook, S10 ilustrasi
   per langkah wizard (BUTUH-TOBING #5), S11 nasib riwayat chat saat channel dihapus (putuskan di
   butir ruang chat), P4-S1 ruang kosong di bawah kartu terakhir.
