@@ -53,6 +53,26 @@ describe('parseInboxBusMessage', () => {
   });
 });
 
+describe('event panel detail (butir 8)', () => {
+  it('conversation.detail wajib bagian; tags.changed tanpa percakapan', () => {
+    const parse = (value: Record<string, unknown>) =>
+      parseInboxBusMessage(JSON.stringify({ v: 1, organizationId: ORG, ...value }));
+    expect(
+      parse({ type: 'conversation.detail', conversationId: CONV, section: 'notes' }),
+    ).toMatchObject({ section: 'notes' });
+    expect(parse({ type: 'tags.changed' })).toMatchObject({ type: 'tags.changed' });
+    for (const bad of [
+      { type: 'conversation.detail', conversationId: CONV },
+      { type: 'conversation.detail', conversationId: CONV, section: 'isi' },
+      { type: 'tags.changed', conversationId: CONV },
+      { type: 'conversation.updated' },
+      { type: 'message.status', messageId: MSG },
+    ]) {
+      expect(parse(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+});
+
 describe('penerbit', () => {
   it('menggabungkan event ganda dan menerbitkan ke channel berawalan', async () => {
     const published: Array<[string, string]> = [];

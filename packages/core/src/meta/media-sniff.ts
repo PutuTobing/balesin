@@ -127,6 +127,9 @@ export function officeZipAllowed(
       (name) =>
         name.endsWith('vbaproject.bin') ||
         name.endsWith('vbadata.xml') ||
+        // Objek OLE / ActiveX tersisip (`word/embeddings/oleObject1.bin`, paket berisi program —
+        // review ruang chat Info P2-3). Dokumen tersisip biasa (`.xlsx`, `.docx`) tetap boleh.
+        (/(^|\/)(embeddings|activex)\//.test(name) && name.endsWith('.bin')) ||
         /\.(exe|dll|bat|cmd|com|scr|js|vbs|ps1|msi|jar|apk)$/.test(name),
     )
   );

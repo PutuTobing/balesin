@@ -122,6 +122,11 @@ export function sendMessageJobId(messageId: string, attempt: number): string {
 export const MAINTENANCE_JOBS = {
   /** Mengosongkan payload `webhook_events` yang sudah selesai dan lebih tua dari retensi organisasi. */
   webhookPayloadRetention: 'webhook-payload-retention',
+  /**
+   * Klaim kirim yang macet (review ruang chat R5): pesan `pending` tanpa wamid yang klaimnya lebih
+   * tua dari `SEND_CLAIM_STALE_MS` → `delivery_unknown`.
+   */
+  staleSendClaims: 'stale-send-claims',
 } as const;
 export type MaintenanceJobName = (typeof MAINTENANCE_JOBS)[keyof typeof MAINTENANCE_JOBS];
 
@@ -129,6 +134,15 @@ export type MaintenanceJobName = (typeof MAINTENANCE_JOBS)[keyof typeof MAINTENA
 export const WEBHOOK_PAYLOAD_RETENTION_INTERVAL_MS = 60 * 60 * 1000;
 
 export const maintenanceJobPayloadSchema = z.strictObject({});
+
+/**
+ * Umur klaim kirim yang masih dianggap BERJALAN (review ruang chat R5): lebih lama dari batas waktu
+ * panggilan Meta. Job ganda (BullMQ stalled) yang menemukan klaim lebih muda dari ini dilewati —
+ * percobaan pertama dibiarkan selesai; klaim yang lebih tua ditandai `delivery_unknown`.
+ */
+export const SEND_CLAIM_STALE_MS = 2 * 60 * 1000;
+/** Selang pemeriksa klaim kirim macet. */
+export const STALE_SEND_CLAIMS_INTERVAL_MS = 60 * 1000;
 
 // ── Antrian `system` ────────────────────────────────────────────────────────
 

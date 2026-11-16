@@ -188,7 +188,7 @@ export const API_ROUTES = {
     reopen: `${API_PREFIX}/conversations/:conversationId/reopen`,
     /** GET — riwayat penanganan (tab "Log"). */
     events: `${API_PREFIX}/conversations/:conversationId/events`,
-    /** GET — agen yang bisa ditugaskan (`inbox.assign`). */
+    /** GET — daftar agen untuk saringan & penugasan (`inbox.assign`; Teknisi tidak). */
     agents: `${API_PREFIX}/inbox/agents`,
     /** GET (WebSocket) — event inbox real-time. Cookie sesi + `Origin` aplikasi wajib. */
     stream: `${API_PREFIX}/inbox/stream`,
@@ -202,8 +202,34 @@ export const API_ROUTES = {
     retry: `${API_PREFIX}/messages/:messageId/retry`,
     /** GET — unduh media pesan (CSRF: memakai jatah + menulis cache). */
     media: `${API_PREFIX}/messages/:messageId/media`,
-    /** GET — satu kontak. */
+    /** GET — satu kontak (`contacts.view`); PATCH — ubah nama/email/catatan/atribut (`contacts.manage`). */
     contact: `${API_PREFIX}/contacts/:contactId`,
+    /** POST — pasang tag ke kontak (`contacts.manage`, CSRF). */
+    contactTags: `${API_PREFIX}/contacts/:contactId/tags`,
+    /** DELETE — lepas tag dari kontak (`contacts.manage`, CSRF). */
+    contactTag: `${API_PREFIX}/contacts/:contactId/tags/:tagId`,
+    /** GET — catatan sesi (`inbox.view`); POST — tambah (`inbox.reply`, CSRF). */
+    notes: `${API_PREFIX}/conversations/:conversationId/notes`,
+    /** PATCH — ubah (penulis); DELETE — hapus (penulis / `inbox.notes.moderate`). */
+    note: `${API_PREFIX}/conversations/:conversationId/notes/:noteId`,
+    /** PUT — tandai pesan; DELETE — lepas tanda (`inbox.reply`, CSRF). */
+    star: `${API_PREFIX}/messages/:messageId/star`,
+  },
+  /** Master tag (butir 8): lihat = `inbox.view`; buat = `contacts.manage`; ubah/hapus = `settings.workspace.manage`. */
+  tags: {
+    /** GET — semua tag organisasi; POST — buat tag. */
+    list: `${API_PREFIX}/tags`,
+    /** PATCH — ganti nama/warna; DELETE — hapus (dilepas dari semua kontak). */
+    tag: `${API_PREFIX}/tags/:tagId`,
+  },
+  /** Quick reply `/` (butir 9): pakai = `inbox.reply`; kelola = `quick_replies.manage`. */
+  quickReplies: {
+    /** GET — daftar + cari (`inbox.reply`); POST — buat (`quick_replies.manage`). */
+    list: `${API_PREFIX}/quick-replies`,
+    /** PATCH — ubah; DELETE — hapus (`quick_replies.manage`). */
+    quickReply: `${API_PREFIX}/quick-replies/:quickReplyId`,
+    /** POST — isi variabel untuk percakapan + naikkan penghitung (`inbox.reply` + cakupan). */
+    use: `${API_PREFIX}/quick-replies/:quickReplyId/use`,
   },
 } as const;
 

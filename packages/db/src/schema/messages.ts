@@ -142,6 +142,9 @@ export const messages = pgTable(
      * PENULIS ASLI (pemilik kunci idempotensi).
      */
     lastSentByUserId: uuid('last_sent_by_user_id'),
+    /** Pesan ditandai (bintang) — dipakai bersama tim, satu tanda per pesan (butir 8). */
+    starredAt: timestamptz('starred_at'),
+    starredByUserId: uuid('starred_by_user_id'),
     /** Salinan lokal media (unggahan untuk pesan keluar / cache unduhan pesan masuk). */
     mediaFileId: uuid('media_file_id'),
     occurredAt: timestamptz('occurred_at').notNull(),
@@ -201,6 +204,19 @@ export const messages = pgTable(
       columns: [table.organizationId, table.lastSentByUserId],
       foreignColumns: [users.organizationId, users.id],
     }).onDelete('restrict'),
+    foreignKey({
+      name: 'messages_organization_id_starred_by_user_id_fk',
+      columns: [table.organizationId, table.starredByUserId],
+      foreignColumns: [users.organizationId, users.id],
+    }).onDelete('restrict'),
+    // Tab "Pesan ditandai" panel detail.
+    index('messages_conversation_id_starred_idx')
+      .on(table.conversationId, table.occurredAt)
+      .where(sql`${table.starredAt} is not null`),
+    check(
+      'messages_star_consistent',
+      sql`(${table.starredAt} is null) = (${table.starredByUserId} is null)`,
+    ),
     check(
       'messages_inbound_has_no_status',
       sql`${table.direction} <> 'inbound' or (${table.status} is null and ${table.senderKind} = 'customer')`,

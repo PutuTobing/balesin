@@ -240,9 +240,14 @@ describe('startWorkers + jadwal pemeliharaan (Redis sungguhan)', () => {
         .poll(async () => (await queue.getJobSchedulers()).map((item) => item.key), {
           timeout: 5_000,
         })
-        .toEqual([MAINTENANCE_JOBS.webhookPayloadRetention]);
+        .toEqual(
+          expect.arrayContaining([
+            MAINTENANCE_JOBS.webhookPayloadRetention,
+            MAINTENANCE_JOBS.staleSendClaims,
+          ]),
+        );
       await scheduleMaintenanceJobs(queue);
-      expect(await queue.getJobSchedulersCount()).toBe(1);
+      expect(await queue.getJobSchedulersCount()).toBe(2);
       await runtime.close();
       await queue.obliterate({ force: true });
       await queue.close();

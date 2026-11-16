@@ -1,7 +1,8 @@
 import { z } from 'zod';
 
 import { CHANNEL_TYPES } from './channels';
-import { isoDateTimeSchema } from './fields';
+import { hasControlCharacters, isoDateTimeSchema } from './fields';
+import { tagColorSchema, tagRefSchema } from './tags';
 
 /**
  * Inbox: kontak, percakapan, dan pesan (Fase 2 butir 4 — docs/KONTRAK-API-INBOX.md).
@@ -37,7 +38,8 @@ export const CONVERSATION_STATUS_LABELS: Readonly<Record<ConversationStatus, str
  *  - `assigned`   — agen ditugaskan/dialihkan oleh orang lain (atau diri sendiri mengambil alih);
  *  - `unassigned` — dikembalikan ke antrian terbuka;
  *  - `resolved`   — ditandai selesai;
- *  - `reopened`   — dibuka lagi.
+ *  - `reopened`   — dibuka lagi;
+ *  - `note_added` / `note_updated` / `note_deleted` — catatan sesi (butir 8; TANPA isi catatan).
  */
 export const CONVERSATION_EVENT_KINDS = [
   'claimed',
@@ -45,8 +47,27 @@ export const CONVERSATION_EVENT_KINDS = [
   'unassigned',
   'resolved',
   'reopened',
+  'note_added',
+  'note_updated',
+  'note_deleted',
 ] as const;
-export const conversationEventKindSchema = z.enum(CONVERSATION_EVENT_KINDS);
+/** Jenis yang disimpan di `conversation_events` (enum database). */
+export type ConversationRecordKind = (typeof CONVERSATION_EVENT_KINDS)[number];
+
+/**
+ * Jenis kejadian KONTAK (tabel `contact_events`, butir 8) — ikut tampil di tab "Log" setiap
+ * percakapan kontak itu. Tanpa nilai data pelanggan: hanya nama tag / nama isian yang berubah.
+ *  - `tag_added` / `tag_removed` — tag dipasang/dilepas;
+ *  - `contact_updated` — isian kontak diubah (`fields`: `name`, `email`, `notes`, `attributes`).
+ */
+export const CONTACT_EVENT_KINDS = ['tag_added', 'tag_removed', 'contact_updated'] as const;
+export type ContactEventKind = (typeof CONTACT_EVENT_KINDS)[number];
+
+/** Semua jenis baris tab "Log" (kejadian percakapan + kejadian kontaknya). */
+export const conversationEventKindSchema = z.enum([
+  ...CONVERSATION_EVENT_KINDS,
+  ...CONTACT_EVENT_KINDS,
+]);
 export type ConversationEventKind = z.infer<typeof conversationEventKindSchema>;
 
 export const CONVERSATION_EVENT_LABELS: Readonly<Record<ConversationEventKind, string>> = {
@@ -55,6 +76,23 @@ export const CONVERSATION_EVENT_LABELS: Readonly<Record<ConversationEventKind, s
   unassigned: 'Mengembalikan ke antrian',
   resolved: 'Menandai selesai',
   reopened: 'Membuka lagi',
+  note_added: 'Menambah catatan',
+  note_updated: 'Mengubah catatan',
+  note_deleted: 'Menghapus catatan',
+  tag_added: 'Memasang tag',
+  tag_removed: 'Melepas tag',
+  contact_updated: 'Mengubah data kontak',
+};
+
+/** Isian kontak yang bisa diubah tim (dicatat di `contact_events.fields`, tanpa nilainya). */
+export const CONTACT_EDITABLE_FIELDS = ['name', 'email', 'notes', 'attributes'] as const;
+export type ContactEditableField = (typeof CONTACT_EDITABLE_FIELDS)[number];
+
+export const CONTACT_FIELD_LABELS: Readonly<Record<ContactEditableField, string>> = {
+  name: 'Nama',
+  email: 'Email',
+  notes: 'Catatan kontak',
+  attributes: 'Atribut',
 };
 
 /** Jendela layanan pelanggan WhatsApp: 24 jam sejak pesan masuk terakhir (jam server). */
@@ -165,12 +203,13 @@ export const CONVERSATION_WINDOW_FILTER_LABELS: Readonly<Record<ConversationWind
 export const WINDOW_EXPIRING_SOON_MS = 2 * 60 * 60 * 1000;
 
 /**
- * Saringan bersama daftar & hitungan per tab: channel, agen, status jendela, belum dibaca, cari.
- * `assignee` = UUID agen, `me` (diri sendiri), atau `unassigned` (belum di-assign).
- * TITIK KAIT tag: `tagId` ditambahkan di sini saat tabel tag dibangun (butir panel detail).
+ * Saringan bersama daftar & hitungan per tab: channel, agen, tag kontak, status jendela, belum
+ * dibaca, cari. `assignee` = UUID agen, `me` (diri sendiri), atau `unassigned` (belum di-assign).
  */
 const conversationFilterFields = {
   channelId: z.uuid({ error: 'Channel tidak valid.' }).optional(),
+  /** Hanya percakapan yang KONTAKNYA memakai tag ini (butir 8). */
+  tagId: z.uuid({ error: 'Tag tidak valid.' }).optional(),
   assignee: z
     .union([z.uuid(), z.literal('me'), z.literal('unassigned')], {
       error: 'Agen tidak valid.',
@@ -222,10 +261,20 @@ export const conversationCountsResponseSchema = z.object({
 });
 export type ConversationCountsResponse = z.infer<typeof conversationCountsResponseSchema>;
 
+/**
+ * Saringan pesan panel detail (butir 8):
+ *  - `starred` — pesan ditandai;
+ *  - `media`   — gambar, video, stiker (tab "Media");
+ *  - `files`   — dokumen & audio (tab "File").
+ */
+export const MESSAGE_LIST_FILTERS = ['starred', 'media', 'files'] as const;
+export type MessageListFilter = (typeof MESSAGE_LIST_FILTERS)[number];
+
 /** `GET /conversations/:id/messages` — terbaru dulu; `cursor` = halaman pesan yang lebih lama. */
 export const messageListQuerySchema = z.object({
   cursor: inboxCursorSchema.optional(),
   limit: pageLimitSchema.optional(),
+  only: z.enum(MESSAGE_LIST_FILTERS, { error: 'Saringan pesan tidak dikenal.' }).optional(),
 });
 export type MessageListQuery = z.infer<typeof messageListQuerySchema>;
 
@@ -248,8 +297,55 @@ export const contactSummarySchema = z.object({
   phone: z.string().nullable(),
   /** Username WhatsApp (tanpa `@`), bila ada. */
   waUsername: z.string().nullable(),
+  /**
+   * Tag kontak (urut nama). Server SELALU mengisinya; opsional di skema hanya supaya data tiruan
+   * lama tetap sah — dijadikan wajib setelah web menyesuaikan.
+   */
+  tags: z.array(tagRefSchema).optional(),
 });
 export type ContactSummary = z.infer<typeof contactSummarySchema>;
+
+/** Batas atribut kustom kontak (butir 8). */
+export const CONTACT_ATTRIBUTES_MAX = 30;
+export const CONTACT_ATTRIBUTE_KEY_MAX = 40;
+export const CONTACT_ATTRIBUTE_VALUE_MAX = 500;
+export const CONTACT_NOTES_MAX = 2_000;
+export const CONTACT_NAME_MAX = 256;
+
+/** Kunci atribut: diawali huruf/angka; huruf, angka, spasi, `_`, `-`, `.`; 1–40 karakter. */
+export const contactAttributeKeySchema = z
+  .string()
+  .trim()
+  .min(1, 'Nama atribut wajib diisi.')
+  .max(
+    CONTACT_ATTRIBUTE_KEY_MAX,
+    `Nama atribut maksimal ${String(CONTACT_ATTRIBUTE_KEY_MAX)} karakter.`,
+  )
+  .regex(
+    /^[\p{L}\p{N}][\p{L}\p{N} ._-]*$/u,
+    'Nama atribut hanya boleh huruf, angka, spasi, titik, tanda hubung, dan garis bawah.',
+  );
+
+export const contactAttributeValueSchema = z
+  .string()
+  .trim()
+  .min(1, 'Nilai atribut wajib diisi (hapus atributnya bila kosong).')
+  .max(
+    CONTACT_ATTRIBUTE_VALUE_MAX,
+    `Nilai atribut maksimal ${String(CONTACT_ATTRIBUTE_VALUE_MAX)} karakter.`,
+  )
+  .refine((value) => !hasControlCharacters(value), 'Nilai atribut memuat karakter khusus.');
+
+/** Atribut kustom: peta kunci → teks. Disimpan & dikirim sebagai daftar berurutan. */
+export const contactAttributesSchema = z
+  .array(z.object({ key: contactAttributeKeySchema, value: contactAttributeValueSchema }))
+  .max(CONTACT_ATTRIBUTES_MAX, `Maksimal ${String(CONTACT_ATTRIBUTES_MAX)} atribut per kontak.`)
+  .refine(
+    (items) =>
+      new Set(items.map((item) => item.key.toLocaleLowerCase('id-ID'))).size === items.length,
+    'Nama atribut tidak boleh kembar.',
+  );
+export type ContactAttributes = z.infer<typeof contactAttributesSchema>;
 
 /** `GET /contacts/:id`. */
 export const contactSchema = contactSummarySchema.extend({
@@ -258,12 +354,68 @@ export const contactSchema = contactSummarySchema.extend({
   name: z.string().nullable(),
   /** Nama profil WhatsApp (dari pelanggan, tidak tepercaya; karakter tak terlihat dibuang). */
   profileName: z.string().nullable(),
+  /**
+   * Isian butir 8 (selalu diisi server; opsional di skema hanya untuk data tiruan lama).
+   * `email` diisi tim; `notes` = catatan KONTAK (berbeda dari catatan sesi per percakapan).
+   */
+  email: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+  attributes: z.array(z.object({ key: z.string(), value: z.string() })).optional(),
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,
 });
 export type Contact = z.infer<typeof contactSchema>;
 export const contactResponseSchema = z.object({ contact: contactSchema });
 export type ContactResponse = z.infer<typeof contactResponseSchema>;
+
+/**
+ * `PATCH /contacts/:contactId` (`contacts.manage`). Hanya isian yang dikirim yang diubah; `null`
+ * mengosongkan (`name: null` → kembali ke nama profil WhatsApp). `attributes` MENGGANTI seluruh
+ * daftar atribut.
+ */
+export const updateContactRequestSchema = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(1, 'Nama tidak boleh kosong (kirim null untuk memakai nama WhatsApp).')
+      .max(CONTACT_NAME_MAX, `Nama maksimal ${String(CONTACT_NAME_MAX)} karakter.`)
+      .refine((value) => !hasControlCharacters(value), 'Nama memuat karakter khusus.')
+      .nullable()
+      .optional(),
+    email: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .max(254, 'Alamat email maksimal 254 karakter.')
+      .pipe(z.email({ error: 'Alamat email tidak valid. Contoh: nama@perusahaan.co.id' }))
+      .nullable()
+      .optional(),
+    notes: z
+      .string()
+      .trim()
+      .min(1, 'Catatan kosong — kirim null untuk menghapusnya.')
+      .max(
+        CONTACT_NOTES_MAX,
+        `Catatan maksimal ${CONTACT_NOTES_MAX.toLocaleString('id-ID')} karakter.`,
+      )
+      .refine(
+        (value) => !hasControlCharacters(value.replace(/\r?\n|\t/g, ' ')),
+        'Catatan memuat karakter khusus tak terlihat.',
+      )
+      .nullable()
+      .optional(),
+    attributes: contactAttributesSchema.optional(),
+  })
+  .refine(
+    (value) =>
+      value.name !== undefined ||
+      value.email !== undefined ||
+      value.notes !== undefined ||
+      value.attributes !== undefined,
+    { error: 'Tidak ada yang diubah.' },
+  );
+export type UpdateContactRequest = z.infer<typeof updateContactRequestSchema>;
 
 export const messagePreviewSchema = z.object({
   direction: messageDirectionSchema,
@@ -327,6 +479,12 @@ export const conversationEventSchema = z.object({
   actor: userRefSchema.nullable(),
   assignee: userRefSchema.nullable(),
   previousAssignee: userRefSchema.nullable(),
+  /**
+   * Butir 8 (selalu diisi server; opsional di skema hanya untuk data tiruan lama):
+   * `tag` = tag yang dipasang/dilepas (nama saat kejadian); `fields` = isian kontak yang diubah.
+   */
+  tag: z.object({ name: z.string(), color: tagColorSchema }).nullable().optional(),
+  fields: z.array(z.enum(CONTACT_EDITABLE_FIELDS)).nullable().optional(),
   createdAt: isoDateTimeSchema,
 });
 export type ConversationEvent = z.infer<typeof conversationEventSchema>;
@@ -335,8 +493,63 @@ export const conversationEventListResponseSchema = z.object({
 });
 export type ConversationEventListResponse = z.infer<typeof conversationEventListResponseSchema>;
 
+// ── Catatan sesi (butir 8) ──────────────────────────────────────────────────
+
 /**
- * Agen inbox (`GET /inbox/agents`, izin `inbox.view`): semua pengguna yang perannya memegang
+ * Catatan sesi: catatan INTERNAL per percakapan (tidak pernah terkirim ke pelanggan). Lihat =
+ * `inbox.view`; tulis = `inbox.reply` (cakupan); ubah = penulisnya saja; hapus = penulisnya atau
+ * pemegang `inbox.notes.moderate` (Owner/Admin). Isi tidak pernah masuk log/audit/event.
+ */
+export const CONVERSATION_NOTE_MAX = 2_000;
+export const CONVERSATION_NOTES_MAX = 200;
+
+export const conversationNoteBodySchema = z
+  .string({ error: 'Isi catatan wajib diisi.' })
+  .trim()
+  .min(1, 'Isi catatan wajib diisi.')
+  .max(
+    CONVERSATION_NOTE_MAX,
+    `Catatan maksimal ${CONVERSATION_NOTE_MAX.toLocaleString('id-ID')} karakter.`,
+  )
+  .refine(
+    (value) => !hasControlCharacters(value.replace(/\r?\n|\t/g, ' ')),
+    'Catatan memuat karakter khusus tak terlihat.',
+  );
+
+export const conversationNoteRequestSchema = z.object({ body: conversationNoteBodySchema });
+export type ConversationNoteRequest = z.infer<typeof conversationNoteRequestSchema>;
+
+export const conversationNoteSchema = z.object({
+  id: z.uuid(),
+  body: z.string(),
+  author: userRefSchema,
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema,
+  /** Pernah diubah setelah dibuat. */
+  edited: z.boolean(),
+  /** Hak PEMANGGIL atas catatan ini (untuk menampilkan tombol). */
+  canEdit: z.boolean(),
+  canDelete: z.boolean(),
+});
+export type ConversationNote = z.infer<typeof conversationNoteSchema>;
+export const conversationNoteResponseSchema = z.object({ note: conversationNoteSchema });
+export type ConversationNoteResponse = z.infer<typeof conversationNoteResponseSchema>;
+export const conversationNoteListResponseSchema = z.object({
+  /** Terlama dulu (seperti utas). */
+  notes: z.array(conversationNoteSchema),
+});
+export type ConversationNoteListResponse = z.infer<typeof conversationNoteListResponseSchema>;
+/** Jawaban hapus panel detail / tag / quick reply. */
+export const deletedResponseSchema = z.object({ deleted: z.literal(true) });
+export type DeletedResponse = z.infer<typeof deletedResponseSchema>;
+
+export const conversationNoteParamsSchema = z.object({
+  conversationId: z.string(),
+  noteId: z.string(),
+});
+
+/**
+ * Agen inbox (`GET /inbox/agents`, izin `inbox.assign` — Teknisi tidak): semua pengguna yang perannya memegang
  * `inbox.reply`, termasuk yang dinonaktifkan (`active: false`) supaya saringan agen percakapan lama
  * tetap bisa menampilkan namanya. Tanpa email. Yang bisa DITUGASKAN hanya `active: true`.
  */
@@ -430,6 +643,11 @@ export const messageSchema = z.object({
   senderUserId: z.uuid().nullable(),
   /** Media bisa diunduh lewat `GET /messages/:id/media`. */
   mediaAvailable: z.boolean(),
+  /**
+   * Pesan ditandai (bintang, dipakai bersama tim; butir 8). Server SELALU mengisinya; opsional di
+   * skema hanya untuk data tiruan lama.
+   */
+  starredAt: isoDateTimeSchema.nullable().optional(),
   createdAt: isoDateTimeSchema,
 });
 export type Message = z.infer<typeof messageSchema>;
@@ -446,6 +664,10 @@ export const messageListResponseSchema = z.object({
 export type MessageListResponse = z.infer<typeof messageListResponseSchema>;
 
 // ── Real-time (WebSocket `GET /inbox/stream`) ───────────────────────────────
+
+/** Bagian panel detail yang bisa berubah (event `conversation.detail`). */
+export const CONVERSATION_DETAIL_SECTIONS = ['tags', 'contact', 'notes', 'stars'] as const;
+export type ConversationDetailSection = (typeof CONVERSATION_DETAIL_SECTIONS)[number];
 
 /** Selang ping server (detik); klien yang tidak menjawab pong dua kali berturut-turut diputus. */
 export const INBOX_STREAM_HEARTBEAT_SECONDS = 30;
@@ -503,5 +725,16 @@ export const inboxStreamEventSchema = z.discriminatedUnion('type', [
     messageId: z.uuid(),
     status: messageDeliveryStatusSchema,
   }),
+  /**
+   * Bagian panel detail percakapan berubah (butir 8): `tags` / `contact` (data kontaknya), `notes`
+   * (catatan sesi), `stars` (pesan ditandai). Hanya ID + nama bagian; web memuat ulang lewat REST.
+   */
+  z.object({
+    type: z.literal('conversation.detail'),
+    conversationId: z.uuid(),
+    section: z.enum(CONVERSATION_DETAIL_SECTIONS),
+  }),
+  /** Master tag organisasi berubah (dibuat/diubah/dihapus): muat ulang daftar tag. */
+  z.object({ type: z.literal('tags.changed') }),
 ]);
 export type InboxStreamEvent = z.infer<typeof inboxStreamEventSchema>;

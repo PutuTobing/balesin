@@ -3,6 +3,7 @@ import {
   bigint,
   check,
   index,
+  jsonb,
   pgTable,
   text,
   unique,
@@ -49,6 +50,15 @@ export const contacts = pgTable(
     waUsername: text('wa_username'),
     profileName: text('profile_name'),
     name: text('name'),
+    /** Diisi tim (butir 8). */
+    email: text('email'),
+    /** Catatan KONTAK (berbeda dari catatan sesi per percakapan). */
+    notes: text('notes'),
+    /** Atribut kustom: daftar `{ key, value }` berurutan (batas di `contactAttributesSchema`). */
+    attributes: jsonb('attributes')
+      .$type<{ key: string; value: string }[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
@@ -80,6 +90,10 @@ export const contacts = pgTable(
     check(
       'contacts_wa_bsuid_format',
       sql`${table.waBsuid} is null or (${table.waBsuid} ~ '^[A-Za-z0-9._:-]+$' and char_length(${table.waBsuid}) <= 256)`,
+    ),
+    check(
+      'contacts_details_lengths',
+      sql`(${table.email} is null or char_length(${table.email}) between 3 and 254) and (${table.notes} is null or char_length(${table.notes}) between 1 and 2000) and jsonb_typeof(${table.attributes}) = 'array' and jsonb_array_length(${table.attributes}) <= 30 and octet_length(${table.attributes}::text) <= 65536`,
     ),
     check(
       'contacts_text_lengths',

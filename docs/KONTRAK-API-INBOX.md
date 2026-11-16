@@ -1,4 +1,4 @@
-# Kontrak API — Inbox: kontak, percakapan, pesan, real-time, ruang chat (Fase 2 butir 4–7)
+# Kontrak API — Inbox: kontak, percakapan, pesan, real-time, ruang chat, panel detail, quick reply (Fase 2 butir 4–9)
 
 Butir ini membangun **model data + pemrosesan otomatis** pesan masuk WhatsApp dan **API baca
 minimal** sebagai fondasi layar inbox. Belum ada aksi tulis (assign, balas, selesai, ubah kontak) —
@@ -223,6 +223,10 @@ sementara Meta → diulang BullMQ (5×, eksponensial mulai 10 dtk). Tanpa kunci/
 panggilan HTTP. Sebelum memanggil Meta, worker MENGKLAIM pesan secara atomik (`send_claimed_at`);
 pesan yang sudah diklaim tanpa wamid → `delivery_unknown` (cegah kirim ganda, review R3). Klaim
 dilepas hanya bila Meta jelas menolak sementara. Rem darurat diperiksa ulang di worker.
+Review R5: klaim yang lebih muda dari 2 menit (`SEND_CLAIM_STALE_MS`) = percobaan lain masih
+memanggil Meta → job ganda DILEWATI (pesan tetap `pending`). Job `maintenance`
+`stale-send-claims` (tiap menit) menandai klaim > 2 menit tanpa wamid → `delivery_unknown`. Bila
+Meta ternyata menerima belakangan, wamid tetap disimpan dan status dibetulkan menjadi `sent`.
 
 **Bentuk `Message` (tambahan)**: `failure`, `senderUserId`, `mediaAvailable`.
 
@@ -261,7 +265,12 @@ termasuk "dilanjutkan").
 | `POST /api/v1/conversations/:id/resolve` | `inbox.reply` + cakupan | `resolved` + `resolvedAt`; agen tetap tercatat (laporan). Idempoten |
 | `POST /api/v1/conversations/:id/reopen` | `inbox.reply` + cakupan | Hanya sesi TERAKHIR kontak × channel dan bila belum ada sesi terbuka → `served` (agen lama bila masih aktif & berizin) atau `unserved`; selain itu 409. Jendela 24 jam tidak menjadi syarat (pengiriman tetap dibatasi jendela) |
 | `GET /api/v1/conversations/:id/events` | `inbox.view` + cakupan | Riwayat penanganan (tab "Log"): `{ events: [{ id, kind, actor, assignee, previousAssignee, createdAt }] }` — `kind`: `claimed`/`assigned`/`unassigned`/`resolved`/`reopened`; `actor` `null` = sistem |
-| `GET /api/v1/inbox/agents` | `inbox.view` | `{ agents: [{ id, name, role, active, openConversations }] }` — semua pengguna berperan `inbox.reply` (termasuk nonaktif untuk saringan percakapan lama; hanya `active` yang bisa ditugaskan). Tanpa email |
+| `GET /api/v1/inbox/agents` | `inbox.assign` | `{ agents: [{ id, name, role, active, openConversations }] }` — semua pengguna berperan `inbox.reply` (termasuk nonaktif untuk saringan percakapan lama; hanya `active` yang bisa ditugaskan). Tanpa email. Teknisi → 403 (review butir 7 Info 1; ia tidak menugaskan/menyaring per agen) |
+
+**Alarm aksi massal** (review butir 7 R1): > 30 ambil/selesai/kembalikan oleh SATU pengguna dalam
+10 menit → audit `inbox.bulk_action` (`actions`, `windowMinutes`, `kinds`, `actorRole`) + kejadian
+keamanan `inbox_bulk_action` (`warning`, banner Owner/Admin), paling banyak sekali per jam per
+pengguna. Aksinya sendiri tidak ditolak.
 
 Semua POST: CSRF (Origin + token), batas 120 aksi/menit per pengguna (`inbox-aksi`). Jawaban
 `{ conversation }` = keadaan sesudah aksi menurut cakupan pemanggil; **`null`** bila pemanggil tidak
@@ -283,6 +292,90 @@ departemen (menyempitkan cakupan & agen sasaran), CSAT setelah `resolve`.
 
 Ringkasan kontak di daftar percakapan kini memuat `nameSource` (`team` / `whatsapp` / `none`) dan
 `waUsername` — tampilkan penanda "dari WhatsApp" + nomor/@username di samping nama profil.
+
+## Panel detail (butir 8)
+
+Skema: `packages/shared/src/inbox.ts`, `tags.ts`. Semua tulis: CSRF (Origin + token), batas 120
+perubahan/menit per pengguna (`panel-ubah`), pelaku diperiksa ulang di transaksi
+(`assertActorStillAuthorized`), semua query tersaring `organization_id`. Event real-time HANYA ID.
+
+**Tag (menempel ke KONTAK).** Sama dengan API n8n/MobiChat (`/contacts/:id/tags`). Warna = kunci
+palet `TAG_COLORS` (`gray`, `blue`, `green`, `yellow`, `orange`, `red`, `purple`, `teal`) — web
+memetakannya ke token desain; bukan hex.
+
+| Endpoint | Izin | Keterangan |
+|---|---|---|
+| `GET /api/v1/tags` | `inbox.view` | `{ tags: [{ id, name, color, contactCount, createdAt, updatedAt }] }` urut nama |
+| `POST /api/v1/tags` | `contacts.manage` | Body `{ name (1–40, satu baris), color? (bawaan blue) }` → **201** `{ tag }`. Nama unik tanpa beda huruf besar/kecil → **409**. Maks. 300 tag/organisasi (409). Diaudit `tag.created` |
+| `PATCH /api/v1/tags/:tagId` | `settings.workspace.manage` | Body `{ name?, color? }` → `{ tag }`. Diaudit `tag.updated` (nama/warna lama & baru) |
+| `DELETE /api/v1/tags/:tagId` | `settings.workspace.manage` | Lepas dari semua kontak + hapus → `{ deleted: true }`. Diaudit `tag.deleted` |
+| `POST /api/v1/contacts/:contactId/tags` | `contacts.manage` | Body `{ tagId }` → `{ contact }`. Idempoten. Maks. 20 tag/kontak (409). Tag tak dikenal → 404 |
+| `DELETE /api/v1/contacts/:contactId/tags/:tagId` | `contacts.manage` | → `{ contact }`. Idempoten |
+
+Saringan daftar & hitungan: `GET /conversations?tagId=` dan `/conversations/counts?tagId=` =
+percakapan yang KONTAKNYA memakai tag itu. `Conversation.contact.tags` dan `Contact.tags` =
+`[{ id, name, color }]` (urut nama).
+
+**Ubah kontak.** `PATCH /api/v1/contacts/:contactId` (`contacts.manage`; Teknisi hanya melihat) →
+`{ contact }`. Body (minimal satu): `name` (≤ 256, satu baris; `null` = kembali ke nama profil
+WhatsApp), `email` (dinormalkan huruf kecil; `null` = hapus), `notes` (catatan KONTAK ≤ 2.000, boleh
+baris baru; `null` = hapus), `attributes` (MENGGANTI daftar: maks. 30 `{ key, value }`, kunci 1–40
+huruf/angka/spasi/`._-` unik tanpa beda huruf, nilai 1–500 satu baris). `Contact` kini memuat
+`email`, `notes`, `attributes`, `tags`.
+
+**Riwayat kontak** (`contact_events`): `tag_added`/`tag_removed` (nama & warna tag saat kejadian),
+`contact_updated` (`fields`: nama isian yang berubah) — TANPA nilai data pelanggan. Bukan audit log
+(perubahan data pelanggan sehari-hari tidak membanjiri audit). Tampil di tab "Log" setiap percakapan
+kontak itu sejak percakapan dibuat.
+
+**Catatan sesi** (internal, tidak pernah terkirim ke pelanggan):
+
+| Endpoint | Izin | Keterangan |
+|---|---|---|
+| `GET /api/v1/conversations/:id/notes` | `inbox.view` + cakupan | `{ notes: [{ id, body, author: {id,name}, createdAt, updatedAt, edited, canEdit, canDelete }] }` terlama dulu |
+| `POST /api/v1/conversations/:id/notes` | `inbox.reply` + cakupan | Body `{ body }` (1–2.000, boleh baris baru) → **201** `{ note }`. Maks. 200/percakapan (409) |
+| `PATCH /api/v1/conversations/:id/notes/:noteId` | `inbox.reply` + cakupan | HANYA penulisnya (selain itu **403**, diaudit `auth.access.denied` aturan `inbox.note.edit_others`) → `{ note }` (`edited: true`) |
+| `DELETE /api/v1/conversations/:id/notes/:noteId` | `inbox.reply` + cakupan | Penulisnya, atau pemegang `inbox.notes.moderate` (Owner/Admin); selain itu **403** (`inbox.note.delete_others`) → `{ deleted: true }` |
+
+`canEdit`/`canDelete` = hak PEMANGGIL (untuk tombol). Log mencatat `note_added`/`note_updated`/
+`note_deleted` tanpa isi. Isi catatan tidak pernah masuk log server, audit, atau event.
+
+**Pesan ditandai** (bintang, satu tanda bersama per pesan): `PUT` / `DELETE
+/api/v1/messages/:messageId/star` (`inbox.reply` + cakupan; di luar cakupan 404) → `{ message }`.
+Idempoten. `Message.starredAt` (`null` = tidak ditandai).
+
+**Media, file, pesan ditandai** di panel: `GET /conversations/:id/messages?only=starred|media|files`
+(kursor sama dengan riwayat pesan): `media` = gambar/video/stiker, `files` = dokumen/audio.
+
+**Log**: `GET /conversations/:id/events` kini memuat juga `note_*` dan kejadian kontak
+(`tag_added`, `tag_removed`, `contact_updated`), dengan isian tambahan `tag: { name, color } | null`
+dan `fields: string[] | null`.
+
+**Real-time** (WebSocket, hanya ID): `{ type: 'conversation.detail', conversationId, section }` —
+`section` = `tags` / `contact` / `notes` / `stars`; dikirim ke pengguna yang boleh melihat percakapan
+itu (perubahan kontak → maks. 20 percakapan terbaru kontak itu). `{ type: 'tags.changed' }` — master
+tag berubah (semua pemegang `inbox.view`).
+
+**Kompatibilitas skema web**: `contact.tags`, `Contact.email/notes/attributes`, `Message.starredAt`,
+dan `ConversationEvent.tag/fields` OPSIONAL di skema Zod (server selalu mengisinya) supaya data tiruan
+web lama tetap sah — dijadikan wajib setelah web menyesuaikan.
+
+## Quick reply `/` (butir 9)
+
+Skema: `packages/shared/src/quick-replies.ts`.
+
+| Endpoint | Izin | Keterangan |
+|---|---|---|
+| `GET /api/v1/quick-replies?q=` | `inbox.reply` | `{ quickReplies: [{ id, shortcut, title, body, usageCount, lastUsedAt, updatedBy, createdAt, updatedAt }] }` — urut paling sering dipakai lalu shortcut; `q` (≤ 50) mencari shortcut/judul. Maks. 500 |
+| `POST /api/v1/quick-replies` | `quick_replies.manage` | Body `{ shortcut, title (≤ 80), body (≤ 3.500) }` → **201**. Shortcut: `/` di depan dibuang, huruf kecil, `[a-z0-9_-]`, ≤ 32; kembar → **409**. Maks. 500/organisasi |
+| `PATCH /api/v1/quick-replies/:id` | `quick_replies.manage` | Isian sebagian → `{ quickReply }` |
+| `DELETE /api/v1/quick-replies/:id` | `quick_replies.manage` | → `{ deleted: true }` |
+| `POST /api/v1/quick-replies/:id/use` | `inbox.reply` + cakupan percakapan | Body `{ conversationId }` → `{ text }` (variabel terisi) + penghitung naik. Percakapan di luar cakupan → 404. Batas 240/menit per pengguna |
+
+Variabel HANYA `{nama}` (nama dari tim → nama profil WhatsApp → "Kak") dan `{agen}` (nama pemakai);
+bentuk `{kata}` lain ditolak saat menyimpan (400). Teks hasil dimasukkan ke composer lalu dikirim
+lewat endpoint kirim pesan biasa (jendela 24 jam & batas kirim tetap berlaku). Buat/ubah/hapus
+diaudit (`quick_reply.*`, shortcut + nama isian yang berubah — TANPA isi template).
 
 ## Retensi & hapus per kontak (UU PDP, review webhook S4)
 

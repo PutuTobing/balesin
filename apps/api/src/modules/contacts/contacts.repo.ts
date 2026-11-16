@@ -1,7 +1,10 @@
 import { contactIdentityLockKeys } from '@balesin/core';
 import {
+  contactEvents,
+  contactTags,
   contacts,
   conversationEvents,
+  conversationNotes,
   conversations,
   lockAdvisoryKeys,
   mediaFiles,
@@ -166,6 +169,31 @@ export async function deleteContactData(
     .delete(messages)
     .where(and(eq(messages.organizationId, organizationId), eq(messages.contactId, contactId)))
     .returning({ id: messages.id });
+  const conversationsOfContact = tx
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(
+      and(eq(conversations.organizationId, organizationId), eq(conversations.contactId, contactId)),
+    );
+  // Catatan sesi, tag, dan riwayat kontak (butir 8) — terkait orangnya.
+  await tx
+    .delete(conversationNotes)
+    .where(
+      and(
+        eq(conversationNotes.organizationId, organizationId),
+        inArray(conversationNotes.conversationId, conversationsOfContact),
+      ),
+    );
+  await tx
+    .delete(contactTags)
+    .where(
+      and(eq(contactTags.organizationId, organizationId), eq(contactTags.contactId, contactId)),
+    );
+  await tx
+    .delete(contactEvents)
+    .where(
+      and(eq(contactEvents.organizationId, organizationId), eq(contactEvents.contactId, contactId)),
+    );
   // Riwayat penanganan percakapan kontak ini (tanpa isi pesan, tetapi terkait orangnya).
   await tx.delete(conversationEvents).where(
     and(

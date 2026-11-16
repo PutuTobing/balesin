@@ -80,6 +80,29 @@ describe('detectMedia (magic bytes, bukan nama berkas)', () => {
         'a.docx',
       ),
     ).toBeNull();
+    // Info P2-3: objek OLE/ActiveX tersisip ditolak; dokumen tersisip biasa tetap boleh.
+    expect(
+      detectMedia(
+        fakeZip(['[Content_Types].xml', 'word/document.xml', 'word/embeddings/oleObject1.bin']),
+        'ole.docx',
+      ),
+    ).toBeNull();
+    expect(
+      detectMedia(
+        fakeZip(['[Content_Types].xml', 'word/document.xml', 'word/activeX/activeX1.bin']),
+        'ax.docx',
+      ),
+    ).toBeNull();
+    expect(
+      detectMedia(
+        fakeZip([
+          '[Content_Types].xml',
+          'word/document.xml',
+          'word/embeddings/Microsoft_Excel_Worksheet.xlsx',
+        ]),
+        'tabel.docx',
+      )?.kind,
+    ).toBe('document');
     expect(detectMedia(bytes(0x50, 0x4b, 0x03, 0x04, 0x14), 'laporan.xlsx')).toBeNull();
     // Mode aliran: hanya kepala berkas (wadah diperiksa pemanggil setelah berkas utuh).
     expect(

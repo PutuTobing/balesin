@@ -1,6 +1,7 @@
 import { AppError, type InboxEventPublisher, type Logger } from '@balesin/core';
 import {
   PG_ERROR_CODES,
+  contactEvents,
   conversationEvents,
   conversations,
   isPgError,
@@ -10,18 +11,23 @@ import {
   type DbExecutor,
 } from '@balesin/db';
 import {
+  CONTACT_EDITABLE_FIELDS,
   hasPermission,
+  tagColorSchema,
+  type ContactEditableField,
   permissionScope,
   rolesWithPermission,
   type ConversationEvent,
-  type ConversationEventKind,
+  type ConversationRecordKind,
   type InboxAgent,
   type Permission,
 } from '@balesin/shared';
-import { and, asc, desc, eq, inArray, isNull, ne, sql, type Column } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, ne, sql, type Column } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
 import type { ClientInfo } from '../../http/client-info';
+import type { RateLimitRule, RateLimiter } from '../../http/rate-limit';
+import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
 import { ACCESS_RULES, forbidByRule, type AccessDeniedRecorder } from '../auth/access-denied';
 import { assertActorStillAuthorized, authorityChanged } from '../auth/actor-check';
 import type { PermissionGrant } from '../auth/permission-grant';
@@ -55,8 +61,28 @@ export interface AssignmentServiceDeps {
   publisher: InboxEventPublisher;
   accessDenied: AccessDeniedRecorder;
   logger: Logger;
+  /** Penghitung aksi massal (review butir 7 R1). Tanpa limiter = alarm mati (tes unit). */
+  limiter?: RateLimiter;
   now?: () => Date;
 }
+
+/**
+ * Alarm aksi massal (review butir 7 R1): > 30 ambil/selesai/kembalikan oleh SATU pengguna dalam 10
+ * menit → audit `inbox.bulk_action` + kejadian keamanan `warning` (banner Owner/Admin), paling banyak
+ * sekali per jam per pengguna. Ambang: CS sibuk menangani ±1 chat/menit; 30 dalam 10 menit = 3/menit
+ * terus-menerus — pola menguras antrian, bukan kerja normal (DECISIONS 2026-11-17).
+ */
+export const BULK_ACTION_RULE: RateLimitRule = {
+  name: 'inbox-aksi-massal',
+  limit: 30,
+  windowSeconds: 10 * 60,
+};
+const BULK_ACTION_FLAG = 'inbox-aksi-massal';
+const BULK_ACTION_KINDS: ReadonlySet<ConversationRecordKind> = new Set([
+  'claimed',
+  'resolved',
+  'unassigned',
+]);
 
 export interface AssignmentContext {
   auth: AuthContext;
@@ -77,13 +103,13 @@ const NOT_FOUND = 'Percakapan tidak ditemukan.';
 
 interface Change {
   /** `null` = tidak ada yang berubah (aksi idempoten). */
-  kind: ConversationEventKind | null;
+  kind: ConversationRecordKind | null;
   patch?: Partial<typeof conversations.$inferInsert>;
   assigneeUserId?: string | null;
 }
 
 export function createAssignmentService(deps: AssignmentServiceDeps): AssignmentService {
-  const { db, publisher, accessDenied, logger } = deps;
+  const { db, publisher, accessDenied, logger, limiter } = deps;
   const now = deps.now ?? (() => new Date());
 
   async function nameOf(tx: DbExecutor, organizationId: string, userId: string | null) {
@@ -102,7 +128,12 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
     decide: (tx: DbExecutor, conversation: ConversationRow, role: string) => Promise<Change>,
   ): Promise<void> {
     const { auth } = context;
-    let published: { previous: string | null; next: string | null } | null = null;
+    let published: {
+      previous: string | null;
+      next: string | null;
+      kind: ConversationRecordKind;
+      role: string;
+    } | null = null;
     await db.transaction(async (tx) => {
       const { role } = await assertActorStillAuthorized(tx, auth, permission, logger);
       const scope = permissionScope(role, permission);
@@ -165,9 +196,14 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
         assigneeUserId: nextAssignee,
         previousAssigneeUserId: current.assigneeUserId,
       });
-      published = { previous: current.assigneeUserId, next: nextAssignee };
+      published = { previous: current.assigneeUserId, next: nextAssignee, kind: change.kind, role };
     });
-    const done = published as { previous: string | null; next: string | null } | null;
+    const done = published as {
+      previous: string | null;
+      next: string | null;
+      kind: ConversationRecordKind;
+      role: string;
+    } | null;
     if (!done) return;
     await publisher.publish([
       {
@@ -180,6 +216,43 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
       },
     ]);
     logger.info({ conversationId, actorRef: auth.user.id }, 'Penanganan percakapan diubah');
+    if (BULK_ACTION_KINDS.has(done.kind)) await watchBulk(context, done.role);
+  }
+
+  /** Alarm aksi massal (R1). Usaha terbaik: Redis/DB bermasalah tidak menggagalkan aksinya. */
+  async function watchBulk(context: AssignmentContext, role: string): Promise<void> {
+    if (!limiter) return;
+    const { auth, client } = context;
+    try {
+      const state = await limiter.consume(
+        BULK_ACTION_RULE,
+        `${auth.organizationId}:${auth.user.id}`,
+      );
+      if (state.allowed) return;
+      const first = await limiter.claimFlag(
+        BULK_ACTION_FLAG,
+        `${auth.organizationId}:${auth.user.id}`,
+        60 * 60,
+      );
+      if (!first) return;
+      await recordAudit(db, {
+        organizationId: auth.organizationId,
+        actorUserId: auth.user.id,
+        action: AUDIT_ACTIONS.inboxBulkAction,
+        targetType: 'user',
+        targetId: auth.user.id,
+        metadata: {
+          actions: state.count,
+          windowMinutes: BULK_ACTION_RULE.windowSeconds / 60,
+          kinds: [...BULK_ACTION_KINDS].join(','),
+          actorRole: role,
+        },
+        client,
+      });
+      logger.warn({ actorRef: auth.user.id, actions: state.count }, 'Aksi massal di inbox');
+    } catch (err) {
+      logger.warn({ err, actorRef: auth.user.id }, 'Alarm aksi massal inbox gagal dicatat');
+    }
   }
 
   async function heldBy(tx: DbExecutor, conversation: ConversationRow): Promise<AppError> {
@@ -340,7 +413,11 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
 
     async events(grant, conversationId) {
       const [visible] = await db
-        .select({ id: conversations.id })
+        .select({
+          id: conversations.id,
+          contactId: conversations.contactId,
+          createdAt: conversations.createdAt,
+        })
         .from(conversations)
         .where(
           and(
@@ -379,16 +456,74 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
         )
         .orderBy(asc(conversationEvents.createdAt), asc(conversationEvents.id))
         .limit(500);
+      // Kejadian KONTAK selama sesi ini (tag dipasang/dilepas, data kontak diubah) — butir 8.
+      const contactActor = alias(users, 'contact_event_actor');
+      const contactRows = await db
+        .select({
+          id: contactEvents.id,
+          kind: contactEvents.kind,
+          createdAt: contactEvents.createdAt,
+          actorId: contactActor.id,
+          actorName: contactActor.name,
+          tagName: contactEvents.tagName,
+          tagColor: contactEvents.tagColor,
+          fields: contactEvents.fields,
+        })
+        .from(contactEvents)
+        .leftJoin(
+          contactActor,
+          and(
+            eq(contactActor.organizationId, contactEvents.organizationId),
+            eq(contactActor.id, contactEvents.actorUserId),
+          ),
+        )
+        .where(
+          and(
+            eq(contactEvents.organizationId, grant.organizationId),
+            eq(contactEvents.contactId, visible.contactId),
+            gte(contactEvents.createdAt, visible.createdAt),
+          ),
+        )
+        .orderBy(asc(contactEvents.createdAt), asc(contactEvents.id))
+        .limit(200);
       const ref = (id: string | null, name: string | null) =>
         id !== null && name !== null ? { id, name } : null;
-      return rows.map((row) => ({
-        id: row.id,
-        kind: row.kind,
-        actor: ref(row.actorId, row.actorName),
-        assignee: ref(row.assigneeId, row.assigneeName),
-        previousAssignee: ref(row.previousId, row.previousName),
-        createdAt: row.createdAt.toISOString(),
-      }));
+      const merged: (ConversationEvent & { at: number })[] = [
+        ...rows.map((row) => ({
+          id: row.id,
+          kind: row.kind,
+          actor: ref(row.actorId, row.actorName),
+          assignee: ref(row.assigneeId, row.assigneeName),
+          previousAssignee: ref(row.previousId, row.previousName),
+          tag: null,
+          fields: null,
+          createdAt: row.createdAt.toISOString(),
+          at: row.createdAt.getTime(),
+        })),
+        ...contactRows.map((row) => {
+          const color = tagColorSchema.safeParse(row.tagColor);
+          const fields = (row.fields ?? []).filter((field): field is ContactEditableField =>
+            (CONTACT_EDITABLE_FIELDS as readonly string[]).includes(field),
+          );
+          return {
+            id: row.id,
+            kind: row.kind,
+            actor: ref(row.actorId, row.actorName),
+            assignee: null,
+            previousAssignee: null,
+            tag:
+              row.tagName !== null && color.success
+                ? { name: row.tagName, color: color.data }
+                : null,
+            fields: row.kind === 'contact_updated' ? fields : null,
+            createdAt: row.createdAt.toISOString(),
+            at: row.createdAt.getTime(),
+          };
+        }),
+      ];
+      // UUIDv7 berurutan waktu: pemecah seri yang stabil untuk waktu yang sama.
+      merged.sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      return merged.map(({ at: _at, ...event }) => event);
     },
 
     async agents(organizationId) {

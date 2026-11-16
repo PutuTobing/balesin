@@ -63,6 +63,12 @@ export const AUDIT_ACTIONS = {
   sendingResumed: 'sending.resumed',
   /** Batas kirim harian (pengguna/organisasi) tercapai — dicatat sekali per 24 jam per cakupan. */
   sendingLimitReached: 'sending.limit_reached',
+  /**
+   * Satu pengguna mengambil/menyelesaikan/mengembalikan banyak percakapan dalam waktu singkat
+   * (review butir 7 R1; `actions`, `windowMinutes`, `kinds`, `actorRole`). Paling banyak sekali
+   * per jam per pengguna.
+   */
+  inboxBulkAction: 'inbox.bulk_action',
   // ── Manajemen pengguna & sesi (Fase 1 butir 6) ────────────────────────────
   userRoleChanged: 'user.role_changed',
   userDisabled: 'user.disabled',
@@ -108,6 +114,17 @@ export const AUDIT_ACTIONS = {
    * (`accounts`, `windowMinutes`). Paling banyak sekali per jam per organisasi.
    */
   passwordResetBurst: 'auth.password_reset.burst',
+  // ── Panel detail & quick reply (Fase 2 butir 8–9) — tanpa isi template/catatan ──
+  /** Tag organisasi dibuat (`name`, `color`). */
+  tagCreated: 'tag.created',
+  /** Tag diganti nama/warna (`previous`, `name`, `color`). */
+  tagUpdated: 'tag.updated',
+  /** Tag dihapus dan dilepas dari semua kontak (`name`, `contacts`). */
+  tagDeleted: 'tag.deleted',
+  /** Quick reply dibuat/diubah/dihapus (`shortcut`, `changedFields`) — isi tidak dicatat. */
+  quickReplyCreated: 'quick_reply.created',
+  quickReplyUpdated: 'quick_reply.updated',
+  quickReplyDeleted: 'quick_reply.deleted',
 } as const;
 
 export type AuditActionKey = keyof typeof AUDIT_ACTIONS;
@@ -153,6 +170,7 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'sending.paused': 'Rem darurat pengiriman ditarik',
   'sending.resumed': 'Pengiriman dilanjutkan',
   'sending.limit_reached': 'Batas kirim harian tercapai',
+  'inbox.bulk_action': 'Aksi massal di inbox',
   'auth.access.denied': 'Akses ditolak',
   'user.role_changed': 'Peran pengguna diubah',
   'user.disabled': 'Pengguna dinonaktifkan',
@@ -174,6 +192,12 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'channel.business_profile_update_failed': 'Perubahan profil bisnis ditolak Meta',
   'channel.webhook_signature_rejected': 'Webhook WhatsApp ditolak berulang',
   'auth.password_reset.burst': 'Banyak permintaan atur ulang password',
+  'tag.created': 'Tag dibuat',
+  'tag.updated': 'Tag diubah',
+  'tag.deleted': 'Tag dihapus',
+  'quick_reply.created': 'Template percakapan dibuat',
+  'quick_reply.updated': 'Template percakapan diubah',
+  'quick_reply.deleted': 'Template percakapan dihapus',
 };
 
 /** Label untuk aksi yang mungkin belum dikenal klien (versi lama): tampilkan kodenya apa adanya. */
@@ -194,6 +218,8 @@ export const AUDIT_TARGET_TYPES = [
   'rule',
   'audit_log',
   'channel',
+  'tag',
+  'quick_reply',
 ] as const;
 export const auditTargetTypeSchema = z.enum(AUDIT_TARGET_TYPES, {
   error: 'Jenis target tidak dikenal.',
@@ -210,6 +236,8 @@ export const AUDIT_TARGET_TYPE_LABELS: Readonly<Record<AuditTargetType, string>>
   rule: 'Aturan akses',
   audit_log: 'Audit log',
   channel: 'Channel',
+  tag: 'Tag',
+  quick_reply: 'Template percakapan',
 };
 
 // ── GET /audit-logs ─────────────────────────────────────────────────────────
@@ -362,6 +390,7 @@ export const SECURITY_EVENT_KINDS = [
   'sending_paused',
   'sending_limit_reached',
   'sending_limits_changed',
+  'inbox_bulk_action',
 ] as const;
 export const securityEventKindSchema = z.enum(SECURITY_EVENT_KINDS);
 export type SecurityEventKind = z.infer<typeof securityEventKindSchema>;
@@ -387,6 +416,7 @@ export const SECURITY_EVENT_SEVERITY: Readonly<Record<SecurityEventKind, 'warnin
   sending_paused: 'warning',
   sending_limit_reached: 'warning',
   sending_limits_changed: 'info',
+  inbox_bulk_action: 'warning',
 };
 
 export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> = {
@@ -405,6 +435,7 @@ export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> 
   sending_paused: 'Rem darurat pengiriman ditarik',
   sending_limit_reached: 'Batas kirim harian tercapai',
   sending_limits_changed: 'Batas kirim diubah',
+  inbox_bulk_action: 'Aksi massal di inbox',
 };
 
 export const securityEventSchema = z.object({

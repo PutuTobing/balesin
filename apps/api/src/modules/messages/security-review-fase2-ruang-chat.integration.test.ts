@@ -236,11 +236,11 @@ describe('S1 — unduhan media masuk tanpa single-flight (memori & jatah Meta)',
 });
 
 describe('Putaran 2 — R5: klaim yang masih berjalan dianggap macet', () => {
-  // Job yang dijalankan ulang (stalled) SEMENTARA percobaan pertama masih memanggil Meta menemukan
-  // klaim tanpa wamid → langsung `failed`/`delivery_unknown`. Percobaan pertama lalu gagal menyimpan
-  // wamid (`status = 'pending'` tidak cocok lagi): pesan yang SUDAH terkirim tampil gagal, status
-  // Meta berikutnya tidak tertaut, dan agen terdorong "Kirim ulang" → pesan ganda.
-  it.fails('klaim yang masih baru → job kedua dilewati, pesan tetap pending', async () => {
+  // Dulu: job yang dijalankan ulang (stalled) SEMENTARA percobaan pertama masih memanggil Meta
+  // menemukan klaim tanpa wamid → langsung `failed`/`delivery_unknown`. Diperbaiki: klaim lebih muda
+  // dari `SEND_CLAIM_STALE_MS` → job dilewati; klaim macet ditandai pemeriksa berkala, dan wamid yang
+  // datang belakangan memulihkan pesan (tes worker `messages.integration.test.ts`).
+  it('klaim yang masih baru → job kedua dilewati, pesan tetap pending', async () => {
     await receive(textMessageNotification());
     const conversation = await conversationId();
     const sent = await call(
@@ -272,7 +272,7 @@ describe('Putaran 2 — R5: klaim yang masih berjalan dianggap macet', () => {
         secretBox: box,
       },
     );
-    expect(result.status).toBe('skipped'); // saat ini 'failed' (delivery_unknown)
+    expect(result.status).toBe('skipped');
     const [row] = await harness.db
       .select({ status: messages.status })
       .from(messages)

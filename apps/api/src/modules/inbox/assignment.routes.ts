@@ -19,7 +19,7 @@ import { requirePermission } from '../../http/route-access';
 import { requireAuth } from '../auth/auth.hook';
 import { permissionGrant } from '../auth/permission-grant';
 import type { AssignmentContext, AssignmentService } from './assignment.service';
-import { findConversation, lastMessagesOf } from './inbox.repo';
+import { conversationExtras, findConversation } from './inbox.repo';
 import { toConversation } from './inbox-view';
 
 export interface AssignmentRoutesOptions {
@@ -35,7 +35,7 @@ export interface AssignmentRoutesOptions {
  *  - ambil / tugaskan / alihkan = `inbox.assign` (Owner, Admin, Supervisor, CS);
  *  - kembalikan ke antrian = `inbox.reply` + cakupan; tanpa `inbox.assign` (Teknisi) hanya miliknya;
  *  - tandai selesai / buka lagi = `inbox.reply` + cakupan (Teknisi: yang di-assign);
- *  - riwayat & daftar agen = `inbox.view`.
+ *  - riwayat = `inbox.view`; daftar agen = `inbox.assign` (review butir 7 Info 1).
  */
 export const ASSIGNMENT_RULE: RateLimitRule = { name: 'inbox-aksi', limit: 120, windowSeconds: 60 };
 
@@ -79,8 +79,15 @@ export const assignmentRoutes: FastifyPluginCallbackZod<AssignmentRoutesOptions>
     const grant = await permissionGrant(request, 'inbox.view');
     const row = await findConversation(db, grant, conversationId);
     if (!row) return { conversation: null };
-    const last = await lastMessagesOf(db, grant.organizationId, [row.id]);
-    return { conversation: toConversation(row, last.get(row.id), now()) };
+    const extras = await conversationExtras(db, grant.organizationId, [row]);
+    return {
+      conversation: toConversation(
+        row,
+        extras.lastMessages.get(row.id),
+        now(),
+        extras.tags.get(row.contact.id) ?? [],
+      ),
+    };
   }
 
   const actions = [
@@ -155,14 +162,16 @@ export const assignmentRoutes: FastifyPluginCallbackZod<AssignmentRoutesOptions>
     },
   );
 
+  // Info 1 (review butir 7): hanya pemegang `inbox.assign` (Owner/Admin/Supervisor/CS) — Teknisi
+  // tidak menugaskan/menyaring per agen, jadi tidak perlu melihat peran & beban rekan.
   app.get(
     routes.agents,
     {
-      config: { access: requirePermission('inbox.view') },
+      config: { access: requirePermission('inbox.assign') },
       schema: { response: { 200: inboxAgentListResponseSchema, ...errors } },
     },
     async (request) => {
-      const grant = await permissionGrant(request, 'inbox.view');
+      const grant = await permissionGrant(request, 'inbox.assign');
       return { agents: await assignment.agents(grant.organizationId) };
     },
   );

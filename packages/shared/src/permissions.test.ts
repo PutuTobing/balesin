@@ -46,6 +46,7 @@ const EXPECTED: Record<Permission, string> = {
   'inbox.reply': 'all  all      all  all  assigned',
   'inbox.initiate': 'all  all      all  -    -',
   'inbox.assign': 'all  all      all  all  -',
+  'inbox.notes.moderate': 'all  all      -    -    -',
   'contacts.view': 'all  all      all  all  assigned',
   'contacts.manage': 'all  all      all  all  -',
   'contacts.export': 'all  all      all  -    -',

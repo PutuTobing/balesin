@@ -92,7 +92,8 @@ export const PERMISSIONS = [
   'inbox.view',
   /**
    * Kerjakan percakapan YANG SUDAH ADA (dalam cakupan): balas pesan/template di percakapan itu,
-   * catatan internal, tag, tandai selesai/buka lagi, saklar bot per percakapan. Bercakupan.
+   * catatan sesi, tandai pesan, quick reply, tandai selesai/buka lagi, saklar bot per percakapan.
+   * Bercakupan. Tag menempel ke KONTAK, jadi memasang/melepasnya = `contacts.manage` (butir 8).
    * TIDAK mencakup memulai percakapan ke nomor yang belum punya percakapan — itu `inbox.initiate`.
    */
   'inbox.reply',
@@ -105,6 +106,11 @@ export const PERMISSIONS = [
   'inbox.initiate',
   /** Assign/alihkan percakapan ke agen lain, ambil dari antrian terbuka, ambil alih. */
   'inbox.assign',
+  /**
+   * Menghapus catatan sesi milik ORANG LAIN (moderasi, butir 8). Mengubah isi catatan tetap hanya
+   * penulisnya — supaya tidak ada yang "menulis atas nama" rekan.
+   */
+  'inbox.notes.moderate',
   // ── CRM ───────────────────────────────────────────────────────────────────
   /** Lihat kontak dan riwayatnya. Bercakupan. */
   'contacts.view',
@@ -170,6 +176,7 @@ const MATRIX: Readonly<Record<Permission, Row>> = {
   'inbox.reply': [Y, Y, Y, Y, 'assigned'],
   'inbox.initiate': [Y, Y, Y, N, N],
   'inbox.assign': [Y, Y, Y, Y, N],
+  'inbox.notes.moderate': [Y, Y, N, N, N],
   'contacts.view': [Y, Y, Y, Y, 'assigned'],
   'contacts.manage': [Y, Y, Y, Y, N],
   'contacts.export': [Y, Y, Y, N, N],
@@ -305,6 +312,7 @@ export const PERMISSION_LABELS: Readonly<Record<Permission, string>> = {
   'inbox.reply': 'Balas percakapan yang sudah ada',
   'inbox.initiate': 'Mulai percakapan ke nomor baru',
   'inbox.assign': 'Assign dan alihkan percakapan',
+  'inbox.notes.moderate': 'Hapus catatan sesi milik orang lain',
   'contacts.view': 'Lihat kontak',
   'contacts.manage': 'Ubah kontak',
   'contacts.export': 'Impor dan ekspor kontak',

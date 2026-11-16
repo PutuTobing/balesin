@@ -1,14 +1,19 @@
 import {
   MAINTENANCE_JOBS,
+  NOOP_INBOX_EVENT_PUBLISHER,
   QUEUE_NAMES,
   QUEUE_PREFIX,
+  SEND_CLAIM_STALE_MS,
+  STALE_SEND_CLAIMS_INTERVAL_MS,
   WEBHOOK_PAYLOAD_RETENTION_INTERVAL_MS,
   maintenanceJobPayloadSchema,
+  type InboxBusEventInput,
+  type InboxEventPublisher,
   type Logger,
 } from '@balesin/core';
-import type { Database } from '@balesin/db';
+import { messages, type Database } from '@balesin/db';
 import { Queue, UnrecoverableError, Worker } from 'bullmq';
-import { sql } from 'drizzle-orm';
+import { and, eq, isNull, lt, sql } from 'drizzle-orm';
 
 import type { QueueConnectionOptions } from './system';
 
@@ -163,23 +168,86 @@ export interface MaintenanceJobDeps {
   db: Database;
   logger: Logger;
   now?: () => Date;
+  /** Event real-time untuk pesan yang ditandai `delivery_unknown` oleh pemeriksa klaim. */
+  publisher?: InboxEventPublisher;
+}
+
+/**
+ * Pemeriksa klaim kirim macet (review ruang chat R5): pesan keluar `pending` tanpa wamid yang
+ * klaimnya lebih tua dari `SEND_CLAIM_STALE_MS` → `failed` (`delivery_unknown`, TIDAK diulang
+ * otomatis — bisa saja sudah terkirim). Bila jawaban Meta ternyata datang belakangan, worker pesan
+ * memulihkannya (wamid disimpan, status `sent`).
+ */
+export async function markStaleSendClaims(
+  db: Database,
+  options: { now?: Date; publisher?: InboxEventPublisher } = {},
+): Promise<number> {
+  const now = options.now ?? new Date();
+  const publisher = options.publisher ?? NOOP_INBOX_EVENT_PUBLISHER;
+  const rows = await db
+    .update(messages)
+    .set({ status: 'failed', failureReason: 'delivery_unknown', statusUpdatedAt: now })
+    .where(
+      and(
+        eq(messages.direction, 'outbound'),
+        eq(messages.status, 'pending'),
+        isNull(messages.wamid),
+        lt(messages.sendClaimedAt, new Date(now.getTime() - SEND_CLAIM_STALE_MS)),
+      ),
+    )
+    .returning({
+      id: messages.id,
+      organizationId: messages.organizationId,
+      conversationId: messages.conversationId,
+    });
+  const events: InboxBusEventInput[] = rows.flatMap((row) => [
+    {
+      type: 'message.status' as const,
+      organizationId: row.organizationId,
+      conversationId: row.conversationId,
+      messageId: row.id,
+    },
+    {
+      type: 'conversation.updated' as const,
+      organizationId: row.organizationId,
+      conversationId: row.conversationId,
+    },
+  ]);
+  await publisher.publish(events);
+  return rows.length;
 }
 
 export async function processMaintenanceJob(
   job: MaintenanceJob,
   deps: MaintenanceJobDeps,
-): Promise<RetentionResult> {
-  if (job.name !== MAINTENANCE_JOBS.webhookPayloadRetention) {
-    throw new UnrecoverableError(`Job "${job.name}" tidak dikenal di antrian maintenance`);
-  }
+): Promise<Record<string, number>> {
   if (!maintenanceJobPayloadSchema.safeParse(job.data ?? {}).success) {
     throw new UnrecoverableError('Payload job maintenance tidak valid');
   }
-  const result = await purgeWebhookPayloads(deps.db, { now: deps.now?.() });
-  if (result.purged > 0 || result.expiredPending > 0 || result.deleted > 0) {
-    deps.logger.info(result, 'Retensi webhook: isi kejadian lama dikosongkan / baris lama dihapus');
+  switch (job.name) {
+    case MAINTENANCE_JOBS.webhookPayloadRetention: {
+      const result = await purgeWebhookPayloads(deps.db, { now: deps.now?.() });
+      if (result.purged > 0 || result.expiredPending > 0 || result.deleted > 0) {
+        deps.logger.info(
+          result,
+          'Retensi webhook: isi kejadian lama dikosongkan / baris lama dihapus',
+        );
+      }
+      return { ...result };
+    }
+    case MAINTENANCE_JOBS.staleSendClaims: {
+      const stale = await markStaleSendClaims(deps.db, {
+        now: deps.now?.(),
+        ...(deps.publisher ? { publisher: deps.publisher } : {}),
+      });
+      if (stale > 0) {
+        deps.logger.warn({ stale }, 'Klaim kirim macet ditandai "mungkin terkirim"');
+      }
+      return { stale };
+    }
+    default:
+      throw new UnrecoverableError(`Job "${job.name}" tidak dikenal di antrian maintenance`);
   }
-  return result;
 }
 
 export function createMaintenanceQueue(options: QueueConnectionOptions): Queue {
@@ -191,6 +259,15 @@ export function createMaintenanceQueue(options: QueueConnectionOptions): Queue {
 
 /** Mendaftarkan jadwal berkala (idempoten: memanggil ulang hanya memperbarui jadwal yang sama). */
 export async function scheduleMaintenanceJobs(queue: Queue): Promise<void> {
+  await queue.upsertJobScheduler(
+    MAINTENANCE_JOBS.staleSendClaims,
+    { every: STALE_SEND_CLAIMS_INTERVAL_MS },
+    {
+      name: MAINTENANCE_JOBS.staleSendClaims,
+      data: {},
+      opts: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 50 } },
+    },
+  );
   await queue.upsertJobScheduler(
     MAINTENANCE_JOBS.webhookPayloadRetention,
     { every: WEBHOOK_PAYLOAD_RETENTION_INTERVAL_MS },

@@ -1,8 +1,10 @@
 import {
   channels,
+  contactTags,
   contacts,
   conversations,
   messages,
+  tags,
   users,
   type ContactRow,
   type DbExecutor,
@@ -15,8 +17,24 @@ import {
   type ConversationFilter,
   type ConversationListQuery,
   type ConversationStatus,
+  type MessageListFilter,
+  type TagColor,
+  type TagRef,
 } from '@balesin/shared';
-import { and, desc, eq, gt, ilike, inArray, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
+import {
+  and,
+  desc,
+  eq,
+  gt,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 
 import { scopeCondition, type PermissionGrant } from '../auth/permission-grant';
 
@@ -241,7 +259,10 @@ export function conversationFilterCondition(
         ? gt(conversations.unreadCount, 0)
         : eq(conversations.unreadCount, 0),
     filter.q === undefined ? undefined : searchCondition(filter.q),
-    // TITIK KAIT tag: `exists (select 1 from conversation_tags …)` saat tabel tag dibangun.
+    // Tag menempel ke KONTAK (DECISIONS 2026-11-17): percakapan yang kontaknya memakai tag ini.
+    filter.tagId === undefined
+      ? undefined
+      : sql`exists (select 1 from ${contactTags} where ${contactTags.organizationId} = ${conversations.organizationId} and ${contactTags.contactId} = ${conversations.contactId} and ${contactTags.tagId} = ${filter.tagId})`,
   ) as SQL;
 }
 
@@ -387,12 +408,26 @@ export async function lastMessagesOf(
 
 export type MessageRowView = MessageRow & { occurredAtExact: string };
 
+/** Saringan panel detail (`only`): pesan ditandai / media / file. */
+function messageFilterCondition(only: MessageListFilter | undefined): SQL | undefined {
+  switch (only) {
+    case 'starred':
+      return isNotNull(messages.starredAt);
+    case 'media':
+      return inArray(messages.type, ['image', 'video', 'sticker']);
+    case 'files':
+      return inArray(messages.type, ['document', 'audio']);
+    case undefined:
+      return undefined;
+  }
+}
+
 /** Pesan satu percakapan (PEMANGGIL sudah memastikan percakapannya dalam cakupan). */
 export async function listMessages(
   db: DbExecutor,
   organizationId: string,
   conversationId: string,
-  options: { limit: number; cursor?: Cursor | undefined },
+  options: { limit: number; cursor?: Cursor | undefined; only?: MessageListFilter | undefined },
 ): Promise<MessageRowView[]> {
   const rows = await db
     .select({ message: messages, occurredAtExact: exactTime(sql`${messages.occurredAt}`) })
@@ -401,6 +436,7 @@ export async function listMessages(
       and(
         eq(messages.organizationId, organizationId),
         eq(messages.conversationId, conversationId),
+        messageFilterCondition(options.only),
         options.cursor === undefined
           ? undefined
           : sql`(${messages.occurredAt}, ${messages.id}) < (${options.cursor.atExact}::timestamptz, ${options.cursor.id}::uuid)`,
@@ -409,6 +445,62 @@ export async function listMessages(
     .orderBy(desc(messages.occurredAt), desc(messages.id))
     .limit(options.limit);
   return rows.map((row) => ({ ...row.message, occurredAtExact: row.occurredAtExact }));
+}
+
+/** Tag tiap kontak (satu query), urut nama tanpa membedakan huruf besar/kecil. */
+export async function contactTagsOf(
+  db: DbExecutor,
+  organizationId: string,
+  contactIds: readonly string[],
+): Promise<Map<string, TagRef[]>> {
+  const found = new Map<string, TagRef[]>();
+  if (contactIds.length === 0) return found;
+  const rows = await db
+    .select({
+      contactId: contactTags.contactId,
+      id: tags.id,
+      name: tags.name,
+      color: tags.color,
+    })
+    .from(contactTags)
+    .innerJoin(
+      tags,
+      and(eq(tags.organizationId, contactTags.organizationId), eq(tags.id, contactTags.tagId)),
+    )
+    .where(
+      and(
+        eq(contactTags.organizationId, organizationId),
+        inArray(contactTags.contactId, [...new Set(contactIds)]),
+      ),
+    )
+    .orderBy(sql`lower(${tags.name})`, tags.id);
+  for (const row of rows) {
+    const list = found.get(row.contactId) ?? [];
+    list.push({ id: row.id, name: row.name, color: row.color as TagColor });
+    found.set(row.contactId, list);
+  }
+  return found;
+}
+
+/** Pesan terakhir + tag kontak untuk sekumpulan percakapan (dua query, bukan N+1). */
+export async function conversationExtras(
+  db: DbExecutor,
+  organizationId: string,
+  rows: readonly ConversationRowView[],
+): Promise<{ lastMessages: Map<string, LastMessageRow>; tags: Map<string, TagRef[]> }> {
+  const [lastMessages, tagsByContact] = await Promise.all([
+    lastMessagesOf(
+      db,
+      organizationId,
+      rows.map((row) => row.id),
+    ),
+    contactTagsOf(
+      db,
+      organizationId,
+      rows.map((row) => row.contact.id),
+    ),
+  ]);
+  return { lastMessages, tags: tagsByContact };
 }
 
 /** Satu kontak DALAM cakupan `contacts.view`, atau `undefined`. */

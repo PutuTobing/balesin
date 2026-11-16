@@ -11,6 +11,7 @@ import {
   type Conversation,
   type Message,
   type MessagePreview,
+  type TagRef,
 } from '@balesin/shared';
 import { z } from 'zod';
 
@@ -48,12 +49,20 @@ export function toContactSummary(contact: ContactNames & { id: string }): Contac
   };
 }
 
-export function toContact(row: ContactRow): Contact {
+export function toContact(row: ContactRow, tags: TagRef[]): Contact {
+  const attributes = z
+    .array(z.object({ key: z.string(), value: z.string() }))
+    .catch([])
+    .parse(row.attributes);
   return {
     ...toContactSummary(row),
+    tags,
     channelType: row.channelType,
     name: row.name,
     profileName: row.profileName,
+    email: row.email,
+    notes: row.notes,
+    attributes,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -79,13 +88,14 @@ export function toConversation(
   row: ConversationRowView,
   lastMessage: LastMessageRow | undefined,
   now: Date,
+  tags: TagRef[] = [],
 ): Conversation {
   return {
     id: row.id,
     number: row.number,
     status: row.status,
     channel: row.channel,
-    contact: toContactSummary(row.contact),
+    contact: { ...toContactSummary(row.contact), tags },
     assignee: row.assignee,
     unreadCount: row.unreadCount,
     lastMessageAt: row.lastMessageAt.toISOString(),
@@ -170,6 +180,7 @@ export function toMessage(row: MessageRowView): Message {
     failure: failureOf(row),
     senderUserId: row.senderUserId,
     mediaAvailable: row.media !== null || row.mediaFileId !== null,
+    starredAt: row.starredAt?.toISOString() ?? null,
     createdAt: row.occurredAt.toISOString(),
   };
 }

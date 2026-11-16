@@ -48,6 +48,10 @@ export const ACCESS_RULES = {
   teamAssignRole: 'team.manage.assign_role',
   /** Mengembalikan ke antrian percakapan yang dipegang orang lain tanpa izin `inbox.assign`. */
   inboxUnassignOthers: 'inbox.unassign.others',
+  /** Mengubah catatan sesi milik orang lain (isi catatan hanya bisa diubah penulisnya). */
+  noteEditOthers: 'inbox.note.edit_others',
+  /** Menghapus catatan sesi milik orang lain tanpa izin `inbox.notes.moderate`. */
+  noteDeleteOthers: 'inbox.note.delete_others',
 } as const;
 export type AccessRule = (typeof ACCESS_RULES)[keyof typeof ACCESS_RULES];
 

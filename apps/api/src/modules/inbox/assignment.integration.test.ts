@@ -5,7 +5,15 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import { channels, contacts, conversationEvents, conversations, newId, users } from '@balesin/db';
+import {
+  auditLogs,
+  channels,
+  contacts,
+  conversationEvents,
+  conversations,
+  newId,
+  users,
+} from '@balesin/db';
 import { insertUser } from '@balesin/db/testing';
 import {
   API_ROUTES,
@@ -15,6 +23,7 @@ import {
   errorEnvelopeSchema,
   inboxAgentListResponseSchema,
   inboxStreamEventSchema,
+  securitySummaryResponseSchema,
   type InboxStreamEvent,
   type UserRole,
 } from '@balesin/shared';
@@ -351,7 +360,7 @@ describe('laporan & agen', () => {
     expect((await stateOf(row.id)).firstResponseAt?.getTime()).toBe(first?.getTime());
   });
 
-  it('daftar agen (inbox.view): tanpa email, status aktif, beban percakapan', async () => {
+  it('daftar agen (inbox.assign; Teknisi 403): tanpa email, status aktif, beban percakapan', async () => {
     const cs = await agent('cs', 'Sinta CS');
     const gone = await agent('teknisi', 'Lama Teknisi');
     await harness.db.update(users).set({ disabledAt: new Date() }).where(eq(users.id, gone.userId));
@@ -359,8 +368,12 @@ describe('laporan & agen', () => {
     const claimed = await act(cs, API_ROUTES.inbox.claim, row.id);
     expect(claimed.statusCode, claimed.body).toBe(200);
     const teknisi = await agent('teknisi', 'Arya Teknisi');
-    const response = await call(harness.app, 'GET', API_ROUTES.inbox.agents, undefined, {
+    const denied = await call(harness.app, 'GET', API_ROUTES.inbox.agents, undefined, {
       cookie: teknisi.cookie,
+    });
+    expect(denied.statusCode).toBe(403);
+    const response = await call(harness.app, 'GET', API_ROUTES.inbox.agents, undefined, {
+      cookie: cs.cookie,
     });
     expect(response.statusCode).toBe(200);
     expect(response.body).not.toContain('@majujaya.test');
@@ -371,5 +384,30 @@ describe('laporan & agen', () => {
       role: 'cs',
     });
     expect(agents.find((item) => item.id === gone.userId)).toMatchObject({ active: false });
+  });
+});
+
+describe('alarm aksi massal (review butir 7 R1)', () => {
+  it('> 30 ambil/kembalikan dalam 10 menit → audit + kejadian keamanan warning, sekali per jam', async () => {
+    const cs = await agent('cs', 'Sinta CS');
+    const row = await conversation();
+    for (let round = 0; round < 18; round += 1) {
+      expect((await act(cs, API_ROUTES.inbox.claim, row.id)).statusCode).toBe(200);
+      expect((await act(cs, API_ROUTES.inbox.unassign, row.id)).statusCode).toBe(200);
+    }
+    const alarms = await harness.db
+      .select({ metadata: auditLogs.metadata, actor: auditLogs.actorUserId })
+      .from(auditLogs)
+      .where(eq(auditLogs.action, 'inbox.bulk_action'));
+    expect(alarms).toHaveLength(1);
+    expect(alarms[0]).toMatchObject({ actor: cs.userId, metadata: { actorRole: 'cs' } });
+    const summary = await call(harness.app, 'GET', API_ROUTES.audit.securitySummary, undefined, {
+      cookie: owner.cookie,
+    });
+    const parsed = securitySummaryResponseSchema.parse(summary.json());
+    expect(parsed.counts.inbox_bulk_action).toBe(1);
+    expect(parsed.events).toContainEqual(
+      expect.objectContaining({ kind: 'inbox_bulk_action', severity: 'warning' }),
+    );
   });
 });

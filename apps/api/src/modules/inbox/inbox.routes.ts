@@ -23,13 +23,14 @@ import { enforceRateLimit, type RateLimitRule, type RateLimiter } from '../../ht
 import { requirePermission } from '../../http/route-access';
 import { permissionGrant } from '../auth/permission-grant';
 import {
+  contactTagsOf,
+  conversationExtras,
   countConversations,
   decodeCursor,
   encodeCursor,
   markConversationRead,
   findContact,
   findConversation,
-  lastMessagesOf,
   listConversations,
   listMessages,
   type Cursor,
@@ -176,15 +177,18 @@ export const inboxRoutes: FastifyPluginCallbackZod<InboxRoutesOptions> = (app, o
         );
       }
       const visible = rows.slice(0, pageSize);
-      const lastMessages = await lastMessagesOf(
-        db,
-        grant.organizationId,
-        visible.map((row) => row.id),
-      );
+      const extras = await conversationExtras(db, grant.organizationId, visible);
       const at = now();
       const last = visible.at(-1);
       return {
-        conversations: visible.map((row) => toConversation(row, lastMessages.get(row.id), at)),
+        conversations: visible.map((row) =>
+          toConversation(
+            row,
+            extras.lastMessages.get(row.id),
+            at,
+            extras.tags.get(row.contact.id) ?? [],
+          ),
+        ),
         nextCursor:
           rows.length > pageSize && last
             ? encodeCursor({ atExact: last.lastMessageAtExact, id: last.id })
@@ -242,8 +246,15 @@ export const inboxRoutes: FastifyPluginCallbackZod<InboxRoutesOptions> = (app, o
       }
       const row = await findConversation(db, grant, id);
       if (!row) throw notFound(CONVERSATION_NOT_FOUND);
-      const lastMessages = await lastMessagesOf(db, grant.organizationId, [row.id]);
-      return { conversation: toConversation(row, lastMessages.get(row.id), now()) };
+      const extras = await conversationExtras(db, grant.organizationId, [row]);
+      return {
+        conversation: toConversation(
+          row,
+          extras.lastMessages.get(row.id),
+          now(),
+          extras.tags.get(row.contact.id) ?? [],
+        ),
+      };
     },
   );
 
@@ -261,8 +272,15 @@ export const inboxRoutes: FastifyPluginCallbackZod<InboxRoutesOptions> = (app, o
       const id = requireUuid(request.params.conversationId, CONVERSATION_NOT_FOUND);
       const row = await findConversation(db, grant, id);
       if (!row) throw notFound(CONVERSATION_NOT_FOUND);
-      const lastMessages = await lastMessagesOf(db, grant.organizationId, [row.id]);
-      return { conversation: toConversation(row, lastMessages.get(row.id), now()) };
+      const extras = await conversationExtras(db, grant.organizationId, [row]);
+      return {
+        conversation: toConversation(
+          row,
+          extras.lastMessages.get(row.id),
+          now(),
+          extras.tags.get(row.contact.id) ?? [],
+        ),
+      };
     },
   );
 
@@ -287,6 +305,7 @@ export const inboxRoutes: FastifyPluginCallbackZod<InboxRoutesOptions> = (app, o
       const rows = await listMessages(db, grant.organizationId, conversation.id, {
         limit: pageSize + 1,
         cursor,
+        only: request.query.only,
       });
       const page = rows.slice(0, pageSize);
       const last = page.at(-1);
@@ -314,7 +333,8 @@ export const inboxRoutes: FastifyPluginCallbackZod<InboxRoutesOptions> = (app, o
       const id = requireUuid(request.params.contactId, CONTACT_NOT_FOUND);
       const row = await findContact(db, grant, id);
       if (!row) throw notFound(CONTACT_NOT_FOUND);
-      return { contact: toContact(row) };
+      const tagsByContact = await contactTagsOf(db, grant.organizationId, [row.id]);
+      return { contact: toContact(row, tagsByContact.get(row.id) ?? []) };
     },
   );
 

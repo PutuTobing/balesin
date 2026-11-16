@@ -58,7 +58,7 @@ function main(config: WorkerConfig): void {
       plaintextLogin: plaintextLoginPolicy(config.isProduction),
     },
     webhooks: { db, publisher },
-    maintenance: { db },
+    maintenance: { db, publisher },
     messages: { db, meta, secretBox, publisher },
   });
 

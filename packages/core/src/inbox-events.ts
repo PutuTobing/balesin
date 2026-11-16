@@ -1,3 +1,4 @@
+import { CONVERSATION_DETAIL_SECTIONS } from '@balesin/shared';
 import { z } from 'zod';
 
 import type { Logger } from './logger';
@@ -20,6 +21,10 @@ export const INBOX_BUS_EVENT_TYPES = [
   'conversation.updated',
   'message.created',
   'message.status',
+  /** Bagian panel detail berubah (butir 8) — wajib `section`. */
+  'conversation.detail',
+  /** Master tag organisasi berubah (butir 8) — TANPA `conversationId`. */
+  'tags.changed',
 ] as const;
 export type InboxBusEventType = (typeof INBOX_BUS_EVENT_TYPES)[number];
 
@@ -27,9 +32,12 @@ export const inboxBusEventSchema = z.strictObject({
   v: z.literal(1),
   type: z.enum(INBOX_BUS_EVENT_TYPES),
   organizationId: z.uuid(),
-  conversationId: z.uuid(),
+  /** Wajib untuk semua jenis kecuali `tags.changed` (tingkat organisasi). */
+  conversationId: z.uuid().optional(),
   /** Wajib untuk `message.*`. */
   messageId: z.uuid().optional(),
+  /** Wajib untuk `conversation.detail`. */
+  section: z.enum(CONVERSATION_DETAIL_SECTIONS).optional(),
   /**
    * `conversation.updated` karena dialihkan/dikembalikan: agen sebelumnya. Hub mengirim
    * `conversation.removed` kepadanya bila ia tidak lagi boleh melihat percakapan itu.
@@ -49,7 +57,7 @@ export function dedupeInboxEvents(events: readonly InboxBusEventInput[]): InboxB
   const seen = new Set<string>();
   const unique: InboxBusEventInput[] = [];
   for (const event of events) {
-    const key = `${event.type}|${event.organizationId}|${event.conversationId}|${event.messageId ?? ''}|${event.previousAssigneeUserId ?? ''}`;
+    const key = `${event.type}|${event.organizationId}|${event.conversationId ?? ''}|${event.messageId ?? ''}|${event.previousAssigneeUserId ?? ''}|${event.section ?? ''}`;
     if (seen.has(key)) continue;
     seen.add(key);
     unique.push(event);
@@ -82,6 +90,7 @@ export function createInboxEventPublisher(
         const pipeline = redis.pipeline();
         for (const event of unique) {
           const message: InboxBusEvent = inboxBusEventSchema.parse({ v: 1, ...event });
+          if (!isComplete(message)) throw new Error(`Event inbox ${message.type} tidak lengkap`);
           pipeline.publish(channel, JSON.stringify(message));
         }
         await pipeline.exec();
@@ -105,11 +114,23 @@ export function parseInboxBusMessage(raw: string): InboxBusEvent | null {
     return null;
   }
   const parsed = inboxBusEventSchema.safeParse(value);
-  if (!parsed.success) return null;
-  if (parsed.data.type !== 'conversation.updated' && parsed.data.messageId === undefined) {
-    return null;
-  }
+  if (!parsed.success || !isComplete(parsed.data)) return null;
   return parsed.data;
+}
+
+/** Isian wajib per jenis (skema datar supaya pesan Redis tetap kecil & ketat). */
+function isComplete(event: InboxBusEvent): boolean {
+  switch (event.type) {
+    case 'tags.changed':
+      return event.conversationId === undefined && event.messageId === undefined;
+    case 'conversation.updated':
+      return event.conversationId !== undefined;
+    case 'conversation.detail':
+      return event.conversationId !== undefined && event.section !== undefined;
+    case 'message.created':
+    case 'message.status':
+      return event.conversationId !== undefined && event.messageId !== undefined;
+  }
 }
 
 // ── Pencabutan sesi (penutupan socket seketika) ─────────────────────────────

@@ -66,6 +66,14 @@ import { createChannelsService } from './modules/channels/channels.service';
 import { createAuditService } from './modules/audit/audit.service';
 import { assignmentRoutes } from './modules/inbox/assignment.routes';
 import { createAssignmentService } from './modules/inbox/assignment.service';
+import { createPanelService } from './modules/inbox/panel.service';
+import { panelRoutes } from './modules/inbox/panel.routes';
+import { createContactsService } from './modules/contacts/contacts.service';
+import { contactsRoutes } from './modules/contacts/contacts.routes';
+import { createTagsService } from './modules/tags/tags.service';
+import { tagsRoutes } from './modules/tags/tags.routes';
+import { createQuickRepliesService } from './modules/quick-replies/quick-replies.service';
+import { quickRepliesRoutes } from './modules/quick-replies/quick-replies.routes';
 import { inboxRoutes } from './modules/inbox/inbox.routes';
 import { createMediaStore } from './modules/messages/media-store';
 import { sendingLimitsRoutes } from './modules/sending-limits/sending-limits.routes';
@@ -492,8 +500,27 @@ export async function buildApp(deps: AppDeps) {
       db,
       publisher: inboxEvents,
       accessDenied,
+      limiter,
       logger: deps.logger,
     }),
+  });
+  // Panel detail & quick reply (Fase 2 butir 8–9).
+  await app.register(contactsRoutes, {
+    db,
+    limiter,
+    contacts: createContactsService({ db, publisher: inboxEvents }),
+  });
+  await app.register(tagsRoutes, {
+    limiter,
+    tags: createTagsService({ db, publisher: inboxEvents }),
+  });
+  await app.register(panelRoutes, {
+    limiter,
+    panel: createPanelService({ db, publisher: inboxEvents, accessDenied }),
+  });
+  await app.register(quickRepliesRoutes, {
+    limiter,
+    quickReplies: createQuickRepliesService({ db }),
   });
   // Publik: penerima webhook Meta (keaslian dari tanda tangan App Secret, bukan sesi).
   await app.register(whatsAppWebhookRoutes, { guard: webhookGuard, webhooks: whatsAppWebhooks });

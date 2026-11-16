@@ -3,6 +3,7 @@ import {
   NOOP_INBOX_EVENT_PUBLISHER,
   QUEUE_NAMES,
   QUEUE_PREFIX,
+  SEND_CLAIM_STALE_MS,
   isMetaApiError,
   isStatusAdvance,
   normalizeStatusUpdate,
@@ -384,6 +385,17 @@ export async function processSendMessageJob(
     )
     .returning({ id: messages.id });
   if (!claimed) {
+    // R5: klaim yang masih baru = percobaan lain SEDANG memanggil Meta (job ganda/stalled). Jangan
+    // ganggu — biarkan ia menyimpan wamid. Klaim yang macet ditandai pemeriksa berkala
+    // (`markStaleSendClaims`) atau oleh job berikutnya setelah `SEND_CLAIM_STALE_MS`.
+    const [current] = await db
+      .select({ claimedAt: messages.sendClaimedAt })
+      .from(messages)
+      .where(and(eq(messages.organizationId, organizationId), eq(messages.id, messageId)));
+    if (current?.claimedAt && now.getTime() - current.claimedAt.getTime() < SEND_CLAIM_STALE_MS) {
+      logger.info({ messageId }, 'Pesan keluar sedang dikirim percobaan lain — job ini dilewati');
+      return { status: 'skipped', reason: 'not_pending' };
+    }
     if (await markFailed(db, message, 'delivery_unknown', null, new Date())) {
       await publisher.publish(events);
     }
@@ -446,7 +458,34 @@ export async function processSendMessageJob(
         ),
       )
       .returning({ id: messages.id });
-    if (saved.length > 0) await replayEarlyStatuses(tx, message, wamid);
+    // R5: pesan sudah ditandai `delivery_unknown` (klaim dianggap macet) padahal Meta MENERIMA →
+    // pulihkan: wamid disimpan, status dibetulkan menjadi `sent` supaya status webhook tertaut.
+    const recovered =
+      saved.length > 0
+        ? []
+        : await tx
+            .update(messages)
+            .set({
+              wamid,
+              status: 'sent',
+              errorCode: null,
+              failureReason: null,
+              statusUpdatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(messages.organizationId, organizationId),
+                eq(messages.id, messageId),
+                eq(messages.status, 'failed'),
+                eq(messages.failureReason, 'delivery_unknown'),
+                isNull(messages.wamid),
+              ),
+            )
+            .returning({ id: messages.id });
+    if (recovered.length > 0) {
+      logger.warn({ messageId }, 'Pesan "mungkin terkirim" ternyata diterima Meta — dipulihkan');
+    }
+    if (saved.length > 0 || recovered.length > 0) await replayEarlyStatuses(tx, message, wamid);
   });
   await publisher.publish(events);
   logger.info({ messageId }, 'Pesan keluar diterima Meta');

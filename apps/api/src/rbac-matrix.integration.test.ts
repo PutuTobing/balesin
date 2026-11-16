@@ -144,7 +144,7 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'POST /api/v1/conversations/:conversationId/resolve': 'inbox.reply',
   'POST /api/v1/conversations/:conversationId/reopen': 'inbox.reply',
   'GET /api/v1/conversations/:conversationId/events': 'inbox.view',
-  'GET /api/v1/inbox/agents': 'inbox.view',
+  'GET /api/v1/inbox/agents': 'inbox.assign',
   // WebSocket inbox: sesi + inbox.view (Origin & batas koneksi dicek sebelum upgrade)
   'GET /api/v1/inbox/stream': 'inbox.view',
   'GET /api/v1/conversations/:conversationId': 'inbox.view',
@@ -155,6 +155,27 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'POST /api/v1/messages/:messageId/retry': 'inbox.reply',
   'GET /api/v1/messages/:messageId/media': 'inbox.view',
   'GET /api/v1/contacts/:contactId': 'contacts.view',
+  // panel detail (butir 8): ubah kontak & tag kontak = contacts.manage; master tag lihat = inbox.view,
+  // buat = contacts.manage, ubah/hapus = settings.workspace.manage; catatan & tanda pesan = inbox.reply
+  'PATCH /api/v1/contacts/:contactId': 'contacts.manage',
+  'POST /api/v1/contacts/:contactId/tags': 'contacts.manage',
+  'DELETE /api/v1/contacts/:contactId/tags/:tagId': 'contacts.manage',
+  'GET /api/v1/tags': 'inbox.view',
+  'POST /api/v1/tags': 'contacts.manage',
+  'PATCH /api/v1/tags/:tagId': 'settings.workspace.manage',
+  'DELETE /api/v1/tags/:tagId': 'settings.workspace.manage',
+  'GET /api/v1/conversations/:conversationId/notes': 'inbox.view',
+  'POST /api/v1/conversations/:conversationId/notes': 'inbox.reply',
+  'PATCH /api/v1/conversations/:conversationId/notes/:noteId': 'inbox.reply',
+  'DELETE /api/v1/conversations/:conversationId/notes/:noteId': 'inbox.reply',
+  'PUT /api/v1/messages/:messageId/star': 'inbox.reply',
+  'DELETE /api/v1/messages/:messageId/star': 'inbox.reply',
+  // quick reply (butir 9): pakai = inbox.reply; kelola = quick_replies.manage
+  'GET /api/v1/quick-replies': 'inbox.reply',
+  'POST /api/v1/quick-replies': 'quick_replies.manage',
+  'PATCH /api/v1/quick-replies/:quickReplyId': 'quick_replies.manage',
+  'DELETE /api/v1/quick-replies/:quickReplyId': 'quick_replies.manage',
+  'POST /api/v1/quick-replies/:quickReplyId/use': 'inbox.reply',
   // penerima webhook Meta: publik — keaslian dari verify token (GET) / tanda tangan App Secret (POST)
   'GET /webhooks/whatsapp/:channelId': 'public',
   'POST /webhooks/whatsapp/:channelId': 'public',
@@ -239,6 +260,9 @@ const SAMPLE_PARAMS: Readonly<Record<string, string>> = {
   conversationId: '00000000-0000-4000-8000-0000000000ee',
   contactId: '00000000-0000-4000-8000-0000000000ff',
   messageId: '00000000-0000-4000-8000-0000000000a1',
+  tagId: '00000000-0000-4000-8000-0000000000a2',
+  noteId: '00000000-0000-4000-8000-0000000000a3',
+  quickReplyId: '00000000-0000-4000-8000-0000000000a4',
 };
 
 function concreteUrl(pattern: string): string {

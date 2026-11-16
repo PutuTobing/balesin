@@ -33,9 +33,10 @@ import {
 } from '@balesin/db';
 import { insertOrganization, insertUser } from '@balesin/db/testing';
 import { UnrecoverableError } from 'bullmq';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
 
+import { markStaleSendClaims } from './maintenance';
 import { processSendMessageJob } from './messages';
 
 const box = createSecretBox(new Secret(randomBytes(32)));
@@ -429,13 +430,67 @@ describe('kirim pesan keluar', () => {
 
 describe('review ruang chat R2/R3/S2', () => {
   it('R3: klaim tanpa wamid (percobaan sebelumnya terhenti) → delivery_unknown, Meta tidak dipanggil lagi', async () => {
-    const message = await outbound({ sendClaimedAt: new Date(Date.now() - 60_000) });
+    const message = await outbound({ sendClaimedAt: new Date(Date.now() - 3 * 60_000) });
     const meta = stubMeta();
     expect(await run(message.id, meta.client)).toMatchObject({
       status: 'failed',
       reason: 'delivery_unknown',
     });
     expect(meta.sent).toEqual([]);
+  });
+
+  it('R5: klaim yang masih baru (percobaan lain sedang memanggil Meta) → dilewati, tetap pending', async () => {
+    const message = await outbound({ sendClaimedAt: new Date(Date.now() - 30_000) });
+    const meta = stubMeta();
+    expect(await run(message.id, meta.client)).toEqual({
+      status: 'skipped',
+      reason: 'not_pending',
+    });
+    expect(meta.sent).toEqual([]);
+    const [row] = await db.select().from(messages).where(eq(messages.id, message.id));
+    expect(row?.status).toBe('pending');
+  });
+
+  it('R5: Meta menerima setelah pesan ditandai delivery_unknown → wamid disimpan, status sent', async () => {
+    const message = await outbound();
+    const meta = stubMeta(async () => {
+      // Pemeriksa klaim macet menandai pesan SELAGI panggilan Meta berjalan.
+      await db
+        .update(messages)
+        .set({ status: 'failed', failureReason: 'delivery_unknown' })
+        .where(eq(messages.id, message.id));
+      return { messages: [{ id: 'wamid.PULIH01' }] };
+    });
+    expect(await run(message.id, meta.client)).toMatchObject({ status: 'sent' });
+    const [row] = await db.select().from(messages).where(eq(messages.id, message.id));
+    expect(row).toMatchObject({ status: 'sent', wamid: 'wamid.PULIH01', failureReason: null });
+  });
+
+  it('R5: pemeriksa berkala hanya menandai klaim yang lebih tua dari batas', async () => {
+    const stale = await outbound({ sendClaimedAt: new Date(Date.now() - 3 * 60_000) });
+    const fresh = await outbound({ sendClaimedAt: new Date(Date.now() - 30_000) });
+    const published: InboxBusEventInput[] = [];
+    const count = await markStaleSendClaims(db, {
+      publisher: {
+        publish: (events) => {
+          published.push(...events);
+          return Promise.resolve();
+        },
+      },
+    });
+    expect(count).toBeGreaterThanOrEqual(1);
+    const rows = await db
+      .select({ id: messages.id, status: messages.status, reason: messages.failureReason })
+      .from(messages)
+      .where(inArray(messages.id, [stale.id, fresh.id]));
+    expect(rows.find((row) => row.id === stale.id)).toMatchObject({
+      status: 'failed',
+      reason: 'delivery_unknown',
+    });
+    expect(rows.find((row) => row.id === fresh.id)?.status).toBe('pending');
+    expect(published).toContainEqual(
+      expect.objectContaining({ type: 'message.status', messageId: stale.id }),
+    );
   });
 
   it('R3: dua job bersamaan untuk pesan yang sama → Meta dipanggil SEKALI', async () => {

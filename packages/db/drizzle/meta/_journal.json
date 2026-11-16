@@ -120,6 +120,13 @@
       "when": 1794817809369,
       "tag": "0016_rem_pengiriman",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794824229571,
+      "tag": "0017_panel_detail_quick_reply",
+      "breakpoints": true
     }
   ]
 }

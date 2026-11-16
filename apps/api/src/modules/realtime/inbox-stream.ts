@@ -113,9 +113,14 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
   }
 
   async function payloadFor(event: InboxBusEvent): Promise<{
-    assigneeUserId: string | null;
+    /** `undefined` = event tingkat organisasi (semua pemegang `inbox.view`). */
+    assigneeUserId: string | null | undefined;
     message: InboxStreamEvent;
   } | null> {
+    if (event.type === 'tags.changed') {
+      return { assigneeUserId: undefined, message: { type: 'tags.changed' } };
+    }
+    if (event.conversationId === undefined) return null;
     const [conversation] = await db
       .select({
         id: conversations.id,
@@ -135,6 +140,17 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
       .limit(1);
     if (!conversation) return null;
     const { assigneeUserId } = conversation;
+    if (event.type === 'conversation.detail') {
+      if (event.section === undefined) return null;
+      return {
+        assigneeUserId,
+        message: {
+          type: 'conversation.detail',
+          conversationId: conversation.id,
+          section: event.section,
+        },
+      };
+    }
     if (event.type === 'conversation.updated') {
       return {
         assigneeUserId,
@@ -275,7 +291,11 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
       for (const client of group) {
         const scope = permissionScope(client.role, 'inbox.view');
         const holders = payload.assigneeUserId ? [payload.assigneeUserId] : [];
-        if (scope !== null && isWithinScope(scope, client.userId, { holderUserIds: holders })) {
+        const visible =
+          scope !== null &&
+          (payload.assigneeUserId === undefined ||
+            isWithinScope(scope, client.userId, { holderUserIds: holders }));
+        if (visible) {
           if (send(client, payload.message)) delivered += 1;
           continue;
         }
@@ -283,6 +303,7 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
         // ID, supaya web menutup panel dan membuang cache-nya.
         if (
           event.type === 'conversation.updated' &&
+          event.conversationId !== undefined &&
           event.previousAssigneeUserId !== undefined &&
           client.userId === event.previousAssigneeUserId
         ) {
