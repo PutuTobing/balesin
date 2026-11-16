@@ -161,12 +161,16 @@ test('Owner: tambah nomor lewat wizard, tes gagal → ganti token → berhasil, 
     await expect(heading2(page, name)).toBeVisible();
     await expect(page.getByText('Tes terakhir gagal')).toBeVisible();
 
-    // Ganti token (konfirmasi identitas); token lama tidak pernah ditampilkan.
-    await page.getByRole('button', { name: 'Ganti kredensial', exact: true }).click();
+    // Tes gagal karena token: aksi utama di kotak gagal membuka form ganti dengan Token terfokus.
+    // Token lama tidak pernah ditampilkan, dan nilai baru tidak muncul sebagai atribut DOM.
+    await page.getByRole('button', { name: 'Ganti kredensial', exact: true }).first().click();
     const token = page.getByLabel(/^Token System User/);
+    await expect(token).toBeFocused();
     await expect(token).toHaveValue('');
+    await expect(token).toHaveAttribute('autocomplete', 'new-password');
     await expect(token).toHaveAttribute('type', 'password');
     await token.fill(FAKE_META.token);
+    expect(await page.content()).not.toContain(FAKE_META.token);
     await page.getByRole('button', { name: 'Simpan kredensial', exact: true }).click();
     await confirmWith(page, owner, 'Ganti kredensial channel?', 'Simpan kredensial');
     await expect(page.getByText('Kredensial diganti.', { exact: false })).toBeVisible();
@@ -177,12 +181,12 @@ test('Owner: tambah nomor lewat wizard, tes gagal → ganti token → berhasil, 
     await expect(page.getByText(number.display).first()).toBeVisible();
     await expect(page.getByText('1.000 pelanggan per 24 jam')).toBeVisible();
 
-    // Profil bisnis: dibaca dari Meta tiruan; Info + website wajib konfirmasi identitas.
-    const about = page.getByLabel('Info', { exact: true });
+    // Profil bisnis: dibaca dari Meta tiruan; Tentang + situs web wajib konfirmasi identitas.
+    const about = page.getByLabel('Tentang', { exact: true });
     await expect(about).toHaveValue(FAKE_META.profile.about);
     const newAbout = 'Balasan CS 08.00–21.00 setiap hari.';
     await about.fill(newAbout);
-    await page.getByLabel(/^Website 2/).fill('https://majujaya.test/promo');
+    await page.getByLabel(/^Situs web 2/).fill('https://majujaya.test/promo');
     await page.getByRole('button', { name: 'Simpan profil', exact: true }).click();
     await confirmWith(page, owner, 'Simpan profil bisnis?', 'Simpan profil');
     await expect(page.getByText('Profil bisnis tersimpan di Meta.')).toBeVisible({
@@ -199,15 +203,15 @@ test('Owner: tambah nomor lewat wizard, tes gagal → ganti token → berhasil, 
 
     // Muat ulang: nilai baru memang tersimpan di Meta (tiruan).
     await page.reload();
-    await expect(page.getByLabel('Info', { exact: true })).toHaveValue(newAbout);
-    await expect(page.getByLabel(/^Website 2/)).toHaveValue('https://majujaya.test/promo');
+    await expect(page.getByLabel('Tentang', { exact: true })).toHaveValue(newAbout);
+    await expect(page.getByLabel(/^Situs web 2/)).toHaveValue('https://majujaya.test/promo');
     await expect(page.getByLabel('Kategori')).toHaveValue('RETAIL');
 
     // Nonaktifkan (dialog konfirmasi biasa).
     await page.getByRole('button', { name: 'Nonaktifkan channel', exact: true }).click();
     const disable = page.getByRole('dialog', { name: 'Nonaktifkan channel ini?' });
     await disable.getByRole('button', { name: 'Nonaktifkan', exact: true }).click();
-    await expect(page.getByText('Channel nonaktif', { exact: true })).toBeVisible();
+    await expect(page.getByText(/^Dinonaktifkan sejak /)).toBeVisible();
 
     // Hapus (konfirmasi identitas) → kembali ke daftar dengan pesan.
     await page.getByRole('button', { name: 'Hapus channel', exact: true }).click();
@@ -259,7 +263,7 @@ test('HP: wizard maju-mundur tanpa kehilangan isian, error per isian, tinggalkan
 
   // Tinggalkan lewat tombol kembali header: dialog konfirmasi, "Tetap di sini" mempertahankan isian.
   await page.getByRole('link', { name: 'Kembali ke Channel' }).click();
-  const leave = page.getByRole('dialog', { name: 'Tinggalkan wizard?' });
+  const leave = page.getByRole('dialog', { name: 'Batal menambah nomor?' });
   await expect(leave).toBeVisible();
   await leave.getByRole('button', { name: 'Tetap di sini' }).click();
   await expect(page.getByLabel('Nama channel')).toHaveValue('CS E2E HP');

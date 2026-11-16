@@ -38,6 +38,8 @@ export function CodeField({ kind, value, onValueChange, ...field }: CodeFieldPro
       autoCapitalize="none"
       autoCorrect="off"
       spellCheck={false}
+      // Kode sekali pakai tetap rahasia selama dialog terbuka: tanpa atribut `value` di DOM.
+      concealValue
       maxLength={totp ? undefined : 24}
       inputClassName={styles.codeInput}
     />

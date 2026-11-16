@@ -104,8 +104,34 @@ describe('halaman nomor WhatsApp', () => {
     });
     fireEvent.click(await screen.findByRole('button', { name: t.channels.test.action }));
     expect(await screen.findByText(message)).toBeInTheDocument();
-    expect(screen.getByText(t.channels.test.failedTitle)).toBeInTheDocument();
-    expect(await screen.findByText('Gagal', { selector: 'span' })).toBeInTheDocument();
+    expect(screen.getByText(t.channels.detail.lastFailedTitle)).toBeInTheDocument();
+    // Satu kotak gagal saja (tanpa salinan "Koneksi gagal" di bawah tombol tes).
+    expect(screen.getAllByText(message)).toHaveLength(1);
+    expect(await screen.findByText('Koneksi gagal', { selector: 'span' })).toBeInTheDocument();
+  });
+
+  it('tes terakhir gagal karena token: aksi utama "Ganti kredensial" membuka form, Token terfokus', async () => {
+    const failed = fakeChannel({
+      status: 'failed',
+      lastTest: {
+        ok: false,
+        code: 'token_invalid',
+        message: 'Token System User ditolak Meta.',
+        testedAt: '2026-11-14T03:00:00.000Z',
+      },
+    });
+    await renderApp(path, { routes: detailRoutes(failed) });
+    const notice = (await screen.findByText(t.channels.detail.lastFailedTitle)).closest(
+      'div',
+    )!.parentElement!;
+    const fix = within(notice).getByRole('button', { name: t.channels.credentials.change });
+    // Tombol tes turun jadi sekunder: mengulang tes dengan token yang sama tidak menolong.
+    expect(screen.getByRole('button', { name: t.channels.test.action })).not.toHaveClass(/primary/);
+    fireEvent.click(fix);
+    const token = await screen.findByLabelText(new RegExp(`^${t.channels.credentials.token}`));
+    await waitFor(() => expect(token).toHaveFocus());
+    // Fakta kredensial disembunyikan selama form terbuka (nilainya tidak tampil dua kali).
+    expect(screen.queryByText('••••Q2ZD')).not.toBeInTheDocument();
   });
 
   it('ganti kredensial: hanya isian berubah + konfirmasi identitas; nilai lama tidak pernah tampil', async () => {
@@ -158,17 +184,17 @@ describe('halaman nomor WhatsApp', () => {
     const { api } = await renderApp(path, {
       routes: detailRoutes(channel, {
         [`POST ${at(API_ROUTES.channels.disable)}`]: () =>
-          json({ channel: { ...channel, enabled: false } }),
+          json({ channel: { ...channel, enabled: false, disabledAt: '2026-11-14T03:00:00.000Z' } }),
         [`POST ${at(API_ROUTES.channels.enable)}`]: () => json({ channel }),
       }),
     });
     fireEvent.click(await screen.findByRole('button', { name: t.channels.access.disable }));
     const dialog = await screen.findByRole('dialog', { name: t.channels.access.disableTitle });
     fireEvent.click(within(dialog).getByRole('button', { name: t.channels.access.disableConfirm }));
-    expect(await screen.findByText(t.channels.detail.disabledTitle)).toBeInTheDocument();
+    expect(await screen.findByText(/^Dinonaktifkan sejak /)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: t.channels.detail.enable }));
     await waitFor(() =>
-      expect(screen.queryByText(t.channels.detail.disabledTitle)).not.toBeInTheDocument(),
+      expect(screen.queryByText(/^Dinonaktifkan sejak /)).not.toBeInTheDocument(),
     );
     expect(find(api.requests, 'POST', API_ROUTES.channels.enable)).toHaveLength(1);
   });
@@ -226,7 +252,7 @@ describe('halaman nomor WhatsApp', () => {
       vertical: 'RETAIL',
     });
 
-    fireEvent.change(screen.getByLabelText(/^Website 2/), {
+    fireEvent.change(screen.getByLabelText(/^Situs web 2/), {
       target: { value: 'https://majujaya.co.id/promo' },
     });
     fireEvent.click(screen.getByRole('button', { name: t.channels.profile.save }));
@@ -320,6 +346,26 @@ describe('daftar channel & menu Pengaturan', () => {
     expect(link).toHaveAttribute('href', '/pengaturan/channel');
     expect(await within(link).findByText(t.channels.menuNone)).toBeInTheDocument();
     expect(within(link).getByText(t.channels.connectNow)).toBeInTheDocument();
+  });
+
+  it('menu Pengaturan: jumlah channel bermasalah disebut ("4 nomor · 1 koneksi gagal")', async () => {
+    const make = (n: number, status: 'connected' | 'failed') =>
+      fakeChannel({ id: `6c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e1${n}`, name: `CS ${n}`, status });
+    await renderApp('/pengaturan', {
+      channelSettings: {
+        channels: [
+          make(1, 'connected'),
+          make(2, 'failed'),
+          make(3, 'connected'),
+          make(4, 'connected'),
+        ],
+        canStoreSecrets: true,
+        maxChannels: 20,
+      },
+    });
+    const link = await screen.findByRole('link', { name: /^Channel/ });
+    expect(await within(link).findByText('4 nomor')).toBeInTheDocument();
+    expect(within(link).getByText('1 koneksi gagal')).toBeInTheDocument();
   });
 
   it('menu Pengaturan: CS tidak melihat Channel', async () => {

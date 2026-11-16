@@ -10,7 +10,7 @@ import {
 import { Button } from '../../components/ui/Button';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { PasswordField, TextField } from '../../components/ui/Field';
+import { SecretField, TextField } from '../../components/ui/Field';
 import { Icon } from '../../components/ui/Icon';
 import { Notice } from '../../components/ui/Notice';
 import { Page } from '../../components/ui/Page';
@@ -25,6 +25,7 @@ import { useSession } from '../auth/session';
 import { isConfirmationError } from '../identity/confirmation-error';
 import { IdentityDialog } from '../identity/IdentityDialog';
 import { addBlockedReason } from './channel-status';
+import { MasterKeyCommand } from './MasterKeyCommand';
 import styles from './Channels.module.css';
 import { ChannelListSkeleton } from './ChannelsSkeleton';
 import { GuideSteps } from './GuideSteps';
@@ -66,26 +67,31 @@ export function ChannelWizardPage() {
       {blocked === null ? (
         <ChannelWizard />
       ) : blocked ? (
-        <EmptyState
-          illustration={<ChannelIllustration />}
-          title={
-            blocked === 'noMasterKey'
-              ? t.channels.list.noMasterKeyTitle
-              : t.channels.list.limitTitle
-          }
-          body={
-            blocked === 'noMasterKey' ? (
-              <RichText text={t.channels.list.noMasterKeyBody} />
-            ) : (
-              t.channels.list.limitBody(list.data?.maxChannels ?? 0)
-            )
-          }
-          actions={
-            <Button asChild variant="primary">
-              <Link to="/pengaturan/channel">{t.channels.detail.backToList}</Link>
-            </Button>
-          }
-        />
+        <div className={styles.content}>
+          <EmptyState
+            illustration={<ChannelIllustration />}
+            title={
+              blocked === 'noMasterKey'
+                ? t.channels.list.noMasterKeyTitle
+                : t.channels.list.limitTitle
+            }
+            body={
+              blocked === 'noMasterKey' ? (
+                <div className={styles.blockedBody}>
+                  <RichText text={t.channels.list.noMasterKeyBody} />
+                  <MasterKeyCommand />
+                </div>
+              ) : (
+                t.channels.list.limitBody(list.data?.maxChannels ?? 0)
+              )
+            }
+            actions={
+              <Button asChild variant="primary">
+                <Link to="/pengaturan/channel">{t.channels.detail.backToList}</Link>
+              </Button>
+            }
+          />
+        </div>
       ) : list.isPending ? (
         <div className={styles.content}>
           <SkeletonRegion>
@@ -113,6 +119,19 @@ function ChannelWizard() {
   const navigate = useNavigate();
   const session = useSession();
   const [state, setState] = useState<WizardState>(initialWizardState);
+  /**
+   * Token System User dan App Secret: isian TAK TERKENDALI (dibaca lewat ref saat disimpan), tetap
+   * terpasang tetapi tersembunyi di langkah lain supaya maju-mundur tidak menghapusnya. Nilainya
+   * tidak pernah masuk state React, cache, storage, atau atribut DOM.
+   */
+  const tokenRef = useRef<HTMLInputElement>(null);
+  const secretRef = useRef<HTMLInputElement>(null);
+  const [secretTyped, setSecretTyped] = useState(false);
+  const currentValues = () => ({
+    ...state.values,
+    accessToken: tokenRef.current?.value ?? '',
+    appSecret: secretRef.current?.value ?? '',
+  });
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -142,7 +161,7 @@ function ChannelWizard() {
 
   // Isian belum tersimpan: pindah halaman di dalam aplikasi ditahan dengan dialog konfirmasi,
   // tutup tab / muat ulang minta konfirmasi browser. Ke halaman masuk (sesi habis) tidak ditahan.
-  const unsaved = hasUnsavedInput(state);
+  const unsaved = hasUnsavedInput(state) || (secretTyped && !state.created);
   const unsavedRef = useRef(unsaved);
   useEffect(() => {
     unsavedRef.current = unsaved;
@@ -178,6 +197,16 @@ function ChannelWizard() {
       return { ...current, values: { ...current.values, [field]: value }, errors };
     });
 
+  /** Isian rahasia berubah: hanya error-nya yang dihapus; nilainya tetap di elemen input. */
+  const secretChanged = (field: 'accessToken' | 'appSecret') => {
+    setSecretTyped(Boolean(tokenRef.current?.value || secretRef.current?.value));
+    setState((current) => {
+      if (!(field in current.errors)) return current;
+      const { [field]: _removed, ...errors } = current.errors;
+      return { ...current, errors };
+    });
+  };
+
   /**
    * Simpan channel. Dipanggil langsung (bukan `useMutation`) supaya token, App Secret, dan
    * konfirmasi identitas tidak tertinggal di cache mutasi.
@@ -185,15 +214,17 @@ function ChannelWizard() {
   const persist = async (identity: IdentityConfirmation) => {
     try {
       const created = await endpoints.channels.create({
-        ...toCreateRequest(state.values),
+        ...toCreateRequest(currentValues()),
         confirmation: identity,
       });
       storeChannel(queryClient, created.channel);
       setConfirming(false);
+      // Rahasia tidak disimpan lebih lama dari yang perlu (isiannya juga dilepas setelah ini).
+      if (tokenRef.current) tokenRef.current.value = '';
+      if (secretRef.current) secretRef.current.value = '';
+      setSecretTyped(false);
       setState((current) => ({
         ...current,
-        // Rahasia tidak disimpan lebih lama dari yang perlu.
-        values: { ...current.values, accessToken: '', appSecret: '' },
         created,
         errors: {},
         failure: null,
@@ -219,13 +250,14 @@ function ChannelWizard() {
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (busy) return;
-    const errors = validateStep(state.step, state.values);
+    const values = currentValues();
+    const errors = validateStep(state.step, values);
     if (Object.keys(errors).length > 0) {
       fail(state.step, errors);
       return;
     }
     if (state.step === SAVE_STEP && !state.created) {
-      const all = validateAll(state.values);
+      const all = validateAll(values);
       if (all.step !== null) {
         fail(all.step, all.errors);
         return;
@@ -283,9 +315,10 @@ function ChannelWizard() {
         </div>
 
         {state.created && step === 'webhook' ? (
-          <Notice tone="success" role="status">
+          <p className={styles.savedNote} role="status">
+            <Icon icon={CircleCheck} size={16} />
             {copy.savedNote(state.created.channel.name)}
-          </Notice>
+          </p>
         ) : null}
         {fieldErrorCount > 0 ? (
           <p className="sr-only" role="alert">
@@ -334,31 +367,35 @@ function ChannelWizard() {
           </div>
         ) : null}
 
-        {step === 'token' ? (
-          <PasswordField
-            label={steps.token.label}
-            hint={steps.token.hint}
-            name="token-system-user"
-            value={state.values.accessToken}
-            onChange={(event) => setValue('accessToken', event.target.value)}
-            error={state.errors.accessToken}
-            autoComplete="off"
-            inputClassName={styles.mono}
-          />
-        ) : null}
-
-        {step === 'secret' ? (
-          <>
-            <PasswordField
+        {state.created ? null : (
+          <div hidden={step !== 'token'}>
+            <SecretField
+              ref={tokenRef}
+              label={steps.token.label}
+              hint={steps.token.hint}
+              name="token-system-user"
+              onChange={() => secretChanged('accessToken')}
+              error={state.errors.accessToken}
+              inputClassName={styles.mono}
+            />
+          </div>
+        )}
+        {state.created ? null : (
+          <div hidden={step !== 'secret'}>
+            <SecretField
+              ref={secretRef}
               label={steps.secret.label}
               hint={steps.secret.hint}
               name="app-secret"
-              value={state.values.appSecret}
-              onChange={(event) => setValue('appSecret', event.target.value)}
+              onChange={() => secretChanged('appSecret')}
               error={state.errors.appSecret}
-              autoComplete="off"
               inputClassName={styles.mono}
             />
+          </div>
+        )}
+
+        {step === 'secret' ? (
+          <>
             <p className={styles.note}>
               <Icon icon={Info} size={16} className={styles.noteIcon} />
               <span>

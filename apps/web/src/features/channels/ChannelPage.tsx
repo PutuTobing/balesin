@@ -1,4 +1,9 @@
-import type { ChannelTestResult, IdentityConfirmation, WhatsAppChannel } from '@balesin/shared';
+import type {
+  ChannelCredentialField,
+  ChannelTestResult,
+  IdentityConfirmation,
+  WhatsAppChannel,
+} from '@balesin/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, getRouteApi, useNavigate } from '@tanstack/react-router';
 import { Smartphone } from 'lucide-react';
@@ -19,18 +24,19 @@ import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
 import { channelQuery, channelWebhookQuery, queryKeys, storeChannel } from '../../lib/api/queries';
-import { formatDateTime } from '../../lib/format';
+import { formatDateTime, formatDateTimeInline } from '../../lib/format';
 import { apiFieldErrors } from '../../lib/form';
 import { useSession } from '../auth/session';
 import { IdentityDialog } from '../identity/IdentityDialog';
 import { BusinessProfileCard } from './BusinessProfileCard';
 import { dropChannelFromList, forgetChannel } from './channel-cache';
-import { isChannelId } from './channel-status';
+import { credentialFixFor, isChannelId } from './channel-status';
 import { ChannelStatusBadge } from './ChannelBadges';
 import styles from './Channels.module.css';
 import { ChannelDetailCardsSkeleton } from './ChannelsSkeleton';
 import { CredentialsCard } from './CredentialsCard';
 import { NumberFacts } from './NumberFacts';
+import { SectionNav } from './SectionNav';
 import './route-state';
 import { TestPanel } from './TestPanel';
 import { WebhookPanel } from './WebhookPanel';
@@ -86,27 +92,41 @@ export function ChannelPage() {
 }
 
 function ChannelScreen({ channel }: { channel: WhatsAppChannel }) {
+  // Form ganti kredensial dibuka dari kartunya sendiri ATAU dari kotak "Tes terakhir gagal".
+  const [editing, setEditing] = useState<ChannelCredentialField | null>(null);
   return (
-    <div className={styles.content}>
-      <SummaryCard channel={channel} />
-      <WebhookCard channelId={channel.id} />
-      <BusinessProfileCard channel={channel} />
-      <RenameCard channel={channel} />
-      <CredentialsCard channel={channel} />
-      <AccessCard channel={channel} />
+    <div className={styles.detailLayout}>
+      <div className={styles.content}>
+        <SummaryCard channel={channel} onFixCredentials={setEditing} />
+        <WebhookCard channelId={channel.id} />
+        <BusinessProfileCard channel={channel} />
+        <RenameCard channel={channel} />
+        <CredentialsCard channel={channel} editing={editing} onEdit={setEditing} />
+        <AccessCard channel={channel} />
+      </div>
+      <SectionNav />
     </div>
   );
 }
 
 // ── Ringkasan + tes koneksi ─────────────────────────────────────────────────
 
-function SummaryCard({ channel }: { channel: WhatsAppChannel }) {
+function SummaryCard({
+  channel,
+  onFixCredentials,
+}: {
+  channel: WhatsAppChannel;
+  onFixCredentials: (field: ChannelCredentialField) => void;
+}) {
   const queryClient = useQueryClient();
   const [testResult, setTestResult] = useState<ChannelTestResult | null>(null);
   const [enabling, setEnabling] = useState(false);
   const [enableError, setEnableError] = useState<string | null>(null);
   const number = channel.number;
   const lastTest = channel.lastTest;
+  const failed = lastTest && !lastTest.ok ? lastTest : null;
+  // Gagal karena kredensial → aksi utama memperbaikinya, bukan mengulang tes yang sama.
+  const fixField = failed ? credentialFixFor(failed.code) : null;
 
   const enable = async () => {
     setEnabling(true);
@@ -122,7 +142,7 @@ function SummaryCard({ channel }: { channel: WhatsAppChannel }) {
   };
 
   return (
-    <section className={styles.card} aria-labelledby="channel-nama">
+    <section id="ringkasan" className={styles.card} aria-labelledby="channel-nama">
       <div className={styles.summaryHead}>
         <span className={styles.summaryIcon}>
           <Icon icon={Smartphone} size={20} />
@@ -143,7 +163,11 @@ function SummaryCard({ channel }: { channel: WhatsAppChannel }) {
       {!channel.enabled ? (
         <Notice
           tone="info"
-          title={copy.disabledTitle}
+          title={
+            channel.disabledAt
+              ? copy.disabledSince(formatDateTimeInline(channel.disabledAt))
+              : t.channels.disabled
+          }
           actions={
             <Button variant="secondary" loading={enabling} onClick={() => void enable()}>
               {enabling ? copy.enabling : copy.enable}
@@ -165,12 +189,25 @@ function SummaryCard({ channel }: { channel: WhatsAppChannel }) {
         <Notice tone="info">{copy.untested}</Notice>
       ) : null}
 
-      {/* Tes terakhir gagal (dari kunjungan sebelumnya); tes baru di halaman ini tampil di bawah tombol. */}
-      {lastTest && !lastTest.ok && !testResult ? (
-        <Notice tone="danger" title={copy.lastFailedTitle}>
-          <p>{lastTest.message}</p>
-          {/* Waktunya sudah ada di fakta "Tes terakhir" bila data nomor tampil. */}
-          {number ? null : <p>{formatDateTime(lastTest.testedAt)}</p>}
+      {/* Tes terakhir gagal (juga tes yang baru dijalankan di halaman ini: cache ikut diperbarui). */}
+      {failed ? (
+        <Notice
+          tone="danger"
+          title={copy.lastFailedTitle}
+          role={testResult ? 'alert' : undefined}
+          actions={
+            fixField ? (
+              <Button variant="primary" onClick={() => onFixCredentials(fixField)}>
+                {t.channels.credentials.change}
+              </Button>
+            ) : undefined
+          }
+        >
+          <div className={styles.paragraphs}>
+            <p>{failed.message}</p>
+            {/* Waktunya sudah ada di fakta "Tes terakhir" bila data nomor tampil. */}
+            {number ? null : <p>{formatDateTime(failed.testedAt)}</p>}
+          </div>
         </Notice>
       ) : null}
 
@@ -188,7 +225,9 @@ function SummaryCard({ channel }: { channel: WhatsAppChannel }) {
         channelId={channel.id}
         result={testResult}
         onResult={setTestResult}
-        variant={channel.status === 'connected' ? 'secondary' : 'primary'}
+        // Kegagalan tampil di kotak "Tes terakhir gagal" di atas (dengan aksi perbaikannya).
+        showFailure={false}
+        variant={channel.status === 'connected' || fixField ? 'secondary' : 'primary'}
       />
     </section>
   );
@@ -242,7 +281,7 @@ function WebhookCard({ channelId }: { channelId: string }) {
   );
 
   return (
-    <section className={styles.card} aria-labelledby="channel-webhook">
+    <section id="webhook" className={styles.card} aria-labelledby="channel-webhook">
       <div className={styles.cardHead}>
         <h2 id="channel-webhook" className={styles.cardTitle}>
           {t.channels.webhook.title}
@@ -345,7 +384,7 @@ function RenameCard({ channel }: { channel: WhatsAppChannel }) {
   };
 
   return (
-    <section className={styles.card} aria-labelledby="channel-ganti-nama">
+    <section id="nama" className={styles.card} aria-labelledby="channel-ganti-nama">
       <div className={styles.cardHead}>
         <h2 id="channel-ganti-nama" className={styles.cardTitle}>
           {t.channels.rename.title}
@@ -431,7 +470,7 @@ function AccessCard({ channel }: { channel: WhatsAppChannel }) {
   };
 
   return (
-    <section className={styles.card} aria-labelledby="channel-akses">
+    <section id="akses" className={styles.card} aria-labelledby="channel-akses">
       <div className={styles.cardHead}>
         <h2 id="channel-akses" className={styles.cardTitle}>
           {access.title}
@@ -453,14 +492,15 @@ function AccessCard({ channel }: { channel: WhatsAppChannel }) {
           {failure}
         </Notice>
       ) : null}
+      {/* Aksi kartu di kiri bawah teksnya; merah penuh hanya di tombol konfirmasi dialog. */}
       <div className={styles.dangerZone}>
-        <div>
-          <h3 className={styles.dangerTitle}>{access.deleteTitleCard}</h3>
-          <p className={styles.hint}>{access.deleteHint}</p>
+        <h3 className={styles.dangerTitle}>{access.deleteTitleCard}</h3>
+        <p className={styles.hint}>{access.deleteHint}</p>
+        <div className={styles.actions}>
+          <Button ref={deleteRef} className={styles.dangerText} onClick={() => setAsking('delete')}>
+            {access.delete}
+          </Button>
         </div>
-        <Button ref={deleteRef} variant="danger" onClick={() => setAsking('delete')}>
-          {access.delete}
-        </Button>
       </div>
       <ConfirmDialog
         open={asking === 'disable'}

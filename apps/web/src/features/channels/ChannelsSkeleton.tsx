@@ -48,9 +48,12 @@ export function ChannelsSkeleton() {
   );
 }
 
-/** Isi kerangka halaman nomor: kartu ringkasan dengan label fakta asli. */
+/**
+ * Isi kerangka halaman nomor: hanya kepala kartu ringkasan (ikon, nama, nomor, status), setinggi
+ * persis baris aslinya. Isi di bawahnya (fakta, kotak nonaktif/gagal, tombol tes) bergantung data,
+ * jadi tidak ditebak di kerangka: kartu cukup tumbuh ke bawah tanpa ada yang bergeser.
+ */
 export function ChannelDetailCardsSkeleton() {
-  const facts = t.channels.number;
   return (
     <div className={styles.content}>
       <div className={styles.card}>
@@ -58,21 +61,12 @@ export function ChannelDetailCardsSkeleton() {
           <Skeleton className={styles.skeletonBigIcon} />
           <div className={styles.summaryText}>
             <Skeleton className={styles.skeletonBigName} />
-            <Skeleton className={styles.skeletonMeta} />
-            <Skeleton className={styles.skeletonBadge} />
+            <Skeleton className={styles.skeletonNumber} />
+            <span className={styles.summaryBadges}>
+              <Skeleton className={styles.skeletonBadge} />
+            </span>
           </div>
         </div>
-        <div className={`${styles.facts} ${styles.factsDivided}`}>
-          {[facts.quality, facts.status, facts.limit, facts.verifiedName, facts.lastTest].map(
-            (label) => (
-              <div key={label} className={styles.fact}>
-                <span className={styles.factLabel}>{label}</span>
-                <Skeleton className={styles.skeletonValue} />
-              </div>
-            ),
-          )}
-        </div>
-        <Skeleton className={styles.skeletonButton} />
       </div>
     </div>
   );

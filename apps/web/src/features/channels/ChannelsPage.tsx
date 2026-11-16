@@ -19,6 +19,7 @@ import { channelSettingsQuery } from '../../lib/api/queries';
 import { cx } from '../../lib/cx';
 import { ChannelStatusBadge, QualityBadge } from './ChannelBadges';
 import { addBlockedReason } from './channel-status';
+import { MasterKeyCommand } from './MasterKeyCommand';
 import styles from './Channels.module.css';
 import { ChannelListSkeleton } from './ChannelsSkeleton';
 import './route-state';
@@ -128,7 +129,12 @@ function AddButton({ blocked, label }: { blocked: boolean; label: string }) {
 
 function BlockedNotice({ reason, max }: { reason: 'noMasterKey' | 'limit'; max: number }) {
   return reason === 'noMasterKey' ? (
-    <Notice id={BLOCKED_NOTICE_ID} tone="warning" title={copy.noMasterKeyTitle}>
+    <Notice
+      id={BLOCKED_NOTICE_ID}
+      tone="warning"
+      title={copy.noMasterKeyTitle}
+      actions={<MasterKeyCommand />}
+    >
       <RichText text={copy.noMasterKeyBody} />
     </Notice>
   ) : (

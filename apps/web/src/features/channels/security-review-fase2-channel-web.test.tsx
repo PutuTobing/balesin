@@ -6,7 +6,7 @@
  */
 import { API_ROUTES, USER_ROLES, apiPath, type UserRole } from '@balesin/shared';
 import type { QueryClient } from '@tanstack/react-query';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { t } from '../../i18n/id';
 import { fakeChannel, fakeSession, json, type FakeRequest } from '../../test/fake-api';
@@ -163,11 +163,11 @@ describe('rahasia tidak tertinggal setelah disimpan', () => {
   });
 });
 
-describe('R1 — selama form terbuka, React menyalin isian rahasia ke atribut `value` di DOM', () => {
-  // React menyinkronkan atribut `value` untuk input terkendali: `<input type="password"
-  // value="EAAG…">` terlihat di DevTools, ikut terekam alat perekam DOM/sesi, dan bisa dibaca
-  // pemilih atribut CSS. Setelah disimpan/ditutup inputnya dilepas (penjaga di atas lulus).
-  it.fails('isian token di form ganti kredensial tidak muncul sebagai atribut value', async () => {
+describe('R1 — isian rahasia tidak pernah muncul sebagai atribut `value` di DOM', () => {
+  // Token dan App Secret: isian tak terkendali (`SecretField`, dibaca lewat ref). Password & kode di
+  // dialog konfirmasi: `PasswordField`/`CodeField` membuang atribut yang disinkronkan React setelah
+  // setiap render. Nilainya tetap ada di properti `.value` (tidak terlihat di DevTools/perekam DOM).
+  it('isian token di form ganti kredensial tidak muncul sebagai atribut value', async () => {
     const channel = fakeChannel();
     const at = (route: string) => apiPath(route, { channelId: channel.id });
     await renderApp(`/pengaturan/channel/${channel.id}`, {
@@ -183,7 +183,52 @@ describe('R1 — selama form terbuka, React menyalin isian rahasia ke atribut `v
     const token = screen.getByLabelText(new RegExp(`^${t.channels.credentials.token}`));
     fireEvent.change(token, { target: { value: NEW_TOKEN } });
     expect(token).toHaveValue(NEW_TOKEN);
-    expect(document.documentElement.outerHTML).not.toContain(NEW_TOKEN); // saat ini value="…"
+    expect(document.documentElement.outerHTML).not.toContain(NEW_TOKEN);
+  });
+
+  it('wizard: token & App Secret (juga setelah maju-mundur) serta password & kode di dialog', async () => {
+    await renderApp('/pengaturan/channel/tambah');
+    await heading(wizard.steps.business.title);
+    next();
+    await heading(wizard.steps.app.title);
+    next();
+    await heading(wizard.steps.number.title);
+    next();
+    await heading(wizard.steps.ids.title);
+    fill(wizard.steps.ids.name, 'CS Review');
+    fill(wizard.steps.ids.phoneNumberId, '106540352242922');
+    fill(wizard.steps.ids.wabaId, '102290129340398');
+    next();
+    await heading(wizard.steps.token.title);
+    fill(wizard.steps.token.label, TOKEN);
+    next();
+    await heading(wizard.steps.secret.title);
+    fill(wizard.steps.secret.label, SECRET);
+    fireEvent.click(screen.getByRole('button', { name: wizard.back }));
+    await heading(wizard.steps.token.title);
+    expect(screen.getByLabelText(wizard.steps.token.label)).toHaveValue(TOKEN);
+    next();
+    await heading(wizard.steps.secret.title);
+    fireEvent.click(screen.getByRole('button', { name: wizard.save }));
+    const dialog = await screen.findByRole('dialog', { name: wizard.confirmTitle }, SLOW);
+    fireEvent.change(within(dialog).getByLabelText(t.identity.password), {
+      target: { value: PASSWORD },
+    });
+    fireEvent.change(within(dialog).getByLabelText(t.identity.code), { target: { value: CODE } });
+    const html = document.documentElement.outerHTML;
+    for (const secret of [TOKEN, SECRET, PASSWORD, CODE]) expect(html).not.toContain(secret);
+  });
+
+  it('R2: token & App Secret tidak ditawarkan disimpan password manager', async () => {
+    await renderApp('/pengaturan/channel/tambah');
+    await heading(wizard.steps.business.title);
+    for (const label of [wizard.steps.token.label, wizard.steps.secret.label]) {
+      const input = screen.getByLabelText(label);
+      expect(input).toHaveAttribute('autocomplete', 'new-password');
+      expect(input).toHaveAttribute('data-1p-ignore');
+      expect(input).toHaveAttribute('data-lpignore', 'true');
+      expect(input).toHaveAttribute('data-bwignore');
+    }
   });
 });
 

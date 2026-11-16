@@ -39,7 +39,8 @@ export type ChannelStatus = z.infer<typeof channelStatusSchema>;
 
 export const CHANNEL_STATUS_LABELS: Readonly<Record<ChannelStatus, string>> = {
   connected: 'Terhubung',
-  failed: 'Gagal',
+  // "Koneksi gagal", bukan "Gagal": status nomor di Meta (fakta terpisah) bisa tetap "Terhubung".
+  failed: 'Koneksi gagal',
   untested: 'Belum dites',
 };
 

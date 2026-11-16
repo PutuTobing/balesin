@@ -8,7 +8,56 @@
   flex-direction: column;
   gap: var(--space-16);
   width: 100%;
-  max-width: 44rem;
+  /* Sama dengan halaman Pengaturan lain (42rem). */
+  max-width: 42rem;
+}
+
+/* Halaman nomor: kolom isi + daftar bagian menempel di kanan (desktop). */
+.detailLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 42rem);
+  align-items: start;
+  gap: var(--space-24);
+}
+
+.sectionNav {
+  display: none;
+}
+
+.sectionList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sectionLink {
+  display: flex;
+  align-items: center;
+  min-height: var(--size-control);
+  padding: var(--space-4) var(--space-12);
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+  font-size: var(--text-14);
+}
+
+.sectionLink:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.sectionLink[aria-current] {
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+}
+
+/* Kartu yang dituju dari daftar bagian: fokus terprogram tanpa cincin. */
+.card:focus {
+  outline: none;
 }
 
 .card {
@@ -109,6 +158,17 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-16) var(--space-24);
   margin: 0;
+}
+
+.factsBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.factsSource {
+  color: var(--ink-2);
+  font-size: var(--text-13);
 }
 
 .factsDivided {
@@ -235,7 +295,8 @@
 .channelBadges {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  /* Rata kiri di kolomnya: titik status dan kualitas sejajar. */
+  align-items: flex-start;
   gap: var(--space-4);
 }
 
@@ -317,7 +378,7 @@
 
 .wizard {
   display: grid;
-  grid-template-columns: 15rem minmax(0, 44rem);
+  grid-template-columns: 15rem minmax(0, 42rem);
   align-items: start;
   gap: var(--space-24);
   width: 100%;
@@ -656,20 +717,19 @@ button.stepButton:hover {
 
 .dangerZone {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-12) var(--space-16);
+  flex-direction: column;
+  gap: var(--space-4);
   padding-top: var(--space-16);
   border-top: 1px solid var(--line);
 }
 
-.dangerZone > div {
-  display: flex;
-  flex: 1 1 18rem;
-  flex-direction: column;
-  gap: var(--space-4);
-  min-width: 0;
+.dangerZone > .actions {
+  margin-top: var(--space-12);
+}
+
+/* Tombol sekunder untuk aksi berbahaya (pola Detail anggota): merah penuh hanya di dialog. */
+.dangerZone .dangerText {
+  color: var(--danger-ink);
 }
 
 .dangerTitle {
@@ -678,16 +738,60 @@ button.stepButton:hover {
   font-weight: var(--weight-semibold);
 }
 
+/* Latar --surface (bukan --surface-2): tautan --primary di --surface-2 hanya 4,5:1 (DESIGN.md §1). */
 .photoNote {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-4) var(--space-12);
   padding: var(--space-12) var(--space-16);
+  border: 1px solid var(--line);
   border-radius: var(--radius-input);
-  background: var(--surface-2);
+  background: var(--surface);
   color: var(--ink-2);
   font-size: var(--text-13);
+}
+
+/* Perintah siap salin (mis. pembuat BALESIN_MASTER_KEY). */
+.commandRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.command {
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+}
+
+.blockedBody {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-16);
+}
+
+/* Isian "Tentang": dua baris tetap, tanpa pegangan ubah ukuran. */
+.aboutField textarea {
+  min-height: 0;
+  resize: none;
+}
+
+/* Kerangka kepala halaman nomor: setinggi baris aslinya (nomor 14px, lencana 24px). */
+.skeletonNumber {
+  width: 8rem;
+  height: calc(var(--text-14) * var(--leading-text));
+}
+
+.skeletonBadges {
+  width: 6rem;
+  height: var(--space-24);
 }
 
 /* ---------- Kerangka memuat ---------- */
@@ -762,7 +866,7 @@ button.stepButton:hover {
 
 @media (max-width: 1023px) {
   .wizard {
-    grid-template-columns: minmax(0, 44rem);
+    grid-template-columns: minmax(0, 42rem);
   }
 
   .stepNav {
@@ -783,9 +887,9 @@ button.stepButton:hover {
     margin: 0 calc(var(--space-16) * -1) calc(var(--space-16) * -1);
   }
 
-  /* HP: status turun ke bawah nama, supaya nomor tidak terpotong. */
+  /* HP: status turun ke bawah nama, supaya nomor tidak terpotong; chevron tetap di kanan. */
   .channelLink {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: start;
     gap: var(--space-8) var(--space-12);
     padding: var(--space-12) var(--space-16);
@@ -799,8 +903,17 @@ button.stepButton:hover {
     gap: var(--space-4) var(--space-16);
   }
 
+  /* Chevron tetap ada di HP (seperti baris menu Pengaturan), di kanan setinggi dua baris. */
   .chevron {
-    display: none;
+    grid-row: 1 / span 2;
+    grid-column: 3;
+    align-self: center;
+  }
+
+  .photoNote a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--size-touch);
   }
 
   .row {
@@ -823,5 +936,17 @@ button.stepButton:hover {
 
   .summaryHead {
     gap: var(--space-12);
+  }
+}
+
+@media (min-width: 1024px) {
+  .detailLayout {
+    grid-template-columns: minmax(0, 42rem) 12rem;
+  }
+
+  .sectionNav {
+    position: sticky;
+    top: 0;
+    display: block;
   }
 }

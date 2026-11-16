@@ -8,7 +8,7 @@ import {
 import type { ReactNode } from 'react';
 import { t } from '../../i18n/id';
 import { cx } from '../../lib/cx';
-import { formatDateTime } from '../../lib/format';
+import { formatDateTime, formatDateTimeInline } from '../../lib/format';
 import { QualityBadge } from './ChannelBadges';
 import styles from './Channels.module.css';
 
@@ -39,25 +39,29 @@ export function NumberFacts({
   divided?: boolean;
 }) {
   return (
-    <dl className={cx(styles.facts, divided && styles.factsDivided)}>
-      <Fact label={copy.quality}>
-        <QualityBadge rating={number.qualityRating} />
-      </Fact>
-      <Fact label={copy.status}>{phoneNumberStatusLabel(number.status)}</Fact>
-      <Fact label={copy.limit}>{messagingLimitLabel(number.messagingLimit)}</Fact>
-      <Fact label={copy.verifiedName}>
-        {number.verifiedName ?? '—'}
-        {number.nameStatus ? (
-          <span className={styles.factSub}>
-            {copy.nameStatus(nameStatusLabel(number.nameStatus))}
-          </span>
-        ) : null}
-      </Fact>
-      {lastTest !== undefined ? (
-        <Fact label={copy.lastTest}>
-          {lastTest ? formatDateTime(lastTest.testedAt) : copy.neverTested}
+    <div className={cx(styles.factsBlock, divided && styles.factsDivided)}>
+      <dl className={styles.facts}>
+        <Fact label={copy.quality}>
+          <QualityBadge rating={number.qualityRating} />
         </Fact>
-      ) : null}
-    </dl>
+        <Fact label={copy.status}>{phoneNumberStatusLabel(number.status)}</Fact>
+        <Fact label={copy.limit}>{messagingLimitLabel(number.messagingLimit)}</Fact>
+        <Fact label={copy.verifiedName}>
+          {number.verifiedName ?? '—'}
+          {number.nameStatus ? (
+            <span className={styles.factSub}>
+              {copy.nameStatus(nameStatusLabel(number.nameStatus))}
+            </span>
+          ) : null}
+        </Fact>
+        {lastTest !== undefined ? (
+          <Fact label={copy.lastTest}>
+            {lastTest ? formatDateTime(lastTest.testedAt) : copy.neverTested}
+          </Fact>
+        ) : null}
+      </dl>
+      {/* Fakta di atas bisa basi (mis. tes terakhir gagal): sebut kapan dibaca dari Meta. */}
+      <p className={styles.factsSource}>{copy.fetchedAt(formatDateTimeInline(number.fetchedAt))}</p>
+    </div>
   );
 }

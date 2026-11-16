@@ -1225,6 +1225,8 @@ export const t = {
     // Pendek: status di kanan tidak boleh membuat petunjuk patah baris saat dimuat (CLS).
     menuHint: 'Nomor WhatsApp untuk inbox',
     menuCount: (count: number) => `${count} nomor`,
+    /** "1 koneksi gagal", "2 belum dites": hanya sebagian channel aktif yang berstatus itu. */
+    menuWorst: (count: number, label: string) => `${count} ${label.toLocaleLowerCase('id-ID')}`,
     /** Sama dengan pola Email pengirim ("Belum diatur · Atur sekarang"). */
     menuNone: 'Belum diatur',
     connectNow: 'Hubungkan',
@@ -1250,7 +1252,10 @@ export const t = {
         `Satu organisasi bisa memakai paling banyak ${max} nomor. Hapus nomor yang tidak dipakai lagi untuk menambah yang baru.`,
       noMasterKeyTitle: 'Token Meta belum bisa disimpan',
       noMasterKeyBody:
-        '`BALESIN_MASTER_KEY` belum diisi di berkas `.env` server, jadi token dan App Secret tidak bisa disimpan terenkripsi. Isi dengan 32 byte acak (base64), nyalakan ulang server, lalu kembali ke halaman ini.',
+        '`BALESIN_MASTER_KEY` belum diisi di berkas `.env` server, jadi token dan App Secret tidak bisa disimpan terenkripsi. Isi dengan 32 byte acak (base64) dari perintah di bawah, nyalakan ulang server, lalu kembali ke halaman ini.',
+      masterKeyCommand: 'openssl rand -base64 32',
+      copyCommand: 'Salin perintah',
+      copiedCommand: 'Perintah tersalin.',
       deleted: (name: string) =>
         `Channel ${name} sudah dihapus. Cabut juga webhook-nya di Meta (WhatsApp → Konfigurasi → Webhook).`,
     },
@@ -1258,11 +1263,13 @@ export const t = {
     /** Ringkasan nomor (kartu daftar, langkah Tes di wizard, halaman nomor). */
     number: {
       quality: 'Kualitas',
-      status: 'Status nomor',
+      status: 'Status di Meta',
       limit: 'Batas pesan',
       verifiedName: 'Nama tampilan',
       lastTest: 'Tes terakhir',
       neverTested: 'Belum pernah dites',
+      /** Fakta di atas bisa basi bila tes terakhir gagal: sebut kapan dibaca. */
+      fetchedAt: (time: string) => `Data dari Meta, dibaca ${time}.`,
       nameStatus: (label: string) => `Persetujuan nama: ${label}`,
     },
 
@@ -1286,9 +1293,9 @@ export const t = {
       copyTokenLabel: 'Salin verify token',
       copiedUrl: 'URL webhook tersalin.',
       copiedToken: 'Verify token tersalin.',
-      fieldsTitle: 'Langganan field ini',
+      fieldsTitle: 'Kolom webhook yang perlu dilanggani',
       fieldsHint:
-        'Setelah verifikasi, di daftar Kolom webhook klik Berlangganan pada ketiga field ini.',
+        'Setelah verifikasi, klik Berlangganan pada ketiga kolom ini di daftar Kolom webhook.',
       notes: [
         {
           title: 'Beberapa nomor dalam satu aplikasi Meta',
@@ -1334,7 +1341,7 @@ export const t = {
       confirmBody:
         'Token dan App Secret disimpan terenkripsi di server. Chat dari nomor ini akan masuk ke inbox timmu.',
       leave: {
-        title: 'Tinggalkan wizard?',
+        title: 'Batal menambah nomor?',
         body: 'Isian yang belum disimpan, termasuk token dan App Secret, akan hilang.',
         stay: 'Tetap di sini',
         leave: 'Tinggalkan',
@@ -1365,14 +1372,14 @@ export const t = {
           intro: 'Aplikasi Meta menjadi jalur resmi Cloud API untuk nomor ini.',
           items: [
             {
-              text: 'Buka Aplikasi Saya di Meta for Developers, lalu tekan Buat Aplikasi.',
+              text: 'Buka **Aplikasi Saya** di Meta for Developers, lalu tekan **Buat Aplikasi**.',
               link: {
                 label: 'Buka developers.facebook.com',
                 href: 'https://developers.facebook.com/apps/',
               },
             },
-            { text: 'Pilih tipe Business, lalu hubungkan ke portofolio bisnis perusahaanmu.' },
-            { text: 'Di dasbor aplikasi, tambahkan produk WhatsApp.' },
+            { text: 'Pilih tipe **Business**, lalu hubungkan ke portofolio bisnis perusahaanmu.' },
+            { text: 'Di dasbor aplikasi, tambahkan produk **WhatsApp**.' },
           ],
         },
         number: {
@@ -1433,7 +1440,7 @@ export const t = {
           items: [
             { text: 'Di dasbor aplikasi, buka Pengaturan Aplikasi → Dasar.' },
             {
-              text: 'Tekan Tampilkan di samping App Secret, masukkan password Facebook-mu, lalu salin.',
+              text: 'Tekan **Tampilkan** di samping App Secret, masukkan password Facebook-mu, lalu salin.',
             },
           ],
           label: 'App Secret',
@@ -1442,9 +1449,17 @@ export const t = {
         webhook: {
           nav: 'Webhook',
           title: 'Pasang webhook',
-          intro:
-            'Alamat dan verify token ini dibuat khusus untuk channel ini. Di WhatsApp → Konfigurasi → Webhook → Edit, tempel URL webhook ke Callback URL dan verify token ke Verify token, lalu tekan Verifikasi dan simpan.',
-          items: [],
+          intro: 'URL webhook dan verify token di bawah dibuat khusus untuk channel ini.',
+          items: [
+            {
+              text: 'Di dasbor aplikasi Meta, buka WhatsApp → Konfigurasi → Webhook, lalu tekan **Edit**.',
+            },
+            {
+              text: 'Tempel URL webhook ke **Callback URL** dan verify token ke **Verify token**.',
+            },
+            { text: 'Tekan **Verifikasi dan simpan**.' },
+            { text: 'Klik **Berlangganan** untuk ketiga kolom webhook di bawah.' },
+          ],
         },
         test: {
           nav: 'Tes koneksi',
@@ -1453,7 +1468,7 @@ export const t = {
             'Tes memeriksa token, App Secret, Phone Number ID, dan WABA ID langsung ke Meta, lalu mengambil data nomornya.',
           items: [],
           failedHint:
-            'Perbaiki penyebabnya, lalu tes lagi. Isian yang salah bisa diganti dari halaman nomor setelah wizard ini.',
+            'Isian yang sudah tersimpan diganti dari halaman nomor. Tekan Lanjut sampai selesai, lalu pilih “Ganti kredensial” di sana.',
         },
         billing: {
           nav: 'Pembayaran',
@@ -1475,6 +1490,11 @@ export const t = {
       },
     },
 
+    sections: {
+      label: 'Bagian halaman nomor',
+      summary: 'Ringkasan',
+    },
+
     detail: {
       title: 'Nomor WhatsApp',
       notFoundTitle: 'Channel tidak ditemukan',
@@ -1484,7 +1504,7 @@ export const t = {
       untested:
         'Belum dites. Tekan “Tes koneksi” untuk memeriksa kredensial dan mengambil data nomor dari Meta.',
       lastFailedTitle: 'Tes terakhir gagal',
-      disabledTitle: 'Channel nonaktif',
+      disabledSince: (time: string) => `Dinonaktifkan sejak ${time}`,
       disabledBody:
         'Chat dari nomor ini tidak masuk ke inbox, dan timmu tidak bisa membalas lewat nomor ini. Kredensial tetap tersimpan.',
       enable: 'Aktifkan lagi',
@@ -1554,14 +1574,14 @@ export const t = {
     profile: {
       title: 'Profil bisnis',
       hint: 'Tampil ke semua pelanggan di info kontak WhatsApp. Perubahan langsung dikirim ke Meta.',
-      about: 'Info',
+      about: 'Tentang',
       aboutHint: 'Kalimat singkat di bawah nama. Tidak boleh kosong.',
       address: 'Alamat',
       description: 'Deskripsi',
       email: 'Email',
       emailPlaceholder: 'Contoh: cs@perusahaan.co.id',
-      websites: 'Website',
-      website: (index: number) => `Website ${index}`,
+      websites: 'Situs web',
+      website: (index: number) => `Situs web ${index}`,
       websitePlaceholder: 'https://perusahaan.co.id',
       websitesHint: 'Paling banyak 2 alamat, diawali https://.',
       vertical: 'Kategori',
@@ -1578,7 +1598,7 @@ export const t = {
       unchanged: 'Belum ada yang diubah.',
       confirmTitle: 'Simpan profil bisnis?',
       confirmBody:
-        'Info, alamat, deskripsi, email, dan website langsung tampil ke semua pelanggan yang membuka info kontak nomor ini.',
+        'Tentang, alamat, deskripsi, email, dan situs web langsung tampil ke semua pelanggan yang membuka info kontak nomor ini.',
       lockedTitle: 'Profil bisnis dibatasi sementara',
       loadFailedTitle: 'Profil bisnis belum bisa dimuat',
       needsConnection: 'Profil bisnis bisa dilihat dan diubah setelah tes koneksi berhasil.',

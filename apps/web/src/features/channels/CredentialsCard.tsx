@@ -1,8 +1,13 @@
-import type { IdentityConfirmation, UpdateChannelRequest, WhatsAppChannel } from '@balesin/shared';
+import type {
+  ChannelCredentialField,
+  IdentityConfirmation,
+  UpdateChannelRequest,
+  WhatsAppChannel,
+} from '@balesin/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Button } from '../../components/ui/Button';
-import { PasswordField, TextField } from '../../components/ui/Field';
+import { SecretField, TextField } from '../../components/ui/Field';
 import { Notice } from '../../components/ui/Notice';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
@@ -18,21 +23,29 @@ import {
   CREDENTIAL_FIELDS,
   credentialChanges,
   validateCredentialChanges,
-  type CredentialValues,
 } from './credentials-form';
 import { Fact } from './NumberFacts';
 
 const copy = t.channels.credentials;
 
+export interface CredentialsCardProps {
+  channel: WhatsAppChannel;
+  /**
+   * Form ganti terbuka, dengan isian yang difokus saat dibuka (`null` = tertutup). Dikendalikan
+   * halaman nomor supaya "Ganti kredensial" di kotak "Tes terakhir gagal" bisa membukanya langsung.
+   */
+  editing: ChannelCredentialField | null;
+  onEdit: (field: ChannelCredentialField | null) => void;
+}
+
 /**
  * Kredensial Meta: ID tampil apa adanya (bukan rahasia), token dan App Secret hanya petunjuk
- * tersamar `••••abcd`. Ganti kredensial = form di dalam kartu (isian rahasia selalu kosong) +
- * konfirmasi identitas. Setelah diganti, status kembali "Belum dites".
+ * tersamar `••••abcd`. Ganti kredensial = form di dalam kartu (isian rahasia selalu kosong dan tak
+ * terkendali) + konfirmasi identitas. Setelah diganti, status kembali "Belum dites".
  */
-export function CredentialsCard({ channel }: { channel: WhatsAppChannel }) {
+export function CredentialsCard({ channel, editing, onEdit }: CredentialsCardProps) {
   const queryClient = useQueryClient();
   const session = useSession();
-  const [editing, setEditing] = useState(false);
   const [done, setDone] = useState(false);
   const openRef = useRef<HTMLButtonElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
@@ -42,25 +55,12 @@ export function CredentialsCard({ channel }: { channel: WhatsAppChannel }) {
   }, [done]);
 
   return (
-    <section className={styles.card} aria-labelledby="channel-kredensial">
-      <div className={styles.cardHeadRow}>
-        <div className={styles.cardHead}>
-          <h2 id="channel-kredensial" className={styles.cardTitle}>
-            {copy.title}
-          </h2>
-          <p className={styles.hint}>{copy.hint}</p>
-        </div>
-        {editing ? null : (
-          <Button
-            ref={openRef}
-            onClick={() => {
-              setDone(false);
-              setEditing(true);
-            }}
-          >
-            {copy.change}
-          </Button>
-        )}
+    <section id="kredensial" className={styles.card} aria-labelledby="channel-kredensial">
+      <div className={styles.cardHead}>
+        <h2 id="channel-kredensial" className={styles.cardTitle}>
+          {copy.title}
+        </h2>
+        <p className={styles.hint}>{copy.hint}</p>
       </div>
       {done ? (
         <div ref={resultRef} tabIndex={-1} className={styles.result}>
@@ -69,78 +69,106 @@ export function CredentialsCard({ channel }: { channel: WhatsAppChannel }) {
           </Notice>
         </div>
       ) : null}
-      <dl className={styles.facts}>
-        <Fact label={copy.phoneNumberId}>
-          <span className={styles.mono}>{channel.phoneNumberId}</span>
-        </Fact>
-        <Fact label={copy.wabaId}>
-          <span className={styles.mono}>{channel.wabaId}</span>
-        </Fact>
-        <Fact label={copy.token}>
-          <span className={styles.mono}>{channel.accessTokenHint ?? copy.stored}</span>
-        </Fact>
-        <Fact label={copy.appSecret}>
-          <span className={styles.mono}>{channel.appSecretHint ?? copy.stored}</span>
-        </Fact>
-        <Fact label={copy.updatedAt}>{formatDateTime(channel.credentialsUpdatedAt)}</Fact>
-      </dl>
       {editing ? (
+        // Selama form terbuka, fakta di atasnya disembunyikan: nilainya sudah ada di isian.
         <CredentialsForm
+          key={editing}
           channel={channel}
+          focus={editing}
           ownersNotified={session !== null && session.user.role !== 'owner'}
           onCancel={() => {
-            setEditing(false);
+            onEdit(null);
             requestAnimationFrame(() => openRef.current?.focus());
           }}
           onSaved={(next) => {
             storeChannel(queryClient, next);
             // Profil bisnis dibaca dengan kredensial lama; dibaca ulang setelah tes berikutnya.
             queryClient.removeQueries({ queryKey: queryKeys.businessProfile(channel.id) });
-            setEditing(false);
+            onEdit(null);
             setDone(true);
           }}
         />
-      ) : null}
+      ) : (
+        <>
+          <dl className={styles.facts}>
+            <Fact label={copy.phoneNumberId}>
+              <span className={styles.mono}>{channel.phoneNumberId}</span>
+            </Fact>
+            <Fact label={copy.wabaId}>
+              <span className={styles.mono}>{channel.wabaId}</span>
+            </Fact>
+            <Fact label={copy.token}>
+              <span className={styles.mono}>{channel.accessTokenHint ?? copy.stored}</span>
+            </Fact>
+            <Fact label={copy.appSecret}>
+              <span className={styles.mono}>{channel.appSecretHint ?? copy.stored}</span>
+            </Fact>
+            <Fact label={copy.updatedAt}>{formatDateTime(channel.credentialsUpdatedAt)}</Fact>
+          </dl>
+          {/* Aksi kartu: kiri bawah isi kartu (pola halaman nomor). */}
+          <div className={styles.actions}>
+            <Button
+              ref={openRef}
+              onClick={() => {
+                setDone(false);
+                onEdit('phoneNumberId');
+              }}
+            >
+              {copy.change}
+            </Button>
+          </div>
+        </>
+      )}
     </section>
   );
 }
 
 function CredentialsForm({
   channel,
+  focus,
   ownersNotified,
   onCancel,
   onSaved,
 }: {
   channel: WhatsAppChannel;
+  focus: ChannelCredentialField;
   ownersNotified: boolean;
   onCancel: () => void;
   onSaved: (channel: WhatsAppChannel) => void;
 }) {
-  // Rahasia hanya di state komponen ini; hilang begitu form ditutup.
-  const [values, setValues] = useState<CredentialValues>({
-    phoneNumberId: channel.phoneNumberId,
-    wabaId: channel.wabaId,
-    accessToken: '',
-    appSecret: '',
-  });
+  // ID (bukan rahasia) di state; token dan App Secret hanya di elemen input (lewat ref).
+  const [ids, setIds] = useState({ phoneNumberId: channel.phoneNumberId, wabaId: channel.wabaId });
   const [errors, setErrors] = useState<FieldErrors>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<UpdateChannelRequest | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const submitRef = useRef<HTMLButtonElement>(null);
-  const firstRef = useRef<HTMLInputElement>(null);
+  const tokenRef = useRef<HTMLInputElement>(null);
+  const secretRef = useRef<HTMLInputElement>(null);
   const [invalidTick, setInvalidTick] = useState(0);
 
+  // Dibuka → gulir ke form dan fokus ke isian yang relevan (mis. Token setelah tes gagal).
   useEffect(() => {
-    firstRef.current?.focus();
-  }, []);
+    const input = formRef.current?.querySelector<HTMLInputElement>(`[data-isian="${focus}"]`);
+    formRef.current?.scrollIntoView({ block: 'nearest' });
+    input?.focus();
+  }, [focus]);
   useEffect(() => {
     if (invalidTick === 0) return;
     formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
   }, [invalidTick]);
 
-  const set = (field: keyof CredentialValues, value: string) => {
-    setValues((current) => ({ ...current, [field]: value }));
+  // Rahasia tidak tertinggal di elemen setelah form ditutup (berhasil atau batal).
+  useEffect(() => {
+    const token = tokenRef.current;
+    const secret = secretRef.current;
+    return () => {
+      if (token) token.value = '';
+      if (secret) secret.value = '';
+    };
+  }, []);
+
+  const clearError = (field: string) => {
     setFailure(null);
     if (errors[field]) setErrors(({ [field]: _removed, ...rest }) => rest);
   };
@@ -174,7 +202,14 @@ function CredentialsForm({
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    const changes = credentialChanges(values, channel);
+    const changes = credentialChanges(
+      {
+        ...ids,
+        accessToken: tokenRef.current?.value ?? '',
+        appSecret: secretRef.current?.value ?? '',
+      },
+      channel,
+    );
     if (Object.keys(changes).length === 0) {
       setFailure(copy.unchanged);
       return;
@@ -196,47 +231,54 @@ function CredentialsForm({
         <p className={styles.hint}>{copy.formHint}</p>
         <div className={styles.row}>
           <TextField
-            ref={firstRef}
+            data-isian="phoneNumberId"
             label={copy.phoneNumberId}
             inputMode="numeric"
-            value={values.phoneNumberId}
-            onChange={(event) => set('phoneNumberId', event.target.value)}
+            value={ids.phoneNumberId}
+            onChange={(event) => {
+              setIds((current) => ({ ...current, phoneNumberId: event.target.value }));
+              clearError('phoneNumberId');
+            }}
             error={errors.phoneNumberId}
             autoComplete="off"
             spellCheck={false}
             inputClassName={styles.mono}
           />
           <TextField
+            data-isian="wabaId"
             label={t.channels.wizard.steps.ids.wabaId}
             inputMode="numeric"
-            value={values.wabaId}
-            onChange={(event) => set('wabaId', event.target.value)}
+            value={ids.wabaId}
+            onChange={(event) => {
+              setIds((current) => ({ ...current, wabaId: event.target.value }));
+              clearError('wabaId');
+            }}
             error={errors.wabaId}
             autoComplete="off"
             spellCheck={false}
             inputClassName={styles.mono}
           />
         </div>
-        <PasswordField
+        <SecretField
+          ref={tokenRef}
+          data-isian="accessToken"
           label={copy.token}
           optional
           hint={channel.accessTokenHint ? copy.keepToken(channel.accessTokenHint) : copy.keepNoHint}
           name="token-system-user"
-          value={values.accessToken}
-          onChange={(event) => set('accessToken', event.target.value)}
+          onChange={() => clearError('accessToken')}
           error={errors.accessToken}
-          autoComplete="off"
           inputClassName={styles.mono}
         />
-        <PasswordField
+        <SecretField
+          ref={secretRef}
+          data-isian="appSecret"
           label={copy.appSecret}
           optional
           hint={channel.appSecretHint ? copy.keepSecret(channel.appSecretHint) : copy.keepNoHint}
           name="app-secret"
-          value={values.appSecret}
-          onChange={(event) => set('appSecret', event.target.value)}
+          onChange={() => clearError('appSecret')}
           error={errors.appSecret}
-          autoComplete="off"
           inputClassName={styles.mono}
         />
         {ownersNotified ? <p className={styles.note}>{t.channels.ownersNotified}</p> : null}

@@ -19,7 +19,7 @@ import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
 import { businessProfileQuery, queryKeys } from '../../lib/api/queries';
-import { formatDateTime } from '../../lib/format';
+import { formatDateTimeInline } from '../../lib/format';
 import type { FieldErrors } from '../../lib/form';
 import { useLock } from '../../lib/use-lock';
 import { useSession } from '../auth/session';
@@ -48,7 +48,7 @@ const WHATSAPP_MANAGER_URL = 'https://business.facebook.com/wa/manage/phone-numb
  */
 export function BusinessProfileCard({ channel }: { channel: WhatsAppChannel }) {
   return (
-    <section className={styles.card} aria-labelledby="channel-profil">
+    <section id="profil-bisnis" className={styles.card} aria-labelledby="channel-profil">
       <div className={styles.cardHead}>
         <h2 id="channel-profil" className={styles.cardTitle}>
           {copy.title}
@@ -242,14 +242,16 @@ function ProfileForm({
   return (
     <>
       <form ref={formRef} className={styles.form} onSubmit={submit} noValidate>
-        <p className={styles.copyMeta}>{copy.fetchedAt(formatDateTime(data.fetchedAt))}</p>
-        <TextField
+        <p className={styles.copyMeta}>{copy.fetchedAt(formatDateTimeInline(data.fetchedAt))}</p>
+        {/* Dua baris: kalimat ±60 karakter terbaca utuh di HP (isian satu baris memotongnya). */}
+        <TextAreaField
+          className={styles.aboutField}
+          rows={2}
           label={copy.about}
           hint={`${copy.aboutHint} ${counter(values.about, BUSINESS_PROFILE_LIMITS.about)}`}
           value={values.about}
-          onChange={(event) => set('about', event.target.value)}
+          onChange={(event) => set('about', event.target.value.replace(/\r?\n/g, ' '))}
           error={errors.about}
-          autoComplete="off"
           disabled={saving}
         />
         <TextField

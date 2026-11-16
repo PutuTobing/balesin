@@ -25,6 +25,7 @@ export function TestPanel({
   result,
   onResult,
   showNumber = false,
+  showFailure = true,
   failedHint,
   variant = 'primary',
 }: {
@@ -34,6 +35,8 @@ export function TestPanel({
   onResult: (result: ChannelTestResult) => void;
   /** Tampilkan data nomor + peringatan dari hasil (wizard). Halaman nomor sudah punya ringkasannya. */
   showNumber?: boolean;
+  /** `false`: hasil gagal tidak diulang di sini (halaman nomor menampilkannya di kotak sendiri). */
+  showFailure?: boolean;
   failedHint?: string;
   variant?: 'primary' | 'secondary';
 }) {
@@ -88,7 +91,7 @@ export function TestPanel({
         ) : null}
       </div>
       {error ? <FormErrorNotice error={error} lock={lock} lockedTitle={copy.lockedTitle} /> : null}
-      {result && !pending ? (
+      {result && !pending && (result.ok || showFailure) ? (
         <div ref={resultRef} className={styles.form}>
           <Notice
             tone={result.ok ? 'success' : 'danger'}

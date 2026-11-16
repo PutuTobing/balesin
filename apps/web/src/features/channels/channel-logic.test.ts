@@ -43,7 +43,7 @@ describe('status & kualitas channel', () => {
     });
     expect(channelStatusView({ enabled: true, status: 'failed' })).toEqual({
       tone: 'danger',
-      label: 'Gagal',
+      label: 'Koneksi gagal',
     });
     expect(channelStatusView({ enabled: true, status: 'untested' }).label).toBe('Belum dites');
   });
@@ -200,7 +200,7 @@ describe('profil bisnis', () => {
     expect(validateProfileChanges({ websites: ['https://ok.co.id', 'ftp://salah'] })).toEqual({
       website2: expect.stringMatching(/https:\/\//) as string,
     });
-    expect(validateProfileChanges({ about: '' }).about).toBe('Info tidak boleh kosong.');
+    expect(validateProfileChanges({ about: '' }).about).toBe('Tentang tidak boleh kosong.');
     expect(
       profileFieldErrors([
         { location: 'body', field: 'websites.0', message: 'Salah.' },

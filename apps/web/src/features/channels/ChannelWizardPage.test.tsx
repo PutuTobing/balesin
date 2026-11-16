@@ -98,7 +98,7 @@ describe('wizard tambah nomor WhatsApp', () => {
     // Isian rahasia: tipe password, tanpa isi otomatis.
     const secret = screen.getByLabelText(copy.steps.secret.label);
     expect(secret).toHaveAttribute('type', 'password');
-    expect(secret).toHaveAttribute('autocomplete', 'off');
+    expect(secret).toHaveAttribute('autocomplete', 'new-password');
 
     // Mundur lalu maju lagi: isian tetap ada.
     fireEvent.click(screen.getByRole('button', { name: copy.back }));

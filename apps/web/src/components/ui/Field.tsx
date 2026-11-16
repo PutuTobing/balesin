@@ -1,5 +1,11 @@
 import { CircleAlert, Eye, EyeOff } from 'lucide-react';
-import { useId, useState, type ComponentPropsWithRef, type ReactNode } from 'react';
+import {
+  useId,
+  useLayoutEffect,
+  useState,
+  type ComponentPropsWithRef,
+  type ReactNode,
+} from 'react';
 import { t } from '../../i18n/id';
 import { cx } from '../../lib/cx';
 import { describedBy } from '../../lib/form';
@@ -74,6 +80,12 @@ export interface TextFieldProps extends FieldFrameProps, InputProps {
   leading?: ReactNode;
   /** Kelas tambahan untuk elemen `<input>` (mis. huruf monospace untuk kode). */
   inputClassName?: string;
+  /**
+   * Isian rahasia: atribut `value` yang disinkronkan React untuk input terkendali dibuang setelah
+   * setiap render, jadi nilainya tidak tampak di DOM (DevTools, perekam sesi, pemilih atribut CSS).
+   * Nilainya tetap ada di properti `.value`.
+   */
+  concealValue?: boolean;
 }
 
 export function TextField({
@@ -86,11 +98,30 @@ export function TextField({
   trailing,
   leading,
   inputClassName,
+  concealValue = false,
   id,
   'aria-describedby': extraDescribedBy,
   ...input
 }: TextFieldProps) {
   const ids = useFieldIds(id, hint, error);
+  const { inputId } = ids;
+  /*
+   * Atribut `value` = `input.defaultValue`. React menyamakannya dengan nilai terkendali setiap
+   * render DAN setelah setiap ketikan (pemulihan input terkendali, di luar render). Untuk isian
+   * rahasia, `defaultValue` elemen ini dibuat selalu sama dengan `.value` dan tidak bisa ditulis,
+   * jadi React tidak pernah perlu menulis atributnya; atribut dari render pertama dibuang.
+   */
+  useLayoutEffect(() => {
+    if (!concealValue) return;
+    const input = document.getElementById(inputId);
+    if (!(input instanceof HTMLInputElement)) return;
+    input.removeAttribute('value');
+    Object.defineProperty(input, 'defaultValue', {
+      configurable: true,
+      get: () => input.value,
+      set: () => undefined,
+    });
+  }, [concealValue, inputId]);
   return (
     <FieldFrame
       label={label}
@@ -130,6 +161,7 @@ export function PasswordField(props: PasswordFieldProps) {
   const label = visible ? t.form.hidePassword : t.form.showPassword;
   return (
     <TextField
+      concealValue
       {...props}
       type={visible ? 'text' : 'password'}
       autoCapitalize="none"
@@ -148,6 +180,27 @@ export function PasswordField(props: PasswordFieldProps) {
           <Icon icon={visible ? EyeOff : Eye} size={20} />
         </button>
       }
+    />
+  );
+}
+
+export type SecretFieldProps = Omit<PasswordFieldProps, 'value' | 'defaultValue' | 'autoComplete'>;
+
+/**
+ * Rahasia milik layanan lain (token Meta, App Secret): isian TAK TERKENDALI — nilainya dibaca lewat
+ * `ref` saat dikirim, tidak pernah lewat state React atau atribut DOM — dan tidak ditawarkan untuk
+ * disimpan password manager (`autocomplete="new-password"` + atribut abaikan 1Password, LastPass,
+ * Bitwarden, Dashlane). Pemanggil mengosongkan `ref.current.value` setelah selesai.
+ */
+export function SecretField(props: SecretFieldProps) {
+  return (
+    <PasswordField
+      {...props}
+      autoComplete="new-password"
+      data-1p-ignore=""
+      data-lpignore="true"
+      data-bwignore=""
+      data-form-type="other"
     />
   );
 }

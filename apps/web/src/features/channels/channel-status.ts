@@ -1,5 +1,7 @@
 import {
   CHANNEL_STATUS_LABELS,
+  type ChannelCredentialField,
+  type ChannelTestCode,
   type ChannelSettingsListResponse,
   qualityRatingLabel,
   type ChannelStatus,
@@ -37,6 +39,30 @@ export function qualityView(rating: string | null): { tone: StatusTone; label: s
           ? 'danger'
           : 'neutral';
   return { tone, label: qualityRatingLabel(rating) };
+}
+
+/**
+ * Tes gagal karena kredensial/ID yang tersimpan → isian yang perlu diganti (difokus saat form
+ * ganti kredensial dibuka). `null` = bukan soal kredensial (gangguan Meta, jaringan, batas laju):
+ * aksi yang tepat memang mengulang tes.
+ */
+export function credentialFixFor(code: ChannelTestCode): ChannelCredentialField | null {
+  switch (code) {
+    case 'token_invalid':
+    case 'token_expired':
+    case 'permission_denied':
+    case 'secret_unavailable':
+      return 'accessToken';
+    case 'app_secret_invalid':
+      return 'appSecret';
+    case 'phone_number_not_found':
+    case 'phone_number_waba_mismatch':
+      return 'phoneNumberId';
+    case 'waba_not_found':
+      return 'wabaId';
+    default:
+      return null;
+  }
 }
 
 /** UUID seperti yang dibuat server; alamat lain langsung "tidak ditemukan" tanpa memanggil API. */

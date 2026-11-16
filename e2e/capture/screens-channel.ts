@@ -133,6 +133,41 @@ export const channelScreens: Screen[] = [
     before: wizardMocks,
     waitFor: 'h2',
   },
+  // Q2: langkah 2–4 tanpa galat.
+  {
+    name: 'wizard-aplikasi',
+    path: WIZARD,
+    before: wizardMocks,
+    waitFor: 'h2',
+    prepare: async (page) => {
+      await page.getByRole('button', { name: 'Lanjut', exact: true }).click();
+      await page.getByRole('heading', { level: 2, name: 'Buat aplikasi Meta' }).waitFor();
+      await settle(page);
+    },
+  },
+  {
+    name: 'wizard-pilih-nomor',
+    path: WIZARD,
+    before: wizardMocks,
+    waitFor: 'h2',
+    prepare: async (page) => {
+      for (const title of ['Buat aplikasi Meta', 'Pilih nomor']) {
+        await page.getByRole('button', { name: 'Lanjut', exact: true }).click();
+        await page.getByRole('heading', { level: 2, name: title }).waitFor();
+      }
+      await settle(page);
+    },
+  },
+  {
+    name: 'wizard-salin-id',
+    path: WIZARD,
+    before: wizardMocks,
+    waitFor: 'h2',
+    prepare: async (page) => {
+      await wizardTo(page, 'ids');
+      await settle(page);
+    },
+  },
   {
     name: 'wizard-salin-id-galat',
     path: WIZARD,
@@ -281,7 +316,7 @@ export const channelScreens: Screen[] = [
     },
     waitFor: 'h2',
     prepare: async (page) => {
-      await page.getByLabel('Info', { exact: true }).waitFor();
+      await page.getByLabel('Tentang', { exact: true }).waitFor();
       await scrollTo(page, 'Profil bisnis');
     },
   },
@@ -307,7 +342,7 @@ export const channelScreens: Screen[] = [
     },
     waitFor: 'h2',
     prepare: async (page) => {
-      await page.getByLabel('Website 2').fill('https://majujaya.co.id/promo');
+      await page.getByLabel('Situs web 2').fill('https://majujaya.co.id/promo');
       await page.getByRole('button', { name: 'Simpan profil', exact: true }).click();
       await fillIdentity(page);
       await settle(page);
@@ -362,14 +397,42 @@ export const channelScreens: Screen[] = [
     path: detailPath(UNTESTED.id),
     before: async (page) => {
       await quietSecurity(page);
-      await channelDetail(page, UNTESTED);
-      await channelTest(page, UNTESTED.id, 'ok');
+      // Q1: server ikut berubah setelah tes (Terhubung + data nomor), seperti server sungguhan.
+      const setChannel = await channelDetail(page, UNTESTED);
+      await channelTest(page, UNTESTED.id, 'ok', () =>
+        setChannel({
+          ...MAIN,
+          id: UNTESTED.id,
+          name: UNTESTED.name,
+          lastTest: {
+            ok: true,
+            code: 'ok',
+            message: 'Koneksi berhasil. Token, App Secret, Phone Number ID, dan WABA ID cocok.',
+            testedAt: new Date().toISOString(),
+          },
+        }),
+      );
     },
     waitFor: 'h2',
     prepare: async (page) => {
       await page.getByRole('button', { name: 'Tes koneksi', exact: true }).click();
       await page.getByText(/^Koneksi berhasil./).waitFor();
+      await page.getByText('Terhubung', { exact: true }).first().waitFor();
       await settle(page);
+    },
+  },
+  {
+    // W2: aksi utama "Ganti kredensial" di kotak gagal → form terbuka, Token terfokus.
+    name: 'nomor-gagal-tes-perbaiki',
+    path: detailPath(SECOND.id),
+    before: async (page) => {
+      await quietSecurity(page);
+      await channelDetail(page, SECOND);
+    },
+    waitFor: 'h2',
+    prepare: async (page) => {
+      await page.getByRole('button', { name: 'Ganti kredensial', exact: true }).first().click();
+      await page.getByLabel(/^Token System User/).waitFor();
     },
   },
   {

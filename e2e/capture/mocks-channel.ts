@@ -44,6 +44,7 @@ export function photoChannel(
   return {
     type: 'whatsapp',
     enabled: true,
+    disabledAt: null,
     status: 'connected',
     phoneNumberId: '106540352242922',
     wabaId: '102290129340398',
@@ -94,6 +95,7 @@ export const PHOTO_CHANNELS: PhotoChannel[] = [
     id: PHOTO_CHANNEL_IDS.disabled,
     name: 'Promo Lama',
     enabled: false,
+    disabledAt: ago(26),
     phoneNumberId: '106540352242955',
     number: number({ displayPhoneNumber: '+62 811-7200-901', qualityRating: 'RED' }),
   }),
@@ -139,15 +141,19 @@ export const PHOTO_PROFILE = {
   vertical: 'PROF_SERVICES',
 };
 
-/** Halaman nomor: channel, webhook, dan profil bisnis. */
+/**
+ * Halaman nomor: channel, webhook, dan profil bisnis. Mengembalikan pengganti channel yang dijawab
+ * GET berikutnya (mis. setelah tes koneksi, seperti server sungguhan yang mencatat hasil tes).
+ */
 export async function channelDetail(
   page: Page,
   channel: PhotoChannel,
   options: { profile?: 'ok' | 'meta-error' | 'hang'; webhookWarning?: boolean } = {},
-): Promise<void> {
+): Promise<(next: PhotoChannel) => void> {
   const base = `${API}/settings/channels/${channel.id}`;
+  let current = channel;
   await page.route(base, (route) =>
-    route.request().method() === 'GET' ? json(route, { channel }) : route.fallback(),
+    route.request().method() === 'GET' ? json(route, { channel: current }) : route.fallback(),
   );
   await page.route(`${base}/webhook`, (route) =>
     json(route, photoWebhook(channel.id, options.webhookWarning ? HTTPS_WARNING : null)),
@@ -165,6 +171,9 @@ export async function channelDetail(
     }
     return json(route, { profile: PHOTO_PROFILE, fetchedAt: ago(0.2) });
   });
+  return (next) => {
+    current = next;
+  };
 }
 
 /** `POST …/test` tiruan: berhasil, token ditolak, atau dibatasi (429). */
@@ -172,8 +181,11 @@ export async function channelTest(
   page: Page,
   id: string,
   outcome: 'ok' | 'token_invalid' | 'limited',
+  /** Dipanggil sebelum hasil dijawab (mis. channel di server ikut berubah). */
+  onTested?: () => void,
 ): Promise<void> {
   await page.route(`${API}/settings/channels/${id}/test`, (route) => {
+    onTested?.();
     if (outcome === 'limited') {
       return apiError(
         route,

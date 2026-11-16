@@ -69,6 +69,14 @@ export function profileNeedsConfirmation(changes: UpdateBusinessProfileRequest):
   return BUSINESS_PROFILE_CONFIRMED_FIELDS.some((field) => changes[field] !== undefined);
 }
 
+/**
+ * Pesan validasi dari skema/server menyebut isian `about` "Info"; di form labelnya "Tentang"
+ * (istilah info kontak Meta), jadi kata pertamanya disesuaikan.
+ */
+function fieldMessage(field: string, message: string): string {
+  return field === 'about' ? message.replace(/^Info\b/, 'Tentang') : message;
+}
+
 /** Path isian server/Zod (`websites.1`) → nama isian form (`website2`). */
 function formField(path: string): string {
   if (path === 'websites' || path === 'websites.0') return 'website1';
@@ -82,7 +90,8 @@ export function validateProfileChanges(changes: UpdateBusinessProfileRequest): F
   if (result.success) return {};
   const errors: FieldErrors = {};
   for (const issue of result.error.issues) {
-    errors[formField(issue.path.map(String).join('.'))] ??= issue.message;
+    const field = formField(issue.path.map(String).join('.'));
+    errors[field] ??= fieldMessage(field, issue.message);
   }
   return errors;
 }
@@ -92,7 +101,8 @@ export function profileFieldErrors(details: readonly ErrorDetail[]): FieldErrors
   const errors: FieldErrors = {};
   for (const detail of details) {
     if (detail.field.startsWith('confirmation.')) continue;
-    errors[formField(detail.field)] ??= detail.message;
+    const field = formField(detail.field);
+    errors[field] ??= fieldMessage(field, detail.message);
   }
   return errors;
 }

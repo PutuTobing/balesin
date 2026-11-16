@@ -1,3 +1,8 @@
+.strong {
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+}
+
 .code {
   padding: 0 var(--space-4);
   border-radius: calc(var(--radius-input) / 2);

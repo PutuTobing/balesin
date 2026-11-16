@@ -9,8 +9,8 @@ const SEVERITY = { failed: 3, untested: 2, connected: 1 } as const;
 
 /**
  * Status ringkas Channel di menu Pengaturan: "○ Belum diatur · Hubungkan", atau
- * "2 nomor · ● Gagal" dengan status channel aktif yang paling perlu perhatian (semua nonaktif →
- * "Nonaktif").
+ * "4 nomor · ● 1 koneksi gagal" dengan status channel aktif yang paling perlu perhatian (semua
+ * nonaktif → "Nonaktif").
  */
 export function ChannelsMenuStatus({ channels }: { channels: readonly WhatsAppChannel[] }) {
   if (channels.length === 0) {
@@ -31,13 +31,20 @@ export function ChannelsMenuStatus({ channels }: { channels: readonly WhatsAppCh
     null,
   );
   const view = channelStatusView(worst ?? { enabled: false, status: 'untested' });
+  // Hanya sebagian channel aktif berstatus terburuk → sebut jumlahnya ("1 koneksi gagal"), supaya
+  // tidak terbaca "semua channel gagal". Semua sama (atau satu nomor) → label saja.
+  const sameCount = worst ? active.filter((channel) => channel.status === worst.status).length : 0;
+  const label =
+    worst && active.length > 1 && sameCount < active.length
+      ? t.channels.menuWorst(sameCount, view.label)
+      : view.label;
   return (
     <>
       <span className={styles.menuCount}>{t.channels.menuCount(channels.length)}</span>
       <span className={styles.statusSeparator} aria-hidden="true">
         ·
       </span>
-      <StatusBadge tone={view.tone} label={view.label} />
+      <StatusBadge tone={view.tone} label={label} />
     </>
   );
 }
