@@ -6,7 +6,7 @@ import {
   type Logger,
   type Redis,
 } from '@balesin/core';
-import { conversations, messages, type Database } from '@balesin/db';
+import { conversations, messages, organizations, type Database } from '@balesin/db';
 import {
   INBOX_STREAM_CLOSE_CODES,
   INBOX_STREAM_HEARTBEAT_SECONDS,
@@ -119,6 +119,17 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
   } | null> {
     if (event.type === 'tags.changed') {
       return { assigneeUserId: undefined, message: { type: 'tags.changed' } };
+    }
+    if (event.type === 'sending.changed') {
+      const [org] = await db
+        .select({ pausedAt: organizations.sendingPausedAt })
+        .from(organizations)
+        .where(eq(organizations.id, event.organizationId));
+      if (!org) return null;
+      return {
+        assigneeUserId: undefined,
+        message: { type: 'sending.changed', paused: org.pausedAt !== null },
+      };
     }
     if (event.conversationId === undefined) return null;
     const [conversation] = await db

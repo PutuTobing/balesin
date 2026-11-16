@@ -182,10 +182,9 @@ describe('sasaran & pelaku', () => {
 });
 
 describe('Putaran 2 — R2: alarm aksi massal bisa dihindari dengan "tugaskan"', () => {
-  // Alarm hanya menghitung `claimed`/`resolved`/`unassigned`. Mengalihkan chat yang sedang dilayani
-  // agen lain ke diri sendiri (atau mengosongkan antrian ke akun rekanan) tercatat `assigned` →
-  // tidak dihitung, jadi antrian bisa dikuras tanpa kejadian keamanan.
-  it.fails('31 pengalihan ke diri sendiri dalam 10 menit → audit inbox.bulk_action', async () => {
+  // Dulu alarm hanya menghitung `claimed`/`resolved`/`unassigned`; pengalihan (`assigned`) kini
+  // ikut dihitung (butir 10).
+  it('31 pengalihan ke diri sendiri dalam 10 menit → audit inbox.bulk_action', async () => {
     const cs = await agent('cs', 'Sinta CS');
     const holder = await agent('supervisor', 'Rina Supervisor');
     for (let index = 0; index < 31; index += 1) {
@@ -197,6 +196,6 @@ describe('Putaran 2 — R2: alarm aksi massal bisa dihindari dengan "tugaskan"',
       .select()
       .from(auditLogs)
       .where(eq(auditLogs.action, AUDIT_ACTIONS.inboxBulkAction));
-    expect(alarms).toHaveLength(1); // saat ini 0
+    expect(alarms).toHaveLength(1);
   });
 });

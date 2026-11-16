@@ -199,6 +199,12 @@ export const messages = pgTable(
     index('messages_outbound_sender_created_at_idx')
       .on(table.organizationId, table.senderUserId, table.createdAt)
       .where(sql`${table.direction} = 'outbound'`),
+    // Pemeriksa klaim kirim macet (`stale-send-claims`, review R5): hanya baris yang sedang diklaim.
+    index('messages_pending_send_claim_idx')
+      .on(table.sendClaimedAt)
+      .where(
+        sql`${table.status} = 'pending' and ${table.wamid} is null and ${table.sendClaimedAt} is not null`,
+      ),
     foreignKey({
       name: 'messages_organization_id_last_sent_by_user_id_fk',
       columns: [table.organizationId, table.lastSentByUserId],

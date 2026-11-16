@@ -8,6 +8,7 @@ import {
   type InvitationEmailPayload,
   type SecurityNoticeAdminEmailPayload,
   type SecurityNoticeEmailPayload,
+  type NotificationJobPayload,
   type SendMessageJobPayload,
   type WebhookEventJobPayload,
 } from '@balesin/core';
@@ -23,6 +24,7 @@ import { buildApp, type App, type AppConfig, type AppDeps } from '../app';
 import type { ReadinessProbes } from '../modules/health/health.service';
 import type { EmailNotifier } from '../queues/email-queue';
 import type { OutboundMessageEnqueuer } from '../queues/message-queue';
+import type { NotificationEnqueuer } from '../queues/notification-queue';
 import type { WebhookEventEnqueuer } from '../queues/webhook-queue';
 
 export const TEST_APP_ORIGIN = 'http://localhost:5173';
@@ -41,6 +43,8 @@ export interface TestAppOptions {
   webhookQueue?: WebhookEventEnqueuer;
   /** Pengganti pengantre pesan keluar (bawaan: mencatat ke `messageJobs`). */
   messageQueue?: OutboundMessageEnqueuer;
+  /** Pengganti pengantre notifikasi (bawaan: mencatat ke `notificationJobs`). */
+  notificationQueue?: NotificationEnqueuer;
   overrides?: AppDeps['overrides'];
 }
 
@@ -66,6 +70,8 @@ export interface TestApp {
   webhookJobs: WebhookEventJobPayload[];
   /** Job pesan keluar yang diantrekan (bila `messageQueue` tidak diganti). */
   messageJobs: Array<SendMessageJobPayload & { attempt: number }>;
+  /** Job notifikasi yang diantrekan (bila `notificationQueue` tidak diganti). */
+  notificationJobs: NotificationJobPayload[];
 }
 
 const healthy = () => Promise.resolve();
@@ -140,6 +146,7 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<TestAp
   const channelChangeNotices: ChannelChangedEmailPayload[] = [];
   const webhookJobs: WebhookEventJobPayload[] = [];
   const messageJobs: Array<SendMessageJobPayload & { attempt: number }> = [];
+  const notificationJobs: NotificationJobPayload[] = [];
   const record =
     <T>(list: T[]) =>
     (payload: T) => {
@@ -178,6 +185,7 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<TestAp
         return Promise.resolve();
       },
     },
+    notificationQueue: options.notificationQueue ?? { enqueue: record(notificationJobs) },
     overrides: {
       ...options.overrides,
       meta: { fetch: offlineMetaFetch, ...options.overrides?.meta },
@@ -195,6 +203,7 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<TestAp
     channelChangeNotices,
     webhookJobs,
     messageJobs,
+    notificationJobs,
   };
 }
 

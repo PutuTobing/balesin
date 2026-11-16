@@ -1,4 +1,9 @@
-import { AppError, type Logger } from '@balesin/core';
+import {
+  AppError,
+  NOOP_INBOX_EVENT_PUBLISHER,
+  type InboxEventPublisher,
+  type Logger,
+} from '@balesin/core';
 import { messages, organizations, users, type Database, type DbExecutor } from '@balesin/db';
 import type {
   IdentityConfirmation,
@@ -6,7 +11,7 @@ import type {
   SendingLimits,
   UpdateSendingLimitsRequest,
 } from '@balesin/shared';
-import { and, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, isNull, sql } from 'drizzle-orm';
 
 import type { ClientInfo } from '../../http/client-info';
 import { enforceRateLimit, type RateLimiter } from '../../http/rate-limit';
@@ -35,6 +40,8 @@ const LIMIT_FLAG = 'batas-kirim-harian';
 
 export interface SendingLimitsServiceDeps {
   db: Database;
+  /** Event `sending.changed` saat rem ditarik/dilepas (banner inbox semua agen, butir 10). */
+  publisher?: InboxEventPublisher;
   limiter: RateLimiter;
   notifier: EmailNotifier;
   twoFactor: Pick<TwoFactorService, 'confirmIdentity'>;
@@ -48,6 +55,8 @@ export interface SendingLimitsContext extends TwoFactorContext {
 
 export interface SendingLimitsService {
   get(organizationId: string): Promise<SendingLimits>;
+  /** Rem darurat sedang ditarik (untuk banner semua agen, tanpa rincian). */
+  paused(organizationId: string): Promise<boolean>;
   update(
     auth: AuthContext,
     input: UpdateSendingLimitsRequest,
@@ -94,6 +103,9 @@ async function countOutbound(
 
 export function createSendingLimitsService(deps: SendingLimitsServiceDeps): SendingLimitsService {
   const { db, limiter, notifier, twoFactor, logger } = deps;
+  const publisher = deps.publisher ?? NOOP_INBOX_EVENT_PUBLISHER;
+  const sendingChanged = (organizationId: string) =>
+    publisher.publish([{ type: 'sending.changed', organizationId }]);
   const now = deps.now ?? (() => new Date());
 
   async function load(executor: DbExecutor, organizationId: string): Promise<SendingLimits> {
@@ -277,6 +289,7 @@ export function createSendingLimitsService(deps: SendingLimitsServiceDeps): Send
           { organizationId: auth.organizationId, actorRef: auth.user.id },
           'Rem darurat pengiriman ditarik',
         );
+        await sendingChanged(auth.organizationId);
         await notifyOwners(auth.organizationId, 'sending_paused', auth.user.id, auditLogId);
       }
       return result;
@@ -291,14 +304,21 @@ export function createSendingLimitsService(deps: SendingLimitsServiceDeps): Send
         context,
         'Masukkan password (dan kode verifikasi) untuk melanjutkan pengiriman.',
       );
-      return db.transaction(async (tx) => {
+      let resumed = false;
+      const result = await db.transaction(async (tx) => {
         const { role } = await assertActorStillAuthorized(tx, auth, 'sending.resume');
         const updated = await tx
           .update(organizations)
           .set({ sendingPausedAt: null, sendingPausedByUserId: null, sendingPauseReason: null })
-          .where(eq(organizations.id, auth.organizationId))
+          .where(
+            and(
+              eq(organizations.id, auth.organizationId),
+              isNotNull(organizations.sendingPausedAt),
+            ),
+          )
           .returning({ id: organizations.id });
         if (updated.length > 0) {
+          resumed = true;
           await recordAudit(tx, {
             organizationId: auth.organizationId,
             actorUserId: auth.user.id,
@@ -311,6 +331,16 @@ export function createSendingLimitsService(deps: SendingLimitsServiceDeps): Send
         }
         return load(tx, auth.organizationId);
       });
+      if (resumed) await sendingChanged(auth.organizationId);
+      return result;
+    },
+
+    async paused(organizationId) {
+      const [org] = await db
+        .select({ pausedAt: organizations.sendingPausedAt })
+        .from(organizations)
+        .where(eq(organizations.id, organizationId));
+      return Boolean(org?.pausedAt);
     },
 
     async assertCanSend({ organizationId, userId, conversationId, client }) {

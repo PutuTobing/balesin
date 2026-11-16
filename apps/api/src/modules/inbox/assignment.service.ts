@@ -27,6 +27,10 @@ import { alias } from 'drizzle-orm/pg-core';
 
 import type { ClientInfo } from '../../http/client-info';
 import type { RateLimitRule, RateLimiter } from '../../http/rate-limit';
+import {
+  NOOP_NOTIFICATION_ENQUEUER,
+  type NotificationEnqueuer,
+} from '../../queues/notification-queue';
 import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
 import { ACCESS_RULES, forbidByRule, type AccessDeniedRecorder } from '../auth/access-denied';
 import { assertActorStillAuthorized, authorityChanged } from '../auth/actor-check';
@@ -63,6 +67,8 @@ export interface AssignmentServiceDeps {
   logger: Logger;
   /** Penghitung aksi massal (review butir 7 R1). Tanpa limiter = alarm mati (tes unit). */
   limiter?: RateLimiter;
+  /** Notifikasi push (butir 10): ditugaskan ke seseorang / kembali ke antrian. */
+  notifications?: NotificationEnqueuer;
   now?: () => Date;
 }
 
@@ -80,6 +86,7 @@ export const BULK_ACTION_RULE: RateLimitRule = {
 const BULK_ACTION_FLAG = 'inbox-aksi-massal';
 const BULK_ACTION_KINDS: ReadonlySet<ConversationRecordKind> = new Set([
   'claimed',
+  'assigned',
   'resolved',
   'unassigned',
 ]);
@@ -110,6 +117,7 @@ interface Change {
 
 export function createAssignmentService(deps: AssignmentServiceDeps): AssignmentService {
   const { db, publisher, accessDenied, logger, limiter } = deps;
+  const notifications = deps.notifications ?? NOOP_NOTIFICATION_ENQUEUER;
   const now = deps.now ?? (() => new Date());
 
   async function nameOf(tx: DbExecutor, organizationId: string, userId: string | null) {
@@ -216,6 +224,23 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
       },
     ]);
     logger.info({ conversationId, actorRef: auth.user.id }, 'Penanganan percakapan diubah');
+    // Push (usaha terbaik, payload hanya ID): ditugaskan ke ORANG LAIN → penerima baru; kembali ke
+    // antrian → yang bisa mengambil. Mengambil sendiri tidak memberi tahu siapa pun.
+    if (done.next !== null && done.next !== auth.user.id && done.next !== done.previous) {
+      await notifications.enqueue({
+        organizationId: auth.organizationId,
+        kind: 'assigned',
+        conversationId,
+        actorUserId: auth.user.id,
+      });
+    } else if (done.next === null && (done.kind === 'unassigned' || done.kind === 'reopened')) {
+      await notifications.enqueue({
+        organizationId: auth.organizationId,
+        kind: 'queued',
+        conversationId,
+        actorUserId: auth.user.id,
+      });
+    }
     if (BULK_ACTION_KINDS.has(done.kind)) await watchBulk(context, done.role);
   }
 

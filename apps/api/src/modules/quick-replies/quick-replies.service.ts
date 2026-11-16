@@ -35,6 +35,47 @@ import { conversationScope, likePattern } from '../inbox/inbox.repo';
  */
 
 export const QUICK_REPLY_NOT_FOUND = 'Template percakapan tidak ditemukan.';
+
+/** Isi template di audit dipotong (teks bisnis; cukup untuk menelusuri perubahan). */
+const AUDIT_BODY_MAX = 1_000;
+const LINK_PATTERN =
+  /\b(?:https?:\/\/|www\.)[^\s]+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|id|co|io|me|link|xyz|ly|info|biz|site|online|app|cc|top|shop)\b(?:\/[^\s]*)?/gi;
+const LONG_NUMBER_PATTERN = /\d(?:[\s.-]?\d){7,}/g;
+
+function matchesOf(
+  text: string,
+  pattern: RegExp,
+  normalize: (value: string) => string,
+): Set<string> {
+  return new Set([...text.matchAll(pattern)].map((match) => normalize(match[0])));
+}
+
+/**
+ * Tautan / angka panjang (≥ 8 digit, mis. rekening/telepon) yang BARU muncul di `next` dibanding
+ * `previous` (review panel R1).
+ */
+export function riskyAdditions(previous: string, next: string): { links: number; numbers: number } {
+  const linkOf = (value: string) => value.toLowerCase();
+  const digitsOf = (value: string) => value.replace(/\D/g, '');
+  const oldLinks = matchesOf(previous, LINK_PATTERN, linkOf);
+  const oldNumbers = matchesOf(previous, LONG_NUMBER_PATTERN, digitsOf);
+  const links = [...matchesOf(next, LINK_PATTERN, linkOf)].filter((link) => !oldLinks.has(link));
+  const numbers = [...matchesOf(next, LONG_NUMBER_PATTERN, digitsOf)].filter(
+    (number) => !oldNumbers.has(number),
+  );
+  return { links: links.length, numbers: numbers.length };
+}
+
+const clip = (text: string) =>
+  text.length > AUDIT_BODY_MAX ? `${text.slice(0, AUDIT_BODY_MAX)}…` : text;
+
+/** Metadata risiko: hanya bila pelaku BUKAN Owner dan ada tautan/angka baru. */
+function riskOf(role: string, previous: string, next: string) {
+  if (role === 'owner') return {};
+  const added = riskyAdditions(previous, next);
+  if (added.links === 0 && added.numbers === 0) return {};
+  return { risky: true, addedLinks: added.links, addedNumbers: added.numbers };
+}
 const DUPLICATE = 'Shortcut itu sudah dipakai template lain.';
 const CONVERSATION_NOT_FOUND = 'Percakapan tidak ditemukan.';
 
@@ -151,7 +192,7 @@ export function createQuickRepliesService(deps: {
     async create({ auth, client }, input) {
       const id = await guard(() =>
         db.transaction(async (tx) => {
-          await assertActorStillAuthorized(tx, auth, 'quick_replies.manage');
+          const { role } = await assertActorStillAuthorized(tx, auth, 'quick_replies.manage');
           await tx.execute(
             sql`select pg_advisory_xact_lock(hashtextextended(${`quick-replies:${auth.organizationId}`}, 0))`,
           );
@@ -180,7 +221,12 @@ export function createQuickRepliesService(deps: {
             action: AUDIT_ACTIONS.quickReplyCreated,
             targetType: 'quick_reply',
             targetId: row.id,
-            metadata: { shortcut: input.shortcut },
+            metadata: {
+              shortcut: input.shortcut,
+              next: { title: input.title, body: clip(input.body) },
+              actorRole: role,
+              ...riskOf(role, '', input.body),
+            },
             client,
           });
           return row.id;
@@ -192,7 +238,7 @@ export function createQuickRepliesService(deps: {
     async update({ auth, client }, id, input) {
       await guard(() =>
         db.transaction(async (tx) => {
-          await assertActorStillAuthorized(tx, auth, 'quick_replies.manage');
+          const { role } = await assertActorStillAuthorized(tx, auth, 'quick_replies.manage');
           const [current] = await tx
             .select()
             .from(quickReplies)
@@ -221,6 +267,13 @@ export function createQuickRepliesService(deps: {
               shortcut: input.shortcut ?? current.shortcut,
               previousShortcut: current.shortcut,
               changedFields,
+              previous: { title: current.title, body: clip(current.body) },
+              next: {
+                title: input.title ?? current.title,
+                body: clip(input.body ?? current.body),
+              },
+              actorRole: role,
+              ...riskOf(role, current.body, input.body ?? current.body),
             },
             client,
           });

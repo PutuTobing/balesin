@@ -3,6 +3,7 @@ import type { Queue, Worker } from 'bullmq';
 
 import { createEmailWorker, type EmailJobDeps } from './queues/email';
 import { createMessageWorker, type MessageJobDeps } from './queues/messages';
+import { createNotificationWorker, type NotificationJobDeps } from './queues/notifications';
 import {
   createMaintenanceQueue,
   createMaintenanceWorker,
@@ -31,6 +32,8 @@ export interface WorkerServices {
   maintenance?: Omit<MaintenanceJobDeps, 'logger'>;
   /** Antrian `messages` (pesan keluar ke Meta). Opsional untuk tes yang tidak membutuhkannya. */
   messages?: Omit<MessageJobDeps, 'logger'>;
+  /** Antrian `notifications` (Web Push). Opsional untuk tes yang tidak membutuhkannya. */
+  notifications?: Omit<NotificationJobDeps, 'logger'>;
 }
 
 const ERROR_LOG_INTERVAL_MS = 30_000;
@@ -51,6 +54,9 @@ export function startWorkers(
   ];
   if (services.messages) {
     workers.push(createMessageWorker(options, { ...services.messages, logger }));
+  }
+  if (services.notifications) {
+    workers.push(createNotificationWorker(options, { ...services.notifications, logger }));
   }
   let maintenanceQueue: Queue | undefined;
   if (services.maintenance) {

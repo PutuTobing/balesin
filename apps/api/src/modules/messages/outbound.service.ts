@@ -52,7 +52,12 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { ClientInfo } from '../../http/client-info';
 import type { OutboundMessageEnqueuer } from '../../queues/message-queue';
 import type { PermissionGrant } from '../auth/permission-grant';
-import { conversationScope, findConversation, type MessageRowView } from '../inbox/inbox.repo';
+import {
+  conversationScope,
+  findConversation,
+  senderNameOf,
+  type MessageRowView,
+} from '../inbox/inbox.repo';
 import type { SendingLimitsService } from '../sending-limits/sending-limits.service';
 import { createConcurrencyGate } from './concurrency';
 import { MediaTooLargeError, type MediaStore, type StoredFile } from './media-store';
@@ -281,7 +286,11 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
       })
       .from(messages)
       .where(and(eq(messages.organizationId, row.organizationId), eq(messages.id, row.id)));
-    return { ...row, occurredAtExact: exact?.at ?? row.occurredAt.toISOString() };
+    return {
+      ...row,
+      occurredAtExact: exact?.at ?? row.occurredAt.toISOString(),
+      senderName: await senderNameOf(db, row),
+    };
   }
 
   async function enqueue(row: MessageRow, attempt: number): Promise<MessageRow> {

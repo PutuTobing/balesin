@@ -25,6 +25,8 @@ export const INBOX_BUS_EVENT_TYPES = [
   'conversation.detail',
   /** Master tag organisasi berubah (butir 8) — TANPA `conversationId`. */
   'tags.changed',
+  /** Rem darurat pengiriman ditarik/dilepas (butir 10) — TANPA `conversationId`. */
+  'sending.changed',
 ] as const;
 export type InboxBusEventType = (typeof INBOX_BUS_EVENT_TYPES)[number];
 
@@ -122,6 +124,7 @@ export function parseInboxBusMessage(raw: string): InboxBusEvent | null {
 function isComplete(event: InboxBusEvent): boolean {
   switch (event.type) {
     case 'tags.changed':
+    case 'sending.changed':
       return event.conversationId === undefined && event.messageId === undefined;
     case 'conversation.updated':
       return event.conversationId !== undefined;

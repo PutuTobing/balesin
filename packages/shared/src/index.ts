@@ -20,6 +20,7 @@ export * from './inbox';
 export * from './invitations';
 export * from './outbound';
 export * from './links';
+export * from './notifications';
 export * from './password';
 export * from './password-reset';
 export * from './permissions';

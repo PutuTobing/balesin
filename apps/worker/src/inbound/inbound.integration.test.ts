@@ -5,7 +5,12 @@
  */
 import { randomBytes } from 'node:crypto';
 
-import { splitWhatsAppWebhook, WEBHOOK_JOBS, type InboxBusEventInput } from '@balesin/core';
+import {
+  splitWhatsAppWebhook,
+  WEBHOOK_JOBS,
+  type InboxBusEventInput,
+  type NotificationJobPayload,
+} from '@balesin/core';
 import { createLogCapture, type LogCapture } from '@balesin/core/testing';
 import {
   channels,
@@ -704,6 +709,36 @@ describe('event real-time', () => {
       ],
     ]);
     expect(JSON.stringify(published)).not.toContain(SECRET_TEXT);
+  });
+
+  it('pesan masuk baru → job notifikasi (ID saja) setelah commit; kiriman ulang tidak dobel', async () => {
+    const queued: NotificationJobPayload[] = [];
+    const notifications = {
+      enqueue: (jobs: readonly NotificationJobPayload[]) => {
+        queued.push(...jobs);
+        return Promise.resolve();
+      },
+    };
+    const eventId = await storeOne(messageNotification({}));
+    await processWebhookJob(
+      { name: WEBHOOK_JOBS.whatsappEvent, data: { organizationId, eventId } },
+      { db, logger: logs.logger, notifications },
+    );
+    await processWebhookJob(
+      { name: WEBHOOK_JOBS.whatsappEvent, data: { organizationId, eventId } },
+      { db, logger: logs.logger, notifications },
+    );
+    const [conversation] = await conversationRows();
+    const [message] = await messageRows();
+    expect(queued).toEqual([
+      {
+        organizationId,
+        kind: 'message',
+        conversationId: conversation!.id,
+        messageId: message!.id,
+      },
+    ]);
+    expect(JSON.stringify(queued)).not.toContain(SECRET_TEXT);
   });
 
   it('handler gagal (transaksi batal) → tidak ada event yang diterbitkan', async () => {

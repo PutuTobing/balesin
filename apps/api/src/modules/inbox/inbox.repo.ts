@@ -406,7 +406,21 @@ export async function lastMessagesOf(
   return found;
 }
 
-export type MessageRowView = MessageRow & { occurredAtExact: string };
+/** `senderName` = nama tampilan agen pengirim (pesan keluar oleh manusia), tanpa email. */
+export type MessageRowView = MessageRow & { occurredAtExact: string; senderName?: string | null };
+
+/** Nama tampilan pengirim satu pesan (untuk jawaban kirim/kirim ulang/tandai). */
+export async function senderNameOf(
+  db: DbExecutor,
+  row: Pick<MessageRow, 'organizationId' | 'senderUserId'>,
+): Promise<string | null> {
+  if (!row.senderUserId) return null;
+  const [user] = await db
+    .select({ name: users.name })
+    .from(users)
+    .where(and(eq(users.organizationId, row.organizationId), eq(users.id, row.senderUserId)));
+  return user?.name ?? null;
+}
 
 /** Saringan panel detail (`only`): pesan ditandai / media / file. */
 function messageFilterCondition(only: MessageListFilter | undefined): SQL | undefined {
@@ -430,8 +444,16 @@ export async function listMessages(
   options: { limit: number; cursor?: Cursor | undefined; only?: MessageListFilter | undefined },
 ): Promise<MessageRowView[]> {
   const rows = await db
-    .select({ message: messages, occurredAtExact: exactTime(sql`${messages.occurredAt}`) })
+    .select({
+      message: messages,
+      occurredAtExact: exactTime(sql`${messages.occurredAt}`),
+      senderName: users.name,
+    })
     .from(messages)
+    .leftJoin(
+      users,
+      and(eq(users.organizationId, messages.organizationId), eq(users.id, messages.senderUserId)),
+    )
     .where(
       and(
         eq(messages.organizationId, organizationId),
@@ -444,7 +466,11 @@ export async function listMessages(
     )
     .orderBy(desc(messages.occurredAt), desc(messages.id))
     .limit(options.limit);
-  return rows.map((row) => ({ ...row.message, occurredAtExact: row.occurredAtExact }));
+  return rows.map((row) => ({
+    ...row.message,
+    occurredAtExact: row.occurredAtExact,
+    senderName: row.senderName,
+  }));
 }
 
 /** Tag tiap kontak (satu query), urut nama tanpa membedakan huruf besar/kecil. */

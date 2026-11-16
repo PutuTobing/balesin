@@ -15,6 +15,7 @@ import { buildApp } from './app';
 import { loadConfig, type ApiConfig } from './config';
 import { createEmailQueue } from './queues/email-queue';
 import { createMessageQueue } from './queues/message-queue';
+import { createNotificationQueue } from './queues/notification-queue';
 import { createWebhookQueue } from './queues/webhook-queue';
 
 /** Titik masuk proses API: baca konfigurasi → sambungkan dependensi → dengarkan port. */
@@ -60,6 +61,7 @@ async function main(config: ApiConfig): Promise<void> {
   const emailQueue = createEmailQueue({ connection: queueRedis });
   const webhookQueue = createWebhookQueue({ connection: queueRedis });
   const messageQueue = createMessageQueue({ connection: queueRedis });
+  const notificationQueue = createNotificationQueue({ connection: queueRedis, logger });
 
   const app = await buildApp({
     config,
@@ -73,6 +75,7 @@ async function main(config: ApiConfig): Promise<void> {
     notifier: emailQueue.notifier,
     webhookQueue: webhookQueue.enqueuer,
     messageQueue: messageQueue.enqueuer,
+    notificationQueue: notificationQueue.enqueuer,
   });
 
   const shutdown = createShutdown({
@@ -82,6 +85,7 @@ async function main(config: ApiConfig): Promise<void> {
       { name: 'antrian', run: () => emailQueue.close() },
       { name: 'antrian-webhook', run: () => webhookQueue.close() },
       { name: 'antrian-pesan', run: () => messageQueue.close() },
+      { name: 'antrian-notifikasi', run: () => notificationQueue.close() },
       { name: 'postgres', run: () => closeDb(db) },
       { name: 'redis', run: () => closeRedis(redis) },
       { name: 'redis-antrian', run: () => closeRedis(queueRedis) },

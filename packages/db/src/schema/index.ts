@@ -17,6 +17,7 @@ export * from './installation';
 export * from './invitations';
 export * from './media-files';
 export * from './messages';
+export * from './notifications';
 export * from './organization-logos';
 export * from './organizations';
 export * from './quick-replies';

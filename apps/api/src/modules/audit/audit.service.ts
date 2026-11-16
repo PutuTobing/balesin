@@ -92,6 +92,7 @@ const SECURITY_EVENT_CONDITIONS: Readonly<Record<SecurityEventKind, SQL>> = {
   sending_paused: sql`${auditLogs.action} = ${AUDIT_ACTIONS.sendingPaused}`,
   sending_limit_reached: sql`${auditLogs.action} = ${AUDIT_ACTIONS.sendingLimitReached}`,
   inbox_bulk_action: sql`${auditLogs.action} = ${AUDIT_ACTIONS.inboxBulkAction}`,
+  quick_reply_risky: sql`(${auditLogs.action} in (${AUDIT_ACTIONS.quickReplyCreated}, ${AUDIT_ACTIONS.quickReplyUpdated}) and ${auditLogs.metadata} ->> 'risky' = 'true')`,
   // Juga dilanjutkan setelah rem darurat (perubahan rem pengiriman oleh siapa pun tercatat).
   sending_limits_changed: sql`${auditLogs.action} in (${AUDIT_ACTIONS.sendingLimitsUpdated}, ${AUDIT_ACTIONS.sendingResumed})`,
 };
@@ -199,6 +200,9 @@ function kindOf(row: AuditRow): SecurityEventKind | undefined {
       return 'sending_limit_reached';
     case AUDIT_ACTIONS.inboxBulkAction:
       return 'inbox_bulk_action';
+    case AUDIT_ACTIONS.quickReplyCreated:
+    case AUDIT_ACTIONS.quickReplyUpdated:
+      return row.metadata.risky === true ? 'quick_reply_risky' : undefined;
     case AUDIT_ACTIONS.sendingLimitsUpdated:
     case AUDIT_ACTIONS.sendingResumed:
       return 'sending_limits_changed';
@@ -224,6 +228,7 @@ const DETAIL_KEYS: Readonly<Record<SecurityEventKind, readonly string[]>> = {
   sending_paused: ['reason', 'actorRole'],
   sending_limit_reached: ['scope', 'limit', 'sent'],
   inbox_bulk_action: ['actions', 'windowMinutes', 'kinds', 'actorRole'],
+  quick_reply_risky: ['shortcut', 'addedLinks', 'addedNumbers', 'actorRole'],
   sending_limits_changed: [
     'change',
     'dailyPerUser',

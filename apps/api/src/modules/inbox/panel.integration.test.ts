@@ -31,6 +31,7 @@ import {
   messageResponseSchema,
   quickReplyListResponseSchema,
   quickReplyResponseSchema,
+  securitySummaryResponseSchema,
   tagListResponseSchema,
   tagResponseSchema,
   useQuickReplyResponseSchema,
@@ -541,7 +542,7 @@ describe('pesan ditandai & media', () => {
 });
 
 describe('quick reply', () => {
-  it('kelola = Supervisor+; shortcut dinormalkan; variabel tak dikenal ditolak; audit tanpa isi', async () => {
+  it('kelola = Supervisor+; shortcut dinormalkan; variabel tak dikenal ditolak; audit memuat isi (R1)', async () => {
     const supervisor = await agent('supervisor', 'Rina Supervisor');
     const cs = await agent('cs', 'Sinta CS');
     const body = { shortcut: '/Salam', title: 'Salam pembuka', body: 'Halo {nama}, saya {agen}.' };
@@ -577,7 +578,8 @@ describe('quick reply', () => {
       'quick_reply.created',
       'quick_reply.updated',
     ]);
-    expect(JSON.stringify(audit)).not.toContain('Selamat pagi');
+    // Review panel R1: isi template (teks bisnis) ikut diaudit supaya perubahan bisa ditelusuri.
+    expect(JSON.stringify(audit)).toContain('Selamat pagi');
     expect((await send(cs, 'DELETE', url)).statusCode).toBe(403);
     expect((await send(supervisor, 'DELETE', url)).json()).toEqual({ deleted: true });
   });
@@ -655,5 +657,51 @@ describe('hapus kontak (UU PDP)', () => {
         .from(conversationNotes)
         .where(eq(conversationNotes.conversationId, row.id)),
     ).toEqual([]);
+  });
+});
+
+describe('quick reply — jejak isi & tautan/angka baru (review panel R1)', () => {
+  it('audit menyimpan isi lama → baru; tautan/rekening baru oleh selain Owner → kejadian warning', async () => {
+    const supervisor = await agent('supervisor', 'Rina Supervisor');
+    const created = await send(supervisor, 'POST', API_ROUTES.quickReplies.list, {
+      shortcut: 'rekening',
+      title: 'Rekening',
+      body: 'Silakan transfer ke rekening resmi kami.',
+    });
+    const item = quickReplyResponseSchema.parse(created.json()).quickReply;
+    const url = apiPath(API_ROUTES.quickReplies.quickReply, { quickReplyId: item.id });
+    await send(supervisor, 'PATCH', url, {
+      body: 'Transfer ke BCA 1234 5678 90 atau bayar di https://bayar-cepat.example/x',
+    });
+    // Owner menambah tautan → tercatat tetapi bukan kejadian keamanan.
+    await send(owner, 'PATCH', url, { body: 'Bayar lewat https://resmi.example' });
+
+    const audit = await harness.db
+      .select({ action: auditLogs.action, metadata: auditLogs.metadata })
+      .from(auditLogs)
+      .where(eq(auditLogs.targetId, item.id));
+    const updates = audit.filter((row) => row.action === 'quick_reply.updated');
+    expect(updates).toHaveLength(2);
+    expect(updates[0]?.metadata).toMatchObject({
+      previous: { body: 'Silakan transfer ke rekening resmi kami.' },
+      next: { body: expect.stringContaining('1234 5678 90') as unknown },
+      risky: true,
+      addedLinks: 1,
+      addedNumbers: 1,
+      actorRole: 'supervisor',
+    });
+    expect(updates[1]?.metadata).not.toHaveProperty('risky');
+
+    const summary = securitySummaryResponseSchema.parse(
+      (await send(owner, 'GET', API_ROUTES.audit.securitySummary)).json(),
+    );
+    expect(summary.counts.quick_reply_risky).toBe(1);
+    expect(summary.events).toContainEqual(
+      expect.objectContaining({
+        kind: 'quick_reply_risky',
+        severity: 'warning',
+        details: expect.objectContaining({ shortcut: 'rekening', addedLinks: 1 }) as unknown,
+      }),
+    );
   });
 });

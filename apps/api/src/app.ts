@@ -67,6 +67,8 @@ import { createAuditService } from './modules/audit/audit.service';
 import { assignmentRoutes } from './modules/inbox/assignment.routes';
 import { createAssignmentService } from './modules/inbox/assignment.service';
 import { createPanelService } from './modules/inbox/panel.service';
+import { createNotificationsService } from './modules/notifications/notifications.service';
+import { notificationsRoutes } from './modules/notifications/notifications.routes';
 import { panelRoutes } from './modules/inbox/panel.routes';
 import { createContactsService } from './modules/contacts/contacts.service';
 import { contactsRoutes } from './modules/contacts/contacts.routes';
@@ -94,6 +96,7 @@ import { whatsAppWebhookRoutes } from './modules/webhooks/whatsapp-webhook.route
 import { createWhatsAppWebhookService } from './modules/webhooks/whatsapp-webhook.service';
 import type { EmailNotifier } from './queues/email-queue';
 import type { OutboundMessageEnqueuer } from './queues/message-queue';
+import type { NotificationEnqueuer } from './queues/notification-queue';
 import type { WebhookEventEnqueuer } from './queues/webhook-queue';
 
 export type AppConfig = Pick<
@@ -130,6 +133,8 @@ export interface AppDeps {
   webhookQueue: WebhookEventEnqueuer;
   /** Pengantre pesan keluar (dikirim worker ke Meta). */
   messageQueue: OutboundMessageEnqueuer;
+  /** Pengantre notifikasi Web Push (dikirim worker). */
+  notificationQueue: NotificationEnqueuer;
   /** Titik ganti untuk tes. Tidak diisi di `index.ts`. */
   overrides?: {
     /** Awalan kunci Redis batas laju, supaya tes tidak saling mengganggu. */
@@ -139,6 +144,8 @@ export interface AppDeps {
     smtpTimeouts?: Partial<SmtpTimeouts>;
     /** Klien Graph API (mis. `sleep` instan supaya backoff tidak memperlambat tes). */
     meta?: Partial<Omit<MetaGraphClientOptions, 'version' | 'baseUrl' | 'environment'>>;
+    /** Origin server push TIRUAN yang boleh didaftarkan (tes saja; produksi: layanan push dikenal). */
+    pushEndpointOrigins?: readonly string[];
     /** Selang heartbeat/validasi ulang WebSocket inbox dan batas koneksi per pengguna. */
     inboxStream?: {
       heartbeatMs?: number;
@@ -394,6 +401,7 @@ export async function buildApp(deps: AppDeps) {
   // Rem pengiriman: batas harian/per percakapan + rem darurat (SECURITY §5).
   const sendingLimits = createSendingLimitsService({
     db,
+    publisher: inboxEvents,
     limiter,
     notifier: deps.notifier,
     twoFactor,
@@ -501,7 +509,18 @@ export async function buildApp(deps: AppDeps) {
       publisher: inboxEvents,
       accessDenied,
       limiter,
+      notifications: deps.notificationQueue,
       logger: deps.logger,
+    }),
+  });
+  // Notifikasi Web Push (Fase 2 butir 10).
+  await app.register(notificationsRoutes, {
+    limiter,
+    notifications: createNotificationsService({
+      db,
+      secretBox,
+      notifications: deps.notificationQueue,
+      extraOrigins: deps.overrides?.pushEndpointOrigins ?? [],
     }),
   });
   // Panel detail & quick reply (Fase 2 butir 8–9).
@@ -515,6 +534,7 @@ export async function buildApp(deps: AppDeps) {
     tags: createTagsService({ db, publisher: inboxEvents }),
   });
   await app.register(panelRoutes, {
+    db,
     limiter,
     panel: createPanelService({ db, publisher: inboxEvents, accessDenied }),
   });

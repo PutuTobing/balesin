@@ -127,6 +127,13 @@
       "when": 1794824229571,
       "tag": "0017_panel_detail_quick_reply",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794840727386,
+      "tag": "0018_notifikasi_push",
+      "breakpoints": true
     }
   ]
 }

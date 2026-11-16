@@ -1,4 +1,5 @@
 import { AppError } from '@balesin/core';
+import type { Database } from '@balesin/db';
 import {
   API_ROUTES,
   conversationIdParamsSchema,
@@ -21,10 +22,12 @@ import { requirePermission } from '../../http/route-access';
 import { requireAuth } from '../auth/auth.hook';
 import { permissionGrant } from '../auth/permission-grant';
 import { PANEL_WRITE_RULE } from '../contacts/contacts.routes';
+import { senderNameOf } from './inbox.repo';
 import { toMessage } from './inbox-view';
 import type { PanelContext, PanelService } from './panel.service';
 
 export interface PanelRoutesOptions {
+  db: Database;
   panel: PanelService;
   limiter: RateLimiter;
 }
@@ -55,7 +58,7 @@ function uuidOr404(value: string, message: string): string {
 }
 
 export const panelRoutes: FastifyPluginCallbackZod<PanelRoutesOptions> = (app, options, done) => {
-  const { panel, limiter } = options;
+  const { db, panel, limiter } = options;
   const routes = API_ROUTES.inbox;
   const REPLY = requirePermission('inbox.reply');
 
@@ -151,7 +154,13 @@ export const panelRoutes: FastifyPluginCallbackZod<PanelRoutesOptions> = (app, o
       handler: async (request) => {
         const id = uuidOr404(request.params.messageId, MESSAGE_NOT_FOUND);
         const row = await panel.star(await contextOf(request), id, starred);
-        return { message: toMessage({ ...row, occurredAtExact: row.occurredAt.toISOString() }) };
+        return {
+          message: toMessage({
+            ...row,
+            occurredAtExact: row.occurredAt.toISOString(),
+            senderName: await senderNameOf(db, row),
+          }),
+        };
       },
     });
   }

@@ -179,6 +179,7 @@ export function toMessage(row: MessageRowView): Message {
     errorCode: row.errorCode,
     failure: failureOf(row),
     senderUserId: row.senderUserId,
+    senderName: row.senderName ?? null,
     mediaAvailable: row.media !== null || row.mediaFileId !== null,
     starredAt: row.starredAt?.toISOString() ?? null,
     createdAt: row.occurredAt.toISOString(),

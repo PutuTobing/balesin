@@ -4,6 +4,7 @@ import {
   pauseSendingRequestSchema,
   resumeSendingRequestSchema,
   sendingLimitsResponseSchema,
+  sendingStatusResponseSchema,
   updateSendingLimitsRequestSchema,
 } from '@balesin/shared';
 import type { FastifyRequest } from 'fastify';
@@ -47,6 +48,18 @@ export const sendingLimitsRoutes: FastifyPluginCallbackZod<SendingLimitsRoutesOp
     log: request.log,
     presentedDeviceToken: readDeviceToken(request.headers.cookie, cookieSecure),
   });
+
+  // Status rem darurat untuk banner inbox SEMUA agen (butir 10): hanya `paused`, tanpa batas/pelaku.
+  app.get(
+    API_ROUTES.inbox.sendingStatus,
+    {
+      config: { access: requirePermission('inbox.view') },
+      schema: { response: { 200: sendingStatusResponseSchema, ...errors } },
+    },
+    async (request) => ({
+      paused: await sendingLimits.paused(requireAuth(request).organizationId),
+    }),
+  );
 
   app.get(
     routes.settings,

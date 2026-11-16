@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { check, integer, pgTable, text, uuid } from 'drizzle-orm/pg-core';
+import { boolean, check, integer, pgTable, text, uuid } from 'drizzle-orm/pg-core';
 
 import { createdAtColumn, idColumn, timestamptz, updatedAtColumn } from './columns';
 
@@ -42,6 +42,8 @@ export const organizations = pgTable(
     sendingPausedAt: timestamptz('sending_paused_at'),
     sendingPausedByUserId: uuid('sending_paused_by_user_id'),
     sendingPauseReason: text('sending_pause_reason'),
+    /** Tampilkan cuplikan isi pesan di notifikasi push (layar kunci). Bawaan MATI (butir 10). */
+    notificationPreview: boolean('notification_preview').notNull().default(false),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },

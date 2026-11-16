@@ -28,6 +28,11 @@ export const QUEUE_NAMES = {
    * Payload hanya ID; isi pesan dibaca worker dari database.
    */
   messages: 'messages',
+  /**
+   * Notifikasi Web Push (Fase 2 butir 10): satu job = satu kejadian inbox (pesan masuk, ditugaskan,
+   * kembali ke antrian, tes). Payload hanya ID; penerima & isi ditentukan worker dari database.
+   */
+  notifications: 'notifications',
 } as const;
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
@@ -115,6 +120,47 @@ export const MESSAGE_JOB_OPTIONS = {
 /** ID job = pesan + percobaan ke-n (kirim ulang manual memakai nomor percobaan baru). */
 export function sendMessageJobId(messageId: string, attempt: number): string {
   return `msg-${messageId}-${String(attempt)}`;
+}
+
+// ── Antrian `notifications` (Web Push) ──────────────────────────────────────
+
+export const NOTIFICATION_JOBS = {
+  /** Kejadian inbox → push ke penerima yang berhak & berlangganan. */
+  inbox: 'inbox',
+} as const;
+
+/**
+ * Jenis kejadian:
+ *  - `message`  — pesan masuk baru (`messageId`);
+ *  - `assigned` — percakapan ditugaskan/dialihkan ke seseorang (`actorUserId` = pelaku);
+ *  - `queued`   — percakapan kembali ke antrian terbuka (`actorUserId` = pelaku);
+ *  - `test`     — notifikasi tes ke perangkat pengguna sendiri (`userId`).
+ */
+export const NOTIFICATION_EVENT_KINDS = ['message', 'assigned', 'queued', 'test'] as const;
+
+export const notificationJobPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  kind: z.enum(NOTIFICATION_EVENT_KINDS),
+  conversationId: z.uuid().optional(),
+  messageId: z.uuid().optional(),
+  actorUserId: z.uuid().optional(),
+  userId: z.uuid().optional(),
+});
+export type NotificationJobPayload = z.infer<typeof notificationJobPayloadSchema>;
+
+/** 3 percobaan pendek: notifikasi yang terlambat lebih dari beberapa menit tidak berguna. */
+export const NOTIFICATION_JOB_OPTIONS = {
+  attempts: 3,
+  backoff: { type: 'exponential', delay: 3_000 },
+  removeOnComplete: { age: 60 * 60, count: 2_000 },
+  removeOnFail: { age: 24 * 60 * 60, count: 2_000 },
+};
+
+/** Pesan masuk: ID job = ID pesan (kiriman ulang webhook tidak menjadi dua notifikasi). */
+export function notificationJobId(payload: NotificationJobPayload): string | undefined {
+  return payload.kind === 'message' && payload.messageId
+    ? `notif-msg-${payload.messageId}`
+    : undefined;
 }
 
 // ── Antrian `maintenance` ───────────────────────────────────────────────────

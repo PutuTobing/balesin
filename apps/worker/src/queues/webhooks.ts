@@ -27,6 +27,7 @@ import { UnrecoverableError, Worker } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
 
 import { createInboundHandlers } from '../inbound/handlers';
+import type { NotificationProducer } from './notifications';
 import type { QueueConnectionOptions } from './system';
 
 /**
@@ -110,6 +111,8 @@ export interface WebhookJobDeps {
   now?: () => Date;
   /** Penerbit event inbox real-time (bawaan: tidak menerbitkan apa pun). */
   publisher?: InboxEventPublisher;
+  /** Pengantre notifikasi push untuk pesan masuk baru (butir 10). */
+  notifications?: Pick<NotificationProducer, 'enqueue'>;
 }
 
 /** `last_error` + alasan hasil job bila channel sudah nonaktif/dihapus saat diproses (R3). */
@@ -225,6 +228,23 @@ export async function processWebhookJob(
     });
     // Sesudah commit. Tidak pernah melempar (real-time = usaha terbaik).
     await (deps.publisher ?? NOOP_INBOX_EVENT_PUBLISHER).publish(emitted);
+    // Pesan masuk baru → notifikasi push (penerima ditentukan worker notifikasi). Hanya ID.
+    await deps.notifications?.enqueue(
+      emitted.flatMap((inboxEvent) =>
+        inboxEvent.type === 'message.created' &&
+        inboxEvent.conversationId !== undefined &&
+        inboxEvent.messageId !== undefined
+          ? [
+              {
+                organizationId: inboxEvent.organizationId,
+                kind: 'message' as const,
+                conversationId: inboxEvent.conversationId,
+                messageId: inboxEvent.messageId,
+              },
+            ]
+          : [],
+      ),
+    );
     return result;
   } catch (error) {
     const permanent = error instanceof WebhookPayloadError;

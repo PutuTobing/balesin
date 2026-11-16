@@ -228,7 +228,7 @@ memanggil Meta → job ganda DILEWATI (pesan tetap `pending`). Job `maintenance`
 `stale-send-claims` (tiap menit) menandai klaim > 2 menit tanpa wamid → `delivery_unknown`. Bila
 Meta ternyata menerima belakangan, wamid tetap disimpan dan status dibetulkan menjadi `sent`.
 
-**Bentuk `Message` (tambahan)**: `failure`, `senderUserId`, `mediaAvailable`.
+**Bentuk `Message` (tambahan)**: `failure`, `senderUserId`, `senderName` (nama tampilan agen pengirim pesan keluar, tanpa email — semua peran yang melihat percakapan, termasuk Teknisi, melihat nama pengirim tanpa `/inbox/agents`), `mediaAvailable`.
 
 **Pembersih media** (retensi/hapus kontak) juga mengosongkan `filename`, `sha256` (diisi nol) dan ID
 media Meta (review R4). Lokasi: NUL di `name`/`address` → 400.
@@ -255,6 +255,10 @@ Kejadian keamanan baru di ringkasan (`SECURITY_EVENT_KINDS`): `sending_paused` (
 `sending_limit_reached` (warning), `sending_limits_changed` (info; warning bila oleh selain Owner;
 termasuk "dilanjutkan").
 
+**Status untuk semua agen** (butir 10): `GET /api/v1/inbox/sending-status` (`inbox.view`) →
+`{ paused }` tanpa rincian batas/pelaku; event WebSocket `{ type: 'sending.changed', paused }` saat
+rem ditarik/dilepas — banner tampil sebelum agen terkena 423.
+
 ## Penanganan percakapan (butir 7)
 
 | Endpoint | Izin | Keterangan |
@@ -267,7 +271,7 @@ termasuk "dilanjutkan").
 | `GET /api/v1/conversations/:id/events` | `inbox.view` + cakupan | Riwayat penanganan (tab "Log"): `{ events: [{ id, kind, actor, assignee, previousAssignee, createdAt }] }` — `kind`: `claimed`/`assigned`/`unassigned`/`resolved`/`reopened`; `actor` `null` = sistem |
 | `GET /api/v1/inbox/agents` | `inbox.assign` | `{ agents: [{ id, name, role, active, openConversations }] }` — semua pengguna berperan `inbox.reply` (termasuk nonaktif untuk saringan percakapan lama; hanya `active` yang bisa ditugaskan). Tanpa email. Teknisi → 403 (review butir 7 Info 1; ia tidak menugaskan/menyaring per agen) |
 
-**Alarm aksi massal** (review butir 7 R1): > 30 ambil/selesai/kembalikan oleh SATU pengguna dalam
+**Alarm aksi massal** (review butir 7 R1 + R2): > 30 ambil/tugaskan/selesai/kembalikan oleh SATU pengguna dalam
 10 menit → audit `inbox.bulk_action` (`actions`, `windowMinutes`, `kinds`, `actorRole`) + kejadian
 keamanan `inbox_bulk_action` (`warning`, banner Owner/Admin), paling banyak sekali per jam per
 pengguna. Aksinya sendiri tidak ditolak.
@@ -351,6 +355,8 @@ Idempoten. `Message.starredAt` (`null` = tidak ditandai).
 (`tag_added`, `tag_removed`, `contact_updated`), dengan isian tambahan `tag: { name, color } | null`
 dan `fields: string[] | null`.
 
+Notifikasi push: lihat `docs/KONTRAK-API-NOTIFIKASI.md` (butir 10).
+
 **Real-time** (WebSocket, hanya ID): `{ type: 'conversation.detail', conversationId, section }` —
 `section` = `tags` / `contact` / `notes` / `stars`; dikirim ke pengguna yang boleh melihat percakapan
 itu (perubahan kontak → maks. 20 percakapan terbaru kontak itu). `{ type: 'tags.changed' }` — master
@@ -375,7 +381,9 @@ Skema: `packages/shared/src/quick-replies.ts`.
 Variabel HANYA `{nama}` (nama dari tim → nama profil WhatsApp → "Kak") dan `{agen}` (nama pemakai);
 bentuk `{kata}` lain ditolak saat menyimpan (400). Teks hasil dimasukkan ke composer lalu dikirim
 lewat endpoint kirim pesan biasa (jendela 24 jam & batas kirim tetap berlaku). Buat/ubah/hapus
-diaudit (`quick_reply.*`, shortcut + nama isian yang berubah — TANPA isi template).
+diaudit (`quick_reply.*`: shortcut, nama isian yang berubah, isi lama → baru dipotong ≤ 1.000 —
+teks bisnis, bukan data pelanggan; review panel R1). Tautan atau angka ≥ 8 digit yang BARU ditambahkan
+oleh selain Owner → `risky: true` + kejadian keamanan `quick_reply_risky` (warning).
 
 ## Retensi & hapus per kontak (UU PDP, review webhook S4)
 

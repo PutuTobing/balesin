@@ -214,6 +214,21 @@ export const API_ROUTES = {
     note: `${API_PREFIX}/conversations/:conversationId/notes/:noteId`,
     /** PUT — tandai pesan; DELETE — lepas tanda (`inbox.reply`, CSRF). */
     star: `${API_PREFIX}/messages/:messageId/star`,
+    /** GET — status rem darurat pengiriman `{ paused }` untuk banner (`inbox.view`). */
+    sendingStatus: `${API_PREFIX}/inbox/sending-status`,
+  },
+  /** Notifikasi Web Push (butir 10, docs/KONTRAK-API-NOTIFIKASI.md). */
+  notifications: {
+    /** GET — kunci publik VAPID (sesi). */
+    vapidPublicKey: `${API_PREFIX}/notifications/vapid-public-key`,
+    /** POST — daftarkan perangkat ini; DELETE — lepas (CSRF, sesi). */
+    subscriptions: `${API_PREFIX}/notifications/subscriptions`,
+    /** GET/PUT — preferensi notifikasi pengguna sendiri (sesi). */
+    preferences: `${API_PREFIX}/notifications/preferences`,
+    /** POST — kirim notifikasi tes ke perangkat sendiri (CSRF, sesi). */
+    test: `${API_PREFIX}/notifications/test`,
+    /** GET/PUT — pengaturan organisasi: cuplikan isi pesan (`organization.manage`). */
+    settings: `${API_PREFIX}/settings/notifications`,
   },
   /** Master tag (butir 8): lihat = `inbox.view`; buat = `contacts.manage`; ubah/hapus = `settings.workspace.manage`. */
   tags: {

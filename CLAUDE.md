@@ -112,6 +112,7 @@ Tugas BELUM selesai sampai semua ini benar:
 | `docs/KONTRAK-API-AUTH.md` | Kontrak API setup, login, branding, email pengirim (Fase 1) |
 | `docs/KONTRAK-API-CHANNEL.md` | Kontrak API channel WhatsApp (wizard, tes koneksi, profil bisnis) |
 | `docs/KONTRAK-API-INBOX.md` | Kontrak API inbox (percakapan, pesan, kontak; jendela 24 jam) |
+| `docs/KONTRAK-API-NOTIFIKASI.md` | Kontrak API notifikasi Web Push (langganan, preferensi, cuplikan) |
 | `docs/SETUP-META.md` | Teks wizard koneksi WhatsApp (dipakai di UI) |
 | `docs/BRANDING-PROMPTS.md` | Prompt gambar Kak Sky & logo |
 | `docs/KONTEKS-SKYTECH.md` | Konteks operasional Sky Tech |

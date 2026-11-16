@@ -121,10 +121,16 @@ export const AUDIT_ACTIONS = {
   tagUpdated: 'tag.updated',
   /** Tag dihapus dan dilepas dari semua kontak (`name`, `contacts`). */
   tagDeleted: 'tag.deleted',
-  /** Quick reply dibuat/diubah/dihapus (`shortcut`, `changedFields`) — isi tidak dicatat. */
+  /**
+   * Quick reply dibuat/diubah/dihapus (`shortcut`, `changedFields`, isi lama/baru dipotong ≤ 1.000 —
+   * teks bisnis, bukan data pelanggan; review panel R1). `risky: true` = selain Owner MENAMBAH
+   * tautan/angka panjang (`addedLinks`, `addedNumbers`) → kejadian keamanan `quick_reply_risky`.
+   */
   quickReplyCreated: 'quick_reply.created',
   quickReplyUpdated: 'quick_reply.updated',
   quickReplyDeleted: 'quick_reply.deleted',
+  /** Pengaturan notifikasi organisasi diubah (`preview` lama & baru). */
+  notificationSettingsUpdated: 'settings.notifications.updated',
 } as const;
 
 export type AuditActionKey = keyof typeof AUDIT_ACTIONS;
@@ -198,6 +204,7 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'quick_reply.created': 'Template percakapan dibuat',
   'quick_reply.updated': 'Template percakapan diubah',
   'quick_reply.deleted': 'Template percakapan dihapus',
+  'settings.notifications.updated': 'Pengaturan notifikasi diubah',
 };
 
 /** Label untuk aksi yang mungkin belum dikenal klien (versi lama): tampilkan kodenya apa adanya. */
@@ -391,6 +398,7 @@ export const SECURITY_EVENT_KINDS = [
   'sending_limit_reached',
   'sending_limits_changed',
   'inbox_bulk_action',
+  'quick_reply_risky',
 ] as const;
 export const securityEventKindSchema = z.enum(SECURITY_EVENT_KINDS);
 export type SecurityEventKind = z.infer<typeof securityEventKindSchema>;
@@ -417,6 +425,7 @@ export const SECURITY_EVENT_SEVERITY: Readonly<Record<SecurityEventKind, 'warnin
   sending_limit_reached: 'warning',
   sending_limits_changed: 'info',
   inbox_bulk_action: 'warning',
+  quick_reply_risky: 'warning',
 };
 
 export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> = {
@@ -436,6 +445,7 @@ export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> 
   sending_limit_reached: 'Batas kirim harian tercapai',
   sending_limits_changed: 'Batas kirim diubah',
   inbox_bulk_action: 'Aksi massal di inbox',
+  quick_reply_risky: 'Template percakapan diberi tautan/angka baru',
 };
 
 export const securityEventSchema = z.object({

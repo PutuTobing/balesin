@@ -11,6 +11,7 @@ export * from './inbox-events';
 export * from './logger';
 export * from './mail';
 export * from './meta';
+export * from './push/web-push';
 export * from './queues';
 export * from './redact';
 export * from './redis';

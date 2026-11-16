@@ -170,6 +170,17 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'DELETE /api/v1/conversations/:conversationId/notes/:noteId': 'inbox.reply',
   'PUT /api/v1/messages/:messageId/star': 'inbox.reply',
   'DELETE /api/v1/messages/:messageId/star': 'inbox.reply',
+  // notifikasi push (butir 10): perangkat & preferensi sendiri = inbox.view; cuplikan = organization.manage
+  'GET /api/v1/notifications/vapid-public-key': 'inbox.view',
+  'POST /api/v1/notifications/subscriptions': 'inbox.view',
+  'DELETE /api/v1/notifications/subscriptions': 'inbox.view',
+  'GET /api/v1/notifications/preferences': 'inbox.view',
+  'PUT /api/v1/notifications/preferences': 'inbox.view',
+  'POST /api/v1/notifications/test': 'inbox.view',
+  'GET /api/v1/settings/notifications': 'organization.manage',
+  'PUT /api/v1/settings/notifications': 'organization.manage',
+  // status rem darurat untuk banner semua agen (tanpa rincian)
+  'GET /api/v1/inbox/sending-status': 'inbox.view',
   // quick reply (butir 9): pakai = inbox.reply; kelola = quick_replies.manage
   'GET /api/v1/quick-replies': 'inbox.reply',
   'POST /api/v1/quick-replies': 'quick_replies.manage',

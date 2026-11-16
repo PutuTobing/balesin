@@ -1,6 +1,13 @@
 import { TWO_FACTOR_ENROLLMENT_SESSION_MINUTES, type UserRole } from '@balesin/shared';
-import { organizations, userSessions, users, type DbExecutor, type SessionKind } from '@balesin/db';
-import { and, desc, eq, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
+import {
+  organizations,
+  pushSubscriptions,
+  userSessions,
+  users,
+  type DbExecutor,
+  type SessionKind,
+} from '@balesin/db';
+import { and, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 
 import type { ClientInfo } from '../../http/client-info';
 
@@ -182,6 +189,23 @@ export async function insertSession(
   return row;
 }
 
+/**
+ * Langganan push perangkat milik sesi yang baru dicabut ikut dihapus (butir 10): perangkat itu
+ * tidak lagi menerima notifikasi. Worker juga memeriksa ulang sesi sebelum setiap kirim.
+ */
+async function dropPushSubscriptions(
+  db: DbExecutor,
+  sessions: readonly { id: string }[],
+): Promise<void> {
+  if (sessions.length === 0) return;
+  await db.delete(pushSubscriptions).where(
+    inArray(
+      pushSubscriptions.sessionId,
+      sessions.map((session) => session.id),
+    ),
+  );
+}
+
 /** Mencabut satu sesi. `true` bila sesi itu memang masih aktif. */
 export async function revokeSession(
   db: DbExecutor,
@@ -199,6 +223,7 @@ export async function revokeSession(
       ),
     )
     .returning({ id: userSessions.id });
+  await dropPushSubscriptions(db, rows);
   return rows.length > 0;
 }
 
@@ -224,6 +249,7 @@ export async function revokeUserSessions(
       ),
     )
     .returning({ id: userSessions.id });
+  await dropPushSubscriptions(db, rows);
   return rows.map((row) => row.id);
 }
 
@@ -326,5 +352,6 @@ export async function revokeSessionOfUser(
       ),
     )
     .returning({ id: userSessions.id });
+  await dropPushSubscriptions(db, rows);
   return rows.length > 0;
 }

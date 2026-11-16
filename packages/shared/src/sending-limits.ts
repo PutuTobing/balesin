@@ -72,6 +72,13 @@ export const pauseSendingRequestSchema = z.object({
 });
 export type PauseSendingRequest = z.infer<typeof pauseSendingRequestSchema>;
 
+/**
+ * `GET /inbox/sending-status` (`inbox.view`) — status rem darurat untuk banner inbox semua agen,
+ * tanpa rincian batas/pelaku. Berubah → event WebSocket `sending.changed`.
+ */
+export const sendingStatusResponseSchema = z.object({ paused: z.boolean() });
+export type SendingStatusResponse = z.infer<typeof sendingStatusResponseSchema>;
+
 export const resumeSendingRequestSchema = z.object({
   confirmation: identityConfirmationSchema.optional(),
 });

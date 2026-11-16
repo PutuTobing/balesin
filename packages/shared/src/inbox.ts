@@ -641,6 +641,12 @@ export const messageSchema = z.object({
     .nullable(),
   /** Agen pengirim (pesan keluar oleh manusia). */
   senderUserId: z.uuid().nullable(),
+  /**
+   * Nama tampilan agen pengirim (pesan keluar oleh manusia) — supaya semua peran yang melihat
+   * percakapan (termasuk Teknisi, yang tidak memuat `/inbox/agents`) melihat nama pengirim. Tanpa
+   * email. Server SELALU mengisinya; opsional di skema hanya untuk data tiruan lama.
+   */
+  senderName: z.string().nullable().optional(),
   /** Media bisa diunduh lewat `GET /messages/:id/media`. */
   mediaAvailable: z.boolean(),
   /**
@@ -736,5 +742,7 @@ export const inboxStreamEventSchema = z.discriminatedUnion('type', [
   }),
   /** Master tag organisasi berubah (dibuat/diubah/dihapus): muat ulang daftar tag. */
   z.object({ type: z.literal('tags.changed') }),
+  /** Rem darurat pengiriman ditarik (`paused: true`) / dilepas — tampilkan/sembunyikan banner. */
+  z.object({ type: z.literal('sending.changed'), paused: z.boolean() }),
 ]);
 export type InboxStreamEvent = z.infer<typeof inboxStreamEventSchema>;
