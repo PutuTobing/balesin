@@ -4,9 +4,22 @@
  * Teknisi pada riwayat/buka lagi/selesai, sasaran penugasan lintas organisasi, peran yang diturunkan
  * di tengah sesi, dan jawaban tanpa data di luar cakupan. Postgres + Redis sungguhan.
  */
-import { channels, contacts, conversationEvents, conversations, newId, users } from '@balesin/db';
+import {
+  auditLogs,
+  channels,
+  contacts,
+  conversationEvents,
+  conversations,
+  newId,
+  users,
+} from '@balesin/db';
 import { insertOrganization, insertUser } from '@balesin/db/testing';
-import { API_ROUTES, apiPath, conversationActionResponseSchema } from '@balesin/shared';
+import {
+  API_ROUTES,
+  AUDIT_ACTIONS,
+  apiPath,
+  conversationActionResponseSchema,
+} from '@balesin/shared';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
@@ -165,5 +178,25 @@ describe('sasaran & pelaku', () => {
     const response = await post(teknisi, API_ROUTES.inbox.unassign, row.id);
     expect(response.statusCode, response.body).toBe(200);
     expect(conversationActionResponseSchema.parse(response.json()).conversation).toBeNull();
+  });
+});
+
+describe('Putaran 2 — R2: alarm aksi massal bisa dihindari dengan "tugaskan"', () => {
+  // Alarm hanya menghitung `claimed`/`resolved`/`unassigned`. Mengalihkan chat yang sedang dilayani
+  // agen lain ke diri sendiri (atau mengosongkan antrian ke akun rekanan) tercatat `assigned` →
+  // tidak dihitung, jadi antrian bisa dikuras tanpa kejadian keamanan.
+  it.fails('31 pengalihan ke diri sendiri dalam 10 menit → audit inbox.bulk_action', async () => {
+    const cs = await agent('cs', 'Sinta CS');
+    const holder = await agent('supervisor', 'Rina Supervisor');
+    for (let index = 0; index < 31; index += 1) {
+      const row = await conversation({ status: 'served', assigneeUserId: holder.userId });
+      const response = await post(cs, API_ROUTES.inbox.assign, row.id, { userId: cs.userId });
+      expect(response.statusCode, response.body).toBe(200);
+    }
+    const alarms = await harness.db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.action, AUDIT_ACTIONS.inboxBulkAction));
+    expect(alarms).toHaveLength(1); // saat ini 0
   });
 });

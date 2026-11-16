@@ -132,3 +132,31 @@ Owner tidak diberi tahu.
 | `packages/core`: `vitest run src/meta src/mail` | 190/190 lulus |
 | ESLint + `tsc --noEmit` (apps/api) untuk berkas tes baru | bersih |
 | `pnpm audit` | 2 moderate dev-only (`esbuild`, `minimatch`), tidak ada yang baru |
+
+---
+
+## Putaran 2 — verifikasi perbaikan commit `40d9c1b`
+
+### Putusan putaran 2: AMAN
+
+R1 dan Info 1 tertutup. Ada satu catatan baru, R2 (Rendah), yang dikunci `it.fails`.
+
+| # | Status | Bukti |
+|---|---|---|
+| R1 alarm aksi massal | ✅ (R2) | `assignment.service.ts` `watchBulk` setelah commit: `inbox-aksi-massal` (30 / 10 menit, kunci `organisasi:pengguna`) → lewat batas → `claimFlag` sekali/jam → audit `inbox.bulk_action` (`actions`, `windowMinutes`, `kinds`, `actorRole`) + kejadian `inbox_bulk_action` (`warning`). Usaha terbaik: galat Redis/DB hanya di-log, aksi tidak gagal. Aksi tidak diblokir (sesuai DECISIONS) |
+| Info 1 `/inbox/agents` | ✅ | Rute `requirePermission('inbox.assign')` + `permissionGrant(…,'inbox.assign')`. Teknisi 403 |
+
+**R2 — Rendah — Alarm aksi massal bisa dihindari lewat "tugaskan".**
+- **Bukti.** `BULK_ACTION_KINDS` = `claimed`, `resolved`, `unassigned`. `assign` yang mengalihkan chat agen LAIN
+  (ke diri sendiri atau ke akun rekanan) tercatat `assigned` dan tidak dihitung.
+- **Dampak.** Akun CS curian bisa memindahkan seluruh chat "Dilayani" ke dirinya, atau mengosongkan antrian ke akun
+  rekanan, tanpa kejadian keamanan.
+- **Tes.** `it.fails` baru di `apps/api/src/modules/inbox/security-review-fase2-penanganan.integration.test.ts`
+  (31 pengalihan ke diri sendiri → tidak ada audit), gagal tepat di asersi `expected [] to have a length of 1`.
+- **Perbaikan.** Masukkan `assigned` ke `BULK_ACTION_KINDS`, atau setidaknya `assigned` yang `previousAssignee` ≠
+  `null` dan ≠ pelaku.
+
+| Perintah | Hasil |
+|---|---|
+| `apps/api`: `vitest run src/modules/inbox/security-review-fase2-penanganan` | 5 lulus + 1 `it.fails` (R2) |
+| Sama, `it.fails` → `it` (salinan sementara, sudah dihapus) | gagal tepat di asersi R2 |

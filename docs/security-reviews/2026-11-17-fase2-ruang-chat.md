@@ -321,3 +321,35 @@ dan diemailkan, dan melanjutkan butuh konfirmasi. Arah aman, jadi bisa diterima.
 | `apps/api`: `vitest run src/modules/inbox src/modules/messages src/modules/sending-limits src/rbac-matrix src/modules/realtime src/modules/audit` | 106 lulus + 1 `it.fails` |
 | `apps/worker`: `vitest run src/queues/messages src/queues/email` | 25/25 lulus |
 | `pnpm audit` | 2 moderate dev-only, tidak ada yang baru |
+
+---
+
+## Putaran 3 — verifikasi perbaikan commit `40d9c1b`
+
+### Putusan putaran 3: AMAN
+
+R5 dan Info P2-3 tertutup. Tes R5 di `security-review-fase2-ruang-chat.integration.test.ts` kini `it` dan lulus. Diff
+hanya menghapus `.fails` dan komentar; asersi `toBe('skipped')` dan `toBe('pending')` tetap. Tidak ada temuan baru di
+atas Info.
+
+| # | Status | Bukti |
+|---|---|---|
+| R5 klaim < 2 menit | ✅ | `apps/worker/src/queues/messages.ts`: klaim gagal diambil + `send_claimed_at` lebih muda dari `SEND_CLAIM_STALE_MS` (2 menit) → `skipped` (`not_pending`), pesan tetap `pending` |
+| R5 job `stale-send-claims` | ✅ | `maintenance.ts` `markStaleSendClaims` (tiap menit): `pending` + tanpa wamid + klaim > 2 menit → `failed`/`delivery_unknown` + event. Lintas organisasi, satu `UPDATE … RETURNING` |
+| R5 wamid terlambat | ✅ | Bila `UPDATE … WHERE status = 'pending'` tidak kena, pesan `failed`/`delivery_unknown` tanpa wamid dipulihkan menjadi `sent` + wamid, lalu status dini diputar ulang. Kirim ulang yang sudah ditekan pengguna tidak tertimpa (syarat `status = 'failed'`) |
+| Info P2-3 OLE/ActiveX | ✅ | `officeZipAllowed`: entri `(…/)embeddings/*.bin` atau `(…/)activex/*.bin` → ditolak. Dokumen tersisip biasa (`.xlsx` di `.docx`) tetap boleh. Tes `messaging.test.ts` |
+
+**Info P3-1.** `markStaleSendClaims` memindai `messages` (`direction = 'outbound' AND status = 'pending' AND wamid IS
+NULL AND send_claimed_at < …`) tiap menit tanpa indeks khusus. Volume pesan `pending` kecil, tetapi rencana query
+bisa memindai tabel besar. Saran: indeks parsial `(send_claimed_at) WHERE status = 'pending' AND wamid IS NULL AND
+send_claimed_at IS NOT NULL`.
+
+**Info P3-2.** Bila agen sudah menekan "Kirim ulang" pada pesan `delivery_unknown` sebelum wamid terlambat datang,
+pesan bisa terkirim dua kali. Ini keputusan sadar pengguna dan teks UI `delivery_unknown` sudah memperingatkan "mungkin
+terkirim". Bisa diterima.
+
+| Perintah | Hasil |
+|---|---|
+| `apps/api`: `vitest run src/modules/messages/security-review-fase2-ruang-chat` (dalam suite inbox/messages) | 5/5 lulus (termasuk R5 yang kini `it`) |
+| `apps/worker`: `vitest run src/queues` | 86/86 lulus |
+| `packages/core`: `vitest run` | 518/518 lulus |
