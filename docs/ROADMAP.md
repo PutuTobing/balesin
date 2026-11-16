@@ -31,10 +31,10 @@ Orkestrator mengerjakan dari atas ke bawah. Tandai `[x]` saat Definition of Done
 - [x] Webhook masuk: verifikasi, signature, idempotensi, worker
 - [x] Kontak & percakapan otomatis, jendela 24 jam
 - [x] Inbox real-time: tab Semua/Bot/Belum dilayani/Dilayani/Selesai, cari, filter (termasuk filter status sesi + hitung mundur)
-- [ ] Ruang chat: teks, gambar, dokumen, audio/VN, video, lokasi, reaksi, balas-kutip, status centang
-- [ ] Assign/ambil/alihkan/antrian terbuka, tandai selesai
-- [ ] Panel detail: info, tag, catatan, media, log
-- [ ] Quick reply `/`
+- [x] Ruang chat: teks, gambar, dokumen, audio/VN, video, lokasi, reaksi, balas-kutip, status centang
+- [x] Assign/ambil/alihkan/antrian terbuka, tandai selesai
+- [x] Panel detail: info, tag, catatan, media, log
+- [x] Quick reply `/`
 - [ ] Notifikasi + PWA installable
 - [ ] Tampilan HP penuh (navigasi bawah, layar bertumpuk)
 - [ ] E2E: pesan masuk (simulasi webhook) → tampil → dibalas → status

@@ -140,3 +140,34 @@ Worktree dihapus (folder + `git worktree prune`; `git worktree list` hanya repo 
 `balesin_kd_e2e` di-drop, Redis db 11 `DBSIZE` 0. Berkas repo: laporan ini + 26 screenshot, bagian "Putaran 3" laporan
 ruang chat (+3 `p3-*.png`), bagian "Putaran 2" laporan penanganan & template (+6 `p2-*.png`). Tidak ada kode produk yang
 diubah, tidak ada commit.
+
+---
+
+# Putaran 2
+
+- **Tanggal:** 2026-11-17 · **Penilai:** `kritikus-desain` · **Putaran:** 2
+- **Kode yang dinilai:** `9778d3d` ("feat(pwa): … revisi panel detail P1–P4"). Worktree terisolasi (3191/5191,
+  `balesin_kd_e2e` migrasi sampai `0021`, Redis db 11). Foto ulang panel detail, diagnosis webhook, menu Pengaturan dengan
+  rem ditarik, popover tag (semua tag + buat tag dengan pilihan warna) × 4: lulus.
+- **Screenshot:** berkas berawalan `p2-`.
+
+## Putusan putaran 2: LOLOS
+
+| Butir | Hasil | Status |
+|---|---|---|
+| **P1** token tag | `--tag-purple` (#7A52CC / #A98BF0) dan `--tag-teal` (#0B8A9E / #3CC4D6) ada di `DESIGN.md` & token. "Mitra" tampil ungu, "Bisnis" tampil toska, keduanya jelas berbeda dari biru dan hijau di terang & gelap; cincin pembeda sementara hilang | Lolos |
+| **P2** cincin fokus tab | Setelah klik mouse pada tab Catatan/Berkas/Log tidak ada lagi kotak cincin di foto (4 varian); tab aktif hanya bergaris bawah. Catatan: `:focus-visible` masih bernilai `true` setelah klik mouse, tetapi gayanya tidak lagi tampil sebagai kotak — diterima, pastikan cincin tetap terlihat dengan keyboard | Lolos |
+| **P3** diagnosis webhook | Kartu sendiri "Diagnosis webhook" tepat setelah Ringkasan, entri "Diagnosis" di navigasi bagian, "Periksa lagi" berbingkai dengan ikon, tombol "Ganti App Secret" di kotak "Ada yang perlu dicek" | Lolos |
+| **P4** "Ubah kontak" | 14 px `--primary` + ikon, tidak lagi lebih besar dari judul "Kontak" | Lolos |
+| P-S1 log | "Rina Kartika · mengalihkan percakapan dari Rina Kartika ke Agus" | Lolos |
+| P-S2 kartu audio | "Pesan suara · dari pelanggan" + "Putar audio" dalam kartu. Catatan kecil: waktu ada **di dalam** kartu audio tetapi **di luar** kartu dokumen — samakan (saran) | Lolos |
+| P-S3 menu Pengaturan | Baris Batas kirim: "● Rem darurat ditarik" (`--danger-ink`) saat rem aktif | Lolos |
+| P-S4 warna tag baru | "Buat tag" menampilkan 8 bulatan warna (terpilih bercincin) sebelum menyimpan | Lolos |
+
+Semua layar laporan ini kini ≥ 4 di 390 & 1440, terang & gelap; tidak ada pelanggaran §3. Tidak ada teks < 4,5:1 di layar
+yang difoto ulang.
+
+## Bersih-bersih putaran 2
+
+Satu worktree bersama laporan `2026-11-19-fase2-notifikasi-pwa.md`; sudah dihapus, port 3191/5191 kosong,
+`balesin_kd_e2e` di-drop, Redis db 11 `DBSIZE` 0. Tidak ada kode produk yang diubah, tidak ada commit.
