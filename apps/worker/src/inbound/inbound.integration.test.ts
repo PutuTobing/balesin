@@ -19,7 +19,9 @@ import {
   conversations,
   createDb,
   messages,
+  outgoingEvents,
   newId,
+  webhookEndpoints,
   webhookEvents,
   type Database,
   type NewWebhookEvent,
@@ -709,6 +711,32 @@ describe('event real-time', () => {
       ],
     ]);
     expect(JSON.stringify(published)).not.toContain(SECRET_TEXT);
+  });
+
+  it('webhook keluar: pesan masuk pertama → outbox kontak/percakapan/pesan (ID saja) bila ada langganan', async () => {
+    const before = await db.select().from(outgoingEvents);
+    expect(before).toEqual([]);
+    await db.insert(webhookEndpoints).values({
+      organizationId,
+      url: 'https://n8n.contoh.id/hook',
+      events: ['message.received', 'conversation.created', 'contact.created'],
+      secretEncrypted: 'v1.x.y',
+    });
+    const eventId = await storeOne(messageNotification({}));
+    await processWebhookJob(
+      { name: WEBHOOK_JOBS.whatsappEvent, data: { organizationId, eventId } },
+      { db, logger: logs.logger },
+    );
+    const rows = await db
+      .select({ type: outgoingEvents.type, messageId: outgoingEvents.messageId })
+      .from(outgoingEvents)
+      .where(eq(outgoingEvents.organizationId, organizationId));
+    expect(rows.map((row) => row.type).sort()).toEqual([
+      'contact.created',
+      'conversation.created',
+      'message.received',
+    ]);
+    expect(JSON.stringify(rows)).not.toContain(SECRET_TEXT);
   });
 
   it('pesan masuk baru → job notifikasi (ID saja) setelah commit; kiriman ulang tidak dobel', async () => {

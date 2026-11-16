@@ -202,6 +202,18 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'POST /api/v1/settings/api-keys/:apiKeyId/revoke': 'api_keys.manage',
   'GET /api/v1/settings/api': 'api_keys.manage',
   'PUT /api/v1/settings/api': 'api_keys.manage',
+  // Webhook keluar (Fase 3): Owner/Admin (`integrations.manage`)
+  'GET /api/v1/settings/webhooks': 'integrations.manage',
+  'POST /api/v1/settings/webhooks': 'integrations.manage',
+  'PATCH /api/v1/settings/webhooks/:webhookId': 'integrations.manage',
+  'DELETE /api/v1/settings/webhooks/:webhookId': 'integrations.manage',
+  'POST /api/v1/settings/webhooks/:webhookId/rotate-secret': 'integrations.manage',
+  'POST /api/v1/settings/webhooks/:webhookId/test': 'integrations.manage',
+  'GET /api/v1/settings/webhooks/:webhookId/deliveries': 'integrations.manage',
+  'POST /api/v1/settings/webhooks/:webhookId/deliveries/:deliveryId/redeliver':
+    'integrations.manage',
+  'GET /api/v1/settings/webhooks-private-network': 'integrations.manage',
+  'PUT /api/v1/settings/webhooks-private-network': 'integrations.manage',
   // API publik v1: HANYA Bearer API key + scope (sesi web apa pun → 401)
   'GET /api/v1/public/conversations': 'apikey:conversations:read',
   'GET /api/v1/public/conversations/:conversationId': 'apikey:conversations:read',
@@ -319,6 +331,8 @@ const SAMPLE_PARAMS: Readonly<Record<string, string>> = {
   noteId: '00000000-0000-4000-8000-0000000000a3',
   quickReplyId: '00000000-0000-4000-8000-0000000000a4',
   apiKeyId: '00000000-0000-4000-8000-0000000000a5',
+  webhookId: '00000000-0000-4000-8000-0000000000a6',
+  deliveryId: '00000000-0000-4000-8000-0000000000a7',
 };
 
 function concreteUrl(pattern: string): string {

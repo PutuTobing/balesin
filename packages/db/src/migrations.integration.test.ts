@@ -54,6 +54,7 @@ describe('migrasi dari nol', () => {
       'notification_preferences',
       'organization_logos',
       'organizations',
+      'outgoing_events',
       'push_subscriptions',
       'push_vapid_keys',
       'quick_replies',
@@ -63,6 +64,8 @@ describe('migrasi dari nol', () => {
       'user_invitations',
       'user_sessions',
       'users',
+      'webhook_deliveries',
+      'webhook_endpoints',
       'webhook_events',
     ]);
 

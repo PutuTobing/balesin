@@ -114,6 +114,7 @@ Tugas BELUM selesai sampai semua ini benar:
 | `docs/KONTRAK-API-INBOX.md` | Kontrak API inbox (percakapan, pesan, kontak; jendela 24 jam) |
 | `docs/KONTRAK-API-NOTIFIKASI.md` | Kontrak API notifikasi Web Push (langganan, preferensi, cuplikan) |
 | `docs/KONTRAK-API-PUBLIK.md` | Kontrak API publik v1 (API key ber-scope, OpenAPI `/api/docs`) |
+| `docs/KONTRAK-WEBHOOK-KELUAR.md` | Kontrak webhook keluar bertanda tangan (event, tanda tangan, SSRF, riwayat) |
 | `docs/SETUP-META.md` | Teks wizard koneksi WhatsApp (dipakai di UI) |
 | `docs/BRANDING-PROMPTS.md` | Prompt gambar Kak Sky & logo |
 | `docs/KONTEKS-SKYTECH.md` | Konteks operasional Sky Tech |

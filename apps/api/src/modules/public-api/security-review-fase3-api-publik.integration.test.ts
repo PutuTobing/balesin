@@ -170,18 +170,15 @@ describe('review keamanan Fase 3 — autentikasi API key', () => {
     ).toBe(200);
   });
 
-  it.fails(
-    'R1: key SAH dari IP yang terkunci karena 30 key salah tetap diterima (penyerang di NAT bersama tidak bisa memblokir integrasi sah)',
-    async () => {
-      const key = await createKey(['contacts:read']);
-      const url = `${API_ROUTES.publicApi.contacts}?q=ab`;
-      for (let attempt = 0; attempt < 30; attempt += 1) {
-        await api(fakeToken(), 'GET', url, undefined, { remoteAddress: '192.0.2.88' });
-      }
-      const legit = await api(key.secret, 'GET', url, undefined, { remoteAddress: '192.0.2.88' });
-      expect(legit.statusCode).toBe(200);
-    },
-  );
+  it('R1: key SAH dari IP yang terkunci karena 30 key salah tetap diterima (penyerang di NAT bersama tidak bisa memblokir integrasi sah)', async () => {
+    const key = await createKey(['contacts:read']);
+    const url = `${API_ROUTES.publicApi.contacts}?q=ab`;
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      await api(fakeToken(), 'GET', url, undefined, { remoteAddress: '192.0.2.88' });
+    }
+    const legit = await api(key.secret, 'GET', url, undefined, { remoteAddress: '192.0.2.88' });
+    expect(legit.statusCode).toBe(200);
+  });
 
   it('log tidak memuat rahasia key maupun header Authorization (sukses, salah, dan buat key)', async () => {
     const key = await createKey(['contacts:read']);

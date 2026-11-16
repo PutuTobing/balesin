@@ -8,6 +8,7 @@ import {
   apiKeys,
   auditLogs,
   channels,
+  contactEvents,
   contacts,
   conversations,
   messages,
@@ -328,6 +329,13 @@ describe('API publik v1', () => {
     expect(reached).toMatchObject([
       { targetType: 'api_key', targetId: key.apiKey.id, actorUserId: null },
     ]);
+    // Review R2: Owner diberi tahu juga (subjek = pembuat key).
+    expect(harness.adminNotices).toContainEqual(
+      expect.objectContaining({
+        event: 'sending_limit_reached',
+        subjectUserId: owner.session.user.id,
+      }),
+    );
 
     const status = await api(
       key.secret,
@@ -377,6 +385,15 @@ describe('API publik v1', () => {
       ['MITRA-SURYA'],
     );
     const untagged = await api(key.secret, 'DELETE', tagsUrl, { tags: ['mitra-surya'] });
+    // Review R2: riwayat kontak menyebut key pelakunya.
+    const history = await harness.db
+      .select({ apiKeyId: contactEvents.apiKeyId, actorUserId: contactEvents.actorUserId })
+      .from(contactEvents)
+      .where(eq(contactEvents.contactId, contact.id));
+    expect(history.length).toBeGreaterThan(0);
+    expect(history.every((row) => row.apiKeyId === key.apiKey.id && row.actorUserId === null)).toBe(
+      true,
+    );
     expect(contactResponseSchema.parse(untagged.json()).contact.tags).toEqual([]);
   });
 

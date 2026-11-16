@@ -13,6 +13,7 @@ import {
   conversations,
   lockAdvisoryKeys,
   messages,
+  recordOutgoingEvent,
   tags,
   type Database,
   type DbExecutor,
@@ -62,6 +63,7 @@ export interface ContactsService {
   /** Lewat API publik (`contacts:write`): pelaku = API key (riwayat tanpa pengguna). */
   updateFromApi(
     organizationId: string,
+    apiKeyId: string,
     contactId: string,
     input: UpdateContactRequest,
   ): Promise<void>;
@@ -73,6 +75,7 @@ export interface ContactsService {
   /** Pasang/lepas tag berdasarkan NAMA (pasang membuat tag yang belum ada). */
   tagsByNameFromApi(
     organizationId: string,
+    apiKeyId: string,
     contactId: string,
     names: readonly string[],
     operation: 'add' | 'remove',
@@ -163,6 +166,7 @@ export function createContactsService(deps: {
     contactId: string,
     input: UpdateContactRequest,
     check?: (tx: DbExecutor) => Promise<void>,
+    apiKeyId: string | null = null,
   ): Promise<void> {
     const changed = await db.transaction(async (tx) => {
       await check?.(tx);
@@ -195,7 +199,14 @@ export function createContactsService(deps: {
         contactId,
         kind: 'contact_updated',
         actorUserId,
+        apiKeyId,
         fields,
+      });
+      await recordOutgoingEvent(tx, {
+        organizationId,
+        type: 'contact.updated',
+        contactId,
+        actorUserId,
       });
       return true;
     });
@@ -206,6 +217,7 @@ export function createContactsService(deps: {
 
   async function tagsByName(
     organizationId: string,
+    apiKeyId: string,
     contactId: string,
     names: readonly string[],
     operation: 'add' | 'remove',
@@ -282,12 +294,16 @@ export function createContactsService(deps: {
             .returning({ tagId: contactTags.tagId });
           if (removed.length === 0) continue;
         }
+        if (!touched) {
+          await recordOutgoingEvent(tx, { organizationId, type: 'contact.updated', contactId });
+        }
         touched = true;
         await tx.insert(contactEvents).values({
           organizationId,
           contactId,
           kind: operation === 'add' ? 'tag_added' : 'tag_removed',
           actorUserId: null,
+          apiKeyId,
           tagName: tag.name,
           tagColor: tag.color,
         });
@@ -304,8 +320,8 @@ export function createContactsService(deps: {
       });
     },
 
-    updateFromApi: (organizationId, contactId, input) =>
-      applyUpdate(organizationId, null, contactId, input),
+    updateFromApi: (organizationId, apiKeyId, contactId, input) =>
+      applyUpdate(organizationId, null, contactId, input, undefined, apiKeyId),
 
     tagsByNameFromApi: tagsByName,
 
@@ -339,6 +355,11 @@ export function createContactsService(deps: {
           })
           .returning({ id: contacts.id });
         if (!row) throw new Error('Kontak tidak tersimpan');
+        await recordOutgoingEvent(tx, {
+          organizationId,
+          type: 'contact.created',
+          contactId: row.id,
+        });
         return { id: row.id, created: true };
       });
     },
@@ -622,6 +643,12 @@ export function createContactsService(deps: {
             message: `Kontak ini sudah memakai ${String(TAGS_PER_CONTACT_MAX)} tag (batas). Lepas salah satu dulu.`,
           });
         }
+        await recordOutgoingEvent(tx, {
+          organizationId: auth.organizationId,
+          type: 'contact.updated',
+          contactId,
+          actorUserId: auth.user.id,
+        });
         await tx.insert(contactEvents).values({
           organizationId: auth.organizationId,
           contactId,
@@ -657,6 +684,12 @@ export function createContactsService(deps: {
           .from(tags)
           .where(and(eq(tags.organizationId, auth.organizationId), eq(tags.id, tagId)));
         if (tag) {
+          await recordOutgoingEvent(tx, {
+            organizationId: auth.organizationId,
+            type: 'contact.updated',
+            contactId,
+            actorUserId: auth.user.id,
+          });
           await tx.insert(contactEvents).values({
             organizationId: auth.organizationId,
             contactId,

@@ -27,6 +27,7 @@ import {
   mediaFiles,
   messages,
   organizations,
+  recordOutgoingEvent,
   users,
   webhookEvents,
   type Database,
@@ -511,7 +512,16 @@ export async function processSendMessageJob(
     if (recovered.length > 0) {
       logger.warn({ messageId }, 'Pesan "mungkin terkirim" ternyata diterima Meta — dipulihkan');
     }
-    if (saved.length > 0 || recovered.length > 0) await replayEarlyStatuses(tx, message, wamid);
+    if (saved.length > 0 || recovered.length > 0) {
+      await replayEarlyStatuses(tx, message, wamid);
+      await recordOutgoingEvent(tx, {
+        organizationId,
+        type: 'message.sent',
+        conversationId: message.conversationId,
+        messageId,
+        contactId: message.contactId,
+      });
+    }
   });
   await publisher.publish(events);
   logger.info({ messageId }, 'Pesan keluar diterima Meta');

@@ -230,6 +230,23 @@ export const API_ROUTES = {
     /** GET/PUT — pengaturan API publik (dokumentasi `/api/docs` aktif/mati). */
     settings: `${API_PREFIX}/settings/api`,
   },
+  /** Pengaturan → Webhook keluar (`integrations.manage`, Fase 3; docs/KONTRAK-WEBHOOK-KELUAR.md). */
+  outgoingWebhooks: {
+    /** GET — daftar; POST — buat (+ konfirmasi; rahasia tampil SEKALI). */
+    list: `${API_PREFIX}/settings/webhooks`,
+    /** PATCH — ubah (URL baru = konfirmasi); DELETE — hapus. */
+    webhook: `${API_PREFIX}/settings/webhooks/:webhookId`,
+    /** POST — rotasi rahasia (+ konfirmasi; lama tetap ditandatangani 24 jam). */
+    rotateSecret: `${API_PREFIX}/settings/webhooks/:webhookId/rotate-secret`,
+    /** POST — kirim event uji `webhook.test`. */
+    test: `${API_PREFIX}/settings/webhooks/:webhookId/test`,
+    /** GET — riwayat pengiriman (terbaru dulu). */
+    deliveries: `${API_PREFIX}/settings/webhooks/:webhookId/deliveries`,
+    /** POST — kirim ulang satu pengiriman. */
+    redeliver: `${API_PREFIX}/settings/webhooks/:webhookId/deliveries/:deliveryId/redeliver`,
+    /** GET/PUT — allowlist IP privat (PUT + konfirmasi). */
+    privateNetwork: `${API_PREFIX}/settings/webhooks-private-network`,
+  },
   /**
    * API publik v1 (`Authorization: Bearer blsn_live_…`, tanpa cookie/CSRF). Scope per rute di
    * docs/KONTRAK-API-PUBLIK.md. OpenAPI: `/api/docs/openapi.json`; halaman: `/api/docs`.

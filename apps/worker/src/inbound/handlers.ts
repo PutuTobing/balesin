@@ -17,6 +17,7 @@ import {
   type DbExecutor,
   type MessageExtras,
   type NewMessageRow,
+  recordOutgoingEvent,
 } from '@balesin/db';
 import {
   CUSTOMER_SERVICE_WINDOW_MS,
@@ -247,6 +248,12 @@ export function createInboundHandlers(options: InboundHandlerOptions = {}): Inbo
           .returning();
         if (!created) throw new Error('INSERT percakapan tidak mengembalikan baris');
         conversation = created;
+        await recordOutgoingEvent(tx, {
+          organizationId,
+          type: 'conversation.created',
+          conversationId: created.id,
+          contactId: contact.id,
+        });
       }
 
       const row: NewMessageRow = {
@@ -301,6 +308,13 @@ export function createInboundHandlers(options: InboundHandlerOptions = {}): Inbo
         .returning({ id: messages.id });
       const [created] = inserted;
       if (!created) return;
+      await recordOutgoingEvent(tx, {
+        organizationId,
+        type: 'message.received',
+        conversationId: conversation.id,
+        messageId: created.id,
+        contactId: contact.id,
+      });
       context.emit({
         type: 'message.created',
         organizationId,
@@ -375,6 +389,13 @@ export function createInboundHandlers(options: InboundHandlerOptions = {}): Inbo
             : {}),
         })
         .where(and(eq(messages.organizationId, organizationId), eq(messages.id, message.id)));
+      await recordOutgoingEvent(tx, {
+        organizationId,
+        type: 'message.status',
+        conversationId: message.conversationId,
+        messageId: message.id,
+        contactId: message.contactId,
+      });
       context.emit({
         type: 'message.status',
         organizationId,

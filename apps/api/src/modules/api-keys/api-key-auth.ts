@@ -11,7 +11,7 @@ import { ipAllowed, parseApiKey, secretMatches } from './api-key-token';
 /**
  * Autentikasi API publik (Fase 3, docs/KONTRAK-API-PUBLIK.md "Autentikasi"):
  *  1. `Authorization: Bearer blsn_live_<id>_<rahasia>` — cookie/CSRF TIDAK dipakai sama sekali;
- *  2. kegagalan per IP dibatasi (`api-key-gagal`, 30/menit) supaya pencarian `<id>` tidak murah;
+ *  2. kegagalan per IP dibatasi (`api-key-gagal`, 30/menit) — HANYA jalur gagal (key sah tetap dilayani);
  *  3. key dicari lewat `<id>`, rahasia dibandingkan waktu-konstan (HMAC berlada);
  *  4. dicabut/kedaluwarsa → 401; IP di luar daftar key → 403; scope kurang → 403;
  *  5. batas laju per key (`api-key`, 300/menit) → 429;
@@ -60,7 +60,19 @@ export function createApiKeyAuthenticator(deps: {
   const { db, limiter, pepper } = deps;
   const now = deps.now ?? (() => new Date());
 
+  /**
+   * Jalur GAGAL saja (review API publik R1): key sah tetap dilayani walau IP-nya sedang dikunci,
+   * jadi penyerang di NAT/proxy bersama tidak bisa memblokir integrasi sah. IP yang terkunci
+   * mendapat 429 untuk key salah berikutnya (tanpa menambah hitungan).
+   */
   async function fail(ipKey: string, message: string): Promise<never> {
+    const failures = await limiter.peek(API_KEY_FAILURE_RULE, ipKey).catch(() => null);
+    if (failures && !failures.allowed) {
+      throw new AppError('RATE_LIMITED', {
+        message: 'Terlalu banyak API key yang salah dari alamat ini. Coba lagi sebentar lagi.',
+        retryAfterSeconds: failures.retryAfterSeconds,
+      });
+    }
     await limiter.consume(API_KEY_FAILURE_RULE, ipKey).catch(() => undefined);
     throw new AppError('UNAUTHENTICATED', { message });
   }
@@ -69,13 +81,6 @@ export function createApiKeyAuthenticator(deps: {
     async authenticate(request, scope) {
       const client = clientInfo(request);
       const ipKey = client.ip ?? 'tanpa-ip';
-      const failures = await limiter.peek(API_KEY_FAILURE_RULE, ipKey);
-      if (!failures.allowed) {
-        throw new AppError('RATE_LIMITED', {
-          message: 'Terlalu banyak API key yang salah dari alamat ini. Coba lagi sebentar lagi.',
-          retryAfterSeconds: failures.retryAfterSeconds,
-        });
-      }
       const header = request.headers.authorization;
       const match = typeof header === 'string' ? /^Bearer +(\S+)$/i.exec(header) : null;
       // Tanpa header bukan tebakan kunci: tidak dihitung ke batas kegagalan.

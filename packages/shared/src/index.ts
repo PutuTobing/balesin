@@ -20,6 +20,7 @@ export * from './health';
 export * from './inbox';
 export * from './invitations';
 export * from './outbound';
+export * from './outgoing-webhooks';
 export * from './links';
 export * from './notifications';
 export * from './password';

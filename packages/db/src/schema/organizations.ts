@@ -48,6 +48,14 @@ export const organizations = pgTable(
     notificationContactName: boolean('notification_contact_name').notNull().default(false),
     /** Halaman dokumentasi API publik `/api/docs` aktif (Pengaturan → API, Fase 3). */
     apiDocsEnabled: boolean('api_docs_enabled').notNull().default(true),
+    /**
+     * Allowlist IP privat webhook keluar (CIDR), diatur Owner/Admin lewat UI (Fase 3). Kosong = tidak
+     * ada jaringan privat yang boleh dituju.
+     */
+    webhookPrivateCidrs: text('webhook_private_cidrs')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },

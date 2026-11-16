@@ -32,6 +32,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 
 import { clientInfo } from '../../http/client-info';
+import { enforceRateLimit, type RateLimiter } from '../../http/rate-limit';
 import { requireApiKeyScope } from '../../http/route-access';
 import { requireApiKey, type ApiKeyPrincipal } from '../api-keys/api-key-auth';
 import type { PermissionGrant } from '../auth/permission-grant';
@@ -49,11 +50,14 @@ import {
   senderNameOf,
   type Cursor,
 } from '../inbox/inbox.repo';
+import { SEARCH_TIMEOUT_MS, withStatementTimeout } from '../inbox/inbox.routes';
 import { toContact, toConversation, toMessage } from '../inbox/inbox-view';
+import { SEND_ORGANIZATION_RULE } from '../messages/outbound.routes';
 import type { OutboundService } from '../messages/outbound.service';
 
 export interface PublicApiRoutesOptions {
   db: Database;
+  limiter: RateLimiter;
   outbound: OutboundService;
   contacts: ContactsService;
   now?: () => Date;
@@ -123,7 +127,15 @@ export const publicApiRoutes: FastifyPluginAsyncZod<PublicApiRoutesOptions> = as
   app,
   options,
 ) => {
-  const { db, outbound } = options;
+  const { db, outbound, limiter } = options;
+  // Batas kirim organisasi per menit berlaku juga untuk API (review API publik R3).
+  const organizationRate = (organizationId: string) =>
+    enforceRateLimit(
+      limiter,
+      SEND_ORGANIZATION_RULE,
+      organizationId,
+      (wait) => `Batas kirim organisasi per menit tercapai. Coba lagi dalam ${wait}.`,
+    );
   const contactsService = options.contacts;
   const now = options.now ?? (() => new Date());
   const routes = API_ROUTES.publicApi;
@@ -255,6 +267,7 @@ export const publicApiRoutes: FastifyPluginAsyncZod<PublicApiRoutesOptions> = as
     async (request, reply) => {
       const key = requireApiKey(request);
       const id = uuidOr404(request.params.conversationId, CONVERSATION_NOT_FOUND);
+      await organizationRate(key.organizationId);
       const input = {
         ...request.body,
         clientMessageId: clientMessageIdFor(key.id, request.headers['idempotency-key']),
@@ -286,6 +299,7 @@ export const publicApiRoutes: FastifyPluginAsyncZod<PublicApiRoutesOptions> = as
     async (request, reply) => {
       const key = requireApiKey(request);
       const id = uuidOr404(request.params.conversationId, CONVERSATION_NOT_FOUND);
+      await organizationRate(key.organizationId);
       const part = await request.file();
       if (!part) {
         throw new AppError('VALIDATION_ERROR', { message: 'Kirim satu berkas di isian "file".' });
@@ -366,12 +380,15 @@ export const publicApiRoutes: FastifyPluginAsyncZod<PublicApiRoutesOptions> = as
           ) as SQL,
         );
       }
-      const rows = await db
-        .select()
-        .from(contacts)
-        .where(and(...conditions))
-        .orderBy(desc(contacts.createdAt), desc(contacts.id))
-        .limit(limit ?? 20);
+      // Pencarian `ILIKE` dibatasi waktu query (Info review API publik).
+      const rows = await withStatementTimeout(db, SEARCH_TIMEOUT_MS, (tx) =>
+        tx
+          .select()
+          .from(contacts)
+          .where(and(...conditions))
+          .orderBy(desc(contacts.createdAt), desc(contacts.id))
+          .limit(limit ?? 20),
+      );
       const tagsByContact = await contactTagsOf(
         db,
         key.organizationId,
@@ -426,7 +443,7 @@ export const publicApiRoutes: FastifyPluginAsyncZod<PublicApiRoutesOptions> = as
     async (request) => {
       const key = requireApiKey(request);
       const id = uuidOr404(request.params.contactId, CONTACT_NOT_FOUND);
-      await contactsService.updateFromApi(key.organizationId, id, request.body);
+      await contactsService.updateFromApi(key.organizationId, key.id, id, request.body);
       return contactView(key, id);
     },
   );
@@ -449,6 +466,7 @@ export const publicApiRoutes: FastifyPluginAsyncZod<PublicApiRoutesOptions> = as
         const id = uuidOr404(request.params.contactId, CONTACT_NOT_FOUND);
         await contactsService.tagsByNameFromApi(
           key.organizationId,
+          key.id,
           id,
           request.body.tags,
           operation,

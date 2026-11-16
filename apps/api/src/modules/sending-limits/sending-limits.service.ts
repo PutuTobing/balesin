@@ -4,7 +4,14 @@ import {
   type InboxEventPublisher,
   type Logger,
 } from '@balesin/core';
-import { messages, organizations, users, type Database, type DbExecutor } from '@balesin/db';
+import {
+  apiKeys,
+  messages,
+  organizations,
+  users,
+  type Database,
+  type DbExecutor,
+} from '@balesin/db';
 import type {
   IdentityConfirmation,
   PauseSendingRequest,
@@ -199,6 +206,13 @@ export function createSendingLimitsService(deps: SendingLimitsServiceDeps): Send
       .claimFlag(LIMIT_FLAG, key, SENDING_DAY_MS / 1000)
       .catch(() => false);
     if (first) {
+      // Batas per API key: Owner diberi tahu atas nama PEMBUAT key + nama key (review API publik R2).
+      const [key] = sender.apiKeyId
+        ? await db
+            .select({ name: apiKeys.name, createdByUserId: apiKeys.createdByUserId })
+            .from(apiKeys)
+            .where(and(eq(apiKeys.organizationId, organizationId), eq(apiKeys.id, sender.apiKeyId)))
+        : [];
       const auditLogId = await recordAudit(db, {
         organizationId,
         // Pesan lewat API key: pelaku = key (bukan pengguna), lihat `apiKeyId`.
@@ -214,12 +228,13 @@ export function createSendingLimitsService(deps: SendingLimitsServiceDeps): Send
           limit,
           sent,
           ...(sender.apiKeyId ? { apiKeyId: sender.apiKeyId } : {}),
+          ...(key ? { apiKeyName: key.name } : {}),
         },
         client,
       });
-      // Email Owner menyebut pengguna pengirim; batas per API key cukup audit + banner.
-      if (sender.userId) {
-        await notifyOwners(organizationId, 'sending_limit_reached', sender.userId, auditLogId);
+      const subjectUserId = sender.userId ?? key?.createdByUserId ?? null;
+      if (subjectUserId) {
+        await notifyOwners(organizationId, 'sending_limit_reached', subjectUserId, auditLogId);
       }
     }
     throw new AppError('RATE_LIMITED', {

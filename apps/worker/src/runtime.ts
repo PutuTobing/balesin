@@ -11,6 +11,12 @@ import {
   type MaintenanceJobDeps,
 } from './queues/maintenance';
 import { createSystemWorker, type QueueConnectionOptions } from './queues/system';
+import {
+  createWebhooksOutQueue,
+  createWebhooksOutWorker,
+  scheduleWebhooksOut,
+  type WebhooksOutDeps,
+} from './queues/webhooks-out';
 import { createWebhookWorker, type WebhookJobDeps } from './queues/webhooks';
 
 export interface WorkerRuntime {
@@ -34,6 +40,8 @@ export interface WorkerServices {
   messages?: Omit<MessageJobDeps, 'logger'>;
   /** Antrian `notifications` (Web Push). Opsional untuk tes yang tidak membutuhkannya. */
   notifications?: Omit<NotificationJobDeps, 'logger'>;
+  /** Antrian `webhooks-out` (webhook keluar, job berkala tiap 5 dtk). Opsional untuk tes. */
+  webhooksOut?: Omit<WebhooksOutDeps, 'logger'>;
 }
 
 const ERROR_LOG_INTERVAL_MS = 30_000;
@@ -59,6 +67,16 @@ export function startWorkers(
     workers.push(createNotificationWorker(options, { ...services.notifications, logger }));
   }
   let maintenanceQueue: Queue | undefined;
+  let webhooksOutQueue: Queue | undefined;
+  if (services.webhooksOut) {
+    workers.push(createWebhooksOutWorker(options, { ...services.webhooksOut, logger }));
+    const queue = createWebhooksOutQueue(options);
+    webhooksOutQueue = queue;
+    scheduleWebhooksOut(queue).catch((err: unknown) => {
+      logger.error({ err }, 'Jadwal webhook keluar gagal didaftarkan');
+    });
+    queue.on('error', () => undefined);
+  }
   if (services.maintenance) {
     workers.push(createMaintenanceWorker(options, { ...services.maintenance, logger }));
     const queue = createMaintenanceQueue(options);
@@ -105,6 +123,10 @@ export function startWorkers(
       // menunggu Redis selamanya — jadi tutup paksa (langsung putus) bila Redis sedang mati.
       const force = options.connection.status !== 'ready';
       await Promise.all(workers.map((worker) => worker.close(force)));
+      if (webhooksOutQueue) {
+        if (force) await webhooksOutQueue.disconnect();
+        else await webhooksOutQueue.close();
+      }
       if (maintenanceQueue) {
         if (force) await maintenanceQueue.disconnect();
         else await maintenanceQueue.close();

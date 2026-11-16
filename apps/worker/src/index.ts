@@ -16,6 +16,7 @@ import { closeDb, createDb } from '@balesin/db';
 
 import { loadConfig, type WorkerConfig } from './config';
 import { createNotificationProducer, redisThrottle } from './queues/notifications';
+import { createOwnerNotifier } from './queues/webhooks-out';
 import { startWorkers } from './runtime';
 
 /** Titik masuk proses worker: baca konfigurasi → sambungkan Redis dan Postgres → proses antrian. */
@@ -50,6 +51,7 @@ function main(config: WorkerConfig): void {
     logger,
   });
   const notificationProducer = createNotificationProducer({ connection: redis }, logger);
+  const ownerNotifier = createOwnerNotifier({ connection: redis });
   const runtime = startWorkers({ connection: redis }, logger, {
     email: {
       appUrl: config.appUrl,
@@ -63,6 +65,7 @@ function main(config: WorkerConfig): void {
     maintenance: { db, publisher },
     messages: { db, meta, secretBox, publisher },
     notifications: { db, secretBox, appUrl: config.appUrl, throttle: redisThrottle(redis) },
+    webhooksOut: { db, secretBox, notifyOwner: ownerNotifier.notify },
   });
 
   const shutdown = createShutdown({
@@ -72,6 +75,7 @@ function main(config: WorkerConfig): void {
     steps: [
       { name: 'workers', run: () => runtime.close() },
       { name: 'antrian-notifikasi', run: () => notificationProducer.close() },
+      { name: 'antrian-email-owner', run: () => ownerNotifier.close() },
       { name: 'postgres', run: () => closeDb(db) },
       { name: 'redis', run: () => closeRedis(redis) },
     ],

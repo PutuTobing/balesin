@@ -92,6 +92,8 @@ const SECURITY_EVENT_CONDITIONS: Readonly<Record<SecurityEventKind, SQL>> = {
   sending_paused: sql`${auditLogs.action} = ${AUDIT_ACTIONS.sendingPaused}`,
   sending_limit_reached: sql`${auditLogs.action} = ${AUDIT_ACTIONS.sendingLimitReached}`,
   inbox_bulk_action: sql`${auditLogs.action} = ${AUDIT_ACTIONS.inboxBulkAction}`,
+  webhook_changed: sql`(${auditLogs.action} in (${AUDIT_ACTIONS.outgoingWebhookCreated}, ${AUDIT_ACTIONS.outgoingWebhookSecretRotated}, ${AUDIT_ACTIONS.privateNetworkUpdated}) or (${auditLogs.action} = ${AUDIT_ACTIONS.outgoingWebhookUpdated} and ${auditLogs.metadata} ? 'host'))`,
+  webhook_disabled: sql`${auditLogs.action} = ${AUDIT_ACTIONS.outgoingWebhookAutoDisabled}`,
   api_key_changed: sql`${auditLogs.action} in (${AUDIT_ACTIONS.apiKeyCreated}, ${AUDIT_ACTIONS.apiKeyRevoked})`,
   quick_reply_risky: sql`(${auditLogs.action} in (${AUDIT_ACTIONS.quickReplyCreated}, ${AUDIT_ACTIONS.quickReplyUpdated}) and ${auditLogs.metadata} ->> 'risky' = 'true')`,
   // Juga dilanjutkan setelah rem darurat (perubahan rem pengiriman oleh siapa pun tercatat).
@@ -201,6 +203,14 @@ function kindOf(row: AuditRow): SecurityEventKind | undefined {
       return 'sending_limit_reached';
     case AUDIT_ACTIONS.inboxBulkAction:
       return 'inbox_bulk_action';
+    case AUDIT_ACTIONS.outgoingWebhookCreated:
+    case AUDIT_ACTIONS.outgoingWebhookSecretRotated:
+    case AUDIT_ACTIONS.privateNetworkUpdated:
+      return 'webhook_changed';
+    case AUDIT_ACTIONS.outgoingWebhookUpdated:
+      return Object.hasOwn(row.metadata, 'host') ? 'webhook_changed' : undefined;
+    case AUDIT_ACTIONS.outgoingWebhookAutoDisabled:
+      return 'webhook_disabled';
     case AUDIT_ACTIONS.apiKeyCreated:
     case AUDIT_ACTIONS.apiKeyRevoked:
       return 'api_key_changed';
@@ -234,6 +244,8 @@ const DETAIL_KEYS: Readonly<Record<SecurityEventKind, readonly string[]>> = {
   inbox_bulk_action: ['actions', 'windowMinutes', 'kinds', 'actorRole'],
   quick_reply_risky: ['shortcut', 'addedLinks', 'addedNumbers', 'actorRole'],
   api_key_changed: ['change', 'name', 'displayPrefix', 'scopes', 'actorRole'],
+  webhook_changed: ['change', 'host', 'previousHost', 'events', 'cidrs', 'actorRole'],
+  webhook_disabled: ['host', 'failures'],
   sending_limits_changed: [
     'change',
     'dailyPerUser',

@@ -2,6 +2,7 @@ import { CONTACT_EDITABLE_FIELDS, CONTACT_EVENT_KINDS } from '@balesin/shared';
 import { sql } from 'drizzle-orm';
 import { check, foreignKey, index, pgEnum, pgTable, text, uuid } from 'drizzle-orm/pg-core';
 
+import { apiKeys } from './api-keys';
 import { createdAtColumn, idColumn, updatedAtColumn } from './columns';
 import { contacts } from './contacts';
 import { organizations } from './organizations';
@@ -28,6 +29,8 @@ export const contactEvents = pgTable(
     kind: contactEventKind('kind').notNull(),
     /** `null` = sistem/bot/API. */
     actorUserId: uuid('actor_user_id'),
+    /** Perubahan lewat API publik: key pelakunya (review API publik R2). */
+    apiKeyId: uuid('api_key_id'),
     tagName: text('tag_name'),
     tagColor: text('tag_color'),
     fields: text('fields').array(),
@@ -44,6 +47,11 @@ export const contactEvents = pgTable(
       name: 'contact_events_organization_id_actor_user_id_fk',
       columns: [table.organizationId, table.actorUserId],
       foreignColumns: [users.organizationId, users.id],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'contact_events_organization_id_api_key_id_fk',
+      columns: [table.organizationId, table.apiKeyId],
+      foreignColumns: [apiKeys.organizationId, apiKeys.id],
     }).onDelete('restrict'),
     index('contact_events_contact_id_created_at_idx').on(table.contactId, table.createdAt),
     check(

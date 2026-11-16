@@ -5,6 +5,7 @@ import {
   conversationEvents,
   conversations,
   isPgError,
+  recordOutgoingEvent,
   users,
   type ConversationRow,
   type Database,
@@ -204,6 +205,23 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
         assigneeUserId: nextAssignee,
         previousAssigneeUserId: current.assigneeUserId,
       });
+      // Webhook keluar (Fase 3): outbox di transaksi yang sama.
+      const outgoingType = {
+        claimed: 'conversation.assigned',
+        assigned: 'conversation.assigned',
+        unassigned: 'conversation.unassigned',
+        resolved: 'conversation.resolved',
+        reopened: 'conversation.reopened',
+      }[change.kind as 'claimed' | 'assigned' | 'unassigned' | 'resolved' | 'reopened'];
+      if (outgoingType) {
+        await recordOutgoingEvent(tx, {
+          organizationId: auth.organizationId,
+          type: outgoingType,
+          conversationId: current.id,
+          contactId: current.contactId,
+          actorUserId: auth.user.id,
+        });
+      }
       published = { previous: current.assigneeUserId, next: nextAssignee, kind: change.kind, role };
     });
     const done = published as {

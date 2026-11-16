@@ -9,6 +9,8 @@ import {
   lockAdvisoryKeys,
   mediaFiles,
   messages,
+  outgoingEvents,
+  webhookDeliveries,
   webhookEvents,
   type DbExecutor,
 } from '@balesin/db';
@@ -174,6 +176,25 @@ export async function deleteContactData(
     .from(conversations)
     .where(
       and(eq(conversations.organizationId, organizationId), eq(conversations.contactId, contactId)),
+    );
+  // Webhook keluar (Fase 3): kejadian yang belum dikirim + isi riwayat pengiriman tentang kontak ini.
+  await tx
+    .delete(outgoingEvents)
+    .where(
+      and(
+        eq(outgoingEvents.organizationId, organizationId),
+        eq(outgoingEvents.contactId, contactId),
+      ),
+    );
+  await tx
+    .update(webhookDeliveries)
+    .set({ payload: null, payloadPurgedAt: now, responseSnippet: null })
+    .where(
+      and(
+        eq(webhookDeliveries.organizationId, organizationId),
+        isNull(webhookDeliveries.payloadPurgedAt),
+        sql`${webhookDeliveries.payload} -> 'data' -> 'contact' ->> 'id' = ${contactId}`,
+      ),
     );
   // Catatan sesi, tag, dan riwayat kontak (butir 8) — terkait orangnya.
   await tx

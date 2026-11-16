@@ -33,6 +33,11 @@ export const QUEUE_NAMES = {
    * kembali ke antrian, tes). Payload hanya ID; penerima & isi ditentukan worker dari database.
    */
   notifications: 'notifications',
+  /**
+   * Webhook keluar (Fase 3): satu job berkala (`tick`, tiap 5 dtk) mengambil `outgoing_events`,
+   * membuat `webhook_deliveries`, mengirim yang jatuh tempo, dan menjalankan retensi riwayat.
+   */
+  webhooksOut: 'webhooks-out',
 } as const;
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
@@ -162,6 +167,15 @@ export function notificationJobId(payload: NotificationJobPayload): string | und
     ? `notif-msg-${payload.messageId}`
     : undefined;
 }
+
+// ── Antrian `webhooks-out` (webhook keluar) ────────────────────────────────
+
+export const WEBHOOKS_OUT_JOBS = {
+  /** Satu putaran: dispatch kejadian → kirim yang jatuh tempo → retensi. Payload kosong. */
+  tick: 'tick',
+} as const;
+export const WEBHOOKS_OUT_TICK_INTERVAL_MS = 5_000;
+export const webhooksOutJobPayloadSchema = z.strictObject({});
 
 // ── Antrian `maintenance` ───────────────────────────────────────────────────
 
@@ -335,6 +349,9 @@ export const SECURITY_NOTICE_ADMIN_EVENTS = [
   // yang mencapai batas): ke semua Owner aktif (review ruang chat S2). Rincian dari baris audit.
   'sending_paused',
   'sending_limit_reached',
+  // Webhook keluar dinonaktifkan otomatis setelah gagal beruntun (Fase 3): ke semua Owner aktif;
+  // subjek = pembuat endpoint, rincian (host, jumlah gagal) dari baris audit.
+  'webhook_disabled',
 ] as const;
 export type SecurityNoticeAdminEvent = (typeof SECURITY_NOTICE_ADMIN_EVENTS)[number];
 

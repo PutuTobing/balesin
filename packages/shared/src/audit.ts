@@ -142,6 +142,16 @@ export const AUDIT_ACTIONS = {
   apiKeyRevoked: 'api_key.revoked',
   /** Pengaturan API publik diubah (`docsEnabled`). */
   apiSettingsUpdated: 'settings.api.updated',
+  /** Webhook keluar dibuat (`host`, `events`) — URL utuh & rahasia tidak dicatat. */
+  outgoingWebhookCreated: 'webhook.created',
+  /** Webhook keluar diubah (`changedFields`, `host`/`previousHost` bila URL berubah, `enabled`). */
+  outgoingWebhookUpdated: 'webhook.updated',
+  outgoingWebhookDeleted: 'webhook.deleted',
+  outgoingWebhookSecretRotated: 'webhook.secret_rotated',
+  /** Dinonaktifkan otomatis setelah gagal beruntun (`failures`, `host`); tanpa pelaku. */
+  outgoingWebhookAutoDisabled: 'webhook.auto_disabled',
+  /** Allowlist IP privat webhook diubah (`previous`, `cidrs`). */
+  privateNetworkUpdated: 'settings.private_network.updated',
   /** Pengaturan notifikasi organisasi diubah (`preview` lama & baru). */
   notificationSettingsUpdated: 'settings.notifications.updated',
 } as const;
@@ -223,6 +233,12 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'api_key.created': 'API key dibuat',
   'api_key.revoked': 'API key dicabut',
   'settings.api.updated': 'Pengaturan API diubah',
+  'webhook.created': 'Webhook keluar dibuat',
+  'webhook.updated': 'Webhook keluar diubah',
+  'webhook.deleted': 'Webhook keluar dihapus',
+  'webhook.secret_rotated': 'Rahasia webhook keluar dirotasi',
+  'webhook.auto_disabled': 'Webhook keluar dinonaktifkan otomatis',
+  'settings.private_network.updated': 'Allowlist IP privat diubah',
 };
 
 /** Label untuk aksi yang mungkin belum dikenal klien (versi lama): tampilkan kodenya apa adanya. */
@@ -247,6 +263,7 @@ export const AUDIT_TARGET_TYPES = [
   'quick_reply',
   'contact',
   'api_key',
+  'webhook',
 ] as const;
 export const auditTargetTypeSchema = z.enum(AUDIT_TARGET_TYPES, {
   error: 'Jenis target tidak dikenal.',
@@ -264,9 +281,10 @@ export const AUDIT_TARGET_TYPE_LABELS: Readonly<Record<AuditTargetType, string>>
   audit_log: 'Audit log',
   channel: 'Channel',
   tag: 'Tag',
-  quick_reply: 'Template percakapan',
+  quick_reply: 'Balasan cepat',
   contact: 'Kontak',
   api_key: 'API key',
+  webhook: 'Webhook keluar',
 };
 
 // ── GET /audit-logs ─────────────────────────────────────────────────────────
@@ -422,6 +440,8 @@ export const SECURITY_EVENT_KINDS = [
   'inbox_bulk_action',
   'quick_reply_risky',
   'api_key_changed',
+  'webhook_changed',
+  'webhook_disabled',
 ] as const;
 export const securityEventKindSchema = z.enum(SECURITY_EVENT_KINDS);
 export type SecurityEventKind = z.infer<typeof securityEventKindSchema>;
@@ -450,6 +470,8 @@ export const SECURITY_EVENT_SEVERITY: Readonly<Record<SecurityEventKind, 'warnin
   inbox_bulk_action: 'warning',
   quick_reply_risky: 'warning',
   api_key_changed: 'warning',
+  webhook_changed: 'warning',
+  webhook_disabled: 'warning',
 };
 
 export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> = {
@@ -471,6 +493,8 @@ export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> 
   inbox_bulk_action: 'Aksi massal di inbox',
   quick_reply_risky: 'Template percakapan diberi tautan/angka baru',
   api_key_changed: 'API key dibuat atau dicabut',
+  webhook_changed: 'Webhook keluar / allowlist IP privat diubah',
+  webhook_disabled: 'Webhook keluar dinonaktifkan karena gagal beruntun',
 };
 
 export const securityEventSchema = z.object({

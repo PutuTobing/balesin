@@ -382,7 +382,15 @@ async function findSendingDetails(
   organizationId: string,
   auditLogId: string | undefined,
   deps: EmailJobDeps,
-): Promise<{ reason?: string; scope?: 'user' | 'organization'; limit?: number } | undefined> {
+): Promise<
+  | {
+      reason?: string;
+      scope?: 'user' | 'organization' | 'api_key';
+      limit?: number;
+      apiKeyName?: string;
+    }
+  | undefined
+> {
   if (!auditLogId) return undefined;
   const [row] = await deps.db
     .select({ metadata: auditLogs.metadata })
@@ -390,11 +398,32 @@ async function findSendingDetails(
     .where(and(eq(auditLogs.organizationId, organizationId), eq(auditLogs.id, auditLogId)))
     .limit(1);
   if (!row) return undefined;
-  const { reason, scope, limit } = row.metadata;
+  const { reason, scope, limit, apiKeyName } = row.metadata;
   return {
     ...(typeof reason === 'string' ? { reason: reason.slice(0, 200) } : {}),
-    ...(scope === 'user' || scope === 'organization' ? { scope } : {}),
+    ...(scope === 'user' || scope === 'organization' || scope === 'api_key' ? { scope } : {}),
+    ...(typeof apiKeyName === 'string' ? { apiKeyName: apiKeyName.slice(0, 80) } : {}),
     ...(typeof limit === 'number' ? { limit } : {}),
+  };
+}
+
+/** Host tujuan + jumlah gagal beruntun webhook yang dinonaktifkan (dari baris audit). */
+async function findWebhookDetails(
+  organizationId: string,
+  auditLogId: string | undefined,
+  deps: EmailJobDeps,
+): Promise<{ host?: string; failures?: number } | undefined> {
+  if (!auditLogId) return undefined;
+  const [row] = await deps.db
+    .select({ metadata: auditLogs.metadata })
+    .from(auditLogs)
+    .where(and(eq(auditLogs.organizationId, organizationId), eq(auditLogs.id, auditLogId)))
+    .limit(1);
+  if (!row) return undefined;
+  const { host, failures } = row.metadata;
+  return {
+    ...(typeof host === 'string' ? { host: host.slice(0, 253) } : {}),
+    ...(typeof failures === 'number' ? { failures } : {}),
   };
 }
 
@@ -519,11 +548,15 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
     event === 'member_joined' ||
     event === 'password_reset_burst' ||
     event === 'sending_paused' ||
-    event === 'sending_limit_reached';
+    event === 'sending_limit_reached' ||
+    event === 'webhook_disabled';
   const recipient = await findActiveUser(organizationId, recipientUserId, deps);
   // Pengguna yang baru dinonaktifkan tetap disebut di email "dinonaktifkan".
   const subject =
-    event === 'user_disabled' || event === 'sending_paused' || event === 'sending_limit_reached'
+    event === 'user_disabled' ||
+    event === 'sending_paused' ||
+    event === 'sending_limit_reached' ||
+    event === 'webhook_disabled'
       ? await findUserAnyStateWithEmail(organizationId, subjectUserId, deps)
       : await findActiveUser(organizationId, subjectUserId, deps);
   const branding = await loadOrganizationBrand(deps.db, organizationId);
@@ -567,6 +600,10 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
       event === 'sending_paused' || event === 'sending_limit_reached'
         ? await findSendingDetails(organizationId, auditLogId, deps)
         : undefined;
+    const webhook =
+      event === 'webhook_disabled'
+        ? await findWebhookDetails(organizationId, auditLogId, deps)
+        : undefined;
     body = renderAdminAccountNoticeEmail({
       brand: branding.brand,
       timeZone: branding.timeZone,
@@ -578,6 +615,7 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
       ...(roleChange ? { roleChange } : {}),
       ...(burst ? { burst } : {}),
       ...(sending ? { sending } : {}),
+      ...(webhook ? { webhook } : {}),
       ...(origin ? { origin } : {}),
     });
   }

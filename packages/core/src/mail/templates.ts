@@ -668,7 +668,8 @@ export interface AdminAccountNoticeEmailInput {
     | 'member_joined'
     | 'password_reset_burst'
     | 'sending_paused'
-    | 'sending_limit_reached';
+    | 'sending_limit_reached'
+    | 'webhook_disabled';
   subject: { name: string; email: string; role: UserRole };
   /**
    * Untuk `two_factor_reset`, `role_changed`, `user_disabled`: pelakunya. Untuk `member_joined`:
@@ -679,8 +680,16 @@ export interface AdminAccountNoticeEmailInput {
   roleChange?: { from: UserRole; to: UserRole };
   /** Untuk `password_reset_burst`: jumlah akun berbeda dalam jendela itu. */
   burst?: { accounts: number; windowMinutes: number };
+  /** Untuk `webhook_disabled`: host tujuan + jumlah gagal beruntun (dari baris audit). */
+  webhook?: { host?: string; failures?: number };
   /** Untuk `sending_paused` / `sending_limit_reached`: rincian dari baris audit. */
-  sending?: { reason?: string; scope?: 'user' | 'organization'; limit?: number };
+  sending?: {
+    reason?: string;
+    scope?: 'user' | 'organization' | 'api_key';
+    limit?: number;
+    /** `scope: 'api_key'`: nama API key (subjek = pembuat key). */
+    apiKeyName?: string;
+  };
   occurredAt: Date;
   origin?: EventOrigin;
 }
@@ -736,6 +745,44 @@ export function renderAdminAccountNoticeEmail(input: AdminAccountNoticeEmailInpu
       details: [...details, ...(reason ? [{ label: 'Alasan', value: reason }] : [])],
       notes: [
         `Bila bukan kamu atau timmu yang menariknya, periksa Audit log di ${product} dan sesi aktif akun tersebut sebelum melanjutkan pengiriman.`,
+      ],
+    });
+  }
+  if (input.event === 'webhook_disabled') {
+    const host = input.webhook?.host ?? 'tujuan webhook';
+    const failures = input.webhook?.failures;
+    return compose(input.brand, {
+      subject: `Webhook keluar ke ${host} dinonaktifkan di ${product}`,
+      preheader: 'Pengiriman event ke integrasi berhenti sampai webhook diaktifkan lagi.',
+      heading: 'Webhook keluar dinonaktifkan otomatis',
+      paragraphs: [
+        hello(input.recipientName),
+        `Webhook keluar ke ${host} (dibuat oleh ${account}) gagal${failures ? ` ${String(failures)} kali` : ''} berturut-turut, jadi dinonaktifkan otomatis. Integrasi (mis. n8n/bot) tidak lagi menerima event.`,
+        'Penyebab umum: alamat atau server penerima mati, sertifikat HTTPS bermasalah, atau jaringan privat belum diizinkan.',
+        'Kamu menerima email ini karena kamu Owner.',
+      ],
+      details,
+      notes: [
+        `Periksa riwayat pengiriman di Pengaturan → Webhook di ${product}, perbaiki penerimanya, lalu aktifkan lagi.`,
+      ],
+    });
+  }
+  if (input.event === 'sending_limit_reached' && input.sending?.scope === 'api_key') {
+    const keyName = input.sending.apiKeyName ?? 'tanpa nama';
+    const limit = input.sending.limit;
+    return compose(input.brand, {
+      subject: `Batas kirim harian API key "${keyName}" tercapai di ${product}`,
+      preheader: 'Pesan baru lewat API key ini ditolak sampai jumlah 24 jam terakhir turun.',
+      heading: 'Batas kirim harian API key tercapai',
+      paragraphs: [
+        hello(input.recipientName),
+        `API key "${keyName}" (dibuat oleh ${account}) mencapai batas kirim harian${limit ? ` (${limit.toLocaleString('id-ID')} pesan)` : ''}.`,
+        'Lonjakan seperti ini bisa wajar (bot sedang sibuk), tetapi juga bisa tanda API key bocor dan dipakai mengirim pesan penipuan dari nomor resmi.',
+        'Kamu menerima email ini karena kamu Owner.',
+      ],
+      details,
+      notes: [
+        `Periksa Audit log di ${product}. Bila mencurigakan, cabut API key itu di Pengaturan → API key atau tarik rem darurat di Pengaturan → Batas kirim.`,
       ],
     });
   }

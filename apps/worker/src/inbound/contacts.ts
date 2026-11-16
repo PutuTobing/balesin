@@ -1,5 +1,11 @@
 import { contactIdentityLockKeys, type Logger, type WhatsAppContactIdentity } from '@balesin/core';
-import { contacts, lockAdvisoryKeys, type ContactRow, type DbExecutor } from '@balesin/db';
+import {
+  contacts,
+  lockAdvisoryKeys,
+  recordOutgoingEvent,
+  type ContactRow,
+  type DbExecutor,
+} from '@balesin/db';
 import type { ChannelType } from '@balesin/shared';
 import { and, eq } from 'drizzle-orm';
 
@@ -108,6 +114,12 @@ export async function resolveWhatsAppContact(
       })
       .returning();
     if (!created) throw new Error('INSERT kontak tidak mengembalikan baris');
+    // Webhook keluar (Fase 3): outbox di transaksi yang sama.
+    await recordOutgoingEvent(tx, {
+      organizationId,
+      type: 'contact.created',
+      contactId: created.id,
+    });
     return created;
   }
 

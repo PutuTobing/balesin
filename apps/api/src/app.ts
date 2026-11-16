@@ -38,6 +38,8 @@ import { createCsrfRejectionRecorder } from './modules/auth/csrf-rejection';
 import { createApiKeyAuthenticator } from './modules/api-keys/api-key-auth';
 import { apiKeysRoutes } from './modules/api-keys/api-keys.routes';
 import { createApiKeysService } from './modules/api-keys/api-keys.service';
+import { outgoingWebhooksRoutes } from './modules/outgoing-webhooks/outgoing-webhooks.routes';
+import { createOutgoingWebhooksService } from './modules/outgoing-webhooks/outgoing-webhooks.service';
 import { apiDocsRoutes } from './modules/public-api/api-docs.routes';
 import { publicApiRoutes } from './modules/public-api/public-api.routes';
 import { apiKeyPepper as deriveApiKeyPepper } from './modules/api-keys/api-key-token';
@@ -150,6 +152,8 @@ export interface AppDeps {
     smtpTimeouts?: Partial<SmtpTimeouts>;
     /** Klien Graph API (mis. `sleep` instan supaya backoff tidak memperlambat tes). */
     meta?: Partial<Omit<MetaGraphClientOptions, 'version' | 'baseUrl' | 'environment'>>;
+    /** HANYA tes: webhook keluar boleh ke 127.0.0.1 (server penerima tiruan). */
+    webhookAllowLoopback?: boolean;
     /** Origin server push TIRUAN yang boleh didaftarkan (tes saja; produksi: layanan push dikenal). */
     pushEndpointOrigins?: readonly string[];
     /** Selang heartbeat/validasi ulang WebSocket inbox dan batas koneksi per pengguna. */
@@ -538,13 +542,24 @@ export async function buildApp(deps: AppDeps) {
     purgeMedia: (ids) => outbound.purgeMediaFiles(ids),
     logger: deps.logger,
   });
+  // Webhook keluar (Fase 3).
+  await app.register(outgoingWebhooksRoutes, {
+    limiter,
+    cookieSecure: config.cookieSecure,
+    webhooks: createOutgoingWebhooksService({
+      db,
+      secretBox,
+      twoFactor,
+      ...(deps.overrides?.webhookAllowLoopback ? { allowLoopback: true } : {}),
+    }),
+  });
   // API publik v1 + API key + dokumentasi (Fase 3).
   await app.register(apiKeysRoutes, {
     limiter,
     cookieSecure: config.cookieSecure,
     apiKeys: createApiKeysService({ db, pepper: apiKeyPepper, twoFactor }),
   });
-  await app.register(publicApiRoutes, { db, outbound, contacts: contactsService });
+  await app.register(publicApiRoutes, { db, limiter, outbound, contacts: contactsService });
   await app.register(apiDocsRoutes, { db, apiUrl: config.apiUrl });
   // Notifikasi Web Push (Fase 2 butir 10).
   await app.register(notificationsRoutes, {

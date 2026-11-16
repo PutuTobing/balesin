@@ -21,6 +21,7 @@ export * from './messages';
 export * from './notifications';
 export * from './organization-logos';
 export * from './organizations';
+export * from './outgoing-webhooks';
 export * from './quick-replies';
 export * from './tags';
 export * from './two-factor';
