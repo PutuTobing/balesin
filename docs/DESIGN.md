@@ -91,6 +91,7 @@ error API; hindari kata ganti bila kalimatnya tetap wajar.
 - Waktu ke depan memakai "pukul 02.04"; waktu lampau "Hari ini, 03.47" / "Kemarin, …" / tanggal.
 - Di dialog, tombol berwarna selalu terakhir (kanan di desktop, atas di HP); tombol batal berbingkai.
 - Nama produk tidak pernah ditulis langsung di teks UI — selalu dari pengaturan merek (white-label).
+- "Balasan cepat" = teks siap pakai lewat `/` di composer (fitur `quick_replies`); "template" HANYA untuk template pesan WhatsApp yang disetujui Meta.
 
 ## 5. RUBRIK `kritikus-desain`
 

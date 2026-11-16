@@ -178,3 +178,64 @@ Worktree sementara dihapus (folder + `git worktree prune`; `git worktree list` h
 kosong, database `balesin_kd_e2e` di-drop, Redis db 11 `DBSIZE` 0. Berkas repo yang ditulis: laporan ini + 20 screenshot
 di `docs/design-reviews/2026-11-18-fase2-ruang-chat/`, serta bagian "Putaran 3" + 3 berkas `p3-*.png` di laporan Inbox.
 Tidak ada kode produk yang diubah, tidak ada commit.
+
+---
+
+# Putaran 2
+
+- **Tanggal:** 2026-11-18 · **Penilai:** `kritikus-desain` · **Putaran:** 2
+- **Kode yang dinilai:** `78a46dc` ("feat(inbox): tandai selesai/buka lagi/alihkan/kembalikan, template "/" +
+  Pengaturan → Template percakapan, revisi ruang chat C1–C7"). Selama penilaian HEAD maju ke `c90555f` (fitur kontak
+  lain); foto mewakili `78a46dc`.
+- **Cara:** worktree sementara, API 3191 / web 5191, `balesin_kd_e2e` (migrasi sampai `0018`), Redis db 11. 25 layar
+  (ruang chat + butir 7/9) × 4: **101 foto lulus**. Ukur: kepala chat HP (avatar, nomor), gambar & dokumen, kirim → 500
+  (posisi "Kirim ulang"), rem darurat (tombol), kontras/target/teks terpotong di semua layar terang 390/1440.
+- **Screenshot:** berkas berawalan `p2-`. Layar butir 7 & 9 dinilai di `2026-11-18-fase2-penanganan-template.md`.
+
+## Putusan putaran 2: REVISI (dua sisa, satu regresi)
+
+| Butir | Hasil | Status |
+|---|---|---|
+| **C1** rem darurat | Setelah mengetik draf: "Kirim" **nonaktif**, "Lampirkan berkas" **nonaktif**; draf tetap bisa ditulis | Lolos |
+| **C2** gagal terlihat, sekali | Kotak "Pesan belum terkirim" di footer **hilang**; riwayat digulir ke item. Tetapi gulirnya berhenti di gelembung: "Kirim ulang" di 1440 di y 792, tepi bawah riwayat 782 (**tersembunyi**); di 390 y 701–745, tepi 715 (**terpotong**) | **Sebagian** (CH2) |
+| **C3** satu tombol utama | "Ambil chat" berbingkai; "Kirim" satu-satunya tombol penuh. Teks strip: "Belum ada yang menangani. Ambil supaya tim tahu kamu yang membalas." | Lolos |
+| **C4** "⋯" di HP | Tidak ada "⋯" yang terlihat sebelum gelembung diketuk | Lolos |
+| **C5** nama dokumen | Nama berkas muncul **1 kali** per pesan dokumen | Lolos |
+| **C6** gelembung gambar | Gambar 280 px, gelembung **306 px** (1440); 254/280 (390) | Lolos |
+| **C7** footer sesi habis | Judul + penjelasan saja, tanpa tombol nonaktif dan tanpa janji rilis | Lolos |
+| **CS1** chat milik agen lain | Strip "Ditangani Agus · Ambil alih" (tombol berbingkai) | Lolos |
+| **CS4** | Kotak galat 500 dihapus (C2) | Lolos |
+| Avatar kepala chat HP disembunyikan | **Tidak terjadi**: avatar masih tampil (`display: grid`, 32 px). `.headerAvatar { display: none }` di `Chat.module.css` kalah oleh aturan `display: grid` modul Avatar. Akibatnya nomor terpotong di **setiap** kepala chat 390: "+62 812-3456-78…" (115 > 111 px), dan pada chat selesai "Yohanes Sir…" + "+62 812-9999…" (91 px) | **Regresi** (CH1) |
+| "Selesai · Agus" di tab Semua | Tampil ("+62 812-9999-8888 · Selesai · Agus · CS Maju Ja…") | Lolos |
+
+Kontras: tidak ada teks < 4,5:1. Target sentuh 390: tidak ada < 44 px. Ukuran huruf 12/13/14/16/20.
+
+## Revisi putaran 2
+
+### Wajib
+
+**CH1. Nomor di kepala chat HP terlihat utuh** — `ChatRoom.tsx` (`ChatHeader`), `Chat.module.css`
+
+- Aturan `.headerAvatar { display: none }` tidak menang atas `display: grid` dari `Avatar.module.css` (urutan muat CSS).
+  Jangan render avatar di ≤ 640 px (mis. `className` yang dikenal Avatar, atau render bersyarat lewat `useMediaQuery`),
+  atau naikkan spesifisitas: `.header .headerAvatar { display: none; }`.
+- Pada chat dengan pil sesi + "⋮", nama tetap boleh terpotong tetapi **nomor tidak boleh** (alasan keamanan
+  `contact-identity.ts`): beri nomor `flex-shrink: 0` dan biarkan nama yang memendek.
+- Kriteria lolos: di 390 nomor Indonesia utuh di kepala `inbox-chat`, `inbox-chat-agen-lain`, `inbox-chat-selesai`.
+
+**CH2. "Kirim ulang" ikut terlihat setelah gagal** — `ChatRoom.tsx` (gulir setelah kirim), `OutboxRows.tsx`
+
+- Gulir ke **bawah baris outbox** (bukan ke gelembung): `history.scrollTop = history.scrollHeight` setelah item gagal
+  dirender (tunggu `requestAnimationFrame` setelah baris aksi masuk DOM).
+- Kriteria lolos: setelah kirim → 500 di 390 & 1440, tombol "Kirim ulang" seluruhnya berada di dalam area riwayat.
+
+### Saran
+
+- **CH-S1.** Pada chat selesai di HP, "Buka lagi" hanya ada di menu "⋮" (di desktop tombol di kepala). Tampilkan
+  tombol "Buka lagi" (sekunder) di footer "Chat ini sudah selesai…" pada ≤ 640 px.
+
+## Bersih-bersih putaran 2
+
+Worktree dihapus (folder + `git worktree prune`; `git worktree list` hanya repo utama), port 3191/5191 kosong,
+`balesin_kd_e2e` di-drop, Redis db 11 `DBSIZE` 0. Berkas repo: bagian ini + 9 berkas `p2-*.png`. Tidak ada kode produk
+yang diubah, tidak ada commit.
