@@ -98,3 +98,15 @@ Berkas baru: `apps/web/src/sw/security-review-fase2-pwa.test.ts` — 11 `it` + 1
 | `apps/web`: `vitest run src/sw src/pwa src/features/notifications src/brand src/styles src/features/auth …panel-batas-kirim` | 96 lulus + 1 `it.fails`, 10 berkas |
 | `tsc --noEmit` + ESLint (`apps/web`) | bersih |
 | `pnpm audit` | 2 moderate dev-only (esbuild via drizzle-kit, minimatch via eslint), tidak ada yang baru |
+
+---
+
+## Putaran 2 — verifikasi perbaikan (commit `4e53378`)
+
+| Butir | Bukti | Status |
+|---|---|---|
+| R1 segmen titik → `//host` | `apps/web/src/sw/push-payload.ts` `resolveAppUrl`: setelah `new URL(path, origin)` menolak pathname yang diawali `//` atau berisi `\`, dan mengembalikan `origin + pathname + search` hasil normalisasi (bukan `href` mentah). Tes penjaga R1 di `security-review-fase2-pwa.test.ts` diubah `it.fails` → `it` dan lulus (`/.%2e//evil.example`, `/x/%2e%2e//…`, `/./%2e%2e//…`) | **Tertutup** |
+
+Catatan: `handleNotificationClick` kini membuka URL hasil normalisasi; halaman tetap memeriksa ulang
+`isAppPath` untuk pesan navigasi. `vitest run src/sw` lulus semua tanpa `it.fails` tersisa. Putusan tetap
+**AMAN**.

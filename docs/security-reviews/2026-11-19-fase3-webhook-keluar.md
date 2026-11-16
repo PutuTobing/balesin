@@ -135,3 +135,24 @@ Tidak ada temuan Kritis atau Tinggi. Ada 2 temuan Rendah dan beberapa Info.
 | `apps/worker`: `vitest run src/inbound src/queues` | 119 lulus, 11 berkas |
 | `tsc --noEmit` (api, worker) + ESLint berkas tes baru | bersih |
 | `pnpm audit` | 2 moderate dev-only (esbuild via drizzle-kit, minimatch via eslint), tidak ada yang baru |
+
+---
+
+## Putaran 2 — verifikasi perbaikan (commit `dc649d9`)
+
+| Butir | Bukti | Status |
+|---|---|---|
+| R1 DNS di luar batas waktu / threadpool | `packages/core/src/net/outgoing-webhook.ts:206-221` — `dns.promises.Resolver` (c-ares, `timeout` 2 dtk × 2 percobaan, A + AAAA) TANPA threadpool libuv; dibungkus `withDeadline(…, timeoutMs)` (`:292`) dan tenggat total di `fetchRemoteFile` (`:469-472`). Tes penjaga R1 kini `it` dan lulus | **Tertutup** |
+| R2 rentang IPv6 pembungkus IPv4 | `:38-53` menambah `::/96`, `2002::/16`, `64:ff9b:1::/48`, `2001::/32` (Teredo). 3 tes penjaga R2 kini `it` dan lulus; `::ffff:0:0/96` (mapped) tidak ikut terblokir (tes klasifikasi privat/publik tetap lulus) | **Tertutup** |
+| Info 3 kejadian beracun | `outgoing-webhooks/…perbaikan-review-webhook-keluar.integration.test.ts:116-157` — kejadian gagal dibuang + dicatat tanpa isi; yang lain tetap terkirim | **Tertutup** |
+| Info 5 `err` di log | idem `:159` — `errorRef` hanya nama + kode + constraint | **Tertutup** |
+| Info 6 cabut rahasia lama seketika | idem `:171-203` — `revokePrevious` | **Tertutup** |
+| Info pencarian publik | `public-api.routes.ts` — `GET /public/conversations?q=` kini lewat `withStatementTimeout` | **Tertutup** |
+
+Dampak sampingan R1 (Info): resolver c-ares hanya bertanya ke server DNS di `/etc/resolv.conf`, **tidak
+membaca `/etc/hosts`**. Nama dari `extra_hosts` Docker / alias hosts lokal tidak bisa dipakai sebagai URL
+webhook atau `media_url` (→ galat `dns`); nama layanan Docker Compose tetap jalan lewat DNS bawaan Docker
+(127.0.0.11). Dari sisi keamanan ini menguntungkan (hosts lokal tidak bisa dipakai memetakan nama ke
+alamat internal). Perlu satu baris di teks UI/dokumentasi: "pakai IP untuk alamat LAN tanpa DNS".
+
+Hasil: `packages/core` `vitest run src/net` lulus semua (tanpa `it.fails` tersisa). Putusan tetap **AMAN**.
