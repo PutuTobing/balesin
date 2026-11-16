@@ -130,3 +130,18 @@ data pelanggan), jadi menyimpannya di audit tidak bertentangan dengan UU PDP.
 | `packages/core`: `vitest run` · `packages/shared`: `vitest run` | 518/518 · 108/108 lulus |
 | ESLint + `tsc --noEmit` (apps/api) untuk berkas tes baru | bersih |
 | `pnpm audit` | 2 moderate dev-only (`esbuild`, `minimatch`), tidak ada yang baru |
+
+---
+
+## Putaran 2 — verifikasi perbaikan commit `51e5dbc`
+
+### Putusan putaran 2: AMAN
+
+R1 tertutup sebagian.
+- **Sudah:** audit `quick_reply.created`/`quick_reply.updated` kini memuat `previous`/`next` (judul + isi, dipotong
+  1.000 karakter) dan `actorRole`. Bila pelaku BUKAN Owner menambah tautan atau angka ≥ 8 digit, metadata
+  `risky: true` muncul sebagai kejadian keamanan `quick_reply_risky` (banner Owner/Admin).
+- **Sisa (Rendah, dicatat sebagai R2 di `2026-11-18-fase2-notifikasi-push.md`):**
+  - pola tautan hanya mengenali daftar TLD tertentu;
+  - isi audit dipotong 1.000 karakter dari batas template 3.500;
+  - `quick_reply.deleted` belum menyimpan isi yang dihapus.

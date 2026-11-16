@@ -160,3 +160,15 @@ R1 dan Info 1 tertutup. Ada satu catatan baru, R2 (Rendah), yang dikunci `it.fai
 |---|---|
 | `apps/api`: `vitest run src/modules/inbox/security-review-fase2-penanganan` | 5 lulus + 1 `it.fails` (R2) |
 | Sama, `it.fails` → `it` (salinan sementara, sudah dihapus) | gagal tepat di asersi R2 |
+
+---
+
+## Putaran 3 — verifikasi perbaikan commit `51e5dbc`
+
+### Putusan putaran 3: AMAN
+
+R2 tertutup. `BULK_ACTION_KINDS` kini memuat `assigned`, jadi pengalihan massal ke diri sendiri atau akun rekanan ikut
+dihitung alarm `inbox.bulk_action`. Tes R2 di `security-review-fase2-penanganan.integration.test.ts` kini `it` dan
+lulus. Diff hanya menghapus `.fails` dan komentar; asersi `toHaveLength(1)` tetap. Aksi penanganan kini juga mengantre
+notifikasi push (`assigned` ke pemegang baru bila bukan pelaku, `queued` saat kembali ke antrian), ditinjau di
+`2026-11-18-fase2-notifikasi-push.md`.
