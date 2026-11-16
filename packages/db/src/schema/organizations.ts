@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
-import { check, integer, pgTable, text } from 'drizzle-orm/pg-core';
+import { check, integer, pgTable, text, uuid } from 'drizzle-orm/pg-core';
 
-import { createdAtColumn, idColumn, updatedAtColumn } from './columns';
+import { createdAtColumn, idColumn, timestamptz, updatedAtColumn } from './columns';
 
 /**
  * Organisasi = perusahaan pemakai Balesin (satu per instalasi di v1).
@@ -29,6 +29,19 @@ export const organizations = pgTable(
      * SECURITY.md §10 "retensi media dapat diatur"). UI menyusul; nilai di DB, bukan `.env`.
      */
     mediaRetentionDays: integer('media_retention_days').notNull().default(30),
+    // ── Rem pengiriman (SECURITY.md §5, review ruang chat S2; `SENDING_LIMIT_BOUNDS`) ──
+    /** Pesan keluar per pengguna per 24 jam bergulir. */
+    sendDailyLimitPerUser: integer('send_daily_limit_per_user').notNull().default(500),
+    /** Pesan keluar seluruh organisasi per 24 jam bergulir. */
+    sendDailyLimitPerOrganization: integer('send_daily_limit_per_organization')
+      .notNull()
+      .default(5000),
+    /** Pesan keluar ke satu percakapan per menit. */
+    sendPerConversationPerMinute: integer('send_per_conversation_per_minute').notNull().default(20),
+    /** Rem darurat ditarik (semua pengiriman keluar berhenti); `null` = berjalan. */
+    sendingPausedAt: timestamptz('sending_paused_at'),
+    sendingPausedByUserId: uuid('sending_paused_by_user_id'),
+    sendingPauseReason: text('sending_pause_reason'),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
@@ -36,6 +49,14 @@ export const organizations = pgTable(
     check(
       'organizations_brand_color_hex',
       sql`${table.brandColor} is null or ${table.brandColor} ~ '^#[0-9a-f]{6}$'`,
+    ),
+    check(
+      'organizations_send_limits_range',
+      sql`${table.sendDailyLimitPerUser} between 1 and 100000 and ${table.sendDailyLimitPerOrganization} between 1 and 1000000 and ${table.sendPerConversationPerMinute} between 1 and 120`,
+    ),
+    check(
+      'organizations_sending_pause_consistent',
+      sql`(${table.sendingPausedAt} is not null or (${table.sendingPausedByUserId} is null and ${table.sendingPauseReason} is null)) and (${table.sendingPauseReason} is null or char_length(${table.sendingPauseReason}) <= 200)`,
     ),
     check(
       'organizations_media_retention_days_range',

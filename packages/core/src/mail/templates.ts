@@ -666,7 +666,9 @@ export interface AdminAccountNoticeEmailInput {
     | 'role_changed'
     | 'user_disabled'
     | 'member_joined'
-    | 'password_reset_burst';
+    | 'password_reset_burst'
+    | 'sending_paused'
+    | 'sending_limit_reached';
   subject: { name: string; email: string; role: UserRole };
   /**
    * Untuk `two_factor_reset`, `role_changed`, `user_disabled`: pelakunya. Untuk `member_joined`:
@@ -677,6 +679,8 @@ export interface AdminAccountNoticeEmailInput {
   roleChange?: { from: UserRole; to: UserRole };
   /** Untuk `password_reset_burst`: jumlah akun berbeda dalam jendela itu. */
   burst?: { accounts: number; windowMinutes: number };
+  /** Untuk `sending_paused` / `sending_limit_reached`: rincian dari baris audit. */
+  sending?: { reason?: string; scope?: 'user' | 'organization'; limit?: number };
   occurredAt: Date;
   origin?: EventOrigin;
 }
@@ -715,6 +719,48 @@ export function renderAdminAccountNoticeEmail(input: AdminAccountNoticeEmailInpu
       details,
       notes: [
         `Kalau kamu tidak mengenal anggota ini, nonaktifkan akunnya dari halaman Tim di ${product} sekarang, lalu periksa Audit log dan sesi aktif ${by}.`,
+      ],
+    });
+  }
+  if (input.event === 'sending_paused') {
+    const reason = input.sending?.reason ? singleLine(input.sending.reason) : null;
+    return compose(input.brand, {
+      subject: `Rem darurat pengiriman ditarik di ${product}`,
+      preheader: `${name} menghentikan semua pengiriman pesan keluar.`,
+      heading: 'Semua pengiriman pesan dihentikan',
+      paragraphs: [
+        hello(input.recipientName),
+        `${account} menarik rem darurat: semua pesan keluar (balasan, kirim ulang, antrean) berhenti sampai Owner atau Admin melanjutkannya dari Pengaturan → Batas kirim.`,
+        'Kamu menerima email ini karena kamu Owner.',
+      ],
+      details: [...details, ...(reason ? [{ label: 'Alasan', value: reason }] : [])],
+      notes: [
+        `Bila bukan kamu atau timmu yang menariknya, periksa Audit log di ${product} dan sesi aktif akun tersebut sebelum melanjutkan pengiriman.`,
+      ],
+    });
+  }
+  if (input.event === 'sending_limit_reached') {
+    const organizationWide = input.sending?.scope === 'organization';
+    const limit = input.sending?.limit;
+    return compose(input.brand, {
+      subject: organizationWide
+        ? `Batas kirim harian organisasi tercapai di ${product}`
+        : `Batas kirim harian ${name} tercapai di ${product}`,
+      preheader: organizationWide
+        ? 'Pesan keluar baru ditolak sampai jumlah 24 jam terakhir turun.'
+        : `${name} tidak bisa mengirim pesan lagi sampai jumlah 24 jam terakhir turun.`,
+      heading: 'Batas kirim harian tercapai',
+      paragraphs: [
+        hello(input.recipientName),
+        organizationWide
+          ? `Jumlah pesan keluar organisasi dalam 24 jam terakhir mencapai batas${limit ? ` (${limit.toLocaleString('id-ID')} pesan)` : ''}. Pesan terakhir dikirim oleh ${account}.`
+          : `${account} mencapai batas kirim harian per pengguna${limit ? ` (${limit.toLocaleString('id-ID')} pesan)` : ''}.`,
+        'Lonjakan seperti ini bisa wajar (gangguan massal), tetapi juga bisa tanda akun yang dibobol mengirim pesan penipuan dari nomor resmi.',
+        'Kamu menerima email ini karena kamu Owner.',
+      ],
+      details,
+      notes: [
+        `Periksa percakapan terbaru dan Audit log di ${product}. Bila mencurigakan, tarik rem darurat di Pengaturan → Batas kirim dan nonaktifkan akun yang terlibat.`,
       ],
     });
   }

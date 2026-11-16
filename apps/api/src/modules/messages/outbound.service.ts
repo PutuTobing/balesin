@@ -1,8 +1,16 @@
 import {
   AppError,
+  MACRO_MARKER_MAX_BYTES,
+  ZIP_TAIL_BYTES,
   checkOutboundMedia,
   cleanFileName,
+  containsMacroMarker,
   detectMedia,
+  findZipCentralDirectory,
+  officeContainerOf,
+  officeZipAllowed,
+  zipEntryNames,
+  type DetectedMedia,
   isMetaApiError,
   openWhatsAppCredentials,
   readWhatsAppMediaUrl,
@@ -29,19 +37,25 @@ import {
 import {
   MAX_INBOUND_MEDIA_BYTES,
   MAX_SEND_ATTEMPTS,
+  MAX_UPLOAD_BYTES,
+  OUTBOUND_MEDIA_LIMITS,
   META_ERROR_MESSAGES,
   isRetryableFailure,
   outboundFailureReasonSchema,
   type MessageMediaKind,
+  type OutboundMediaKind,
   type SendMessageRequest,
   type UploadedMedia,
 } from '@balesin/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 
+import type { ClientInfo } from '../../http/client-info';
 import type { OutboundMessageEnqueuer } from '../../queues/message-queue';
 import type { PermissionGrant } from '../auth/permission-grant';
 import { conversationScope, findConversation, type MessageRowView } from '../inbox/inbox.repo';
-import type { MediaStore } from './media-store';
+import type { SendingLimitsService } from '../sending-limits/sending-limits.service';
+import { createConcurrencyGate } from './concurrency';
+import { MediaTooLargeError, type MediaStore, type StoredFile } from './media-store';
 
 /**
  * Ruang chat — kirim pesan, kirim ulang, unggah & unduh media (Fase 2 butir 6,
@@ -59,6 +73,10 @@ import type { MediaStore } from './media-store';
 
 export interface OutboundServiceDeps {
   db: Database;
+  /** Rem pengiriman (batas harian, per percakapan, rem darurat). */
+  sendingLimits: Pick<SendingLimitsService, 'assertCanSend'>;
+  /** Batas unggahan/unduhan media yang berjalan bersamaan (bawaan 4 per proses, 2 per pengguna). */
+  mediaConcurrency?: { global: number; perUser: number };
   store: MediaStore;
   meta: MetaGraphClient;
   secretBox: SecretBox | null;
@@ -78,6 +96,26 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const UPLOAD_MAX_RETENTION_DAYS = 29;
 
 const notFound = (message: string) => new AppError('NOT_FOUND', { message });
+const HEAD_BYTES = 64 * 1024;
+/** Pengganti `sha256` setelah metadata media dikosongkan (kolom wajib 64 karakter). */
+const PURGED_SHA256 = '0'.repeat(64);
+
+const unsupportedMedia = () =>
+  new AppError('UNSUPPORTED_MEDIA_TYPE', {
+    message:
+      'Jenis berkas tidak didukung WhatsApp. Kirim gambar JPG/PNG, video MP4/3GP, audio (OGG, MP3, AAC, M4A, AMR), atau dokumen (PDF, Word, Excel, PowerPoint tanpa makro, TXT).',
+  });
+const busy = (what: string) =>
+  new AppError('RATE_LIMITED', {
+    message: `Terlalu banyak ${what} yang sedang berjalan. Tunggu sebentar lalu coba lagi.`,
+    retryAfterSeconds: 5,
+  });
+
+interface Flight {
+  promise: Promise<string>;
+  controller: AbortController;
+  waiters: number;
+}
 
 function metaFailure(error: MetaApiError): AppError {
   return new AppError('META_REQUEST_FAILED', {
@@ -99,24 +137,36 @@ export interface OutboundService {
     grant: PermissionGrant,
     conversationId: string,
     input: SendMessageRequest,
+    client: ClientInfo,
   ): Promise<{ message: MessageRowView; created: boolean }>;
-  retry(grant: PermissionGrant, messageId: string): Promise<MessageRowView>;
+  retry(grant: PermissionGrant, messageId: string, client: ClientInfo): Promise<MessageRowView>;
   upload(
     grant: PermissionGrant,
     conversationId: string,
-    file: { bytes: Buffer; filename: string | null },
+    file: {
+      stream: AsyncIterable<unknown> & { resume?: () => unknown };
+      filename: string | null;
+      /** `true` bila parser multipart memotong berkas (melewati batas global). */
+      truncated?: () => boolean;
+    },
   ): Promise<UploadedMedia>;
   /** Media pesan (unduh dari Meta bila belum ada salinan lokal). */
   media(
     grant: PermissionGrant,
     messageId: string,
+    /** Dibatalkan saat klien memutus (unduhan dihentikan bila semua peminta sudah pergi). */
+    signal?: AbortSignal,
   ): Promise<{ file: MediaFileRow; stream: NodeJS.ReadableStream; sizeBytes: number }>;
   /** Hapus salinan lokal yang kedaluwarsa (pembersih berkala). */
   purgeExpiredMedia(limit?: number): Promise<number>;
 }
 
 export function createOutboundService(deps: OutboundServiceDeps): OutboundService {
-  const { db, store, meta, secretBox, queue, publisher, logger } = deps;
+  const { db, store, meta, secretBox, queue, publisher, logger, sendingLimits } = deps;
+  // Batas pekerjaan media BERJALAN (review ruang chat S1): per proses + per pengguna.
+  const uploadGate = createConcurrencyGate(deps.mediaConcurrency ?? { global: 4, perUser: 2 });
+  const downloadGate = createConcurrencyGate(deps.mediaConcurrency ?? { global: 4, perUser: 2 });
+  const downloads = new Map<string, Flight>();
   const now = deps.now ?? (() => new Date());
 
   async function scopedConversation(grant: PermissionGrant, conversationId: string) {
@@ -286,8 +336,149 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
     return organization?.days ?? 30;
   }
 
+  async function cachedMedia(
+    organizationId: string,
+    fileId: string | null,
+  ): Promise<{ file: MediaFileRow; stream: NodeJS.ReadableStream; sizeBytes: number } | null> {
+    if (!fileId) return null;
+    const [file] = await db
+      .select()
+      .from(mediaFiles)
+      .where(and(eq(mediaFiles.organizationId, organizationId), eq(mediaFiles.id, fileId)))
+      .limit(1);
+    if (!file?.storageKey || file.deletedAt !== null) return null;
+    const opened = await store.open(file.storageKey);
+    return opened ? { file, ...opened } : null;
+  }
+
+  async function officeContainerAcceptable(
+    stored: StoredFile,
+    detected: DetectedMedia | null,
+    filename: string | null,
+  ): Promise<boolean> {
+    const container = officeContainerOf(detected);
+    if (container === null) return true;
+    if (container === 'cfb') {
+      let carry = Buffer.alloc(0);
+      for await (const chunk of store.chunks(stored.storageKey)) {
+        const window = Buffer.concat([carry, chunk]);
+        if (containsMacroMarker(window)) return false;
+        carry = window.subarray(Math.max(0, window.length - MACRO_MARKER_MAX_BYTES));
+      }
+      return true;
+    }
+    const tailStart = Math.max(0, stored.sizeBytes - ZIP_TAIL_BYTES);
+    const tail = await store.readRange(stored.storageKey, tailStart, stored.sizeBytes - tailStart);
+    const location = findZipCentralDirectory(tail, tailStart);
+    if (!location) return false;
+    const directory = await store.readRange(stored.storageKey, location.offset, location.size);
+    const names = zipEntryNames(directory, location.entries);
+    return names !== null && officeZipAllowed(names, filename);
+  }
+
+  /** Unduh media masuk ke disk (dialirkan), simpan baris cache; mengembalikan ID baris. */
+  async function downloadInbound(
+    organizationId: string,
+    message: MessageRow,
+    signal: AbortSignal,
+  ): Promise<string> {
+    const media = message.media;
+    if (!media) throw notFound(MEDIA_UNAVAILABLE);
+    const [channel] = await db
+      .select()
+      .from(channels)
+      .where(and(eq(channels.organizationId, organizationId), eq(channels.id, message.channelId)))
+      .limit(1);
+    // Channel nonaktif (mungkin karena insiden) / terhapus: tidak ada unduhan BARU memakai
+    // tokennya; salinan yang sudah di-cache tetap bisa dibaca (review ruang chat Info 6).
+    if (!channel || channel.deletedAt !== null || !channel.enabled)
+      throw notFound(MEDIA_UNAVAILABLE);
+    const credentials = credentialsOf(channel);
+    const writer = await store.writer('inbound', MAX_INBOUND_MEDIA_BYTES);
+    let stored: StoredFile | null = null;
+    try {
+      const combined = AbortSignal.any([signal, AbortSignal.timeout(90_000)]);
+      let head = Buffer.alloc(0);
+      try {
+        const info = await readWhatsAppMediaUrl(meta, credentials, media.metaMediaId, {
+          signal: combined,
+        });
+        if (info.fileSize !== null && info.fileSize > MAX_INBOUND_MEDIA_BYTES) {
+          throw notFound('Media terlalu besar untuk diunduh lewat Balesin.');
+        }
+        await meta.download(credentials, {
+          operation: 'media.download',
+          url: info.url,
+          maxBytes: MAX_INBOUND_MEDIA_BYTES,
+          signal: combined,
+          sink: async (chunk) => {
+            if (head.length < HEAD_BYTES) head = Buffer.concat([head, chunk]);
+            await writer.write(chunk);
+          },
+        });
+      } catch (error) {
+        if (isMetaApiError(error)) {
+          if (error.kind === 'not_found') throw notFound(MEDIA_UNAVAILABLE);
+          throw metaFailure(error);
+        }
+        throw error;
+      }
+      stored = await writer.finish();
+      const filename = cleanFileName(media.filename);
+      let detected = detectMedia(head, filename, { verifyContainer: false });
+      if (detected && !(await officeContainerAcceptable(stored, detected, filename))) {
+        // Dokumen Office berisi makro/program: tetap bisa diunduh, tetapi sebagai biner.
+        detected = null;
+      }
+      const kind: MessageMediaKind = detected?.kind ?? media.kind;
+      const days = await mediaRetentionDays(organizationId);
+      const fileId = await db.transaction(async (tx) => {
+        // Proses api lain bisa saja sudah selesai lebih dulu: pakai salinannya.
+        const [current] = await tx
+          .select({ mediaFileId: messages.mediaFileId })
+          .from(messages)
+          .where(and(eq(messages.organizationId, organizationId), eq(messages.id, message.id)))
+          .for('update');
+        if (current?.mediaFileId) return current.mediaFileId;
+        const [file] = await tx
+          .insert(mediaFiles)
+          .values({
+            organizationId,
+            channelId: channel.id,
+            source: 'inbound',
+            kind,
+            mimeType: detected?.mimeType ?? 'application/octet-stream',
+            sizeBytes: stored?.sizeBytes ?? 0,
+            sha256: stored?.sha256 ?? PURGED_SHA256,
+            filename,
+            storageKey: stored?.storageKey ?? null,
+            metaMediaRef: media.metaMediaId,
+            expiresAt: new Date(now().getTime() + days * DAY_MS),
+          })
+          .returning({ id: mediaFiles.id });
+        if (!file) throw new Error('INSERT media tidak mengembalikan baris');
+        await tx
+          .update(messages)
+          .set({ mediaFileId: file.id })
+          .where(and(eq(messages.organizationId, organizationId), eq(messages.id, message.id)));
+        return file.id;
+      });
+      logger.info({ messageId: message.id, bytes: stored.sizeBytes }, 'Media masuk diunduh');
+      // Berkas kita tidak dipakai (didahului proses lain) → dihapus.
+      const [mine] = await db
+        .select({ id: mediaFiles.id })
+        .from(mediaFiles)
+        .where(and(eq(mediaFiles.id, fileId), eq(mediaFiles.storageKey, stored.storageKey)));
+      if (mine) stored = null;
+      return fileId;
+    } finally {
+      await writer.abort().catch(() => undefined);
+      if (stored) await store.remove(stored.storageKey).catch(() => undefined);
+    }
+  }
+
   return {
-    async send(grant, conversationId, input) {
+    async send(grant, conversationId, input, client) {
       const existing = await byIdempotencyKey(grant, input.clientMessageId);
       if (existing) {
         if (existing.conversationId !== conversationId) {
@@ -306,6 +497,13 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
         // TITIK KAIT template (fase berikutnya): di luar jendela hanya template yang boleh.
         throw new AppError('WINDOW_CLOSED');
       }
+      // Rem pengiriman: rem darurat, batas harian pengguna/organisasi, batas per percakapan.
+      await sendingLimits.assertCanSend({
+        organizationId: grant.organizationId,
+        userId: grant.userId,
+        conversationId: conversation.id,
+        client,
+      });
 
       const [conversationRow] = await db
         .select({ contactId: conversations.contactId })
@@ -414,6 +612,10 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
               lastMessageAt: sql`greatest(${conversations.lastMessageAt}, ${at})`,
               // Membalas = sudah membaca percakapan ini.
               unreadCount: 0,
+              // Laporan "waktu respons pertama": pesan keluar pertama agen (reaksi tidak dihitung).
+              ...(values.type === 'reaction'
+                ? {}
+                : { firstResponseAt: sql`coalesce(${conversations.firstResponseAt}, ${at})` }),
             })
             .where(
               and(
@@ -438,7 +640,7 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
       return { message: await view(row), created: true };
     },
 
-    async retry(grant, messageId) {
+    async retry(grant, messageId, client) {
       const message = await scopedMessage(grant, messageId);
       const reason = outboundFailureReasonSchema.safeParse(message.failureReason);
       if (
@@ -458,6 +660,12 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
       ) {
         throw new AppError('WINDOW_CLOSED');
       }
+      await sendingLimits.assertCanSend({
+        organizationId: grant.organizationId,
+        userId: grant.userId,
+        conversationId: message.conversationId,
+        client,
+      });
       const [updated] = await db
         .update(messages)
         .set({
@@ -465,8 +673,10 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
           failureReason: null,
           errorCode: null,
           wamid: null,
-          // Yang menekan "Kirim ulang" menjadi pengirimnya (diperiksa ulang worker saat kirim).
-          senderUserId: grant.userId,
+          sendClaimedAt: null,
+          // Penulis asli (`senderUserId`, pemilik kunci idempotensi) TETAP; yang menekan "Kirim
+          // ulang" dicatat terpisah dan diperiksa ulang worker saat kirim (review ruang chat R2).
+          lastSentByUserId: grant.userId,
           sendAttempts: sql`${messages.sendAttempts} + 1`,
           statusUpdatedAt: now(),
         })
@@ -488,159 +698,159 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
     async upload(grant, conversationId, file) {
       const conversation = await scopedConversation(grant, conversationId);
       const channel = await liveChannel(grant.organizationId, conversation.channel.id);
+      const credentials = credentialsOf(channel);
+      const release = uploadGate.tryAcquire(grant.userId);
+      if (!release) throw busy('unggahan');
       const filename = cleanFileName(file.filename);
-      const detected = detectMedia(file.bytes, filename);
-      const verdict = checkOutboundMedia(detected, file.bytes.byteLength);
-      if (!verdict.ok) {
-        if (verdict.reason === 'too_large') {
+      const writer = await store.writer('uploads', MAX_UPLOAD_BYTES);
+      let stored: StoredFile | null = null;
+      try {
+        // Kepala berkas (64 KiB) → jenis; batas ukuran dipersempit ke batas jenis itu (gambar 5 MB…),
+        // jadi penulisan berhenti sesegera mungkin (review ruang chat S1).
+        let head: Buffer = Buffer.alloc(0);
+        let verdict: ReturnType<typeof checkOutboundMedia> | null = null;
+        let detected: DetectedMedia | null = null;
+        const decide = () => {
+          detected = detectMedia(head, filename, { verifyContainer: false });
+          verdict = checkOutboundMedia(detected, 0);
+          if (!verdict.ok) throw unsupportedMedia();
+          writer.maxBytes = OUTBOUND_MEDIA_LIMITS[verdict.kind].maxBytes;
+        };
+        try {
+          for await (const chunk of file.stream) {
+            const bytes = chunk as Buffer;
+            if (verdict === null) {
+              head = Buffer.concat([head, bytes]);
+              if (head.length >= HEAD_BYTES) decide();
+            }
+            await writer.write(bytes);
+          }
+          if (verdict === null) decide();
+        } catch (error) {
+          if (error instanceof MediaTooLargeError) {
+            throw new AppError('PAYLOAD_TOO_LARGE', {
+              message: `Berkas terlalu besar untuk jenis ini (maks. ${String(Math.floor(writer.maxBytes / (1024 * 1024)))} MB).`,
+            });
+          }
+          throw error;
+        }
+        if (file.truncated?.()) {
           throw new AppError('PAYLOAD_TOO_LARGE', {
-            message: `Berkas terlalu besar untuk jenis ini (maks. ${String(Math.floor((verdict.maxBytes ?? 0) / (1024 * 1024)))} MB).`,
+            message: `Berkas terlalu besar (maks. ${String(MAX_UPLOAD_BYTES / (1024 * 1024))} MB).`,
           });
         }
-        throw new AppError('UNSUPPORTED_MEDIA_TYPE', {
-          message:
-            'Jenis berkas tidak didukung WhatsApp. Kirim gambar JPG/PNG, video MP4/3GP, audio (OGG, MP3, AAC, M4A, AMR), atau dokumen (PDF, Word, Excel, PowerPoint, TXT).',
-        });
+        if (writer.sizeBytes === 0)
+          throw new AppError('VALIDATION_ERROR', { message: 'Berkas kosong.' });
+        stored = await writer.finish();
+        const chosen = verdict as unknown as {
+          ok: true;
+          kind: OutboundMediaKind;
+          mimeType: string;
+        };
+        // Isi wadah Office (review ruang chat R1) diperiksa dari berkas di disk, tanpa memuat utuh.
+        if (!(await officeContainerAcceptable(stored, detected, filename)))
+          throw unsupportedMedia();
+
+        let metaId: string;
+        try {
+          ({ id: metaId } = await uploadWhatsAppMedia(
+            meta,
+            credentials,
+            channel.waPhoneNumberId ?? '',
+            {
+              blob: await store.blob(stored.storageKey, chosen.mimeType),
+              mimeType: chosen.mimeType,
+              filename: filename ?? `berkas-${stored.storageKey.slice(-12)}`,
+            },
+            { signal: AbortSignal.timeout(120_000) },
+          ));
+        } catch (error) {
+          if (isMetaApiError(error)) throw metaFailure(error);
+          throw error;
+        }
+        const days = Math.min(
+          await mediaRetentionDays(grant.organizationId),
+          UPLOAD_MAX_RETENTION_DAYS,
+        );
+        const [row] = await db
+          .insert(mediaFiles)
+          .values({
+            organizationId: grant.organizationId,
+            channelId: channel.id,
+            source: 'upload',
+            kind: chosen.kind,
+            mimeType: chosen.mimeType,
+            sizeBytes: stored.sizeBytes,
+            sha256: stored.sha256,
+            filename,
+            storageKey: stored.storageKey,
+            metaMediaRef: metaId,
+            uploadedByUserId: grant.userId,
+            expiresAt: new Date(now().getTime() + days * DAY_MS),
+          })
+          .returning();
+        if (!row) throw new Error('INSERT media tidak mengembalikan baris');
+        logger.info({ mediaId: row.id, kind: row.kind, bytes: row.sizeBytes }, 'Media diunggah');
+        stored = null;
+        return {
+          id: row.id,
+          kind: row.kind,
+          mimeType: row.mimeType,
+          filename: row.filename,
+          sizeBytes: row.sizeBytes,
+        };
+      } finally {
+        await writer.abort().catch(() => undefined);
+        if (stored) await store.remove(stored.storageKey).catch(() => undefined);
+        // Sisa aliran unggahan dibuang supaya koneksi tidak menggantung.
+        file.stream.resume?.();
+        release();
       }
-      const credentials = credentialsOf(channel);
-      const stored = await store.save('uploads', file.bytes);
-      let metaId: string;
-      try {
-        ({ id: metaId } = await uploadWhatsAppMedia(
-          meta,
-          credentials,
-          channel.waPhoneNumberId ?? '',
-          {
-            bytes: file.bytes,
-            mimeType: verdict.mimeType,
-            filename: filename ?? `berkas-${stored.storageKey.slice(-12)}`,
-          },
-          { signal: AbortSignal.timeout(60_000) },
-        ));
-      } catch (error) {
-        await store.remove(stored.storageKey).catch(() => undefined);
-        if (isMetaApiError(error)) throw metaFailure(error);
-        throw error;
-      }
-      const days = Math.min(
-        await mediaRetentionDays(grant.organizationId),
-        UPLOAD_MAX_RETENTION_DAYS,
-      );
-      const [row] = await db
-        .insert(mediaFiles)
-        .values({
-          organizationId: grant.organizationId,
-          channelId: channel.id,
-          source: 'upload',
-          kind: verdict.kind,
-          mimeType: verdict.mimeType,
-          sizeBytes: stored.sizeBytes,
-          sha256: stored.sha256,
-          filename,
-          storageKey: stored.storageKey,
-          metaMediaRef: metaId,
-          uploadedByUserId: grant.userId,
-          expiresAt: new Date(now().getTime() + days * DAY_MS),
-        })
-        .returning();
-      if (!row) throw new Error('INSERT media tidak mengembalikan baris');
-      logger.info({ mediaId: row.id, kind: row.kind, bytes: row.sizeBytes }, 'Media diunggah');
-      return {
-        id: row.id,
-        kind: row.kind,
-        mimeType: row.mimeType,
-        filename: row.filename,
-        sizeBytes: row.sizeBytes,
-      };
     },
 
-    async media(grant, messageId) {
+    async media(grant, messageId, signal) {
       const message = await scopedMessage(grant, messageId);
-      if (message.mediaFileId) {
-        const [file] = await db
-          .select()
-          .from(mediaFiles)
-          .where(
-            and(
-              eq(mediaFiles.organizationId, grant.organizationId),
-              eq(mediaFiles.id, message.mediaFileId),
-            ),
-          )
-          .limit(1);
-        if (file?.storageKey && file.deletedAt === null) {
-          const opened = await store.open(file.storageKey);
-          if (opened) return { file, ...opened };
-        }
-        // Salinan unggahan pesan keluar tidak bisa diunduh ulang dari Meta.
-        if (message.direction === 'outbound') throw notFound(MEDIA_UNAVAILABLE);
-      }
-      const media = message.media;
-      if (message.direction !== 'inbound' || !media?.metaMediaId) {
+      const cached = await cachedMedia(grant.organizationId, message.mediaFileId);
+      if (cached) return cached;
+      // Salinan unggahan pesan keluar tidak bisa diunduh ulang dari Meta.
+      if (message.direction !== 'inbound' || !message.media?.metaMediaId) {
         throw notFound(MEDIA_UNAVAILABLE);
       }
-      const [channel] = await db
-        .select()
-        .from(channels)
-        .where(
-          and(
-            eq(channels.organizationId, grant.organizationId),
-            eq(channels.id, message.channelId),
-          ),
-        )
-        .limit(1);
-      if (!channel || channel.deletedAt !== null) throw notFound(MEDIA_UNAVAILABLE);
-      const credentials = credentialsOf(channel);
-      const signal = AbortSignal.timeout(90_000);
-      let bytes: Buffer;
-      try {
-        const info = await readWhatsAppMediaUrl(meta, credentials, media.metaMediaId, { signal });
-        if (info.fileSize !== null && info.fileSize > MAX_INBOUND_MEDIA_BYTES) {
-          throw notFound('Media terlalu besar untuk diunduh lewat Balesin.');
-        }
-        ({ bytes } = await meta.download(credentials, {
-          operation: 'media.download',
-          url: info.url,
-          maxBytes: MAX_INBOUND_MEDIA_BYTES,
-          signal,
-        }));
-      } catch (error) {
-        if (isMetaApiError(error)) {
-          if (error.kind === 'not_found') throw notFound(MEDIA_UNAVAILABLE);
-          throw metaFailure(error);
-        }
-        throw error;
+      // Single-flight per pesan (review ruang chat S1): permintaan bersamaan menunggu SATU unduhan.
+      const key = `${grant.organizationId}:${message.id}`;
+      let flight = downloads.get(key);
+      if (!flight) {
+        const release = downloadGate.tryAcquire(grant.userId);
+        if (!release) throw busy('unduhan');
+        const controller = new AbortController();
+        const created: Flight = {
+          controller,
+          waiters: 0,
+          promise: downloadInbound(grant.organizationId, message, controller.signal).finally(() => {
+            downloads.delete(key);
+            release();
+          }),
+        };
+        downloads.set(key, created);
+        flight = created;
       }
-      const filename = cleanFileName(media.filename);
-      const detected = detectMedia(bytes, filename);
-      const kind: MessageMediaKind = detected?.kind ?? media.kind;
-      const stored = await store.save('inbound', bytes);
-      const days = await mediaRetentionDays(grant.organizationId);
-      const [file] = await db
-        .insert(mediaFiles)
-        .values({
-          organizationId: grant.organizationId,
-          channelId: channel.id,
-          source: 'inbound',
-          kind,
-          // Tidak dikenali = disajikan sebagai unduhan biner, tidak pernah ditampilkan inline.
-          mimeType: detected?.mimeType ?? 'application/octet-stream',
-          sizeBytes: stored.sizeBytes,
-          sha256: stored.sha256,
-          filename,
-          storageKey: stored.storageKey,
-          metaMediaRef: media.metaMediaId,
-          expiresAt: new Date(now().getTime() + days * DAY_MS),
-        })
-        .returning();
-      if (!file) throw new Error('INSERT media tidak mengembalikan baris');
-      await db
-        .update(messages)
-        .set({ mediaFileId: file.id })
-        .where(and(eq(messages.organizationId, grant.organizationId), eq(messages.id, message.id)));
-      const opened = await store.open(stored.storageKey);
-      if (!opened) throw notFound(MEDIA_UNAVAILABLE);
-      logger.info({ messageId: message.id, bytes: stored.sizeBytes }, 'Media masuk diunduh');
-      return { file, ...opened };
+      const joined = flight;
+      joined.waiters += 1;
+      const onAbort = () => {
+        joined.waiters -= 1;
+        // Semua peminta sudah memutus → unduhan dibatalkan.
+        if (joined.waiters <= 0) joined.controller.abort();
+      };
+      signal?.addEventListener('abort', onAbort, { once: true });
+      try {
+        const fileId = await joined.promise;
+        const result = await cachedMedia(grant.organizationId, fileId);
+        if (!result) throw notFound(MEDIA_UNAVAILABLE);
+        return result;
+      } finally {
+        signal?.removeEventListener('abort', onAbort);
+        if (!signal?.aborted) joined.waiters -= 1;
+      }
     },
 
     async purgeExpiredMedia(limit = 500) {
@@ -653,9 +863,17 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
       for (const file of due) {
         try {
           if (file.storageKey) await store.remove(file.storageKey);
+          // Metadata yang bisa memuat data pribadi ikut dikosongkan (review ruang chat R4): nama
+          // berkas ("KTP_Budi.jpg"), sidik isi, dan ID media Meta.
           await db
             .update(mediaFiles)
-            .set({ storageKey: null, deletedAt: now() })
+            .set({
+              storageKey: null,
+              deletedAt: now(),
+              filename: null,
+              sha256: PURGED_SHA256,
+              metaMediaRef: null,
+            })
             .where(eq(mediaFiles.id, file.id));
           removed += 1;
         } catch (err) {

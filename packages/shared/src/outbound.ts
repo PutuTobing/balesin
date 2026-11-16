@@ -93,8 +93,21 @@ export const sendMessageRequestSchema = z.discriminatedUnion('type', [
     clientMessageId,
     latitude: z.number().min(-90).max(90),
     longitude: z.number().min(-180).max(180),
-    name: z.string().trim().max(256).optional(),
-    address: z.string().trim().max(512).optional(),
+    name: z
+      .string()
+      .trim()
+      .max(256)
+      .refine(
+        (value) => !value.includes('\u0000'),
+        'Nama lokasi memuat karakter yang tidak didukung.',
+      )
+      .optional(),
+    address: z
+      .string()
+      .trim()
+      .max(512)
+      .refine((value) => !value.includes('\u0000'), 'Alamat memuat karakter yang tidak didukung.')
+      .optional(),
     replyToMessageId: replyTo,
   }),
   z.object({
@@ -147,6 +160,7 @@ export const OUTBOUND_FAILURE_REASONS = [
   'delivery_unknown',
   'credentials_unavailable',
   'queue_unavailable',
+  'sending_paused',
 ] as const;
 export const outboundFailureReasonSchema = z.enum(OUTBOUND_FAILURE_REASONS);
 export type OutboundFailureReason = z.infer<typeof outboundFailureReasonSchema>;
@@ -164,6 +178,8 @@ const REASON_MESSAGES: Readonly<Record<OutboundFailureReason, string>> = {
   delivery_failed: 'Meta melaporkan pesan ini gagal diantar ke pelanggan.',
   delivery_unknown:
     'Koneksi ke Meta terputus saat mengirim, jadi pesan mungkin sudah terkirim. Pastikan pelanggan belum menerimanya sebelum kirim ulang.',
+  sending_paused:
+    'Pengiriman dihentikan sementara oleh rem darurat. Kirim ulang setelah Owner/Admin melanjutkan pengiriman.',
   queue_unavailable:
     'Antrean pengiriman sedang bermasalah sehingga pesan belum dikirim. Kirim ulang beberapa saat lagi.',
   credentials_unavailable:
@@ -213,6 +229,7 @@ const RETRYABLE_REASONS = new Set<OutboundFailureReason>([
   'window_closed',
   'credentials_unavailable',
   'queue_unavailable',
+  'sending_paused',
 ]);
 const UNRETRYABLE_META_CODES = new Set([131021, 131051]);
 

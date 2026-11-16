@@ -132,6 +132,11 @@ export interface MetaDownloadRequest {
   url: string;
   maxBytes: number;
   signal?: AbortSignal;
+  /**
+   * Bila diisi, potongan dialirkan ke sini (mis. berkas di disk) dan TIDAK dikumpulkan di memori;
+   * `bytes` jawaban kosong (review ruang chat S1).
+   */
+  sink?: (chunk: Uint8Array) => Promise<void>;
 }
 
 export interface MetaDownload {
@@ -594,7 +599,8 @@ export function createMetaGraphClient(options: MetaGraphClientOptions): MetaGrap
             await response.body.cancel().catch(() => undefined);
             throw fail('invalid_parameter');
           }
-          chunks.push(chunk);
+          if (request.sink) await request.sink(chunk);
+          else chunks.push(chunk);
         }
       }
       logger?.info(

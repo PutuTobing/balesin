@@ -1,6 +1,7 @@
 import { contactIdentityLockKeys } from '@balesin/core';
 import {
   contacts,
+  conversationEvents,
   conversations,
   lockAdvisoryKeys,
   mediaFiles,
@@ -165,6 +166,24 @@ export async function deleteContactData(
     .delete(messages)
     .where(and(eq(messages.organizationId, organizationId), eq(messages.contactId, contactId)))
     .returning({ id: messages.id });
+  // Riwayat penanganan percakapan kontak ini (tanpa isi pesan, tetapi terkait orangnya).
+  await tx.delete(conversationEvents).where(
+    and(
+      eq(conversationEvents.organizationId, organizationId),
+      inArray(
+        conversationEvents.conversationId,
+        tx
+          .select({ id: conversations.id })
+          .from(conversations)
+          .where(
+            and(
+              eq(conversations.organizationId, organizationId),
+              eq(conversations.contactId, contactId),
+            ),
+          ),
+      ),
+    ),
+  );
   const deletedConversations = await tx
     .delete(conversations)
     .where(

@@ -101,6 +101,8 @@ export interface ConversationRowView {
   windowExpiresAt: Date | null;
   createdAt: Date;
   resolvedAt: Date | null;
+  firstAssignedAt: Date | null;
+  firstResponseAt: Date | null;
   channel: { id: string; name: string; type: ChannelType };
   contact: Pick<ContactRow, 'id' | 'number' | 'name' | 'profileName' | 'phone' | 'waUsername'>;
   assignee: { id: string; name: string } | null;
@@ -119,6 +121,8 @@ function selectConversations(db: DbExecutor) {
       windowExpiresAt: conversations.windowExpiresAt,
       createdAt: conversations.createdAt,
       resolvedAt: conversations.resolvedAt,
+      firstAssignedAt: conversations.firstAssignedAt,
+      firstResponseAt: conversations.firstResponseAt,
       channelId: channels.id,
       channelName: channels.name,
       channelType: channels.type,
@@ -171,6 +175,8 @@ function toConversationRowView(row: SelectedConversation): ConversationRowView {
     windowExpiresAt: row.windowExpiresAt,
     createdAt: row.createdAt,
     resolvedAt: row.resolvedAt,
+    firstAssignedAt: row.firstAssignedAt,
+    firstResponseAt: row.firstResponseAt,
     channel: { id: row.channelId, name: row.channelName, type: row.channelType },
     contact: {
       id: row.contactId,

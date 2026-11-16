@@ -42,7 +42,9 @@ export function toContactSummary(contact: ContactNames & { id: string }): Contac
     id: contact.id,
     number: contact.number,
     displayName: contactDisplayName(contact),
+    nameSource: contact.name ? 'team' : contact.profileName ? 'whatsapp' : 'none',
     phone: contact.phone,
+    waUsername: contact.waUsername,
   };
 }
 
@@ -52,7 +54,6 @@ export function toContact(row: ContactRow): Contact {
     channelType: row.channelType,
     name: row.name,
     profileName: row.profileName,
-    waUsername: row.waUsername,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -94,6 +95,8 @@ export function toConversation(
     lastMessage: lastMessage ? toMessagePreview(lastMessage) : null,
     createdAt: row.createdAt.toISOString(),
     resolvedAt: row.resolvedAt?.toISOString() ?? null,
+    firstAssignedAt: row.firstAssignedAt?.toISOString() ?? null,
+    firstResponseAt: row.firstResponseAt?.toISOString() ?? null,
   };
 }
 

@@ -56,7 +56,148 @@ function isPlainText(bytes: Uint8Array): boolean {
   }
 }
 
-export function detectMedia(bytes: Uint8Array, filenameHint?: string | null): DetectedMedia | null {
+// ── Wadah Office (review ruang chat R1) ─────────────────────────────────────
+
+const OFFICE_FOLDER_BY_EXTENSION: Readonly<Record<string, string>> = {
+  docx: 'word/',
+  xlsx: 'xl/',
+  pptx: 'ppt/',
+};
+/** Panjang maksimal ujung berkas yang perlu dibaca untuk menemukan End Of Central Directory ZIP. */
+export const ZIP_TAIL_BYTES = 22 + 0xffff;
+/** Direktori pusat ZIP terbesar yang mau dibaca (cukup untuk dokumen Office yang wajar). */
+export const ZIP_MAX_CENTRAL_DIRECTORY_BYTES = 8 * 1024 * 1024;
+
+const u16 = (bytes: Uint8Array, at: number) => (bytes[at] ?? 0) | ((bytes[at + 1] ?? 0) << 8);
+const u32 = (bytes: Uint8Array, at: number) => (u16(bytes, at) | (u16(bytes, at + 2) << 16)) >>> 0;
+
+/**
+ * Lokasi direktori pusat ZIP dari potongan UJUNG berkas (`tail`, dimulai di `tailStart`), atau `null`
+ * (bukan ZIP yang utuh / ZIP64 / direktori terlalu besar).
+ */
+export function findZipCentralDirectory(
+  tail: Uint8Array,
+  tailStart: number,
+): { offset: number; size: number; entries: number } | null {
+  for (let at = tail.length - 22; at >= 0; at -= 1) {
+    if (u32(tail, at) !== 0x06054b50) continue;
+    const entries = u16(tail, at + 10);
+    const size = u32(tail, at + 12);
+    const offset = u32(tail, at + 16);
+    if (size === 0xffffffff || offset === 0xffffffff || entries === 0xffff) return null;
+    if (size > ZIP_MAX_CENTRAL_DIRECTORY_BYTES || offset + size > tailStart + at) return null;
+    return { offset, size, entries };
+  }
+  return null;
+}
+
+/** Nama entri dari isi direktori pusat ZIP, atau `null` bila rusak. */
+export function zipEntryNames(centralDirectory: Uint8Array, expected: number): string[] | null {
+  const names: string[] = [];
+  let at = 0;
+  const decoder = new TextDecoder('utf-8');
+  while (at + 46 <= centralDirectory.length && names.length < 100_000) {
+    if (u32(centralDirectory, at) !== 0x02014b50) return null;
+    const nameLength = u16(centralDirectory, at + 28);
+    const extraLength = u16(centralDirectory, at + 30);
+    const commentLength = u16(centralDirectory, at + 32);
+    const end = at + 46 + nameLength;
+    if (end > centralDirectory.length) return null;
+    names.push(decoder.decode(centralDirectory.subarray(at + 46, end)));
+    at = end + extraLength + commentLength;
+  }
+  return names.length === expected ? names : null;
+}
+
+/**
+ * Dokumen Office modern yang sah: ada `[Content_Types].xml` + folder sesuai ekstensi (`word/`,
+ * `xl/`, `ppt/`), TANPA proyek makro (`vbaProject.bin`) maupun program tersisip.
+ */
+export function officeZipAllowed(
+  names: readonly string[],
+  filename: string | null | undefined,
+): boolean {
+  const folder = OFFICE_FOLDER_BY_EXTENSION[extensionOf(filename)];
+  if (!folder) return false;
+  const lower = names.map((name) => name.toLowerCase());
+  return (
+    lower.includes('[content_types].xml') &&
+    lower.some((name) => name.startsWith(folder)) &&
+    !lower.some(
+      (name) =>
+        name.endsWith('vbaproject.bin') ||
+        name.endsWith('vbadata.xml') ||
+        /\.(exe|dll|bat|cmd|com|scr|js|vbs|ps1|msi|jar|apk)$/.test(name),
+    )
+  );
+}
+
+const MACRO_MARKERS = ['_VBA_PROJECT', 'Macros', 'VBA\u0000'].map((text) =>
+  Uint8Array.from(Array.from(text).flatMap((character) => [character.charCodeAt(0), 0])),
+);
+/** Panjang penanda terpanjang (untuk tumpang tindih saat memindai berkas per potongan). */
+export const MACRO_MARKER_MAX_BYTES = Math.max(...MACRO_MARKERS.map((marker) => marker.length));
+
+function indexOf(haystack: Uint8Array, needle: Uint8Array): number {
+  outer: for (let at = 0; at + needle.length <= haystack.length; at += 1) {
+    for (let index = 0; index < needle.length; index += 1) {
+      if (haystack[at + index] !== needle[index]) continue outer;
+    }
+    return at;
+  }
+  return -1;
+}
+
+/** Potongan berkas CFB memuat nama aliran proyek makro VBA (UTF-16LE). */
+export function containsMacroMarker(chunk: Uint8Array): boolean {
+  return MACRO_MARKERS.some((marker) => indexOf(chunk, marker) !== -1);
+}
+
+/** Pemeriksaan wadah Office pada berkas UTUH di memori. */
+function officeContainerAllowed(bytes: Uint8Array, filename: string | null | undefined): boolean {
+  if (startsWith(bytes, [0x50, 0x4b, 0x03, 0x04])) {
+    const tailStart = Math.max(0, bytes.length - ZIP_TAIL_BYTES);
+    const location = findZipCentralDirectory(bytes.subarray(tailStart), tailStart);
+    if (!location) return false;
+    const names = zipEntryNames(
+      bytes.subarray(location.offset, location.offset + location.size),
+      location.entries,
+    );
+    return names !== null && officeZipAllowed(names, filename);
+  }
+  return !containsMacroMarker(bytes);
+}
+
+export interface DetectOptions {
+  /**
+   * `false` = hanya dari AWAL berkas (unggahan yang dialirkan): wadah Office belum diperiksa —
+   * pemanggil WAJIB memeriksanya setelah berkas utuh (`findZipCentralDirectory` /
+   * `containsMacroMarker`). Bawaan `true` (berkas utuh di memori).
+   */
+  verifyContainer?: boolean;
+}
+
+/** Hasil deteksi adalah dokumen Office berwadah ZIP / CFB (perlu pemeriksaan isi wadah). */
+export function officeContainerOf(detected: DetectedMedia | null): 'zip' | 'cfb' | null {
+  if (!detected || detected.kind !== 'document') return null;
+  if (Object.values(OOXML_BY_EXTENSION).includes(detected.mimeType)) return 'zip';
+  if (Object.values(CFB_BY_EXTENSION).includes(detected.mimeType)) return 'cfb';
+  return null;
+}
+
+export function detectMedia(
+  bytes: Uint8Array,
+  filenameHint?: string | null,
+  options: DetectOptions = {},
+): DetectedMedia | null {
+  const detected = detectHead(bytes, filenameHint);
+  if (options.verifyContainer !== false && officeContainerOf(detected)) {
+    return officeContainerAllowed(bytes, filenameHint) ? detected : null;
+  }
+  return detected;
+}
+
+function detectHead(bytes: Uint8Array, filenameHint?: string | null): DetectedMedia | null {
   if (startsWith(bytes, [0xff, 0xd8, 0xff])) return { mimeType: 'image/jpeg', kind: 'image' };
   if (startsWith(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) {
     return { mimeType: 'image/png', kind: 'image' };

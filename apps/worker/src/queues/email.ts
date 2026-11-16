@@ -377,6 +377,27 @@ async function findResetBurst(
     : undefined;
 }
 
+/** Rincian rem pengiriman dari baris audit (alasan rem / cakupan + batas). */
+async function findSendingDetails(
+  organizationId: string,
+  auditLogId: string | undefined,
+  deps: EmailJobDeps,
+): Promise<{ reason?: string; scope?: 'user' | 'organization'; limit?: number } | undefined> {
+  if (!auditLogId) return undefined;
+  const [row] = await deps.db
+    .select({ metadata: auditLogs.metadata })
+    .from(auditLogs)
+    .where(and(eq(auditLogs.organizationId, organizationId), eq(auditLogs.id, auditLogId)))
+    .limit(1);
+  if (!row) return undefined;
+  const { reason, scope, limit } = row.metadata;
+  return {
+    ...(typeof reason === 'string' ? { reason: reason.slice(0, 200) } : {}),
+    ...(scope === 'user' || scope === 'organization' ? { scope } : {}),
+    ...(typeof limit === 'number' ? { limit } : {}),
+  };
+}
+
 /** IP + user agent dari baris audit kejadian (untuk "dari mana" di email keamanan). */
 async function findAuditOrigin(
   organizationId: string,
@@ -496,11 +517,13 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
     event === 'role_changed' ||
     event === 'user_disabled' ||
     event === 'member_joined' ||
-    event === 'password_reset_burst';
+    event === 'password_reset_burst' ||
+    event === 'sending_paused' ||
+    event === 'sending_limit_reached';
   const recipient = await findActiveUser(organizationId, recipientUserId, deps);
   // Pengguna yang baru dinonaktifkan tetap disebut di email "dinonaktifkan".
   const subject =
-    event === 'user_disabled'
+    event === 'user_disabled' || event === 'sending_paused' || event === 'sending_limit_reached'
       ? await findUserAnyStateWithEmail(organizationId, subjectUserId, deps)
       : await findActiveUser(organizationId, subjectUserId, deps);
   const branding = await loadOrganizationBrand(deps.db, organizationId);
@@ -540,6 +563,10 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
       event === 'password_reset_burst'
         ? await findResetBurst(organizationId, auditLogId, deps)
         : undefined;
+    const sending =
+      event === 'sending_paused' || event === 'sending_limit_reached'
+        ? await findSendingDetails(organizationId, auditLogId, deps)
+        : undefined;
     body = renderAdminAccountNoticeEmail({
       brand: branding.brand,
       timeZone: branding.timeZone,
@@ -550,6 +577,7 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
       ...(actor ? { actor: { name: actor.name, role: actor.role } } : {}),
       ...(roleChange ? { roleChange } : {}),
       ...(burst ? { burst } : {}),
+      ...(sending ? { sending } : {}),
       ...(origin ? { origin } : {}),
     });
   }

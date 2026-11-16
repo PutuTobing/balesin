@@ -154,6 +154,18 @@ export const API_ROUTES = {
     businessProfile: `${API_PREFIX}/settings/channels/:channelId/business-profile`,
   },
   /**
+   * Rem pengiriman (docs/KONTRAK-API-INBOX.md "Batas kirim & rem darurat"). GET/PUT =
+   * `sending.limits.manage`; tarik rem = `sending.limits.manage`; lanjutkan = `sending.resume`.
+   */
+  sendingLimits: {
+    /** GET — batas + status rem; PUT — ubah batas (+ konfirmasi identitas). */
+    settings: `${API_PREFIX}/settings/sending-limits`,
+    /** POST — tarik rem darurat (hentikan semua pengiriman). */
+    pause: `${API_PREFIX}/settings/sending-limits/pause`,
+    /** POST — lanjutkan pengiriman (+ konfirmasi identitas). */
+    resume: `${API_PREFIX}/settings/sending-limits/resume`,
+  },
+  /**
    * Inbox (docs/KONTRAK-API-INBOX.md). Percakapan/pesan = `inbox.view`, kontak = `contacts.view`
    * (keduanya bercakupan: Teknisi hanya yang di-assign). Path ber-`:id` disusun dengan `apiPath`.
    */
@@ -164,6 +176,20 @@ export const API_ROUTES = {
     counts: `${API_PREFIX}/conversations/counts`,
     /** POST — tandai sudah dibaca (CSRF). */
     read: `${API_PREFIX}/conversations/:conversationId/read`,
+    /** POST — ambil dari antrian terbuka (CSRF, `inbox.assign`). */
+    claim: `${API_PREFIX}/conversations/:conversationId/claim`,
+    /** POST — tugaskan/alihkan ke agen (CSRF, `inbox.assign`). */
+    assign: `${API_PREFIX}/conversations/:conversationId/assign`,
+    /** POST — kembalikan ke antrian (CSRF; Teknisi hanya miliknya). */
+    unassign: `${API_PREFIX}/conversations/:conversationId/unassign`,
+    /** POST — tandai selesai (CSRF, `inbox.reply`). */
+    resolve: `${API_PREFIX}/conversations/:conversationId/resolve`,
+    /** POST — buka lagi (CSRF, `inbox.reply`). */
+    reopen: `${API_PREFIX}/conversations/:conversationId/reopen`,
+    /** GET — riwayat penanganan (tab "Log"). */
+    events: `${API_PREFIX}/conversations/:conversationId/events`,
+    /** GET — agen yang bisa ditugaskan (`inbox.assign`). */
+    agents: `${API_PREFIX}/inbox/agents`,
     /** GET (WebSocket) — event inbox real-time. Cookie sesi + `Origin` aplikasi wajib. */
     stream: `${API_PREFIX}/inbox/stream`,
     /** GET — satu percakapan. */

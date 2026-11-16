@@ -13,6 +13,25 @@ const withHead = (head: Uint8Array) => {
   return full;
 };
 
+/** ZIP minimal: tanda tangan lokal + direktori pusat (nama saja) + End Of Central Directory. */
+function fakeZip(names: string[]): Uint8Array {
+  const local = Buffer.from([0x50, 0x4b, 0x03, 0x04, ...new Array<number>(26).fill(0)]);
+  const entries = names.map((name) => {
+    const header = Buffer.alloc(46);
+    header.writeUInt32LE(0x02014b50, 0);
+    header.writeUInt16LE(Buffer.byteLength(name), 28);
+    return Buffer.concat([header, Buffer.from(name)]);
+  });
+  const directory = Buffer.concat(entries);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(names.length, 8);
+  end.writeUInt16LE(names.length, 10);
+  end.writeUInt32LE(directory.length, 12);
+  end.writeUInt32LE(local.length, 16);
+  return Buffer.concat([local, directory, end]);
+}
+
 describe('detectMedia (magic bytes, bukan nama berkas)', () => {
   it('mengenali jenis yang didukung WhatsApp', () => {
     expect(detectMedia(bytes(0xff, 0xd8, 0xff, 0xe0))).toEqual({
@@ -44,11 +63,28 @@ describe('detectMedia (magic bytes, bukan nama berkas)', () => {
     expect(detectMedia(text('MZ\u0090\u0000'), 'dokumen.pdf')).toBeNull();
   });
 
-  it('ZIP/CFB hanya diterima sebagai dokumen Office sesuai ekstensi; teks hanya .txt UTF-8', () => {
-    const zip = bytes(0x50, 0x4b, 0x03, 0x04, 0x14);
-    expect(detectMedia(zip, 'laporan.xlsx')?.mimeType).toContain('spreadsheetml');
-    expect(detectMedia(zip, 'arsip.zip')).toBeNull();
-    expect(detectMedia(zip, 'laporan.docx.exe')).toBeNull();
+  it('ZIP diterima sebagai Office hanya bila isinya dokumen Office tanpa makro; teks hanya .txt UTF-8', () => {
+    const xlsx = fakeZip(['[Content_Types].xml', '_rels/.rels', 'xl/workbook.xml']);
+    expect(detectMedia(xlsx, 'laporan.xlsx')?.mimeType).toContain('spreadsheetml');
+    expect(detectMedia(xlsx, 'arsip.zip')).toBeNull();
+    expect(detectMedia(xlsx, 'laporan.docx')).toBeNull(); // folder tidak cocok ekstensi
+    expect(
+      detectMedia(
+        fakeZip(['[Content_Types].xml', 'xl/workbook.xml', 'xl/vbaProject.bin']),
+        'makro.xlsx',
+      ),
+    ).toBeNull();
+    expect(
+      detectMedia(
+        fakeZip(['[Content_Types].xml', 'word/document.xml', 'word/setup.exe']),
+        'a.docx',
+      ),
+    ).toBeNull();
+    expect(detectMedia(bytes(0x50, 0x4b, 0x03, 0x04, 0x14), 'laporan.xlsx')).toBeNull();
+    // Mode aliran: hanya kepala berkas (wadah diperiksa pemanggil setelah berkas utuh).
+    expect(
+      detectMedia(bytes(0x50, 0x4b, 0x03, 0x04), 'laporan.xlsx', { verifyContainer: false })?.kind,
+    ).toBe('document');
     expect(detectMedia(text('Halo kak, ini catatan.'), 'catatan.txt')?.mimeType).toBe('text/plain');
     expect(detectMedia(bytes(0x48, 0x00, 0x49), 'biner.txt')).toBeNull();
   });

@@ -13,6 +13,7 @@ import {
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 
+import { clientInfo } from '../../http/client-info';
 import { enforceRateLimit, type RateLimitRule, type RateLimiter } from '../../http/rate-limit';
 import { requirePermission } from '../../http/route-access';
 import { permissionGrant } from '../auth/permission-grant';
@@ -115,7 +116,12 @@ export const outboundRoutes: FastifyPluginAsyncZod<OutboundRoutesOptions> = asyn
       const id = requireUuid(request.params.conversationId, 'Percakapan tidak ditemukan.');
       await enforceRateLimit(limiter, SEND_USER_RULE, grant.userId, sendLimit);
       await enforceRateLimit(limiter, SEND_ORGANIZATION_RULE, grant.organizationId, orgLimit);
-      const { message, created } = await outbound.send(grant, id, request.body);
+      const { message, created } = await outbound.send(
+        grant,
+        id,
+        request.body,
+        clientInfo(request),
+      );
       void reply.code(created ? 202 : 200);
       return { message: toMessage(message) };
     },
@@ -135,7 +141,7 @@ export const outboundRoutes: FastifyPluginAsyncZod<OutboundRoutesOptions> = asyn
       const id = requireUuid(request.params.messageId, 'Pesan tidak ditemukan.');
       await enforceRateLimit(limiter, SEND_USER_RULE, grant.userId, sendLimit);
       await enforceRateLimit(limiter, SEND_ORGANIZATION_RULE, grant.organizationId, orgLimit);
-      const message = await outbound.retry(grant, id);
+      const message = await outbound.retry(grant, id, clientInfo(request));
       void reply.code(202);
       return { message: toMessage(message) };
     },
@@ -171,18 +177,12 @@ export const outboundRoutes: FastifyPluginAsyncZod<OutboundRoutesOptions> = asyn
           details: [{ location: 'body', field: 'file', message: 'Berkas wajib diisi.' }],
         });
       }
-      let bytes: Buffer;
-      try {
-        bytes = await part.toBuffer();
-      } catch {
-        throw new AppError('PAYLOAD_TOO_LARGE', {
-          message: `Berkas terlalu besar (maks. ${String(MAX_UPLOAD_BYTES / (1024 * 1024))} MB).`,
-        });
-      }
-      if (bytes.byteLength === 0) {
-        throw new AppError('VALIDATION_ERROR', { message: 'Berkas kosong.' });
-      }
-      const media = await outbound.upload(grant, id, { bytes, filename: part.filename || null });
+      // Dialirkan ke disk (review ruang chat S1) — tidak pernah dibaca utuh ke memori.
+      const media = await outbound.upload(grant, id, {
+        stream: part.file,
+        filename: part.filename || null,
+        truncated: () => part.file.truncated,
+      });
       void reply.code(201);
       return { media };
     },
@@ -199,7 +199,12 @@ export const outboundRoutes: FastifyPluginAsyncZod<OutboundRoutesOptions> = asyn
       const grant = await permissionGrant(request, 'inbox.view');
       const id = requireUuid(request.params.messageId, 'Pesan tidak ditemukan.');
       await enforceRateLimit(limiter, MEDIA_USER_RULE, grant.userId, mediaLimit);
-      const { file, stream, sizeBytes } = await outbound.media(grant, id);
+      // Klien memutus sebelum jawaban selesai → unduhan dari Meta dibatalkan (bila tak ada peminta lain).
+      const disconnected = new AbortController();
+      reply.raw.on('close', () => {
+        if (!reply.raw.writableFinished) disconnected.abort();
+      });
+      const { file, stream, sizeBytes } = await outbound.media(grant, id, disconnected.signal);
       const inline = INLINE_MEDIA_TYPES.has(file.mimeType);
       void reply.headers({
         'content-type': inline ? file.mimeType : 'application/octet-stream',

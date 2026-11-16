@@ -46,6 +46,8 @@ export const ACCESS_RULES = {
   teamManageSelf: 'team.manage.self',
   /** Peran baru di luar yang boleh diberikan pemanggil (`assignableRoles`). */
   teamAssignRole: 'team.manage.assign_role',
+  /** Mengembalikan ke antrian percakapan yang dipegang orang lain tanpa izin `inbox.assign`. */
+  inboxUnassignOthers: 'inbox.unassign.others',
 } as const;
 export type AccessRule = (typeof ACCESS_RULES)[keyof typeof ACCESS_RULES];
 

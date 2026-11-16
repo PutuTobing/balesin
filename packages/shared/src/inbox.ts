@@ -31,6 +31,32 @@ export const CONVERSATION_STATUS_LABELS: Readonly<Record<ConversationStatus, str
   resolved: 'Selesai',
 };
 
+/**
+ * Jenis kejadian penanganan percakapan (tabel `conversation_events`, tab "Log" panel detail):
+ *  - `claimed`    — agen mengambil dari antrian terbuka (atau mengambil alih dari bot);
+ *  - `assigned`   — agen ditugaskan/dialihkan oleh orang lain (atau diri sendiri mengambil alih);
+ *  - `unassigned` — dikembalikan ke antrian terbuka;
+ *  - `resolved`   — ditandai selesai;
+ *  - `reopened`   — dibuka lagi.
+ */
+export const CONVERSATION_EVENT_KINDS = [
+  'claimed',
+  'assigned',
+  'unassigned',
+  'resolved',
+  'reopened',
+] as const;
+export const conversationEventKindSchema = z.enum(CONVERSATION_EVENT_KINDS);
+export type ConversationEventKind = z.infer<typeof conversationEventKindSchema>;
+
+export const CONVERSATION_EVENT_LABELS: Readonly<Record<ConversationEventKind, string>> = {
+  claimed: 'Mengambil percakapan',
+  assigned: 'Menugaskan percakapan',
+  unassigned: 'Mengembalikan ke antrian',
+  resolved: 'Menandai selesai',
+  reopened: 'Membuka lagi',
+};
+
 /** Jendela layanan pelanggan WhatsApp: 24 jam sejak pesan masuk terakhir (jam server). */
 export const CUSTOMER_SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -212,8 +238,16 @@ export const contactSummarySchema = z.object({
   number: z.number().int().positive(),
   /** Nama tampilan: nama dari tim → nama profil WhatsApp → nomor → username. */
   displayName: z.string(),
+  /**
+   * Asal `displayName`: `team` (diedit tim), `whatsapp` (nama profil kiriman pelanggan — tidak
+   * tepercaya, tampilkan penanda "dari WhatsApp" + nomor/username di sampingnya), `none` (nomor,
+   * @username, atau "Kontak #n").
+   */
+  nameSource: z.enum(['team', 'whatsapp', 'none']),
   /** Nomor E.164 (`+62…`), `null` bila pelanggan memakai username tanpa nomor. */
   phone: z.string().nullable(),
+  /** Username WhatsApp (tanpa `@`), bila ada. */
+  waUsername: z.string().nullable(),
 });
 export type ContactSummary = z.infer<typeof contactSummarySchema>;
 
@@ -224,7 +258,6 @@ export const contactSchema = contactSummarySchema.extend({
   name: z.string().nullable(),
   /** Nama profil WhatsApp (dari pelanggan, tidak tepercaya; karakter tak terlihat dibuang). */
   profileName: z.string().nullable(),
-  waUsername: z.string().nullable(),
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,
 });
@@ -260,8 +293,64 @@ export const conversationSchema = z.object({
   lastMessage: messagePreviewSchema.nullable(),
   createdAt: isoDateTimeSchema,
   resolvedAt: isoDateTimeSchema.nullable(),
+  /** Laporan: pertama kali ditugaskan ke agen. */
+  firstAssignedAt: isoDateTimeSchema.nullable(),
+  /** Laporan: pesan keluar pertama oleh agen. */
+  firstResponseAt: isoDateTimeSchema.nullable(),
 });
 export type Conversation = z.infer<typeof conversationSchema>;
+
+// ── Penanganan percakapan (butir 7) ─────────────────────────────────────────
+
+/**
+ * Jawaban aksi penanganan: keadaan terbaru menurut cakupan pemanggil SESUDAH aksi. `null` = aksi
+ * berhasil tetapi pemanggil tidak lagi boleh melihat percakapan itu (mis. Teknisi mengembalikan
+ * chat-nya ke antrian).
+ */
+export const conversationActionResponseSchema = z.object({
+  conversation: conversationSchema.nullable(),
+});
+export type ConversationActionResponse = z.infer<typeof conversationActionResponseSchema>;
+
+/** `POST /conversations/:id/assign` — tugaskan/alihkan ke agen (aktif, berizin `inbox.reply`). */
+export const assignConversationRequestSchema = z.object({
+  userId: z.uuid({ error: 'Agen tidak valid.' }),
+});
+export type AssignConversationRequest = z.infer<typeof assignConversationRequestSchema>;
+
+const userRefSchema = z.object({ id: z.uuid(), name: z.string() });
+
+export const conversationEventSchema = z.object({
+  id: z.uuid(),
+  kind: conversationEventKindSchema,
+  /** `null` = sistem/bot. */
+  actor: userRefSchema.nullable(),
+  assignee: userRefSchema.nullable(),
+  previousAssignee: userRefSchema.nullable(),
+  createdAt: isoDateTimeSchema,
+});
+export type ConversationEvent = z.infer<typeof conversationEventSchema>;
+export const conversationEventListResponseSchema = z.object({
+  events: z.array(conversationEventSchema),
+});
+export type ConversationEventListResponse = z.infer<typeof conversationEventListResponseSchema>;
+
+/**
+ * Agen inbox (`GET /inbox/agents`, izin `inbox.view`): semua pengguna yang perannya memegang
+ * `inbox.reply`, termasuk yang dinonaktifkan (`active: false`) supaya saringan agen percakapan lama
+ * tetap bisa menampilkan namanya. Tanpa email. Yang bisa DITUGASKAN hanya `active: true`.
+ */
+export const inboxAgentSchema = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  role: z.enum(['owner', 'admin', 'supervisor', 'cs', 'teknisi']),
+  active: z.boolean(),
+  /** Percakapan `served` yang sedang dipegang (beban kerja; kapasitas maks. menyusul). */
+  openConversations: z.number().int().nonnegative(),
+});
+export type InboxAgent = z.infer<typeof inboxAgentSchema>;
+export const inboxAgentListResponseSchema = z.object({ agents: z.array(inboxAgentSchema) });
+export type InboxAgentListResponse = z.infer<typeof inboxAgentListResponseSchema>;
 
 export const conversationListResponseSchema = z.object({
   conversations: z.array(conversationSchema),
@@ -399,6 +488,14 @@ export const inboxStreamEventSchema = z.discriminatedUnion('type', [
     messageId: z.uuid(),
     direction: messageDirectionSchema,
     createdAt: isoDateTimeSchema,
+  }),
+  /**
+   * Pengguna ini TIDAK LAGI boleh melihat percakapan (mis. Teknisi yang percakapannya dialihkan):
+   * web menutup panel & membuang cache-nya. Hanya ID.
+   */
+  z.object({
+    type: z.literal('conversation.removed'),
+    conversationId: z.uuid(),
   }),
   z.object({
     type: z.literal('message.status'),

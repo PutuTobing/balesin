@@ -30,6 +30,11 @@ export const inboxBusEventSchema = z.strictObject({
   conversationId: z.uuid(),
   /** Wajib untuk `message.*`. */
   messageId: z.uuid().optional(),
+  /**
+   * `conversation.updated` karena dialihkan/dikembalikan: agen sebelumnya. Hub mengirim
+   * `conversation.removed` kepadanya bila ia tidak lagi boleh melihat percakapan itu.
+   */
+  previousAssigneeUserId: z.uuid().optional(),
 });
 export type InboxBusEvent = z.infer<typeof inboxBusEventSchema>;
 export type InboxBusEventInput = Omit<InboxBusEvent, 'v'>;
@@ -44,7 +49,7 @@ export function dedupeInboxEvents(events: readonly InboxBusEventInput[]): InboxB
   const seen = new Set<string>();
   const unique: InboxBusEventInput[] = [];
   for (const event of events) {
-    const key = `${event.type}|${event.organizationId}|${event.conversationId}|${event.messageId ?? ''}`;
+    const key = `${event.type}|${event.organizationId}|${event.conversationId}|${event.messageId ?? ''}|${event.previousAssigneeUserId ?? ''}`;
     if (seen.has(key)) continue;
     seen.add(key);
     unique.push(event);

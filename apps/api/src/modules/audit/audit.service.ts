@@ -89,6 +89,10 @@ const SECURITY_EVENT_CONDITIONS: Readonly<Record<SecurityEventKind, SQL>> = {
   member_joined: sql`${auditLogs.action} = ${AUDIT_ACTIONS.invitationAccepted}`,
   password_reset_burst: sql`${auditLogs.action} = ${AUDIT_ACTIONS.passwordResetBurst}`,
   webhook_signature_failed: sql`${auditLogs.action} = ${AUDIT_ACTIONS.channelWebhookSignatureRejected}`,
+  sending_paused: sql`${auditLogs.action} = ${AUDIT_ACTIONS.sendingPaused}`,
+  sending_limit_reached: sql`${auditLogs.action} = ${AUDIT_ACTIONS.sendingLimitReached}`,
+  // Juga dilanjutkan setelah rem darurat (perubahan rem pengiriman oleh siapa pun tercatat).
+  sending_limits_changed: sql`${auditLogs.action} in (${AUDIT_ACTIONS.sendingLimitsUpdated}, ${AUDIT_ACTIONS.sendingResumed})`,
 };
 
 /** Baris `account_locked` maksimal di `events` ringkasan keamanan (review akhir R2). */
@@ -122,6 +126,11 @@ const WARNING_WHEN: Partial<
   business_profile_changed: {
     sql: OWNERS_NOTIFIED,
     test: (metadata) => metadata.ownersNotified === true,
+  },
+  // Batas kirim diubah oleh SELAIN Owner → peringatan (rem yang melindungi nomor).
+  sending_limits_changed: {
+    sql: sql`(${auditLogs.metadata} ->> 'actorRole' is not null and ${auditLogs.metadata} ->> 'actorRole' <> 'owner')`,
+    test: (metadata) => typeof metadata.actorRole === 'string' && metadata.actorRole !== 'owner',
   },
   account_locked: {
     sql: sql`coalesce(${auditLogs.metadata} ->> 'scope', 'account') in ('account', 'device', 'two_factor')`,
@@ -183,6 +192,13 @@ function kindOf(row: AuditRow): SecurityEventKind | undefined {
       return 'password_reset_burst';
     case AUDIT_ACTIONS.channelWebhookSignatureRejected:
       return 'webhook_signature_failed';
+    case AUDIT_ACTIONS.sendingPaused:
+      return 'sending_paused';
+    case AUDIT_ACTIONS.sendingLimitReached:
+      return 'sending_limit_reached';
+    case AUDIT_ACTIONS.sendingLimitsUpdated:
+    case AUDIT_ACTIONS.sendingResumed:
+      return 'sending_limits_changed';
     default:
       return undefined;
   }
@@ -202,6 +218,15 @@ const DETAIL_KEYS: Readonly<Record<SecurityEventKind, readonly string[]>> = {
   business_profile_changed: ['name', 'phoneNumberId', 'changedFields', 'actorRole'],
   member_joined: ['role', 'issuerRole'],
   password_reset_burst: ['accounts', 'windowMinutes'],
+  sending_paused: ['reason', 'actorRole'],
+  sending_limit_reached: ['scope', 'limit', 'sent'],
+  sending_limits_changed: [
+    'change',
+    'dailyPerUser',
+    'dailyPerOrganization',
+    'perConversationPerMinute',
+    'actorRole',
+  ],
   // Sumber berbeda + awalan IP terbanyak: membedakan "App Secret salah" (banyak IP Meta) dari orang
   // dalam yang tahu ID channel (satu IP) — review webhook R1.
   webhook_signature_failed: [

@@ -40,6 +40,7 @@ describe('migrasi dari nol', () => {
       'audit_logs',
       'channels',
       'contacts',
+      'conversation_events',
       'conversations',
       'email_settings',
       'email_settings_change_notices',

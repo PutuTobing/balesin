@@ -274,10 +274,20 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
       let delivered = 0;
       for (const client of group) {
         const scope = permissionScope(client.role, 'inbox.view');
-        if (scope === null) continue;
         const holders = payload.assigneeUserId ? [payload.assigneeUserId] : [];
-        if (!isWithinScope(scope, client.userId, { holderUserIds: holders })) continue;
-        if (send(client, payload.message)) delivered += 1;
+        if (scope !== null && isWithinScope(scope, client.userId, { holderUserIds: holders })) {
+          if (send(client, payload.message)) delivered += 1;
+          continue;
+        }
+        // Agen sebelumnya yang kehilangan akses (mis. Teknisi yang percakapannya dialihkan): hanya
+        // ID, supaya web menutup panel dan membuang cache-nya.
+        if (
+          event.type === 'conversation.updated' &&
+          event.previousAssigneeUserId !== undefined &&
+          client.userId === event.previousAssigneeUserId
+        ) {
+          send(client, { type: 'conversation.removed', conversationId: event.conversationId });
+        }
       }
       return delivered;
     },

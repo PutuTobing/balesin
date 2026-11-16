@@ -1191,3 +1191,43 @@ describe('template email', () => {
     );
   });
 });
+
+describe('pemberitahuan rem pengiriman ke Owner (review ruang chat S2)', () => {
+  const at = new Date('2026-11-17T03:00:00Z');
+  const brand = (): EmailBrand => ({
+    productName: 'Balesin Uji',
+    organizationName: null,
+    logoSrc: null,
+    primaryColor: null,
+  });
+  it('rem darurat ditarik: pelaku + alasan (di-escape), langkah tindak lanjut', () => {
+    const mail = renderAdminAccountNoticeEmail({
+      brand: brand(),
+      timeZone: 'Asia/Jakarta',
+      recipientName: 'Rina',
+      event: 'sending_paused',
+      subject: { name: 'Adi', email: 'adi@contoh.test', role: 'admin' },
+      sending: { reason: 'Akun <CS> dibobol' },
+      occurredAt: at,
+    });
+    expect(mail.subject).toContain('Rem darurat pengiriman ditarik');
+    expect(mail.text).toContain('Akun <CS> dibobol');
+    expect(mail.html).not.toContain('<CS>');
+    expect(mail.text).toContain('Pengaturan → Batas kirim');
+  });
+
+  it('batas harian organisasi tercapai: menyebut batas dan pengirim terakhir', () => {
+    const mail = renderAdminAccountNoticeEmail({
+      brand: brand(),
+      timeZone: 'Asia/Jakarta',
+      recipientName: 'Rina',
+      event: 'sending_limit_reached',
+      subject: { name: 'Sinta', email: 'sinta@contoh.test', role: 'cs' },
+      sending: { scope: 'organization', limit: 5000 },
+      occurredAt: at,
+    });
+    expect(mail.subject).toContain('Batas kirim harian organisasi');
+    expect(mail.text).toContain('5.000 pesan');
+    expect(mail.text).toContain('Sinta');
+  });
+});

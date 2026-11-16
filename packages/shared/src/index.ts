@@ -24,6 +24,7 @@ export * from './password';
 export * from './password-reset';
 export * from './permissions';
 export * from './roles';
+export * from './sending-limits';
 export * from './setup';
 export * from './team';
 export * from './two-factor';

@@ -54,6 +54,15 @@ export const AUDIT_ACTIONS = {
    * dibatasi 1×/menit per pengguna, lihat `csrf-rejection.ts`).
    */
   csrfRejected: 'auth.csrf.rejected',
+  // ── Rem pengiriman (review ruang chat S2) ─────────────────────────────────
+  /** Batas kirim harian / per percakapan diubah. */
+  sendingLimitsUpdated: 'settings.sending_limits.updated',
+  /** Rem darurat ditarik: semua pengiriman keluar dihentikan. */
+  sendingPaused: 'sending.paused',
+  /** Pengiriman dilanjutkan setelah rem darurat. */
+  sendingResumed: 'sending.resumed',
+  /** Batas kirim harian (pengguna/organisasi) tercapai — dicatat sekali per 24 jam per cakupan. */
+  sendingLimitReached: 'sending.limit_reached',
   // ── Manajemen pengguna & sesi (Fase 1 butir 6) ────────────────────────────
   userRoleChanged: 'user.role_changed',
   userDisabled: 'user.disabled',
@@ -140,6 +149,10 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'auth.email.verified': 'Email diverifikasi',
   'auth.email.verification_failed': 'Verifikasi email gagal',
   'auth.csrf.rejected': 'Permintaan ditolak: token keamanan/asal tidak sah',
+  'settings.sending_limits.updated': 'Batas kirim diubah',
+  'sending.paused': 'Rem darurat pengiriman ditarik',
+  'sending.resumed': 'Pengiriman dilanjutkan',
+  'sending.limit_reached': 'Batas kirim harian tercapai',
   'auth.access.denied': 'Akses ditolak',
   'user.role_changed': 'Peran pengguna diubah',
   'user.disabled': 'Pengguna dinonaktifkan',
@@ -346,6 +359,9 @@ export const SECURITY_EVENT_KINDS = [
   'member_joined',
   'password_reset_burst',
   'webhook_signature_failed',
+  'sending_paused',
+  'sending_limit_reached',
+  'sending_limits_changed',
 ] as const;
 export const securityEventKindSchema = z.enum(SECURITY_EVENT_KINDS);
 export type SecurityEventKind = z.infer<typeof securityEventKindSchema>;
@@ -368,6 +384,9 @@ export const SECURITY_EVENT_SEVERITY: Readonly<Record<SecurityEventKind, 'warnin
   member_joined: 'warning',
   password_reset_burst: 'warning',
   webhook_signature_failed: 'warning',
+  sending_paused: 'warning',
+  sending_limit_reached: 'warning',
+  sending_limits_changed: 'info',
 };
 
 export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> = {
@@ -383,6 +402,9 @@ export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> 
   member_joined: 'Anggota baru bergabung lewat undangan',
   password_reset_burst: 'Banyak permintaan atur ulang password',
   webhook_signature_failed: 'Webhook WhatsApp ditolak berulang',
+  sending_paused: 'Rem darurat pengiriman ditarik',
+  sending_limit_reached: 'Batas kirim harian tercapai',
+  sending_limits_changed: 'Batas kirim diubah',
 };
 
 export const securityEventSchema = z.object({

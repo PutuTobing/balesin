@@ -25,6 +25,7 @@ import {
   mediaFiles,
   messages,
   newId,
+  organizations,
   users,
   webhookEvents,
   type Database,
@@ -423,5 +424,46 @@ describe('kirim pesan keluar', () => {
         { db, logger: logs.logger, meta: stubMeta().client, secretBox: box },
       ),
     ).rejects.toBeInstanceOf(UnrecoverableError);
+  });
+});
+
+describe('review ruang chat R2/R3/S2', () => {
+  it('R3: klaim tanpa wamid (percobaan sebelumnya terhenti) → delivery_unknown, Meta tidak dipanggil lagi', async () => {
+    const message = await outbound({ sendClaimedAt: new Date(Date.now() - 60_000) });
+    const meta = stubMeta();
+    expect(await run(message.id, meta.client)).toMatchObject({
+      status: 'failed',
+      reason: 'delivery_unknown',
+    });
+    expect(meta.sent).toEqual([]);
+  });
+
+  it('R3: dua job bersamaan untuk pesan yang sama → Meta dipanggil SEKALI', async () => {
+    const message = await outbound();
+    const meta = stubMeta();
+    await Promise.all([run(message.id, meta.client), run(message.id, meta.client)]);
+    expect(meta.sent).toHaveLength(1);
+  });
+
+  it('S2: rem darurat ditarik → sending_paused tanpa memanggil Meta', async () => {
+    await db
+      .update(organizations)
+      .set({ sendingPausedAt: new Date() })
+      .where(eq(organizations.id, organizationId));
+    const message = await outbound();
+    const meta = stubMeta();
+    expect(await run(message.id, meta.client)).toMatchObject({ reason: 'sending_paused' });
+    expect(meta.sent).toEqual([]);
+  });
+
+  it('R2: yang diperiksa saat kirim ulang = penekan "Kirim ulang" (lastSentBy), bukan penulis', async () => {
+    const other = (await insertUser(db, organizationId, { role: 'cs' })).id;
+    await db.update(users).set({ disabledAt: new Date() }).where(eq(users.id, agentId));
+    const message = await outbound({ lastSentByUserId: other });
+    expect((await run(message.id, stubMeta().client)).status).toBe('sent');
+    const disabledResender = await outbound({ lastSentByUserId: agentId, senderUserId: other });
+    expect(await run(disabledResender.id, stubMeta().client)).toMatchObject({
+      reason: 'sender_not_allowed',
+    });
   });
 });

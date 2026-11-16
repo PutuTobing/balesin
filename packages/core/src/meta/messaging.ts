@@ -129,13 +129,15 @@ export async function uploadWhatsAppMedia(
   client: MetaGraphClient,
   credentials: MetaCredentials,
   phoneNumberId: string,
-  file: { bytes: Uint8Array; mimeType: string; filename: string },
+  /** `bytes` (memori) atau `blob` berbasis berkas (`fs.openAsBlob`, dialirkan — review S1). */
+  file: { bytes?: Uint8Array; blob?: Blob; mimeType: string; filename: string },
   options: { signal?: AbortSignal } = {},
 ): Promise<{ id: string }> {
   const form = new FormData();
   form.set('messaging_product', 'whatsapp');
   form.set('type', file.mimeType);
-  form.set('file', new Blob([file.bytes], { type: file.mimeType }), file.filename);
+  const blob = file.blob ?? new Blob([file.bytes ?? new Uint8Array()], { type: file.mimeType });
+  form.set('file', blob, file.filename);
   return client.request(credentials, {
     operation: 'media.upload',
     method: 'POST',

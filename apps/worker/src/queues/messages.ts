@@ -24,6 +24,7 @@ import {
   conversations,
   mediaFiles,
   messages,
+  organizations,
   users,
   webhookEvents,
   type Database,
@@ -118,6 +119,13 @@ async function prepare(
   now: Date,
 ): Promise<{ prepared: Prepared } | { failure: OutboundFailureReason }> {
   const org = message.organizationId;
+  // Rem darurat (review ruang chat S2): antrean berhenti seketika, pesan gagal dengan alasan yang
+  // bisa dikirim ulang setelah pengiriman dilanjutkan.
+  const [organization] = await tx
+    .select({ pausedAt: organizations.sendingPausedAt })
+    .from(organizations)
+    .where(eq(organizations.id, org));
+  if (organization?.pausedAt) return { failure: 'sending_paused' };
   const [channel] = await tx
     .select()
     .from(channels)
@@ -134,21 +142,19 @@ async function prepare(
   if (!conversation) return { failure: 'channel_unavailable' };
 
   // Pengirim masih aktif dan masih boleh membalas percakapan ini (cakupan peran SAAT INI).
-  if (message.senderUserId) {
+  // Yang memicu pengiriman ini: penekan "Kirim ulang" terakhir, atau penulis asli (review R2).
+  const actorUserId = message.lastSentByUserId ?? message.senderUserId;
+  if (actorUserId) {
     const [sender] = await tx
       .select({ role: users.role })
       .from(users)
       .where(
-        and(
-          eq(users.organizationId, org),
-          eq(users.id, message.senderUserId),
-          isNull(users.disabledAt),
-        ),
+        and(eq(users.organizationId, org), eq(users.id, actorUserId), isNull(users.disabledAt)),
       )
       .limit(1);
     const scope = sender ? permissionScope(sender.role, 'inbox.reply') : null;
     const holders = conversation.assigneeUserId ? [conversation.assigneeUserId] : [];
-    if (!scope || !isWithinScope(scope, message.senderUserId, { holderUserIds: holders })) {
+    if (!scope || !isWithinScope(scope, actorUserId, { holderUserIds: holders })) {
       return { failure: 'sender_not_allowed' };
     }
   }
@@ -360,6 +366,33 @@ export async function processSendMessageJob(
   }
 
   const { prepared } = check;
+
+  // Klaim atomik SEBELUM memanggil Meta (review ruang chat R3). Klaim yang sudah ada tanpa wamid =
+  // percobaan sebelumnya berhenti di tengah (proses mati / job tersendat) — Meta mungkin sudah
+  // menerima, jadi TIDAK dikirim lagi: `delivery_unknown`, pengguna yang memutuskan.
+  const [claimed] = await db
+    .update(messages)
+    .set({ sendClaimedAt: now })
+    .where(
+      and(
+        eq(messages.organizationId, organizationId),
+        eq(messages.id, messageId),
+        eq(messages.status, 'pending'),
+        isNull(messages.wamid),
+        isNull(messages.sendClaimedAt),
+      ),
+    )
+    .returning({ id: messages.id });
+  if (!claimed) {
+    if (await markFailed(db, message, 'delivery_unknown', null, new Date())) {
+      await publisher.publish(events);
+    }
+    logger.warn(
+      { messageId },
+      'Pesan keluar sudah diklaim percobaan lain tanpa hasil — tidak dikirim ulang',
+    );
+    return { status: 'failed', reason: 'delivery_unknown', errorCode: null };
+  }
   let wamid: string;
   try {
     ({ wamid } = await sendWhatsAppMessage(
@@ -382,6 +415,11 @@ export async function processSendMessageJob(
     ) {
       // Meta belum memproses: aman diulang (BullMQ, jeda eksponensial). Pesan baru: kode saja.
       logger.warn({ messageId, kind: error.kind, metaCode: error.metaCode }, 'Kirim pesan diulang');
+      // Meta jelas belum memproses → klaim dilepas supaya percobaan berikutnya boleh mengirim.
+      await db
+        .update(messages)
+        .set({ sendClaimedAt: null })
+        .where(and(eq(messages.organizationId, organizationId), eq(messages.id, messageId)));
       throw new Error(`Kirim pesan ditunda (${error.kind})`, { cause: error });
     }
     const reason: OutboundFailureReason =

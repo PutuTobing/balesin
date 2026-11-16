@@ -1,6 +1,6 @@
 /**
  * Review keamanan Fase 2 butir 6 — ruang chat (docs/security-reviews/2026-11-17-fase2-ruang-chat.md).
- * Penjaga regresi (`it`) + temuan yang dikunci `it.fails` (harus menjadi `it` setelah diperbaiki).
+ * Penjaga regresi + temuan S1 yang sudah diperbaiki (dulu dikunci `it.fails`).
  * Postgres + Redis sungguhan, server Meta TIRUAN lokal — tidak pernah memanggil Meta sungguhan.
  */
 import { randomUUID } from 'node:crypto';
@@ -210,7 +210,7 @@ describe('S1 — unduhan media masuk tanpa single-flight (memori & jatah Meta)',
   // memori. Permintaan bersamaan untuk media yang sama tidak digabung → N unduhan, N baris
   // media_files, N berkas di disk. Akun CS curian + satu dokumen 100 MB yang dikirim penyerang ke
   // nomor bisnis = puluhan × 100 MB di memori proses api (OOM), sebelum batas laju 120/menit menahan.
-  it.fails('dua permintaan bersamaan untuk media yang sama → satu unduhan dari Meta', async () => {
+  it('dua permintaan bersamaan untuk media yang sama → satu unduhan dari Meta', async () => {
     fake.media.set('8880002', { bytes: JPEG, mimeType: 'image/jpeg' });
     await receive(mediaMessageNotification('image', { mediaId: '8880002' }));
     const [incoming] = await harness.db.select().from(messages).where(eq(messages.type, 'image'));
@@ -223,6 +223,6 @@ describe('S1 — unduhan media masuk tanpa single-flight (memori & jatah Meta)',
       .select({ id: mediaFiles.id })
       .from(mediaFiles)
       .where(eq(mediaFiles.source, 'inbound'));
-    expect(files).toHaveLength(1); // saat ini 2–3 (satu per permintaan yang berbarengan)
+    expect(files).toHaveLength(1);
   });
 });

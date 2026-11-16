@@ -53,6 +53,10 @@ export const conversations = pgTable(
     lastInboundAt: timestamptz('last_inbound_at'),
     windowExpiresAt: timestamptz('window_expires_at'),
     resolvedAt: timestamptz('resolved_at'),
+    /** Laporan: pertama kali diambil/ditugaskan ke agen (diisi sekali). */
+    firstAssignedAt: timestamptz('first_assigned_at'),
+    /** Laporan: pesan keluar pertama oleh agen (diisi sekali, saat pesan dikirim). */
+    firstResponseAt: timestamptz('first_response_at'),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },

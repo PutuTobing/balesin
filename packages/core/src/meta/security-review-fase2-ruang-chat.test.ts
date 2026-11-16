@@ -1,6 +1,6 @@
 /**
  * Review keamanan Fase 2 butir 6 — deteksi jenis berkas unggahan
- * (docs/security-reviews/2026-11-17-fase2-ruang-chat.md). `it.fails` = temuan yang belum diperbaiki.
+ * (docs/security-reviews/2026-11-17-fase2-ruang-chat.md). Temuan R1 sudah diperbaiki (dulu `it.fails`).
  */
 import { describe, expect, it } from 'vitest';
 
@@ -23,17 +23,17 @@ describe('R1 — dokumen Office hanya diperiksa tanda tangan wadahnya', () => {
   // ZIP apa pun bernama `.docx/.xlsx/.pptx` dan CFB apa pun bernama `.doc/.xls/.ppt` diterima, lalu
   // dikirim ke pelanggan dari nomor resmi perusahaan. Akun CS curian bisa mengirim arsip berisi
   // program (berkedok .docx) atau dokumen Office lama ber-makro VBA.
-  it.fails('ZIP bernama .docx tanpa [Content_Types].xml / word/ ditolak', () => {
+  it('ZIP bernama .docx tanpa [Content_Types].xml / word/ ditolak', () => {
     const zip = Buffer.concat([
       Buffer.from(ZIP_SIGNATURE),
       Buffer.alloc(26, 0),
       Buffer.from('payload/setup.exe'),
       Buffer.from('MZ\u0090\u0000'),
     ]);
-    expect(detectMedia(zip, 'tagihan.docx')).toBeNull(); // saat ini diterima sebagai Word
+    expect(detectMedia(zip, 'tagihan.docx')).toBeNull();
   });
 
-  it.fails('dokumen Office lama (CFB) yang memuat proyek makro VBA ditolak', () => {
+  it('dokumen Office lama (CFB) yang memuat proyek makro VBA ditolak', () => {
     const doc = Buffer.concat([
       Buffer.from(CFB_SIGNATURE),
       Buffer.alloc(504, 0),
@@ -41,6 +41,6 @@ describe('R1 — dokumen Office hanya diperiksa tanda tangan wadahnya', () => {
       utf16('_VBA_PROJECT'),
       utf16('Macros'),
     ]);
-    expect(detectMedia(doc, 'tagihan.doc')).toBeNull(); // saat ini diterima sebagai application/msword
+    expect(detectMedia(doc, 'tagihan.doc')).toBeNull();
   });
 });

@@ -38,6 +38,8 @@ export const ERROR_CODES = [
    * boleh dikirim). Web menampilkan penjelasan + ajakan memakai template.
    */
   'WINDOW_CLOSED',
+  /** Rem darurat pengiriman sedang ditarik Owner/Admin (Pengaturan → Batas kirim). */
+  'SENDING_PAUSED',
 ] as const;
 
 export const errorCodeSchema = z.enum(ERROR_CODES);
@@ -65,6 +67,7 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
   META_REQUEST_FAILED: 502,
   SERVICE_UNAVAILABLE: 503,
   WINDOW_CLOSED: 409,
+  SENDING_PAUSED: 423,
 };
 
 /** Pesan bawaan (dipakai server bila tidak ada pesan khusus, dan web sebagai cadangan). */
@@ -98,6 +101,8 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   INTERNAL_ERROR: 'Terjadi kesalahan di server. Coba lagi beberapa saat lagi.',
   META_REQUEST_FAILED: 'Permintaan ke Meta gagal. Coba lagi beberapa saat lagi.',
   SERVICE_UNAVAILABLE: 'Layanan sedang tidak tersedia. Coba lagi beberapa saat lagi.',
+  SENDING_PAUSED:
+    'Pengiriman pesan sedang dihentikan sementara oleh Owner/Admin (rem darurat). Hubungi mereka untuk melanjutkan.',
   WINDOW_CLOSED:
     'Sudah lebih dari 24 jam sejak pesan terakhir pelanggan. Pesan biasa tidak bisa dikirim — tunggu pelanggan membalas, atau kirim template (segera hadir).',
 };

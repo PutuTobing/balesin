@@ -64,8 +64,12 @@ import { auditRoutes } from './modules/audit/audit.routes';
 import { channelsRoutes } from './modules/channels/channels.routes';
 import { createChannelsService } from './modules/channels/channels.service';
 import { createAuditService } from './modules/audit/audit.service';
+import { assignmentRoutes } from './modules/inbox/assignment.routes';
+import { createAssignmentService } from './modules/inbox/assignment.service';
 import { inboxRoutes } from './modules/inbox/inbox.routes';
 import { createMediaStore } from './modules/messages/media-store';
+import { sendingLimitsRoutes } from './modules/sending-limits/sending-limits.routes';
+import { createSendingLimitsService } from './modules/sending-limits/sending-limits.service';
 import { outboundRoutes } from './modules/messages/outbound.routes';
 import { createOutboundService, type OutboundService } from './modules/messages/outbound.service';
 import { createInboxStreamHub, type InboxStreamHub } from './modules/realtime/inbox-stream';
@@ -379,8 +383,17 @@ export async function buildApp(deps: AppDeps) {
   app.decorate('inboxStream', inboxStream);
   app.addHook('onClose', () => inboxStream.close());
 
+  // Rem pengiriman: batas harian/per percakapan + rem darurat (SECURITY §5).
+  const sendingLimits = createSendingLimitsService({
+    db,
+    limiter,
+    notifier: deps.notifier,
+    twoFactor,
+    logger: deps.logger,
+  });
   // Ruang chat: kirim pesan (antrean worker), unggah/unduh media (disk `MEDIA_DIR`).
   const outbound = createOutboundService({
+    sendingLimits,
     db,
     store: createMediaStore(config.mediaDir),
     meta,
@@ -471,6 +484,17 @@ export async function buildApp(deps: AppDeps) {
   await app.register(inboxRoutes, { db, limiter, publisher: inboxEvents });
   await app.register(inboxStreamRoutes, { hub: inboxStream, appOrigin: config.appOrigin });
   await app.register(outboundRoutes, { outbound, limiter });
+  await app.register(sendingLimitsRoutes, { sendingLimits, cookieSecure: config.cookieSecure });
+  await app.register(assignmentRoutes, {
+    db,
+    limiter,
+    assignment: createAssignmentService({
+      db,
+      publisher: inboxEvents,
+      accessDenied,
+      logger: deps.logger,
+    }),
+  });
   // Publik: penerima webhook Meta (keaslian dari tanda tangan App Secret, bukan sesi).
   await app.register(whatsAppWebhookRoutes, { guard: webhookGuard, webhooks: whatsAppWebhooks });
 

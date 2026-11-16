@@ -132,6 +132,16 @@ export const messages = pgTable(
     idempotencyKey: text('idempotency_key'),
     /** Berapa kali pesan keluar sudah dicoba kirim (termasuk kirim ulang). */
     sendAttempts: integer('send_attempts').notNull().default(0),
+    /**
+     * Klaim atomik worker SEBELUM memanggil Meta (review ruang chat R3). Job yang menemukan klaim
+     * tanpa wamid tidak mengirim lagi (→ `delivery_unknown`). Dikosongkan saat kirim ulang.
+     */
+    sendClaimedAt: timestamptz('send_claimed_at'),
+    /**
+     * Pengguna yang terakhir menekan "Kirim ulang" (review ruang chat R2). `sender_user_id` tetap
+     * PENULIS ASLI (pemilik kunci idempotensi).
+     */
+    lastSentByUserId: uuid('last_sent_by_user_id'),
     /** Salinan lokal media (unggahan untuk pesan keluar / cache unduhan pesan masuk). */
     mediaFileId: uuid('media_file_id'),
     occurredAt: timestamptz('occurred_at').notNull(),
@@ -179,6 +189,18 @@ export const messages = pgTable(
       table.id,
     ),
     index('messages_organization_id_contact_id_idx').on(table.organizationId, table.contactId),
+    // Batas kirim harian (24 jam bergulir) per organisasi & per pengirim.
+    index('messages_outbound_created_at_idx')
+      .on(table.organizationId, table.createdAt)
+      .where(sql`${table.direction} = 'outbound'`),
+    index('messages_outbound_sender_created_at_idx')
+      .on(table.organizationId, table.senderUserId, table.createdAt)
+      .where(sql`${table.direction} = 'outbound'`),
+    foreignKey({
+      name: 'messages_organization_id_last_sent_by_user_id_fk',
+      columns: [table.organizationId, table.lastSentByUserId],
+      foreignColumns: [users.organizationId, users.id],
+    }).onDelete('restrict'),
     check(
       'messages_inbound_has_no_status',
       sql`${table.direction} <> 'inbound' or (${table.status} is null and ${table.senderKind} = 'customer')`,

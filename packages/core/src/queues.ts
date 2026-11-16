@@ -271,6 +271,10 @@ export const SECURITY_NOTICE_ADMIN_EVENTS = [
   'member_joined',
   // Atur ulang password untuk banyak akun berbeda dalam satu jam: ke semua Owner aktif (R5).
   'password_reset_burst',
+  // Rem darurat pengiriman ditarik (subjek = pelaku) / batas kirim harian tercapai (subjek = pengirim
+  // yang mencapai batas): ke semua Owner aktif (review ruang chat S2). Rincian dari baris audit.
+  'sending_paused',
+  'sending_limit_reached',
 ] as const;
 export type SecurityNoticeAdminEvent = (typeof SECURITY_NOTICE_ADMIN_EVENTS)[number];
 

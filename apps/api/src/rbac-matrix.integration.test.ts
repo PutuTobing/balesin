@@ -128,10 +128,23 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'POST /api/v1/settings/channels/:channelId/webhook/verify-token': 'channels.manage',
   'GET /api/v1/settings/channels/:channelId/business-profile': 'channels.manage',
   'PUT /api/v1/settings/channels/:channelId/business-profile': 'channels.manage',
+  // rem pengiriman (SECURITY §5): atur & tarik rem = sending.limits.manage; lanjutkan = sending.resume
+  'GET /api/v1/settings/sending-limits': 'sending.limits.manage',
+  'PUT /api/v1/settings/sending-limits': 'sending.limits.manage',
+  'POST /api/v1/settings/sending-limits/pause': 'sending.limits.manage',
+  'POST /api/v1/settings/sending-limits/resume': 'sending.resume',
   // inbox (baca): percakapan = inbox.view, kontak = contacts.view (Teknisi: hanya yang di-assign)
   'GET /api/v1/conversations': 'inbox.view',
   'GET /api/v1/conversations/counts': 'inbox.view',
   'POST /api/v1/conversations/:conversationId/read': 'inbox.view',
+  // penanganan: ambil/tugaskan = inbox.assign; kembalikan/selesai/buka lagi = inbox.reply (cakupan)
+  'POST /api/v1/conversations/:conversationId/claim': 'inbox.assign',
+  'POST /api/v1/conversations/:conversationId/assign': 'inbox.assign',
+  'POST /api/v1/conversations/:conversationId/unassign': 'inbox.reply',
+  'POST /api/v1/conversations/:conversationId/resolve': 'inbox.reply',
+  'POST /api/v1/conversations/:conversationId/reopen': 'inbox.reply',
+  'GET /api/v1/conversations/:conversationId/events': 'inbox.view',
+  'GET /api/v1/inbox/agents': 'inbox.view',
   // WebSocket inbox: sesi + inbox.view (Origin & batas koneksi dicek sebelum upgrade)
   'GET /api/v1/inbox/stream': 'inbox.view',
   'GET /api/v1/conversations/:conversationId': 'inbox.view',

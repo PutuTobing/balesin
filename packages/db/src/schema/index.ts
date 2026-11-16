@@ -7,6 +7,7 @@ export * from './account-tokens';
 export * from './audit-logs';
 export * from './channels';
 export * from './contacts';
+export * from './conversation-events';
 export * from './conversations';
 export * from './email-settings';
 export * from './email-settings-change-notices';

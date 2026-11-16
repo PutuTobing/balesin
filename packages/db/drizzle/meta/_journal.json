@@ -106,6 +106,20 @@
       "when": 1794807299087,
       "tag": "0014_ruang_chat_media",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1794817059496,
+      "tag": "0015_penanganan_percakapan",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1794817809369,
+      "tag": "0016_rem_pengiriman",
+      "breakpoints": true
     }
   ]
 }
