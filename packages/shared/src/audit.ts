@@ -49,6 +49,11 @@ export const AUDIT_ACTIONS = {
   emailVerificationFailed: 'auth.email.verification_failed',
   /** Permintaan ditolak 403 karena peran tidak punya izinnya (dibatasi, lihat `access-denied.ts`). */
   accessDenied: 'auth.access.denied',
+  /**
+   * Permintaan BERSESI SAH ditolak karena token CSRF salah / `Origin` asing (review akhir Fase 1 R1;
+   * dibatasi 1×/menit per pengguna, lihat `csrf-rejection.ts`).
+   */
+  csrfRejected: 'auth.csrf.rejected',
   // ── Manajemen pengguna & sesi (Fase 1 butir 6) ────────────────────────────
   userRoleChanged: 'user.role_changed',
   userDisabled: 'user.disabled',
@@ -134,6 +139,7 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'auth.email.verification_sent': 'Tautan verifikasi email dikirim',
   'auth.email.verified': 'Email diverifikasi',
   'auth.email.verification_failed': 'Verifikasi email gagal',
+  'auth.csrf.rejected': 'Permintaan ditolak: token keamanan/asal tidak sah',
   'auth.access.denied': 'Akses ditolak',
   'user.role_changed': 'Peran pengguna diubah',
   'user.disabled': 'Pengguna dinonaktifkan',

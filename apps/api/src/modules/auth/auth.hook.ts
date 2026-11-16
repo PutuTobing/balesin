@@ -1,4 +1,4 @@
-import { AppError } from '@balesin/core';
+import { AppError, sha256Hex } from '@balesin/core';
 import { CSRF_HEADER_NAME, hasPermission } from '@balesin/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
@@ -7,6 +7,7 @@ import { clearedSessionCookie, readSessionToken } from '../../http/cookies';
 import { allowsTwoFactorEnrollment } from '../../http/route-access';
 import { fetchSiteOf, type AccessDeniedRecorder } from './access-denied';
 import type { CsrfProtection } from './csrf';
+import type { CsrfRejectionRecorder, CsrfRejectionReason } from './csrf-rejection';
 import type { AuthContext, SessionService } from './session.service';
 
 declare module 'fastify' {
@@ -20,6 +21,8 @@ declare module 'fastify' {
   interface FastifyInstance {
     /** Pencatat audit penolakan izin (dipakai hook auth dan `permissionGrant`). */
     accessDenied: AccessDeniedRecorder;
+    /** Pencatat audit penolakan CSRF/Origin bersesi sah (hook auth, WebSocket inbox). */
+    csrfRejections: CsrfRejectionRecorder;
   }
 }
 
@@ -31,6 +34,7 @@ export interface AuthHookOptions {
   sessions: SessionService;
   csrf: CsrfProtection;
   accessDenied: AccessDeniedRecorder;
+  csrfRejections: CsrfRejectionRecorder;
 }
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -63,10 +67,29 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  * memutuskan "boleh masuk ke rute ini atau tidak".
  */
 export function registerAuthHook(app: FastifyInstance, options: AuthHookOptions): void {
-  const { appOrigin, cookieSecure, sessions, csrf, accessDenied } = options;
+  const { appOrigin, cookieSecure, sessions, csrf, accessDenied, csrfRejections } = options;
 
   app.decorateRequest('auth', null);
   app.decorate('accessDenied', accessDenied);
+  app.decorate('csrfRejections', csrfRejections);
+
+  /** Audit penolakan CSRF/Origin bila permintaan membawa sesi sah (review akhir Fase 1 R1). */
+  const recordRejection = async (
+    request: FastifyRequest,
+    reason: CsrfRejectionReason,
+    session: Parameters<CsrfRejectionRecorder['record']>[0]['session'] | undefined,
+  ) => {
+    if (!session) return;
+    await csrfRejections.record({
+      session,
+      reason,
+      method: request.method,
+      route: request.routeOptions.url ?? '',
+      origin: request.headers.origin,
+      fetchSite: fetchSiteOf(request),
+      client: clientInfo(request),
+    });
+  };
 
   app.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
     // Preflight CORS sudah ditangani plugin keamanan dan tidak pernah membawa kredensial.
@@ -75,6 +98,12 @@ export function registerAuthHook(app: FastifyInstance, options: AuthHookOptions)
     const unsafe = !SAFE_METHODS.has(request.method);
     const { origin } = request.headers;
     if (unsafe && origin !== undefined && origin !== appOrigin) {
+      // Sesi dibaca TANPA efek samping (tidak memperpanjang sesi korban) hanya untuk audit.
+      const cookieToken = readSessionToken(request.headers.cookie, cookieSecure);
+      if (cookieToken) {
+        const session = await sessions.peek(sha256Hex(cookieToken)).catch(() => undefined);
+        await recordRejection(request, 'origin', session);
+      }
       throw new AppError('FORBIDDEN', {
         message: 'Permintaan dari asal ini tidak diizinkan. Buka aplikasi dari alamat resminya.',
       });
@@ -107,6 +136,7 @@ export function registerAuthHook(app: FastifyInstance, options: AuthHookOptions)
         origin !== appOrigin ||
         !csrf.verify(auth.sessionTokenHash, request.headers[CSRF_HEADER_NAME])
       ) {
+        await recordRejection(request, origin === appOrigin ? 'token' : 'origin', auth);
         throw new AppError('CSRF_INVALID');
       }
     } else if (request.routeOptions.config.requireCsrf === true) {
@@ -118,6 +148,10 @@ export function registerAuthHook(app: FastifyInstance, options: AuthHookOptions)
         (typeof fetchSite === 'string' && fetchSite !== 'same-origin') ||
         !csrf.verify(auth.sessionTokenHash, request.headers[CSRF_HEADER_NAME])
       ) {
+        const foreign =
+          (origin !== undefined && origin !== appOrigin) ||
+          (typeof fetchSite === 'string' && fetchSite !== 'same-origin');
+        await recordRejection(request, foreign ? 'origin' : 'token', auth);
         throw new AppError('CSRF_INVALID');
       }
     }

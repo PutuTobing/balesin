@@ -7,6 +7,9 @@ import {
   normalizeStatusUpdate,
   normalizeWebhookFailure,
   webhookEventJobPayloadSchema,
+  NOOP_INBOX_EVENT_PUBLISHER,
+  type InboxBusEventInput,
+  type InboxEventPublisher,
   type Logger,
   type NormalizedInboundMessage,
   type NormalizedStatusUpdate,
@@ -66,6 +69,11 @@ export interface InboundEventContext {
   /** Transaksi yang mengunci baris kejadian. */
   tx: DbExecutor;
   logger: Logger;
+  /**
+   * Mencatat event real-time (ID saja). Diterbitkan ke Redis SETELAH transaksi commit — event dari
+   * transaksi yang batal tidak pernah terkirim.
+   */
+  emit(event: InboxBusEventInput): void;
 }
 
 export interface InboundEventHandlers {
@@ -100,6 +108,8 @@ export interface WebhookJobDeps {
   logger: Logger;
   handlers?: InboundEventHandlers;
   now?: () => Date;
+  /** Penerbit event inbox real-time (bawaan: tidak menerbitkan apa pun). */
+  publisher?: InboxEventPublisher;
 }
 
 /** `last_error` + alasan hasil job bila channel sudah nonaktif/dihapus saat diproses (R3). */
@@ -157,8 +167,9 @@ export async function processWebhookJob(
     eq(webhookEvents.id, eventId),
   );
 
+  const emitted: InboxBusEventInput[] = [];
   try {
-    return await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       const [event] = await tx.select().from(webhookEvents).where(where).limit(1).for('update');
       if (!event) return { status: 'skipped', reason: 'not_found' } as const;
       if (event.status !== 'pending') return { status: 'skipped', reason: 'already_done' } as const;
@@ -193,6 +204,7 @@ export async function processWebhookJob(
         receivedAt: event.receivedAt,
         tx,
         logger,
+        emit: (inboxEvent) => emitted.push(inboxEvent),
       });
       await tx
         .update(webhookEvents)
@@ -211,6 +223,9 @@ export async function processWebhookJob(
         ? ({ status: 'processed' } as const)
         : ({ status: 'skipped', reason: 'unhandled' } as const);
     });
+    // Sesudah commit. Tidak pernah melempar (real-time = usaha terbaik).
+    await (deps.publisher ?? NOOP_INBOX_EVENT_PUBLISHER).publish(emitted);
+    return result;
   } catch (error) {
     const permanent = error instanceof WebhookPayloadError;
     const maxAttempts = job.opts?.attempts ?? 1;

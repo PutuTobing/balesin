@@ -1,4 +1,4 @@
-# Kontrak API — Inbox: kontak, percakapan, pesan (Fase 2 butir 4)
+# Kontrak API — Inbox: kontak, percakapan, pesan, real-time (Fase 2 butir 4–5)
 
 Butir ini membangun **model data + pemrosesan otomatis** pesan masuk WhatsApp dan **API baca
 minimal** sebagai fondasi layar inbox. Belum ada aksi tulis (assign, balas, selesai, ubah kontak) —
@@ -77,6 +77,79 @@ tidak tepercaya — tampilkan sebagai teks**), `forwarded`, `sharedContactsCount
 ### Kursor
 Base64url dari `<waktu mikrodetik UTC>|<uuid>`; rusak/dibuat-buat → 400 `VALIDATION_ERROR`
 ("Kursor halaman tidak valid. Muat ulang daftar dari awal.").
+
+## Saringan, hitungan per tab, tandai dibaca (butir 5)
+
+Saringan bersama `GET /conversations` dan `GET /conversations/counts`:
+
+| Query | Nilai | Arti |
+|---|---|---|
+| `channelId` | UUID | channel tertentu |
+| `assignee` | UUID / `me` / `unassigned` | agen percakapan |
+| `window` | `open` / `expiring` / `expired` / `none` | jendela 24 jam: terbuka (sisa > 2 jam) / hampir habis (sisa ≤ 2 jam, `WINDOW_EXPIRING_SOON_MS`) / kedaluwarsa / belum pernah ada pesan masuk (label UI "Broadcast") — dihitung dari jam server saat query |
+| `unread` | `true` / `false` | punya pesan belum dibaca / tidak |
+| `q` | 2–100 karakter | cari (lihat atas) |
+| tag | — | **titik kait**: `tagId` ditambahkan saat tabel tag dibangun |
+
+| Endpoint | Izin | Keterangan |
+|---|---|---|
+| `GET /api/v1/conversations/counts` | `inbox.view` | Saringan di atas (tanpa `status`). → `{ counts: { all, bot, unserved, served, resolved }, unreadOpen }` sesuai cakupan pemanggil (Teknisi: hanya yang di-assign). `unreadOpen` = percakapan terbuka yang punya pesan belum dibaca (badge menu). Batas laju sama dengan daftar (`q` → ember cari + `statement_timeout`) |
+| `POST /api/v1/conversations/:conversationId/read` | `inbox.view` (cakupan) | Wajib `Origin` aplikasi + `X-CSRF-Token`. `unread_count = 0`; idempoten. → `{ conversation }`; di luar cakupan/tak dikenal → 404. Bila berubah, event `conversation.updated` diterbitkan |
+
+Penghitung belum dibaca **per percakapan** (dipakai bersama tim, seperti MobiChat) — bukan per
+pengguna (DECISIONS 2026-11-16).
+
+## Real-time — WebSocket `GET /api/v1/inbox/stream` (butir 5)
+
+**Sambungan.** `new WebSocket('wss://<host>/api/v1/inbox/stream')` dari origin aplikasi. Autentikasi =
+cookie sesi yang sama dengan REST (tidak ada token di URL). Ditolak SEBELUM upgrade dengan jawaban
+HTTP biasa:
+
+| Kondisi | HTTP |
+|---|---|
+| tanpa sesi / sesi tidak sah | 401 `UNAUTHENTICATED` |
+| sesi terbatas 2FA / peran tanpa `inbox.view` | 403 |
+| `Origin` bukan origin aplikasi (termasuk tanpa `Origin`) | 403 `FORBIDDEN` + audit `auth.csrf.rejected` |
+| sudah 10 socket terbuka untuk pengguna ini (per proses api) | 429 `RATE_LIMITED` |
+| GET biasa tanpa upgrade | 404 |
+
+**Pesan server → klien** (JSON, `inboxStreamEventSchema`). Isinya hanya ID + status — TANPA isi pesan,
+nama, nomor, atau BSUID; klien mengambil detail lewat REST (cakupan ditegakkan lagi):
+
+| `type` | Isian | Kapan |
+|---|---|---|
+| `hello` | `heartbeatSeconds` | tepat setelah tersambung |
+| `conversation.updated` | `conversationId`, `status`, `assigneeUserId`, `unreadCount`, `lastMessageAt`, `windowExpiresAt` | pesan masuk baru, tandai dibaca (nanti: assign, selesai) |
+| `message.created` | `conversationId`, `messageId`, `direction`, `createdAt` | pesan tersimpan (masuk; nanti keluar) |
+| `message.status` | `conversationId`, `messageId`, `status` | status pesan keluar maju |
+
+Klien → server: tidak ada perintah; pesan diabaikan (maks. 1 KiB, lebih → ditutup 1009).
+
+**Penyaringan per penerima (server).** Setiap event dibaca ulang dari database (keadaan terbaru,
+terfilter organisasi), lalu dikirim hanya ke socket yang cakupan `inbox.view`-nya mencakup
+percakapan itu: Owner/Admin/Supervisor/CS semua; Teknisi hanya bila dia `assigneeUserId`-nya.
+Catatan: Teknisi yang percakapannya dialihkan ke orang lain tidak menerima event berikutnya untuk
+percakapan itu — klien memuat ulang daftar saat tersambung lagi / berkala.
+
+**Kode penutupan** (`INBOX_STREAM_CLOSE_CODES`): `4401` sesi berakhir/dicabut/akun dinonaktifkan/2FA
+kini wajib (web → halaman masuk); `4403` peran tidak lagi boleh melihat inbox; `4408` tidak menjawab
+heartbeat; `4429` terlalu banyak koneksi; `1001` server berhenti. Selain 4401/4403: sambung ulang
+dengan jeda bertambah (mis. 1, 2, 5, 10, 30 detik) lalu muat ulang daftar & hitungan lewat REST
+(event selama terputus tidak diulang).
+
+**Heartbeat & validasi ulang.** Server mengirim ping WebSocket tiap 30 detik (browser menjawab pong
+otomatis); tanpa pong sampai ping berikutnya → 4408. Tiap 30 detik sesi divalidasi ulang tanpa
+memperpanjang batas idle (socket terbuka tidak membuat sesi abadi); perubahan peran langsung
+mengubah cakupan event.
+
+**Jalur event.** Worker (pesan masuk/status) dan api (tandai dibaca) menerbitkan event berisi ID ke
+Redis pub/sub `<awalan>:inbox-events` SETELAH transaksi commit; tiap proses api berlangganan dan
+mengantar ke socket miliknya. Pub/sub = paling banyak sekali; kegagalan Redis tidak menggagalkan
+pemrosesan (hanya log).
+
+**Proxy (devops, Fase 7).** Reverse proxy wajib meneruskan upgrade WebSocket untuk
+`/api/v1/inbox/stream` (`proxy_http_version 1.1`, `Upgrade`/`Connection`, `proxy_read_timeout` > 30
+detik). Dev server web perlu `ws: true` pada proxy `/api`.
 
 ## Retensi & hapus per kontak (UU PDP, review webhook S4)
 

@@ -48,7 +48,7 @@ import {
 import type { PasswordHasher } from '../auth/password-hasher';
 import { checkPassword } from '../auth/password-policy';
 import { revokeInvitationsOnRecovery } from '../invitations/session-revocation';
-import { detectResetBurst } from './reset-burst';
+import { detectResetBurst, emailSenderChangedRecently } from './reset-burst';
 import type { SessionService } from '../auth/session.service';
 import {
   findInstallationOrganization,
@@ -405,6 +405,10 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps): Pass
       // Peran wajib 2FA yang BELUM mendaftar: siapa pun yang menguasai kotak masuk ini kini bisa
       // menjadi pemegang faktor keduanya (review undangan R3) — Owner/Admin diberi tahu.
       const enrollmentPending = isTwoFactorRequired(user.role) && user.totpEnabledAt === null;
+      // Sisa R5 review akhir Fase 1: akun tanpa 2FA yang di-reset tak lama setelah jalur email
+      // dibelokkan = kemungkinan pengambilalihan → `warning` di ringkasan keamanan.
+      const afterEmailSenderChange =
+        user.totpEnabledAt === null && (await emailSenderChangedRecently(db, organizationId));
       const twoFactorContext = { client: context.client, log: context.log };
       const { auditLogId, revokedSessions, backupCodesRemaining } = await db.transaction(
         async (tx) => {
@@ -450,6 +454,7 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps): Pass
               twoFactor: method,
               revokedSessions: revoked,
               ...(enrollmentPending ? { twoFactorEnrollmentPending: true } : {}),
+              ...(afterEmailSenderChange ? { afterEmailSenderChange: true } : {}),
             },
             client: context.client,
           });

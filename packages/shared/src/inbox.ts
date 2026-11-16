@@ -115,10 +115,47 @@ const pageLimitSchema = z.coerce
   .min(1, 'Paling sedikit 1 per halaman.')
   .max(INBOX_PAGE_MAX, `Paling banyak ${INBOX_PAGE_MAX} per halaman.`);
 
-/** `GET /conversations` — tab (status), channel, pencarian nama/nomor, kursor. */
-export const conversationListQuerySchema = z.object({
-  status: conversationStatusSchema.optional(),
+/**
+ * Status sesi jendela 24 jam untuk filter inbox (PRD §3.3 "Broadcast · Terbuka · Hampir habis ·
+ * Kedaluwarsa"), dihitung saat query terhadap jam server:
+ *  - `open`     — jendela masih terbuka lebih dari `WINDOW_EXPIRING_SOON_MS`;
+ *  - `expiring` — sisa jendela ≤ `WINDOW_EXPIRING_SOON_MS` (hampir habis);
+ *  - `expired`  — jendela sudah lewat (hanya template yang bisa dikirim);
+ *  - `none`     — belum pernah ada pesan masuk (mis. percakapan dari broadcast/template).
+ */
+export const CONVERSATION_WINDOW_FILTERS = ['open', 'expiring', 'expired', 'none'] as const;
+export const conversationWindowFilterSchema = z.enum(CONVERSATION_WINDOW_FILTERS);
+export type ConversationWindowFilter = z.infer<typeof conversationWindowFilterSchema>;
+
+export const CONVERSATION_WINDOW_FILTER_LABELS: Readonly<Record<ConversationWindowFilter, string>> =
+  {
+    open: 'Terbuka',
+    expiring: 'Hampir habis',
+    expired: 'Kedaluwarsa',
+    none: 'Broadcast',
+  };
+
+/** Ambang "hampir habis": sisa jendela 24 jam ≤ 2 jam (DECISIONS 2026-11-16). */
+export const WINDOW_EXPIRING_SOON_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * Saringan bersama daftar & hitungan per tab: channel, agen, status jendela, belum dibaca, cari.
+ * `assignee` = UUID agen, `me` (diri sendiri), atau `unassigned` (belum di-assign).
+ * TITIK KAIT tag: `tagId` ditambahkan di sini saat tabel tag dibangun (butir panel detail).
+ */
+const conversationFilterFields = {
   channelId: z.uuid({ error: 'Channel tidak valid.' }).optional(),
+  assignee: z
+    .union([z.uuid(), z.literal('me'), z.literal('unassigned')], {
+      error: 'Agen tidak valid.',
+    })
+    .optional(),
+  window: conversationWindowFilterSchema.optional(),
+  /** `true` = hanya yang punya pesan belum dibaca. */
+  unread: z
+    .enum(['true', 'false'], { error: 'Nilai belum dibaca harus true atau false.' })
+    .transform((value) => value === 'true')
+    .optional(),
   /**
    * Nama kontak (diedit tim / profil WhatsApp / username) atau potongan nomor; 2–100 karakter.
    * Dibatasi laju per pengguna dan waktu query (review kontak R3).
@@ -129,10 +166,35 @@ export const conversationListQuerySchema = z.object({
     .min(2, 'Kata pencarian minimal 2 karakter.')
     .max(100, 'Kata pencarian terlalu panjang (maks. 100 karakter).')
     .optional(),
+};
+
+/** `GET /conversations` — tab (status) + saringan + kursor. */
+export const conversationListQuerySchema = z.object({
+  status: conversationStatusSchema.optional(),
+  ...conversationFilterFields,
   cursor: inboxCursorSchema.optional(),
   limit: pageLimitSchema.optional(),
 });
 export type ConversationListQuery = z.infer<typeof conversationListQuerySchema>;
+
+/** `GET /conversations/counts` — saringan yang sama tanpa tab/kursor. */
+export const conversationCountsQuerySchema = z.object(conversationFilterFields);
+export type ConversationCountsQuery = z.infer<typeof conversationCountsQuerySchema>;
+export type ConversationFilter = ConversationCountsQuery;
+
+/** Jumlah percakapan per tab (sesuai cakupan pemanggil + saringan). */
+export const conversationCountsResponseSchema = z.object({
+  counts: z.object({
+    all: z.number().int().nonnegative(),
+    bot: z.number().int().nonnegative(),
+    unserved: z.number().int().nonnegative(),
+    served: z.number().int().nonnegative(),
+    resolved: z.number().int().nonnegative(),
+  }),
+  /** Percakapan TERBUKA (≠ selesai) yang punya pesan belum dibaca — untuk badge menu. */
+  unreadOpen: z.number().int().nonnegative(),
+});
+export type ConversationCountsResponse = z.infer<typeof conversationCountsResponseSchema>;
 
 /** `GET /conversations/:id/messages` — terbaru dulu; `cursor` = halaman pesan yang lebih lama. */
 export const messageListQuerySchema = z.object({
@@ -277,3 +339,56 @@ export const messageListResponseSchema = z.object({
   nextCursor: z.string().nullable(),
 });
 export type MessageListResponse = z.infer<typeof messageListResponseSchema>;
+
+// ── Real-time (WebSocket `GET /inbox/stream`) ───────────────────────────────
+
+/** Selang ping server (detik); klien yang tidak menjawab pong dua kali berturut-turut diputus. */
+export const INBOX_STREAM_HEARTBEAT_SECONDS = 30;
+
+/**
+ * Kode penutupan WebSocket dari server (4000–4999 = milik aplikasi):
+ *  - 4401 sesi berakhir/dicabut/akun dinonaktifkan → web mengarahkan ke halaman masuk;
+ *  - 4403 izin/peran berubah sehingga tidak boleh melihat inbox lagi;
+ *  - 4408 tidak menjawab heartbeat;
+ *  - 4429 terlalu banyak koneksi untuk pengguna ini.
+ */
+export const INBOX_STREAM_CLOSE_CODES = {
+  sessionEnded: 4401,
+  forbidden: 4403,
+  heartbeatTimeout: 4408,
+  tooManyConnections: 4429,
+} as const;
+
+/**
+ * Event yang dikirim server. Isinya MINIMAL — ID + kolom status, TANPA isi pesan, nama, atau nomor
+ * pelanggan. Klien mengambil data lengkap lewat REST (yang menegakkan cakupan lagi).
+ */
+export const inboxStreamEventSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('hello'),
+    heartbeatSeconds: z.number().int().positive(),
+  }),
+  z.object({
+    type: z.literal('conversation.updated'),
+    conversationId: z.uuid(),
+    status: conversationStatusSchema,
+    assigneeUserId: z.uuid().nullable(),
+    unreadCount: z.number().int().nonnegative(),
+    lastMessageAt: isoDateTimeSchema,
+    windowExpiresAt: isoDateTimeSchema.nullable(),
+  }),
+  z.object({
+    type: z.literal('message.created'),
+    conversationId: z.uuid(),
+    messageId: z.uuid(),
+    direction: messageDirectionSchema,
+    createdAt: isoDateTimeSchema,
+  }),
+  z.object({
+    type: z.literal('message.status'),
+    conversationId: z.uuid(),
+    messageId: z.uuid(),
+    status: messageDeliveryStatusSchema,
+  }),
+]);
+export type InboxStreamEvent = z.infer<typeof inboxStreamEventSchema>;

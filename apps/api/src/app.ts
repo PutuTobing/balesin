@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
+import websocket from '@fastify/websocket';
 import {
+  createInboxEventPublisher,
   createMetaGraphClient,
   createSecretBox,
   deriveKey,
@@ -30,6 +32,7 @@ import { createRateLimiter } from './http/rate-limit';
 import { enforceRouteDeclarations } from './http/route-access';
 import { applyBaselineHeaders, securityPlugin } from './http/security';
 import { createAccessDeniedRecorder } from './modules/auth/access-denied';
+import { createCsrfRejectionRecorder } from './modules/auth/csrf-rejection';
 import { registerAuthHook } from './modules/auth/auth.hook';
 import { authRoutes } from './modules/auth/auth.routes';
 import { createAuthService } from './modules/auth/auth.service';
@@ -60,6 +63,8 @@ import { channelsRoutes } from './modules/channels/channels.routes';
 import { createChannelsService } from './modules/channels/channels.service';
 import { createAuditService } from './modules/audit/audit.service';
 import { inboxRoutes } from './modules/inbox/inbox.routes';
+import { createInboxStreamHub, type InboxStreamHub } from './modules/realtime/inbox-stream';
+import { inboxStreamRoutes } from './modules/realtime/inbox-stream.routes';
 import { sessionsRoutes } from './modules/sessions/sessions.routes';
 import { createOwnSessionsService } from './modules/sessions/sessions.service';
 import { setupRoutes } from './modules/setup/setup.routes';
@@ -113,6 +118,8 @@ export interface AppDeps {
     smtpTimeouts?: Partial<SmtpTimeouts>;
     /** Klien Graph API (mis. `sleep` instan supaya backoff tidak memperlambat tes). */
     meta?: Partial<Omit<MetaGraphClientOptions, 'version' | 'baseUrl' | 'environment'>>;
+    /** Selang heartbeat/validasi ulang WebSocket inbox dan batas koneksi per pengguna. */
+    inboxStream?: { heartbeatMs?: number; revalidateMs?: number; maxConnectionsPerUser?: number };
   };
 }
 
@@ -185,6 +192,8 @@ export async function buildApp(deps: AppDeps) {
     appOrigin: config.appOrigin,
     isProduction: config.isProduction,
   });
+  // WebSocket (inbox real-time). Pesan dari klien tidak dipakai: dibatasi 1 KiB.
+  await app.register(websocket, { options: { maxPayload: 1024 } });
 
   // ── Layanan ───────────────────────────────────────────────────────────────
   if (config.isProduction && !config.sessionSecret) {
@@ -246,6 +255,7 @@ export async function buildApp(deps: AppDeps) {
   });
 
   const accessDenied = createAccessDeniedRecorder({ db, limiter, logger: app.log });
+  const csrfRejections = createCsrfRejectionRecorder({ db, limiter, logger: app.log });
   const delivery = createTokenDelivery({ secretBox, fallback: config.smtpFallback });
   const background = createBackgroundTasks();
   const invitations = createInvitationService({
@@ -306,6 +316,22 @@ export async function buildApp(deps: AppDeps) {
     apiUrl: config.apiUrl,
   });
 
+  // Real-time inbox: penerbit (api → Redis) + hub WebSocket (Redis → socket yang berhak).
+  const inboxEvents = createInboxEventPublisher(deps.redis, {
+    prefix: redisPrefix,
+    logger: app.log,
+  });
+  const inboxStream = createInboxStreamHub({
+    db,
+    sessions,
+    redis: deps.redis,
+    prefix: redisPrefix,
+    logger: deps.logger,
+    ...deps.overrides?.inboxStream,
+  });
+  app.decorate('inboxStream', inboxStream);
+  app.addHook('onClose', () => inboxStream.close());
+
   const webhookGuard = createWebhookGuard({ db, limiter });
   const whatsAppWebhooks = createWhatsAppWebhookService({
     db,
@@ -332,6 +358,7 @@ export async function buildApp(deps: AppDeps) {
     sessions,
     csrf,
     accessDenied,
+    csrfRejections,
   });
 
   // ── Rute ──────────────────────────────────────────────────────────────────
@@ -367,7 +394,8 @@ export async function buildApp(deps: AppDeps) {
   await app.register(teamRoutes, { team, cookieSecure: config.cookieSecure });
   await app.register(auditRoutes, { audit });
   await app.register(channelsRoutes, { channels, limiter, cookieSecure: config.cookieSecure });
-  await app.register(inboxRoutes, { db, limiter });
+  await app.register(inboxRoutes, { db, limiter, publisher: inboxEvents });
+  await app.register(inboxStreamRoutes, { hub: inboxStream, appOrigin: config.appOrigin });
   // Publik: penerima webhook Meta (keaslian dari tanda tangan App Secret, bukan sesi).
   await app.register(whatsAppWebhookRoutes, { guard: webhookGuard, webhooks: whatsAppWebhooks });
 
@@ -383,5 +411,7 @@ declare module 'fastify' {
   interface FastifyInstance {
     /** Pekerjaan setelah jawaban terkirim (lihat `http/background-tasks.ts`). */
     backgroundTasks: BackgroundTasks;
+    /** Hub WebSocket inbox (lihat `modules/realtime/inbox-stream.ts`). */
+    inboxStream: InboxStreamHub;
   }
 }

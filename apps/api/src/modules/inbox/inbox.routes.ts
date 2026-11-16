@@ -1,10 +1,12 @@
-import { AppError } from '@balesin/core';
+import { AppError, NOOP_INBOX_EVENT_PUBLISHER, type InboxEventPublisher } from '@balesin/core';
 import { PG_ERROR_CODES, getPgError, type Database, type DbExecutor } from '@balesin/db';
 import {
   API_ROUTES,
   INBOX_PAGE_DEFAULT,
   contactIdParamsSchema,
   contactResponseSchema,
+  conversationCountsQuerySchema,
+  conversationCountsResponseSchema,
   conversationIdParamsSchema,
   conversationListQuerySchema,
   conversationListResponseSchema,
@@ -21,8 +23,10 @@ import { enforceRateLimit, type RateLimitRule, type RateLimiter } from '../../ht
 import { requirePermission } from '../../http/route-access';
 import { permissionGrant } from '../auth/permission-grant';
 import {
+  countConversations,
   decodeCursor,
   encodeCursor,
+  markConversationRead,
   findContact,
   findConversation,
   lastMessagesOf,
@@ -38,6 +42,8 @@ export interface InboxRoutesOptions {
   now?: () => Date;
   /** Batas waktu query pencarian (bawaan `SEARCH_TIMEOUT_MS`). */
   searchTimeoutMs?: number;
+  /** Penerbit event real-time (tandai dibaca → `conversation.updated`). */
+  publisher?: InboxEventPublisher;
 }
 
 /**
@@ -142,6 +148,7 @@ export const inboxRoutes: FastifyPluginCallbackZod<InboxRoutesOptions> = (app, o
   const { db, limiter } = options;
   const now = options.now ?? (() => new Date());
   const searchTimeoutMs = options.searchTimeoutMs ?? SEARCH_TIMEOUT_MS;
+  const publisher = options.publisher ?? NOOP_INBOX_EVENT_PUBLISHER;
   const routes = API_ROUTES.inbox;
 
   app.get(
@@ -157,7 +164,7 @@ export const inboxRoutes: FastifyPluginCallbackZod<InboxRoutesOptions> = (app, o
       const grant = await permissionGrant(request, 'inbox.view');
       const { cursor, limit, ...filter } = request.query;
       const pageSize = limit ?? INBOX_PAGE_DEFAULT;
-      const page = { limit: pageSize + 1, cursor: cursorOf(cursor) };
+      const page = { limit: pageSize + 1, cursor: cursorOf(cursor), now: now() };
       await enforceRateLimit(limiter, INBOX_LIST_RULE, grant.userId, listLimitMessage);
       let rows;
       if (filter.q === undefined) {
@@ -183,6 +190,60 @@ export const inboxRoutes: FastifyPluginCallbackZod<InboxRoutesOptions> = (app, o
             ? encodeCursor({ atExact: last.lastMessageAtExact, id: last.id })
             : null,
       };
+    },
+  );
+
+  app.get(
+    routes.counts,
+    {
+      config: { access: VIEW_INBOX },
+      schema: {
+        querystring: conversationCountsQuerySchema,
+        response: { 200: conversationCountsResponseSchema, ...errors },
+      },
+    },
+    async (request) => {
+      const grant = await permissionGrant(request, 'inbox.view');
+      const filter = request.query;
+      // Hitungan dimuat bersama daftar: memakai ember daftar (dan ember cari bila ada `q`).
+      await enforceRateLimit(limiter, INBOX_LIST_RULE, grant.userId, listLimitMessage);
+      if (filter.q === undefined) return countConversations(db, grant, filter, now());
+      await enforceRateLimit(limiter, INBOX_SEARCH_RULE, grant.userId, searchLimitMessage);
+      return withStatementTimeout(db, searchTimeoutMs, (tx) =>
+        countConversations(tx, grant, filter, now()),
+      );
+    },
+  );
+
+  app.post(
+    routes.read,
+    {
+      // Menulis data milik bersama tim (penghitung belum dibaca), bukan data sensitif: cukup
+      // izin melihat percakapan itu (Teknisi: yang di-assign). CSRF + Origin oleh hook auth.
+      config: { access: VIEW_INBOX },
+      schema: {
+        params: conversationIdParamsSchema,
+        response: { 200: conversationResponseSchema, ...errors },
+      },
+    },
+    async (request) => {
+      const grant = await permissionGrant(request, 'inbox.view');
+      const id = requireUuid(request.params.conversationId, CONVERSATION_NOT_FOUND);
+      const changed = await markConversationRead(db, grant, id);
+      if (changed === undefined) throw notFound(CONVERSATION_NOT_FOUND);
+      if (changed) {
+        await publisher.publish([
+          {
+            type: 'conversation.updated',
+            organizationId: grant.organizationId,
+            conversationId: id,
+          },
+        ]);
+      }
+      const row = await findConversation(db, grant, id);
+      if (!row) throw notFound(CONVERSATION_NOT_FOUND);
+      const lastMessages = await lastMessagesOf(db, grant.organizationId, [row.id]);
+      return { conversation: toConversation(row, lastMessages.get(row.id), now()) };
     },
   );
 

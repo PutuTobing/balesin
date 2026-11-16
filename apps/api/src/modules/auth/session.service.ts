@@ -77,6 +77,14 @@ export interface SessionService {
    */
   resolve(token: string): Promise<AuthContext | undefined>;
   /**
+   * Seperti `resolve` tetapi TANPA efek samping (tidak menggeser batas idle, tidak mencabut sesi
+   * yang jenisnya tidak cocok) dan dari HASH token. Dipakai untuk audit penolakan CSRF/Origin (yang
+   * tidak boleh memperpanjang sesi korban) dan validasi ulang WebSocket (socket yang terbuka tidak
+   * boleh membuat sesi abadi). `undefined` = tidak berlaku, termasuk jenis sesi yang tidak cocok
+   * dengan keadaan 2FA sekarang.
+   */
+  peek(tokenHash: string): Promise<SessionSnapshot | undefined>;
+  /**
    * Membuat sesi baru dengan token baru (rotasi). Satu-satunya tempat sesi dibuat: login,
    * langkah kedua 2FA, aktivasi 2FA, dan akhir wizard setup memanggil fungsi ini.
    *
@@ -95,6 +103,14 @@ export interface SessionService {
     userId: string,
     exceptSessionRef?: string,
   ): Promise<number>;
+}
+
+/** Keadaan sesi tanpa CSRF/kedaluwarsa — hasil `peek`. */
+export interface SessionSnapshot {
+  sessionRef: string;
+  organizationId: string;
+  user: AuthContext['user'];
+  twoFactor: TwoFactorState;
 }
 
 export interface IssueSessionInput {
@@ -139,6 +155,22 @@ export function createSessionService(db: Database, csrf: CsrfProtection): Sessio
         absoluteExpiresAt: session.absoluteExpiresAt,
         twoFactor,
         sessionKind: session.kind,
+      };
+    },
+
+    async peek(tokenHash) {
+      const session = await findActiveSession(db, tokenHash);
+      if (!session) return undefined;
+      const twoFactor = twoFactorState(session.user.role, session.twoFactorEnabled);
+      const expectedKind: SessionKind = twoFactor.enrollmentRequired
+        ? 'two_factor_enrollment'
+        : 'standard';
+      if (session.kind !== expectedKind) return undefined;
+      return {
+        sessionRef: session.id,
+        organizationId: session.organizationId,
+        user: session.user,
+        twoFactor,
       };
     },
 

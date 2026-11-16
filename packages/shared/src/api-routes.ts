@@ -160,6 +160,12 @@ export const API_ROUTES = {
   inbox: {
     /** GET — daftar percakapan (tab, channel, cari, kursor). */
     conversations: `${API_PREFIX}/conversations`,
+    /** GET — jumlah percakapan per tab (saringan sama dengan daftar). */
+    counts: `${API_PREFIX}/conversations/counts`,
+    /** POST — tandai sudah dibaca (CSRF). */
+    read: `${API_PREFIX}/conversations/:conversationId/read`,
+    /** GET (WebSocket) — event inbox real-time. Cookie sesi + `Origin` aplikasi wajib. */
+    stream: `${API_PREFIX}/inbox/stream`,
     /** GET — satu percakapan. */
     conversation: `${API_PREFIX}/conversations/:conversationId`,
     /** GET — pesan percakapan, terbaru dulu (kursor = lebih lama). */

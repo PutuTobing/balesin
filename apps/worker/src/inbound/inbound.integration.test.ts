@@ -5,7 +5,7 @@
  */
 import { randomBytes } from 'node:crypto';
 
-import { splitWhatsAppWebhook, WEBHOOK_JOBS } from '@balesin/core';
+import { splitWhatsAppWebhook, WEBHOOK_JOBS, type InboxBusEventInput } from '@balesin/core';
 import { createLogCapture, type LogCapture } from '@balesin/core/testing';
 import {
   channels,
@@ -26,7 +26,12 @@ import { and, asc, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
 
 import { processWebhookJob } from '../queues/webhooks';
-import { countsAsCustomerMessage, inboundOccurredAt, messageTypeOf } from './handlers';
+import {
+  countsAsCustomerMessage,
+  createInboundHandlers,
+  inboundOccurredAt,
+  messageTypeOf,
+} from './handlers';
 
 const WABA = '102290129340398';
 const PHONE_NUMBER_ID = '106540352242922';
@@ -306,7 +311,6 @@ describe('pesan masuk pertama', () => {
         occurredAt: items[0]!.occurredAt,
       })
       .returning();
-    const { createInboundHandlers } = await import('./handlers');
     await processWebhookJob(
       { name: WEBHOOK_JOBS.whatsappEvent, data: { organizationId, eventId: row!.id } },
       {
@@ -643,5 +647,106 @@ describe('status pesan keluar', () => {
     await deliver(messageNotification({ id }));
     await deliver(statusNotification(id, 'read'));
     expect((await messageRows())[0]?.status).toBeNull();
+  });
+});
+
+describe('event real-time', () => {
+  function recordingPublisher() {
+    const published: InboxBusEventInput[][] = [];
+    return {
+      published,
+      publisher: {
+        publish: (events: readonly InboxBusEventInput[]) => {
+          published.push([...events]);
+          return Promise.resolve();
+        },
+      },
+    };
+  }
+
+  async function storeOne(body: unknown) {
+    const { items } = splitWhatsAppWebhook(body);
+    const [row] = await db
+      .insert(webhookEvents)
+      .values({
+        organizationId,
+        channelId,
+        source: 'whatsapp',
+        kind: items[0]!.kind,
+        field: items[0]!.field,
+        dedupKey: items[0]!.dedupKey,
+        externalId: items[0]!.externalId,
+        payload: items[0]!.payload as unknown as Record<string, unknown>,
+        occurredAt: items[0]!.occurredAt,
+      })
+      .returning();
+    return row!.id;
+  }
+
+  it('pesan masuk → message.created + conversation.updated, diterbitkan SETELAH commit (ID saja)', async () => {
+    const { published, publisher } = recordingPublisher();
+    const eventId = await storeOne(messageNotification({}));
+    await processWebhookJob(
+      { name: WEBHOOK_JOBS.whatsappEvent, data: { organizationId, eventId } },
+      { db, logger: logs.logger, publisher },
+    );
+    const [conversation] = await conversationRows();
+    const [message] = await messageRows();
+    expect(published).toEqual([
+      [
+        {
+          type: 'message.created',
+          organizationId,
+          conversationId: conversation!.id,
+          messageId: message!.id,
+        },
+        { type: 'conversation.updated', organizationId, conversationId: conversation!.id },
+      ],
+    ]);
+    expect(JSON.stringify(published)).not.toContain(SECRET_TEXT);
+  });
+
+  it('handler gagal (transaksi batal) → tidak ada event yang diterbitkan', async () => {
+    const { published, publisher } = recordingPublisher();
+    const eventId = await storeOne(messageNotification({}));
+    const failing = createInboundHandlers();
+    await expect(
+      processWebhookJob(
+        {
+          name: WEBHOOK_JOBS.whatsappEvent,
+          data: { organizationId, eventId },
+          opts: { attempts: 3 },
+        },
+        {
+          db,
+          logger: logs.logger,
+          publisher,
+          handlers: {
+            ...failing,
+            message: async (message, context) => {
+              await failing.message(message, context);
+              throw new Error('gagal setelah emit');
+            },
+          },
+        },
+      ),
+    ).rejects.toThrow();
+    expect(published).toEqual([]);
+    expect(await messageRows()).toEqual([]);
+  });
+
+  it('status pesan keluar → message.status', async () => {
+    await deliver(messageNotification({}));
+    const [conversation] = await conversationRows();
+    const outgoing = await outboundMessage(conversation!.id, conversation!.contactId, 'sent');
+    const { published, publisher } = recordingPublisher();
+    const eventId = await storeOne(statusNotification(outgoing, 'delivered'));
+    await processWebhookJob(
+      { name: WEBHOOK_JOBS.whatsappEvent, data: { organizationId, eventId } },
+      { db, logger: logs.logger, publisher },
+    );
+    expect(published[0]).toEqual([
+      expect.objectContaining({ type: 'message.status', conversationId: conversation!.id }),
+    ]);
   });
 });

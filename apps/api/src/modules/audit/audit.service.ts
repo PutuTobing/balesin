@@ -78,7 +78,8 @@ const SECURITY_EVENT_CONDITIONS: Readonly<Record<SecurityEventKind, SQL>> = {
   email_sender_changed: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.emailSettingsUpdated} and ${OWNERS_NOTIFIED})`,
   two_factor_reset: sql`${auditLogs.action} = ${AUDIT_ACTIONS.userTwoFactorReset}`,
   two_factor_enrollment_reopened: sql`${auditLogs.action} = ${AUDIT_ACTIONS.userTwoFactorEnrollmentReopened}`,
-  password_reset_without_two_factor: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.passwordResetCompleted} and ${auditLogs.metadata} ->> 'twoFactorEnrollmentPending' = 'true')`,
+  // Juga reset akun tanpa 2FA ≤ 72 jam setelah email pengirim diubah (sisa R5 review akhir Fase 1).
+  password_reset_without_two_factor: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.passwordResetCompleted} and (${auditLogs.metadata} ->> 'twoFactorEnrollmentPending' = 'true' or ${auditLogs.metadata} ->> 'afterEmailSenderChange' = 'true'))`,
   account_locked: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.accountLocked} and ${auditLogs.targetType} = 'user')`,
   role_changed: sql`${auditLogs.action} = ${AUDIT_ACTIONS.userRoleChanged}`,
   user_disabled: sql`${auditLogs.action} = ${AUDIT_ACTIONS.userDisabled}`,
@@ -157,7 +158,8 @@ function kindOf(row: AuditRow): SecurityEventKind | undefined {
     case AUDIT_ACTIONS.userTwoFactorEnrollmentReopened:
       return 'two_factor_enrollment_reopened';
     case AUDIT_ACTIONS.passwordResetCompleted:
-      return row.metadata.twoFactorEnrollmentPending === true
+      return row.metadata.twoFactorEnrollmentPending === true ||
+        row.metadata.afterEmailSenderChange === true
         ? 'password_reset_without_two_factor'
         : undefined;
     case AUDIT_ACTIONS.accountLocked:
@@ -191,7 +193,7 @@ const DETAIL_KEYS: Readonly<Record<SecurityEventKind, readonly string[]>> = {
   email_sender_changed: ['previousHost', 'host', 'port', 'fromAddress', 'actorRole'],
   two_factor_reset: ['role'],
   two_factor_enrollment_reopened: ['role', 'dueAt'],
-  password_reset_without_two_factor: [],
+  password_reset_without_two_factor: ['afterEmailSenderChange'],
   account_locked: ['scope', 'lockedUntil'],
   role_changed: ['from', 'to', 'actorRole'],
   user_disabled: ['role', 'actorRole'],

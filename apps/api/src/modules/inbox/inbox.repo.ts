@@ -8,8 +8,15 @@ import {
   type DbExecutor,
   type MessageRow,
 } from '@balesin/db';
-import type { ChannelType, ConversationListQuery, ConversationStatus } from '@balesin/shared';
-import { and, desc, eq, ilike, inArray, or, sql, type SQL } from 'drizzle-orm';
+import {
+  WINDOW_EXPIRING_SOON_MS,
+  type ChannelType,
+  type ConversationCountsResponse,
+  type ConversationFilter,
+  type ConversationListQuery,
+  type ConversationStatus,
+} from '@balesin/shared';
+import { and, desc, eq, gt, ilike, inArray, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
 
 import { scopeCondition, type PermissionGrant } from '../auth/permission-grant';
 
@@ -180,20 +187,70 @@ function toConversationRowView(row: SelectedConversation): ConversationRowView {
   };
 }
 
+/**
+ * Saringan bersama daftar & hitungan (tanpa tab/status). Status jendela dihitung terhadap `now`
+ * (jam server); "hampir habis" = sisa ≤ `WINDOW_EXPIRING_SOON_MS`.
+ */
+export function conversationFilterCondition(
+  grant: PermissionGrant,
+  filter: ConversationFilter,
+  now: Date,
+): SQL {
+  const soon = new Date(now.getTime() + WINDOW_EXPIRING_SOON_MS);
+  let assignee: SQL | undefined;
+  if (filter.assignee === 'me') assignee = eq(conversations.assigneeUserId, grant.userId);
+  else if (filter.assignee === 'unassigned') assignee = isNull(conversations.assigneeUserId);
+  else if (filter.assignee !== undefined) {
+    assignee = eq(conversations.assigneeUserId, filter.assignee);
+  }
+  let window: SQL | undefined;
+  switch (filter.window) {
+    case 'open':
+      window = gt(conversations.windowExpiresAt, soon);
+      break;
+    case 'expiring':
+      window = and(
+        gt(conversations.windowExpiresAt, now),
+        lte(conversations.windowExpiresAt, soon),
+      );
+      break;
+    case 'expired':
+      window = lte(conversations.windowExpiresAt, now);
+      break;
+    case 'none':
+      window = isNull(conversations.windowExpiresAt);
+      break;
+    case undefined:
+      break;
+  }
+  return and(
+    eq(conversations.organizationId, grant.organizationId),
+    conversationScope(grant),
+    filter.channelId === undefined ? undefined : eq(conversations.channelId, filter.channelId),
+    assignee,
+    window,
+    filter.unread === undefined
+      ? undefined
+      : filter.unread
+        ? gt(conversations.unreadCount, 0)
+        : eq(conversations.unreadCount, 0),
+    filter.q === undefined ? undefined : searchCondition(filter.q),
+    // TITIK KAIT tag: `exists (select 1 from conversation_tags …)` saat tabel tag dibangun.
+  ) as SQL;
+}
+
 export async function listConversations(
   db: DbExecutor,
   grant: PermissionGrant,
   query: Omit<ConversationListQuery, 'cursor' | 'limit'>,
-  options: { limit: number; cursor?: Cursor | undefined },
+  options: { limit: number; cursor?: Cursor | undefined; now: Date },
 ): Promise<ConversationRowView[]> {
+  const { status, ...filter } = query;
   const rows = await selectConversations(db)
     .where(
       and(
-        eq(conversations.organizationId, grant.organizationId),
-        conversationScope(grant),
-        query.status === undefined ? undefined : eq(conversations.status, query.status),
-        query.channelId === undefined ? undefined : eq(conversations.channelId, query.channelId),
-        query.q === undefined ? undefined : searchCondition(query.q),
+        conversationFilterCondition(grant, filter, options.now),
+        status === undefined ? undefined : eq(conversations.status, status),
         options.cursor === undefined
           ? undefined
           : sql`(${conversations.lastMessageAt}, ${conversations.id}) < (${options.cursor.atExact}::timestamptz, ${options.cursor.id}::uuid)`,
@@ -202,6 +259,71 @@ export async function listConversations(
     .orderBy(desc(conversations.lastMessageAt), desc(conversations.id))
     .limit(options.limit);
   return rows.map(toConversationRowView);
+}
+
+/** Jumlah per tab dalam satu query (`count(*) filter (…)`), sesuai cakupan + saringan. */
+export async function countConversations(
+  db: DbExecutor,
+  grant: PermissionGrant,
+  filter: ConversationFilter,
+  now: Date,
+): Promise<ConversationCountsResponse> {
+  const byStatus = (status: ConversationStatus) =>
+    sql<number>`(count(*) filter (where ${conversations.status} = ${status}))::int`;
+  const [row] = await db
+    .select({
+      all: sql<number>`count(*)::int`,
+      bot: byStatus('bot'),
+      unserved: byStatus('unserved'),
+      served: byStatus('served'),
+      resolved: byStatus('resolved'),
+      unreadOpen: sql<number>`(count(*) filter (where ${conversations.status} <> 'resolved' and ${conversations.unreadCount} > 0))::int`,
+    })
+    .from(conversations)
+    .innerJoin(
+      contacts,
+      and(
+        eq(contacts.organizationId, conversations.organizationId),
+        eq(contacts.id, conversations.contactId),
+      ),
+    )
+    .where(conversationFilterCondition(grant, filter, now));
+  const value = (n: number | undefined) => Number(n ?? 0);
+  return {
+    counts: {
+      all: value(row?.all),
+      bot: value(row?.bot),
+      unserved: value(row?.unserved),
+      served: value(row?.served),
+      resolved: value(row?.resolved),
+    },
+    unreadOpen: value(row?.unreadOpen),
+  };
+}
+
+/**
+ * Tandai sudah dibaca: `unread_count = 0` untuk percakapan DALAM cakupan. Penghitung per
+ * PERCAKAPAN (dipakai bersama tim — DECISIONS 2026-11-16). `true` bila ada yang berubah,
+ * `false` bila sudah 0, `undefined` bila percakapan tidak ada/di luar cakupan.
+ */
+export async function markConversationRead(
+  db: DbExecutor,
+  grant: PermissionGrant,
+  conversationId: string,
+): Promise<boolean | undefined> {
+  const scoped = and(
+    eq(conversations.organizationId, grant.organizationId),
+    eq(conversations.id, conversationId),
+    conversationScope(grant),
+  );
+  const updated = await db
+    .update(conversations)
+    .set({ unreadCount: 0 })
+    .where(and(scoped, gt(conversations.unreadCount, 0)))
+    .returning({ id: conversations.id });
+  if (updated.length > 0) return true;
+  const [exists] = await db.select({ id: conversations.id }).from(conversations).where(scoped);
+  return exists ? false : undefined;
 }
 
 /** Satu percakapan DALAM cakupan, atau `undefined` (pemanggil menjawab 404). */

@@ -299,7 +299,20 @@ export function createInboundHandlers(options: InboundHandlerOptions = {}): Inbo
         .values(row)
         .onConflictDoNothing({ target: [messages.channelId, messages.wamid] })
         .returning({ id: messages.id });
-      if (inserted.length === 0 || !counts) return;
+      const [created] = inserted;
+      if (!created) return;
+      context.emit({
+        type: 'message.created',
+        organizationId,
+        conversationId: conversation.id,
+        messageId: created.id,
+      });
+      if (!counts) return;
+      context.emit({
+        type: 'conversation.updated',
+        organizationId,
+        conversationId: conversation.id,
+      });
 
       // Jendela 24 jam dari jam server; `greatest` menjaga urutan bila kejadian diproses tidak urut.
       await tx
@@ -322,7 +335,12 @@ export function createInboundHandlers(options: InboundHandlerOptions = {}): Inbo
       const { tx, organizationId, channelId, receivedAt, logger } = context;
       if (update.status === 'unknown') return;
       const [message] = await tx
-        .select({ id: messages.id, status: messages.status, contactId: messages.contactId })
+        .select({
+          id: messages.id,
+          status: messages.status,
+          contactId: messages.contactId,
+          conversationId: messages.conversationId,
+        })
         .from(messages)
         .where(
           and(
@@ -355,6 +373,12 @@ export function createInboundHandlers(options: InboundHandlerOptions = {}): Inbo
           ...(update.status === 'failed' ? { errorCode: update.errors[0]?.code ?? null } : {}),
         })
         .where(and(eq(messages.organizationId, organizationId), eq(messages.id, message.id)));
+      context.emit({
+        type: 'message.status',
+        organizationId,
+        conversationId: message.conversationId,
+        messageId: message.id,
+      });
     },
 
     error(failure, context) {

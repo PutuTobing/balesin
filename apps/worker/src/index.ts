@@ -1,5 +1,6 @@
 import {
   closeRedis,
+  createInboxEventPublisher,
   createLogger,
   createRedis,
   createSecretBox,
@@ -47,7 +48,7 @@ function main(config: WorkerConfig): void {
       allowedPorts: config.smtpAllowedPorts,
       plaintextLogin: plaintextLoginPolicy(config.isProduction),
     },
-    webhooks: { db },
+    webhooks: { db, publisher: createInboxEventPublisher(redis, { logger }) },
     maintenance: { db },
   });
 

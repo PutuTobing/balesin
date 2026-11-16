@@ -1,4 +1,4 @@
-import { accountTokens, users, type Database } from '@balesin/db';
+import { accountTokens, auditLogs, users, type Database, type DbExecutor } from '@balesin/db';
 import { and, countDistinct, eq, gte, isNull, sql } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 
@@ -83,4 +83,37 @@ export async function detectResetBurst(deps: {
         deps.log.warn({ err }, 'Gagal mengantre email permintaan atur ulang password massal');
       });
   }
+}
+
+/** Jendela "setelah email pengirim diubah" (review akhir Fase 1 sisa R5). */
+export const RESET_AFTER_SENDER_CHANGE_HOURS = 72;
+
+/**
+ * `true` bila jalur kirim email organisasi diubah (kejadian `email_sender_changed`: audit
+ * `settings.email.updated` dengan `ownersNotified`) dalam `RESET_AFTER_SENDER_CHANGE_HOURS` jam
+ * terakhir. Reset password akun TANPA 2FA yang DISELESAIKAN dalam jendela itu ditandai
+ * `afterEmailSenderChange` dan naik menjadi kejadian `warning` di ringkasan keamanan: pola
+ * pengambilalihan "belokkan SMTP lalu reset akun CS/Teknisi satu per satu" (2 akun/jam pun lolos
+ * dari deteksi burst).
+ */
+export async function emailSenderChangedRecently(
+  db: DbExecutor,
+  organizationId: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: auditLogs.id })
+    .from(auditLogs)
+    .where(
+      and(
+        eq(auditLogs.organizationId, organizationId),
+        eq(auditLogs.action, AUDIT_ACTIONS.emailSettingsUpdated),
+        sql`${auditLogs.metadata} ->> 'ownersNotified' = 'true'`,
+        gte(
+          auditLogs.createdAt,
+          sql`now() - ${sql.raw(`interval '${String(RESET_AFTER_SENDER_CHANGE_HOURS)} hours'`)}`,
+        ),
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
 }

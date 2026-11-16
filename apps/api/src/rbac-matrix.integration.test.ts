@@ -130,6 +130,10 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'PUT /api/v1/settings/channels/:channelId/business-profile': 'channels.manage',
   // inbox (baca): percakapan = inbox.view, kontak = contacts.view (Teknisi: hanya yang di-assign)
   'GET /api/v1/conversations': 'inbox.view',
+  'GET /api/v1/conversations/counts': 'inbox.view',
+  'POST /api/v1/conversations/:conversationId/read': 'inbox.view',
+  // WebSocket inbox: sesi + inbox.view (Origin & batas koneksi dicek sebelum upgrade)
+  'GET /api/v1/inbox/stream': 'inbox.view',
   'GET /api/v1/conversations/:conversationId': 'inbox.view',
   'GET /api/v1/conversations/:conversationId/messages': 'inbox.view',
   'GET /api/v1/contacts/:contactId': 'contacts.view',

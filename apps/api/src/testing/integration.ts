@@ -67,6 +67,8 @@ export interface IntegrationHarness extends TestApp {
   database: TemporaryDatabase;
   /** Pemberitahuan keamanan (2FA, kode cadangan) yang diantrekan. */
   readonly securityNotices: SecurityNoticeEmailPayload[];
+  /** Awalan kunci Redis berkas tes ini (batas laju + channel event inbox `<awalan>:inbox-events`). */
+  readonly redisPrefix: string;
   /** Mengosongkan database, kunci batas laju, antrean notifikasi, dan log. */
   reset(): Promise<void>;
   /** Membangun ulang aplikasi di atas database/Redis yang sama dengan konfigurasi lain. */
@@ -197,6 +199,7 @@ export async function createIntegrationHarness(
       if (!redis) throw new Error('Redis tes belum tersambung');
       return redis;
     },
+    redisPrefix: rateLimitPrefix,
   };
 
   try {

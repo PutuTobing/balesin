@@ -16,6 +16,8 @@ const ALLOWED: Record<string, string> = {
   'modules/auth/actor-check.ts':
     'wewenang berubah DI TENGAH permintaan (review akhir R3): ditolak di transaksi yang dibatalkan; perubahan peran/nonaktifnya sudah diaudit',
   'modules/auth/permission-grant.ts': 'izin tambahan di handler — diaudit lewat record()',
+  'modules/realtime/inbox-stream.routes.ts':
+    'WebSocket dari Origin asing (pembajakan lintas situs, bukan wewenang) — diaudit lewat csrfRejections',
   'modules/setup/setup.service.ts': 'token setup salah (publik, tanpa pengguna)',
   'modules/two-factor/two-factor.service.ts':
     'kebijakan 2FA (peran wajib tidak boleh menonaktifkan 2FA miliknya), bukan wewenang atas data lain',
