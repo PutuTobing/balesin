@@ -422,3 +422,61 @@ Layar yang di putaran 1 bernilai < 4, sesudah revisi:
 Worktree sementara dihapus (folder + `git worktree prune`; `git worktree list` hanya repo utama), port 3191/5191
 kosong, database `balesin_kd_e2e` di-drop, Redis db 11 `DBSIZE` 0. Berkas repo yang ditulis: bagian ini dan 21 berkas
 `p2-*.png`. Tidak ada kode produk yang diubah, tidak ada commit.
+
+---
+
+# Putaran 3 (verifikasi terbatas)
+
+- **Tanggal:** 2026-11-16 · **Penilai:** `kritikus-desain` · **Putaran:** 3
+- **Kode yang dinilai:** `3959c7d` ("fix(channel): revisi putaran 2 — paragraf kunci enkripsi utuh, gulir hanya wadah
+  isi, teks App Secret").
+- **Cara:** worktree sementara dari HEAD, API 3191 / web 5191, `balesin_kd_e2e`, Redis db 11. Foto ulang 8 layar
+  (`wizard-tanpa-kunci`, `nomor`, `nomor-gagal-tes`, `nomor-gagal-tes-perbaiki`, `nomor-ganti-kredensial`,
+  `nomor-tes-berhasil`, `nomor-webhook`, `wizard-webhook`) × 390/1440 × terang/gelap: **32/32 lulus**. Spek ukur
+  (13 + 13 uji lulus): posisi `h1`, rail, `scrollTop` dokumen dan semua leluhur non-gulir, gulir wadah isi, elemen
+  terfokus, dan `aria-current` sebelum/sesudah "Ganti kredensial" (390 & 1440) dan sesudah lompat ke setiap 6 bagian
+  lewat navigasi bagian (Enter dari keyboard, 1440 terang & gelap).
+- **Screenshot:** berkas berawalan `p3-`.
+
+## Putusan putaran 3: REVISI (satu cacat di navigasi bagian)
+
+| Butir | Hasil | Status |
+|---|---|---|
+| **R1** paragraf kunci enkripsi | Satu paragraf rata tengah, `BALESIN_MASTER_KEY` dan `.env` sebaris, perintah + Salin di bawahnya (390 & 1440, terang & gelap) | Lolos |
+| **P2-S1** gulir tanpa menggeser kerangka | `h1` tetap di y 16, rail tetap (y 0 di 1440; nav bawah y 787 di 390), `scrollTop` dokumen 0, **tidak ada** leluhur ber-`overflow: hidden` yang tergulir, di semua 16 kasus. Hanya wadah isi yang bergulir. "Ganti kredensial": isian Token terfokus (y 326 di 1440, y 448 di 390), penanda "Kredensial Meta" | Lolos |
+| **P2-S2** teks App Secret | Halaman nomor: "Ganti App Secret di kartu Kredensial Meta di bawah."; wizard tetap menunjuk halaman nomor | Lolos |
+| **P2-S3** mock `fetchedAt` | `nomor-gagal-tes`: "Data dari Meta, dibaca kemarin, 08.56." sebelum tes gagal hari ini 08.56 — urutan waktunya kini masuk akal | Lolos |
+| Navigasi bagian: penanda bagian aktif | Lompat ke **Webhook, Profil bisnis, Kredensial Meta, Ringkasan**: penanda benar. Lompat ke **Nama channel**: kartu itu naik ke atas (y 72) dan terfokus, tetapi penanda dan `aria-current="location"` jatuh ke **Kredensial Meta**. Lompat ke **Akses channel**: halaman sudah di dasar, kartu di y 569, penanda juga **Kredensial Meta** (`p3-nav-Nama-channel-1440-terang.png`, `p3-nav-Akses-channel-1440-terang.png`) | **Gagal** (R2) |
+
+Nilai: semua layar yang difoto ulang ≥ 4, **kecuali** `nomor` 1440 terang & gelap: **4 Kerapian 3**, **7 Aksesibilitas 3**
+(penanda visual dan `aria-current` menunjuk bagian yang tidak dipilih; pembaca layar mengumumkan lokasi yang salah).
+390 tidak terdampak (navigasi bagian hanya di ≥ 1024 px). `wizard-tanpa-kunci` kini 4/5/5/5/5/5/5/4/4/5.
+
+## Revisi putaran 3
+
+**R2. Navigasi bagian menandai bagian yang dipilih**
+— `apps/web/src/features/channels/SectionNav.tsx`
+
+- Sebab: `jump()` memanggil `setActive(id)`, lalu `IntersectionObserver` langsung memanggil `pick()` lagi saat
+  gulirannya selesai. `pick()` memilih bagian **terakhir** yang tepinya di atas 40% tinggi layar (y 360). Kartu
+  "Nama channel" pendek (167 px), jadi "Kredensial Meta" (y 256) ikut lewat garis dan menang. "Akses channel" tidak
+  pernah bisa naik melewati garis karena halaman sudah di dasar.
+- Perbaikan (keduanya):
+  1. **Kunci pilihan pengguna:** simpan `pinnedRef.current = id` di `jump()`; `pick()` tidak mengubah apa pun selama
+     ada pin. Lepas pin hanya saat pengguna sendiri menggulir wadah isi (`wheel`, `touchmove`, atau `keydown`
+     PageUp/PageDown/Arrow/Home/End/Space pada wadah), bukan pada event `scroll` hasil `scrollToTopOfContainer`.
+  2. **Aturan saat menggulir bebas:** bagian aktif = bagian terakhir yang tepi atasnya ≤ tepi atas wadah + 24 px
+     (bukan 40% layar); bila wadah sudah di dasar (`scrollTop + clientHeight ≥ scrollHeight − 2`), bagian aktif =
+     bagian terakhir.
+- Kriteria lolos: lompat ke masing-masing 6 bagian (klik dan Enter) → `aria-current="location"` ada di tautan yang
+  dipilih, 1440 terang & gelap. Gulir manual dari atas ke dasar → penanda berpindah urut sampai "Akses channel".
+  Tambahkan uji di `ChannelPage.test.tsx` atau E2E.
+
+Setelah R2 diperbaiki: foto ulang `nomor` 1440 (terang & gelap) dan ukur ulang 6 lompatan. Selain itu tidak ada yang
+tersisa — layar Channel siap **LOLOS**.
+
+## Bersih-bersih putaran 3
+
+Worktree dihapus (folder + `git worktree prune`; `git worktree list` hanya repo utama), port 3191/5191 kosong,
+`balesin_kd_e2e` di-drop, Redis db 11 `DBSIZE` 0. Berkas repo yang ditulis: bagian ini dan 6 berkas `p3-*.png`. Tidak
+ada kode produk yang diubah, tidak ada commit.
