@@ -188,3 +188,19 @@ penelusuran isi lama tidak lengkap.
 | `packages/core`: `vitest run` | 529/529 lulus |
 | ESLint + `tsc --noEmit` (api, core) untuk berkas tes baru | bersih |
 | `pnpm audit` | 2 moderate dev-only (`esbuild`, `minimatch`), tidak ada yang baru |
+
+---
+
+## Putaran 2 — verifikasi perbaikan commit `c90555f`
+
+### Putusan putaran 2: AMAN
+
+R1, R2, dan Info 5 tertutup.
+
+| # | Status | Bukti |
+|---|---|---|
+| R1 nama di layar kunci | ✅ | Kolom baru `organizations.notification_contact_name` (migrasi 0019, bawaan `false`). Pengaturan `PUT /settings/notifications` `{ preview, contactName }` (`organization.manage`, diaudit lama/baru). Worker: bila mati → judul "Pesan baru di inbox", badan "Buka untuk melihat percakapan." (tanpa nama). Bila hidup → nama TIM apa adanya, nama profil WhatsApp diberi awalan `~` (penanda teks dari pelanggan), ≤ 60 karakter |
+| R2 `quick_reply_risky` & audit isi | ✅ (Info 5 laporan hapus/ekspor) | Pola domain umum `…\.[a-z]{2,}` (dengan/ tanpa skema). Isi audit utuh hingga 3.500 (= batas template). `quick_reply.deleted` kini menyimpan `previous` (judul + isi) |
+| Info 5 `DELETE` langganan dinormalkan | ✅ | `unsubscribe` menormalkan lewat `checkPushEndpoint(...).href` sebelum mencocokkan |
+
+Tes penjaga putaran 1 (`security-review-fase2-push.test.ts`, `…push.integration.test.ts`) tetap lulus.
