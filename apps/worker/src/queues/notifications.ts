@@ -174,7 +174,11 @@ export async function processNotificationJob(
   if (!secretBox) return { status: 'skipped', reason: 'no_master_key' };
 
   const [org] = await db
-    .select({ timezone: organizations.timezone, preview: organizations.notificationPreview })
+    .select({
+      timezone: organizations.timezone,
+      preview: organizations.notificationPreview,
+      contactName: organizations.notificationContactName,
+    })
     .from(organizations)
     .where(eq(organizations.id, payload.organizationId));
   const [vapid] = await db
@@ -183,7 +187,7 @@ export async function processNotificationJob(
     .where(eq(pushVapidKeys.organizationId, payload.organizationId));
   if (!org || !vapid) return { status: 'skipped', reason: 'no_subscribers' };
 
-  const audience = await audienceOf(db, payload, org.preview);
+  const audience = await audienceOf(db, payload, org.preview, org.contactName);
   if (!audience) return { status: 'skipped', reason: 'no_audience' };
 
   // Penerima yang masih berhak SEKARANG.
@@ -369,6 +373,7 @@ async function audienceOf(
   db: Database,
   payload: NotificationJobPayload,
   preview: boolean,
+  showName: boolean,
 ): Promise<Audience | null> {
   if (payload.kind === 'test') {
     if (!payload.userId) return null;
@@ -406,10 +411,14 @@ async function audienceOf(
       ),
     );
   if (!conversation) return null;
-  const name = truncate(
-    conversation.contactName ?? conversation.contactProfileName ?? 'pelanggan',
-    NAME_MAX,
-  );
+  // Bawaan TANPA nama kontak (review push R1). Nama profil WhatsApp (tidak tepercaya) diberi `~`.
+  const name = !showName
+    ? null
+    : conversation.contactName
+      ? truncate(conversation.contactName, NAME_MAX)
+      : conversation.contactProfileName
+        ? `~${truncate(conversation.contactProfileName, NAME_MAX)}`
+        : null;
   const base = { conversationId: conversation.id, holderUserId: conversation.assigneeUserId };
 
   if (payload.kind === 'message') {
@@ -431,7 +440,7 @@ async function audienceOf(
         ? truncate(message.text, NOTIFICATION_PREVIEW_MAX)
         : (MEDIA_LABELS[message.type] ?? NO_PREVIEW)
       : NO_PREVIEW;
-    const title = `Pesan baru dari ${name}`;
+    const title = name ? `Pesan baru dari ${name}` : 'Pesan baru di inbox';
     if (conversation.status === 'served' && conversation.assigneeUserId) {
       return {
         ...base,
@@ -465,7 +474,7 @@ async function audienceOf(
       candidates: [assignee],
       preference: 'assignedToMe',
       title: 'Chat ditugaskan ke kamu',
-      body: `Percakapan dengan ${name}`,
+      body: name ? `Percakapan dengan ${name}` : 'Buka untuk melihat percakapan.',
       needsAssign: false,
     };
   }
@@ -477,7 +486,7 @@ async function audienceOf(
     candidates: await claimersOf(db, payload.organizationId, payload.actorUserId),
     preference: 'queue',
     title: 'Chat menunggu di antrian',
-    body: `Percakapan dengan ${name}`,
+    body: name ? `Percakapan dengan ${name}` : 'Buka untuk melihat percakapan.',
     needsAssign: true,
   };
 }

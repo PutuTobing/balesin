@@ -37,9 +37,9 @@ import { conversationScope, likePattern } from '../inbox/inbox.repo';
 export const QUICK_REPLY_NOT_FOUND = 'Template percakapan tidak ditemukan.';
 
 /** Isi template di audit dipotong (teks bisnis; cukup untuk menelusuri perubahan). */
-const AUDIT_BODY_MAX = 1_000;
+const AUDIT_BODY_MAX = 3_500;
 const LINK_PATTERN =
-  /\b(?:https?:\/\/|www\.)[^\s]+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|id|co|io|me|link|xyz|ly|info|biz|site|online|app|cc|top|shop)\b(?:\/[^\s]*)?/gi;
+  /\b(?:https?:\/\/|www\.)[^\s]+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}\b(?:\/[^\s]*)?/gi;
 const LONG_NUMBER_PATTERN = /\d(?:[\s.-]?\d){7,}/g;
 
 function matchesOf(
@@ -288,7 +288,11 @@ export function createQuickRepliesService(deps: {
         const [deleted] = await tx
           .delete(quickReplies)
           .where(and(eq(quickReplies.organizationId, auth.organizationId), eq(quickReplies.id, id)))
-          .returning({ shortcut: quickReplies.shortcut });
+          .returning({
+            shortcut: quickReplies.shortcut,
+            title: quickReplies.title,
+            body: quickReplies.body,
+          });
         if (!deleted) throw new AppError('NOT_FOUND', { message: QUICK_REPLY_NOT_FOUND });
         await recordAudit(tx, {
           organizationId: auth.organizationId,
@@ -296,7 +300,10 @@ export function createQuickRepliesService(deps: {
           action: AUDIT_ACTIONS.quickReplyDeleted,
           targetType: 'quick_reply',
           targetId: id,
-          metadata: { shortcut: deleted.shortcut },
+          metadata: {
+            shortcut: deleted.shortcut,
+            previous: { title: deleted.title, body: clip(deleted.body) },
+          },
           client,
         });
       });

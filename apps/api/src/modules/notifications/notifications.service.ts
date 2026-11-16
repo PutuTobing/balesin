@@ -237,13 +237,15 @@ export function createNotificationsService(deps: {
     },
 
     async unsubscribe(auth, endpoint) {
+      // Dinormalkan sama seperti saat mendaftar (URL.href), supaya alamat yang sama selalu cocok.
+      const normalized = checkPushEndpoint(endpoint, extraOrigins)?.href ?? endpoint;
       const deleted = await db
         .delete(pushSubscriptions)
         .where(
           and(
             eq(pushSubscriptions.organizationId, auth.organizationId),
             eq(pushSubscriptions.userId, auth.user.id),
-            eq(pushSubscriptions.endpoint, endpoint),
+            eq(pushSubscriptions.endpoint, normalized),
           ),
         )
         .returning({ id: pushSubscriptions.id });
@@ -269,24 +271,38 @@ export function createNotificationsService(deps: {
 
     async settings(organizationId) {
       const [row] = await db
-        .select({ preview: organizations.notificationPreview })
+        .select({
+          preview: organizations.notificationPreview,
+          contactName: organizations.notificationContactName,
+        })
         .from(organizations)
         .where(eq(organizations.id, organizationId));
-      return { preview: row?.preview ?? false };
+      return { preview: row?.preview ?? false, contactName: row?.contactName ?? false };
     },
 
     async updateSettings(auth, client, input) {
       await db.transaction(async (tx) => {
         await assertActorStillAuthorized(tx, auth, 'organization.manage');
         const [current] = await tx
-          .select({ preview: organizations.notificationPreview })
+          .select({
+            preview: organizations.notificationPreview,
+            contactName: organizations.notificationContactName,
+          })
           .from(organizations)
           .where(eq(organizations.id, auth.organizationId))
           .for('update');
-        if (!current || current.preview === input.preview) return;
+        if (
+          !current ||
+          (current.preview === input.preview && current.contactName === input.contactName)
+        ) {
+          return;
+        }
         await tx
           .update(organizations)
-          .set({ notificationPreview: input.preview })
+          .set({
+            notificationPreview: input.preview,
+            notificationContactName: input.contactName,
+          })
           .where(eq(organizations.id, auth.organizationId));
         await recordAudit(tx, {
           organizationId: auth.organizationId,
@@ -294,11 +310,15 @@ export function createNotificationsService(deps: {
           action: AUDIT_ACTIONS.notificationSettingsUpdated,
           targetType: 'organization',
           targetId: auth.organizationId,
-          metadata: { previous: { preview: current.preview }, preview: input.preview },
+          metadata: {
+            previous: { preview: current.preview, contactName: current.contactName },
+            preview: input.preview,
+            contactName: input.contactName,
+          },
           client,
         });
       });
-      return { preview: input.preview };
+      return { preview: input.preview, contactName: input.contactName };
     },
 
     async test(auth) {

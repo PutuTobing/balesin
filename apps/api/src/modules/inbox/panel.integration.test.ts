@@ -705,3 +705,27 @@ describe('quick reply — jejak isi & tautan/angka baru (review panel R1)', () =
     );
   });
 });
+
+describe('quick reply — review panel putaran 2 (R2)', () => {
+  it('domain tanpa skema terdeteksi; isi audit utuh (≤ 3.500); hapus menyimpan isi terakhir', async () => {
+    const supervisor = await agent('supervisor', 'Rina Supervisor');
+    const created = await send(supervisor, 'POST', API_ROUTES.quickReplies.list, {
+      shortcut: 'info',
+      title: 'Info',
+      body: 'Terima kasih sudah menghubungi kami.',
+    });
+    const item = quickReplyResponseSchema.parse(created.json()).quickReply;
+    const url = apiPath(API_ROUTES.quickReplies.quickReply, { quickReplyId: item.id });
+    const long = `Cek status di bayar-aman.co ya kak. ${'x'.repeat(2000)}`;
+    await send(supervisor, 'PATCH', url, { body: long });
+    await send(supervisor, 'DELETE', url);
+    const audit = await harness.db
+      .select({ action: auditLogs.action, metadata: auditLogs.metadata })
+      .from(auditLogs)
+      .where(eq(auditLogs.targetId, item.id));
+    const updated = audit.find((row) => row.action === 'quick_reply.updated');
+    expect(updated?.metadata).toMatchObject({ risky: true, addedLinks: 1, next: { body: long } });
+    const deleted = audit.find((row) => row.action === 'quick_reply.deleted');
+    expect(deleted?.metadata).toMatchObject({ previous: { body: long } });
+  });
+});

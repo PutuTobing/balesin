@@ -72,6 +72,18 @@ export const WEBHOOK_REJECTED_CHANNEL_RULE: RateLimitRule = {
   limit: 10,
   windowSeconds: 600,
 };
+/**
+ * Jumlah tanda tangan gagal per channel dalam ±24 jam (jendela TETAP sejak kegagalan pertama) dan
+ * penanda "terakhir gagal" (TTL 24 jam; waktu = sekarang − (24 jam − sisa TTL)) — untuk layar
+ * diagnosis webhook (butir 10 sisa). Tidak menahan apa pun.
+ */
+export const WEBHOOK_SIGNATURE_DAY_RULE: RateLimitRule = {
+  name: 'webhook-tanda-tangan-24j',
+  limit: 1_000_000_000,
+  windowSeconds: 24 * 60 * 60,
+};
+export const WEBHOOK_SIGNATURE_LAST_FLAG = 'webhook-tanda-tangan-terakhir';
+
 export const WEBHOOK_CHANNEL_RULE: RateLimitRule = {
   name: 'webhook-channel',
   limit: 12_000,
@@ -195,6 +207,12 @@ export function createWebhookGuard(deps: { db: Database; limiter: RateLimiter })
           return;
         }
         await limiter.consume(rejectionRuleFor('POST'), `${ipKey}:${channel.id}`);
+        await limiter.consume(WEBHOOK_SIGNATURE_DAY_RULE, channel.id);
+        await limiter.setFlag(
+          WEBHOOK_SIGNATURE_LAST_FLAG,
+          channel.id,
+          WEBHOOK_SIGNATURE_DAY_RULE.windowSeconds,
+        );
         await limiter.tally(WEBHOOK_REJECTED_SOURCES_TALLY, channel.id, ipKey, {
           ttlSeconds: WEBHOOK_REJECTED_CHANNEL_RULE.windowSeconds,
           maxMembers: WEBHOOK_REJECTED_SOURCES_MAX,
@@ -224,6 +242,7 @@ export function createWebhookGuard(deps: { db: Database; limiter: RateLimiter })
           targetType: 'channel',
           targetId: channel.id,
           metadata: {
+            channelId: channel.id,
             name: channel.name,
             phoneNumberId: channel.waPhoneNumberId,
             failures: count,

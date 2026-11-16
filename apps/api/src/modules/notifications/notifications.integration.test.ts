@@ -289,10 +289,18 @@ describe('kunci VAPID & langganan', () => {
     });
 
     expect(
-      (await send(cs, 'PUT', API_ROUTES.notifications.settings, { preview: true })).statusCode,
+      (
+        await send(cs, 'PUT', API_ROUTES.notifications.settings, {
+          preview: true,
+          contactName: true,
+        })
+      ).statusCode,
     ).toBe(403);
-    const updated = await send(owner, 'PUT', API_ROUTES.notifications.settings, { preview: true });
-    expect(updated.json()).toEqual({ settings: { preview: true } });
+    const updated = await send(owner, 'PUT', API_ROUTES.notifications.settings, {
+      preview: true,
+      contactName: false,
+    });
+    expect(updated.json()).toEqual({ settings: { preview: true, contactName: false } });
     const audit = await harness.db
       .select()
       .from(auditLogs)
@@ -334,7 +342,8 @@ describe('pengirim (worker) — penerima, isi, jeda', () => {
     const pushed = pushNotificationPayloadSchema.parse(mine.received[0]);
     expect(pushed).toEqual({
       v: 1,
-      title: 'Pesan baru dari Budi Pelanggan',
+      // Bawaan tanpa nama kontak (review push R1).
+      title: 'Pesan baru di inbox',
       body: 'Buka untuk membaca pesan.',
       url: `/inbox?chat=${row.id}`,
       tag: `chat-${row.id}`,
@@ -354,7 +363,7 @@ describe('pengirim (worker) — penerima, isi, jeda', () => {
   it('antrian (unserved) → yang bisa mengambil, bukan Teknisi; cuplikan bila diizinkan Owner; preferensi & 410', async () => {
     await harness.db
       .update(organizations)
-      .set({ notificationPreview: true })
+      .set({ notificationPreview: true, notificationContactName: true })
       .where(eq(organizations.id, organizationId));
     const teknisi = await agent('teknisi', 'Arya Teknisi');
     const cs = await agent('cs', 'Sinta CS');
@@ -378,9 +387,11 @@ describe('pengirim (worker) — penerima, isi, jeda', () => {
     ).toMatchObject({ status: 'sent', delivered: 1, removed: 1 });
     expect(teknisiDevice.received).toEqual([]);
     expect(supervisorDevice.received).toEqual([]);
-    expect(pushNotificationPayloadSchema.parse(csDevice.received[0]).body).toBe(
-      'Tagihan bulan ini berapa ya kak?',
-    );
+    expect(pushNotificationPayloadSchema.parse(csDevice.received[0])).toMatchObject({
+      // Nama profil WhatsApp (tidak tepercaya) diberi penanda `~`.
+      title: 'Pesan baru dari ~Budi Pelanggan',
+      body: 'Tagihan bulan ini berapa ya kak?',
+    });
     const ownerLeft = await harness.db
       .select()
       .from(pushSubscriptions)
@@ -422,7 +433,7 @@ describe('pengirim (worker) — penerima, isi, jeda', () => {
     ).toMatchObject({ delivered: 1 });
     expect(pushNotificationPayloadSchema.parse(device.received[0])).toMatchObject({
       title: 'Chat ditugaskan ke kamu',
-      body: 'Percakapan dengan Budi Pelanggan',
+      body: 'Buka untuk melihat percakapan.',
     });
     await send(cs, 'POST', apiPath(API_ROUTES.inbox.unassign, { conversationId: row.id }));
     expect(harness.notificationJobs.at(-1)).toMatchObject({

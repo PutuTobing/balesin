@@ -496,7 +496,12 @@ export async function buildApp(deps: AppDeps) {
   });
   await app.register(teamRoutes, { team, cookieSecure: config.cookieSecure });
   await app.register(auditRoutes, { audit });
-  await app.register(channelsRoutes, { channels, limiter, cookieSecure: config.cookieSecure });
+  await app.register(channelsRoutes, {
+    db,
+    channels,
+    limiter,
+    cookieSecure: config.cookieSecure,
+  });
   await app.register(inboxRoutes, { db, limiter, publisher: inboxEvents });
   await app.register(inboxStreamRoutes, { hub: inboxStream, appOrigin: config.appOrigin });
   await app.register(outboundRoutes, { outbound, limiter });
@@ -527,7 +532,14 @@ export async function buildApp(deps: AppDeps) {
   await app.register(contactsRoutes, {
     db,
     limiter,
-    contacts: createContactsService({ db, publisher: inboxEvents }),
+    cookieSecure: config.cookieSecure,
+    contacts: createContactsService({
+      db,
+      publisher: inboxEvents,
+      twoFactor,
+      purgeMedia: () => outbound.purgeExpiredMedia(),
+      logger: deps.logger,
+    }),
   });
   await app.register(tagsRoutes, {
     limiter,

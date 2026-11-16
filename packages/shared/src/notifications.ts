@@ -102,10 +102,16 @@ export const notificationPreferencesResponseSchema = z.object({
 export type NotificationPreferencesResponse = z.infer<typeof notificationPreferencesResponseSchema>;
 
 /**
- * Pengaturan notifikasi organisasi (`organization.manage` = Owner). `preview` = tampilkan cuplikan
- * isi pesan di notifikasi (terlihat di layar kunci). Bawaan MATI.
+ * Pengaturan notifikasi organisasi (`organization.manage` = Owner), keduanya bawaan MATI (privasi
+ * layar kunci, review push R1):
+ *  - `contactName` = tampilkan nama kontak di judul ("Pesan baru dari {nama}"); mati → "Pesan baru
+ *    di inbox". Nama profil WhatsApp (bukan nama dari tim) diberi penanda `~` (selaras UI);
+ *  - `preview` = tampilkan cuplikan isi pesan.
  */
-export const notificationSettingsSchema = z.object({ preview: z.boolean() });
+export const notificationSettingsSchema = z.object({
+  preview: z.boolean(),
+  contactName: z.boolean(),
+});
 export type NotificationSettings = z.infer<typeof notificationSettingsSchema>;
 export const notificationSettingsResponseSchema = z.object({
   settings: notificationSettingsSchema,

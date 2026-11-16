@@ -1,3 +1,5 @@
+import { AppError } from '@balesin/core';
+import type { Database } from '@balesin/db';
 import {
   API_ROUTES,
   businessProfileResponseSchema,
@@ -15,6 +17,7 @@ import {
   updateBusinessProfileRequestSchema,
   updateBusinessProfileResponseSchema,
   updateChannelRequestSchema,
+  webhookHealthResponseSchema,
 } from '@balesin/shared';
 import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod';
@@ -24,9 +27,11 @@ import { readDeviceToken } from '../../http/cookies';
 import { enforceRateLimit, type RateLimitRule, type RateLimiter } from '../../http/rate-limit';
 import { requirePermission } from '../../http/route-access';
 import { requireAuth } from '../auth/auth.hook';
+import { webhookHealth } from '../webhooks/webhook-health';
 import type { ChannelContext, ChannelsService } from './channels.service';
 
 export interface ChannelsRoutesOptions {
+  db: Database;
   channels: ChannelsService;
   limiter: RateLimiter;
   cookieSecure: boolean;
@@ -247,6 +252,26 @@ export const channelsRoutes: FastifyPluginCallbackZod<ChannelsRoutesOptions> = (
       },
     },
     async (request) => channels.webhook(requireAuth(request), request.params.channelId),
+  );
+
+  // Diagnosis webhook 24 jam (butir 10 sisa): hitungan & waktu saja, tanpa payload.
+  app.get(
+    routes.webhookHealth,
+    {
+      config: { access: MANAGE },
+      schema: {
+        params: channelIdParamsSchema,
+        response: { 200: webhookHealthResponseSchema, ...errors },
+      },
+    },
+    async (request) => {
+      const auth = requireAuth(request);
+      const id = request.params.channelId;
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+        throw new AppError('NOT_FOUND', { message: 'Channel tidak ditemukan.' });
+      }
+      return { health: await webhookHealth(options.db, limiter, auth.organizationId, id) };
+    },
   );
 
   app.post(

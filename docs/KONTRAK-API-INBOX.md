@@ -381,9 +381,10 @@ Skema: `packages/shared/src/quick-replies.ts`.
 Variabel HANYA `{nama}` (nama dari tim → nama profil WhatsApp → "Kak") dan `{agen}` (nama pemakai);
 bentuk `{kata}` lain ditolak saat menyimpan (400). Teks hasil dimasukkan ke composer lalu dikirim
 lewat endpoint kirim pesan biasa (jendela 24 jam & batas kirim tetap berlaku). Buat/ubah/hapus
-diaudit (`quick_reply.*`: shortcut, nama isian yang berubah, isi lama → baru dipotong ≤ 1.000 —
-teks bisnis, bukan data pelanggan; review panel R1). Tautan atau angka ≥ 8 digit yang BARU ditambahkan
-oleh selain Owner → `risky: true` + kejadian keamanan `quick_reply_risky` (warning).
+diaudit (`quick_reply.*`: shortcut, nama isian yang berubah, isi lama → baru UTUH (≤ 3.500), juga
+isi terakhir saat dihapus — teks bisnis, bukan data pelanggan; review panel R1/R2). Tautan (dengan
+atau tanpa skema, mis. `bayar-aman.co`) atau angka ≥ 8 digit yang BARU ditambahkan oleh selain Owner →
+`risky: true` + kejadian keamanan `quick_reply_risky` (warning).
 
 ## Retensi & hapus per kontak (UU PDP, review webhook S4)
 
@@ -397,8 +398,27 @@ oleh selain Owner → `risky: true` + kejadian keamanan `quick_reply_risky` (war
 - `deleteContactData(tx, organizationId, contactId)` (`apps/api/src/modules/contacts/contacts.repo.ts`):
   hapus pesan, percakapan, kontak; kosongkan payload `webhook_events` yang dikaitkan atau cocok
   identitasnya; kejadian `pending` → `skipped` (`contact_deleted`). Baris + kunci dedup tetap, jadi
-  kiriman ulang Meta tidak menghidupkan kontak. Endpoint (izin `contacts.delete` + konfirmasi
-  identitas + audit) menyusul di butir CRM.
+  kiriman ulang Meta tidak menghidupkan kontak. Juga menghapus tag kontak, riwayat kontak, dan
+  catatan sesi.
+
+**Hapus kontak** — `DELETE /api/v1/contacts/:contactId` (`contacts.delete` = Owner/Admin). CSRF; body
+`{ confirmation }` WAJIB (password + kode 2FA; tanpa → 400 `confirmation.password`). Satu transaksi:
+pelaku diperiksa ulang → `deleteContactData` → audit `contact.deleted` (HANYA ID kontak + jumlah:
+`messages`, `conversations`, `webhookEvents`, `hadOpenConversation`, `actorRole` — tanpa nama, nomor,
+isi). Kontak dengan percakapan TERBUKA tetap boleh dihapus (permintaan UU PDP tidak menunggu chat
+selesai; tercatat `hadOpenConversation`). Setelah commit: berkas media langsung dihapus dari disk
+(`purgeExpiredMedia`, review R4) dan setiap percakapannya diumumkan `conversation.removed`
+(`{ conversationId }`) ke semua pemegang `inbox.view`. → `{ deleted: { messages, conversations,
+webhookEvents, mediaFiles } }`; kontak tak dikenal → 404.
+
+**Ekspor data satu kontak** (permintaan akses data) — `GET /api/v1/contacts/:contactId/export`
+(`contacts.export` = Owner/Admin/Supervisor; 20/jam per pengguna) → JSON `contactExportSchema`
+(`Content-Disposition: attachment; filename="kontak-<nomor>.json"`, `Cache-Control: no-store`): data
+kontak (nomor, username, nama tim & profil, email, catatan kontak, atribut, nama tag), percakapan
+(nomor, channel, status, waktu), pesan (arah, jenis, teks, nama/jenis media, lokasi, status, waktu;
+maks. 10.000 — lebih → `truncated: true`). TIDAK memuat ID internal Meta (BSUID, ID media), catatan
+sesi internal tim, atau berkas media. Diaudit `contact.exported` (ID + jumlah). Ekspor massal &
+berkas media menyusul (Fase 4).
 
 ## Jejak kejadian yang ditolak database (review webhook N2)
 

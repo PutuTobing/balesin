@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { CHANNEL_TYPES } from './channels';
 import { hasControlCharacters, isoDateTimeSchema } from './fields';
+import { identityConfirmationSchema } from './identity';
 import { tagColorSchema, tagRefSchema } from './tags';
 
 /**
@@ -416,6 +417,91 @@ export const updateContactRequestSchema = z
     { error: 'Tidak ada yang diubah.' },
   );
 export type UpdateContactRequest = z.infer<typeof updateContactRequestSchema>;
+
+/**
+ * `DELETE /contacts/:contactId` — hapus kontak beserta data pribadinya (UU PDP; `contacts.delete` =
+ * Owner/Admin). WAJIB konfirmasi identitas. Percakapan terbuka ikut terhapus.
+ */
+export const deleteContactRequestSchema = z.object({
+  confirmation: identityConfirmationSchema.optional(),
+});
+export type DeleteContactRequest = z.input<typeof deleteContactRequestSchema>;
+export const deleteContactResponseSchema = z.object({
+  deleted: z.object({
+    messages: z.number().int().nonnegative(),
+    conversations: z.number().int().nonnegative(),
+    /** Kejadian webhook yang isinya dikosongkan. */
+    webhookEvents: z.number().int().nonnegative(),
+    /** Berkas media yang dihapus dari disk. */
+    mediaFiles: z.number().int().nonnegative(),
+  }),
+});
+export type DeleteContactResponse = z.infer<typeof deleteContactResponseSchema>;
+
+/** Batas pesan dalam ekspor satu kontak (lebih dari ini → `truncated`; ekspor penuh Fase 4). */
+export const CONTACT_EXPORT_MESSAGES_MAX = 10_000;
+
+/**
+ * `GET /contacts/:contactId/export` (`contacts.export`) — data pribadi SATU kontak untuk permintaan
+ * akses data (UU PDP), JSON. Tanpa ID internal Meta (BSUID, ID media), tanpa catatan sesi internal
+ * tim, tanpa berkas media (hanya nama/jenisnya).
+ */
+export const contactExportSchema = z.object({
+  exportedAt: isoDateTimeSchema,
+  contact: z.object({
+    id: z.uuid(),
+    number: z.number().int(),
+    channelType: z.string(),
+    phone: z.string().nullable(),
+    waUsername: z.string().nullable(),
+    name: z.string().nullable(),
+    profileName: z.string().nullable(),
+    email: z.string().nullable(),
+    notes: z.string().nullable(),
+    attributes: z.array(z.object({ key: z.string(), value: z.string() })),
+    tags: z.array(z.string()),
+    createdAt: isoDateTimeSchema,
+  }),
+  conversations: z.array(
+    z.object({
+      id: z.uuid(),
+      number: z.number().int(),
+      channel: z.string(),
+      status: conversationStatusSchema,
+      createdAt: isoDateTimeSchema,
+      resolvedAt: isoDateTimeSchema.nullable(),
+    }),
+  ),
+  messages: z.array(
+    z.object({
+      id: z.uuid(),
+      conversationId: z.uuid(),
+      direction: messageDirectionSchema,
+      type: messageTypeSchema,
+      text: z.string().nullable(),
+      media: z
+        .object({
+          kind: z.string(),
+          mimeType: z.string().nullable(),
+          filename: z.string().nullable(),
+        })
+        .nullable(),
+      location: z
+        .object({
+          latitude: z.number(),
+          longitude: z.number(),
+          name: z.string().nullable(),
+          address: z.string().nullable(),
+        })
+        .nullable(),
+      status: messageDeliveryStatusSchema.nullable(),
+      createdAt: isoDateTimeSchema,
+    }),
+  ),
+  /** `true` = pesan lebih dari `CONTACT_EXPORT_MESSAGES_MAX` (yang terbaru dipotong). */
+  truncated: z.boolean(),
+});
+export type ContactExport = z.infer<typeof contactExportSchema>;
 
 export const messagePreviewSchema = z.object({
   direction: messageDirectionSchema,

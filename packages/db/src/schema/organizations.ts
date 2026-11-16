@@ -44,6 +44,8 @@ export const organizations = pgTable(
     sendingPauseReason: text('sending_pause_reason'),
     /** Tampilkan cuplikan isi pesan di notifikasi push (layar kunci). Bawaan MATI (butir 10). */
     notificationPreview: boolean('notification_preview').notNull().default(false),
+    /** Tampilkan nama kontak di notifikasi push. Bawaan MATI (review push R1). */
+    notificationContactName: boolean('notification_contact_name').notNull().default(false),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },

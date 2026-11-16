@@ -129,6 +129,13 @@ export const AUDIT_ACTIONS = {
   quickReplyCreated: 'quick_reply.created',
   quickReplyUpdated: 'quick_reply.updated',
   quickReplyDeleted: 'quick_reply.deleted',
+  /**
+   * Kontak dihapus beserta data pribadinya (UU PDP) — HANYA ID kontak + jumlah baris yang dihapus
+   * (`messages`, `conversations`, `webhookEvents`, `mediaFiles`, `hadOpenConversation`).
+   */
+  contactDeleted: 'contact.deleted',
+  /** Data satu kontak diekspor (permintaan akses data) — ID + jumlah pesan. */
+  contactExported: 'contact.exported',
   /** Pengaturan notifikasi organisasi diubah (`preview` lama & baru). */
   notificationSettingsUpdated: 'settings.notifications.updated',
 } as const;
@@ -205,6 +212,8 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'quick_reply.updated': 'Template percakapan diubah',
   'quick_reply.deleted': 'Template percakapan dihapus',
   'settings.notifications.updated': 'Pengaturan notifikasi diubah',
+  'contact.deleted': 'Kontak dihapus (UU PDP)',
+  'contact.exported': 'Data kontak diekspor',
 };
 
 /** Label untuk aksi yang mungkin belum dikenal klien (versi lama): tampilkan kodenya apa adanya. */
@@ -227,6 +236,7 @@ export const AUDIT_TARGET_TYPES = [
   'channel',
   'tag',
   'quick_reply',
+  'contact',
 ] as const;
 export const auditTargetTypeSchema = z.enum(AUDIT_TARGET_TYPES, {
   error: 'Jenis target tidak dikenal.',
@@ -245,6 +255,7 @@ export const AUDIT_TARGET_TYPE_LABELS: Readonly<Record<AuditTargetType, string>>
   channel: 'Channel',
   tag: 'Tag',
   quick_reply: 'Template percakapan',
+  contact: 'Kontak',
 };
 
 // ── GET /audit-logs ─────────────────────────────────────────────────────────

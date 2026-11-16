@@ -148,6 +148,8 @@ export const API_ROUTES = {
     test: `${API_PREFIX}/settings/channels/:channelId/test`,
     /** GET — URL webhook + verify token. */
     webhook: `${API_PREFIX}/settings/channels/:channelId/webhook`,
+    /** GET — diagnosis webhook 24 jam (hitungan, tanpa payload; `channels.manage`). */
+    webhookHealth: `${API_PREFIX}/settings/channels/:channelId/webhook-health`,
     /** POST — buat ulang verify token. */
     rotateVerifyToken: `${API_PREFIX}/settings/channels/:channelId/webhook/verify-token`,
     /** GET — profil bisnis dari Meta; PUT — ubah profil bisnis. */
@@ -204,6 +206,8 @@ export const API_ROUTES = {
     media: `${API_PREFIX}/messages/:messageId/media`,
     /** GET — satu kontak (`contacts.view`); PATCH — ubah nama/email/catatan/atribut (`contacts.manage`). */
     contact: `${API_PREFIX}/contacts/:contactId`,
+    /** GET — ekspor data satu kontak (JSON, `contacts.export`). DELETE kontak = `contact` (`contacts.delete`). */
+    contactExport: `${API_PREFIX}/contacts/:contactId/export`,
     /** POST — pasang tag ke kontak (`contacts.manage`, CSRF). */
     contactTags: `${API_PREFIX}/contacts/:contactId/tags`,
     /** DELETE — lepas tag dari kontak (`contacts.manage`, CSRF). */

@@ -27,6 +27,11 @@ export const INBOX_BUS_EVENT_TYPES = [
   'tags.changed',
   /** Rem darurat pengiriman ditarik/dilepas (butir 10) — TANPA `conversationId`. */
   'sending.changed',
+  /**
+   * Percakapan DIHAPUS (hapus kontak, UU PDP) — barisnya sudah tidak ada, jadi hub mengirim
+   * `conversation.removed` (ID saja) ke semua socket organisasi yang memegang `inbox.view`.
+   */
+  'conversation.deleted',
 ] as const;
 export type InboxBusEventType = (typeof INBOX_BUS_EVENT_TYPES)[number];
 
@@ -127,6 +132,7 @@ function isComplete(event: InboxBusEvent): boolean {
     case 'sending.changed':
       return event.conversationId === undefined && event.messageId === undefined;
     case 'conversation.updated':
+    case 'conversation.deleted':
       return event.conversationId !== undefined;
     case 'conversation.detail':
       return event.conversationId !== undefined && event.section !== undefined;

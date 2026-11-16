@@ -125,6 +125,7 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'POST /api/v1/settings/channels/:channelId/enable': 'channels.manage',
   'POST /api/v1/settings/channels/:channelId/test': 'channels.manage',
   'GET /api/v1/settings/channels/:channelId/webhook': 'channels.manage',
+  'GET /api/v1/settings/channels/:channelId/webhook-health': 'channels.manage',
   'POST /api/v1/settings/channels/:channelId/webhook/verify-token': 'channels.manage',
   'GET /api/v1/settings/channels/:channelId/business-profile': 'channels.manage',
   'PUT /api/v1/settings/channels/:channelId/business-profile': 'channels.manage',
@@ -155,6 +156,9 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'POST /api/v1/messages/:messageId/retry': 'inbox.reply',
   'GET /api/v1/messages/:messageId/media': 'inbox.view',
   'GET /api/v1/contacts/:contactId': 'contacts.view',
+  // UU PDP: hapus kontak = contacts.delete (Owner/Admin, + konfirmasi identitas); ekspor = contacts.export
+  'DELETE /api/v1/contacts/:contactId': 'contacts.delete',
+  'GET /api/v1/contacts/:contactId/export': 'contacts.export',
   // panel detail (butir 8): ubah kontak & tag kontak = contacts.manage; master tag lihat = inbox.view,
   // buat = contacts.manage, ubah/hapus = settings.workspace.manage; catatan & tanda pesan = inbox.reply
   'PATCH /api/v1/contacts/:contactId': 'contacts.manage',

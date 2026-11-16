@@ -239,6 +239,9 @@ const DETAIL_KEYS: Readonly<Record<SecurityEventKind, readonly string[]>> = {
   // Sumber berbeda + awalan IP terbanyak: membedakan "App Secret salah" (banyak IP Meta) dari orang
   // dalam yang tahu ID channel (satu IP) — review webhook R1.
   webhook_signature_failed: [
+    // ID channel → banner menautkan ke Pengaturan → Channel (S3 kritikus Channel). Baris lama tanpa
+    // `channelId` di metadata memakai `target_id` (lihat pembentukan `details`).
+    'channelId',
     'name',
     'phoneNumberId',
     'failures',
@@ -355,6 +358,14 @@ export function createAuditService(deps: { db: Database; limiter: RateLimiter })
         const kind = kindOf(row);
         if (!kind) continue;
         const metadata = publicMetadata(row.metadata);
+        if (
+          kind === 'webhook_signature_failed' &&
+          !('channelId' in metadata) &&
+          row.targetType === 'channel' &&
+          row.targetId
+        ) {
+          metadata.channelId = row.targetId;
+        }
         events.push({
           id: row.id,
           kind,

@@ -132,6 +132,13 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
       };
     }
     if (event.conversationId === undefined) return null;
+    if (event.type === 'conversation.deleted') {
+      // Barisnya sudah dihapus: tidak ada cakupan untuk diperiksa — hanya ID ke pemegang inbox.view.
+      return {
+        assigneeUserId: undefined,
+        message: { type: 'conversation.removed', conversationId: event.conversationId },
+      };
+    }
     const [conversation] = await db
       .select({
         id: conversations.id,

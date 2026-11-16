@@ -1,23 +1,35 @@
-import { AppError, type InboxEventPublisher } from '@balesin/core';
+import { AppError, cleanFileName, type InboxEventPublisher, type Logger } from '@balesin/core';
 import {
+  channels,
   contactEvents,
   contactTags,
   contacts,
   conversations,
+  messages,
   tags,
   type Database,
   type DbExecutor,
 } from '@balesin/db';
 import {
+  CONTACT_EXPORT_MESSAGES_MAX,
   TAGS_PER_CONTACT_MAX,
   type ContactEditableField,
+  type ContactExport,
   type ConversationDetailSection,
+  type DeleteContactResponse,
+  type IdentityConfirmation,
   type UpdateContactRequest,
 } from '@balesin/shared';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ne, sql } from 'drizzle-orm';
+import { z } from 'zod';
 
+import type { ClientInfo } from '../../http/client-info';
+import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
 import { assertActorStillAuthorized } from '../auth/actor-check';
 import type { AuthContext } from '../auth/session.service';
+import { requireIdentityConfirmation } from '../two-factor/require-confirmation';
+import type { TwoFactorContext, TwoFactorService } from '../two-factor/two-factor.service';
+import { deleteContactData } from './contacts.repo';
 
 /**
  * Data kontak dari panel detail (Fase 2 butir 8, docs/KONTRAK-API-INBOX.md "Panel detail"): ubah
@@ -38,6 +50,15 @@ export const TAG_NOT_FOUND = 'Tag tidak ditemukan.';
 
 export interface ContactsService {
   update(auth: AuthContext, contactId: string, input: UpdateContactRequest): Promise<void>;
+  /** Hapus kontak + data pribadinya (UU PDP). Konfirmasi identitas wajib. */
+  remove(
+    auth: AuthContext,
+    contactId: string,
+    confirmation: IdentityConfirmation | undefined,
+    context: TwoFactorContext,
+  ): Promise<DeleteContactResponse['deleted']>;
+  /** Data satu kontak (permintaan akses data), diaudit. */
+  exportData(auth: AuthContext, client: ClientInfo, contactId: string): Promise<ContactExport>;
   addTag(auth: AuthContext, contactId: string, tagId: string): Promise<void>;
   removeTag(auth: AuthContext, contactId: string, tagId: string): Promise<void>;
 }
@@ -92,8 +113,15 @@ function sameAttributes(a: unknown, b: unknown): boolean {
 export function createContactsService(deps: {
   db: Database;
   publisher: InboxEventPublisher;
+  /** Wajib untuk hapus kontak (konfirmasi identitas). */
+  twoFactor?: Pick<TwoFactorService, 'confirmIdentity'>;
+  /** Pembersih media (`outbound.purgeExpiredMedia`) — dipanggil SETELAH commit hapus kontak (R4). */
+  purgeMedia?: () => Promise<number>;
+  logger?: Pick<Logger, 'warn' | 'info'>;
+  now?: () => Date;
 }): ContactsService {
   const { db, publisher } = deps;
+  const now = deps.now ?? (() => new Date());
 
   return {
     async update(auth, contactId, input) {
@@ -138,6 +166,227 @@ export function createContactsService(deps: {
       if (changed) {
         await publishContactDetail(db, publisher, auth.organizationId, [contactId], 'contact');
       }
+    },
+
+    async remove(auth, contactId, confirmation, context) {
+      if (!deps.twoFactor) throw new Error('Hapus kontak butuh layanan 2FA');
+      await requireIdentityConfirmation(
+        deps.twoFactor,
+        auth,
+        confirmation,
+        'contact.delete',
+        context,
+        'Masukkan password (dan kode verifikasi) untuk menghapus kontak ini.',
+      );
+      const outcome = await db.transaction(async (tx) => {
+        const { role } = await assertActorStillAuthorized(tx, auth, 'contacts.delete');
+        const affected = await tx
+          .select({ id: conversations.id, status: conversations.status })
+          .from(conversations)
+          .where(
+            and(
+              eq(conversations.organizationId, auth.organizationId),
+              eq(conversations.contactId, contactId),
+            ),
+          );
+        const result = await deleteContactData(tx, auth.organizationId, contactId);
+        if (!result) throw new AppError('NOT_FOUND', { message: CONTACT_NOT_FOUND });
+        const hadOpenConversation = affected.some((row) => row.status !== 'resolved');
+        await recordAudit(tx, {
+          organizationId: auth.organizationId,
+          actorUserId: auth.user.id,
+          action: AUDIT_ACTIONS.contactDeleted,
+          targetType: 'contact',
+          targetId: contactId,
+          // HANYA jumlah — tanpa nama, nomor, atau isi (UU PDP).
+          metadata: {
+            messages: result.messages,
+            conversations: result.conversations,
+            webhookEvents: result.webhookEvents,
+            hadOpenConversation,
+            actorRole: role,
+          },
+          client: context.client,
+        });
+        return { result, conversationIds: affected.map((row) => row.id) };
+      });
+      // Setelah commit: berkas media langsung dihapus dari disk (review ruang chat R4), lalu web
+      // diberi tahu percakapan yang hilang (ID saja).
+      let mediaFiles = 0;
+      try {
+        mediaFiles = (await deps.purgeMedia?.()) ?? 0;
+      } catch (err) {
+        deps.logger?.warn(
+          { err },
+          'Pembersihan media setelah hapus kontak gagal (dicoba lagi berkala)',
+        );
+      }
+      await publisher.publish(
+        outcome.conversationIds.map((conversationId) => ({
+          type: 'conversation.deleted' as const,
+          organizationId: auth.organizationId,
+          conversationId,
+        })),
+      );
+      return {
+        messages: outcome.result.messages,
+        conversations: outcome.result.conversations,
+        webhookEvents: outcome.result.webhookEvents,
+        mediaFiles,
+      };
+    },
+
+    async exportData(auth, client, contactId) {
+      return db.transaction(async (tx) => {
+        await assertActorStillAuthorized(tx, auth, 'contacts.export');
+        const [contact] = await tx
+          .select()
+          .from(contacts)
+          .where(and(eq(contacts.organizationId, auth.organizationId), eq(contacts.id, contactId)));
+        if (!contact) throw new AppError('NOT_FOUND', { message: CONTACT_NOT_FOUND });
+        const tagRows = await tx
+          .select({ name: tags.name })
+          .from(contactTags)
+          .innerJoin(
+            tags,
+            and(
+              eq(tags.organizationId, contactTags.organizationId),
+              eq(tags.id, contactTags.tagId),
+            ),
+          )
+          .where(
+            and(
+              eq(contactTags.organizationId, auth.organizationId),
+              eq(contactTags.contactId, contactId),
+            ),
+          )
+          .orderBy(sql`lower(${tags.name})`);
+        const conversationRows = await tx
+          .select({
+            id: conversations.id,
+            number: conversations.number,
+            channel: channels.name,
+            status: conversations.status,
+            createdAt: conversations.createdAt,
+            resolvedAt: conversations.resolvedAt,
+          })
+          .from(conversations)
+          .innerJoin(
+            channels,
+            and(
+              eq(channels.organizationId, conversations.organizationId),
+              eq(channels.id, conversations.channelId),
+            ),
+          )
+          .where(
+            and(
+              eq(conversations.organizationId, auth.organizationId),
+              eq(conversations.contactId, contactId),
+            ),
+          )
+          .orderBy(asc(conversations.createdAt));
+        const messageRows = await tx
+          .select({
+            id: messages.id,
+            conversationId: messages.conversationId,
+            direction: messages.direction,
+            type: messages.type,
+            text: messages.text,
+            media: messages.media,
+            location: messages.location,
+            status: messages.status,
+            occurredAt: messages.occurredAt,
+          })
+          .from(messages)
+          .where(
+            and(
+              eq(messages.organizationId, auth.organizationId),
+              eq(messages.contactId, contactId),
+              ne(messages.type, 'system'),
+            ),
+          )
+          .orderBy(asc(messages.occurredAt), asc(messages.id))
+          .limit(CONTACT_EXPORT_MESSAGES_MAX + 1);
+        const truncated = messageRows.length > CONTACT_EXPORT_MESSAGES_MAX;
+        const kept = messageRows.slice(0, CONTACT_EXPORT_MESSAGES_MAX);
+        const attributes = z
+          .array(z.object({ key: z.string(), value: z.string() }))
+          .catch([])
+          .parse(contact.attributes);
+        const mediaOf = (value: unknown) => {
+          const parsed = z
+            .object({
+              kind: z.string(),
+              mimeType: z.string().nullable().catch(null),
+              filename: z.string().nullable().catch(null),
+            })
+            .safeParse(value);
+          return parsed.success
+            ? {
+                kind: parsed.data.kind,
+                mimeType: parsed.data.mimeType,
+                filename: cleanFileName(parsed.data.filename),
+              }
+            : null;
+        };
+        const locationOf = (value: unknown) => {
+          const parsed = z
+            .object({
+              latitude: z.number(),
+              longitude: z.number(),
+              name: z.string().nullable().catch(null),
+              address: z.string().nullable().catch(null),
+            })
+            .safeParse(value);
+          return parsed.success ? parsed.data : null;
+        };
+        await recordAudit(tx, {
+          organizationId: auth.organizationId,
+          actorUserId: auth.user.id,
+          action: AUDIT_ACTIONS.contactExported,
+          targetType: 'contact',
+          targetId: contactId,
+          metadata: { messages: kept.length, conversations: conversationRows.length, truncated },
+          client,
+        });
+        return {
+          exportedAt: now().toISOString(),
+          contact: {
+            id: contact.id,
+            number: contact.number,
+            channelType: contact.channelType,
+            phone: contact.phone,
+            waUsername: contact.waUsername,
+            name: contact.name,
+            profileName: contact.profileName,
+            email: contact.email,
+            notes: contact.notes,
+            attributes,
+            tags: tagRows.map((row) => row.name),
+            createdAt: contact.createdAt.toISOString(),
+          },
+          conversations: conversationRows.map((row) => ({
+            id: row.id,
+            number: row.number,
+            channel: row.channel,
+            status: row.status,
+            createdAt: row.createdAt.toISOString(),
+            resolvedAt: row.resolvedAt?.toISOString() ?? null,
+          })),
+          messages: kept.map((row) => ({
+            id: row.id,
+            conversationId: row.conversationId,
+            direction: row.direction,
+            type: row.type,
+            text: row.text,
+            media: mediaOf(row.media),
+            location: locationOf(row.location),
+            status: row.status,
+            createdAt: row.occurredAt.toISOString(),
+          })),
+          truncated,
+        };
+      });
     },
 
     async addTag(auth, contactId, tagId) {

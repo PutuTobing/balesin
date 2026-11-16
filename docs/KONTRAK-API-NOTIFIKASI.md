@@ -20,12 +20,12 @@ worker = web (`apps/web`).
 |---|---|---|
 | `GET /api/v1/notifications/vapid-public-key` | `inbox.view` | `{ publicKey }` (base64url, 65 byte). Pasangan kunci dibuat otomatis saat pertama diminta, per organisasi; kunci privat terenkripsi di DB (tidak pernah ke browser/log). Tanpa `BALESIN_MASTER_KEY` → **503** |
 | `POST /api/v1/notifications/subscriptions` | `inbox.view` | CSRF. Body `{ endpoint, keys: { p256dh, auth }, expirationTime? }` → **201** `{ subscription: { id, createdAt } }`. Langganan terikat SESI pemanggil. Alamat bukan HTTPS ke layanan push yang dikenal → **400**; kunci bukan titik P-256 / `auth` ≠ 16 byte → **400**. Alamat yang sama didaftarkan lagi (pengguna lain di browser yang sama) → pindah ke pemanggil. Maks. 10 perangkat per pengguna (yang tertua dilepas) |
-| `DELETE /api/v1/notifications/subscriptions` | `inbox.view` | CSRF. Body `{ endpoint }` → `{ deleted }` — hanya langganan milik pemanggil |
+| `DELETE /api/v1/notifications/subscriptions` | `inbox.view` | CSRF. Body `{ endpoint }` (dinormalkan seperti saat mendaftar) → `{ deleted }` — hanya langganan milik pemanggil |
 | `GET /api/v1/notifications/preferences` | `inbox.view` | `{ preferences, timezone, devices }` |
 | `PUT /api/v1/notifications/preferences` | `inbox.view` | CSRF. Body `NotificationPreferences` → sama dengan GET |
 | `POST /api/v1/notifications/test` | `inbox.view` | CSRF. Kirim notifikasi tes ke perangkat SENDIRI → `{ devices }` (0 = belum berlangganan; tidak ada yang diantre). Batas 5/menit |
-| `GET /api/v1/settings/notifications` | `organization.manage` | `{ settings: { preview } }` |
-| `PUT /api/v1/settings/notifications` | `organization.manage` | CSRF. Body `{ preview }` (cuplikan isi pesan di notifikasi). Diaudit `settings.notifications.updated` |
+| `GET /api/v1/settings/notifications` | `organization.manage` | `{ settings: { preview, contactName } }` |
+| `PUT /api/v1/settings/notifications` | `organization.manage` | CSRF. Body `{ preview, contactName }` (cuplikan isi pesan / nama kontak di notifikasi; keduanya bawaan MATI). Diaudit `settings.notifications.updated` |
 
 Batas laju tulis: 30/menit per pengguna (`notifikasi-ubah`).
 
@@ -65,13 +65,16 @@ layanan push → langganan dihapus; jawaban lain dicatat (tanpa isi).
 ## Isi push (`PushNotificationPayload`)
 
 ```json
-{ "v": 1, "title": "Pesan baru dari Budi", "body": "Buka untuk membaca pesan.",
+{ "v": 1, "title": "Pesan baru di inbox", "body": "Buka untuk membaca pesan.",
   "url": "/inbox?chat=<conversationId>", "tag": "chat-<conversationId>", "conversationId": "<uuid>" }
 ```
 
 - Bawaan TANPA isi pesan (layar kunci). Cuplikan (≤ 80 karakter; media → "Mengirim gambar", dst.)
   hanya bila Owner menyalakan `preview`.
-- Nama kontak: nama dari tim → nama profil WhatsApp → "pelanggan" (≤ 60 karakter).
+- Nama kontak hanya bila Owner menyalakan `contactName` (review push R1); bawaan judul generik
+  "Pesan baru di inbox" dan badan "Buka untuk melihat percakapan." untuk ditugaskan/antrian. Bila
+  menyala: nama dari tim, atau nama profil WhatsApp dengan penanda `~` (tidak tepercaya, selaras UI),
+  ≤ 60 karakter.
 - Judul lain: "Chat ditugaskan ke kamu", "Chat menunggu di antrian" (badan: "Percakapan dengan {nama}"),
   "Notifikasi aktif" (tes; `url` `/inbox`, `tag` `balesin-test`, `conversationId` `null`).
 - Terenkripsi `aes128gcm` (RFC 8291); header `TTL` 3600 (tes 300), `Urgency: high`, `Topic` = ID

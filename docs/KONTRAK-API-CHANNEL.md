@@ -170,6 +170,20 @@ hasilnya `network_error`. Tampilkan indikator proses selama itu.
   identitas (tidak membuka rahasia baru apa pun selain yang memang ditampilkan ke peran ini).
 - 503 bila verify token tersimpan tak bisa dibuka (master key berubah) → arahkan ke "Buat ulang".
 
+## Diagnosis webhook (`GET …/webhook-health`)
+
+`channels.manage`. → `{ health: { status, lastReceivedAt, lastProcessedAt, last24h: { received,
+processed, skipped, pending, failed, rejected, expiredPending, signatureFailures }, stalledPending,
+lastSignatureFailureAt, checkedAt } }` (`webhookHealthSchema`, `packages/shared/src/webhooks.ts`).
+- Hitungan `webhook_events` channel ini 24 jam terakhir (menurut `received_at`): `failed` = gagal
+  diproses; `rejected` = stub yang ditolak database (`rejected:*`, review N2); `expiredPending` = macet
+  melewati retensi. `stalledPending` = `pending` lebih tua dari 10 menit (worker macet/mati).
+- `signatureFailures` / `lastSignatureFailureAt` = POST dengan tanda tangan Meta salah/tidak ada
+  (Redis, jendela tetap ±24 jam sejak kegagalan pertama).
+- `status`: `attention` (ada gagal/ditolak/tanda tangan gagal/macet), `idle` (tidak ada kejadian 24
+  jam — periksa langganan webhook di Meta), selain itu `ok`.
+- HANYA angka & waktu: tanpa payload, wamid, nomor, atau IP. Channel terhapus/organisasi lain → 404.
+
 ## Profil bisnis (`…/business-profile`)
 
 - **GET** wajib header `X-CSRF-Token` (rute ini memakai jatah batas laju dan memanggil Meta, jadi tidak
@@ -421,7 +435,8 @@ dihitung adalah IP Meta/penyerang, bukan IP proxy — tanpa itu semua kiriman te
 batas per IP menjadi batas bersama.
 
 **Kejadian keamanan**: **10 tanda tangan salah dalam 10 menit pada satu channel** (semua IP) → audit
-`channel.webhook_signature_rejected` (tanpa pelaku; IP = pengirim terakhir; `details`: `name`,
+`channel.webhook_signature_rejected` (tanpa pelaku; IP = pengirim terakhir; `details`: `channelId`
+(untuk tautan banner ke channel; baris lama memakai `target_id`), `name`,
 `phoneNumberId`, `failures`, `windowMinutes`, `reason`, `distinctSources` (jumlah IP berbeda dalam
 jendela, maks. 256 dihitung), `topSource` (awalan IP terbanyak: IPv4 `/24`, IPv6 `/64` — bukan
 alamat lengkap), `topSourceFailures`) dan kejadian **`webhook_signature_failed`
