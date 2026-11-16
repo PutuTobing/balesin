@@ -239,3 +239,30 @@ Kontras: tidak ada teks < 4,5:1. Target sentuh 390: tidak ada < 44 px. Ukuran hu
 Worktree dihapus (folder + `git worktree prune`; `git worktree list` hanya repo utama), port 3191/5191 kosong,
 `balesin_kd_e2e` di-drop, Redis db 11 `DBSIZE` 0. Berkas repo: bagian ini + 9 berkas `p2-*.png`. Tidak ada kode produk
 yang diubah, tidak ada commit.
+
+---
+
+# Putaran 3
+
+- **Tanggal:** 2026-11-17 · **Penilai:** `kritikus-desain` · **Putaran:** 3
+- **Kode yang dinilai:** `064ee6f` (panel detail, batas kirim, diagnosis webhook + revisi CH1/CH2/CH-S1). Sesudahnya
+  HEAD `0791763` (tes security saja).
+- **Cara:** worktree sementara, API 3191 / web 5191, `balesin_kd_e2e` (migrasi sampai `0020`), Redis db 11. Foto 31 layar
+  × 4 (125 lulus) + audit kontras/target/teks terpotong 124 varian.
+- **Screenshot:** berkas berawalan `p3-`.
+
+## Putusan putaran 3: LOLOS
+
+| Butir | Hasil | Status |
+|---|---|---|
+| **CH1** nomor kepala chat HP | Avatar tidak lagi dirender di 390; "+62 812-3456-7890", "+62 813-7788-9900", "+62 812-9999-8888" utuh; "Yohanes Siregar" utuh di chat selesai. Audit teks terpotong: **0** di kepala chat | Lolos |
+| **CH2** "Kirim ulang" terlihat | Setelah kirim → 500, "Belum terkirim", keterangan galat, "Hapus" dan "Kirim ulang" semuanya di dalam area riwayat (1440 & 390) | Lolos |
+| **CH-S1** "Buka lagi" di HP | Footer chat selesai: "Chat ini sudah selesai… [Buka lagi]" (berbingkai) | Lolos |
+
+Semua kriteria ruang chat ≥ 4 di 390 & 1440, terang & gelap; tidak ada pelanggaran §3. Tidak ada teks < 4,5:1 dan tidak
+ada target < 44 px di ruang chat.
+
+## Bersih-bersih putaran 3
+
+Satu worktree untuk tiga laporan (lihat `2026-11-19-fase2-panel-batas-kirim.md`); sudah dihapus, port 3191/5191 kosong,
+`balesin_kd_e2e` di-drop, Redis db 11 `DBSIZE` 0. Tidak ada kode produk yang diubah, tidak ada commit.

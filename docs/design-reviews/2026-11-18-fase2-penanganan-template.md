@@ -118,3 +118,34 @@ ruang chat.
 Worktree dihapus (folder + `git worktree prune`), port 3191/5191 kosong, `balesin_kd_e2e` di-drop, Redis db 11
 `DBSIZE` 0. Berkas repo: laporan ini + 15 screenshot di `docs/design-reviews/2026-11-18-fase2-penanganan-template/`.
 Tidak ada kode produk yang diubah, tidak ada commit.
+
+---
+
+# Putaran 2
+
+- **Tanggal:** 2026-11-17 · **Penilai:** `kritikus-desain` · **Putaran:** 2
+- **Kode yang dinilai:** `064ee6f` ("Balasan cepat", `/pengaturan/balasan-cepat`). Cara sama dengan putaran 3 laporan
+  ruang chat.
+- **Screenshot:** berkas berawalan `p2-`.
+
+## Putusan putaran 2: REVISI (satu butir kecil)
+
+| Butir | Hasil | Status |
+|---|---|---|
+| **T1** istilah | "Balasan cepat" di judul halaman, menu Pengaturan ("Balasan cepat · 4 balasan"), daftar "/", dialog "Ubah balasan cepat", teks pengantar. Kata "template" kini hanya untuk template WhatsApp | Lolos |
+| **T2** judul HP & tombol tambah | Judul "Balasan cepat" utuh; tombol `+` 44 × 44 di kanan kotak cari (kolom isi) | Lolos |
+| **T3** daftar "/" HP | Dua baris: shortcut + judul, isi di bawahnya mulai dari x yang sama | Lolos |
+| **T4** formulir | "Sisipkan: {nama} {agen}" di bawah kotak isi, penghitung "78 / 3.500" rata kanan di baris yang sama; teks bantu ganda hilang | Lolos |
+| **T-S1** cincin radio dialog | Cincin kartu agen terpilih utuh di keempat sisi | Lolos |
+| **T-S2** tidak cocok | "Tidak ada balasan cepat untuk “/zzz”." + tautan "Kelola balasan cepat" | Lolos, tetapi lihat T5 |
+
+### Wajib
+
+**T5. Target sentuh "Kelola balasan cepat"** — `apps/web/src/features/inbox/QuickReplyPicker.module.css`
+
+- Di 390 tautan itu **340 × 19 px** (satu-satunya aksi di keadaan tidak cocok). Beri `display: flex; align-items:
+  center; min-height: var(--size-touch)` (44 px) pada ≤ 640 px / `pointer: coarse`, seperti pola `.guideLink`.
+- Kriteria lolos: tinggi target ≥ 44 px di 390.
+
+Nilai lain: semua layar butir 7 & 9 ≥ 4 di 390 & 1440, terang & gelap, kecuali `inbox-chat-balasan-cepat-tidak-cocok`
+390 (Responsif 3) karena T5.

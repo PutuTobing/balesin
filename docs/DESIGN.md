@@ -38,6 +38,8 @@ pasangan teks/latar yang terdaftar di `contrastPairs`).
 | `--on-primary` | `#FFFFFF` | `#0F1620` | teks di atas `--primary` |
 | `--on-accent` | `#14202E` | `#0F1620` | teks di atas `--accent` |
 | `--primary-soft` | `#E3EEFF` | `#1A3354` | latar item aktif (sama dengan bubble keluar) |
+| `--tag-purple` | `#7A52CC` | `#A98BF0` | warna tag "Ungu" (titik/chip, non-teks ≥ 3:1) |
+| `--tag-teal` | `#0B8A9E` | `#3CC4D6` | warna tag "Toska" (titik/chip, non-teks ≥ 3:1) |
 
 Aturan pakai: `--success`/`--warning`/`--danger` untuk latar, titik, dan garis; untuk **teks**
 pakai varian `-ink`. `--accent` bukan untuk teks. `--primary` di atas `--surface-2` (terang)
