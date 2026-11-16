@@ -296,6 +296,7 @@ export const t = {
       removeTag: (name: string) => `Lepas tag ${name}`,
       tagSearch: 'Cari atau buat tag',
       tagCreate: (name: string) => `Buat tag “${name}”`,
+      tagColor: 'Warna tag baru',
       tagNone: 'Belum ada tag di organisasi ini.',
       tagFailed: 'Tag belum bisa diubah.',
       editContact: 'Ubah kontak',
@@ -342,12 +343,18 @@ export const t = {
       system: 'Sistem',
       logAssignee: (name: string) => `ke ${name}`,
       logFrom: (name: string) => `dari ${name}`,
+      logReassigned: 'mengalihkan percakapan',
+      logFromTo: (from: string, to: string) => `dari ${from} ke ${to}`,
+      audioFrom: (kind: string, sender: string) =>
+        `${kind} · dari ${sender.toLocaleLowerCase('id-ID')}`,
       logFields: (fields: string) => `(${fields})`,
       privacy: 'Data pribadi',
-      privacyHint: 'Untuk permintaan akses atau penghapusan data dari pelanggan (UU PDP).',
+      privacyHint:
+        'Untuk permintaan akses atau penghapusan data dari pelanggan (UU PDP). Setelah berkas ekspor dikirim ke pelanggan, hapus berkasnya dari folder Unduhan.',
       exportContact: 'Ekspor data kontak',
       exporting: 'Menyiapkan…',
-      exported: 'Data kontak diunduh (JSON).',
+      exported:
+        'Data kontak diunduh (JSON). Hapus berkasnya dari folder Unduhan setelah dikirim ke pelanggan.',
       deleteContact: 'Hapus kontak',
       deleteContactTitle: 'Hapus kontak ini beserta datanya?',
       deleteContactBody:
@@ -1687,8 +1694,10 @@ export const t = {
 
     /** Diagnosis webhook 24 jam (hanya hitungan, tanpa isi pesan). */
     webhookHealth: {
-      title: 'Diagnosis 24 jam terakhir',
+      title: 'Diagnosis webhook',
+      hint: 'Data yang dikirim Meta ke channel ini dalam 24 jam terakhir. Hanya hitungan, tanpa isi pesan.',
       recheck: 'Periksa lagi',
+      fixAppSecret: 'Ganti App Secret',
       checking: 'Memeriksa…',
       failedTitle: 'Diagnosis belum bisa dimuat',
       okTitle: 'Webhook menerima data',
@@ -1887,6 +1896,7 @@ export const t = {
     sections: {
       label: 'Bagian halaman nomor',
       summary: 'Ringkasan',
+      diagnosis: 'Diagnosis',
     },
 
     detail: {
@@ -2044,6 +2054,92 @@ export const t = {
       'Balasan ini hilang dari daftar "/" untuk semua anggota tim. Pesan yang sudah terkirim tidak berubah.',
     removeConfirm: 'Hapus balasan cepat',
     removing: 'Menghapus…',
+  },
+
+  /** Aplikasi terpasang (PWA): pembaruan versi + teks di service worker. */
+  pwa: {
+    updateTitle: 'Versi baru tersedia',
+    updateBody: 'Muat ulang untuk memakai versi terbaru. Draf yang belum terkirim tetap aman.',
+    reload: 'Muat ulang',
+    reloading: 'Memuat ulang…',
+    dismiss: 'Nanti saja',
+    /** Notifikasi cadangan bila isi push tidak bisa dibaca (browser wajib menampilkan sesuatu). */
+    fallbackTitle: 'Ada pembaruan di inbox',
+    fallbackBody: 'Buka untuk melihat percakapan.',
+  },
+
+  /** Pengaturan → Notifikasi (per pengguna) + pengaturan organisasi (Owner). */
+  notifications: {
+    title: 'Notifikasi',
+    menuHint: 'Pemberitahuan chat baru di perangkat ini',
+    menuOn: 'Aktif di perangkat ini',
+    menuOff: 'Belum aktif',
+    menuBlocked: 'Diblokir browser',
+    deviceTitle: 'Perangkat ini',
+    deviceHint:
+      'Notifikasi muncul walau tab sedang tidak dibuka. Aktifkan di setiap perangkat yang kamu pakai.',
+    statusOn: 'Aktif',
+    statusOff: 'Belum aktif',
+    statusBlocked: 'Diblokir',
+    statusUnsupported: 'Tidak didukung',
+    onBody: 'Perangkat ini menerima notifikasi.',
+    offBody: 'Browser akan menanyakan izin setelah kamu menekan tombol di bawah.',
+    devices: (count: number) =>
+      count === 0
+        ? 'Belum ada perangkat yang terdaftar untuk akunmu.'
+        : `Terdaftar di ${count.toLocaleString('id-ID')} perangkat untuk akunmu.`,
+    enable: 'Aktifkan di perangkat ini',
+    enabling: 'Mengaktifkan…',
+    enabled: 'Notifikasi aktif di perangkat ini.',
+    disable: 'Lepas perangkat ini',
+    disabling: 'Melepas…',
+    disabled: 'Perangkat ini tidak lagi menerima notifikasi.',
+    test: 'Kirim notifikasi tes',
+    testing: 'Mengirim…',
+    testSent: (count: number) =>
+      `Notifikasi tes dikirim ke ${count.toLocaleString('id-ID')} perangkat. Biasanya tiba dalam beberapa detik.`,
+    testNoDevice: 'Belum ada perangkat yang terdaftar. Aktifkan notifikasi di perangkat ini dulu.',
+    blockedTitle: 'Notifikasi diblokir di browser ini',
+    blockedBody:
+      'Izin notifikasi untuk situs ini ditolak. Buka ikon gembok di sebelah alamat situs → Izin situs → Notifikasi → Izinkan, lalu muat ulang halaman ini.',
+    iosTitle: 'Pasang aplikasi dulu untuk notifikasi',
+    iosBody:
+      'Di iPhone dan iPad, notifikasi hanya bisa dari aplikasi yang dipasang. Ketuk tombol Bagikan di Safari → Tambah ke Layar Utama, lalu buka aplikasi dari ikon di layar utama.',
+    unsupportedTitle: 'Browser ini belum mendukung notifikasi',
+    unsupportedBody:
+      'Pakai Chrome, Edge, Firefox, atau Safari versi terbaru untuk menerima notifikasi.',
+    permissionDismissed: 'Izin notifikasi belum diberikan. Tekan tombol lagi bila ingin mencoba.',
+    subscribeFailed:
+      'Notifikasi belum bisa diaktifkan di browser ini. Pastikan perangkat terhubung ke internet, lalu coba lagi.',
+    workerMissing: 'Aplikasi belum siap menerima notifikasi. Muat ulang halaman, lalu coba lagi.',
+    // Preferensi
+    prefsTitle: 'Kirim notifikasi untuk',
+    prefsHint: 'Berlaku untuk semua perangkatmu.',
+    queue: 'Chat baru di antrian',
+    queueHint: 'Pesan di chat yang belum ditangani siapa pun.',
+    assignedMessage: 'Pesan baru di chat yang saya tangani',
+    assignedToMe: 'Chat ditugaskan ke saya',
+    assignedToMeHint: 'Saat orang lain menugaskan atau mengalihkan chat ke kamu.',
+    quietHours: 'Jam tenang',
+    quietHoursHint: (timezone: string) =>
+      `Tidak ada notifikasi di rentang jam ini (zona waktu ${timezone}). Boleh melewati tengah malam.`,
+    quietStart: 'Mulai',
+    quietEnd: 'Selesai',
+    savePrefs: 'Simpan preferensi',
+    saving: 'Menyimpan…',
+    prefsSaved: 'Preferensi notifikasi disimpan.',
+    prefsFailedTitle: 'Preferensi notifikasi belum bisa dimuat',
+    // Organisasi (Owner)
+    orgTitle: 'Isi notifikasi di organisasi',
+    orgHint:
+      'Notifikasi bisa terbaca di layar kunci tanpa membuka aplikasi. Bawaannya hanya menampilkan "Pesan baru di inbox" tanpa nama maupun isi pesan.',
+    contactName: 'Tampilkan nama kontak',
+    contactNameHint: 'Contoh judul: "Pesan baru dari Budi Santoso".',
+    preview: 'Tampilkan cuplikan isi pesan',
+    previewHint: 'Paling banyak 80 karakter pertama pesan, untuk semua anggota tim.',
+    saveOrg: 'Simpan pengaturan organisasi',
+    orgSaved: 'Pengaturan notifikasi organisasi disimpan.',
+    orgFailedTitle: 'Pengaturan organisasi belum bisa dimuat',
   },
 
   /** Pengaturan → Batas kirim & rem darurat (`sending.limits.manage`; lanjutkan = `sending.resume`). */

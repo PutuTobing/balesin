@@ -72,7 +72,13 @@ export function ContactPrivacy({
       <p className={styles.hint}>{p.privacyHint}</p>
       <div className={styles.privacyActions}>
         {canExport ? (
-          <Button onClick={() => exportData.mutate()} loading={exportData.isPending}>
+          <Button
+            onClick={() =>
+              // JSON berisi data pribadi: jangan dibiarkan di cache mutasi setelah diunduh.
+              exportData.mutate(undefined, { onSuccess: () => exportData.reset() })
+            }
+            loading={exportData.isPending}
+          >
             {exportData.isPending ? null : <Icon icon={Download} size={16} />}
             {exportData.isPending ? p.exporting : p.exportContact}
           </Button>

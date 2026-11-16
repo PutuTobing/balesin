@@ -52,6 +52,10 @@ export interface ThemeColors {
   warningInk: string;
   /** `danger` yang aman dipakai sebagai teks. */
   dangerInk: string;
+  /** Titik warna tag "Ungu" (grafis non-teks, ≥ 3:1). */
+  tagPurple: string;
+  /** Titik warna tag "Toska" (grafis non-teks, ≥ 3:1). */
+  tagTeal: string;
 }
 
 const lightSurface = '#FFFFFF';
@@ -85,6 +89,8 @@ export const color: Record<ThemeName, ThemeColors> = {
     successInk: '#15784F',
     warningInk: '#8F5F00',
     dangerInk: '#C03535',
+    tagPurple: '#7A52CC',
+    tagTeal: '#0B8A9E',
   },
   dark: {
     bg: darkBg,
@@ -107,6 +113,8 @@ export const color: Record<ThemeName, ThemeColors> = {
     successInk: '#3CC48D',
     warningInk: '#F2B544',
     dangerInk: '#F07070',
+    tagPurple: '#A98BF0',
+    tagTeal: '#3CC4D6',
   },
 };
 
@@ -301,4 +309,7 @@ export const contrastPairs: readonly ContrastPair[] = [
   ...pairs(MIN_GRAPHIC_CONTRAST, 'success', ['bg', 'surface']),
   ...pairs(MIN_GRAPHIC_CONTRAST, 'danger', ['bg', 'surface']),
   ...pairs(MIN_GRAPHIC_CONTRAST, 'warningInk', ['bg', 'surface', 'surface2']),
+  // Titik warna tag (palet TAG_COLORS yang tidak punya token status).
+  ...pairs(MIN_GRAPHIC_CONTRAST, 'tagPurple', ['bg', 'surface', 'surface2']),
+  ...pairs(MIN_GRAPHIC_CONTRAST, 'tagTeal', ['bg', 'surface', 'surface2']),
 ];

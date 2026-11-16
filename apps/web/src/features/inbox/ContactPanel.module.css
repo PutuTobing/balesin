@@ -160,7 +160,13 @@
 
 .tab:focus-visible {
   /* Cincin fokus di dalam tab supaya garis tab aktif tetap terlihat. */
+  border-radius: var(--radius-input);
   outline-offset: -4px;
+}
+
+/* Diaktifkan dengan pointer: tanpa cincin (keyboard tetap mendapat cincin). */
+.tab[data-pointer]:focus-visible {
+  outline: none;
 }
 
 .content {
@@ -418,6 +424,25 @@ ul.fileList {
   border-bottom: 1px solid var(--line);
 }
 
+.audioCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-8);
+  padding: var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.audioLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
 .fileMeta {
   display: flex;
   align-items: center;
@@ -493,4 +518,18 @@ ul.fileList {
 /* Tombol sekunder untuk aksi berbahaya: merah penuh hanya di dialog. */
 .dangerText {
   color: var(--danger-ink);
+}
+
+/* Aksi di kepala bagian ("Ubah kontak"): tidak lebih menonjol dari judul bagiannya. */
+.sectionHead .sectionAction {
+  height: var(--space-32);
+  padding: 0 var(--space-8);
+  color: var(--primary);
+  font-size: var(--text-13);
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .sectionHead .sectionAction {
+    height: var(--size-touch);
+  }
 }

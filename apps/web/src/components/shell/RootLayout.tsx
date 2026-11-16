@@ -6,6 +6,7 @@ import { setLoginNotice } from '../../features/auth/login-notice';
 import { api } from '../../lib/api/client';
 import { clearAppData, endSession, queryKeys, refetchSession } from '../../lib/api/queries';
 import { isGuestPage, safeRedirectTarget } from '../../lib/safe-redirect';
+import { onServiceWorkerNavigate } from '../../pwa/service-worker';
 
 const ENROLLMENT_PATH = '/verifikasi-dua-langkah';
 
@@ -37,6 +38,13 @@ function carriedRedirect(search: unknown): string | undefined {
 export function RootLayout() {
   const queryClient = useQueryClient();
   const router = useRouter();
+
+  // Klik notifikasi saat tab sudah terbuka: service worker meminta router membuka path-nya (path
+  // relatif aplikasi, sudah divalidasi di kedua sisi).
+  useEffect(
+    () => onServiceWorkerNavigate((path) => void router.navigate({ href: path })),
+    [router],
+  );
 
   useEffect(
     () =>

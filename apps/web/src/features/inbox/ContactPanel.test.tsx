@@ -61,6 +61,11 @@ const inbox = {
       fakeEvent(),
       fakeEvent({ kind: 'tag_added', tag: { name: 'VIP', color: 'yellow' } }),
       fakeEvent({ kind: 'contact_updated', fields: ['email', 'notes'] }),
+      fakeEvent({
+        kind: 'assigned',
+        assignee: { id: '0b0e2d8c-6d3f-4b8a-9d55-5e2f8a1c0042', name: 'Agus' },
+        previousAssignee: { id: '0b0e2d8c-6d3f-4b8a-9d55-5e2f8a1c0001', name: 'Rina Kartika' },
+      }),
     ],
   },
 };
@@ -106,10 +111,13 @@ describe('panel detail — Info', () => {
     fireEvent.change(screen.getByRole('textbox', { name: p.tagSearch }), {
       target: { value: 'Tunggakan' },
     });
+    // Warna tag baru dipilih sebelum dibuat (bawaan biru).
+    fireEvent.click(screen.getByRole('radio', { name: 'Ungu' }));
     fireEvent.click(screen.getByRole('button', { name: p.tagCreate('Tunggakan') }));
     await waitFor(() =>
       expect(requestsTo(api, 'POST', API_ROUTES.tags.list)[0]?.body).toEqual({
         name: 'Tunggakan',
+        color: 'purple',
       }),
     );
     await waitFor(() => expect(requestsTo(api, 'POST', tagsPath)).toHaveLength(2));
@@ -194,6 +202,15 @@ describe('panel detail — Info', () => {
 });
 
 describe('panel detail — Catatan, Berkas, Log', () => {
+  it('tab diaktifkan pointer ditandai (tanpa cincin fokus); keyboard melepas tandanya', async () => {
+    await openPanel();
+    const tab = panel().getByRole('tab', { name: p.tabs.log });
+    fireEvent.pointerDown(tab);
+    expect(tab).toHaveAttribute('data-pointer');
+    fireEvent.keyDown(tab, { key: 'ArrowRight' });
+    expect(tab).not.toHaveAttribute('data-pointer');
+  });
+
   it('catatan sesi: tombol sesuai hak, tambah dan hapus', async () => {
     const { api } = await openPanel();
     fireEvent.mouseDown(panel().getByRole('tab', { name: p.tabs.notes }));
@@ -260,6 +277,7 @@ describe('panel detail — Catatan, Berkas, Log', () => {
     fireEvent.mouseDown(panel().getByRole('tab', { name: p.tabs.log }));
     fireEvent.click(panel().getByRole('tab', { name: p.tabs.log }));
     expect(await panel().findByText(/\(Email, Catatan/)).toBeVisible();
+    expect(panel().getByText(/mengalihkan percakapan dari Rina Kartika ke Agus/)).toBeVisible();
     expect(panel().getAllByText('VIP').length).toBeGreaterThan(0);
     expect(panel().queryByText('budi@contoh.id')).toBeNull();
   });

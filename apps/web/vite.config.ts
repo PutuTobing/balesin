@@ -2,6 +2,7 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 import pkg from './package.json' with { type: 'json' };
 import { brandFavicon, designTokens, fontPreload } from './vite/design-tokens-plugin.ts';
+import { serviceWorker } from './vite/service-worker-plugin.ts';
 
 export default defineConfig({
   plugins: [
@@ -10,6 +11,8 @@ export default defineConfig({
     brandFavicon(),
     // Font UI utama (subset Latin). Nama berkasnya sama dengan di src/styles/fonts.css.
     fontPreload('plus-jakarta-sans-latin-wght-normal'),
+    // Manifest PWA + service worker (precache aset statis, Web Push).
+    serviceWorker(),
   ],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),

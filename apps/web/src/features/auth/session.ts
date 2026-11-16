@@ -4,6 +4,7 @@ import { useRouter } from '@tanstack/react-router';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
 import { clearAppData, endSession, sessionQuery } from '../../lib/api/queries';
+import { releasePush } from '../notifications/push-device';
 import { setLoginNotice } from './login-notice';
 
 /**
@@ -44,6 +45,12 @@ export function useLogout() {
   const router = useRouter();
   return useMutation({
     mutationFn: async () => {
+      // Lepas notifikasi perangkat ini selagi sesi masih berlaku (DELETE butuh sesi + CSRF).
+      // Dibatasi 3 detik: keluar tidak boleh tertahan oleh layanan push yang lambat.
+      await Promise.race([
+        releasePush({ server: true }).catch(() => undefined),
+        new Promise((resolve) => setTimeout(resolve, 3_000)),
+      ]);
       try {
         await endpoints.auth.logout();
       } catch (error) {

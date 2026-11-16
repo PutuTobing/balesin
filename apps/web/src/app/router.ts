@@ -285,6 +285,18 @@ const quickRepliesRoute = createRoute({
   ),
 });
 
+/** Pengaturan → Notifikasi: per pengguna (`inbox.view`); bagian organisasi = `organization.manage`. */
+const notificationsRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/notifikasi',
+  staticData: { page: { title: t.notifications.title, parent: 'settings' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'inbox.view'),
+  component: lazyRouteComponent(
+    () => import('../features/notifications/NotificationsPage'),
+    'NotificationsPage',
+  ),
+});
+
 /** Pengaturan → Batas kirim & rem darurat: `sending.limits.manage` (Owner, Admin). */
 const sendingLimitsRoute = createRoute({
   getParentRoute,
@@ -451,6 +463,7 @@ const appChildren = [
   quickRepliesRoute,
   oldQuickRepliesRoute,
   sendingLimitsRoute,
+  notificationsRoute,
   channelWizardRoute,
   channelRoute,
   teamRoute,

@@ -150,5 +150,5 @@ test('ekspor data kontak: unduhan JSON berisi kontak dan pesannya', async ({ pag
   expect(data.contact.email).toBe('wulan@contoh.test');
   expect(data.contact.tags).toContain(TAG);
   expect(data.messages.some((message) => message.text === INBOUND)).toBe(true);
-  await expect(panel(page).getByText('Data kontak diunduh (JSON).')).toBeVisible();
+  await expect(panel(page).getByText(/^Data kontak diunduh \(JSON\)\./)).toBeVisible();
 });

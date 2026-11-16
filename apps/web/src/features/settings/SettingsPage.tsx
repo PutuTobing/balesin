@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import {
+  Bell,
   ChevronRight,
   Gauge,
   History,
@@ -37,6 +38,7 @@ import {
 } from '../../lib/api/queries';
 import { TwoFactorBadge } from '../security/TwoFactorBadge';
 import { sendingLimitsQuery } from '../inbox/inbox-queries';
+import { usePushDevice } from '../notifications/use-push-device';
 import styles from './Settings.module.css';
 
 const APPEARANCE_HEADING_ID = 'pengaturan-tampilan';
@@ -297,7 +299,10 @@ function SendingLimitsMenuItem() {
         <span className={styles.menuStatus}>
           {data ? (
             data.paused ? (
-              <span className={styles.menuDanger}>{t.sendingLimits.menuPaused}</span>
+              <span className={styles.menuDanger}>
+                <span className={styles.dangerDot} aria-hidden="true" />
+                {t.sendingLimits.menuPaused}
+              </span>
             ) : (
               <span className={styles.menuCount}>
                 {t.sendingLimits.menuRunning(data.sentLast24Hours)}
@@ -369,6 +374,7 @@ function AuditMenuItem() {
 /** Menu akun pengguna sendiri (semua peran): Keamanan akun dengan status 2FA. */
 function AccountSettings() {
   const status = useQuery(twoFactorStatusQuery);
+  const canNotifications = useCan('inbox.view');
   const queryClient = useQueryClient();
   // Data Keamanan akun dimuat lebih dulu (seperti undangan & anggota untuk baris Tim): dibuka dari
   // menu, halamannya langsung tampil tanpa kerangka. Gagal di sini tidak apa-apa; halamannya
@@ -404,7 +410,40 @@ function AccountSettings() {
             <Icon icon={ChevronRight} size={16} className={styles.chevron} />
           </Link>
         </li>
+        {canNotifications ? <NotificationsMenuItem /> : null}
       </ul>
     </section>
+  );
+}
+
+/** Notifikasi: keadaan di perangkat INI (izin browser + langganan). */
+function NotificationsMenuItem() {
+  const device = usePushDevice();
+  const label =
+    device.support !== 'supported'
+      ? null
+      : device.permission === 'denied'
+        ? t.notifications.menuBlocked
+        : device.subscribed === null
+          ? null
+          : device.subscribed
+            ? t.notifications.menuOn
+            : t.notifications.menuOff;
+  return (
+    <li>
+      <Link to="/pengaturan/notifikasi" className={styles.menuLink}>
+        <span className={styles.menuIcon}>
+          <Icon icon={Bell} size={20} />
+        </span>
+        <span className={styles.menuText}>
+          <span className={styles.menuLabel}>{t.notifications.title}</span>
+          <span className={styles.menuHint}>{t.notifications.menuHint}</span>
+        </span>
+        <span className={styles.menuStatus}>
+          {label ? <span className={styles.menuCount}>{label}</span> : null}
+        </span>
+        <Icon icon={ChevronRight} size={16} className={styles.chevron} />
+      </Link>
+    </li>
   );
 }

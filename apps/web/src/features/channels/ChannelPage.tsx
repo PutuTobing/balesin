@@ -99,6 +99,7 @@ function ChannelScreen({ channel }: { channel: WhatsAppChannel }) {
     <div className={styles.detailLayout}>
       <div className={styles.content}>
         <SummaryCard channel={channel} onFixCredentials={setEditing} />
+        <WebhookHealthCard channelId={channel.id} onFixAppSecret={() => setEditing('appSecret')} />
         <WebhookCard channelId={channel.id} />
         <BusinessProfileCard channel={channel} />
         <RenameCard channel={channel} />
@@ -328,7 +329,6 @@ function WebhookCard({ channelId }: { channelId: string }) {
           {isApiError(webhook.error) ? webhook.error.message : t.api.network}
         </Notice>
       )}
-      <WebhookHealthCard channelId={channelId} />
       <ConfirmDialog
         open={asking}
         title={t.channels.webhook.rotateTitle}

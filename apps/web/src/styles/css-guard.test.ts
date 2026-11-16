@@ -108,7 +108,9 @@ describe('tidak ada nilai liar di CSS aplikasi', () => {
     expect(
       offenders(
         (d) =>
-          !d.property.startsWith('--') && (colorLiteral.test(d.value) || namedColor.test(d.value)),
+          !d.property.startsWith('--') &&
+          // Nama variabel token (mis. `var(--tag-purple)`) bukan warna bernama.
+          (colorLiteral.test(d.value) || namedColor.test(d.value.replace(/var\(--[\w-]+\)/g, ''))),
       ),
     ).toEqual([]);
   });

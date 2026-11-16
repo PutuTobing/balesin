@@ -377,6 +377,11 @@ describe('diagnosis webhook', () => {
     ).toBeVisible();
     expect(screen.getByText(h.failed(2))).toBeVisible();
     expect(screen.getByText('1.240')).toBeVisible();
+
+    // Tanda tangan gagal → satu klik ke form kredensial dengan App Secret terfokus.
+    fireEvent.click(screen.getByRole('button', { name: h.fixAppSecret }));
+    const secret = await screen.findByLabelText(new RegExp(`^${t.channels.credentials.appSecret}`));
+    await waitFor(() => expect(secret).toHaveFocus());
   });
 
   it('tidak ada data 24 jam: petunjuk langganan webhook', async () => {

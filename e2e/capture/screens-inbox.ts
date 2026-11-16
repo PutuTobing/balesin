@@ -425,6 +425,16 @@ export const inboxScreens: Screen[] = [
       await settle(page);
     },
   },
+  // Menu Pengaturan saat rem ditarik: status "● Rem darurat ditarik".
+  {
+    name: 'pengaturan-rem-ditarik',
+    path: '/pengaturan',
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page, { paused: true });
+    },
+    waitFor: 'text=Rem darurat ditarik',
+  },
   {
     name: 'batas-kirim-memuat',
     path: '/pengaturan/batas-kirim',

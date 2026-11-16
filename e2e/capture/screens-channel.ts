@@ -22,7 +22,7 @@ const WIZARD = '/pengaturan/channel/tambah';
 
 /** Gulir wadah gulir halaman sampai judul kartu (h2) berada di atas. */
 async function scrollTo(page: Page, heading: string): Promise<void> {
-  await page.getByRole('heading', { level: 2, name: heading }).evaluate((el) => {
+  await page.getByRole('heading', { level: 2, name: heading, exact: true }).evaluate((el) => {
     let box: HTMLElement | null = el.parentElement;
     while (box && getComputedStyle(box).overflowY !== 'auto') box = box.parentElement;
     if (!box) return;
@@ -315,11 +315,7 @@ export const channelScreens: Screen[] = [
       await channelDetail(page, MAIN, { health: 'attention' });
     },
     waitFor: 'text=Ada yang perlu dicek',
-    prepare: async (page) => {
-      await page
-        .getByRole('heading', { level: 3, name: 'Diagnosis 24 jam terakhir' })
-        .scrollIntoViewIfNeeded();
-    },
+    prepare: (page) => scrollTo(page, 'Diagnosis webhook'),
   },
   {
     name: 'nomor-webhook-diagnosis-kosong',
@@ -329,11 +325,7 @@ export const channelScreens: Screen[] = [
       await channelDetail(page, MAIN, { health: 'idle' });
     },
     waitFor: 'text=Belum ada data masuk 24 jam terakhir',
-    prepare: async (page) => {
-      await page
-        .getByRole('heading', { level: 3, name: 'Diagnosis 24 jam terakhir' })
-        .scrollIntoViewIfNeeded();
-    },
+    prepare: (page) => scrollTo(page, 'Diagnosis webhook'),
   },
   {
     name: 'nomor-profil',

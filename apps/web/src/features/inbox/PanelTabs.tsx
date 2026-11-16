@@ -299,6 +299,7 @@ function starredText(message: Message): string {
 }
 
 function FileRow({ message, starred }: { message: Message; starred: boolean }) {
+  const body = messageBody(message);
   return (
     <li className={styles.fileRow}>
       {starred ? (
@@ -312,6 +313,16 @@ function FileRow({ message, starred }: { message: Message; starred: boolean }) {
             {starredText(message)}
           </p>
         </>
+      ) : message.type === 'audio' ? (
+        // Audio sebagai kartu (sejajar dengan kartu dokumen): jenis + pengirim, lalu tombol putar.
+        <div className={styles.audioCard}>
+          <p className={styles.audioLabel}>
+            {body.icon ? <Icon icon={body.icon} size={16} /> : null}
+            {p.audioFrom(body.label ?? '', t.inbox.chat.senders[message.senderKind])}
+          </p>
+          <MessageMedia message={message} />
+          <p className={styles.fileMeta}>{formatDateTime(message.createdAt)}</p>
+        </div>
       ) : (
         <>
           <MessageMedia message={message} />
@@ -348,9 +359,17 @@ export function LogTab({ conversationId }: { conversationId: string }) {
 
 function LogItem({ event }: { event: ConversationEvent }) {
   const details: string[] = [];
-  if (event.kind === 'assigned' && event.assignee) details.push(p.logAssignee(event.assignee.name));
-  if (event.previousAssignee && event.kind !== 'claimed') {
-    details.push(p.logFrom(event.previousAssignee.name));
+  // Dialihkan dari agen lain: "mengalihkan percakapan dari Rina ke Agus" (urutan alami).
+  const reassigned = event.kind === 'assigned' && event.assignee && event.previousAssignee;
+  if (reassigned) {
+    details.push(p.logFromTo(event.previousAssignee!.name, event.assignee!.name));
+  } else {
+    if (event.kind === 'assigned' && event.assignee) {
+      details.push(p.logAssignee(event.assignee.name));
+    }
+    if (event.previousAssignee && event.kind !== 'claimed') {
+      details.push(p.logFrom(event.previousAssignee.name));
+    }
   }
   if (event.fields && event.fields.length > 0) {
     details.push(p.logFields(event.fields.map((field) => CONTACT_FIELD_LABELS[field]).join(', ')));
@@ -361,7 +380,9 @@ function LogItem({ event }: { event: ConversationEvent }) {
       <div className={styles.logText}>
         <p>
           <strong>{event.actor?.name ?? p.system}</strong> ·{' '}
-          {CONVERSATION_EVENT_LABELS[event.kind].toLocaleLowerCase('id-ID')}
+          {reassigned
+            ? p.logReassigned
+            : CONVERSATION_EVENT_LABELS[event.kind].toLocaleLowerCase('id-ID')}
           {details.length > 0 ? ` ${details.join(' ')}` : ''}
         </p>
         {event.tag ? (

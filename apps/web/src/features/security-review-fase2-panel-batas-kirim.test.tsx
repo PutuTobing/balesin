@@ -196,4 +196,3 @@ describe('review keamanan — tautan banner ke channel', () => {
     expect(screen.queryByRole('link', { name: t.securityBanner.reviewChannel })).toBeNull();
   });
 });
-

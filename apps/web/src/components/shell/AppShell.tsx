@@ -7,6 +7,7 @@ import { cx } from '../../lib/cx';
 import { media, useMediaQuery } from '../../lib/media';
 import { useSession } from '../../features/auth/session';
 import { SecurityBanner } from '../../features/security-banner/SecurityBanner';
+import { UpdateBanner } from '../../pwa/UpdateBanner';
 import { Icon } from '../ui/Icon';
 import { Tooltip } from '../ui/Tooltip';
 import styles from './AppShell.module.css';
@@ -46,6 +47,7 @@ export function AppShell() {
       </a>
       <MainNav pathname={pathname} />
       <main id={MAIN_ID} ref={mainRef} tabIndex={-1} className={styles.main}>
+        <UpdateBanner />
         <SecurityBanner />
         <Outlet />
       </main>

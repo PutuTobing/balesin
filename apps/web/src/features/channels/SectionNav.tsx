@@ -9,6 +9,7 @@ const copy = t.channels.sections;
 /** Urutan sama dengan kartu di halaman nomor (`id` kartu = anchor). */
 const SECTIONS = [
   { id: 'ringkasan', label: copy.summary },
+  { id: 'diagnosis', label: copy.diagnosis },
   { id: 'webhook', label: t.channels.webhook.title },
   { id: 'profil-bisnis', label: t.channels.profile.title },
   { id: 'nama', label: t.channels.rename.title },

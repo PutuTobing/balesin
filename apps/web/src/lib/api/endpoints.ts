@@ -78,6 +78,15 @@ import {
   verifyEmailResponseSchema,
   verifySetupTokenResponseSchema,
   verifyTwoFactorResponseSchema,
+  vapidPublicKeyResponseSchema,
+  pushSubscriptionResponseSchema,
+  pushSubscriptionDeletedResponseSchema,
+  notificationPreferencesResponseSchema,
+  notificationSettingsResponseSchema,
+  notificationTestResponseSchema,
+  type CreatePushSubscriptionRequest,
+  type NotificationPreferences,
+  type NotificationSettings,
   type AcceptInvitationRequest,
   type AuditLogFilter,
   type AuditLogListQuery,
@@ -726,6 +735,52 @@ export function createEndpoints(client: ApiClient) {
           method: 'POST',
           body,
           schema: tagResponseSchema,
+        }),
+    },
+    /** Notifikasi Web Push (docs/KONTRAK-API-NOTIFIKASI.md). */
+    notifications: {
+      vapidPublicKey: () =>
+        client.request(API_ROUTES.notifications.vapidPublicKey, {
+          schema: vapidPublicKeyResponseSchema,
+        }),
+      subscribe: (body: CreatePushSubscriptionRequest) =>
+        client.request(API_ROUTES.notifications.subscriptions, {
+          method: 'POST',
+          body,
+          schema: pushSubscriptionResponseSchema,
+        }),
+      unsubscribe: (endpoint: string) =>
+        client.request(API_ROUTES.notifications.subscriptions, {
+          method: 'DELETE',
+          body: { endpoint },
+          schema: pushSubscriptionDeletedResponseSchema,
+        }),
+      preferences: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.notifications.preferences, {
+          schema: notificationPreferencesResponseSchema,
+          signal,
+        }),
+      updatePreferences: (body: NotificationPreferences) =>
+        client.request(API_ROUTES.notifications.preferences, {
+          method: 'PUT',
+          body,
+          schema: notificationPreferencesResponseSchema,
+        }),
+      test: () =>
+        client.request(API_ROUTES.notifications.test, {
+          method: 'POST',
+          schema: notificationTestResponseSchema,
+        }),
+      settings: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.notifications.settings, {
+          schema: notificationSettingsResponseSchema,
+          signal,
+        }),
+      updateSettings: (body: NotificationSettings) =>
+        client.request(API_ROUTES.notifications.settings, {
+          method: 'PUT',
+          body,
+          schema: notificationSettingsResponseSchema,
         }),
     },
     /** Batas kirim & rem darurat (izin `sending.limits.manage`; lanjutkan = `sending.resume`). */

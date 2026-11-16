@@ -1,0 +1,136 @@
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  width: 100%;
+  /* Sama dengan halaman Pengaturan lain (42rem). */
+  max-width: 42rem;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding: var(--space-24);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.cardHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Judul kartu + status di kanan (desktop); status turun ke bawah judul di HP. */
+.cardHeadRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-12) var(--space-16);
+}
+
+.cardHeadRow > .cardHead {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.cardTitle {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.hint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.body {
+  font-size: var(--text-14);
+  text-wrap: pretty;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.optionText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.optionLabel {
+  font-size: var(--text-14);
+}
+
+.optionHint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.quiet {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-12) var(--space-16);
+  padding-left: var(--space-32);
+}
+
+.timeField {
+  width: 10rem;
+}
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.skeletonTitle {
+  width: 10rem;
+  height: var(--space-24);
+}
+
+.skeletonLine {
+  width: 100%;
+  height: var(--space-16);
+}
+
+.skeletonButton {
+  width: 12rem;
+  height: var(--size-control);
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: var(--space-16);
+  }
+
+  .quiet {
+    padding-left: 0;
+  }
+
+  .timeField {
+    flex: 1 1 8rem;
+    width: auto;
+  }
+}

@@ -1,4 +1,10 @@
-import type { Contact, TagRef } from '@balesin/shared';
+import {
+  TAG_COLORS,
+  TAG_COLOR_LABELS,
+  type Contact,
+  type TagColor,
+  type TagRef,
+} from '@balesin/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Plus, X } from 'lucide-react';
 import { Popover } from 'radix-ui';
@@ -95,12 +101,13 @@ function AddTag({
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [color, setColor] = useState<TagColor>('blue');
   const all = useQuery({ ...tagsQuery, enabled: open }).data?.tags ?? [];
   const needle = search.trim().toLowerCase();
   const shown = needle ? all.filter((tag) => tag.name.toLowerCase().includes(needle)) : all;
   const exact = all.some((tag) => tag.name.toLowerCase() === needle);
   const create = useMutation({
-    mutationFn: (name: string) => endpoints.tags.create({ name }),
+    mutationFn: (name: string) => endpoints.tags.create({ name, color }),
     onSuccess: ({ tag }) => {
       void queryClient.invalidateQueries({ queryKey: inboxKeys.tags });
       onToggle(tag.id, true);
@@ -156,17 +163,39 @@ function AddTag({
               </li>
             ))}
             {needle && !exact ? (
-              <li>
-                <button
-                  type="button"
-                  className={styles.option}
-                  disabled={create.isPending}
-                  onClick={() => create.mutate(search.trim())}
-                >
-                  <Icon icon={Plus} size={16} />
-                  <span className={styles.createText}>{p.tagCreate(search.trim())}</span>
-                </button>
-              </li>
+              <>
+                <li>
+                  {/* Warna tag baru (bawaan biru); titik = token yang sama dengan chip. */}
+                  <div className={styles.colors} role="radiogroup" aria-label={p.tagColor}>
+                    {TAG_COLORS.map((key) => (
+                      <button
+                        key={key}
+                        type="button"
+                        role="radio"
+                        aria-checked={key === color}
+                        aria-label={TAG_COLOR_LABELS[key]}
+                        title={TAG_COLOR_LABELS[key]}
+                        className={styles.colorOption}
+                        data-color={key}
+                        onClick={() => setColor(key)}
+                      >
+                        <span className={styles.colorDot} aria-hidden="true" />
+                      </button>
+                    ))}
+                  </div>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    className={styles.option}
+                    disabled={create.isPending}
+                    onClick={() => create.mutate(search.trim())}
+                  >
+                    <Icon icon={Plus} size={16} />
+                    <span className={styles.createText}>{p.tagCreate(search.trim())}</span>
+                  </button>
+                </li>
+              </>
             ) : null}
             {all.length === 0 && !needle ? <li className={styles.empty}>{p.tagNone}</li> : null}
           </ul>

@@ -186,10 +186,20 @@
 }
 
 .menuDanger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
   color: var(--danger-ink);
   font-size: var(--text-14);
   font-weight: var(--weight-semibold);
   white-space: nowrap;
+}
+
+.dangerDot {
+  width: var(--space-8);
+  height: var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--danger);
 }
 
 .statusSeparator {

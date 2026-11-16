@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo, type ReactNode } from 'react';
 import { brandingQuery } from '../lib/api/queries';
 import { BrandContext, defaultBrand, type Brand } from './brand';
+import { useBrandManifest } from './web-manifest';
 
 /**
  * Merek dari `GET /branding` (white-label): nama produk, nama organisasi, dan logo milik
@@ -24,5 +25,7 @@ export function BrandProvider({ children }: { children: ReactNode }) {
         : defaultBrand,
     [data],
   );
+  // Aplikasi terpasang (PWA) memakai nama & logo organisasi.
+  useBrandManifest(brand);
   return <BrandContext value={brand}>{children}</BrandContext>;
 }

@@ -45,7 +45,22 @@ export function ContactPanel({
     >
       <Tabs.List className={styles.tabs} aria-label={p.tabsLabel}>
         {PANEL_TABS.map((id) => (
-          <Tabs.Trigger key={id} value={id} className={styles.tab}>
+          <Tabs.Trigger
+            key={id}
+            value={id}
+            className={styles.tab}
+            // Cincin fokus hanya untuk keyboard: aktivasi dengan pointer menandai tab-nya sampai
+            // fokus pindah atau tombol ditekan (Chromium kadang menganggap klik = :focus-visible).
+            onPointerDown={(event) => {
+              event.currentTarget.dataset.pointer = '';
+            }}
+            onKeyDown={(event) => {
+              delete event.currentTarget.dataset.pointer;
+            }}
+            onBlur={(event) => {
+              delete event.currentTarget.dataset.pointer;
+            }}
+          >
             {p.tabs[id]}
           </Tabs.Trigger>
         ))}
@@ -139,7 +154,11 @@ function InfoTab({ conversationId, onClosed }: { conversationId: string; onClose
             {d.contact}
           </h3>
           {canManage && contact ? (
-            <Button variant="ghost" onClick={() => setEditing(true)}>
+            <Button
+              variant="ghost"
+              className={styles.sectionAction}
+              onClick={() => setEditing(true)}
+            >
               <Icon icon={Pencil} size={16} />
               {p.editContact}
             </Button>

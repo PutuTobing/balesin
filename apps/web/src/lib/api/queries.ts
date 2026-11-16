@@ -13,6 +13,7 @@ import { api, isApiError } from './client';
 import { endpoints } from './endpoints';
 import { clearMediaCache } from '../../features/inbox/message-media';
 import { resetOutbox } from '../../features/inbox/outbox';
+import { releasePush } from '../../features/notifications/push-device';
 
 /** Kunci query di satu tempat supaya invalidasi tidak salah ketik. */
 export const queryKeys = {
@@ -326,6 +327,9 @@ export function endSession(queryClient: QueryClient): void {
   // Cache modul (draf gagal kirim, Blob media) tidak memicu permintaan ulang: aman dibuang sekarang.
   resetOutbox();
   clearMediaCache();
+  // Sesi berakhir: notifikasi perangkat ini dilepas di browser (server sudah menghapus langganan
+  // milik sesi itu; DELETE tidak mungkin lagi tanpa sesi).
+  void releasePush({ server: false }).catch(() => undefined);
   api.setCsrfToken(null);
   queryClient.setQueryData(queryKeys.session, null);
 }

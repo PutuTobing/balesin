@@ -1,6 +1,8 @@
 import type { WebhookHealth } from '@balesin/shared';
 import { useQuery } from '@tanstack/react-query';
+import { RefreshCw } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
+import { Icon } from '../../components/ui/Icon';
 import { Notice } from '../../components/ui/Notice';
 import { Skeleton, SkeletonRegion } from '../../components/ui/Skeleton';
 import { t } from '../../i18n/id';
@@ -35,26 +37,36 @@ function healthProblems(health: WebhookHealth): string[] {
  * Diagnosis webhook 24 jam (`channels.manage`): apakah Meta benar-benar mengirim data ke channel ini
  * dan worker memprosesnya. Hanya hitungan dan waktu — tidak pernah isi pesan.
  */
-export function WebhookHealthCard({ channelId }: { channelId: string }) {
+export function WebhookHealthCard({
+  channelId,
+  onFixAppSecret,
+}: {
+  channelId: string;
+  /** Tanda tangan gagal → buka form Kredensial Meta dengan isian App Secret terfokus. */
+  onFixAppSecret: () => void;
+}) {
   const health = useQuery(channelWebhookHealthQuery(channelId));
 
   return (
-    <section className={styles.subSection} aria-labelledby="channel-webhook-diagnosis">
-      <div className={styles.subHead}>
-        <h3 id="channel-webhook-diagnosis" className={styles.subTitle}>
-          {copy.title}
-        </h3>
+    <section id="diagnosis" className={styles.card} aria-labelledby="channel-webhook-diagnosis">
+      <div className={styles.cardHeadRow}>
+        <div className={styles.cardHead}>
+          <h2 id="channel-webhook-diagnosis" className={styles.cardTitle}>
+            {copy.title}
+          </h2>
+          <p className={styles.hint}>{copy.hint}</p>
+        </div>
         <Button
-          variant="ghost"
           loading={health.isFetching}
           onClick={() => void health.refetch()}
           disabled={health.isPending}
         >
+          {health.isFetching ? null : <Icon icon={RefreshCw} size={16} />}
           {health.isFetching ? copy.checking : copy.recheck}
         </Button>
       </div>
       {health.data ? (
-        <HealthBody health={health.data.health} />
+        <HealthBody health={health.data.health} onFixAppSecret={onFixAppSecret} />
       ) : health.isPending ? (
         <SkeletonRegion className={styles.facts}>
           {[0, 1, 2, 3].map((index) => (
@@ -70,7 +82,13 @@ export function WebhookHealthCard({ channelId }: { channelId: string }) {
   );
 }
 
-function HealthBody({ health }: { health: WebhookHealth }) {
+function HealthBody({
+  health,
+  onFixAppSecret,
+}: {
+  health: WebhookHealth;
+  onFixAppSecret: () => void;
+}) {
   const last = health.last24h;
   const problems = healthProblems(health);
   return (
@@ -84,7 +102,16 @@ function HealthBody({ health }: { health: WebhookHealth }) {
           {copy.idleBody}
         </Notice>
       ) : (
-        <Notice tone="danger" role="status" title={copy.attentionTitle}>
+        <Notice
+          tone="danger"
+          role="status"
+          title={copy.attentionTitle}
+          actions={
+            last.signatureFailures > 0 ? (
+              <Button onClick={onFixAppSecret}>{copy.fixAppSecret}</Button>
+            ) : undefined
+          }
+        >
           <ul className={styles.healthProblems}>
             {problems.map((problem) => (
               <li key={problem}>{problem}</li>

@@ -94,6 +94,15 @@ ul.list {
   font-weight: var(--weight-semibold);
 }
 
+/* HP: tautan "Kelola balasan cepat" punya area tekan penuh (≥ 44px). */
+@media (max-width: 640px), (pointer: coarse) {
+  .manage {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--size-touch);
+  }
+}
+
 .hint {
   flex: none;
   padding: var(--space-8) var(--space-12);
