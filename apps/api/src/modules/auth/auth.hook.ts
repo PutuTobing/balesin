@@ -8,6 +8,7 @@ import { allowsTwoFactorEnrollment } from '../../http/route-access';
 import { fetchSiteOf, type AccessDeniedRecorder } from './access-denied';
 import type { CsrfProtection } from './csrf';
 import type { CsrfRejectionRecorder, CsrfRejectionReason } from './csrf-rejection';
+import type { ApiKeyAuthenticator } from '../api-keys/api-key-auth';
 import type { AuthContext, SessionService } from './session.service';
 
 declare module 'fastify' {
@@ -35,6 +36,8 @@ export interface AuthHookOptions {
   csrf: CsrfProtection;
   accessDenied: AccessDeniedRecorder;
   csrfRejections: CsrfRejectionRecorder;
+  /** Autentikasi API publik (Bearer API key). Tanpa ini rute `apiKey` selalu 401. */
+  apiKeys?: ApiKeyAuthenticator;
 }
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -70,6 +73,7 @@ export function registerAuthHook(app: FastifyInstance, options: AuthHookOptions)
   const { appOrigin, cookieSecure, sessions, csrf, accessDenied, csrfRejections } = options;
 
   app.decorateRequest('auth', null);
+  app.decorateRequest('apiKey', null);
   app.decorate('accessDenied', accessDenied);
   app.decorate('csrfRejections', csrfRejections);
 
@@ -112,6 +116,12 @@ export function registerAuthHook(app: FastifyInstance, options: AuthHookOptions)
     const access = request.routeOptions.config.access;
     if (!access) throw new AppError('FORBIDDEN');
     if (access.kind === 'public') return;
+    // API publik: HANYA Bearer API key — cookie sesi diabaikan sepenuhnya (tanpa CSRF).
+    if (access.kind === 'apiKey') {
+      if (!options.apiKeys) throw new AppError('UNAUTHENTICATED');
+      request.apiKey = await options.apiKeys.authenticate(request, access.scope);
+      return;
+    }
     // Jenis yang tidak dikenal (seharusnya sudah digagalkan saat start) tidak pernah diloloskan.
     if (access.kind !== 'authenticated' && access.kind !== 'permission') {
       throw new AppError('FORBIDDEN');

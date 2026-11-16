@@ -75,7 +75,10 @@ export interface SendingLimitsService {
   /** Lempar 423 `SENDING_PAUSED` / 429 bila pesan baru dari pengguna ini ke percakapan ini ditolak. */
   assertCanSend(input: {
     organizationId: string;
-    userId: string;
+    /** Agen pengirim; `null` = pesan lewat API key (lihat `apiKey`). */
+    userId: string | null;
+    /** Pesan lewat API publik: batas harian PER KEY menggantikan batas per pengguna (Fase 3). */
+    apiKey?: { id: string; dailySendLimit: number };
     conversationId: string;
     client: ClientInfo;
   }): Promise<void>;
@@ -86,6 +89,7 @@ async function countOutbound(
   organizationId: string,
   since: Date,
   senderUserId?: string,
+  apiKeyId?: string,
 ): Promise<number> {
   const [row] = await db
     .select({ total: sql<number>`count(*)::int` })
@@ -96,6 +100,7 @@ async function countOutbound(
         eq(messages.direction, 'outbound'),
         gt(messages.createdAt, since),
         senderUserId === undefined ? undefined : eq(messages.senderUserId, senderUserId),
+        apiKeyId === undefined ? undefined : eq(messages.apiKeyId, apiKeyId),
       ),
     );
   return Number(row?.total ?? 0);
@@ -178,33 +183,52 @@ export function createSendingLimitsService(deps: SendingLimitsServiceDeps): Send
 
   async function limitReached(
     organizationId: string,
-    scope: 'user' | 'organization',
-    userId: string,
+    scope: 'user' | 'organization' | 'api_key',
+    sender: { userId: string | null; apiKeyId: string | null },
     limit: number,
     sent: number,
     client: ClientInfo,
   ): Promise<never> {
-    const key = scope === 'user' ? `${organizationId}:user:${userId}` : `${organizationId}:org`;
+    const key =
+      scope === 'user'
+        ? `${organizationId}:user:${sender.userId ?? ''}`
+        : scope === 'api_key'
+          ? `${organizationId}:key:${sender.apiKeyId ?? ''}`
+          : `${organizationId}:org`;
     const first = await limiter
       .claimFlag(LIMIT_FLAG, key, SENDING_DAY_MS / 1000)
       .catch(() => false);
     if (first) {
       const auditLogId = await recordAudit(db, {
         organizationId,
-        actorUserId: userId,
+        // Pesan lewat API key: pelaku = key (bukan pengguna), lihat `apiKeyId`.
+        actorUserId: sender.userId,
         action: AUDIT_ACTIONS.sendingLimitReached,
-        targetType: 'user',
-        targetId: userId,
-        metadata: { scope, limit, sent },
+        ...(sender.apiKeyId && !sender.userId
+          ? { targetType: 'api_key' as const, targetId: sender.apiKeyId }
+          : sender.userId
+            ? { targetType: 'user' as const, targetId: sender.userId }
+            : {}),
+        metadata: {
+          scope,
+          limit,
+          sent,
+          ...(sender.apiKeyId ? { apiKeyId: sender.apiKeyId } : {}),
+        },
         client,
       });
-      await notifyOwners(organizationId, 'sending_limit_reached', userId, auditLogId);
+      // Email Owner menyebut pengguna pengirim; batas per API key cukup audit + banner.
+      if (sender.userId) {
+        await notifyOwners(organizationId, 'sending_limit_reached', sender.userId, auditLogId);
+      }
     }
     throw new AppError('RATE_LIMITED', {
       message:
         scope === 'user'
           ? `Batas kirim harianmu (${limit.toLocaleString('id-ID')} pesan per 24 jam) sudah tercapai. Hubungi Owner/Admin bila perlu dinaikkan.`
-          : `Batas kirim harian organisasi (${limit.toLocaleString('id-ID')} pesan per 24 jam) sudah tercapai. Hubungi Owner/Admin.`,
+          : scope === 'api_key'
+            ? `Batas kirim harian API key ini (${limit.toLocaleString('id-ID')} pesan per 24 jam) sudah tercapai.`
+            : `Batas kirim harian organisasi (${limit.toLocaleString('id-ID')} pesan per 24 jam) sudah tercapai. Hubungi Owner/Admin.`,
       retryAfterSeconds: 60 * 60,
     });
   }
@@ -343,7 +367,8 @@ export function createSendingLimitsService(deps: SendingLimitsServiceDeps): Send
       return Boolean(org?.pausedAt);
     },
 
-    async assertCanSend({ organizationId, userId, conversationId, client }) {
+    async assertCanSend({ organizationId, userId, apiKey, conversationId, client }) {
+      const sender = { userId, apiKeyId: apiKey?.id ?? null };
       const [org] = await db
         .select({
           pausedAt: organizations.sendingPausedAt,
@@ -356,16 +381,30 @@ export function createSendingLimitsService(deps: SendingLimitsServiceDeps): Send
       if (!org) throw new AppError('NOT_FOUND');
       if (org.pausedAt) throw new AppError('SENDING_PAUSED');
       const since = new Date(now().getTime() - SENDING_DAY_MS);
-      const mine = await countOutbound(db, organizationId, since, userId);
-      if (mine >= org.perUser) {
-        await limitReached(organizationId, 'user', userId, org.perUser, mine, client);
+      if (apiKey) {
+        const viaKey = await countOutbound(db, organizationId, since, undefined, apiKey.id);
+        if (viaKey >= apiKey.dailySendLimit) {
+          await limitReached(
+            organizationId,
+            'api_key',
+            sender,
+            apiKey.dailySendLimit,
+            viaKey,
+            client,
+          );
+        }
+      } else if (userId) {
+        const mine = await countOutbound(db, organizationId, since, userId);
+        if (mine >= org.perUser) {
+          await limitReached(organizationId, 'user', sender, org.perUser, mine, client);
+        }
       }
       const all = await countOutbound(db, organizationId, since);
       if (all >= org.perOrganization) {
         await limitReached(
           organizationId,
           'organization',
-          userId,
+          sender,
           org.perOrganization,
           all,
           client,

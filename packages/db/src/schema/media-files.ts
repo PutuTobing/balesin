@@ -12,6 +12,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import { apiKeys } from './api-keys';
 import { channels } from './channels';
 import { createdAtColumn, idColumn, timestamptz, updatedAtColumn } from './columns';
 import { organizations } from './organizations';
@@ -50,6 +51,8 @@ export const mediaFiles = pgTable(
     storageKey: text('storage_key'),
     metaMediaRef: text('meta_media_ref'),
     uploadedByUserId: uuid('uploaded_by_user_id'),
+    /** Unggahan lewat API publik (API key). */
+    uploadedByApiKeyId: uuid('uploaded_by_api_key_id'),
     expiresAt: timestamptz('expires_at').notNull(),
     deletedAt: timestamptz('deleted_at'),
     createdAt: createdAtColumn(),
@@ -66,6 +69,11 @@ export const mediaFiles = pgTable(
       name: 'media_files_organization_id_uploaded_by_user_id_fk',
       columns: [table.organizationId, table.uploadedByUserId],
       foreignColumns: [users.organizationId, users.id],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'media_files_organization_id_uploaded_by_api_key_id_fk',
+      columns: [table.organizationId, table.uploadedByApiKeyId],
+      foreignColumns: [apiKeys.organizationId, apiKeys.id],
     }).onDelete('restrict'),
     index('media_files_expires_at_idx')
       .on(table.expiresAt)

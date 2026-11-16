@@ -38,8 +38,9 @@ export const QUICK_REPLY_NOT_FOUND = 'Template percakapan tidak ditemukan.';
 
 /** Isi template di audit dipotong (teks bisnis; cukup untuk menelusuri perubahan). */
 const AUDIT_BODY_MAX = 3_500;
+// Domain hanya dengan TLD yang dikenal (kurangi positif palsu "kata.kata", review hapus Info).
 const LINK_PATTERN =
-  /\b(?:https?:\/\/|www\.)[^\s]+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}\b(?:\/[^\s]*)?/gi;
+  /\b(?:https?:\/\/|www\.)[^\s]+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|id|co|io|me|ly|info|biz|site|online|app|cc|top|shop|xyz|link|click|live|store|club|vip|win|icu|pw|tk|ml|ga|cf|gq|ru|cn|in|us|uk|sg|my|ai|dev|to|gl|gd|is|tv|ws|su)\b(?:\/[^\s]*)?/gi;
 const LONG_NUMBER_PATTERN = /\d(?:[\s.-]?\d){7,}/g;
 
 function matchesOf(

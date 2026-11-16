@@ -1,10 +1,17 @@
-import { AppError, cleanFileName, type InboxEventPublisher, type Logger } from '@balesin/core';
+import {
+  AppError,
+  cleanFileName,
+  contactIdentityLockKeys,
+  type InboxEventPublisher,
+  type Logger,
+} from '@balesin/core';
 import {
   channels,
   contactEvents,
   contactTags,
   contacts,
   conversations,
+  lockAdvisoryKeys,
   messages,
   tags,
   type Database,
@@ -13,14 +20,16 @@ import {
 import {
   CONTACT_EXPORT_MESSAGES_MAX,
   TAGS_PER_CONTACT_MAX,
+  TAGS_PER_ORGANIZATION_MAX,
   type ContactEditableField,
   type ContactExport,
   type ConversationDetailSection,
   type DeleteContactResponse,
   type IdentityConfirmation,
+  type PublicCreateContactRequest,
   type UpdateContactRequest,
 } from '@balesin/shared';
-import { and, asc, desc, eq, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { ClientInfo } from '../../http/client-info';
@@ -50,6 +59,24 @@ export const TAG_NOT_FOUND = 'Tag tidak ditemukan.';
 
 export interface ContactsService {
   update(auth: AuthContext, contactId: string, input: UpdateContactRequest): Promise<void>;
+  /** Lewat API publik (`contacts:write`): pelaku = API key (riwayat tanpa pengguna). */
+  updateFromApi(
+    organizationId: string,
+    contactId: string,
+    input: UpdateContactRequest,
+  ): Promise<void>;
+  /** Kontak WhatsApp dari nomor E.164; nomor yang sudah ada → kontak itu (`created: false`). */
+  createFromApi(
+    organizationId: string,
+    input: PublicCreateContactRequest,
+  ): Promise<{ id: string; created: boolean }>;
+  /** Pasang/lepas tag berdasarkan NAMA (pasang membuat tag yang belum ada). */
+  tagsByNameFromApi(
+    organizationId: string,
+    contactId: string,
+    names: readonly string[],
+    operation: 'add' | 'remove',
+  ): Promise<void>;
   /** Hapus kontak + data pribadinya (UU PDP). Konfirmasi identitas wajib. */
   remove(
     auth: AuthContext,
@@ -115,57 +142,205 @@ export function createContactsService(deps: {
   publisher: InboxEventPublisher;
   /** Wajib untuk hapus kontak (konfirmasi identitas). */
   twoFactor?: Pick<TwoFactorService, 'confirmIdentity'>;
-  /** Pembersih media (`outbound.purgeExpiredMedia`) — dipanggil SETELAH commit hapus kontak (R4). */
-  purgeMedia?: () => Promise<number>;
+  /**
+   * Pembersih media KHUSUS berkas kontak yang dihapus (`outbound.purgeMediaFiles`) — dipanggil
+   * SETELAH commit (R4; review hapus Info: bukan pembersih global di dalam permintaan).
+   */
+  purgeMedia?: (mediaFileIds: readonly string[]) => Promise<number>;
   logger?: Pick<Logger, 'warn' | 'info'>;
   now?: () => Date;
 }): ContactsService {
   const { db, publisher } = deps;
   const now = deps.now ?? (() => new Date());
 
+  /**
+   * Ubah isian kontak + riwayat (`contact_events`, tanpa nilai). `actorUserId` `null` = lewat API
+   * key (pelaku integrasi). `check` = pemeriksaan pelaku di dalam transaksi (sesi web).
+   */
+  async function applyUpdate(
+    organizationId: string,
+    actorUserId: string | null,
+    contactId: string,
+    input: UpdateContactRequest,
+    check?: (tx: DbExecutor) => Promise<void>,
+  ): Promise<void> {
+    const changed = await db.transaction(async (tx) => {
+      await check?.(tx);
+      const current = await lockContact(tx, organizationId, contactId);
+      const patch: Partial<typeof contacts.$inferInsert> = {};
+      const fields: ContactEditableField[] = [];
+      if (input.name !== undefined && input.name !== current.name) {
+        patch.name = input.name;
+        fields.push('name');
+      }
+      if (input.email !== undefined && input.email !== current.email) {
+        patch.email = input.email;
+        fields.push('email');
+      }
+      if (input.notes !== undefined && input.notes !== current.notes) {
+        patch.notes = input.notes;
+        fields.push('notes');
+      }
+      if (input.attributes !== undefined && !sameAttributes(input.attributes, current.attributes)) {
+        patch.attributes = input.attributes;
+        fields.push('attributes');
+      }
+      if (fields.length === 0) return false;
+      await tx
+        .update(contacts)
+        .set(patch)
+        .where(and(eq(contacts.organizationId, organizationId), eq(contacts.id, contactId)));
+      await tx.insert(contactEvents).values({
+        organizationId,
+        contactId,
+        kind: 'contact_updated',
+        actorUserId,
+        fields,
+      });
+      return true;
+    });
+    if (changed) {
+      await publishContactDetail(db, publisher, organizationId, [contactId], 'contact');
+    }
+  }
+
+  async function tagsByName(
+    organizationId: string,
+    contactId: string,
+    names: readonly string[],
+    operation: 'add' | 'remove',
+  ): Promise<void> {
+    const changed = await db.transaction(async (tx) => {
+      await lockContact(tx, organizationId, contactId);
+      // Nama kembar (tanpa beda huruf besar/kecil) → kemunculan PERTAMA yang dipakai.
+      const wanted: string[] = [];
+      const seen = new Set<string>();
+      for (const name of names) {
+        const folded = name.toLocaleLowerCase('id-ID');
+        if (seen.has(folded)) continue;
+        seen.add(folded);
+        wanted.push(name);
+      }
+      const byName = (name: string) =>
+        tx
+          .select({ id: tags.id, name: tags.name, color: tags.color })
+          .from(tags)
+          .where(
+            and(eq(tags.organizationId, organizationId), sql`lower(${tags.name}) = lower(${name})`),
+          );
+      let touched = false;
+      for (const name of wanted) {
+        let [tag] = await byName(name);
+        if (!tag && operation === 'add') {
+          const [count] = await tx
+            .select({ total: sql<number>`count(*)::int` })
+            .from(tags)
+            .where(eq(tags.organizationId, organizationId));
+          if (Number(count?.total ?? 0) >= TAGS_PER_ORGANIZATION_MAX) {
+            throw new AppError('CONFLICT', {
+              message: `Organisasi ini sudah punya ${String(TAGS_PER_ORGANIZATION_MAX)} tag (batas).`,
+            });
+          }
+          await tx
+            .insert(tags)
+            .values({ organizationId, name, color: 'blue' })
+            .onConflictDoNothing();
+          [tag] = await byName(name);
+        }
+        if (!tag) continue;
+        if (operation === 'add') {
+          const [count] = await tx
+            .select({ total: sql<number>`count(*)::int` })
+            .from(contactTags)
+            .where(
+              and(
+                eq(contactTags.organizationId, organizationId),
+                eq(contactTags.contactId, contactId),
+              ),
+            );
+          const inserted = await tx
+            .insert(contactTags)
+            .values({ organizationId, contactId, tagId: tag.id })
+            .onConflictDoNothing()
+            .returning({ tagId: contactTags.tagId });
+          if (inserted.length === 0) continue;
+          if (Number(count?.total ?? 0) >= TAGS_PER_CONTACT_MAX) {
+            throw new AppError('CONFLICT', {
+              message: `Kontak ini sudah memakai ${String(TAGS_PER_CONTACT_MAX)} tag (batas).`,
+            });
+          }
+        } else {
+          const removed = await tx
+            .delete(contactTags)
+            .where(
+              and(
+                eq(contactTags.organizationId, organizationId),
+                eq(contactTags.contactId, contactId),
+                eq(contactTags.tagId, tag.id),
+              ),
+            )
+            .returning({ tagId: contactTags.tagId });
+          if (removed.length === 0) continue;
+        }
+        touched = true;
+        await tx.insert(contactEvents).values({
+          organizationId,
+          contactId,
+          kind: operation === 'add' ? 'tag_added' : 'tag_removed',
+          actorUserId: null,
+          tagName: tag.name,
+          tagColor: tag.color,
+        });
+      }
+      return touched;
+    });
+    if (changed) await publishContactDetail(db, publisher, organizationId, [contactId], 'tags');
+  }
+
   return {
     async update(auth, contactId, input) {
-      const changed = await db.transaction(async (tx) => {
+      await applyUpdate(auth.organizationId, auth.user.id, contactId, input, async (tx) => {
         await assertActorStillAuthorized(tx, auth, 'contacts.manage');
-        const current = await lockContact(tx, auth.organizationId, contactId);
-        const patch: Partial<typeof contacts.$inferInsert> = {};
-        const fields: ContactEditableField[] = [];
-        if (input.name !== undefined && input.name !== current.name) {
-          patch.name = input.name;
-          fields.push('name');
-        }
-        if (input.email !== undefined && input.email !== current.email) {
-          patch.email = input.email;
-          fields.push('email');
-        }
-        if (input.notes !== undefined && input.notes !== current.notes) {
-          patch.notes = input.notes;
-          fields.push('notes');
-        }
-        if (
-          input.attributes !== undefined &&
-          !sameAttributes(input.attributes, current.attributes)
-        ) {
-          patch.attributes = input.attributes;
-          fields.push('attributes');
-        }
-        if (fields.length === 0) return false;
-        await tx
-          .update(contacts)
-          .set(patch)
-          .where(and(eq(contacts.organizationId, auth.organizationId), eq(contacts.id, contactId)));
-        await tx.insert(contactEvents).values({
-          organizationId: auth.organizationId,
-          contactId,
-          kind: 'contact_updated',
-          actorUserId: auth.user.id,
-          fields,
-        });
-        return true;
       });
-      if (changed) {
-        await publishContactDetail(db, publisher, auth.organizationId, [contactId], 'contact');
-      }
+    },
+
+    updateFromApi: (organizationId, contactId, input) =>
+      applyUpdate(organizationId, null, contactId, input),
+
+    tagsByNameFromApi: tagsByName,
+
+    async createFromApi(organizationId, input) {
+      return db.transaction(async (tx) => {
+        // Kunci identitas yang SAMA dengan worker pesan masuk (tidak ada kontak kembar bersamaan).
+        await lockAdvisoryKeys(
+          tx,
+          contactIdentityLockKeys(organizationId, 'whatsapp', { bsuid: null, phone: input.phone }),
+        );
+        const [existing] = await tx
+          .select({ id: contacts.id })
+          .from(contacts)
+          .where(
+            and(
+              eq(contacts.organizationId, organizationId),
+              eq(contacts.channelType, 'whatsapp'),
+              eq(contacts.phone, input.phone),
+            ),
+          );
+        if (existing) return { id: existing.id, created: false };
+        const [row] = await tx
+          .insert(contacts)
+          .values({
+            organizationId,
+            channelType: 'whatsapp',
+            phone: input.phone,
+            name: input.name ?? null,
+            email: input.email ?? null,
+            attributes: input.attributes ?? [],
+          })
+          .returning({ id: contacts.id });
+        if (!row) throw new Error('Kontak tidak tersimpan');
+        return { id: row.id, created: true };
+      });
     },
 
     async remove(auth, contactId, confirmation, context) {
@@ -180,8 +355,22 @@ export function createContactsService(deps: {
       );
       const outcome = await db.transaction(async (tx) => {
         const { role } = await assertActorStillAuthorized(tx, auth, 'contacts.delete');
+        const media = await tx
+          .select({ id: messages.mediaFileId })
+          .from(messages)
+          .where(
+            and(
+              eq(messages.organizationId, auth.organizationId),
+              eq(messages.contactId, contactId),
+              isNotNull(messages.mediaFileId),
+            ),
+          );
         const affected = await tx
-          .select({ id: conversations.id, status: conversations.status })
+          .select({
+            id: conversations.id,
+            status: conversations.status,
+            assigneeUserId: conversations.assigneeUserId,
+          })
           .from(conversations)
           .where(
             and(
@@ -208,24 +397,32 @@ export function createContactsService(deps: {
           },
           client: context.client,
         });
-        return { result, conversationIds: affected.map((row) => row.id) };
+        return {
+          result,
+          affected,
+          mediaFileIds: [
+            ...new Set(media.map((row) => row.id).filter((id): id is string => id !== null)),
+          ],
+        };
       });
       // Setelah commit: berkas media langsung dihapus dari disk (review ruang chat R4), lalu web
       // diberi tahu percakapan yang hilang (ID saja).
       let mediaFiles = 0;
       try {
-        mediaFiles = (await deps.purgeMedia?.()) ?? 0;
+        mediaFiles = (await deps.purgeMedia?.(outcome.mediaFileIds)) ?? 0;
       } catch (err) {
         deps.logger?.warn(
           { err },
           'Pembersihan media setelah hapus kontak gagal (dicoba lagi berkala)',
         );
       }
+      // Agen pemegang ikut dikirim supaya hub menyaring per cakapan (review hapus Info).
       await publisher.publish(
-        outcome.conversationIds.map((conversationId) => ({
+        outcome.affected.map((row) => ({
           type: 'conversation.deleted' as const,
           organizationId: auth.organizationId,
-          conversationId,
+          conversationId: row.id,
+          ...(row.assigneeUserId ? { previousAssigneeUserId: row.assigneeUserId } : {}),
         })),
       );
       return {

@@ -132,7 +132,8 @@ export const contactsRoutes: FastifyPluginCallbackZod<ContactsRoutesOptions> = (
   app.get(
     routes.contactExport,
     {
-      config: { access: requirePermission('contacts.export') },
+      // GET ber-efek-samping (audit, jatah, berkas data pribadi) → wajib X-CSRF-Token (review R1).
+      config: { access: requirePermission('contacts.export'), requireCsrf: true },
       schema: {
         params: contactIdParamsSchema,
         response: { 200: contactExportSchema, ...errors },

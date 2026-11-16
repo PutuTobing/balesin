@@ -35,6 +35,12 @@ import { enforceRouteDeclarations } from './http/route-access';
 import { applyBaselineHeaders, securityPlugin } from './http/security';
 import { createAccessDeniedRecorder } from './modules/auth/access-denied';
 import { createCsrfRejectionRecorder } from './modules/auth/csrf-rejection';
+import { createApiKeyAuthenticator } from './modules/api-keys/api-key-auth';
+import { apiKeysRoutes } from './modules/api-keys/api-keys.routes';
+import { createApiKeysService } from './modules/api-keys/api-keys.service';
+import { apiDocsRoutes } from './modules/public-api/api-docs.routes';
+import { publicApiRoutes } from './modules/public-api/public-api.routes';
+import { apiKeyPepper as deriveApiKeyPepper } from './modules/api-keys/api-key-token';
 import { registerAuthHook } from './modules/auth/auth.hook';
 import { authRoutes } from './modules/auth/auth.routes';
 import { createAuthService } from './modules/auth/auth.service';
@@ -455,6 +461,7 @@ export async function buildApp(deps: AppDeps) {
   // Urutan penting: setelah plugin keamanan (header + CORS berlaku juga untuk respons yang
   // ditolak), sebelum rute pertama.
   app.decorate('routeDeclarations', enforceRouteDeclarations(app));
+  const apiKeyPepper = config.masterKey ? deriveApiKeyPepper(config.masterKey) : null;
   registerAuthHook(app, {
     appOrigin: config.appOrigin,
     cookieSecure: config.cookieSecure,
@@ -462,6 +469,12 @@ export async function buildApp(deps: AppDeps) {
     csrf,
     accessDenied,
     csrfRejections,
+    apiKeys: createApiKeyAuthenticator({
+      db,
+      limiter,
+      pepper: apiKeyPepper,
+      logger: deps.logger,
+    }),
   });
 
   // ── Rute ──────────────────────────────────────────────────────────────────
@@ -518,6 +531,21 @@ export async function buildApp(deps: AppDeps) {
       logger: deps.logger,
     }),
   });
+  const contactsService = createContactsService({
+    db,
+    publisher: inboxEvents,
+    twoFactor,
+    purgeMedia: (ids) => outbound.purgeMediaFiles(ids),
+    logger: deps.logger,
+  });
+  // API publik v1 + API key + dokumentasi (Fase 3).
+  await app.register(apiKeysRoutes, {
+    limiter,
+    cookieSecure: config.cookieSecure,
+    apiKeys: createApiKeysService({ db, pepper: apiKeyPepper, twoFactor }),
+  });
+  await app.register(publicApiRoutes, { db, outbound, contacts: contactsService });
+  await app.register(apiDocsRoutes, { db, apiUrl: config.apiUrl });
   // Notifikasi Web Push (Fase 2 butir 10).
   await app.register(notificationsRoutes, {
     limiter,
@@ -533,13 +561,7 @@ export async function buildApp(deps: AppDeps) {
     db,
     limiter,
     cookieSecure: config.cookieSecure,
-    contacts: createContactsService({
-      db,
-      publisher: inboxEvents,
-      twoFactor,
-      purgeMedia: () => outbound.purgeExpiredMedia(),
-      logger: deps.logger,
-    }),
+    contacts: contactsService,
   });
   await app.register(tagsRoutes, {
     limiter,

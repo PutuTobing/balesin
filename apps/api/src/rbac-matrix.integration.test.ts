@@ -20,6 +20,7 @@ import {
   errorEnvelopeSchema,
   hasPermission,
   USER_ROLES,
+  type ApiKeyScope,
   type Permission,
   type UserRole,
 } from '@balesin/shared';
@@ -39,7 +40,11 @@ import {
 } from './testing/integration';
 
 /** `public` tanpa sesi · `session` cukup sesi penuh · `enrollment` sesi penuh atau sesi terbatas 2FA. */
-type Expectation = 'public' | 'session' | 'enrollment' | Permission;
+/** `apikey:<scope>` = API publik (Bearer API key, tanpa sesi); `apikey:*` = key sah apa pun (405). */
+type ApiKeyExpectation = `apikey:${ApiKeyScope}` | 'apikey:*';
+type Expectation = 'public' | 'session' | 'enrollment' | Permission | ApiKeyExpectation;
+const isApiKeyExpectation = (value: Expectation): value is ApiKeyExpectation =>
+  value.startsWith('apikey:');
 
 /**
  * SEMUA rute modul (tanpa HEAD otomatis dan pelengkap 405 — keduanya diturunkan dari sini).
@@ -191,6 +196,30 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'PATCH /api/v1/quick-replies/:quickReplyId': 'quick_replies.manage',
   'DELETE /api/v1/quick-replies/:quickReplyId': 'quick_replies.manage',
   'POST /api/v1/quick-replies/:quickReplyId/use': 'inbox.reply',
+  // Pengaturan → API key (Fase 3): Owner/Admin
+  'GET /api/v1/settings/api-keys': 'api_keys.manage',
+  'POST /api/v1/settings/api-keys': 'api_keys.manage',
+  'POST /api/v1/settings/api-keys/:apiKeyId/revoke': 'api_keys.manage',
+  'GET /api/v1/settings/api': 'api_keys.manage',
+  'PUT /api/v1/settings/api': 'api_keys.manage',
+  // API publik v1: HANYA Bearer API key + scope (sesi web apa pun → 401)
+  'GET /api/v1/public/conversations': 'apikey:conversations:read',
+  'GET /api/v1/public/conversations/:conversationId': 'apikey:conversations:read',
+  'GET /api/v1/public/conversations/:conversationId/messages': 'apikey:messages:read',
+  'POST /api/v1/public/conversations/:conversationId/messages': 'apikey:messages:send',
+  'POST /api/v1/public/conversations/:conversationId/media': 'apikey:messages:send',
+  'GET /api/v1/public/messages/:messageId': 'apikey:messages:read',
+  'GET /api/v1/public/contacts': 'apikey:contacts:read',
+  'POST /api/v1/public/contacts': 'apikey:contacts:write',
+  'GET /api/v1/public/contacts/:contactId': 'apikey:contacts:read',
+  'PATCH /api/v1/public/contacts/:contactId': 'apikey:contacts:write',
+  'POST /api/v1/public/contacts/:contactId/tags': 'apikey:contacts:write',
+  'DELETE /api/v1/public/contacts/:contactId/tags': 'apikey:contacts:write',
+  // dokumentasi API publik (tanpa sesi; bisa dimatikan Pengaturan → API)
+  'GET /api/docs': 'public',
+  'GET /api/docs/app.css': 'public',
+  'GET /api/docs/app.js': 'public',
+  'GET /api/docs/openapi.json': 'public',
   // penerima webhook Meta: publik — keaslian dari verify token (GET) / tanda tangan App Secret (POST)
   'GET /webhooks/whatsapp/:channelId': 'public',
   'POST /webhooks/whatsapp/:channelId': 'public',
@@ -199,6 +228,10 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
 const LOGOUT = 'POST /api/v1/auth/logout';
 
 function accessOf(expectation: Expectation): RouteAccess {
+  if (isApiKeyExpectation(expectation)) {
+    const scope = expectation.slice('apikey:'.length);
+    return { kind: 'apiKey', scope: scope === '*' ? null : (scope as ApiKeyScope) };
+  }
   switch (expectation) {
     case 'public':
       return { kind: 'public' };
@@ -214,6 +247,11 @@ function accessOf(expectation: Expectation): RouteAccess {
 /** Akses pelengkap 405 yang diharapkan, dihitung dari tabel (bukan dari kode yang diuji). */
 function complementExpectation(expectations: readonly Expectation[]): Expectation {
   if (expectations.every((value) => value === 'public')) return 'public';
+  if (expectations.every(isApiKeyExpectation)) {
+    const scopes = new Set(expectations);
+    const [only] = scopes;
+    return scopes.size === 1 && only ? only : 'apikey:*';
+  }
   const distinct = new Set(expectations);
   const [only] = distinct;
   if (distinct.size === 1 && only !== 'session' && only !== 'enrollment')
@@ -239,6 +277,8 @@ function matches(expected: Outcome, observed: Observed): boolean {
 
 function expectedOutcome(expectation: Expectation, principal: Principal): Outcome {
   if (expectation === 'public') return 'allowed';
+  // API publik tidak menerima sesi web sama sekali (tanpa Bearer → 401).
+  if (isApiKeyExpectation(expectation)) return 'unauthenticated';
   if (principal.kind === 'anonymous') return 'unauthenticated';
   if (principal.kind === 'enrollment') {
     return expectation === 'enrollment' ? 'allowed' : 'enrollment_required';
@@ -278,6 +318,7 @@ const SAMPLE_PARAMS: Readonly<Record<string, string>> = {
   tagId: '00000000-0000-4000-8000-0000000000a2',
   noteId: '00000000-0000-4000-8000-0000000000a3',
   quickReplyId: '00000000-0000-4000-8000-0000000000a4',
+  apiKeyId: '00000000-0000-4000-8000-0000000000a5',
 };
 
 function concreteUrl(pattern: string): string {
@@ -472,7 +513,11 @@ describe('peran × endpoint: hasil sungguhan cocok dengan matriks', () => {
           );
         }
       }
-      if (expected === 'forbidden' && expectation !== 'public') {
+      if (
+        expected === 'forbidden' &&
+        expectation !== 'public' &&
+        !isApiKeyExpectation(expectation)
+      ) {
         deniedPermissions.add(expectation as Permission);
       }
     }

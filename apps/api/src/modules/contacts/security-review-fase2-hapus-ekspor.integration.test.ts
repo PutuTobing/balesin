@@ -146,8 +146,8 @@ describe('ekspor', () => {
   });
 
   // GET ber-efek-samping (audit, jatah 20/jam, berkas PII) — pola proyek: ekspor audit CSV, unduh
-  // media, dan profil bisnis memakai `requireCsrf`. Ekspor kontak belum.
-  it.fails('ekspor tanpa X-CSRF-Token ditolak (pola GET ber-efek-samping)', async () => {
+  // media, dan profil bisnis memakai `requireCsrf`. Kini ekspor kontak juga (review R1).
+  it('ekspor tanpa X-CSRF-Token ditolak (pola GET ber-efek-samping)', async () => {
     const { contact } = await seed();
     const response = await call(
       harness.app,
@@ -156,7 +156,7 @@ describe('ekspor', () => {
       undefined,
       { cookie: owner.cookie },
     );
-    expect(response.statusCode).toBe(403); // saat ini 200
+    expect(response.statusCode).toBe(403);
   });
 });
 

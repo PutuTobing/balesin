@@ -407,12 +407,14 @@ pelaku diperiksa ulang → `deleteContactData` → audit `contact.deleted` (HANY
 `messages`, `conversations`, `webhookEvents`, `hadOpenConversation`, `actorRole` — tanpa nama, nomor,
 isi). Kontak dengan percakapan TERBUKA tetap boleh dihapus (permintaan UU PDP tidak menunggu chat
 selesai; tercatat `hadOpenConversation`). Setelah commit: berkas media langsung dihapus dari disk
-(`purgeExpiredMedia`, review R4) dan setiap percakapannya diumumkan `conversation.removed`
-(`{ conversationId }`) ke semua pemegang `inbox.view`. → `{ deleted: { messages, conversations,
+(HANYA berkas kontak itu, `purgeMediaFiles`, review R4 + Info) dan setiap percakapannya
+diumumkan `conversation.removed` (`{ conversationId }`) ke pemegang `inbox.view` yang cakupannya
+mencakup percakapan itu (agen terakhir dibawa event; Teknisi lain tidak menerimanya). → `{ deleted: { messages, conversations,
 webhookEvents, mediaFiles } }`; kontak tak dikenal → 404.
 
 **Ekspor data satu kontak** (permintaan akses data) — `GET /api/v1/contacts/:contactId/export`
-(`contacts.export` = Owner/Admin/Supervisor; 20/jam per pengguna) → JSON `contactExportSchema`
+(`contacts.export` = Owner/Admin/Supervisor; 20/jam per pengguna; **wajib `X-CSRF-Token`** — GET
+ber-efek-samping, review R1: web memanggil lewat `fetch` lalu `Blob`) → JSON `contactExportSchema`
 (`Content-Disposition: attachment; filename="kontak-<nomor>.json"`, `Cache-Control: no-store`): data
 kontak (nomor, username, nama tim & profil, email, catatan kontak, atribut, nama tag), percakapan
 (nomor, channel, status, waktu), pesan (arah, jenis, teks, nama/jenis media, lokasi, status, waktu;

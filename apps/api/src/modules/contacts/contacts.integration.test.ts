@@ -259,7 +259,11 @@ describe('hapus kontak (UU PDP)', () => {
     const cs = await agent('cs', 'Sinta CS');
     const supervisor = await agent('supervisor', 'Rina Supervisor');
     expect((await send(cs, 'GET', url)).statusCode).toBe(403);
-    const response = await send(supervisor, 'GET', url);
+    // Wajib X-CSRF-Token (GET ber-efek-samping, review R1).
+    const response = await call(harness.app, 'GET', url, undefined, {
+      cookie: supervisor.cookie,
+      csrf: supervisor.csrf,
+    });
     expect(response.statusCode, response.body).toBe(200);
     expect(response.headers['content-disposition']).toBe(
       `attachment; filename="kontak-${String(contact.number)}.json"`,

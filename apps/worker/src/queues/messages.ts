@@ -20,6 +20,7 @@ import {
   type SecretBox,
 } from '@balesin/core';
 import {
+  apiKeys,
   channels,
   contacts,
   conversations,
@@ -32,7 +33,12 @@ import {
   type DbExecutor,
   type MessageRow,
 } from '@balesin/db';
-import { isWithinScope, permissionScope, type OutboundFailureReason } from '@balesin/shared';
+import {
+  apiKeyHasScope,
+  isWithinScope,
+  permissionScope,
+  type OutboundFailureReason,
+} from '@balesin/shared';
 import { UnrecoverableError, Worker } from 'bullmq';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 
@@ -156,6 +162,26 @@ async function prepare(
     const scope = sender ? permissionScope(sender.role, 'inbox.reply') : null;
     const holders = conversation.assigneeUserId ? [conversation.assigneeUserId] : [];
     if (!scope || !isWithinScope(scope, actorUserId, { holderUserIds: holders })) {
+      return { failure: 'sender_not_allowed' };
+    }
+  } else if (message.apiKeyId) {
+    // Pesan lewat API publik: key-nya masih berlaku (tidak dicabut/kedaluwarsa, masih `messages:send`).
+    const [key] = await tx
+      .select({ scopes: apiKeys.scopes, expiresAt: apiKeys.expiresAt })
+      .from(apiKeys)
+      .where(
+        and(
+          eq(apiKeys.organizationId, org),
+          eq(apiKeys.id, message.apiKeyId),
+          isNull(apiKeys.revokedAt),
+        ),
+      )
+      .limit(1);
+    if (
+      !key ||
+      (key.expiresAt !== null && key.expiresAt.getTime() <= now.getTime()) ||
+      !apiKeyHasScope(key.scopes, 'messages:send')
+    ) {
       return { failure: 'sender_not_allowed' };
     }
   }

@@ -47,7 +47,7 @@ import {
   type SendMessageRequest,
   type UploadedMedia,
 } from '@balesin/shared';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import type { ClientInfo } from '../../http/client-info';
 import type { OutboundMessageEnqueuer } from '../../queues/message-queue';
@@ -137,7 +137,61 @@ export function isSingleEmoji(value: string): boolean {
   return segments.length === 1 && /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(value);
 }
 
+/** Pengirim lewat API publik (API key, Fase 3): bukan pengguna; batas harian per key. */
+export interface ApiKeySender {
+  organizationId: string;
+  apiKeyId: string;
+  dailySendLimit: number;
+}
+
+/** Pengirim internal: agen (sesi web) atau API key. `grant` = organisasi + cakupan. */
+interface Sender {
+  grant: PermissionGrant;
+  userId: string | null;
+  apiKey: { id: string; dailySendLimit: number } | null;
+}
+
+const userSender = (grant: PermissionGrant): Sender => ({
+  grant,
+  userId: grant.userId,
+  apiKey: null,
+});
+
+/** API key melihat SEMUA percakapan organisasinya (scope API diperiksa di lapisan auth). */
+function apiKeySender(key: ApiKeySender): Sender {
+  return {
+    grant: {
+      permission: 'inbox.reply',
+      scope: 'all',
+      userId: key.apiKeyId,
+      organizationId: key.organizationId,
+    },
+    userId: null,
+    apiKey: { id: key.apiKeyId, dailySendLimit: key.dailySendLimit },
+  };
+}
+
+type UploadInput = {
+  stream: AsyncIterable<unknown> & { resume?: () => unknown };
+  filename: string | null;
+  /** `true` bila parser multipart memotong berkas (melewati batas global). */
+  truncated?: () => boolean;
+};
+
 export interface OutboundService {
+  /** Kirim lewat API publik (`messages:send`). Jendela 24 jam, rem & batas kirim tetap berlaku. */
+  sendAsApiKey(
+    key: ApiKeySender,
+    conversationId: string,
+    input: SendMessageRequest,
+    client: ClientInfo,
+  ): Promise<{ message: MessageRowView; created: boolean }>;
+  /** Unggah media lewat API publik (`messages:send`). */
+  uploadAsApiKey(
+    key: ApiKeySender,
+    conversationId: string,
+    file: UploadInput,
+  ): Promise<UploadedMedia>;
   send(
     grant: PermissionGrant,
     conversationId: string,
@@ -164,6 +218,8 @@ export interface OutboundService {
   ): Promise<{ file: MediaFileRow; stream: NodeJS.ReadableStream; sizeBytes: number }>;
   /** Hapus salinan lokal yang kedaluwarsa (pembersih berkala). */
   purgeExpiredMedia(limit?: number): Promise<number>;
+  /** Hapus berkas media TERTENTU sekarang juga (hapus kontak, UU PDP). */
+  purgeMediaFiles(mediaFileIds: readonly string[]): Promise<number>;
 }
 
 export function createOutboundService(deps: OutboundServiceDeps): OutboundService {
@@ -264,14 +320,16 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
     return { id: row.id, wamid: row.wamid };
   }
 
-  async function byIdempotencyKey(grant: PermissionGrant, key: string) {
+  async function byIdempotencyKey(sender: Sender, key: string) {
     const [row] = await db
       .select()
       .from(messages)
       .where(
         and(
-          eq(messages.organizationId, grant.organizationId),
-          eq(messages.senderUserId, grant.userId),
+          eq(messages.organizationId, sender.grant.organizationId),
+          sender.apiKey
+            ? eq(messages.apiKeyId, sender.apiKey.id)
+            : eq(messages.senderUserId, sender.userId ?? ''),
           eq(messages.idempotencyKey, key),
         ),
       )
@@ -486,168 +544,308 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
     }
   }
 
-  return {
-    async send(grant, conversationId, input, client) {
-      const existing = await byIdempotencyKey(grant, input.clientMessageId);
-      if (existing) {
-        if (existing.conversationId !== conversationId) {
-          throw new AppError('CONFLICT', {
-            message: 'ID pesan ini sudah dipakai untuk percakapan lain. Muat ulang halaman.',
+  async function sendAs(
+    sender: Sender,
+    conversationId: string,
+    input: SendMessageRequest,
+    client: ClientInfo,
+  ): Promise<{ message: MessageRowView; created: boolean }> {
+    const { grant } = sender;
+    const existing = await byIdempotencyKey(sender, input.clientMessageId);
+    if (existing) {
+      if (existing.conversationId !== conversationId) {
+        throw new AppError('CONFLICT', {
+          message: 'ID pesan ini sudah dipakai untuk percakapan lain. Muat ulang halaman.',
+        });
+      }
+      await scopedConversation(grant, conversationId);
+      return { message: await view(existing), created: false };
+    }
+
+    const conversation = await scopedConversation(grant, conversationId);
+    const at = now();
+    await liveChannel(grant.organizationId, conversation.channel.id);
+    if (!conversation.windowExpiresAt || conversation.windowExpiresAt.getTime() <= at.getTime()) {
+      // TITIK KAIT template (fase berikutnya): di luar jendela hanya template yang boleh.
+      throw new AppError('WINDOW_CLOSED');
+    }
+    // Rem pengiriman: rem darurat, batas harian pengguna/organisasi, batas per percakapan.
+    await sendingLimits.assertCanSend({
+      organizationId: grant.organizationId,
+      userId: sender.userId,
+      ...(sender.apiKey ? { apiKey: sender.apiKey } : {}),
+      conversationId: conversation.id,
+      client,
+    });
+
+    const [conversationRow] = await db
+      .select({ contactId: conversations.contactId })
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.organizationId, grant.organizationId),
+          eq(conversations.id, conversation.id),
+        ),
+      );
+    const contactId = conversationRow?.contactId ?? conversation.contact.id;
+    const channelId = conversation.channel.id;
+
+    const values: typeof messages.$inferInsert = {
+      organizationId: grant.organizationId,
+      conversationId: conversation.id,
+      contactId,
+      channelId,
+      direction: 'outbound',
+      // Lewat API key = integrasi/bot (`bot`), pelakunya key itu — bukan pengguna.
+      senderKind: sender.apiKey ? 'bot' : 'agent',
+      senderUserId: sender.userId,
+      apiKeyId: sender.apiKey?.id ?? null,
+      type: 'text',
+      status: 'pending',
+      statusUpdatedAt: at,
+      idempotencyKey: input.clientMessageId,
+      sendAttempts: 1,
+      occurredAt: at,
+    };
+
+    if ('replyToMessageId' in input && input.replyToMessageId) {
+      const quoted = await target(grant, contactId, channelId, input.replyToMessageId);
+      values.replyToMessageId = quoted.id;
+      values.replyToWamid = quoted.wamid;
+    }
+
+    switch (input.type) {
+      case 'text':
+        values.type = 'text';
+        values.text = input.text;
+        break;
+      case 'location':
+        values.type = 'location';
+        values.location = {
+          latitude: input.latitude,
+          longitude: input.longitude,
+          name: input.name?.trim() || null,
+          address: input.address?.trim() || null,
+        };
+        break;
+      case 'reaction': {
+        if (!isSingleEmoji(input.emoji)) {
+          throw new AppError('VALIDATION_ERROR', {
+            message: 'Reaksi harus satu emoji.',
+            details: [{ location: 'body', field: 'emoji', message: 'Reaksi harus satu emoji.' }],
           });
         }
-        await scopedConversation(grant, conversationId);
-        return { message: await view(existing), created: false };
+        const reacted = await target(grant, contactId, channelId, input.targetMessageId);
+        values.type = 'reaction';
+        values.reactionEmoji = input.emoji === '' ? null : input.emoji;
+        values.reactionToMessageId = reacted.id;
+        values.reactionToWamid = reacted.wamid;
+        break;
       }
+      case 'media': {
+        const [file] = await db
+          .select()
+          .from(mediaFiles)
+          .where(
+            and(
+              eq(mediaFiles.organizationId, grant.organizationId),
+              eq(mediaFiles.id, input.mediaId),
+              eq(mediaFiles.source, 'upload'),
+              sender.apiKey
+                ? eq(mediaFiles.uploadedByApiKeyId, sender.apiKey.id)
+                : eq(mediaFiles.uploadedByUserId, sender.userId ?? ''),
+              eq(mediaFiles.channelId, channelId),
+              isNull(mediaFiles.deletedAt),
+            ),
+          )
+          .limit(1);
+        if (!file || !file.metaMediaRef || file.expiresAt.getTime() <= at.getTime()) {
+          throw notFound(MEDIA_NOT_FOUND);
+        }
+        values.type = file.kind;
+        values.text = input.caption?.trim() ? input.caption : null;
+        values.mediaFileId = file.id;
+        values.media = {
+          kind: file.kind,
+          metaMediaId: file.metaMediaRef,
+          mimeType: file.mimeType,
+          sha256: null,
+          filename: file.filename,
+          voice: false,
+          animated: false,
+        };
+        break;
+      }
+    }
 
-      const conversation = await scopedConversation(grant, conversationId);
-      const at = now();
-      await liveChannel(grant.organizationId, conversation.channel.id);
-      if (!conversation.windowExpiresAt || conversation.windowExpiresAt.getTime() <= at.getTime()) {
-        // TITIK KAIT template (fase berikutnya): di luar jendela hanya template yang boleh.
-        throw new AppError('WINDOW_CLOSED');
-      }
-      // Rem pengiriman: rem darurat, batas harian pengguna/organisasi, batas per percakapan.
-      await sendingLimits.assertCanSend({
-        organizationId: grant.organizationId,
-        userId: grant.userId,
-        conversationId: conversation.id,
-        client,
+    let row: MessageRow;
+    try {
+      row = await db.transaction(async (tx) => {
+        const [inserted] = await tx.insert(messages).values(values).returning();
+        if (!inserted) throw new Error('INSERT pesan keluar tidak mengembalikan baris');
+        await tx
+          .update(conversations)
+          .set({
+            lastMessageAt: sql`greatest(${conversations.lastMessageAt}, ${at})`,
+            // Membalas = sudah membaca percakapan ini.
+            unreadCount: 0,
+            // Laporan "waktu respons pertama": pesan keluar pertama agen (reaksi tidak dihitung).
+            ...(values.type === 'reaction' || sender.apiKey
+              ? {}
+              : { firstResponseAt: sql`coalesce(${conversations.firstResponseAt}, ${at})` }),
+          })
+          .where(
+            and(
+              eq(conversations.organizationId, grant.organizationId),
+              eq(conversations.id, conversation.id),
+            ),
+          );
+        return inserted;
       });
+    } catch (error) {
+      if (
+        !isPgError(error, PG_ERROR_CODES.uniqueViolation, 'messages_idempotency_unique') &&
+        !isPgError(error, PG_ERROR_CODES.uniqueViolation, 'messages_api_key_idempotency_unique')
+      ) {
+        throw error;
+      }
+      const raced = await byIdempotencyKey(sender, input.clientMessageId);
+      if (!raced) throw error;
+      return { message: await view(raced), created: false };
+    }
 
-      const [conversationRow] = await db
-        .select({ contactId: conversations.contactId })
-        .from(conversations)
-        .where(
-          and(
-            eq(conversations.organizationId, grant.organizationId),
-            eq(conversations.id, conversation.id),
-          ),
-        );
-      const contactId = conversationRow?.contactId ?? conversation.contact.id;
-      const channelId = conversation.channel.id;
+    row = await enqueue(row, 1);
+    await publishFor(row, true);
+    logger.info({ messageId: row.id, type: row.type }, 'Pesan keluar diantrekan');
+    return { message: await view(row), created: true };
+  }
 
-      const values: typeof messages.$inferInsert = {
-        organizationId: grant.organizationId,
-        conversationId: conversation.id,
-        contactId,
-        channelId,
-        direction: 'outbound',
-        senderKind: 'agent',
-        senderUserId: grant.userId,
-        type: 'text',
-        status: 'pending',
-        statusUpdatedAt: at,
-        idempotencyKey: input.clientMessageId,
-        sendAttempts: 1,
-        occurredAt: at,
+  async function uploadAs(
+    sender: Sender,
+    conversationId: string,
+    file: UploadInput,
+  ): Promise<UploadedMedia> {
+    const { grant } = sender;
+    const conversation = await scopedConversation(grant, conversationId);
+    const channel = await liveChannel(grant.organizationId, conversation.channel.id);
+    const credentials = credentialsOf(channel);
+    const release = uploadGate.tryAcquire(sender.userId ?? `key:${sender.apiKey?.id ?? ''}`);
+    if (!release) throw busy('unggahan');
+    const filename = cleanFileName(file.filename);
+    const writer = await store.writer('uploads', MAX_UPLOAD_BYTES);
+    let stored: StoredFile | null = null;
+    try {
+      // Kepala berkas (64 KiB) → jenis; batas ukuran dipersempit ke batas jenis itu (gambar 5 MB…),
+      // jadi penulisan berhenti sesegera mungkin (review ruang chat S1).
+      let head: Buffer = Buffer.alloc(0);
+      let verdict: ReturnType<typeof checkOutboundMedia> | null = null;
+      let detected: DetectedMedia | null = null;
+      const decide = () => {
+        detected = detectMedia(head, filename, { verifyContainer: false });
+        verdict = checkOutboundMedia(detected, 0);
+        if (!verdict.ok) throw unsupportedMedia();
+        writer.maxBytes = OUTBOUND_MEDIA_LIMITS[verdict.kind].maxBytes;
       };
-
-      if ('replyToMessageId' in input && input.replyToMessageId) {
-        const quoted = await target(grant, contactId, channelId, input.replyToMessageId);
-        values.replyToMessageId = quoted.id;
-        values.replyToWamid = quoted.wamid;
-      }
-
-      switch (input.type) {
-        case 'text':
-          values.type = 'text';
-          values.text = input.text;
-          break;
-        case 'location':
-          values.type = 'location';
-          values.location = {
-            latitude: input.latitude,
-            longitude: input.longitude,
-            name: input.name?.trim() || null,
-            address: input.address?.trim() || null,
-          };
-          break;
-        case 'reaction': {
-          if (!isSingleEmoji(input.emoji)) {
-            throw new AppError('VALIDATION_ERROR', {
-              message: 'Reaksi harus satu emoji.',
-              details: [{ location: 'body', field: 'emoji', message: 'Reaksi harus satu emoji.' }],
-            });
-          }
-          const reacted = await target(grant, contactId, channelId, input.targetMessageId);
-          values.type = 'reaction';
-          values.reactionEmoji = input.emoji === '' ? null : input.emoji;
-          values.reactionToMessageId = reacted.id;
-          values.reactionToWamid = reacted.wamid;
-          break;
-        }
-        case 'media': {
-          const [file] = await db
-            .select()
-            .from(mediaFiles)
-            .where(
-              and(
-                eq(mediaFiles.organizationId, grant.organizationId),
-                eq(mediaFiles.id, input.mediaId),
-                eq(mediaFiles.source, 'upload'),
-                eq(mediaFiles.uploadedByUserId, grant.userId),
-                eq(mediaFiles.channelId, channelId),
-                isNull(mediaFiles.deletedAt),
-              ),
-            )
-            .limit(1);
-          if (!file || !file.metaMediaRef || file.expiresAt.getTime() <= at.getTime()) {
-            throw notFound(MEDIA_NOT_FOUND);
-          }
-          values.type = file.kind;
-          values.text = input.caption?.trim() ? input.caption : null;
-          values.mediaFileId = file.id;
-          values.media = {
-            kind: file.kind,
-            metaMediaId: file.metaMediaRef,
-            mimeType: file.mimeType,
-            sha256: null,
-            filename: file.filename,
-            voice: false,
-            animated: false,
-          };
-          break;
-        }
-      }
-
-      let row: MessageRow;
       try {
-        row = await db.transaction(async (tx) => {
-          const [inserted] = await tx.insert(messages).values(values).returning();
-          if (!inserted) throw new Error('INSERT pesan keluar tidak mengembalikan baris');
-          await tx
-            .update(conversations)
-            .set({
-              lastMessageAt: sql`greatest(${conversations.lastMessageAt}, ${at})`,
-              // Membalas = sudah membaca percakapan ini.
-              unreadCount: 0,
-              // Laporan "waktu respons pertama": pesan keluar pertama agen (reaksi tidak dihitung).
-              ...(values.type === 'reaction'
-                ? {}
-                : { firstResponseAt: sql`coalesce(${conversations.firstResponseAt}, ${at})` }),
-            })
-            .where(
-              and(
-                eq(conversations.organizationId, grant.organizationId),
-                eq(conversations.id, conversation.id),
-              ),
-            );
-          return inserted;
-        });
-      } catch (error) {
-        if (!isPgError(error, PG_ERROR_CODES.uniqueViolation, 'messages_idempotency_unique')) {
-          throw error;
+        for await (const chunk of file.stream) {
+          const bytes = chunk as Buffer;
+          if (verdict === null) {
+            head = Buffer.concat([head, bytes]);
+            if (head.length >= HEAD_BYTES) decide();
+          }
+          await writer.write(bytes);
         }
-        const raced = await byIdempotencyKey(grant, input.clientMessageId);
-        if (!raced) throw error;
-        return { message: await view(raced), created: false };
+        if (verdict === null) decide();
+      } catch (error) {
+        if (error instanceof MediaTooLargeError) {
+          throw new AppError('PAYLOAD_TOO_LARGE', {
+            message: `Berkas terlalu besar untuk jenis ini (maks. ${String(Math.floor(writer.maxBytes / (1024 * 1024)))} MB).`,
+          });
+        }
+        throw error;
       }
+      if (file.truncated?.()) {
+        throw new AppError('PAYLOAD_TOO_LARGE', {
+          message: `Berkas terlalu besar (maks. ${String(MAX_UPLOAD_BYTES / (1024 * 1024))} MB).`,
+        });
+      }
+      if (writer.sizeBytes === 0)
+        throw new AppError('VALIDATION_ERROR', { message: 'Berkas kosong.' });
+      stored = await writer.finish();
+      const chosen = verdict as unknown as {
+        ok: true;
+        kind: OutboundMediaKind;
+        mimeType: string;
+      };
+      // Isi wadah Office (review ruang chat R1) diperiksa dari berkas di disk, tanpa memuat utuh.
+      if (!(await officeContainerAcceptable(stored, detected, filename))) throw unsupportedMedia();
 
-      row = await enqueue(row, 1);
-      await publishFor(row, true);
-      logger.info({ messageId: row.id, type: row.type }, 'Pesan keluar diantrekan');
-      return { message: await view(row), created: true };
-    },
+      let metaId: string;
+      try {
+        ({ id: metaId } = await uploadWhatsAppMedia(
+          meta,
+          credentials,
+          channel.waPhoneNumberId ?? '',
+          {
+            blob: await store.blob(stored.storageKey, chosen.mimeType),
+            mimeType: chosen.mimeType,
+            filename: filename ?? `berkas-${stored.storageKey.slice(-12)}`,
+          },
+          { signal: AbortSignal.timeout(120_000) },
+        ));
+      } catch (error) {
+        if (isMetaApiError(error)) throw metaFailure(error);
+        throw error;
+      }
+      const days = Math.min(
+        await mediaRetentionDays(grant.organizationId),
+        UPLOAD_MAX_RETENTION_DAYS,
+      );
+      const [row] = await db
+        .insert(mediaFiles)
+        .values({
+          organizationId: grant.organizationId,
+          channelId: channel.id,
+          source: 'upload',
+          kind: chosen.kind,
+          mimeType: chosen.mimeType,
+          sizeBytes: stored.sizeBytes,
+          sha256: stored.sha256,
+          filename,
+          storageKey: stored.storageKey,
+          metaMediaRef: metaId,
+          uploadedByUserId: sender.userId,
+          uploadedByApiKeyId: sender.apiKey?.id ?? null,
+          expiresAt: new Date(now().getTime() + days * DAY_MS),
+        })
+        .returning();
+      if (!row) throw new Error('INSERT media tidak mengembalikan baris');
+      logger.info({ mediaId: row.id, kind: row.kind, bytes: row.sizeBytes }, 'Media diunggah');
+      stored = null;
+      return {
+        id: row.id,
+        kind: row.kind,
+        mimeType: row.mimeType,
+        filename: row.filename,
+        sizeBytes: row.sizeBytes,
+      };
+    } finally {
+      await writer.abort().catch(() => undefined);
+      if (stored) await store.remove(stored.storageKey).catch(() => undefined);
+      // Sisa aliran unggahan dibuang supaya koneksi tidak menggantung.
+      file.stream.resume?.();
+      release();
+    }
+  }
+
+  return {
+    send: (grant, conversationId, input, client) =>
+      sendAs(userSender(grant), conversationId, input, client),
+    sendAsApiKey: (key, conversationId, input, client) =>
+      sendAs(apiKeySender(key), conversationId, input, client),
+    upload: (grant, conversationId, file) => uploadAs(userSender(grant), conversationId, file),
+    uploadAsApiKey: (key, conversationId, file) =>
+      uploadAs(apiKeySender(key), conversationId, file),
 
     async retry(grant, messageId, client) {
       const message = await scopedMessage(grant, messageId);
@@ -704,119 +902,6 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
       return view(row);
     },
 
-    async upload(grant, conversationId, file) {
-      const conversation = await scopedConversation(grant, conversationId);
-      const channel = await liveChannel(grant.organizationId, conversation.channel.id);
-      const credentials = credentialsOf(channel);
-      const release = uploadGate.tryAcquire(grant.userId);
-      if (!release) throw busy('unggahan');
-      const filename = cleanFileName(file.filename);
-      const writer = await store.writer('uploads', MAX_UPLOAD_BYTES);
-      let stored: StoredFile | null = null;
-      try {
-        // Kepala berkas (64 KiB) → jenis; batas ukuran dipersempit ke batas jenis itu (gambar 5 MB…),
-        // jadi penulisan berhenti sesegera mungkin (review ruang chat S1).
-        let head: Buffer = Buffer.alloc(0);
-        let verdict: ReturnType<typeof checkOutboundMedia> | null = null;
-        let detected: DetectedMedia | null = null;
-        const decide = () => {
-          detected = detectMedia(head, filename, { verifyContainer: false });
-          verdict = checkOutboundMedia(detected, 0);
-          if (!verdict.ok) throw unsupportedMedia();
-          writer.maxBytes = OUTBOUND_MEDIA_LIMITS[verdict.kind].maxBytes;
-        };
-        try {
-          for await (const chunk of file.stream) {
-            const bytes = chunk as Buffer;
-            if (verdict === null) {
-              head = Buffer.concat([head, bytes]);
-              if (head.length >= HEAD_BYTES) decide();
-            }
-            await writer.write(bytes);
-          }
-          if (verdict === null) decide();
-        } catch (error) {
-          if (error instanceof MediaTooLargeError) {
-            throw new AppError('PAYLOAD_TOO_LARGE', {
-              message: `Berkas terlalu besar untuk jenis ini (maks. ${String(Math.floor(writer.maxBytes / (1024 * 1024)))} MB).`,
-            });
-          }
-          throw error;
-        }
-        if (file.truncated?.()) {
-          throw new AppError('PAYLOAD_TOO_LARGE', {
-            message: `Berkas terlalu besar (maks. ${String(MAX_UPLOAD_BYTES / (1024 * 1024))} MB).`,
-          });
-        }
-        if (writer.sizeBytes === 0)
-          throw new AppError('VALIDATION_ERROR', { message: 'Berkas kosong.' });
-        stored = await writer.finish();
-        const chosen = verdict as unknown as {
-          ok: true;
-          kind: OutboundMediaKind;
-          mimeType: string;
-        };
-        // Isi wadah Office (review ruang chat R1) diperiksa dari berkas di disk, tanpa memuat utuh.
-        if (!(await officeContainerAcceptable(stored, detected, filename)))
-          throw unsupportedMedia();
-
-        let metaId: string;
-        try {
-          ({ id: metaId } = await uploadWhatsAppMedia(
-            meta,
-            credentials,
-            channel.waPhoneNumberId ?? '',
-            {
-              blob: await store.blob(stored.storageKey, chosen.mimeType),
-              mimeType: chosen.mimeType,
-              filename: filename ?? `berkas-${stored.storageKey.slice(-12)}`,
-            },
-            { signal: AbortSignal.timeout(120_000) },
-          ));
-        } catch (error) {
-          if (isMetaApiError(error)) throw metaFailure(error);
-          throw error;
-        }
-        const days = Math.min(
-          await mediaRetentionDays(grant.organizationId),
-          UPLOAD_MAX_RETENTION_DAYS,
-        );
-        const [row] = await db
-          .insert(mediaFiles)
-          .values({
-            organizationId: grant.organizationId,
-            channelId: channel.id,
-            source: 'upload',
-            kind: chosen.kind,
-            mimeType: chosen.mimeType,
-            sizeBytes: stored.sizeBytes,
-            sha256: stored.sha256,
-            filename,
-            storageKey: stored.storageKey,
-            metaMediaRef: metaId,
-            uploadedByUserId: grant.userId,
-            expiresAt: new Date(now().getTime() + days * DAY_MS),
-          })
-          .returning();
-        if (!row) throw new Error('INSERT media tidak mengembalikan baris');
-        logger.info({ mediaId: row.id, kind: row.kind, bytes: row.sizeBytes }, 'Media diunggah');
-        stored = null;
-        return {
-          id: row.id,
-          kind: row.kind,
-          mimeType: row.mimeType,
-          filename: row.filename,
-          sizeBytes: row.sizeBytes,
-        };
-      } finally {
-        await writer.abort().catch(() => undefined);
-        if (stored) await store.remove(stored.storageKey).catch(() => undefined);
-        // Sisa aliran unggahan dibuang supaya koneksi tidak menggantung.
-        file.stream.resume?.();
-        release();
-      }
-    },
-
     async media(grant, messageId, signal) {
       const message = await scopedMessage(grant, messageId);
       const cached = await cachedMedia(grant.organizationId, message.mediaFileId);
@@ -868,28 +953,41 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
         .from(mediaFiles)
         .where(and(isNull(mediaFiles.deletedAt), sql`${mediaFiles.expiresAt} <= ${now()}`))
         .limit(limit);
-      let removed = 0;
-      for (const file of due) {
-        try {
-          if (file.storageKey) await store.remove(file.storageKey);
-          // Metadata yang bisa memuat data pribadi ikut dikosongkan (review ruang chat R4): nama
-          // berkas ("KTP_Budi.jpg"), sidik isi, dan ID media Meta.
-          await db
-            .update(mediaFiles)
-            .set({
-              storageKey: null,
-              deletedAt: now(),
-              filename: null,
-              sha256: PURGED_SHA256,
-              metaMediaRef: null,
-            })
-            .where(eq(mediaFiles.id, file.id));
-          removed += 1;
-        } catch (err) {
-          logger.warn({ err, mediaId: file.id }, 'Salinan media kedaluwarsa gagal dihapus');
-        }
-      }
-      return removed;
+      return purgeFiles(due);
+    },
+
+    async purgeMediaFiles(mediaFileIds) {
+      if (mediaFileIds.length === 0) return 0;
+      const due = await db
+        .select({ id: mediaFiles.id, storageKey: mediaFiles.storageKey })
+        .from(mediaFiles)
+        .where(and(isNull(mediaFiles.deletedAt), inArray(mediaFiles.id, [...mediaFileIds])));
+      return purgeFiles(due);
     },
   };
+
+  async function purgeFiles(due: readonly { id: string; storageKey: string | null }[]) {
+    let removed = 0;
+    for (const file of due) {
+      try {
+        if (file.storageKey) await store.remove(file.storageKey);
+        // Metadata yang bisa memuat data pribadi ikut dikosongkan (review ruang chat R4): nama
+        // berkas ("KTP_Budi.jpg"), sidik isi, dan ID media Meta.
+        await db
+          .update(mediaFiles)
+          .set({
+            storageKey: null,
+            deletedAt: now(),
+            filename: null,
+            sha256: PURGED_SHA256,
+            metaMediaRef: null,
+          })
+          .where(eq(mediaFiles.id, file.id));
+        removed += 1;
+      } catch (err) {
+        logger.warn({ err, mediaId: file.id }, 'Salinan media kedaluwarsa gagal dihapus');
+      }
+    }
+    return removed;
+  }
 }

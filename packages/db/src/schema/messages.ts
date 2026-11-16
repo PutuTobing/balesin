@@ -22,6 +22,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import { apiKeys } from './api-keys';
 import { channels } from './channels';
 import { createdAtColumn, idColumn, timestamptz, updatedAtColumn } from './columns';
 import { contacts } from './contacts';
@@ -145,6 +146,8 @@ export const messages = pgTable(
     /** Pesan ditandai (bintang) — dipakai bersama tim, satu tanda per pesan (butir 8). */
     starredAt: timestamptz('starred_at'),
     starredByUserId: uuid('starred_by_user_id'),
+    /** Pesan keluar yang dikirim lewat API publik (API key; `sender_user_id` kosong). */
+    apiKeyId: uuid('api_key_id'),
     /** Salinan lokal media (unggahan untuk pesan keluar / cache unduhan pesan masuk). */
     mediaFileId: uuid('media_file_id'),
     occurredAt: timestamptz('occurred_at').notNull(),
@@ -180,6 +183,14 @@ export const messages = pgTable(
     uniqueIndex('messages_idempotency_unique')
       .on(table.organizationId, table.senderUserId, table.idempotencyKey)
       .where(sql`${table.idempotencyKey} is not null`),
+    // Idempotensi pesan lewat API publik: per API key (`Idempotency-Key`).
+    uniqueIndex('messages_api_key_idempotency_unique')
+      .on(table.organizationId, table.apiKeyId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} is not null and ${table.apiKeyId} is not null`),
+    check(
+      'messages_single_sender',
+      sql`${table.senderUserId} is null or ${table.apiKeyId} is null`,
+    ),
     foreignKey({
       name: 'messages_organization_id_media_file_id_fk',
       columns: [table.organizationId, table.mediaFileId],
@@ -215,6 +226,15 @@ export const messages = pgTable(
       columns: [table.organizationId, table.starredByUserId],
       foreignColumns: [users.organizationId, users.id],
     }).onDelete('restrict'),
+    foreignKey({
+      name: 'messages_organization_id_api_key_id_fk',
+      columns: [table.organizationId, table.apiKeyId],
+      foreignColumns: [apiKeys.organizationId, apiKeys.id],
+    }).onDelete('restrict'),
+    // Batas kirim harian per API key (24 jam bergulir).
+    index('messages_outbound_api_key_created_at_idx')
+      .on(table.organizationId, table.apiKeyId, table.createdAt)
+      .where(sql`${table.direction} = 'outbound' and ${table.apiKeyId} is not null`),
     // Tab "Pesan ditandai" panel detail.
     index('messages_conversation_id_starred_idx')
       .on(table.conversationId, table.occurredAt)

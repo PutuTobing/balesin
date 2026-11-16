@@ -46,6 +46,8 @@ export const organizations = pgTable(
     notificationPreview: boolean('notification_preview').notNull().default(false),
     /** Tampilkan nama kontak di notifikasi push. Bawaan MATI (review push R1). */
     notificationContactName: boolean('notification_contact_name').notNull().default(false),
+    /** Halaman dokumentasi API publik `/api/docs` aktif (Pengaturan → API, Fase 3). */
+    apiDocsEnabled: boolean('api_docs_enabled').notNull().default(true),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },

@@ -141,6 +141,13 @@
       "when": 1794842752174,
       "tag": "0019_notifikasi_nama_kontak",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794843995476,
+      "tag": "0020_api_key_publik",
+      "breakpoints": true
     }
   ]
 }

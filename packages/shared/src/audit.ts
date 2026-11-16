@@ -136,6 +136,12 @@ export const AUDIT_ACTIONS = {
   contactDeleted: 'contact.deleted',
   /** Data satu kontak diekspor (permintaan akses data) — ID + jumlah pesan. */
   contactExported: 'contact.exported',
+  /** API key dibuat (`name`, `scopes`, `displayPrefix`, `expiresAt`, `allowedIps`, `dailySendLimit`). */
+  apiKeyCreated: 'api_key.created',
+  /** API key dicabut (`name`, `displayPrefix`). */
+  apiKeyRevoked: 'api_key.revoked',
+  /** Pengaturan API publik diubah (`docsEnabled`). */
+  apiSettingsUpdated: 'settings.api.updated',
   /** Pengaturan notifikasi organisasi diubah (`preview` lama & baru). */
   notificationSettingsUpdated: 'settings.notifications.updated',
 } as const;
@@ -214,6 +220,9 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'settings.notifications.updated': 'Pengaturan notifikasi diubah',
   'contact.deleted': 'Kontak dihapus (UU PDP)',
   'contact.exported': 'Data kontak diekspor',
+  'api_key.created': 'API key dibuat',
+  'api_key.revoked': 'API key dicabut',
+  'settings.api.updated': 'Pengaturan API diubah',
 };
 
 /** Label untuk aksi yang mungkin belum dikenal klien (versi lama): tampilkan kodenya apa adanya. */
@@ -237,6 +246,7 @@ export const AUDIT_TARGET_TYPES = [
   'tag',
   'quick_reply',
   'contact',
+  'api_key',
 ] as const;
 export const auditTargetTypeSchema = z.enum(AUDIT_TARGET_TYPES, {
   error: 'Jenis target tidak dikenal.',
@@ -256,6 +266,7 @@ export const AUDIT_TARGET_TYPE_LABELS: Readonly<Record<AuditTargetType, string>>
   tag: 'Tag',
   quick_reply: 'Template percakapan',
   contact: 'Kontak',
+  api_key: 'API key',
 };
 
 // ── GET /audit-logs ─────────────────────────────────────────────────────────
@@ -410,6 +421,7 @@ export const SECURITY_EVENT_KINDS = [
   'sending_limits_changed',
   'inbox_bulk_action',
   'quick_reply_risky',
+  'api_key_changed',
 ] as const;
 export const securityEventKindSchema = z.enum(SECURITY_EVENT_KINDS);
 export type SecurityEventKind = z.infer<typeof securityEventKindSchema>;
@@ -437,6 +449,7 @@ export const SECURITY_EVENT_SEVERITY: Readonly<Record<SecurityEventKind, 'warnin
   sending_limits_changed: 'info',
   inbox_bulk_action: 'warning',
   quick_reply_risky: 'warning',
+  api_key_changed: 'warning',
 };
 
 export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> = {
@@ -457,6 +470,7 @@ export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> 
   sending_limits_changed: 'Batas kirim diubah',
   inbox_bulk_action: 'Aksi massal di inbox',
   quick_reply_risky: 'Template percakapan diberi tautan/angka baru',
+  api_key_changed: 'API key dibuat atau dicabut',
 };
 
 export const securityEventSchema = z.object({

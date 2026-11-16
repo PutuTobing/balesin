@@ -37,6 +37,7 @@ describe('migrasi dari nol', () => {
 
     expect(await publicTables()).toEqual([
       'account_tokens',
+      'api_keys',
       'audit_logs',
       'channels',
       'contact_events',

@@ -27,6 +27,14 @@ interface KnownRoute {
  */
 function complementAccess(accesses: readonly (RouteAccess | undefined)[]): RouteAccess {
   if (accesses.every((access) => access?.kind === 'public')) return PUBLIC;
+  // API publik: key sah apa pun (scope sama → scope itu), tanpa sesi.
+  if (accesses.every((access) => access?.kind === 'apiKey')) {
+    const scopes = new Set(
+      accesses.map((access) => (access?.kind === 'apiKey' ? access.scope : null)),
+    );
+    const [onlyScope] = scopes;
+    return { kind: 'apiKey', scope: scopes.size === 1 ? (onlyScope ?? null) : null };
+  }
   const permissions = new Set(
     accesses.map((access) => (access?.kind === 'permission' ? access.permission : undefined)),
   );

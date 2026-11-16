@@ -41,7 +41,10 @@ menerjemahkan ke layanan internal Balesin. Tes kontrak memakai contoh payload da
 
 ## 2. API native v1 (ringkas)
 
-Auth: header `Authorization: Bearer blsn_...` (API key dengan scope).
+Auth: header `Authorization: Bearer blsn_live_...` (API key dengan scope). **Alamat sebenarnya**:
+`/api/v1/public/*` (terpisah dari API web bersesi) — kontrak lengkap & status implementasi di
+`docs/KONTRAK-API-PUBLIK.md` (sudah: percakapan, pesan, kirim/unggah, kontak, tag; menyusul:
+handoff/resolve/assign, template, broadcast, tiket, usage). Path di tabel di bawah = rancangan awal.
 
 | Method | Path | Scope |
 |---|---|---|

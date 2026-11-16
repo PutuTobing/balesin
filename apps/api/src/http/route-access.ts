@@ -1,4 +1,4 @@
-import { PERMISSIONS, type Permission } from '@balesin/shared';
+import { API_KEY_SCOPES, PERMISSIONS, type ApiKeyScope, type Permission } from '@balesin/shared';
 import type { FastifyInstance } from 'fastify';
 
 /**
@@ -31,7 +31,12 @@ export type RouteAccess =
    */
   | { readonly kind: 'authenticated'; readonly allowTwoFactorEnrollment?: boolean }
   /** Sesi penuh + izin dari matriks (`ROLE_PERMISSIONS`). Cakupan diperiksa handler/service. */
-  | { readonly kind: 'permission'; readonly permission: Permission };
+  | { readonly kind: 'permission'; readonly permission: Permission }
+  /**
+   * API publik (Fase 3): `Authorization: Bearer blsn_live_…`, TANPA cookie/CSRF. `scope` = scope API
+   * key yang dibutuhkan (`null` hanya untuk rute pelengkap 405 = key sah apa pun).
+   */
+  | { readonly kind: 'apiKey'; readonly scope: ApiKeyScope | null };
 
 export const PUBLIC: RouteAccess = { kind: 'public' };
 export const AUTHENTICATED: RouteAccess = { kind: 'authenticated' };
@@ -59,6 +64,11 @@ export function allowsTwoFactorEnrollment(access: RouteAccess): boolean {
  */
 export function requirePermission(permission: Permission): RouteAccess {
   return { kind: 'permission', permission };
+}
+
+/** Rute API publik yang butuh scope API key ini (lihat `modules/api-keys/api-key-auth.ts`). */
+export function requireApiKeyScope(scope: ApiKeyScope): RouteAccess {
+  return { kind: 'apiKey', scope };
 }
 
 /** Satu rute terdaftar beserta aksesnya — untuk tes matriks peran × endpoint. */
@@ -118,6 +128,8 @@ function isKnownAccess(access: RouteAccess): boolean {
       return true;
     case 'permission':
       return (PERMISSIONS as readonly string[]).includes(access.permission);
+    case 'apiKey':
+      return access.scope === null || (API_KEY_SCOPES as readonly string[]).includes(access.scope);
     default:
       return false;
   }

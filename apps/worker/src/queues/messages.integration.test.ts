@@ -17,6 +17,7 @@ import {
 } from '@balesin/core';
 import { createLogCapture } from '@balesin/core/testing';
 import {
+  apiKeys,
   channels,
   closeDb,
   contacts,
@@ -498,6 +499,36 @@ describe('review ruang chat R2/R3/S2', () => {
     const meta = stubMeta();
     await Promise.all([run(message.id, meta.client), run(message.id, meta.client)]);
     expect(meta.sent).toHaveLength(1);
+  });
+
+  it('API key: pesan lewat key yang dicabut/kurang scope → sender_not_allowed; key aktif → terkirim', async () => {
+    const [key] = await db
+      .insert(apiKeys)
+      .values({
+        organizationId,
+        name: 'n8n',
+        lookupKey: randomBytes(8).toString('hex'),
+        secretHash: randomBytes(32).toString('hex'),
+        scopes: ['messages:send'],
+      })
+      .returning();
+    const viaKey = (overrides: Partial<NewMessageRow> = {}) =>
+      outbound({ senderKind: 'bot', senderUserId: null, apiKeyId: key!.id, ...overrides });
+    expect((await run((await viaKey()).id, stubMeta().client)).status).toBe('sent');
+    await db
+      .update(apiKeys)
+      .set({ scopes: ['messages:read'] })
+      .where(eq(apiKeys.id, key!.id));
+    expect(await run((await viaKey()).id, stubMeta().client)).toMatchObject({
+      reason: 'sender_not_allowed',
+    });
+    await db
+      .update(apiKeys)
+      .set({ scopes: ['messages:send'], revokedAt: new Date() })
+      .where(eq(apiKeys.id, key!.id));
+    expect(await run((await viaKey()).id, stubMeta().client)).toMatchObject({
+      reason: 'sender_not_allowed',
+    });
   });
 
   it('S2: rem darurat ditarik → sending_paused tanpa memanggil Meta', async () => {

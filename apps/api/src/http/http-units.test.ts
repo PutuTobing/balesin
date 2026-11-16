@@ -301,6 +301,11 @@ describe('deklarasi akses rute (bawaan tolak)', () => {
     // Daftar rute publik EKSPLISIT. Menambah rute publik baru harus disengaja: ubah daftar ini
     // dan minta review keamanan.
     expect(publicUrls).toEqual([
+      // Dokumentasi API publik (Fase 3): statis + OpenAPI, bisa dimatikan Pengaturan → API.
+      '/api/docs',
+      '/api/docs/app.css',
+      '/api/docs/app.js',
+      '/api/docs/openapi.json',
       '/api/v1/auth/2fa/verify',
       '/api/v1/auth/email/verify',
       '/api/v1/auth/invitation/accept',

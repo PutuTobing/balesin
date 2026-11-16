@@ -221,6 +221,30 @@ export const API_ROUTES = {
     /** GET — status rem darurat pengiriman `{ paused }` untuk banner (`inbox.view`). */
     sendingStatus: `${API_PREFIX}/inbox/sending-status`,
   },
+  /** Pengaturan → API key (`api_keys.manage`, Fase 3; docs/KONTRAK-API-PUBLIK.md). */
+  apiKeys: {
+    /** GET — daftar; POST — buat (+ konfirmasi identitas; rahasia ditampilkan SEKALI). */
+    list: `${API_PREFIX}/settings/api-keys`,
+    /** POST — cabut (seketika). */
+    revoke: `${API_PREFIX}/settings/api-keys/:apiKeyId/revoke`,
+    /** GET/PUT — pengaturan API publik (dokumentasi `/api/docs` aktif/mati). */
+    settings: `${API_PREFIX}/settings/api`,
+  },
+  /**
+   * API publik v1 (`Authorization: Bearer blsn_live_…`, tanpa cookie/CSRF). Scope per rute di
+   * docs/KONTRAK-API-PUBLIK.md. OpenAPI: `/api/docs/openapi.json`; halaman: `/api/docs`.
+   */
+  publicApi: {
+    conversations: `${API_PREFIX}/public/conversations`,
+    conversation: `${API_PREFIX}/public/conversations/:conversationId`,
+    messages: `${API_PREFIX}/public/conversations/:conversationId/messages`,
+    upload: `${API_PREFIX}/public/conversations/:conversationId/media`,
+    message: `${API_PREFIX}/public/messages/:messageId`,
+    contacts: `${API_PREFIX}/public/contacts`,
+    contact: `${API_PREFIX}/public/contacts/:contactId`,
+    contactTags: `${API_PREFIX}/public/contacts/:contactId/tags`,
+  },
+
   /** Notifikasi Web Push (butir 10, docs/KONTRAK-API-NOTIFIKASI.md). */
   notifications: {
     /** GET — kunci publik VAPID (sesi). */
@@ -274,3 +298,14 @@ export function apiPath(template: string, params: Record<string, string>): strin
     return encodeURIComponent(value);
   });
 }
+
+/**
+ * Dokumentasi API publik (Fase 3) — DI LUAR `API_PREFIX`: halaman statis + OpenAPI, publik (tanpa
+ * sesi), bisa dimatikan Pengaturan → API.
+ */
+export const API_DOCS_ROUTES = {
+  page: '/api/docs',
+  style: '/api/docs/app.css',
+  script: '/api/docs/app.js',
+  openapi: '/api/docs/openapi.json',
+} as const;
