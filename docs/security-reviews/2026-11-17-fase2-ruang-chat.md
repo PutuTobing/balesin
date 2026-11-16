@@ -248,3 +248,76 @@ kolom penulis asli.
 | `packages/core`: `vitest run src/meta` | 119 lulus + 2 `it.fails`, 7 berkas |
 | ESLint + Prettier + `tsc --noEmit` (api, core) untuk berkas tes baru | bersih |
 | `pnpm audit` | 2 moderate dev-only (`esbuild` via drizzle-kit, `minimatch` via eslint), tidak ada yang baru |
+
+---
+
+## Putaran 2 — verifikasi perbaikan commit `6d609c5`
+
+### Putusan putaran 2: AMAN
+
+- **Tertutup:** S1, R1, R2, R4 (bagian kode), Info 3, Info 6.
+- **S2 tertutup untuk lingkup butir ini.** Batas harian pengguna/organisasi, batas per percakapan, rem darurat manual,
+  audit + banner + email Owner. Rem darurat OTOMATIS (> N× rata-rata 7 hari) ditunda ke butir broadcast (DECISIONS) dan
+  tetap **syarat rilis broadcast**.
+- **R3 tertutup** dengan satu catatan baru, R5 (Rendah).
+- **R4** hapus-berkas-segera setelah "Hapus kontak" menunggu endpoint CRM (DECISIONS mewajibkan memanggil
+  `purgeExpiredMedia` setelah commit).
+
+Ketiga tes yang dulu `it.fails` kini `it` dan lulus. Asersi tidak dilemahkan: diff hanya menghapus `.fails` dan komentar
+"saat ini …"; `toHaveLength(1)` dan `toBeNull()` tetap. Tidak ada temuan Sedang ke atas.
+
+| # | Status | Bukti |
+|---|---|---|
+| S1 | ✅ | Unggah: `part.file` dialirkan ke `MEDIA_DIR/tmp` (`MediaWriter`, 0600). Jenis dari 64 KiB pertama → `writer.maxBytes` dipersempit ke batas jenis (gambar 5 MB, …) → `MediaTooLargeError` → 413. Unggah ke Meta dari `openAsBlob` (tidak dimuat). Unduh: `meta.download` dengan `sink` ke disk. Single-flight per `(organisasi, pesan)` di proses. Dibatalkan bila semua peminta memutus (`reply.raw` `close`). Lintas proses: `FOR UPDATE` pada baris pesan, salinan proses lain dipakai dan milik sendiri dihapus. `ConcurrencyGate` 4/proses + 2/pengguna → 429. Tes S1 (3 GET bersamaan → 1 baris) kini `it` dan lulus |
+| S1 celah lintas proses | ✅ diterima | Paling banyak satu unduhan per proses untuk pesan yang sama. Memori tidak lagi bergantung ukuran berkas. Cukup |
+| S2 | ✅ | `assertCanSend` (kirim & kirim ulang): rem → 423 `SENDING_PAUSED`. COUNT 24 jam pengguna/organisasi (indeks parsial baru `messages_outbound_*`) → 429 + audit/email Owner sekali per 24 jam. `kirim-percakapan` per percakapan. Worker memeriksa rem lagi (`sending_paused`). Tarik rem = `sending.limits.manage` TANPA konfirmasi (arah aman, cepat), lalu audit + banner + email semua Owner. Lanjutkan (`sending.resume`) & ubah batas = konfirmasi identitas + `assertActorStillAuthorized`. Nilai batas di DB (CHECK rentang), bukan `.env` |
+| S2 COUNT tanpa kunci | ✅ diterima (Info P2-1) | Kelebihan saat balapan dibatasi 30/menit per pengguna dan 600/menit per organisasi |
+| R1 | ✅ | ZIP: EOCD dari ujung berkas, direktori pusat ≤ 8 MB, `offset + size` ≤ posisi EOCD, ZIP64 ditolak. Wajib `[Content_Types].xml` + folder sesuai ekstensi. Ditolak bila ada `vbaProject.bin`/`vbaData.xml`/ekstensi program. CFB: seluruh berkas dipindai per potongan (dengan sambungan antarpotongan) untuk `_VBA_PROJECT`/`Macros`/`VBA`. Dokumen masuk yang gagal → disajikan biner. Dua tes R1 kini `it` dan lulus |
+| R2 | ✅ | `sender_user_id` = penulis tetap (idempotensi). `last_sent_by_user_id` = penekan "Kirim ulang", FK komposit. Worker memeriksa `lastSentByUserId ?? senderUserId` |
+| R3 | ✅ (R5) | Klaim atomik `send_claimed_at` sebelum Meta. Klaim ditemukan tanpa wamid → `delivery_unknown`. Klaim dilepas hanya pada `rate_limited`/`temporarily_unavailable`. Kirim ulang mengosongkan klaim |
+| R4 | ✅ (sebagian) | `purgeExpiredMedia` mengosongkan `filename`, `sha256` (nol), `metaMediaRef`. Hapus kontak memajukan kedaluwarsa. Hapus berkas seketika menunggu endpoint CRM (DECISIONS) |
+| Info 3 / Info 6 | ✅ | NUL di nama/alamat lokasi → 400. Unduhan BARU dari channel nonaktif/terhapus → 404 (cache tetap bisa dibaca) |
+
+### Catatan baru
+
+**R5 — Rendah — Klaim yang masih berjalan dianggap macet.**
+- **Bukti.** `processSendMessageJob` (`apps/worker/src/queues/messages.ts`): klaim tanpa wamid → langsung
+  `markFailed(… 'delivery_unknown')`, tanpa melihat umur klaim. Bila job yang sama dijalankan ulang BullMQ (stalled)
+  SEMENTARA percobaan pertama masih memanggil Meta, job kedua menandai pesan gagal. Percobaan pertama lalu tidak bisa
+  menyimpan wamid (`WHERE status = 'pending'`). Pesan yang sebenarnya terkirim tampil "gagal, mungkin terkirim", status
+  webhook berikutnya tidak tertaut, dan agen terdorong "Kirim ulang" → pesan ganda (manual).
+- **Tes.** `it.fails` baru di `apps/api/src/modules/messages/security-review-fase2-ruang-chat.integration.test.ts`
+  (klaim baru diambil → job kedua `failed`, bukan `skipped`), gagal tepat di asersi
+  `expected 'failed' to be 'skipped'`.
+- **Perbaikan.**
+  - Klaim yang lebih muda dari batas waktu panggilan Meta (mis. < 2 menit) → `skipped` (`not_pending`) dan pesan
+    dibiarkan `pending`. Biarkan percobaan pertama menyelesaikan; pemeriksa berkala menandai `delivery_unknown` bila
+    klaim > 2 menit tanpa wamid.
+  - Penyimpanan wamid percobaan pertama sebaiknya juga berhasil bila pesan sudah ditandai `delivery_unknown`
+    (`status IN ('pending','failed') AND failure_reason = 'delivery_unknown'`), supaya pesan yang terkirim pulih.
+
+**Info P2-1.** Hitungan harian per pengguna memakai penulis (`sender_user_id`). Kirim ulang oleh pengguna lain tidak
+memakai jatah harian penekannya. Kirim ulang dibatasi 5 percobaan, hanya pesan gagal, dan tetap kena batas per menit,
+jadi efeknya kecil. COUNT tanpa kunci bisa sedikit melampaui batas (dibatasi batas per menit).
+
+**Info P2-2.** Setelah 413/415, sisa aliran unggahan DIKURAS (`resume`) sampai batas `fileSize` multipart (100 MB). Itu
+memakai bandwidth, tetapi tidak memakai memori. Bisa diterima. Alternatif: tutup koneksi (`request.raw.destroy()`)
+setelah balasan 413.
+
+**Info P2-3.** Dokumen Office modern dengan objek OLE tertanam (`word/embeddings/oleObject*.bin`, paket berisi program)
+masih lolos. Ini vektor malware klasik, tetapi butuh klik ganda + peringatan Office. Pertimbangkan menolak
+`embeddings/*.bin` pada unggahan keluar.
+
+**Info P2-4.** Rem darurat bisa ditarik berulang oleh sesi Admin curian (tanpa konfirmasi). Setiap tarikan diaudit
+dan diemailkan, dan melanjutkan butuh konfirmasi. Arah aman, jadi bisa diterima.
+
+### Tes putaran 2
+
+| Perintah | Hasil |
+|---|---|
+| `apps/api`: `vitest run src/modules/messages/security-review-fase2-ruang-chat` | 4 lulus (termasuk S1 yang kini `it`) + 1 `it.fails` (R5) |
+| Sama, `it.fails` → `it` (salinan sementara, sudah dihapus) | gagal tepat di asersi R5 (`'failed'` ≠ `'skipped'`) |
+| `packages/core`: `vitest run src/meta src/mail` (termasuk 2 tes R1 yang kini `it`) | 190/190 lulus |
+| `apps/api`: `vitest run src/modules/inbox src/modules/messages src/modules/sending-limits src/rbac-matrix src/modules/realtime src/modules/audit` | 106 lulus + 1 `it.fails` |
+| `apps/worker`: `vitest run src/queues/messages src/queues/email` | 25/25 lulus |
+| `pnpm audit` | 2 moderate dev-only, tidak ada yang baru |

@@ -8,7 +8,14 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { createSecretBox, sealChannelSecret, Secret, WEBHOOK_JOBS } from '@balesin/core';
+import {
+  createMetaGraphClient,
+  createSecretBox,
+  MESSAGE_JOBS,
+  sealChannelSecret,
+  Secret,
+  WEBHOOK_JOBS,
+} from '@balesin/core';
 import { createLogCapture } from '@balesin/core/testing';
 import { channels, conversations, mediaFiles, messages, newId } from '@balesin/db';
 import { insertUser } from '@balesin/db/testing';
@@ -16,6 +23,7 @@ import { API_ROUTES, WEBHOOK_ROUTES, apiPath, uploadMediaResponseSchema } from '
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { processSendMessageJob } from '../../../../worker/src/queues/messages';
 import { processWebhookJob } from '../../../../worker/src/queues/webhooks';
 import { createPasswordHasher } from '../auth/password-hasher';
 import { TEST_APP_ORIGIN } from '../../testing/build-test-app';
@@ -224,5 +232,51 @@ describe('S1 — unduhan media masuk tanpa single-flight (memori & jatah Meta)',
       .from(mediaFiles)
       .where(eq(mediaFiles.source, 'inbound'));
     expect(files).toHaveLength(1);
+  });
+});
+
+describe('Putaran 2 — R5: klaim yang masih berjalan dianggap macet', () => {
+  // Job yang dijalankan ulang (stalled) SEMENTARA percobaan pertama masih memanggil Meta menemukan
+  // klaim tanpa wamid → langsung `failed`/`delivery_unknown`. Percobaan pertama lalu gagal menyimpan
+  // wamid (`status = 'pending'` tidak cocok lagi): pesan yang SUDAH terkirim tampil gagal, status
+  // Meta berikutnya tidak tertaut, dan agen terdorong "Kirim ulang" → pesan ganda.
+  it.fails('klaim yang masih baru → job kedua dilewati, pesan tetap pending', async () => {
+    await receive(textMessageNotification());
+    const conversation = await conversationId();
+    const sent = await call(
+      harness.app,
+      'POST',
+      apiPath(API_ROUTES.inbox.messages, { conversationId: conversation }),
+      { type: 'text', clientMessageId: randomUUID(), text: 'Halo kak' },
+      { cookie: owner.cookie, csrf: owner.csrf },
+    );
+    expect(sent.statusCode, sent.body).toBe(202);
+    const [job] = harness.messageJobs.splice(0);
+    // Percobaan pertama sedang memanggil Meta (klaim baru diambil, wamid belum ada).
+    await harness.db
+      .update(messages)
+      .set({ sendClaimedAt: new Date() })
+      .where(eq(messages.id, job!.messageId));
+
+    const result = await processSendMessageJob(
+      {
+        name: MESSAGE_JOBS.send,
+        data: { organizationId: job!.organizationId, messageId: job!.messageId },
+        attemptsMade: 0,
+        opts: { attempts: 5 },
+      },
+      {
+        db: harness.db,
+        logger: workerLogs.logger,
+        meta: createMetaGraphClient({ version: 'v26.0', baseUrl: fake.url }),
+        secretBox: box,
+      },
+    );
+    expect(result.status).toBe('skipped'); // saat ini 'failed' (delivery_unknown)
+    const [row] = await harness.db
+      .select({ status: messages.status })
+      .from(messages)
+      .where(eq(messages.id, job!.messageId));
+    expect(row?.status).toBe('pending');
   });
 });
