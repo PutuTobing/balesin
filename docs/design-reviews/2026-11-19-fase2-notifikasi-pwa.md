@@ -99,3 +99,26 @@ Spek audit dihentikan setelah 5 layar × 4 (lambat), lalu server 3191/5191 dipas
 `git worktree prune`; `git worktree list` hanya repo utama), `balesin_kd_e2e` di-drop, Redis db 11 `DBSIZE` 0. Berkas
 repo: laporan ini + 13 screenshot, bagian "Putaran 2" laporan panel & batas kirim (+8 `p2-*.png`), bagian "Putaran 3"
 laporan penanganan & template (+1 `p3-*.png`). Tidak ada kode produk yang diubah, tidak ada commit.
+
+---
+
+# Putaran 2
+
+- **Tanggal:** 2026-11-17 · **Penilai:** `kritikus-desain` · **Putaran:** 2
+- **Kode yang dinilai:** `4e53378`. Worktree terisolasi (3191/5191, `balesin_kd_e2e` migrasi sampai `0022`, Redis db 11).
+- **Screenshot:** berkas berawalan `p2-`.
+
+## Putusan putaran 2: LOLOS
+
+| Butir | Hasil | Status |
+|---|---|---|
+| **N1** sapaan | "Pesan baru di chat yang kamu tangani", "Chat ditugaskan ke kamu"; kata "saya" tidak ada lagi di halaman | Lolos |
+| N-S1 tombol simpan | "Simpan preferensi" dan "Simpan pengaturan organisasi" sama-sama `primary` di kartunya masing-masing | Lolos |
+| N-S2 lencana Owner | "○ Hanya Owner" di judul kartu "Isi notifikasi di organisasi" (1440 kanan atas, 390 di bawah keterangan) | Lolos |
+| N-S3 iOS | Status "● Perlu dipasang" (`--warning-ink`), langkah Safari ditebalkan: **Bagikan → Tambah ke Layar Utama** | Lolos |
+| N-S4 foto jam tenang | `notifikasi-jam-tenang`: kartu Jam tenang tercentang, isian Mulai 21:00 / Selesai 07:00 sejajar di bawahnya | Lolos |
+
+Semua layar Notifikasi ≥ 4 di 390 & 1440, terang & gelap; tidak ada pelanggaran §3.
+
+Catatan kecil (saran): di 1440 isian jam menjorok 32 px dari tepi kartu pilihan (x 145 vs 113) — rata kiri dengan kartu
+akan lebih rapi; di 390 sudah rata.

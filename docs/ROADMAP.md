@@ -35,7 +35,7 @@ Orkestrator mengerjakan dari atas ke bawah. Tandai `[x]` saat Definition of Done
 - [x] Assign/ambil/alihkan/antrian terbuka, tandai selesai
 - [x] Panel detail: info, tag, catatan, media, log
 - [x] Quick reply `/`
-- [ ] Notifikasi + PWA installable
+- [x] Notifikasi + PWA installable
 - [ ] Tampilan HP penuh (navigasi bawah, layar bertumpuk)
 - [ ] E2E: pesan masuk (simulasi webhook) → tampil → dibalas → status
 
