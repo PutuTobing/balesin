@@ -1,0 +1,164 @@
+import { contacts, conversations, messages, webhookEvents, type DbExecutor } from '@balesin/db';
+import type { ChannelType } from '@balesin/shared';
+import { and, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+
+/**
+ * Data kontak (CRM). Fungsi hapus di sini dipakai endpoint "Hapus kontak (UU PDP)" yang menyusul
+ * (izin `contacts.delete`, konfirmasi identitas, audit — butir CRM).
+ */
+
+/**
+ * Kunci advisory identitas kontak — HARUS sama persis dengan `contactIdentityLockKey` di worker
+ * (`apps/worker/src/inbound/contacts.ts`): keduanya menserialkan pembuatan/penghapusan kontak per
+ * identitas. Tes integrasi memeriksa kesamaannya.
+ */
+export function contactIdentityLockKey(
+  organizationId: string,
+  channelType: ChannelType,
+  kind: 'bsuid' | 'phone',
+  value: string,
+): string {
+  return `contact:${organizationId}:${channelType}:${kind}:${value}`;
+}
+
+export interface DeletedContactData {
+  messages: number;
+  conversations: number;
+  /** Kejadian webhook yang payload-nya dikosongkan (baris + kunci dedup tetap). */
+  webhookEvents: number;
+}
+
+/**
+ * Kondisi "kejadian webhook ini milik identitas kontak tersebut" untuk baris yang BELUM dikaitkan
+ * worker (`contact_id` kosong: masih `pending`, gagal, atau dilewati). `wa_id` di payload Meta =
+ * nomor tanpa `+`.
+ */
+function payloadMatchesIdentity(waBsuid: string | null, phone: string | null): SQL | undefined {
+  const conditions: SQL[] = [];
+  if (waBsuid) {
+    conditions.push(
+      sql`${webhookEvents.payload} -> 'message' ->> 'from_user_id' = ${waBsuid}`,
+      sql`${webhookEvents.payload} -> 'contact' ->> 'user_id' = ${waBsuid}`,
+      sql`${webhookEvents.payload} -> 'status' ->> 'recipient_user_id' = ${waBsuid}`,
+    );
+  }
+  if (phone) {
+    const waId = phone.replace(/^\+/, '');
+    conditions.push(
+      sql`${webhookEvents.payload} -> 'message' ->> 'from' = ${waId}`,
+      sql`${webhookEvents.payload} -> 'contact' ->> 'wa_id' = ${waId}`,
+      sql`${webhookEvents.payload} -> 'status' ->> 'recipient_id' = ${waId}`,
+    );
+  }
+  return conditions.length > 0 ? or(...conditions) : undefined;
+}
+
+/**
+ * Menghapus kontak beserta data pribadinya (UU PDP, SECURITY.md §10, review webhook S4):
+ * pesan, percakapan, kontak — dan MENGOSONGKAN payload `webhook_events` terkait (dikaitkan worker
+ * lewat `contact_id`, atau dicocokkan dari identitas untuk kejadian yang belum diproses). Baris
+ * kejadian + kunci dedup tetap ada supaya kiriman ulang Meta tidak menghidupkan kontak lagi;
+ * kejadian `pending` ditandai `skipped` (`contact_deleted`) sehingga worker tidak memprosesnya.
+ *
+ * WAJIB dipanggil di dalam transaksi. Urutan kunci (bebas deadlock dengan worker webhook, yang
+ * mengunci kejadian → identitas → kontak): kejadian webhook (lewat UPDATE) → advisory identitas →
+ * kontak → percakapan/pesan. `undefined` bila kontak tidak ada di organisasi ini.
+ */
+export async function deleteContactData(
+  tx: DbExecutor,
+  organizationId: string,
+  contactId: string,
+): Promise<DeletedContactData | undefined> {
+  const [contact] = await tx
+    .select({
+      id: contacts.id,
+      channelType: contacts.channelType,
+      waBsuid: contacts.waBsuid,
+      phone: contacts.phone,
+    })
+    .from(contacts)
+    .where(and(eq(contacts.organizationId, organizationId), eq(contacts.id, contactId)))
+    .limit(1);
+  if (!contact) return undefined;
+
+  const now = new Date();
+  const identityMatch = payloadMatchesIdentity(contact.waBsuid, contact.phone);
+  const purgedEvents = await tx
+    .update(webhookEvents)
+    .set({
+      payload: {},
+      payloadPurgedAt: now,
+      contactId: null,
+      // Kejadian yang belum diproses tidak boleh membuat kontaknya lagi.
+      status: sql`case when ${webhookEvents.status} = 'pending' then 'skipped'::webhook_event_status else ${webhookEvents.status} end`,
+      lastError: sql`case when ${webhookEvents.status} = 'pending' then 'contact_deleted' else ${webhookEvents.lastError} end`,
+      processedAt: sql`case when ${webhookEvents.status} = 'pending' then ${now}::timestamptz else ${webhookEvents.processedAt} end`,
+    })
+    .where(
+      and(
+        eq(webhookEvents.organizationId, organizationId),
+        or(
+          eq(webhookEvents.contactId, contactId),
+          identityMatch === undefined
+            ? undefined
+            : and(
+                isNull(webhookEvents.contactId),
+                isNull(webhookEvents.payloadPurgedAt),
+                inArray(webhookEvents.kind, ['message', 'status']),
+                identityMatch,
+              ),
+        ),
+      ),
+    )
+    .returning({ id: webhookEvents.id });
+
+  const keys = [
+    contact.waBsuid
+      ? contactIdentityLockKey(organizationId, contact.channelType, 'bsuid', contact.waBsuid)
+      : null,
+    contact.phone
+      ? contactIdentityLockKey(organizationId, contact.channelType, 'phone', contact.phone)
+      : null,
+  ]
+    .filter((key): key is string => key !== null)
+    .sort();
+  for (const key of keys) {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+  }
+
+  const [locked] = await tx
+    .select({ id: contacts.id })
+    .from(contacts)
+    .where(and(eq(contacts.organizationId, organizationId), eq(contacts.id, contactId)))
+    .for('update');
+  if (!locked) return undefined;
+
+  // Kejadian yang sempat dikaitkan worker setelah UPDATE di atas (pesan baru yang masuk bersamaan).
+  const lateEvents = await tx
+    .update(webhookEvents)
+    .set({ payload: {}, payloadPurgedAt: now, contactId: null })
+    .where(
+      and(eq(webhookEvents.organizationId, organizationId), eq(webhookEvents.contactId, contactId)),
+    )
+    .returning({ id: webhookEvents.id });
+
+  const deletedMessages = await tx
+    .delete(messages)
+    .where(and(eq(messages.organizationId, organizationId), eq(messages.contactId, contactId)))
+    .returning({ id: messages.id });
+  const deletedConversations = await tx
+    .delete(conversations)
+    .where(
+      and(eq(conversations.organizationId, organizationId), eq(conversations.contactId, contactId)),
+    )
+    .returning({ id: conversations.id });
+  await tx
+    .delete(contacts)
+    .where(and(eq(contacts.organizationId, organizationId), eq(contacts.id, contactId)));
+
+  return {
+    messages: deletedMessages.length,
+    conversations: deletedConversations.length,
+    webhookEvents: new Set([...purgedEvents, ...lateEvents].map((row) => row.id)).size,
+  };
+}

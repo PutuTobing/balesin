@@ -25,9 +25,13 @@ export interface FakeWebhookTarget {
   displayPhoneNumber?: string;
 }
 
+/**
+ * Pelanggan pengirim. `waId: null` = pelanggan memakai username tanpa nomor (hanya BSUID);
+ * `userId: null` = payload tanpa BSUID (hanya nomor, bentuk lama).
+ */
 export interface FakeCustomer {
   waId?: string | null;
-  userId?: string;
+  userId?: string | null;
   name?: string;
   username?: string;
 }
@@ -53,13 +57,15 @@ function metadataOf(target: FakeWebhookTarget): Json {
 
 function contactOf(customer: FakeCustomer): Json {
   const waId = customer.waId === undefined ? FAKE_WEBHOOK_DEFAULTS.customerWaId : customer.waId;
+  const userId =
+    customer.userId === undefined ? FAKE_WEBHOOK_DEFAULTS.customerUserId : customer.userId;
   return {
     profile: {
       name: customer.name ?? FAKE_WEBHOOK_DEFAULTS.customerName,
       ...(customer.username ? { username: customer.username } : {}),
     },
     ...(waId === null ? {} : { wa_id: waId }),
-    user_id: customer.userId ?? FAKE_WEBHOOK_DEFAULTS.customerUserId,
+    ...(userId === null ? {} : { user_id: userId }),
   };
 }
 
@@ -106,7 +112,7 @@ function messageNotification(options: FakeMessageOptions, message: Json): Json {
       messages: [
         {
           ...(contact.wa_id === undefined ? {} : { from: contact.wa_id }),
-          from_user_id: contact.user_id,
+          ...(contact.user_id === undefined ? {} : { from_user_id: contact.user_id }),
           id: options.wamid ?? fakeWamid(),
           timestamp: options.timestamp ?? unixTimestamp(),
           ...(options.replyTo
@@ -142,6 +148,109 @@ export function imageMessageNotification(
       sha256: 'f9TyJ/VLNWzIkPRS5tg1srKDa3w3SSFDP5XVLBGgbG4=',
       id: options.mediaId ?? '1003383421387256',
     },
+  });
+}
+
+export type FakeMediaKind = 'image' | 'audio' | 'video' | 'document' | 'sticker';
+
+/**
+ * Media masuk jenis apa pun (bentuk contoh resmi Meta: `id`, `mime_type`, `sha256`; dokumen +
+ * `filename`; audio `voice: true` untuk pesan suara; stiker `animated`). Hanya ID media Meta — tidak
+ * pernah URL.
+ */
+export function mediaMessageNotification(
+  kind: FakeMediaKind,
+  options: FakeMessageOptions & {
+    caption?: string;
+    mediaId?: string;
+    mimeType?: string;
+    filename?: string;
+    voice?: boolean;
+  } = {},
+): Json {
+  const defaults: Record<FakeMediaKind, string> = {
+    image: 'image/jpeg',
+    audio: 'audio/ogg; codecs=opus',
+    video: 'video/mp4',
+    document: 'application/pdf',
+    sticker: 'image/webp',
+  };
+  return messageNotification(options, {
+    type: kind,
+    [kind]: {
+      id: options.mediaId ?? '1003383421387256',
+      mime_type: options.mimeType ?? defaults[kind],
+      sha256: 'f9TyJ/VLNWzIkPRS5tg1srKDa3w3SSFDP5XVLBGgbG4=',
+      ...(options.caption && kind !== 'audio' && kind !== 'sticker'
+        ? { caption: options.caption }
+        : {}),
+      ...(kind === 'document' ? { filename: options.filename ?? 'tagihan-november.pdf' } : {}),
+      ...(kind === 'audio' ? { voice: options.voice ?? true } : {}),
+      ...(kind === 'sticker' ? { animated: false } : {}),
+    },
+  });
+}
+
+/** Lokasi yang dibagikan pelanggan (`type: "location"`). */
+export function locationMessageNotification(
+  options: FakeMessageOptions & { latitude?: number; longitude?: number; name?: string } = {},
+): Json {
+  return messageNotification(options, {
+    type: 'location',
+    location: {
+      latitude: options.latitude ?? -7.2575,
+      longitude: options.longitude ?? 112.7521,
+      name: options.name ?? 'Rumah pelanggan',
+      address: 'Jl. Contoh No. 1, Surabaya',
+    },
+  });
+}
+
+/** Reaksi pelanggan ke sebuah pesan (`type: "reaction"`); `emoji` kosong = reaksi dihapus. */
+export function reactionMessageNotification(
+  options: FakeMessageOptions & { targetWamid: string; emoji?: string },
+): Json {
+  return messageNotification(options, {
+    type: 'reaction',
+    reaction: {
+      message_id: options.targetWamid,
+      ...(options.emoji === '' ? {} : { emoji: options.emoji ?? '👍' }),
+    },
+  });
+}
+
+/** Balasan tombol/daftar pesan interaktif (`type: "interactive"`). */
+export function interactiveReplyNotification(
+  options: FakeMessageOptions & {
+    reply?: 'button_reply' | 'list_reply';
+    id?: string;
+    title?: string;
+    description?: string;
+  } = {},
+): Json {
+  const reply = options.reply ?? 'button_reply';
+  return messageNotification(options, {
+    type: 'interactive',
+    interactive: {
+      type: reply,
+      [reply]: {
+        id: options.id ?? 'SUDAH_BAYAR',
+        title: options.title ?? 'Sudah bayar',
+        ...(reply === 'list_reply' && options.description
+          ? { description: options.description }
+          : {}),
+      },
+    },
+  });
+}
+
+/** Tombol balasan cepat dari template (`type: "button"`). */
+export function buttonMessageNotification(
+  options: FakeMessageOptions & { text?: string; payload?: string } = {},
+): Json {
+  return messageNotification(options, {
+    type: 'button',
+    button: { text: options.text ?? 'Hubungi CS', payload: options.payload ?? 'HUBUNGI_CS' },
   });
 }
 

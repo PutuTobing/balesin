@@ -18,6 +18,11 @@ export const QUEUE_NAMES = {
    * permintaan HTTP supaya Meta dijawab cepat (ARCHITECTURE.md §4).
    */
   webhooks: 'webhooks',
+  /**
+   * Pemeliharaan berkala oleh worker (dijadwalkan BullMQ Job Scheduler): retensi payload
+   * `webhook_events` (review webhook S4). Payload job kosong.
+   */
+  maintenance: 'maintenance',
 } as const;
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
@@ -77,6 +82,19 @@ export const webhookEventJobResultSchema = z.object({
   reason: z.enum(['already_done', 'not_found', 'unhandled', 'channel_inactive']).optional(),
 });
 export type WebhookEventJobResult = z.infer<typeof webhookEventJobResultSchema>;
+
+// ── Antrian `maintenance` ───────────────────────────────────────────────────
+
+export const MAINTENANCE_JOBS = {
+  /** Mengosongkan payload `webhook_events` yang sudah selesai dan lebih tua dari retensi organisasi. */
+  webhookPayloadRetention: 'webhook-payload-retention',
+} as const;
+export type MaintenanceJobName = (typeof MAINTENANCE_JOBS)[keyof typeof MAINTENANCE_JOBS];
+
+/** Selang job retensi (sekali per jam; tiap jalan dibatasi jumlah barisnya). */
+export const WEBHOOK_PAYLOAD_RETENTION_INTERVAL_MS = 60 * 60 * 1000;
+
+export const maintenanceJobPayloadSchema = z.strictObject({});
 
 // ── Antrian `system` ────────────────────────────────────────────────────────
 

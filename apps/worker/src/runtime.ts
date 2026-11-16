@@ -1,7 +1,13 @@
 import type { Logger } from '@balesin/core';
-import type { Worker } from 'bullmq';
+import type { Queue, Worker } from 'bullmq';
 
 import { createEmailWorker, type EmailJobDeps } from './queues/email';
+import {
+  createMaintenanceQueue,
+  createMaintenanceWorker,
+  scheduleMaintenanceJobs,
+  type MaintenanceJobDeps,
+} from './queues/maintenance';
 import { createSystemWorker, type QueueConnectionOptions } from './queues/system';
 import { createWebhookWorker, type WebhookJobDeps } from './queues/webhooks';
 
@@ -17,6 +23,11 @@ export interface WorkerServices {
   email: Omit<EmailJobDeps, 'logger'>;
   /** Untuk antrian `webhooks` (kejadian webhook masuk yang sudah tersimpan). */
   webhooks: Omit<WebhookJobDeps, 'logger'>;
+  /**
+   * Antrian `maintenance` + jadwal berkalanya (retensi payload webhook). Opsional supaya tes yang
+   * tidak membutuhkannya tidak mendaftarkan jadwal di Redis.
+   */
+  maintenance?: Omit<MaintenanceJobDeps, 'logger'>;
 }
 
 const ERROR_LOG_INTERVAL_MS = 30_000;
@@ -35,6 +46,20 @@ export function startWorkers(
     createEmailWorker(options, { ...services.email, logger }),
     createWebhookWorker(options, { ...services.webhooks, logger }),
   ];
+  let maintenanceQueue: Queue | undefined;
+  if (services.maintenance) {
+    workers.push(createMaintenanceWorker(options, { ...services.maintenance, logger }));
+    const queue = createMaintenanceQueue(options);
+    maintenanceQueue = queue;
+    // Tidak ditunggu: Redis yang belum siap tidak boleh menahan start. Gagal = dicoba lagi saat
+    // worker dijalankan ulang (retensi tertunda, bukan data hilang).
+    scheduleMaintenanceJobs(queue).catch((err: unknown) => {
+      logger.error({ err }, 'Jadwal pemeliharaan (retensi payload webhook) gagal didaftarkan');
+    });
+    queue.on('error', () => {
+      // Error koneksi sudah dicatat listener worker; listener ini mencegah proses jatuh.
+    });
+  }
 
   for (const worker of workers) {
     const queue = worker.name;
@@ -68,6 +93,10 @@ export function startWorkers(
       // menunggu Redis selamanya — jadi tutup paksa (langsung putus) bila Redis sedang mati.
       const force = options.connection.status !== 'ready';
       await Promise.all(workers.map((worker) => worker.close(force)));
+      if (maintenanceQueue) {
+        if (force) await maintenanceQueue.disconnect();
+        else await maintenanceQueue.close();
+      }
     },
   };
 }

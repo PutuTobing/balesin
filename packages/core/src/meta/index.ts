@@ -5,3 +5,4 @@ export * from './whatsapp';
 export * from './credentials';
 export * from './webhook-signature';
 export * from './webhook-payload';
+export * from './contact-identity';

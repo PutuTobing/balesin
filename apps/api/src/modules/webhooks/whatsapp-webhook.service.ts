@@ -307,7 +307,14 @@ export function createWhatsAppWebhookService(deps: WhatsAppWebhookDeps): WhatsAp
               rejected: summary.rejected,
               codes: [...new Set(result.rejectedCodes)].slice(0, 10),
             },
-            'Sebagian kejadian webhook ditolak database karena datanya — dilewati',
+            'Sebagian kejadian webhook ditolak database karena datanya — dilewati (tercatat sebagai baris stub tanpa isi)',
+          );
+        }
+        if (result.unrecordedRejections > 0) {
+          // N2: jejak stub pun gagal disimpan — kemungkinan regresi skema; pesan pelanggan hilang.
+          log.error(
+            { channelId: channel.id, unrecorded: result.unrecordedRejections },
+            'Kejadian webhook ditolak database dan jejaknya tidak bisa disimpan',
           );
         }
         const jobs: WebhookEventJobPayload[] = [...result.inserted, ...result.pendingDuplicates]

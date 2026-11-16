@@ -153,6 +153,20 @@ export const API_ROUTES = {
     /** GET — profil bisnis dari Meta; PUT — ubah profil bisnis. */
     businessProfile: `${API_PREFIX}/settings/channels/:channelId/business-profile`,
   },
+  /**
+   * Inbox (docs/KONTRAK-API-INBOX.md). Percakapan/pesan = `inbox.view`, kontak = `contacts.view`
+   * (keduanya bercakupan: Teknisi hanya yang di-assign). Path ber-`:id` disusun dengan `apiPath`.
+   */
+  inbox: {
+    /** GET — daftar percakapan (tab, channel, cari, kursor). */
+    conversations: `${API_PREFIX}/conversations`,
+    /** GET — satu percakapan. */
+    conversation: `${API_PREFIX}/conversations/:conversationId`,
+    /** GET — pesan percakapan, terbaru dulu (kursor = lebih lama). */
+    messages: `${API_PREFIX}/conversations/:conversationId/messages`,
+    /** GET — satu kontak. */
+    contact: `${API_PREFIX}/contacts/:contactId`,
+  },
 } as const;
 
 /**

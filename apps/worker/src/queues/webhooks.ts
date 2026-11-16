@@ -23,6 +23,7 @@ import {
 import { UnrecoverableError, Worker } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
 
+import { createInboundHandlers } from '../inbound/handlers';
 import type { QueueConnectionOptions } from './system';
 
 /**
@@ -42,11 +43,15 @@ import type { QueueConnectionOptions } from './system';
  * yang sudah dinonaktifkan/dihapus sejak diterima → `skipped` + `last_error = 'channel_inactive'`,
  * tanpa handler. Channel yang sengaja dimatikan karena insiden tidak "hidup lagi" lewat antrean lama.
  *
- * TITIK SAMBUNG butir berikutnya (kontak, percakapan, jendela 24 jam, unduh media, WebSocket, bot):
- * isi `InboundEventHandlers`. Handler berjalan DI DALAM transaksi yang sama dengan penandaan
- * `processed` — upsert kontak/percakapan/pesan ikut batal bila handler gagal, dan diulang utuh.
- * Pekerjaan lambat/eksternal (unduh media dari Graph API, siaran WebSocket, kirim ke bot) JANGAN
- * dijalankan di dalam transaksi ini: antrekan job tersendiri dari handler (ID saja).
+ * Pemroses kejadian = `InboundEventHandlers` (bawaan `createInboundHandlers` di `../inbound/handlers`:
+ * kontak, percakapan, pesan, jendela 24 jam, status pesan keluar). Handler berjalan DI DALAM transaksi
+ * yang sama dengan penandaan `processed` — upsert kontak/percakapan/pesan ikut batal bila handler
+ * gagal, dan diulang utuh. Pekerjaan lambat/eksternal (unduh media dari Graph API, siaran WebSocket,
+ * kirim ke bot) JANGAN dijalankan di dalam transaksi ini: antrekan job tersendiri dari handler (ID saja).
+ *
+ * N1 (review webhook): transaksi ini memegang `FOR SHARE` pada baris channel. Handler TIDAK BOLEH
+ * meng-`UPDATE channels` (dua worker yang sama-sama memegang kunci bersama lalu meminta kunci
+ * eksklusif = deadlock). Perbarui data channel lewat job terpisah.
  */
 
 export interface InboundEventContext {
@@ -72,12 +77,14 @@ export interface InboundEventHandlers {
   error(failure: NormalizedWebhookFailure, context: InboundEventContext): Promise<void>;
 }
 
-/** Bawaan butir ini: belum ada yang diteruskan (kontak/percakapan dibangun di butir berikutnya). */
+/** Pemroses kosong (untuk tes yang hanya menguji alur antrean/penandaan). */
 export const PENDING_INBOUND_HANDLERS: InboundEventHandlers = {
   message: () => Promise.resolve(),
   status: () => Promise.resolve(),
   error: () => Promise.resolve(),
 };
+
+const DEFAULT_HANDLERS = createInboundHandlers();
 
 export interface WebhookJob {
   id?: string;
@@ -143,7 +150,7 @@ export async function processWebhookJob(
   if (!payload.success) throw new UnrecoverableError('Payload job webhooks tidak valid');
   const { organizationId, eventId } = payload.data;
   const { db, logger } = deps;
-  const handlers = deps.handlers ?? PENDING_INBOUND_HANDLERS;
+  const handlers = deps.handlers ?? DEFAULT_HANDLERS;
   const now = deps.now ?? (() => new Date());
   const where = and(
     eq(webhookEvents.organizationId, organizationId),

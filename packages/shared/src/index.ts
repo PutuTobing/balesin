@@ -16,6 +16,7 @@ export * from './email-verification';
 export * from './errors';
 export * from './fields';
 export * from './health';
+export * from './inbox';
 export * from './invitations';
 export * from './links';
 export * from './password';

@@ -15,6 +15,7 @@ import {
 
 import { channelType, channels } from './channels';
 import { createdAtColumn, idColumn, timestamptz, updatedAtColumn } from './columns';
+import { contacts } from './contacts';
 import { organizations } from './organizations';
 
 export const webhookEventKind = pgEnum('webhook_event_kind', WEBHOOK_EVENT_KINDS);
@@ -27,7 +28,11 @@ export const webhookEventStatus = pgEnum('webhook_event_status', WEBHOOK_EVENT_S
  *
  * - `payload` = bagian notifikasi yang sudah divalidasi skema (`@balesin/core` `splitWhatsAppWebhook`).
  *   TIDAK PERNAH memuat header, tanda tangan, App Secret, atau rahasia lain. Isi pesan pelanggan ada
- *   di sini (data pribadi, UU PDP): jangan di-log, retensinya diatur bersama pesan (butir berikutnya).
+ *   di sini (data pribadi, UU PDP): jangan di-log. Retensi (review webhook S4): job `maintenance`
+ *   worker mengosongkan `payload` (`{}` + `payload_purged_at`) kejadian yang sudah selesai setelah N
+ *   hari (`organizations.webhook_payload_retention_days`); baris `other` hanya menyimpan hash isinya.
+ * - `contact_id` diisi worker saat kejadian pesan/status dikaitkan ke kontak — hapus kontak (UU PDP)
+ *   ikut mengosongkan kejadiannya.
  * - Idempotensi: `(channel_id, dedup_key)` unik. `dedup_key` = `m:<wamid>` (pesan), `s:<wamid>:<status>`
  *   (status), `e:`/`o:` + hash isi (tanpa ID dari Meta). Kiriman ulang Meta = `ON CONFLICT DO NOTHING`.
  * - Retensi baris minimal 8 hari (lebih lama dari jendela kirim ulang Meta 7 hari, dan dari batas
@@ -62,6 +67,10 @@ export const webhookEvents = pgTable(
     /** Kode/nama kesalahan singkat terakhir (BUKAN pesan error mentah — bisa memuat isi pesan). */
     lastError: text('last_error'),
     processedAt: timestamptz('processed_at'),
+    /** Kontak terkait (diisi worker). */
+    contactId: uuid('contact_id'),
+    /** Kapan `payload` dikosongkan (retensi / hapus kontak / baris yang ditolak database). */
+    payloadPurgedAt: timestamptz('payload_purged_at'),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
@@ -71,6 +80,11 @@ export const webhookEvents = pgTable(
       name: 'webhook_events_organization_id_channel_id_fk',
       columns: [table.organizationId, table.channelId],
       foreignColumns: [channels.organizationId, channels.id],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'webhook_events_organization_id_contact_id_fk',
+      columns: [table.organizationId, table.contactId],
+      foreignColumns: [contacts.organizationId, contacts.id],
     }).onDelete('restrict'),
     uniqueIndex('webhook_events_channel_id_dedup_key_unique').on(table.channelId, table.dedupKey),
     // Antrean kerja / pemulihan: kejadian yang belum selesai per organisasi.
@@ -85,6 +99,13 @@ export const webhookEvents = pgTable(
       table.channelId,
       table.externalId,
     ),
+    // Retensi: kejadian yang payload-nya belum dikosongkan, tertua dulu.
+    index('webhook_events_retention_idx')
+      .on(table.receivedAt)
+      .where(sql`${table.payloadPurgedAt} is null`),
+    index('webhook_events_organization_id_contact_id_idx')
+      .on(table.organizationId, table.contactId)
+      .where(sql`${table.contactId} is not null`),
     check('webhook_events_dedup_key_length', sql`char_length(${table.dedupKey}) between 3 and 320`),
     check('webhook_events_field_format', sql`${table.field} ~ '^[a-z_]{1,64}$'`),
     check(

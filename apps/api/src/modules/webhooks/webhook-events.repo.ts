@@ -8,7 +8,7 @@ import {
   type DbExecutor,
   type NewWebhookEvent,
 } from '@balesin/db';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, count, eq, gte, inArray, isNull, like } from 'drizzle-orm';
 
 /**
  * Akses data penerima webhook.
@@ -108,15 +108,50 @@ function insertChunk(db: DbExecutor, chunk: readonly NewWebhookEvent[]): Promise
     });
 }
 
+/** Awalan `last_error` baris stub untuk kejadian yang ditolak database (review webhook N2). */
+export const REJECTED_EVENT_ERROR_PREFIX = 'rejected:';
+
+/**
+ * Baris pengganti TANPA payload untuk kejadian yang ditolak database (review webhook N2): jejak tahan
+ * lama (`status = 'failed'`, `last_error = 'rejected:<kode>'`, kunci dedup, wamid) yang bisa dihitung
+ * dan dicari di layar diagnosis — bukan hanya log `warn`. Tanpa isi pesan dan tanpa cap waktu Meta
+ * (dua-duanya bisa menjadi penyebab penolakan).
+ */
+function rejectedStubOf(row: NewWebhookEvent, code: string): NewWebhookEvent {
+  const receivedAt = row.receivedAt ?? new Date();
+  return {
+    organizationId: row.organizationId,
+    channelId: row.channelId,
+    source: row.source,
+    kind: row.kind,
+    field: row.field,
+    dedupKey: row.dedupKey,
+    externalId: row.externalId,
+    payload: {},
+    payloadPurgedAt: receivedAt,
+    occurredAt: null,
+    receivedAt,
+    status: 'failed',
+    lastError: `${REJECTED_EVENT_ERROR_PREFIX}${code}`.slice(0, 200),
+    processedAt: null,
+  };
+}
+
+interface Rejections {
+  codes: string[];
+  /** Stub yang JUGA ditolak (mis. regresi skema yang menolak semua baris) — hanya tersisa di log. */
+  unrecorded: number;
+}
+
 /**
  * INSERT satu bagian; bila gagal karena data satu baris (`rowDataErrorCode`), diulang PER BARIS dan
- * baris yang tetap gagal dilewati (review webhook S2). `db` BUKAN transaksi: setiap pernyataan berdiri
- * sendiri, jadi kegagalan satu baris tidak membatalkan yang lain.
+ * baris yang tetap gagal diganti stub tanpa payload (review webhook S2 + N2). `db` BUKAN transaksi:
+ * setiap pernyataan berdiri sendiri, jadi kegagalan satu baris tidak membatalkan yang lain.
  */
 async function insertChunkTolerant(
   db: Database,
   chunk: readonly NewWebhookEvent[],
-  rejectedCodes: string[],
+  rejections: Rejections,
 ): Promise<{ created: InsertedRow[]; attempted: NewWebhookEvent[] }> {
   try {
     return { created: await insertChunk(db, chunk), attempted: [...chunk] };
@@ -132,10 +167,41 @@ async function insertChunkTolerant(
     } catch (error) {
       const code = rowDataErrorCode(error);
       if (code === null) throw error;
-      rejectedCodes.push(code);
+      rejections.codes.push(code);
+      try {
+        await insertChunk(db, [rejectedStubOf(row, code)]);
+      } catch (stubError) {
+        if (rowDataErrorCode(stubError) === null) throw stubError;
+        rejections.unrecorded += 1;
+      }
     }
   }
   return { created, attempted };
+}
+
+/**
+ * Jumlah kejadian yang ditolak database sejak `since` (stub N2) — untuk pemeriksaan/diagnosis
+ * webhook per organisasi (dan per channel bila diberikan).
+ */
+export async function countRejectedWebhookEvents(
+  db: DbExecutor,
+  organizationId: string,
+  since: Date,
+  channelId?: string,
+): Promise<number> {
+  const [row] = await db
+    .select({ total: count() })
+    .from(webhookEvents)
+    .where(
+      and(
+        eq(webhookEvents.organizationId, organizationId),
+        channelId === undefined ? undefined : eq(webhookEvents.channelId, channelId),
+        eq(webhookEvents.status, 'failed'),
+        like(webhookEvents.lastError, `${REJECTED_EVENT_ERROR_PREFIX}%`),
+        gte(webhookEvents.receivedAt, since),
+      ),
+    );
+  return Number(row?.total ?? 0);
 }
 
 /**
@@ -144,7 +210,9 @@ async function insertChunkTolerant(
  *  - `pendingDuplicates`: kejadian yang SUDAH ada dan masih `pending` (mis. penyimpanan sebelumnya
  *    berhasil tetapi mengantre job gagal → Meta mengirim ulang) — diantre ulang pemanggil;
  *  - `duplicates`: jumlah semua kiriman ulang (termasuk yang sudah selesai: diabaikan);
- *  - `rejectedCodes`: kode error per baris yang dilewati karena datanya ditolak database (tanpa isi).
+ *  - `rejectedCodes`: kode error per baris yang dilewati karena datanya ditolak database (tanpa isi);
+ *    masing-masing tercatat sebagai baris stub tanpa payload (N2);
+ *  - `unrecordedRejections`: stub yang juga gagal disimpan (hanya terlihat di log `error`).
  * Error lain (koneksi, kapasitas) dilempar apa adanya.
  */
 export async function insertWebhookEvents(
@@ -155,17 +223,18 @@ export async function insertWebhookEvents(
   pendingDuplicates: StoredWebhookEvent[];
   duplicates: number;
   rejectedCodes: string[];
+  unrecordedRejections: number;
 }> {
   const inserted: StoredWebhookEvent[] = [];
   const pendingDuplicates: StoredWebhookEvent[] = [];
-  const rejectedCodes: string[] = [];
+  const rejections: Rejections = { codes: [], unrecorded: 0 };
   let duplicates = 0;
 
   for (let start = 0; start < rows.length; start += INSERT_CHUNK) {
     const { created, attempted } = await insertChunkTolerant(
       db,
       rows.slice(start, start + INSERT_CHUNK),
-      rejectedCodes,
+      rejections,
     );
     inserted.push(
       ...created.map(({ id, organizationId, status }) => ({ id, organizationId, status })),
@@ -208,5 +277,11 @@ export async function insertWebhookEvents(
     }
   }
 
-  return { inserted, pendingDuplicates, duplicates, rejectedCodes };
+  return {
+    inserted,
+    pendingDuplicates,
+    duplicates,
+    rejectedCodes: rejections.codes,
+    unrecordedRejections: rejections.unrecorded,
+  };
 }

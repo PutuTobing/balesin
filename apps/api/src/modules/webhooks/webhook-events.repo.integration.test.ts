@@ -10,6 +10,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createIntegrationHarness, type IntegrationHarness } from '../../testing/integration';
 import {
+  countRejectedWebhookEvents,
   findLiveChannelsByPhoneNumberIds,
   insertWebhookEvents,
   rowDataErrorCode,
@@ -93,13 +94,43 @@ describe('insertWebhookEvents: baris yang ditolak database karena datanya (S2)',
     expect(result.duplicates).toBe(0);
 
     const stored = await harness.db
-      .select({ externalId: webhookEvents.externalId })
+      .select({
+        externalId: webhookEvents.externalId,
+        status: webhookEvents.status,
+        payload: webhookEvents.payload,
+        lastError: webhookEvents.lastError,
+        payloadPurgedAt: webhookEvents.payloadPurgedAt,
+        occurredAt: webhookEvents.occurredAt,
+      })
       .from(webhookEvents)
       .where(eq(webhookEvents.channelId, channelId));
-    expect(stored.map((event) => event.externalId).sort()).toEqual([
-      'wamid.baik-1',
-      'wamid.baik-2',
+    expect(
+      stored
+        .filter((event) => event.status === 'pending')
+        .map((event) => event.externalId)
+        .sort(),
+    ).toEqual(['wamid.baik-1', 'wamid.baik-2']);
+
+    // N2: yang ditolak meninggalkan jejak tahan lama TANPA isi pesan.
+    const stubs = stored.filter((event) => event.status === 'failed');
+    expect(stubs.map((event) => event.externalId).sort()).toEqual([
+      'wamid.nul',
+      'wamid.surrogate',
+      'wamid.tanggal',
     ]);
+    for (const stub of stubs) {
+      expect(stub.payload).toEqual({});
+      expect(stub.occurredAt).toBeNull();
+      expect(stub.payloadPurgedAt).toBeInstanceOf(Date);
+      expect(stub.lastError).toMatch(/^rejected:(22[0-9A-Z]{3}|RangeError)$/);
+    }
+    expect(result.unrecordedRejections).toBe(0);
+    expect(
+      await countRejectedWebhookEvents(harness.db, organizationId, new Date(Date.now() - 60_000)),
+    ).toBe(3);
+    expect(
+      await countRejectedWebhookEvents(harness.db, organizationId, new Date(Date.now() + 60_000)),
+    ).toBe(0);
   });
 
   it('kiriman ulang setelah jalur per baris tetap terdeteksi duplikat (dan pending diantre ulang)', async () => {

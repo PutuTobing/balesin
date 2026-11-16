@@ -128,6 +128,11 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'POST /api/v1/settings/channels/:channelId/webhook/verify-token': 'channels.manage',
   'GET /api/v1/settings/channels/:channelId/business-profile': 'channels.manage',
   'PUT /api/v1/settings/channels/:channelId/business-profile': 'channels.manage',
+  // inbox (baca): percakapan = inbox.view, kontak = contacts.view (Teknisi: hanya yang di-assign)
+  'GET /api/v1/conversations': 'inbox.view',
+  'GET /api/v1/conversations/:conversationId': 'inbox.view',
+  'GET /api/v1/conversations/:conversationId/messages': 'inbox.view',
+  'GET /api/v1/contacts/:contactId': 'contacts.view',
   // penerima webhook Meta: publik — keaslian dari verify token (GET) / tanda tangan App Secret (POST)
   'GET /webhooks/whatsapp/:channelId': 'public',
   'POST /webhooks/whatsapp/:channelId': 'public',
@@ -209,6 +214,8 @@ const SAMPLE_PARAMS: Readonly<Record<string, string>> = {
   userId: '00000000-0000-4000-8000-0000000000bb',
   sessionId: '00000000-0000-4000-8000-0000000000cc',
   channelId: '00000000-0000-4000-8000-0000000000dd',
+  conversationId: '00000000-0000-4000-8000-0000000000ee',
+  contactId: '00000000-0000-4000-8000-0000000000ff',
 };
 
 function concreteUrl(pattern: string): string {

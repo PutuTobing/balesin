@@ -48,6 +48,7 @@ function main(config: WorkerConfig): void {
       plaintextLogin: plaintextLoginPolicy(config.isProduction),
     },
     webhooks: { db },
+    maintenance: { db },
   });
 
   const shutdown = createShutdown({

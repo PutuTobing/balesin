@@ -378,14 +378,16 @@ lebih → **413** sebelum diperiksa). Urutan pemeriksaan:
 | `message` | `value.messages[]` | `m:<wamid>` | pesan masuk unik per (channel, wamid) |
 | `status` | `value.statuses[]` | `s:<wamid>:<status>` | unik per (channel, wamid, status): `sent`, `delivered`, `read`, `played`, `failed` (nilai baru tetap disimpan) |
 | `error` | `value.errors[]` | `e:` + SHA-256 isi | error tingkat sistem/aplikasi/akun |
-| `other` | field selain `messages` | `o:<field>:` + SHA-256 isi | disimpan `skipped`, belum diproses |
+| `other` | field selain `messages` | `o:<field>:` + SHA-256 isi | disimpan `skipped`, belum diproses; payload hanya `{ wabaId, valueSha256 }` (S4) |
 
 Kolom: `organization_id`, `channel_id` (channel pemilik nomor, FK komposit ke `channels`), `source`
 (`whatsapp`), `kind`, `field`, `dedup_key`, `external_id` (wamid), `payload` (bagian yang sudah
 divalidasi — **tanpa** header, tanda tangan, App Secret), `occurred_at` (cap waktu Meta),
 `received_at`, `status` (`pending`/`processed`/`failed`/`skipped`), `attempts`, `last_error` (kode
-singkat, bukan pesan mentah), `processed_at`. Retensi baris minimal **8 hari** (penghapusan berkala
-belum ada — diputuskan bersama retensi pesan).
+singkat, bukan pesan mentah), `processed_at`, `contact_id` (diisi worker), `payload_purged_at`.
+Baris tidak dihapus; **payload** kejadian yang selesai dikosongkan setelah retensi organisasi (bawaan
+8 hari) — lihat `docs/KONTRAK-API-INBOX.md` bagian Retensi. Baris yang ditolak database disimpan
+sebagai stub tanpa payload (`failed`, `last_error = 'rejected:<kode>'`, review N2).
 
 ### Worker (`apps/worker/src/queues/webhooks.ts`)
 
@@ -396,9 +398,10 @@ meneruskan ke `InboundEventHandlers`, lalu `processed`. Gagal → `attempts`+1, 
 **8 kali** dengan jeda eksponensial mulai 5 dtk (±10 menit); percobaan terakhir atau payload rusak →
 `failed`. Sebelum memproses, channel diperiksa ulang **di transaksi yang sama** (baris channel
 `FOR SHARE`): sudah dinonaktifkan/dihapus sejak diterima → `skipped`, `last_error = 'channel_inactive'`,
-hasil job `{status: 'skipped', reason: 'channel_inactive'}`, handler tidak dipanggil. *Butir ini baru
-menormalisasi; kontak, percakapan, jendela 24 jam (dari `received_at`), unduh media, dan WebSocket
-disambungkan lewat `InboundEventHandlers` di butir berikutnya.*
+hasil job `{status: 'skipped', reason: 'channel_inactive'}`, handler tidak dipanggil. Pemroses bawaan
+(`createInboundHandlers`) membuat kontak/percakapan/pesan, memperbarui jendela 24 jam (dari
+`received_at`), dan status pesan keluar — lihat `docs/KONTRAK-API-INBOX.md`. Unduh media dan
+WebSocket menyusul.
 
 ### Batas laju & penyalahgunaan
 
@@ -445,6 +448,8 @@ pribadi, UU PDP).
 
 `apps/api/src/testing/fake-meta-webhooks.ts` (diekspor ulang dari `testing/fake-meta.ts`):
 `textMessageNotification`, `imageMessageNotification`, `unsupportedMessageNotification`,
+`mediaMessageNotification(kind)`, `locationMessageNotification`, `reactionMessageNotification`,
+`interactiveReplyNotification`, `buttonMessageNotification`,
 `statusNotification({wamid, status})`, `errorNotification`, `templateStatusNotification`,
 `combinedNotification`, `signedWebhook` (body + header seperti Meta), `deliverWhatsAppWebhook(url, …)`
 (HTTP sungguhan ke stack E2E, hanya ke loopback), `handshakeQuery(verifyToken)`. Bentuknya mengikuti

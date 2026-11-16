@@ -59,6 +59,7 @@ import { auditRoutes } from './modules/audit/audit.routes';
 import { channelsRoutes } from './modules/channels/channels.routes';
 import { createChannelsService } from './modules/channels/channels.service';
 import { createAuditService } from './modules/audit/audit.service';
+import { inboxRoutes } from './modules/inbox/inbox.routes';
 import { sessionsRoutes } from './modules/sessions/sessions.routes';
 import { createOwnSessionsService } from './modules/sessions/sessions.service';
 import { setupRoutes } from './modules/setup/setup.routes';
@@ -366,6 +367,7 @@ export async function buildApp(deps: AppDeps) {
   await app.register(teamRoutes, { team, cookieSecure: config.cookieSecure });
   await app.register(auditRoutes, { audit });
   await app.register(channelsRoutes, { channels, limiter, cookieSecure: config.cookieSecure });
+  await app.register(inboxRoutes, { db });
   // Publik: penerima webhook Meta (keaslian dari tanda tangan App Secret, bukan sesi).
   await app.register(whatsAppWebhookRoutes, { guard: webhookGuard, webhooks: whatsAppWebhooks });
 

@@ -164,10 +164,14 @@ export interface StoredErrorEvent {
   displayPhoneNumber: string | null;
   error: WhatsAppWebhookError;
 }
-/** Field selain `messages` (tingkat WABA: status template, pembaruan akun, …) — belum diproses. */
+/**
+ * Field selain `messages` (tingkat WABA: status template, pembaruan akun, …) — belum diproses, jadi
+ * isinya TIDAK disimpan (review webhook S4): hanya SHA-256 isi (heks penuh) untuk penelusuran.
+ * Pemroses field ini kelak menambah isian yang ia butuhkan secara eksplisit.
+ */
 export interface StoredOtherEvent {
   wabaId: string;
-  value: Record<string, unknown>;
+  valueSha256: string;
 }
 
 interface ItemBase {
@@ -238,8 +242,12 @@ function storableDate(value: string | number): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function fullDigest(value: unknown): string {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
 function digest(value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 40);
+  return fullDigest(value).slice(0, 40);
 }
 
 function pickContact(
@@ -298,7 +306,7 @@ export function splitWhatsAppWebhook(body: unknown): WhatsAppWebhookSplit {
           externalId: null,
           occurredAt: null,
           dedupKey: `o:${field}:${digest(value)}`,
-          payload: { wabaId, value },
+          payload: { wabaId, valueSha256: fullDigest(value) },
         });
         continue;
       }
