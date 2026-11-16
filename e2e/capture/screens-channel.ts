@@ -404,6 +404,8 @@ export const channelScreens: Screen[] = [
           ...MAIN,
           id: UNTESTED.id,
           name: UNTESTED.name,
+          // Data nomor dibaca oleh tes yang baru saja berhasil.
+          number: { ...(MAIN.number as object), fetchedAt: new Date().toISOString() },
           lastTest: {
             ok: true,
             code: 'ok',

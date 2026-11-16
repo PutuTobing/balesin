@@ -17,8 +17,11 @@ const copy = t.channels.webhook;
 export function WebhookPanel({
   webhook,
   actions,
+  context,
 }: {
   webhook: ChannelWebhookResponse;
+  /** Wizard menunjuk halaman nomor; halaman nomor menunjuk kartu Kredensial Meta di bawahnya. */
+  context: 'wizard' | 'detail';
   /** Aksi tambahan di bawah verify token (mis. "Buat ulang verify token"). */
   actions?: ReactNode;
 }) {
@@ -60,10 +63,14 @@ export function WebhookPanel({
       <Notice tone="info" title={copy.proofTitle}>
         {copy.proofBody(productName)}
       </Notice>
-      {copy.notes.map((note) => (
+      {copy.notes.map((note, index) => (
         <div key={note.title} className={styles.subSection}>
           <h3 className={styles.subTitle}>{note.title}</h3>
-          <p className={styles.hint}>{note.body}</p>
+          <p className={styles.hint}>
+            {index === copy.notes.length - 1
+              ? `${note.body} ${copy.fixAppSecret[context]}`
+              : note.body}
+          </p>
         </div>
       ))}
     </div>

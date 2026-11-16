@@ -15,6 +15,7 @@ import { endpoints } from '../../lib/api/endpoints';
 import { queryKeys, storeChannel } from '../../lib/api/queries';
 import { formatDateTime } from '../../lib/format';
 import type { FieldErrors } from '../../lib/form';
+import { scrollToTopOfContainer } from '../../lib/scroll';
 import { useSession } from '../auth/session';
 import { isConfirmationError } from '../identity/confirmation-error';
 import { IdentityDialog } from '../identity/IdentityDialog';
@@ -147,11 +148,13 @@ function CredentialsForm({
   const secretRef = useRef<HTMLInputElement>(null);
   const [invalidTick, setInvalidTick] = useState(0);
 
-  // Dibuka → gulir ke form dan fokus ke isian yang relevan (mis. Token setelah tes gagal).
+  // Dibuka → kartu Kredensial naik ke atas (navigasi bagian ikut menandainya) dan fokus ke isian
+  // yang relevan (mis. Token setelah tes gagal).
   useEffect(() => {
     const input = formRef.current?.querySelector<HTMLInputElement>(`[data-isian="${focus}"]`);
-    formRef.current?.scrollIntoView({ block: 'nearest' });
-    input?.focus();
+    const section = formRef.current?.closest('section');
+    if (section) scrollToTopOfContainer(section);
+    input?.focus({ preventScroll: true });
   }, [focus]);
   useEffect(() => {
     if (invalidTick === 0) return;

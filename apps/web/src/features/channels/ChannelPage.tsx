@@ -301,7 +301,7 @@ function WebhookCard({ channelId }: { channelId: string }) {
         </Notice>
       ) : null}
       {webhook.data ? (
-        <WebhookPanel webhook={webhook.data} actions={rotateButton} />
+        <WebhookPanel webhook={webhook.data} actions={rotateButton} context="detail" />
       ) : webhook.isPending ? (
         <SkeletonRegion className={styles.copyRows}>
           {[t.channels.webhook.callbackUrl, t.channels.webhook.verifyToken].map((label) => (

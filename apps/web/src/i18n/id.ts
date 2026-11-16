@@ -1303,9 +1303,14 @@ export const t = {
         },
         {
           title: 'Verifikasi berhasil, tetapi pesan tidak masuk?',
-          body: 'Biasanya App Secret di sini tidak sama dengan milik aplikasi Meta, dan banner keamanan menampilkan “Webhook WhatsApp ditolak berulang”. Ganti App Secret di Kredensial Meta pada halaman nomor.',
+          body: 'Biasanya App Secret di sini tidak sama dengan milik aplikasi Meta, dan banner keamanan menampilkan “Webhook WhatsApp ditolak berulang”.',
         },
       ],
+      /** Kalimat penutup catatan App Secret: di wizard menunjuk halaman nomor, di halaman nomor kartunya. */
+      fixAppSecret: {
+        wizard: 'Ganti App Secret di Kredensial Meta pada halaman nomor.',
+        detail: 'Ganti App Secret di kartu Kredensial Meta di bawah.',
+      },
       warningTitle: 'URL ini belum bisa dipakai Meta',
       proofTitle: 'Aktifkan juga “Require App Secret Proof”',
       proofBody: (product: string) =>

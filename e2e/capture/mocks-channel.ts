@@ -77,7 +77,10 @@ export const PHOTO_CHANNELS: PhotoChannel[] = [
     status: 'failed',
     phoneNumberId: '106540352242933',
     lastTest: { ok: false, code: 'token_invalid', message: TOKEN_INVALID, testedAt: ago(3) },
+    // Data nomor dari tes BERHASIL terakhir (sebelum tes yang gagal): server hanya
+    // memperbaruinya lewat tes berhasil.
     number: number({
+      fetchedAt: ago(27),
       displayPhoneNumber: '+62 811-7200-678',
       qualityRating: 'YELLOW',
       messagingLimit: 'TIER_1K',
@@ -203,7 +206,13 @@ export async function channelTest(
         ? 'Koneksi berhasil. Token, App Secret, Phone Number ID, dan WABA ID cocok.'
         : TOKEN_INVALID,
       testedAt: new Date().toISOString(),
-      number: ok ? number({ qualityRating: 'YELLOW', nameStatus: 'PENDING_REVIEW' }) : null,
+      number: ok
+        ? number({
+            qualityRating: 'YELLOW',
+            nameStatus: 'PENDING_REVIEW',
+            fetchedAt: new Date().toISOString(),
+          })
+        : null,
       warnings: ok
         ? [
             {

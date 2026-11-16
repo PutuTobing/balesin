@@ -1,5 +1,6 @@
 import { useEffect, useState, type MouseEvent } from 'react';
 import { t } from '../../i18n/id';
+import { scrollToTopOfContainer } from '../../lib/scroll';
 import styles from './Channels.module.css';
 
 const copy = t.channels.sections;
@@ -51,7 +52,7 @@ export function SectionNav() {
     if (!target) return;
     // Tanpa mengubah alamat (riwayat router tetap bersih); fokus ikut pindah untuk keyboard.
     event.preventDefault();
-    target.scrollIntoView({ block: 'start' });
+    scrollToTopOfContainer(target);
     target.setAttribute('tabindex', '-1');
     target.focus({ preventScroll: true });
     setActive(id);

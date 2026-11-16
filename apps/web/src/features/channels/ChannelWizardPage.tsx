@@ -78,7 +78,10 @@ export function ChannelWizardPage() {
             body={
               blocked === 'noMasterKey' ? (
                 <div className={styles.blockedBody}>
-                  <RichText text={t.channels.list.noMasterKeyBody} />
+                  {/* Satu paragraf: RichText berupa fragment, tiap potongan jadi item flex sendiri. */}
+                  <p>
+                    <RichText text={t.channels.list.noMasterKeyBody} />
+                  </p>
                   <MasterKeyCommand />
                 </div>
               ) : (
@@ -412,7 +415,7 @@ function ChannelWizard() {
         ) : null}
 
         {step === 'webhook' && state.created ? (
-          <WebhookPanel webhook={state.created.webhook} />
+          <WebhookPanel webhook={state.created.webhook} context="wizard" />
         ) : null}
 
         {step === 'test' && state.created ? (
