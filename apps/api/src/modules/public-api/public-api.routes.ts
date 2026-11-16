@@ -123,19 +123,24 @@ export function clientMessageIdFor(apiKeyId: string, idempotencyKey: string | un
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-8${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
-export const publicApiRoutes: FastifyPluginAsyncZod<PublicApiRoutesOptions> = async (
-  app,
-  options,
-) => {
-  const { db, outbound, limiter } = options;
-  // Batas kirim organisasi per menit berlaku juga untuk API (review API publik R3).
-  const organizationRate = (organizationId: string) =>
+/** Batas kirim organisasi per menit untuk jalur API key (review API publik R3; juga MobiChat). */
+export function publicOrganizationRate(limiter: RateLimiter) {
+  return (organizationId: string) =>
     enforceRateLimit(
       limiter,
       SEND_ORGANIZATION_RULE,
       organizationId,
       (wait) => `Batas kirim organisasi per menit tercapai. Coba lagi dalam ${wait}.`,
     );
+}
+
+export const publicApiRoutes: FastifyPluginAsyncZod<PublicApiRoutesOptions> = async (
+  app,
+  options,
+) => {
+  const { db, outbound, limiter } = options;
+  // Batas kirim organisasi per menit berlaku juga untuk API (review API publik R3).
+  const organizationRate = publicOrganizationRate(limiter);
   const contactsService = options.contacts;
   const now = options.now ?? (() => new Date());
   const routes = API_ROUTES.publicApi;
@@ -166,11 +171,15 @@ export const publicApiRoutes: FastifyPluginAsyncZod<PublicApiRoutesOptions> = as
       const key = requireApiKey(request);
       const { cursor, limit, ...filter } = request.query;
       const pageSize = limit ?? INBOX_PAGE_DEFAULT;
-      const rows = await listConversations(db, grantOf(key), filter, {
-        limit: pageSize + 1,
-        cursor: cursorOf(cursor),
-        now: now(),
-      });
+      const page = { limit: pageSize + 1, cursor: cursorOf(cursor), now: now() };
+      // Pencarian `q` (ILIKE/trigram) dibatasi waktu query seperti web (review webhook keluar,
+      // Info pencarian) → 503 bila terlalu lama.
+      const rows =
+        filter.q === undefined
+          ? await listConversations(db, grantOf(key), filter, page)
+          : await withStatementTimeout(db, SEARCH_TIMEOUT_MS, (tx) =>
+              listConversations(tx, grantOf(key), filter, page),
+            );
       const visible = rows.slice(0, pageSize);
       const extras = await conversationExtras(db, key.organizationId, visible);
       const at = now();

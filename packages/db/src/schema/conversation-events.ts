@@ -2,6 +2,7 @@ import { CONVERSATION_EVENT_KINDS } from '@balesin/shared';
 import { sql } from 'drizzle-orm';
 import { check, foreignKey, index, pgEnum, pgTable, uuid } from 'drizzle-orm/pg-core';
 
+import { apiKeys } from './api-keys';
 import { createdAtColumn, idColumn, updatedAtColumn } from './columns';
 import { conversations } from './conversations';
 import { organizations } from './organizations';
@@ -15,6 +16,8 @@ export const conversationEventKind = pgEnum('conversation_event_kind', CONVERSAT
  * pesan, nama/nomor pelanggan, atau catatan.
  *
  * - `actor_user_id` = pelaku (`null` = sistem/bot, mis. penugasan otomatis kelak).
+ * - `api_key_id` = pelaku API key (lapisan kompatibel MobiChat / bot, Fase 3); tidak pernah bersamaan
+ *   dengan `actor_user_id`.
  * - `assignee_user_id` = agen sesudah kejadian; `previous_assignee_user_id` = agen sebelumnya.
  * - Ikut terhapus saat kontak dihapus (UU PDP, `deleteContactData`).
  */
@@ -28,6 +31,7 @@ export const conversationEvents = pgTable(
     conversationId: uuid('conversation_id').notNull(),
     kind: conversationEventKind('kind').notNull(),
     actorUserId: uuid('actor_user_id'),
+    apiKeyId: uuid('api_key_id'),
     assigneeUserId: uuid('assignee_user_id'),
     previousAssigneeUserId: uuid('previous_assignee_user_id'),
     createdAt: createdAtColumn(),
@@ -43,6 +47,11 @@ export const conversationEvents = pgTable(
       name: 'conversation_events_organization_id_actor_user_id_fk',
       columns: [table.organizationId, table.actorUserId],
       foreignColumns: [users.organizationId, users.id],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'conversation_events_organization_id_api_key_id_fk',
+      columns: [table.organizationId, table.apiKeyId],
+      foreignColumns: [apiKeys.organizationId, apiKeys.id],
     }).onDelete('restrict'),
     foreignKey({
       name: 'conversation_events_organization_id_assignee_user_id_fk',
@@ -61,6 +70,10 @@ export const conversationEvents = pgTable(
     check(
       'conversation_events_assignment_has_assignee',
       sql`${table.kind} not in ('claimed', 'assigned') or ${table.assigneeUserId} is not null`,
+    ),
+    check(
+      'conversation_events_single_actor',
+      sql`${table.actorUserId} is null or ${table.apiKeyId} is null`,
     ),
   ],
 );

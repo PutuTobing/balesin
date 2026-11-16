@@ -1,0 +1,147 @@
+{
+  "sumber": "docs/reference/n8n/ulan-workflow.json (\"SKY CS AI - MobiChat (Claude)\") — potongan VERBATIM node yang memanggil/membaca MobiChat. Tanpa kredensial (ekspor n8n tidak memuat isi credential). Placeholder {cid} = nomor percakapan (string), {cid:number} = angka, {wa} = nomor WhatsApp 62…, {mediaUrl} = URL gambar tiruan.",
+  "ambilDataPesan": "// Ambil data penting dari webhook MobiChat (format dibuat fleksibel)\nconst raw = $input.first().json;\nconst body = raw.body || raw;\nconst pick = (...v) => v.find(x => x !== undefined && x !== null && x !== '');\nconst d = body.data || {};\nconst conv = body.conversation || d.conversation || {};\nconst msg = (typeof body.message === 'object' && body.message) || d.message || body.last_message || {};\nconst contact = body.contact || conv.contact || d.contact || {};\nconst conversationId = pick(body.conversation_id, body.conversationId, conv.id, msg.conversation_id, d.conversation_id);\nconst text = pick(body.message_text, body.text, msg.text, msg.message_text, d.text, d.message_text, typeof body.message === 'string' ? body.message : undefined) || '';\nconst type = String(pick(msg.type, body.message_type, body.type, d.type) || '').toLowerCase();\nconst sender = String(pick(msg.sender, body.sender, d.sender) || '');\nconst contactName = pick(contact.full_name, contact.name, body.contact_name, body.sender_name, msg.sender_name, d.contact_name) || '';\nconst messageId = pick(msg.id, body.message_id, d.message_id);\nconst bukanPelanggan = ['agent', 'api-bot', 'bot', 'broadcast', 'system'].includes(type) || /^(bot|agent|system|bot_webhook)$/i.test(sender);\nreturn [{ json: {\n  lanjut: !!conversationId && !bukanPelanggan,\n  conversation_id: conversationId,\n  text,\n  message_id: messageId,\n  contact_name: contactName,\n  raw: body\n} }];",
+  "pembaca": {
+    "daftarPesan": "const daftarPesan = x => Array.isArray(x) ? x : ((x && (x.messages || (Array.isArray(x.data) ? x.data : (x.data && x.data.messages)))) || []);",
+    "pelangganMsg": "const pelMsg = m => m && (m.type === 'user' || (!['agent', 'api-bot', 'bot', 'broadcast', 'system', 'note'].includes(m.type) && !/^(bot|agent|system|bot_webhook|api-bot)$/i.test(m.sender || '')));",
+    "isCustomer": "const isCustomer = m => m.type === 'user' || (!['agent', 'api-bot', 'bot', 'broadcast', 'system', 'note'].includes(m.type) && !/^(bot|agent|system|bot_webhook|api-bot)$/i.test(m.sender || ''));",
+    "lampiranDari": "const lampiranDari = m => m.attachments || m.file_attachments || [];",
+    "tipeDari": "const tipeDari = a => String(a.type || a.file_type || a.mime_type || '').toLowerCase();",
+    "stiker": "const stiker = a => /^sticker_/i.test(String(a.name || ''));",
+    "masihBot": "return a.some(x => x && x.user && x.user.role === 'chatbot');",
+    "agenManusia": "const agen = tugas.find(a => a && a.user && a.user.role && a.user.role !== 'chatbot');",
+    "pesanGagalTag": "pesan = String(b.message || b.error || (typeof r.body === 'string' ? r.body : '') || '').slice(0, 150);"
+  },
+  "permintaan": [
+    {
+      "node": "Riwayat chat",
+      "method": "GET",
+      "path": "/api/public/messages",
+      "query": {
+        "conversation_id": "{cid}",
+        "limit": "30"
+      },
+      "header": "X-API-Key"
+    },
+    {
+      "node": "Riwayat chat (menunggu)",
+      "method": "GET",
+      "path": "/api/public/messages",
+      "query": {
+        "conversation_id": "{cid}",
+        "limit": "20"
+      },
+      "header": "X-API-Key"
+    },
+    {
+      "node": "Baca keputusan Claude",
+      "method": "GET",
+      "path": "/api/public/messages",
+      "query": {
+        "conversation_id": "{cid}",
+        "limit": "10"
+      },
+      "header": "X-API-Key",
+      "asli": "const res = await http.httpRequest({ method: 'GET', url: String(wh.mobichat_base_url || 'https://app.mobichat.id').replace(/\\/+$/, '') + '/api/public/messages?conversation_id=' + encodeURIComponent(cidCek) + '&limit=10', headers: { 'X-API-Key': kunciApi, Accep"
+    },
+    {
+      "node": "Status percakapan",
+      "method": "GET",
+      "path": "/api/public/conversation-status",
+      "query": {
+        "conversationId": "{cid}"
+      },
+      "header": "X-API-Key"
+    },
+    {
+      "node": "Kirim balasan",
+      "method": "POST",
+      "path": "/api/public/messages",
+      "header": "X-API-Key",
+      "asli": "={{ JSON.stringify({ conversation_id: Number($json.conversation_id), messages: [{ message_type: 'text', text: String($json.balasan) }] }) }}",
+      "body": {
+        "conversation_id": "{cid:number}",
+        "messages": [
+          {
+            "message_type": "text",
+            "text": "Baik Kak, tagihan bulan ini sudah kami cek ya 🙏"
+          }
+        ]
+      }
+    },
+    {
+      "node": "Buat pembayaran TriPay",
+      "method": "POST",
+      "path": "/api/public/messages",
+      "header": "X-API-Key",
+      "asli": "conversation_id: Number(cid), messages: [{ message_type: 'media', media_url: 'https://tripay.co.id/qr/' + ref, media_type: 'image', text: caption.slice(0, 1024), caption: caption.slice(0, 1024) }]",
+      "body": {
+        "conversation_id": "{cid:number}",
+        "messages": [
+          {
+            "message_type": "media",
+            "media_url": "{mediaUrl}",
+            "media_type": "image",
+            "text": "Scan QRIS ini ya Kak",
+            "caption": "Scan QRIS ini ya Kak"
+          }
+        ]
+      }
+    },
+    {
+      "node": "Tulis catatan tim",
+      "method": "POST",
+      "path": "/api/public/conversation/notes",
+      "header": "X-API-Key",
+      "asli": "={{ JSON.stringify({ conversationId: Number($json.conversation_id), notes: $json.catatan }) }}",
+      "body": {
+        "conversationId": "{cid:number}",
+        "notes": "AI: pelanggan minta cek tagihan, sudah dijawab."
+      }
+    },
+    {
+      "node": "Ganti nama kontak",
+      "method": "PUT",
+      "path": "/api/public/contacts",
+      "header": "X-API-Key",
+      "asli": "={{ JSON.stringify({ conversation_id: Number($json.conversation_id), full_name: $json.nama_baru, edited_name: $json.nama_baru }) }}",
+      "body": {
+        "conversation_id": "{cid:number}",
+        "full_name": "1000023TRIANINGSIH@RJBS",
+        "edited_name": "1000023TRIANINGSIH@RJBS"
+      }
+    },
+    {
+      "node": "Pasang tag mitra",
+      "method": "PUT",
+      "path": "/api/public/tags/whatsapp",
+      "header": "X-API-Key",
+      "asli": "body: { whatsapp_number: waNo, tags: [u.tag] }, json: true, ignoreHttpStatusErrors: true, returnFullResponse: true, timeout: 15000 });",
+      "body": {
+        "whatsapp_number": "{wa}",
+        "tags": ["MITRA-SURYA"]
+      }
+    },
+    {
+      "node": "Teruskan ke tim (1)",
+      "method": "POST",
+      "path": "/api/public/unassign-agent",
+      "header": "x-api-key",
+      "asli": "let r = await panggil('POST', '/api/public/unassign-agent', { conversation_id: cid });",
+      "body": {
+        "conversation_id": "{cid}"
+      }
+    },
+    {
+      "node": "Teruskan ke tim (2, cara lama)",
+      "method": "POST",
+      "path": "/api/public/conversation-status",
+      "header": "x-api-key",
+      "asli": "r = await panggil('POST', '/api/public/conversation-status', { conversation_id: cid, status: 'unserved' });",
+      "body": {
+        "conversation_id": "{cid}",
+        "status": "unserved"
+      }
+    }
+  ]
+}

@@ -3,7 +3,7 @@
 API untuk integrasi (n8n, bot, sistem lain). Skema Zod: `packages/shared/src/api-keys.ts`,
 `public-api.ts` (+ skema respons inbox yang SAMA dengan API web). Alamat: `API_ROUTES.publicApi`,
 `API_ROUTES.apiKeys`, `API_DOCS_ROUTES`. Lapisan kompatibel MobiChat (`/api/public/*`, header
-`X-API-Key`) adalah butir terpisah dan akan memakai API key yang sama.
+`X-API-Key`) memakai API key yang sama — `docs/KONTRAK-API-MOBICHAT.md`.
 
 ## Namespace
 
@@ -42,13 +42,13 @@ semua key (harus dibuat ulang). Log menyensor `blsn_live_…` dan header `Author
 | Scope                | Arti                                                                          | Termasuk                              |
 | -------------------- | ----------------------------------------------------------------------------- | ------------------------------------- |
 | `conversations:read` | Daftar & detail percakapan                                                    | —                                     |
+| `conversations:write` | Lepas bot/handoff, tugaskan agen, selesai, catatan sesi (saat ini lewat lapisan MobiChat) | `conversations:read` |
 | `messages:read`      | Pesan & statusnya                                                             | `conversations:read`                  |
 | `messages:send`      | Kirim pesan di percakapan YANG SUDAH ADA (dalam jendela 24 jam), unggah media | `messages:read`, `conversations:read` |
 | `contacts:read`      | Cari & lihat kontak                                                           | —                                     |
 | `contacts:write`     | Buat & ubah kontak, pasang/lepas tag                                          | `contacts:read`                       |
 
-Menyusul bersama fiturnya: `messages:initiate` (template ke nomor baru), `conversations:write`
-(selesai/buka lagi/assign/handoff — butir bot eksternal), `broadcasts:write`, `tickets:write`,
+Menyusul bersama fiturnya: `messages:initiate` (template ke nomor baru), `broadcasts:write`, `tickets:write`,
 `reports:read`, `webhooks:manage`. Sesuai SECURITY §5, key tanpa `messages:initiate` tidak bisa
 memulai percakapan ke nomor baru.
 
@@ -59,7 +59,7 @@ Cakupan data = SELURUH organisasi pemilik key (mis. key ber-`messages:send` bisa
 
 | Endpoint                                           | Scope                              | Keterangan                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | -------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/v1/public/conversations`                 | `conversations:read`               | Saringan & kursor sama dengan inbox (`status`, `channelId`, `tagId`, `assignee`, `window`, `unread`, `q`, `cursor`, `limit`)                                                                                                                                                                                                                                                                                                                                                                      |
+| `GET /api/v1/public/conversations`                 | `conversations:read`               | Saringan & kursor sama dengan inbox (`status`, `channelId`, `tagId`, `assignee`, `window`, `unread`, `q`, `cursor`, `limit`); pencarian `q` dibatasi waktu query 3 dtk (503)                                                                                                                                                                                                                                                                                                                                                                      |
 | `GET /api/v1/public/conversations/:id`             | `conversations:read`               |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `GET /api/v1/public/conversations/:id/messages`    | `messages:read`                    | Terbaru dulu; `cursor`, `limit`, `only`                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `POST /api/v1/public/conversations/:id/messages`   | `messages:send`                    | Body = API web tanpa `clientMessageId` (`text` / `media` / `location` / `reaction`). Header **`Idempotency-Key`** opsional (1–100 ASCII; per key) → **202** baru, **200** sudah pernah. Jendela 24 jam (409 `WINDOW_CLOSED`), rem darurat (423), batas per percakapan & organisasi, dan **batas harian PER KEY** (`dailySendLimit`, 24 jam bergulir → 429 + audit `sending.limit_reached` target `api_key` + email Owner atas nama pembuat key), dan batas organisasi 600/menit (sama dengan web) |

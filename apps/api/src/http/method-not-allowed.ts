@@ -33,7 +33,16 @@ function complementAccess(accesses: readonly (RouteAccess | undefined)[]): Route
       accesses.map((access) => (access?.kind === 'apiKey' ? access.scope : null)),
     );
     const [onlyScope] = scopes;
-    return { kind: 'apiKey', scope: scopes.size === 1 ? (onlyScope ?? null) : null };
+    const credentials = new Set(
+      accesses.map((access) => (access?.kind === 'apiKey' ? access.credential : undefined)),
+    );
+    const [credential] = credentials;
+    return {
+      kind: 'apiKey',
+      scope: scopes.size === 1 ? (onlyScope ?? null) : null,
+      // Cara kirim key sama di semua rute alamat itu → dipertahankan (MobiChat: `X-API-Key`).
+      ...(credentials.size === 1 && credential ? { credential } : {}),
+    };
   }
   const permissions = new Set(
     accesses.map((access) => (access?.kind === 'permission' ? access.permission : undefined)),

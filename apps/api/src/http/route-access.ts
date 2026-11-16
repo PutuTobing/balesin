@@ -34,9 +34,18 @@ export type RouteAccess =
   | { readonly kind: 'permission'; readonly permission: Permission }
   /**
    * API publik (Fase 3): `Authorization: Bearer blsn_live_…`, TANPA cookie/CSRF. `scope` = scope API
-   * key yang dibutuhkan (`null` hanya untuk rute pelengkap 405 = key sah apa pun).
+   * key yang dibutuhkan (`null` hanya untuk rute pelengkap 405 = key sah apa pun). `credential`
+   * `x-api-key` = lapisan kompatibel MobiChat (`/api/public/*`, `/api/bot/*`): key dibaca dari header
+   * `X-API-Key`, bukan `Authorization: Bearer` (tanpa = Bearer).
    */
-  | { readonly kind: 'apiKey'; readonly scope: ApiKeyScope | null };
+  | {
+      readonly kind: 'apiKey';
+      readonly scope: ApiKeyScope | null;
+      readonly credential?: ApiKeyCredential;
+    };
+
+/** Cara API key dikirim: `Authorization: Bearer` (API v1) atau `X-API-Key` (kompatibel MobiChat). */
+export type ApiKeyCredential = 'bearer' | 'x-api-key';
 
 export const PUBLIC: RouteAccess = { kind: 'public' };
 export const AUTHENTICATED: RouteAccess = { kind: 'authenticated' };
@@ -69,6 +78,11 @@ export function requirePermission(permission: Permission): RouteAccess {
 /** Rute API publik yang butuh scope API key ini (lihat `modules/api-keys/api-key-auth.ts`). */
 export function requireApiKeyScope(scope: ApiKeyScope): RouteAccess {
   return { kind: 'apiKey', scope };
+}
+
+/** Rute kompatibel MobiChat: API key di header `X-API-Key` dengan scope ini. */
+export function requireMobichatApiKeyScope(scope: ApiKeyScope): RouteAccess {
+  return { kind: 'apiKey', scope, credential: 'x-api-key' };
 }
 
 /** Satu rute terdaftar beserta aksesnya — untuk tes matriks peran × endpoint. */

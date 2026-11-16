@@ -5,6 +5,7 @@ import type { FastifyRequest } from 'fastify';
 import { and, eq, isNull, lt, or, sql } from 'drizzle-orm';
 
 import { clientInfo } from '../../http/client-info';
+import type { ApiKeyCredential } from '../../http/route-access';
 import { enforceRateLimit, type RateLimitRule, type RateLimiter } from '../../http/rate-limit';
 import { ipAllowed, parseApiKey, secretMatches } from './api-key-token';
 
@@ -35,7 +36,11 @@ declare module 'fastify' {
 }
 
 export interface ApiKeyAuthenticator {
-  authenticate(request: FastifyRequest, scope: ApiKeyScope | null): Promise<ApiKeyPrincipal>;
+  authenticate(
+    request: FastifyRequest,
+    scope: ApiKeyScope | null,
+    credential?: ApiKeyCredential,
+  ): Promise<ApiKeyPrincipal>;
 }
 
 export const API_KEY_RULE: RateLimitRule = { name: 'api-key', limit: 300, windowSeconds: 60 };
@@ -48,6 +53,24 @@ export const API_KEY_FAILURE_RULE: RateLimitRule = {
 const INVALID =
   'API key tidak valid, sudah dicabut, atau kedaluwarsa. Periksa header Authorization: Bearer <API key>.';
 const MISSING = 'API key wajib dikirim di header Authorization: Bearer <API key>.';
+const INVALID_X_API_KEY =
+  'API key tidak valid, sudah dicabut, atau kedaluwarsa. Periksa header X-API-Key.';
+const MISSING_X_API_KEY = 'API key wajib dikirim di header X-API-Key.';
+
+/**
+ * Nilai key dari permintaan. Lapisan MobiChat: header `X-API-Key` (nama header tidak peka huruf;
+ * key di query string sengaja TIDAK diterima — URL bisa masuk log proxy/riwayat).
+ */
+function presentedKey(request: FastifyRequest, credential: ApiKeyCredential): string | null {
+  if (credential === 'x-api-key') {
+    const header = request.headers['x-api-key'];
+    const value = Array.isArray(header) ? undefined : header?.trim();
+    return value ? value : null;
+  }
+  const header = request.headers.authorization;
+  const match = typeof header === 'string' ? /^Bearer +(\S+)$/i.exec(header) : null;
+  return match?.[1] ?? null;
+}
 
 export function createApiKeyAuthenticator(deps: {
   db: Database;
@@ -78,15 +101,19 @@ export function createApiKeyAuthenticator(deps: {
   }
 
   return {
-    async authenticate(request, scope) {
+    async authenticate(request, scope, credential = 'bearer') {
       const client = clientInfo(request);
       const ipKey = client.ip ?? 'tanpa-ip';
-      const header = request.headers.authorization;
-      const match = typeof header === 'string' ? /^Bearer +(\S+)$/i.exec(header) : null;
+      const invalid = credential === 'x-api-key' ? INVALID_X_API_KEY : INVALID;
+      const presented = presentedKey(request, credential);
       // Tanpa header bukan tebakan kunci: tidak dihitung ke batas kegagalan.
-      if (!match?.[1]) throw new AppError('UNAUTHENTICATED', { message: MISSING });
-      const parsed = parseApiKey(match[1]);
-      if (!parsed || !pepper) return fail(ipKey, INVALID);
+      if (!presented) {
+        throw new AppError('UNAUTHENTICATED', {
+          message: credential === 'x-api-key' ? MISSING_X_API_KEY : MISSING,
+        });
+      }
+      const parsed = parseApiKey(presented);
+      if (!parsed || !pepper) return fail(ipKey, invalid);
 
       const [key] = await db
         .select()
@@ -100,7 +127,7 @@ export function createApiKeyAuthenticator(deps: {
         key.revokedAt !== null ||
         (key.expiresAt !== null && key.expiresAt.getTime() <= at.getTime())
       ) {
-        return fail(ipKey, INVALID);
+        return fail(ipKey, invalid);
       }
       if (!ipAllowed(client.ip, key.allowedIps)) {
         throw new AppError('FORBIDDEN', {

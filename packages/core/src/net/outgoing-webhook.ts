@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto';
 import type { LookupAddress } from 'node:dns';
-import { lookup as dnsLookup } from 'node:dns/promises';
+import { Resolver } from 'node:dns/promises';
 import { request as httpRequest, type IncomingMessage, type RequestOptions } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { BlockList, isIP } from 'node:net';
@@ -43,6 +43,12 @@ for (const [address, prefix] of [
   ['fd00:ec2::254', 128],
   ['64:ff9b::', 96],
   ['2001:db8::', 32],
+  // Membungkus IPv4 (review webhook keluar R2): IPv4-compatible (usang), 6to4, NAT64 local-use
+  // (RFC 8215), Teredo — bisa menjangkau alamat internal lewat relay/terjemahan.
+  ['::', 96],
+  ['2002::', 16],
+  ['64:ff9b:1::', 48],
+  ['2001::', 32],
 ] as const) {
   FORBIDDEN.addSubnet(address, prefix, 'ipv6');
 }
@@ -191,7 +197,28 @@ function checkAddress(
 
 export type Lookup = (hostname: string) => Promise<readonly LookupAddress[]>;
 
-const defaultLookup: Lookup = (hostname) => dnsLookup(hostname, { all: true, verbatim: true });
+/**
+ * Resolusi bawaan (review webhook keluar R1): `dns.promises.Resolver` (c-ares, TANPA threadpool libuv
+ * yang dipakai bersama kirim Meta/email/DB) dengan batas waktu per percobaan kecil; A + AAAA
+ * paralel. Tidak membaca `/etc/hosts` — tujuan LAN dipakai lewat IP/DNS. Pemanggil tetap membungkusnya
+ * dengan tenggat total (`withDeadline`).
+ */
+const defaultLookup: Lookup = async (hostname) => {
+  const resolver = new Resolver({ timeout: 2_000, tries: 2 });
+  const [v4, v6] = await Promise.allSettled([
+    resolver.resolve4(hostname),
+    resolver.resolve6(hostname),
+  ]);
+  const addresses: LookupAddress[] = [
+    ...(v4.status === 'fulfilled' ? v4.value.map((address) => ({ address, family: 4 })) : []),
+    ...(v6.status === 'fulfilled' ? v6.value.map((address) => ({ address, family: 6 })) : []),
+  ];
+  if (addresses.length === 0) {
+    resolver.cancel();
+    throw new Error('dns');
+  }
+  return addresses;
+};
 
 /** `X-Balesin-Signature`: `t=<unix>,v1=<hex>` (+ `v1` rahasia lama selama masa tumpang tindih). */
 export function webhookSignature(
@@ -259,13 +286,18 @@ export async function deliverWebhook(
   if (isIP(host) !== 0) {
     addresses = [{ address: host, family: isIP(host) }];
   } else {
+    // Tenggat TOTAL mencakup DNS (review R1): DNS lambat tidak menahan worker melewati timeoutMs.
     try {
-      addresses = await (request.lookup ?? defaultLookup)(host);
-    } catch {
+      addresses = await withDeadline(
+        (request.lookup ?? defaultLookup)(host),
+        request.timeoutMs ?? 10_000,
+      );
+    } catch (error) {
+      const timedOut = error instanceof DeadlineError;
       return finish({
         ok: false,
         httpStatus: null,
-        errorCode: 'dns',
+        errorCode: timedOut ? 'timeout' : 'dns',
         snippet: null,
         retryable: true,
       });
@@ -304,7 +336,8 @@ export async function deliverWebhook(
     });
   }
 
-  const timeoutMs = request.timeoutMs ?? 10_000;
+  // Sisa tenggat setelah DNS.
+  const timeoutMs = Math.max(1, (request.timeoutMs ?? 10_000) - (Date.now() - started));
   const snippetBytes = request.snippetBytes ?? 500;
   const send = url.protocol === 'https:' ? httpsRequest : httpRequest;
   return new Promise<WebhookDeliveryResult>((resolve) => {
@@ -388,5 +421,212 @@ export async function deliverWebhook(
       done({ ok: false, httpStatus: null, errorCode: 'network', snippet: null, retryable: true });
     });
     outgoing.end(request.body);
+  });
+}
+
+// ── Unduh berkas dari URL (media_url lapisan kompatibel MobiChat) ──────────
+
+export type RemoteFileError =
+  WebhookTargetError | 'timeout' | 'network' | 'redirect' | 'too_large' | 'http';
+
+export interface RemoteFileRequest {
+  url: string;
+  privateCidrs: readonly string[];
+  /** Batas ukuran; lebih dari ini → `too_large` (unduhan dihentikan). */
+  maxBytes: number;
+  /** Tenggat TOTAL (semua lompatan redirect + DNS). Bawaan 15 dtk. */
+  timeoutMs?: number;
+  /** Bawaan 3. Setiap lompatan diperiksa ulang aturan SSRF yang sama. */
+  maxRedirects?: number;
+  lookup?: Lookup;
+  /** HANYA tes: izinkan 127.0.0.1/::1 + port bebas (server tiruan). */
+  allowLoopback?: boolean;
+}
+
+export type RemoteFileResult =
+  | { ok: true; body: Buffer; contentType: string | null; finalUrl: URL }
+  | { ok: false; error: RemoteFileError; httpStatus: number | null };
+
+/**
+ * GET berkas dari URL pihak ketiga dengan aturan SSRF yang SAMA dengan webhook keluar (alamat
+ * terlarang selalu ditolak, privat hanya lewat allowlist, https wajib untuk publik, port dibatasi,
+ * DNS sekali + soket ke alamat yang diperiksa). Redirect diikuti maks. `maxRedirects` kali dan SETIAP
+ * lompatan diperiksa ulang. Isi dibaca maks. `maxBytes`. Tanpa cookie/kredensial apa pun.
+ */
+export async function fetchRemoteFile(request: RemoteFileRequest): Promise<RemoteFileResult> {
+  const deadline = Date.now() + (request.timeoutMs ?? 15_000);
+  const options = { allowLoopback: request.allowLoopback ?? false };
+  let current = request.url;
+  for (let hop = 0; hop <= (request.maxRedirects ?? 3); hop += 1) {
+    const parsed = parseWebhookUrl(current, request.privateCidrs, options);
+    if ('error' in parsed) return { ok: false, error: parsed.error, httpStatus: null };
+    const { url, port } = parsed;
+    const host = url.hostname.replace(/^\[|\]$/g, '');
+    let addresses: readonly LookupAddress[];
+    if (isIP(host) !== 0) {
+      addresses = [{ address: host, family: isIP(host) }];
+    } else {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return { ok: false, error: 'timeout', httpStatus: null };
+      try {
+        addresses = await withDeadline((request.lookup ?? defaultLookup)(host), remaining);
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof DeadlineError ? 'timeout' : 'dns',
+          httpStatus: null,
+        };
+      }
+    }
+    if (addresses.length === 0) return { ok: false, error: 'dns', httpStatus: null };
+    for (const address of addresses) {
+      const verdict = checkAddress(address.address, url.protocol, request.privateCidrs, options);
+      if (verdict) return { ok: false, error: verdict, httpStatus: null };
+    }
+    const chosen = addresses[0] as LookupAddress;
+    const result = await getOnce(url, host, port, chosen, request.maxBytes, deadline);
+    if (result.kind === 'redirect') {
+      try {
+        current = new URL(result.location, url).href;
+      } catch {
+        return { ok: false, error: 'redirect', httpStatus: result.status };
+      }
+      continue;
+    }
+    return result.value;
+  }
+  return { ok: false, error: 'redirect', httpStatus: null };
+}
+
+class DeadlineError extends Error {}
+
+/** Janji yang ditolak `DeadlineError` bila belum selesai dalam `ms`. */
+export function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new DeadlineError('deadline'));
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  });
+}
+
+type HopResult =
+  | { kind: 'redirect'; location: string; status: number }
+  | { kind: 'done'; value: RemoteFileResult };
+
+function getOnce(
+  url: URL,
+  host: string,
+  port: number,
+  chosen: LookupAddress,
+  maxBytes: number,
+  deadline: number,
+): Promise<HopResult> {
+  const send = url.protocol === 'https:' ? httpsRequest : httpRequest;
+  return new Promise<HopResult>((resolve) => {
+    let settled = false;
+    const done = (result: HopResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const fail = (error: RemoteFileError, httpStatus: number | null = null) => {
+      done({ kind: 'done', value: { ok: false, error, httpStatus } });
+    };
+    const outgoing = send(
+      {
+        protocol: url.protocol,
+        hostname: host,
+        port,
+        path: `${url.pathname}${url.search}`,
+        method: 'GET',
+        headers: { 'user-agent': 'Balesin-Media/1.0', accept: '*/*' },
+        lookup: ((
+          _hostname: string,
+          lookupOptions: { all?: boolean },
+          callback: (...args: unknown[]) => void,
+        ) => {
+          if (lookupOptions.all)
+            callback(null, [{ address: chosen.address, family: chosen.family }]);
+          else callback(null, chosen.address, chosen.family);
+        }) as unknown as RequestOptions['lookup'],
+        ...(url.protocol === 'https:' ? { servername: isIP(host) === 0 ? host : undefined } : {}),
+        agent: false,
+      },
+      (response: IncomingMessage) => {
+        const status = response.statusCode ?? 0;
+        if (status >= 300 && status < 400) {
+          const location = response.headers.location;
+          response.destroy();
+          if (typeof location === 'string' && location !== '') {
+            done({ kind: 'redirect', location, status });
+          } else {
+            fail('redirect', status);
+          }
+          return;
+        }
+        if (status < 200 || status >= 300) {
+          response.destroy();
+          fail('http', status);
+          return;
+        }
+        const declared = Number(response.headers['content-length']);
+        if (Number.isFinite(declared) && declared > maxBytes) {
+          response.destroy();
+          fail('too_large', status);
+          return;
+        }
+        const chunks: Buffer[] = [];
+        let size = 0;
+        response.on('data', (chunk: Buffer) => {
+          size += chunk.length;
+          if (size > maxBytes) {
+            response.destroy();
+            fail('too_large', status);
+            return;
+          }
+          chunks.push(chunk);
+        });
+        response.on('end', () => {
+          const type = response.headers['content-type'];
+          done({
+            kind: 'done',
+            value: {
+              ok: true,
+              body: Buffer.concat(chunks),
+              contentType: typeof type === 'string' ? type : null,
+              finalUrl: url,
+            },
+          });
+        });
+        response.on('error', () => {
+          fail('network', status);
+        });
+        response.on('close', () => {
+          if (!response.complete) fail('network', status);
+        });
+      },
+    );
+    const timer = setTimeout(
+      () => {
+        outgoing.destroy();
+        fail('timeout');
+      },
+      Math.max(1, deadline - Date.now()),
+    );
+    outgoing.on('error', () => {
+      fail('network');
+    });
+    outgoing.end();
   });
 }

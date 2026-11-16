@@ -41,10 +41,12 @@ import {
 
 /** `public` tanpa sesi · `session` cukup sesi penuh · `enrollment` sesi penuh atau sesi terbatas 2FA. */
 /** `apikey:<scope>` = API publik (Bearer API key, tanpa sesi); `apikey:*` = key sah apa pun (405). */
-type ApiKeyExpectation = `apikey:${ApiKeyScope}` | 'apikey:*';
+/** `mobichat:<scope>` = lapisan kompatibel MobiChat (header `X-API-Key`, tanpa sesi). */
+type ApiKeyExpectation =
+  `apikey:${ApiKeyScope}` | 'apikey:*' | `mobichat:${ApiKeyScope}` | 'mobichat:*';
 type Expectation = 'public' | 'session' | 'enrollment' | Permission | ApiKeyExpectation;
 const isApiKeyExpectation = (value: Expectation): value is ApiKeyExpectation =>
-  value.startsWith('apikey:');
+  value.startsWith('apikey:') || value.startsWith('mobichat:');
 
 /**
  * SEMUA rute modul (tanpa HEAD otomatis dan pelengkap 405 — keduanya diturunkan dari sini).
@@ -227,6 +229,20 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'PATCH /api/v1/public/contacts/:contactId': 'apikey:contacts:write',
   'POST /api/v1/public/contacts/:contactId/tags': 'apikey:contacts:write',
   'DELETE /api/v1/public/contacts/:contactId/tags': 'apikey:contacts:write',
+  // kompatibel MobiChat: HANYA header X-API-Key + scope (sesi web apa pun → 401)
+  'GET /api/public/messages': 'mobichat:messages:read',
+  'POST /api/public/messages': 'mobichat:messages:send',
+  'GET /api/public/conversation-status': 'mobichat:conversations:read',
+  'POST /api/public/conversation-status': 'mobichat:conversations:write',
+  'POST /api/public/unassign-agent': 'mobichat:conversations:write',
+  'POST /api/public/agents': 'mobichat:conversations:write',
+  'POST /api/public/conversation/notes': 'mobichat:conversations:write',
+  'PUT /api/public/contacts': 'mobichat:contacts:write',
+  'PUT /api/public/tags/whatsapp': 'mobichat:contacts:write',
+  // URL media bertanda tangan (HMAC + key penanda tangan dicek ulang) — tanpa header
+  'GET /api/public/media/:messageNumber': 'public',
+  'POST /api/bot/reply': 'mobichat:messages:send',
+  'POST /api/bot/reply/media': 'mobichat:messages:send',
   // dokumentasi API publik (tanpa sesi; bisa dimatikan Pengaturan → API)
   'GET /api/docs': 'public',
   'GET /api/docs/app.css': 'public',
@@ -241,8 +257,13 @@ const LOGOUT = 'POST /api/v1/auth/logout';
 
 function accessOf(expectation: Expectation): RouteAccess {
   if (isApiKeyExpectation(expectation)) {
-    const scope = expectation.slice('apikey:'.length);
-    return { kind: 'apiKey', scope: scope === '*' ? null : (scope as ApiKeyScope) };
+    const mobichat = expectation.startsWith('mobichat:');
+    const scope = expectation.slice(expectation.indexOf(':') + 1);
+    return {
+      kind: 'apiKey',
+      scope: scope === '*' ? null : (scope as ApiKeyScope),
+      ...(mobichat ? { credential: 'x-api-key' as const } : {}),
+    };
   }
   switch (expectation) {
     case 'public':
@@ -262,7 +283,8 @@ function complementExpectation(expectations: readonly Expectation[]): Expectatio
   if (expectations.every(isApiKeyExpectation)) {
     const scopes = new Set(expectations);
     const [only] = scopes;
-    return scopes.size === 1 && only ? only : 'apikey:*';
+    if (scopes.size === 1 && only) return only;
+    return expectations.every((value) => value.startsWith('mobichat:')) ? 'mobichat:*' : 'apikey:*';
   }
   const distinct = new Set(expectations);
   const [only] = distinct;
@@ -308,7 +330,19 @@ function observedOutcome(response: Response): Observed {
   if (response.body === '') {
     return response.statusCode === 401 ? 'unauthenticated' : 'forbidden_head';
   }
-  const { code, message } = errorEnvelopeSchema.parse(response.json()).error;
+  // Lapisan kompatibel MobiChat menjawab dengan bentuk MobiChat (`{ success: false, code }` /
+  // `{ error }`), bukan amplop standar.
+  const body: unknown = response.json();
+  if (
+    typeof body === 'object' &&
+    body !== null &&
+    !('error' in body && typeof body.error === 'object')
+  ) {
+    if (response.statusCode === 401) return 'unauthenticated';
+    if ('code' in body && body.code === 'CSRF_INVALID') return 'forbidden';
+    return 'allowed';
+  }
+  const { code, message } = errorEnvelopeSchema.parse(body).error;
   if (code === 'UNAUTHENTICATED') return 'unauthenticated';
   if (code === 'TWO_FACTOR_ENROLLMENT_REQUIRED') return 'enrollment_required';
   // 403 dari handler sendiri (mis. Admin mengundang Admin) memakai pesan khusus; penolakan
@@ -333,6 +367,7 @@ const SAMPLE_PARAMS: Readonly<Record<string, string>> = {
   apiKeyId: '00000000-0000-4000-8000-0000000000a5',
   webhookId: '00000000-0000-4000-8000-0000000000a6',
   deliveryId: '00000000-0000-4000-8000-0000000000a7',
+  messageNumber: '1',
 };
 
 function concreteUrl(pattern: string): string {

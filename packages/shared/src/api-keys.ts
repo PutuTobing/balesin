@@ -19,11 +19,13 @@ export const API_KEY_PATTERN = /^blsn_live_([0-9a-f]{16})_([A-Za-z0-9_-]{43})$/;
 
 /**
  * Scope bertingkat: `…:write`/`send` MENCAKUP `…:read` sumber yang sama. Scope lain dari API-N8N
- * (`messages:initiate`, `broadcasts:write`, `tickets:write`, `reports:read`, `webhooks:manage`,
- * `conversations:write`) ditambahkan bersama fiturnya.
+ * (`messages:initiate`, `broadcasts:write`, `tickets:write`, `reports:read`, `webhooks:manage`)
+ * ditambahkan bersama fiturnya. `conversations:write` (lapisan kompatibel MobiChat): lepas bot /
+ * handoff, tugaskan agen, ubah status, tulis catatan sesi.
  */
 export const API_KEY_SCOPES = [
   'conversations:read',
+  'conversations:write',
   'messages:read',
   'messages:send',
   'contacts:read',
@@ -34,6 +36,8 @@ export type ApiKeyScope = z.infer<typeof apiKeyScopeSchema>;
 
 export const API_KEY_SCOPE_LABELS: Readonly<Record<ApiKeyScope, string>> = {
   'conversations:read': 'Baca percakapan',
+  'conversations:write':
+    'Tangani percakapan: lepas bot ke antrian, tugaskan agen, tandai selesai, tulis catatan tim',
   'messages:read': 'Baca pesan & statusnya',
   'messages:send': 'Kirim pesan di percakapan yang sudah ada (termasuk unggah media)',
   'contacts:read': 'Baca & cari kontak',
@@ -43,6 +47,7 @@ export const API_KEY_SCOPE_LABELS: Readonly<Record<ApiKeyScope, string>> = {
 /** Scope yang ikut didapat karena memegang scope lain (tingkatan). */
 export const API_KEY_SCOPE_IMPLIES: Readonly<Record<ApiKeyScope, readonly ApiKeyScope[]>> = {
   'conversations:read': [],
+  'conversations:write': ['conversations:read'],
   'messages:read': ['conversations:read'],
   'messages:send': ['messages:read', 'conversations:read'],
   'contacts:read': [],

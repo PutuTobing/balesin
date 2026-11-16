@@ -13,6 +13,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import { apiKeys } from './api-keys';
 import { createdAtColumn, idColumn, timestamptz, updatedAtColumn } from './columns';
 import { organizations } from './organizations';
 import { users } from './users';
@@ -59,7 +60,13 @@ export const webhookEndpointDisabledReason = pgEnum('webhook_endpoint_disabled_r
 /**
  * Endpoint webhook keluar. Rahasia penandatangan terenkripsi kotak rahasia
  * (`webhook_endpoints.secret`, AAD = organisasi + ID endpoint); rahasia lama disimpan selama masa
- * tumpang tindih rotasi. `format` = titik kait mode kompatibel MobiChat (butir berikutnya).
+ * tumpang tindih rotasi.
+ *
+ * `format = 'mobichat'` (lapisan kompatibel MobiChat, docs/KONTRAK-API-MOBICHAT.md): body berbentuk
+ * webhook MobiChat + `mobichat_base_url`/`mobichat_api_key` yang DISISIPKAN SAAT KIRIM (tidak pernah
+ * tersimpan di `webhook_deliveries.payload`). API key-nya disimpan terenkripsi kotak rahasia
+ * (`mobichat_api_key_encrypted`, AAD = organisasi + ID endpoint) + ID key-nya (dicek masih aktif saat
+ * kirim) + 4 karakter terakhir untuk tampilan. `format` tidak bisa diubah setelah dibuat.
  */
 export const webhookEndpoints = pgTable(
   'webhook_endpoints',
@@ -72,6 +79,11 @@ export const webhookEndpoints = pgTable(
     description: text('description'),
     events: text('events').array().notNull(),
     format: text('format').notNull().default('native'),
+    /** Mode MobiChat: alamat Balesin yang dipanggil balik workflow (`null` = `APP_URL`). */
+    mobichatBaseUrl: text('mobichat_base_url'),
+    mobichatApiKeyEncrypted: text('mobichat_api_key_encrypted'),
+    mobichatApiKeyId: uuid('mobichat_api_key_id'),
+    mobichatApiKeyLast4: text('mobichat_api_key_last4'),
     secretEncrypted: text('secret_encrypted').notNull(),
     secretRotatedAt: timestamptz('secret_rotated_at').notNull().defaultNow(),
     previousSecretEncrypted: text('previous_secret_encrypted'),
@@ -92,7 +104,20 @@ export const webhookEndpoints = pgTable(
       foreignColumns: [users.organizationId, users.id],
     }).onDelete('restrict'),
     check('webhook_endpoints_url_length', sql`char_length(${table.url}) between 8 and 2048`),
-    check('webhook_endpoints_format_known', sql`${table.format} in ('native')`),
+    foreignKey({
+      name: 'webhook_endpoints_organization_id_mobichat_api_key_id_fk',
+      columns: [table.organizationId, table.mobichatApiKeyId],
+      foreignColumns: [apiKeys.organizationId, apiKeys.id],
+    }).onDelete('restrict'),
+    check('webhook_endpoints_format_known', sql`${table.format} in ('native', 'mobichat')`),
+    check(
+      'webhook_endpoints_mobichat_consistent',
+      sql`case when ${table.format} = 'mobichat' then ${table.mobichatApiKeyEncrypted} is not null and ${table.mobichatApiKeyId} is not null and ${table.mobichatApiKeyLast4} is not null else ${table.mobichatApiKeyEncrypted} is null and ${table.mobichatApiKeyId} is null and ${table.mobichatApiKeyLast4} is null and ${table.mobichatBaseUrl} is null end`,
+    ),
+    check(
+      'webhook_endpoints_mobichat_base_url_length',
+      sql`${table.mobichatBaseUrl} is null or char_length(${table.mobichatBaseUrl}) between 8 and 2048`,
+    ),
     check('webhook_endpoints_events_count', sql`cardinality(${table.events}) between 1 and 50`),
     check(
       'webhook_endpoints_disabled_consistent',

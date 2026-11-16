@@ -119,7 +119,11 @@ export function registerAuthHook(app: FastifyInstance, options: AuthHookOptions)
     // API publik: HANYA Bearer API key — cookie sesi diabaikan sepenuhnya (tanpa CSRF).
     if (access.kind === 'apiKey') {
       if (!options.apiKeys) throw new AppError('UNAUTHENTICATED');
-      request.apiKey = await options.apiKeys.authenticate(request, access.scope);
+      request.apiKey = await options.apiKeys.authenticate(
+        request,
+        access.scope,
+        access.credential ?? 'bearer',
+      );
       return;
     }
     // Jenis yang tidak dikenal (seharusnya sudah digagalkan saat start) tidak pernah diloloskan.

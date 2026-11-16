@@ -34,7 +34,7 @@ import { conversationScope, likePattern } from '../inbox/inbox.repo';
  *   Teksnya dikirim lewat endpoint kirim pesan biasa (batas kirim & jendela 24 jam tetap berlaku).
  */
 
-export const QUICK_REPLY_NOT_FOUND = 'Template percakapan tidak ditemukan.';
+export const QUICK_REPLY_NOT_FOUND = 'Balasan cepat tidak ditemukan.';
 
 /** Isi template di audit dipotong (teks bisnis; cukup untuk menelusuri perubahan). */
 const AUDIT_BODY_MAX = 3_500;
@@ -203,7 +203,7 @@ export function createQuickRepliesService(deps: {
             .where(eq(quickReplies.organizationId, auth.organizationId));
           if (Number(count?.total ?? 0) >= QUICK_REPLIES_PER_ORGANIZATION_MAX) {
             throw new AppError('CONFLICT', {
-              message: `Sudah ada ${String(QUICK_REPLIES_PER_ORGANIZATION_MAX)} template percakapan (batas). Hapus yang tidak dipakai dulu.`,
+              message: `Sudah ada ${String(QUICK_REPLIES_PER_ORGANIZATION_MAX)} balasan cepat (batas). Hapus yang tidak dipakai dulu.`,
             });
           }
           const [row] = await tx

@@ -2,18 +2,19 @@
 
 Balesin mengirim event ke sistem lain (n8n, bot, CRM) lewat HTTP POST bertanda tangan. Skema Zod:
 `packages/shared/src/outgoing-webhooks.ts`. Alamat pengelolaan: `API_ROUTES.outgoingWebhooks`.
-Mode kompatibel MobiChat (body + `mobichat_base_url`/`mobichat_api_key`) = butir berikutnya; titik
-kaitnya kolom `webhook_endpoints.format` (sekarang hanya `native`) dan `buildEventBody` di worker.
+Format body: `native` (di bawah) atau `mobichat` (body webhook MobiChat + `mobichat_base_url`/
+`mobichat_api_key` disisipkan saat kirim, hanya `message.received`) — lihat
+`docs/KONTRAK-API-MOBICHAT.md` "Webhook keluar format MobiChat".
 
 ## Mengelola (Pengaturan → Webhook) — `integrations.manage` (Owner/Admin)
 
 | Endpoint | Keterangan |
 |---|---|
 | `GET /api/v1/settings/webhooks` | `{ webhooks: [{ id, url, description, events, enabled, disabledReason, consecutiveFailures, lastDeliveryAt, secretRotatedAt, previousSecretExpiresAt, createdAt }] }` |
-| `POST /api/v1/settings/webhooks` | `{ url, events (≥ 1), description?, confirmation }` — **wajib konfirmasi identitas** → **201** `{ webhook, secret }` (`whsec_…`, **tampil SEKALI**, `no-store`). Maks. 10 webhook |
-| `PATCH /api/v1/settings/webhooks/:id` | `{ url?, events?, description?, enabled?, confirmation? }` — `url` BERUBAH = wajib konfirmasi; aktif/nonaktif & event tanpa konfirmasi. Mengaktifkan lagi menyetel ulang hitungan gagal |
+| `POST /api/v1/settings/webhooks` | `{ url, events (≥ 1), description?, format? (native/mobichat), mobichat? { apiKey, baseUrl? }, confirmation }` — **wajib konfirmasi identitas** → **201** `{ webhook, secret }` (`whsec_…`, **tampil SEKALI**, `no-store`). Maks. 10 webhook. Jawaban juga memuat `format` + `mobichat { baseUrl, apiKeyLast4, apiKeyId, apiKeyName, apiKeyStatus }` (tanpa key utuh) |
+| `PATCH /api/v1/settings/webhooks/:id` | `{ url?, events?, description?, enabled?, mobichat? { apiKey?, baseUrl? }, confirmation? }` — `url` BERUBAH atau `mobichat` key/alamat berubah = wajib konfirmasi; aktif/nonaktif & event tanpa konfirmasi. Mengaktifkan lagi menyetel ulang hitungan gagal. `format` tidak bisa diubah |
 | `DELETE /api/v1/settings/webhooks/:id` | → `{ deleted: true }` (riwayatnya ikut terhapus) |
-| `POST /api/v1/settings/webhooks/:id/rotate-secret` | `{ confirmation }` → `{ webhook, secret }` baru; rahasia LAMA tetap ikut ditandatangani 24 jam (`previousSecretExpiresAt`) |
+| `POST /api/v1/settings/webhooks/:id/rotate-secret` | `{ confirmation, revokePrevious? }` → `{ webhook, secret }` baru; rahasia LAMA tetap ikut ditandatangani 24 jam (`previousSecretExpiresAt`), kecuali `revokePrevious: true` (bocor) → langsung berhenti |
 | `POST /api/v1/settings/webhooks/:id/test` | Kirim event `webhook.test` → **201** `{ delivery }` (dikirim worker ≤ 5 dtk) |
 | `GET /api/v1/settings/webhooks/:id/deliveries?cursor=&limit=` | Riwayat terbaru dulu: `{ deliveries: [{ id, event, status (pending/succeeded/failed), attempts, httpStatus, durationMs, error, responseSnippet, payloadPurged, createdAt, deliveredAt, nextAttemptAt }], nextCursor }` |
 | `POST /api/v1/settings/webhooks/:id/deliveries/:deliveryId/redeliver` | Kirim ulang body yang SAMA (ID pengiriman baru) → **201**; isi sudah lewat masa simpan → **409** |
@@ -72,9 +73,14 @@ X-Balesin-Signature: t=<unix detik>,v1=<hex>[,v1=<hex rahasia lama>]
 - Port: 80, 443, 5678 (n8n), 8080, 8443. Tanpa kredensial di URL.
 - Alamat SELALU ditolak: loopback, 0/8, link-local 169.254/16 & fe80::/10 (termasuk metadata cloud
   169.254.169.254, fd00:ec2::254), multicast, broadcast, cadangan 240/4, 192.0.0/24, 198.18/15,
-  64:ff9b::/96, 2001:db8::/32; IPv4-mapped IPv6 diperiksa sebagai IPv4.
+  64:ff9b::/96, 2001:db8::/32, serta IPv6 pembungkus IPv4 `::/96`, 6to4 `2002::/16`, NAT64 local-use
+  `64:ff9b:1::/48`, Teredo `2001::/32`; IPv4-mapped IPv6 diperiksa sebagai IPv4.
 - Jaringan privat (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7) hanya bila CIDR-nya ada di
   allowlist organisasi.
-- DNS di-resolve SEKALI; SEMUA alamat hasilnya harus lolos; soket disambungkan ke alamat yang sudah
-  diperiksa (tanpa resolusi kedua → kebal DNS rebinding); SNI/Host tetap nama aslinya.
+- DNS di-resolve SEKALI lewat resolver c-ares (`dns.promises.Resolver`, A + AAAA, bukan threadpool;
+  `/etc/hosts` tidak dibaca) DI DALAM tenggat total 10 dtk; SEMUA alamat hasilnya harus lolos; soket
+  disambungkan ke alamat yang sudah diperiksa (tanpa resolusi kedua → kebal DNS rebinding); SNI/Host
+  tetap nama aslinya.
+- Kejadian outbox yang gagal dibangun dibuang per kejadian (savepoint) + dicatat (ID + kode galat), tidak
+  memacetkan kejadian lain. Log galat worker tanpa teks/parameter kueri.
 - Diperiksa saat menyimpan (sintaksis + IP literal) DAN setiap pengiriman (setelah DNS).

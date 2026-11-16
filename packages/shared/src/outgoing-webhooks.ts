@@ -55,6 +55,51 @@ export const OUTGOING_WEBHOOK_SECRET_OVERLAP_HOURS = 24;
 export const OUTGOING_WEBHOOK_PAYLOAD_RETENTION_DAYS = 7;
 export const OUTGOING_WEBHOOK_PRIVATE_CIDRS_MAX = 20;
 
+/**
+ * Bentuk body: `native` (`{ id, event, created_at, data }`) atau `mobichat` (body webhook MobiChat +
+ * `mobichat_base_url`/`mobichat_api_key`, docs/KONTRAK-API-MOBICHAT.md). Tidak bisa diubah setelah
+ * webhook dibuat.
+ */
+export const OUTGOING_WEBHOOK_FORMATS = ['native', 'mobichat'] as const;
+export const outgoingWebhookFormatSchema = z.enum(OUTGOING_WEBHOOK_FORMATS, {
+  error: 'Format webhook tidak dikenal.',
+});
+export type OutgoingWebhookFormat = z.infer<typeof outgoingWebhookFormatSchema>;
+
+/** Mode MobiChat hanya mengirim pesan masuk pelanggan (seperti bot eksternal MobiChat). */
+export const MOBICHAT_WEBHOOK_EVENTS = ['message.received'] as const;
+
+/**
+ * Pengaturan mode MobiChat. `apiKey` = API key Balesin UTUH (`blsn_live_…`, dibuat di Pengaturan →
+ * API key) yang disisipkan ke setiap body sebagai `mobichat_api_key` supaya node Code n8n bisa
+ * memanggil balik. Disimpan terenkripsi, tampil 4 karakter terakhir saja. `baseUrl` = alamat Balesin
+ * yang dipakai n8n (`null` = alamat aplikasi, `APP_URL`); http/https tanpa query/kredensial.
+ */
+const mobichatBaseUrlSchema = z
+  .string()
+  .trim()
+  .min(8, 'Alamat Balesin terlalu pendek.')
+  .max(2048, 'Alamat Balesin terlalu panjang.')
+  .refine((value) => !hasControlCharacters(value), 'Alamat memuat karakter khusus.');
+const mobichatApiKeySchema = z
+  .string({ error: 'API key wajib diisi.' })
+  .trim()
+  .min(1, 'API key wajib diisi.')
+  .max(200, 'API key tidak valid.');
+
+export const outgoingWebhookMobichatInputSchema = z.object({
+  baseUrl: mobichatBaseUrlSchema.nullable().optional(),
+  apiKey: mobichatApiKeySchema,
+});
+export const outgoingWebhookMobichatPatchSchema = z
+  .object({
+    baseUrl: mobichatBaseUrlSchema.nullable().optional(),
+    apiKey: mobichatApiKeySchema.optional(),
+  })
+  .refine((value) => value.baseUrl !== undefined || value.apiKey !== undefined, {
+    error: 'Tidak ada pengaturan MobiChat yang diubah.',
+  });
+
 const urlSchema = z
   .string({ error: 'URL webhook wajib diisi.' })
   .trim()
@@ -73,12 +118,45 @@ const descriptionSchema = z
   .max(120, 'Keterangan maksimal 120 karakter.')
   .refine((value) => !hasControlCharacters(value), 'Keterangan memuat karakter khusus.');
 
-export const createOutgoingWebhookRequestSchema = z.object({
-  url: urlSchema,
-  events: eventsSchema,
-  description: descriptionSchema.optional(),
-  confirmation: identityConfirmationSchema.optional(),
-});
+export const createOutgoingWebhookRequestSchema = z
+  .object({
+    url: urlSchema,
+    events: eventsSchema,
+    description: descriptionSchema.optional(),
+    /** Bawaan `native`. */
+    format: outgoingWebhookFormatSchema.optional(),
+    /** Wajib bila `format` = `mobichat`; dilarang untuk `native`. */
+    mobichat: outgoingWebhookMobichatInputSchema.optional(),
+    confirmation: identityConfirmationSchema.optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.format === 'mobichat') {
+      if (!value.mobichat) {
+        context.addIssue({
+          code: 'custom',
+          path: ['mobichat', 'apiKey'],
+          message: 'Mode MobiChat butuh API key untuk disisipkan ke webhook.',
+        });
+      }
+      if (
+        value.events.some(
+          (event) => !(MOBICHAT_WEBHOOK_EVENTS as readonly string[]).includes(event),
+        )
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['events'],
+          message: 'Mode MobiChat hanya mengirim event "message.received" (pesan masuk).',
+        });
+      }
+    } else if (value.mobichat) {
+      context.addIssue({
+        code: 'custom',
+        path: ['mobichat'],
+        message: 'Pengaturan MobiChat hanya untuk webhook format MobiChat.',
+      });
+    }
+  });
 export type CreateOutgoingWebhookRequest = z.input<typeof createOutgoingWebhookRequestSchema>;
 
 /** Ubah: konfirmasi identitas WAJIB bila `url` berubah (jalur data pelanggan ke luar). */
@@ -88,6 +166,8 @@ export const updateOutgoingWebhookRequestSchema = z
     events: eventsSchema.optional(),
     description: descriptionSchema.nullable().optional(),
     enabled: z.boolean().optional(),
+    /** Hanya webhook format MobiChat. Mengubah `apiKey`/`baseUrl` = wajib konfirmasi identitas. */
+    mobichat: outgoingWebhookMobichatPatchSchema.optional(),
     confirmation: identityConfirmationSchema.optional(),
   })
   .refine(
@@ -95,13 +175,19 @@ export const updateOutgoingWebhookRequestSchema = z
       value.url !== undefined ||
       value.events !== undefined ||
       value.description !== undefined ||
-      value.enabled !== undefined,
+      value.enabled !== undefined ||
+      value.mobichat !== undefined,
     { error: 'Tidak ada yang diubah.' },
   );
 export type UpdateOutgoingWebhookRequest = z.input<typeof updateOutgoingWebhookRequestSchema>;
 
 export const rotateOutgoingWebhookSecretRequestSchema = z.object({
   confirmation: identityConfirmationSchema.optional(),
+  /**
+   * `true` = rahasia LAMA langsung berhenti ditandatangani (bila bocor). Bawaan: tetap ikut 24 jam
+   * supaya penerima sempat berganti tanpa menolak pengiriman.
+   */
+  revokePrevious: z.boolean().optional(),
 });
 
 export const outgoingWebhookSchema = z.object({
@@ -118,6 +204,22 @@ export const outgoingWebhookSchema = z.object({
   /** Rahasia lama masih ikut ditandatangani sampai waktu ini (rotasi). */
   previousSecretExpiresAt: isoDateTimeSchema.nullable(),
   createdAt: isoDateTimeSchema,
+  /** Server selalu mengisi; opsional di skema supaya data tiruan web lama tetap sah. */
+  format: outgoingWebhookFormatSchema.optional(),
+  /**
+   * Mode MobiChat (`null` untuk `native`). API key TIDAK PERNAH dikirim — hanya 4 karakter
+   * terakhirnya + key yang dipakai (nama, status) supaya admin tahu kapan harus menggantinya.
+   */
+  mobichat: z
+    .object({
+      baseUrl: z.string().nullable(),
+      apiKeyLast4: z.string(),
+      apiKeyId: z.uuid(),
+      apiKeyName: z.string().nullable(),
+      apiKeyStatus: z.enum(['active', 'expired', 'revoked']),
+    })
+    .nullable()
+    .optional(),
 });
 export type OutgoingWebhook = z.infer<typeof outgoingWebhookSchema>;
 

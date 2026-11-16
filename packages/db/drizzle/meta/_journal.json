@@ -155,6 +155,13 @@
       "when": 1794864443558,
       "tag": "0021_webhook_keluar",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794866243360,
+      "tag": "0022_kompat_mobichat",
+      "breakpoints": true
     }
   ]
 }

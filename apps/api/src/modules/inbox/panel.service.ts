@@ -1,5 +1,6 @@
 import { AppError, type InboxEventPublisher } from '@balesin/core';
 import {
+  apiKeys,
   conversationEvents,
   conversationNotes,
   conversations,
@@ -22,6 +23,7 @@ import {
 import { and, asc, eq, sql } from 'drizzle-orm';
 
 import type { ClientInfo } from '../../http/client-info';
+import { assertApiKeyStillAuthorized, type ApiKeyActor } from '../api-keys/api-key-actor';
 import { ACCESS_RULES, forbidByRule, type AccessDeniedRecorder } from '../auth/access-denied';
 import { assertActorStillAuthorized, authorityChanged } from '../auth/actor-check';
 import type { PermissionGrant } from '../auth/permission-grant';
@@ -62,6 +64,11 @@ export interface PanelService {
     body: string,
   ): Promise<ConversationNote>;
   deleteNote(context: PanelContext, conversationId: string, noteId: string): Promise<void>;
+  /**
+   * Catatan dari bot lewat lapisan kompatibel MobiChat (`conversations:write`, pelaku = API key,
+   * cakupan organisasi). Tampil dengan penulis "Bot · <nama key>"; hanya bisa dihapus moderator.
+   */
+  addNoteAsApiKey(actor: ApiKeyActor, conversationId: string, body: string): Promise<void>;
   /** Pasang (`true`) / lepas (`false`) tanda. Mengembalikan baris pesan terbaru. */
   star(context: PanelContext, messageId: string, starred: boolean): Promise<MessageRow>;
 }
@@ -73,19 +80,24 @@ const MESSAGE_NOT_FOUND = 'Pesan tidak ditemukan.';
 interface NoteRowView {
   id: string;
   body: string;
-  authorUserId: string;
-  authorName: string;
+  authorUserId: string | null;
+  authorName: string | null;
+  apiKeyId: string | null;
+  apiKeyName: string | null;
   createdAt: Date;
   updatedAt: Date;
   editedAt: Date | null;
 }
 
 function toNote(row: NoteRowView, userId: string, role: UserRole): ConversationNote {
-  const mine = row.authorUserId === userId;
+  const mine = row.authorUserId !== null && row.authorUserId === userId;
   return {
     id: row.id,
     body: row.body,
-    author: { id: row.authorUserId, name: row.authorName },
+    author:
+      row.authorUserId !== null
+        ? { id: row.authorUserId, name: row.authorName ?? 'Pengguna' }
+        : { id: row.apiKeyId ?? row.id, name: `Bot · ${row.apiKeyName ?? 'API key'}` },
     createdAt: row.createdAt.toISOString(),
     updatedAt: (row.editedAt ?? row.createdAt).toISOString(),
     edited: row.editedAt !== null,
@@ -146,16 +158,25 @@ export function createPanelService(deps: {
         body: conversationNotes.body,
         authorUserId: conversationNotes.authorUserId,
         authorName: users.name,
+        apiKeyId: conversationNotes.apiKeyId,
+        apiKeyName: apiKeys.name,
         createdAt: conversationNotes.createdAt,
         updatedAt: conversationNotes.updatedAt,
         editedAt: conversationNotes.editedAt,
       })
       .from(conversationNotes)
-      .innerJoin(
+      .leftJoin(
         users,
         and(
           eq(users.organizationId, conversationNotes.organizationId),
           eq(users.id, conversationNotes.authorUserId),
+        ),
+      )
+      .leftJoin(
+        apiKeys,
+        and(
+          eq(apiKeys.organizationId, conversationNotes.organizationId),
+          eq(apiKeys.id, conversationNotes.apiKeyId),
         ),
       )
       .where(
@@ -263,6 +284,52 @@ export function createPanelService(deps: {
       });
       await detailChanged(auth.organizationId, conversationId, 'notes');
       return toNote(row, auth.user.id, role);
+    },
+
+    async addNoteAsApiKey(actor, conversationId, body) {
+      await db.transaction(async (tx) => {
+        await assertApiKeyStillAuthorized(tx, actor, 'conversations:write', now());
+        const [row] = await tx
+          .select({ id: conversations.id })
+          .from(conversations)
+          .where(
+            and(
+              eq(conversations.organizationId, actor.organizationId),
+              eq(conversations.id, conversationId),
+            ),
+          )
+          .for('share');
+        if (!row) throw new AppError('NOT_FOUND', { message: CONVERSATION_NOT_FOUND });
+        const [count] = await tx
+          .select({ total: sql<number>`count(*)::int` })
+          .from(conversationNotes)
+          .where(
+            and(
+              eq(conversationNotes.organizationId, actor.organizationId),
+              eq(conversationNotes.conversationId, conversationId),
+            ),
+          );
+        if (Number(count?.total ?? 0) >= CONVERSATION_NOTES_MAX) {
+          throw new AppError('CONFLICT', {
+            message: `Percakapan ini sudah punya ${String(CONVERSATION_NOTES_MAX)} catatan (batas).`,
+          });
+        }
+        await tx.insert(conversationNotes).values({
+          organizationId: actor.organizationId,
+          conversationId,
+          authorUserId: null,
+          apiKeyId: actor.apiKeyId,
+          body,
+        });
+        await tx.insert(conversationEvents).values({
+          organizationId: actor.organizationId,
+          conversationId,
+          kind: 'note_added',
+          actorUserId: null,
+          apiKeyId: actor.apiKeyId,
+        });
+      });
+      await detailChanged(actor.organizationId, conversationId, 'notes');
     },
 
     async editNote({ auth, client }, conversationId, noteId, body) {

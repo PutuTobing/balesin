@@ -14,6 +14,7 @@ import {
   type SecurityNoticeAdminEmailPayload,
 } from '@balesin/core';
 import {
+  apiKeys,
   auditLogs,
   contactTags,
   contacts,
@@ -68,6 +69,11 @@ export interface WebhooksOutDeps {
   now?: () => Date;
   /** Email ke Owner saat endpoint dinonaktifkan otomatis. */
   notifyOwner?: (payload: SecurityNoticeAdminEmailPayload) => Promise<void>;
+  /**
+   * Alamat aplikasi (`APP_URL`) = `mobichat_base_url` bawaan untuk webhook format MobiChat (endpoint
+   * boleh menimpanya).
+   */
+  appUrl?: string;
   /** Tes saja. */
   lookup?: Lookup;
   /** Tes saja: izinkan server penerima tiruan di 127.0.0.1. */
@@ -217,9 +223,206 @@ export async function buildEventBody(
   return { id: event.id, event: event.type, created_at: event.createdAt.toISOString(), data };
 }
 
+/** Teks ringkas pesan untuk bot (lokasi/tombol jadi teks; sama dengan riwayat kompatibel). */
+function mobichatText(row: typeof messages.$inferSelect): string | null {
+  const location = row.location as {
+    latitude?: number;
+    longitude?: number;
+    name?: string | null;
+    address?: string | null;
+  } | null;
+  if (location && typeof location.latitude === 'number' && typeof location.longitude === 'number') {
+    const label = [location.name, location.address]
+      .filter((part) => part && part.trim())
+      .join(', ');
+    return `[lokasi] ${label ? `${label} ` : ''}https://maps.google.com/?q=${String(location.latitude)},${String(location.longitude)}`;
+  }
+  if (row.text) return row.text;
+  const interactive = (row.extras as { interactive?: { title?: unknown } } | null)?.interactive;
+  return typeof interactive?.title === 'string' ? interactive.title : null;
+}
+
+const MOBICHAT_FALLBACK_MIME: Readonly<Record<string, string>> = {
+  image: 'image/jpeg',
+  video: 'video/mp4',
+  audio: 'audio/ogg',
+  document: 'application/octet-stream',
+  sticker: 'image/webp',
+};
+
+/**
+ * Body format MobiChat (docs/KONTRAK-API-MOBICHAT.md "Webhook"; API-MOBICHAT-MAPPING §3.1): field
+ * top-level + objek bersarang cadangan, ID numerik (`conversations.number`, `messages.number`).
+ * HANYA `message.received` (pesan pelanggan). `mobichat_base_url`/`mobichat_api_key` TIDAK ada di
+ * sini — disisipkan saat kirim (`withMobichatCredentials`), supaya API key tidak pernah tersimpan di
+ * riwayat pengiriman. Lampiran tanpa URL (URL bertanda tangan ada di `GET /api/public/messages`).
+ */
+export async function buildMobichatBody(
+  db: DbExecutor,
+  event: OutgoingEventRow,
+): Promise<Record<string, unknown> | null> {
+  if (event.type !== 'message.received' || !event.messageId || !event.conversationId) return null;
+  const org = event.organizationId;
+  const [message] = await db
+    .select()
+    .from(messages)
+    .where(and(eq(messages.organizationId, org), eq(messages.id, event.messageId)));
+  const [conversation] = await db
+    .select()
+    .from(conversations)
+    .where(and(eq(conversations.organizationId, org), eq(conversations.id, event.conversationId)));
+  if (!message || !conversation || message.type === 'reaction') return null;
+  const contact = await contactData(db, org, conversation.contactId);
+  if (!contact) return null;
+  const phone = contact.phone ? contact.phone.replace(/\D/g, '') : null;
+  const fullName = contact.name ?? contact.profile_name;
+  const contactBody = {
+    id: contact.number,
+    full_name: fullName,
+    name: fullName,
+    edited_name: contact.name,
+    profile_name: contact.profile_name,
+    phone,
+    phone_number: phone,
+    contact_details: phone ? [{ type: 'whatsapp', value: phone }] : [],
+    tags: contact.tags,
+  };
+  const media = message.media as {
+    kind?: string;
+    mimeType?: string | null;
+    filename?: string | null;
+  } | null;
+  const kind = media?.kind ?? null;
+  const mime = kind
+    ? (media?.mimeType ?? MOBICHAT_FALLBACK_MIME[kind] ?? 'application/octet-stream')
+    : null;
+  const attachments =
+    kind && mime
+      ? [
+          {
+            id: message.number,
+            type: mime,
+            file_type: mime,
+            mime_type: mime,
+            media_type: kind,
+            name:
+              kind === 'sticker'
+                ? `sticker_${String(message.number)}.webp`
+                : (media?.filename ?? `${kind}_${String(message.number)}`),
+          },
+        ]
+      : [];
+  const text = mobichatText(message);
+  const createdAt = message.occurredAt.toISOString();
+  return {
+    event: event.type,
+    event_id: event.id,
+    created_at: event.createdAt.toISOString(),
+    conversation_id: conversation.number,
+    // Satu percakapan Balesin = satu sesi (DECISIONS 2026-11-16) → ID sesi = nomor percakapan.
+    conversation_session_log_id: conversation.number,
+    message_id: message.number,
+    message_text: text,
+    message_type: message.type,
+    sender: 'user',
+    type: 'user',
+    contact_name: fullName,
+    tags: contact.tags,
+    contact: contactBody,
+    conversation: {
+      id: conversation.number,
+      status: conversation.status,
+      assignee: await userRef(db, org, conversation.assigneeUserId),
+      window_expires_at: conversation.windowExpiresAt?.toISOString() ?? null,
+    },
+    message: {
+      id: message.number,
+      conversation_id: conversation.number,
+      type: 'user',
+      sender: 'user',
+      sender_name: fullName,
+      text,
+      message_text: text,
+      message_type: message.type,
+      attachments,
+      created_at: createdAt,
+    },
+  };
+}
+
+/**
+ * Sisipkan `mobichat_base_url` + `mobichat_api_key` (didekripsi SAAT KIRIM). Key yang sudah dicabut/
+ * kedaluwarsa → `null` (pengiriman gagal `mobichat_key_inactive`, admin mengganti key-nya).
+ */
+async function withMobichatCredentials(
+  deps: WebhooksOutDeps,
+  endpoint: WebhookEndpointRow,
+  payload: Record<string, unknown>,
+  now: Date,
+): Promise<Record<string, unknown> | null> {
+  if (!deps.secretBox || !endpoint.mobichatApiKeyEncrypted || !endpoint.mobichatApiKeyId) {
+    return null;
+  }
+  const [key] = await deps.db
+    .select({ revokedAt: apiKeys.revokedAt, expiresAt: apiKeys.expiresAt })
+    .from(apiKeys)
+    .where(
+      and(
+        eq(apiKeys.organizationId, endpoint.organizationId),
+        eq(apiKeys.id, endpoint.mobichatApiKeyId),
+      ),
+    );
+  if (
+    !key ||
+    key.revokedAt !== null ||
+    (key.expiresAt !== null && key.expiresAt.getTime() <= now.getTime())
+  ) {
+    return null;
+  }
+  const apiKey = deps.secretBox.decrypt(endpoint.mobichatApiKeyEncrypted, {
+    organizationId: endpoint.organizationId,
+    purpose: 'webhook_endpoints.mobichat_api_key',
+    subjectId: endpoint.id,
+  });
+  let base = endpoint.mobichatBaseUrl;
+  if (!base && deps.appUrl) {
+    try {
+      base = new URL(deps.appUrl).origin;
+    } catch {
+      base = null;
+    }
+  }
+  return { ...payload, mobichat_base_url: base, mobichat_api_key: apiKey };
+}
+
 // ── Langkah tick ───────────────────────────────────────────────────────────
 
-async function dispatch(db: Database, now: Date): Promise<number> {
+/**
+ * Rujukan galat untuk log TANPA isi (review webhook keluar Info 5): galat Drizzle/pg memuat teks
+ * kueri + parameternya (bisa berisi potongan jawaban penerima/isi payload) — yang dicatat hanya
+ * nama, kode SQLSTATE/kode sistem, dan nama constraint.
+ */
+export function errorRef(err: unknown): Record<string, string> {
+  const ref: Record<string, string> = {
+    errorName: err instanceof Error ? err.name : typeof err,
+  };
+  const record = (typeof err === 'object' && err !== null ? err : {}) as {
+    code?: unknown;
+    constraint?: unknown;
+    cause?: unknown;
+  };
+  const cause = (typeof record.cause === 'object' && record.cause !== null ? record.cause : {}) as {
+    code?: unknown;
+    constraint?: unknown;
+  };
+  const code = record.code ?? cause.code;
+  const constraint = record.constraint ?? cause.constraint;
+  if (typeof code === 'string' || typeof code === 'number') ref.errorCode = String(code);
+  if (typeof constraint === 'string') ref.constraint = constraint;
+  return ref;
+}
+
+async function dispatch(db: Database, logger: Logger, now: Date): Promise<number> {
   return db.transaction(async (tx) => {
     const batch = await tx
       .select()
@@ -230,30 +433,16 @@ async function dispatch(db: Database, now: Date): Promise<number> {
     if (batch.length === 0) return 0;
     let created = 0;
     for (const event of batch) {
-      const endpoints = await tx
-        .select({ id: webhookEndpoints.id })
-        .from(webhookEndpoints)
-        .where(
-          and(
-            eq(webhookEndpoints.organizationId, event.organizationId),
-            eq(webhookEndpoints.enabled, true),
-            sql`${event.type} = any(${webhookEndpoints.events})`,
-          ),
+      // Satu kejadian per savepoint (review Info 3): kejadian yang gagal dibangun DIBUANG dan dicatat
+      // (hanya ID + kode galat), bukan memacetkan seluruh outbox tiap 5 detik.
+      try {
+        created += await tx.transaction((savepoint) => dispatchOne(savepoint, event, now));
+      } catch (err) {
+        logger.warn(
+          { eventId: event.id, eventType: event.type, ...errorRef(err) },
+          'Kejadian webhook keluar gagal dibangun: dibuang',
         );
-      if (endpoints.length === 0) continue;
-      const body = await buildEventBody(tx, event);
-      if (!body) continue;
-      await tx.insert(webhookDeliveries).values(
-        endpoints.map((endpoint) => ({
-          organizationId: event.organizationId,
-          endpointId: endpoint.id,
-          eventId: event.id,
-          event: event.type,
-          payload: body,
-          nextAttemptAt: now,
-        })),
-      );
-      created += endpoints.length;
+      }
     }
     await tx.delete(outgoingEvents).where(
       inArray(
@@ -263,6 +452,47 @@ async function dispatch(db: Database, now: Date): Promise<number> {
     );
     return created;
   });
+}
+
+/** Bangun pengiriman untuk satu kejadian (di dalam savepoint `dispatch`). */
+async function dispatchOne(tx: DbExecutor, event: OutgoingEventRow, now: Date): Promise<number> {
+  const endpoints = await tx
+    .select({ id: webhookEndpoints.id, format: webhookEndpoints.format })
+    .from(webhookEndpoints)
+    .where(
+      and(
+        eq(webhookEndpoints.organizationId, event.organizationId),
+        eq(webhookEndpoints.enabled, true),
+        sql`${event.type} = any(${webhookEndpoints.events})`,
+      ),
+    );
+  if (endpoints.length === 0) return 0;
+  // Satu body per format (dibangun sekali, hanya bila ada endpoint format itu).
+  const bodies = new Map<string, Record<string, unknown> | null>();
+  const rows = [];
+  for (const endpoint of endpoints) {
+    if (!bodies.has(endpoint.format)) {
+      bodies.set(
+        endpoint.format,
+        endpoint.format === 'mobichat'
+          ? await buildMobichatBody(tx, event)
+          : await buildEventBody(tx, event),
+      );
+    }
+    const body = bodies.get(endpoint.format);
+    if (!body) continue;
+    rows.push({
+      organizationId: event.organizationId,
+      endpointId: endpoint.id,
+      eventId: event.id,
+      event: event.type,
+      payload: body,
+      nextAttemptAt: now,
+    });
+  }
+  if (rows.length === 0) return 0;
+  await tx.insert(webhookDeliveries).values(rows);
+  return rows.length;
 }
 
 /** Klaim pengiriman jatuh tempo (sewa) supaya proses lain tidak mengirim yang sama. */
@@ -336,7 +566,16 @@ async function attempt(
   ) {
     secrets.push(secretBox.decrypt(endpoint.previousSecretEncrypted, secretContext(endpoint)));
   }
-  const body = JSON.stringify(delivery.payload);
+  let payload: Record<string, unknown> = delivery.payload;
+  if (endpoint.format === 'mobichat') {
+    const withKey = await withMobichatCredentials(deps, endpoint, payload, now);
+    if (!withKey) {
+      await finalize({ status: 'failed', nextAttemptAt: null, errorCode: 'mobichat_key_inactive' });
+      return 'failed';
+    }
+    payload = withKey;
+  }
+  const body = JSON.stringify(payload);
   const timestamp = Math.floor(now.getTime() / 1000);
   const result = await deliverWebhook({
     url: endpoint.url,
@@ -432,7 +671,10 @@ async function recordFinalFailure(deps: WebhooksOutDeps, endpoint: WebhookEndpoi
         ...(audit ? { auditLogId: audit.id } : {}),
       })
       .catch((err: unknown) => {
-        logger.warn({ err, webhookId: endpoint.id }, 'Email webhook nonaktif tidak terantre');
+        logger.warn(
+          { webhookId: endpoint.id, ...errorRef(err) },
+          'Email webhook nonaktif tidak terantre',
+        );
       });
   }
 }
@@ -467,14 +709,17 @@ async function retention(db: Database, now: Date): Promise<number> {
 
 export async function processWebhooksOutTick(deps: WebhooksOutDeps): Promise<TickResult> {
   const now = deps.now?.() ?? new Date();
-  const dispatched = await dispatch(deps.db, now);
+  const dispatched = await dispatch(deps.db, deps.logger, now);
   const due = await claimDue(deps.db, now);
   const counts = { delivered: 0, failed: 0, retried: 0 };
   for (let index = 0; index < due.length; index += PARALLEL) {
     const outcomes = await Promise.all(
       due.slice(index, index + PARALLEL).map((delivery) =>
         attempt(deps, delivery, now).catch((err: unknown) => {
-          deps.logger.warn({ err, deliveryId: delivery.id }, 'Pengiriman webhook gagal diproses');
+          deps.logger.warn(
+            { deliveryId: delivery.id, ...errorRef(err) },
+            'Pengiriman webhook gagal diproses',
+          );
           return 'retried' as const;
         }),
       ),

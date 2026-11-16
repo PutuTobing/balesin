@@ -1,6 +1,7 @@
 import { AppError, type InboxEventPublisher, type Logger } from '@balesin/core';
 import {
   PG_ERROR_CODES,
+  apiKeys,
   contactEvents,
   conversationEvents,
   conversations,
@@ -25,6 +26,7 @@ import {
 } from '@balesin/shared';
 import { and, asc, desc, eq, gte, inArray, isNull, ne, sql, type Column } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
+import { z } from 'zod';
 
 import type { ClientInfo } from '../../http/client-info';
 import type { RateLimitRule, RateLimiter } from '../../http/rate-limit';
@@ -32,6 +34,7 @@ import {
   NOOP_NOTIFICATION_ENQUEUER,
   type NotificationEnqueuer,
 } from '../../queues/notification-queue';
+import { assertApiKeyStillAuthorized, type ApiKeyActor } from '../api-keys/api-key-actor';
 import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
 import { ACCESS_RULES, forbidByRule, type AccessDeniedRecorder } from '../auth/access-denied';
 import { assertActorStillAuthorized, authorityChanged } from '../auth/actor-check';
@@ -97,14 +100,27 @@ export interface AssignmentContext {
   client: ClientInfo;
 }
 
+/** Aksi penanganan: `true` = ada perubahan, `false` = sudah begitu (idempoten). */
 export interface AssignmentService {
-  claim(context: AssignmentContext, conversationId: string): Promise<void>;
-  assign(context: AssignmentContext, conversationId: string, userId: string): Promise<void>;
-  unassign(context: AssignmentContext, conversationId: string): Promise<void>;
-  resolve(context: AssignmentContext, conversationId: string): Promise<void>;
-  reopen(context: AssignmentContext, conversationId: string): Promise<void>;
+  claim(context: AssignmentContext, conversationId: string): Promise<boolean>;
+  assign(context: AssignmentContext, conversationId: string, userId: string): Promise<boolean>;
+  unassign(context: AssignmentContext, conversationId: string): Promise<boolean>;
+  resolve(context: AssignmentContext, conversationId: string): Promise<boolean>;
+  reopen(context: AssignmentContext, conversationId: string): Promise<boolean>;
   events(grant: PermissionGrant, conversationId: string): Promise<ConversationEvent[] | undefined>;
   agents(organizationId: string): Promise<InboxAgent[]>;
+  /**
+   * Lapisan kompatibel MobiChat (`conversations:write`, pelaku = API key). `agentUserId` kosong =
+   * lepas BOT (status `bot` -> `unserved`, handoff); berisi = lepas agen itu bila ia pemegangnya.
+   * Percakapan yang sudah di antrian / dipegang agen lain = tidak berubah (`changed: false`).
+   */
+  releaseAsApiKey(
+    actor: ApiKeyActor,
+    conversationId: string,
+    agentUserId: string | null,
+  ): Promise<{ changed: boolean }>;
+  assignAsApiKey(actor: ApiKeyActor, conversationId: string, userId: string): Promise<void>;
+  resolveAsApiKey(actor: ApiKeyActor, conversationId: string): Promise<{ changed: boolean }>;
 }
 
 const NOT_FOUND = 'Percakapan tidak ditemukan.';
@@ -130,13 +146,26 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
     return row?.name ?? null;
   }
 
+  /** Pelaku aksi: pengguna bersesi (izin + cakupan peran) atau API key (cakupan organisasi). */
+  type Actor =
+    | { kind: 'user'; context: AssignmentContext; permission: Permission }
+    | { kind: 'apiKey'; key: ApiKeyActor };
+
+  const asUser = (context: AssignmentContext, permission: Permission): Actor => ({
+    kind: 'user',
+    context,
+    permission,
+  });
+
+  /** `true` bila ada perubahan (aksi idempoten → `false`). */
   async function mutate(
-    context: AssignmentContext,
-    permission: Permission,
+    actor: Actor,
     conversationId: string,
     decide: (tx: DbExecutor, conversation: ConversationRow, role: string) => Promise<Change>,
-  ): Promise<void> {
-    const { auth } = context;
+  ): Promise<boolean> {
+    const organizationId =
+      actor.kind === 'user' ? actor.context.auth.organizationId : actor.key.organizationId;
+    const actorUserId = actor.kind === 'user' ? actor.context.auth.user.id : null;
     let published: {
       previous: string | null;
       next: string | null;
@@ -144,21 +173,32 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
       role: string;
     } | null = null;
     await db.transaction(async (tx) => {
-      const { role } = await assertActorStillAuthorized(tx, auth, permission, logger);
-      const scope = permissionScope(role, permission);
-      if (!scope) throw authorityChanged();
-      const grant: PermissionGrant = {
-        permission,
-        scope,
-        userId: auth.user.id,
-        organizationId: auth.organizationId,
-      };
+      let grant: PermissionGrant;
+      let role: string;
+      if (actor.kind === 'user') {
+        const { auth } = actor.context;
+        const checked = await assertActorStillAuthorized(tx, auth, actor.permission, logger);
+        role = checked.role;
+        const scope = permissionScope(checked.role, actor.permission);
+        if (!scope) throw authorityChanged();
+        grant = { permission: actor.permission, scope, userId: auth.user.id, organizationId };
+      } else {
+        // API key: cek ulang di transaksi akhir (dicabut/kedaluwarsa/scope); cakupan organisasi.
+        await assertApiKeyStillAuthorized(tx, actor.key, 'conversations:write', now());
+        role = 'api_key';
+        grant = {
+          permission: 'inbox.assign',
+          scope: 'all',
+          userId: actor.key.apiKeyId,
+          organizationId,
+        };
+      }
       const [conversation] = await tx
         .select({ conversation: conversations })
         .from(conversations)
         .where(
           and(
-            eq(conversations.organizationId, auth.organizationId),
+            eq(conversations.organizationId, organizationId),
             eq(conversations.id, conversationId),
             conversationScope(grant),
           ),
@@ -177,10 +217,7 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
           .update(conversations)
           .set({ ...change.patch, assigneeUserId: nextAssignee })
           .where(
-            and(
-              eq(conversations.organizationId, auth.organizationId),
-              eq(conversations.id, current.id),
-            ),
+            and(eq(conversations.organizationId, organizationId), eq(conversations.id, current.id)),
           );
       } catch (error) {
         if (
@@ -198,10 +235,11 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
         throw error;
       }
       await tx.insert(conversationEvents).values({
-        organizationId: auth.organizationId,
+        organizationId,
         conversationId: current.id,
         kind: change.kind,
-        actorUserId: auth.user.id,
+        actorUserId,
+        apiKeyId: actor.kind === 'apiKey' ? actor.key.apiKeyId : null,
         assigneeUserId: nextAssignee,
         previousAssigneeUserId: current.assigneeUserId,
       });
@@ -215,11 +253,11 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
       }[change.kind as 'claimed' | 'assigned' | 'unassigned' | 'resolved' | 'reopened'];
       if (outgoingType) {
         await recordOutgoingEvent(tx, {
-          organizationId: auth.organizationId,
+          organizationId,
           type: outgoingType,
           conversationId: current.id,
           contactId: current.contactId,
-          actorUserId: auth.user.id,
+          actorUserId,
         });
       }
       published = { previous: current.assigneeUserId, next: nextAssignee, kind: change.kind, role };
@@ -230,36 +268,40 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
       kind: ConversationRecordKind;
       role: string;
     } | null;
-    if (!done) return;
+    if (!done) return false;
     await publisher.publish([
       {
         type: 'conversation.updated',
-        organizationId: auth.organizationId,
+        organizationId,
         conversationId,
         ...(done.previous && done.previous !== done.next
           ? { previousAssigneeUserId: done.previous }
           : {}),
       },
     ]);
-    logger.info({ conversationId, actorRef: auth.user.id }, 'Penanganan percakapan diubah');
+    logger.info(
+      actor.kind === 'user'
+        ? { conversationId, actorRef: actorUserId }
+        : { conversationId, apiKeyId: actor.key.apiKeyId },
+      'Penanganan percakapan diubah',
+    );
     // Push (usaha terbaik, payload hanya ID): ditugaskan ke ORANG LAIN → penerima baru; kembali ke
     // antrian → yang bisa mengambil. Mengambil sendiri tidak memberi tahu siapa pun.
-    if (done.next !== null && done.next !== auth.user.id && done.next !== done.previous) {
+    const actorRef = actorUserId ? { actorUserId } : {};
+    if (done.next !== null && done.next !== actorUserId && done.next !== done.previous) {
       await notifications.enqueue({
-        organizationId: auth.organizationId,
+        organizationId,
         kind: 'assigned',
         conversationId,
-        actorUserId: auth.user.id,
+        ...actorRef,
       });
     } else if (done.next === null && (done.kind === 'unassigned' || done.kind === 'reopened')) {
-      await notifications.enqueue({
-        organizationId: auth.organizationId,
-        kind: 'queued',
-        conversationId,
-        actorUserId: auth.user.id,
-      });
+      await notifications.enqueue({ organizationId, kind: 'queued', conversationId, ...actorRef });
     }
-    if (BULK_ACTION_KINDS.has(done.kind)) await watchBulk(context, done.role);
+    if (actor.kind === 'user' && BULK_ACTION_KINDS.has(done.kind)) {
+      await watchBulk(actor.context, done.role);
+    }
+    return true;
   }
 
   /** Alarm aksi massal (R1). Usaha terbaik: Redis/DB bermasalah tidak menggagalkan aksinya. */
@@ -312,9 +354,41 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
     });
   }
 
+  /** Agen sasaran penugasan: aktif + boleh membalas (dikunci FOR SHARE), atau 400. */
+  async function assignTarget(
+    tx: DbExecutor,
+    organizationId: string,
+    userId: string,
+    field: string,
+  ): Promise<{ id: string }> {
+    const valid = z.uuid().safeParse(userId).success;
+    const [target] = valid
+      ? await tx
+          .select({ id: users.id, role: users.role })
+          .from(users)
+          .where(
+            and(
+              eq(users.organizationId, organizationId),
+              eq(users.id, userId),
+              isNull(users.disabledAt),
+            ),
+          )
+          .limit(1)
+          .for('share')
+      : [];
+    // TITIK KAIT departemen: agen sasaran harus satu departemen dengan percakapan.
+    if (!target || !hasPermission(target.role, 'inbox.reply')) {
+      throw new AppError('VALIDATION_ERROR', {
+        message: 'Agen tidak ditemukan, sudah dinonaktifkan, atau tidak boleh membalas percakapan.',
+        details: [{ location: 'body', field, message: 'Agen tidak valid.' }],
+      });
+    }
+    return target;
+  }
+
   return {
     claim: (context, conversationId) =>
-      mutate(context, 'inbox.assign', conversationId, async (tx, conversation) => {
+      mutate(asUser(context, 'inbox.assign'), conversationId, async (tx, conversation) => {
         // Antrian terbuka (`unserved`) atau mengambil alih dari bot.
         if (
           (conversation.status !== 'unserved' && conversation.status !== 'bot') ||
@@ -340,28 +414,9 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
       }),
 
     assign: (context, conversationId, userId) =>
-      mutate(context, 'inbox.assign', conversationId, async (tx, conversation) => {
+      mutate(asUser(context, 'inbox.assign'), conversationId, async (tx, conversation) => {
         if (conversation.status === 'resolved') throw await heldBy(tx, conversation);
-        const [target] = await tx
-          .select({ id: users.id, role: users.role })
-          .from(users)
-          .where(
-            and(
-              eq(users.organizationId, context.auth.organizationId),
-              eq(users.id, userId),
-              isNull(users.disabledAt),
-            ),
-          )
-          .limit(1)
-          .for('share');
-        // TITIK KAIT departemen: agen sasaran harus satu departemen dengan percakapan.
-        if (!target || !hasPermission(target.role, 'inbox.reply')) {
-          throw new AppError('VALIDATION_ERROR', {
-            message:
-              'Agen tidak ditemukan, sudah dinonaktifkan, atau tidak boleh membalas percakapan.',
-            details: [{ location: 'body', field: 'userId', message: 'Agen tidak valid.' }],
-          });
-        }
+        const target = await assignTarget(tx, context.auth.organizationId, userId, 'userId');
         if (conversation.assigneeUserId === target.id && conversation.status === 'served') {
           return { kind: null };
         }
@@ -380,7 +435,7 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
       }),
 
     unassign: (context, conversationId) =>
-      mutate(context, 'inbox.reply', conversationId, async (tx, conversation, role) => {
+      mutate(asUser(context, 'inbox.reply'), conversationId, async (tx, conversation, role) => {
         if (conversation.status === 'resolved') throw await heldBy(tx, conversation);
         if (conversation.assigneeUserId === null) return { kind: null };
         // Tanpa `inbox.assign` (Teknisi) hanya boleh mengembalikan chat MILIKNYA (PRD §4).
@@ -399,7 +454,7 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
       }),
 
     resolve: (context, conversationId) =>
-      mutate(context, 'inbox.reply', conversationId, (_tx, conversation) => {
+      mutate(asUser(context, 'inbox.reply'), conversationId, (_tx, conversation) => {
         if (conversation.status === 'resolved') return Promise.resolve({ kind: null });
         // TITIK KAIT CSAT: antrekan survei kepuasan (ID percakapan) setelah commit.
         return Promise.resolve({
@@ -409,7 +464,7 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
       }),
 
     reopen: (context, conversationId) =>
-      mutate(context, 'inbox.reply', conversationId, async (tx, conversation) => {
+      mutate(asUser(context, 'inbox.reply'), conversationId, async (tx, conversation) => {
         if (conversation.status !== 'resolved') return { kind: null };
         // Percakapan = satu sesi: hanya sesi TERAKHIR kontak × channel yang boleh dibuka lagi, dan
         // hanya bila belum ada sesi terbuka yang lebih baru (indeks unik juga menjaganya).
@@ -454,6 +509,58 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
         };
       }),
 
+    async releaseAsApiKey(actor, conversationId, agentUserId) {
+      const changed = await mutate(
+        { kind: 'apiKey', key: actor },
+        conversationId,
+        async (tx, conversation) => {
+          if (conversation.status === 'resolved') throw await heldBy(tx, conversation);
+          const release =
+            agentUserId === null
+              ? // Handoff: hanya melepas BOT. Antrian / dipegang agen = tidak diubah.
+                conversation.status === 'bot'
+              : conversation.assigneeUserId !== null && conversation.assigneeUserId === agentUserId;
+          if (!release) return { kind: null };
+          // TITIK KAIT bot eksternal (butir berikutnya): event `conversation.handoff` + saklar bot.
+          return { kind: 'unassigned', assigneeUserId: null, patch: { status: 'unserved' } };
+        },
+      );
+      return { changed };
+    },
+
+    async assignAsApiKey(actor, conversationId, userId) {
+      await mutate({ kind: 'apiKey', key: actor }, conversationId, async (tx, conversation) => {
+        if (conversation.status === 'resolved') throw await heldBy(tx, conversation);
+        const target = await assignTarget(tx, actor.organizationId, userId, 'agent_id');
+        if (conversation.assigneeUserId === target.id && conversation.status === 'served') {
+          return { kind: null };
+        }
+        return {
+          kind: 'assigned',
+          assigneeUserId: target.id,
+          patch: {
+            status: 'served',
+            firstAssignedAt:
+              sql`coalesce(${conversations.firstAssignedAt}, ${now()})` as unknown as Date,
+          },
+        };
+      });
+    },
+
+    async resolveAsApiKey(actor, conversationId) {
+      const changed = await mutate({ kind: 'apiKey', key: actor }, conversationId, (_tx, row) =>
+        Promise.resolve(
+          row.status === 'resolved'
+            ? { kind: null }
+            : {
+                kind: 'resolved' as const,
+                patch: { status: 'resolved' as const, resolvedAt: now() },
+              },
+        ),
+      );
+      return { changed };
+    },
+
     async events(grant, conversationId) {
       const [visible] = await db
         .select({
@@ -473,6 +580,7 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
       const actor = alias(users, 'event_actor');
       const assignee = alias(users, 'event_assignee');
       const previous = alias(users, 'event_previous');
+      const actorKey = alias(apiKeys, 'event_actor_key');
       const sameOrg = (table: { organizationId: Column; id: Column }, column: Column) =>
         and(eq(table.organizationId, conversationEvents.organizationId), eq(table.id, column));
       const rows = await db
@@ -482,6 +590,8 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
           createdAt: conversationEvents.createdAt,
           actorId: actor.id,
           actorName: actor.name,
+          actorKeyId: actorKey.id,
+          actorKeyName: actorKey.name,
           assigneeId: assignee.id,
           assigneeName: assignee.name,
           previousId: previous.id,
@@ -489,6 +599,7 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
         })
         .from(conversationEvents)
         .leftJoin(actor, sameOrg(actor, conversationEvents.actorUserId))
+        .leftJoin(actorKey, sameOrg(actorKey, conversationEvents.apiKeyId))
         .leftJoin(assignee, sameOrg(assignee, conversationEvents.assigneeUserId))
         .leftJoin(previous, sameOrg(previous, conversationEvents.previousAssigneeUserId))
         .where(
@@ -535,7 +646,10 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
         ...rows.map((row) => ({
           id: row.id,
           kind: row.kind,
-          actor: ref(row.actorId, row.actorName),
+          // Pelaku API key (bot lewat lapisan MobiChat) tampil dengan nama key-nya.
+          actor:
+            ref(row.actorId, row.actorName) ??
+            ref(row.actorKeyId, row.actorKeyName === null ? null : `Bot · ${row.actorKeyName}`),
           assignee: ref(row.assigneeId, row.assigneeName),
           previousAssignee: ref(row.previousId, row.previousName),
           tag: null,

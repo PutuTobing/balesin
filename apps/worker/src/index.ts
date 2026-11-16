@@ -65,7 +65,7 @@ function main(config: WorkerConfig): void {
     maintenance: { db, publisher },
     messages: { db, meta, secretBox, publisher },
     notifications: { db, secretBox, appUrl: config.appUrl, throttle: redisThrottle(redis) },
-    webhooksOut: { db, secretBox, notifyOwner: ownerNotifier.notify },
+    webhooksOut: { db, secretBox, appUrl: config.appUrl, notifyOwner: ownerNotifier.notify },
   });
 
   const shutdown = createShutdown({

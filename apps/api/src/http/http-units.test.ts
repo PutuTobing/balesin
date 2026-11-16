@@ -306,6 +306,8 @@ describe('deklarasi akses rute (bawaan tolak)', () => {
       '/api/docs/app.css',
       '/api/docs/app.js',
       '/api/docs/openapi.json',
+      // URL media bertanda tangan lapisan kompatibel MobiChat (HMAC + key penanda tangan dicek ulang).
+      '/api/public/media/:messageNumber',
       '/api/v1/auth/2fa/verify',
       '/api/v1/auth/email/verify',
       '/api/v1/auth/invitation/accept',

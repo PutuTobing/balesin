@@ -152,6 +152,7 @@ export const outgoingWebhooksRoutes: FastifyPluginCallbackZod<OutgoingWebhooksRo
         id,
         request.body.confirmation,
         context,
+        { revokePrevious: request.body.revokePrevious === true },
       );
       void reply.header('Cache-Control', 'no-store');
       return rotated;

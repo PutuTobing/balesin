@@ -11,6 +11,8 @@ import { describe, expect, it } from 'vitest';
  */
 const ALLOWED: Record<string, string> = {
   'http/security.ts': 'Origin/preflight asing — sebelum sesi dibaca, pelaku tidak pasti',
+  'modules/api-keys/api-key-actor.ts':
+    'cek ulang API key di transaksi akhir (scope dicabut di tengah permintaan; pelaku = key, bukan pengguna — perubahan scope/pencabutan sudah diaudit)',
   'modules/api-keys/api-key-auth.ts':
     'API publik: scope/IP API key (pelaku = key, bukan pengguna; `forbidByRule` butuh sesi). Pembuatan/pencabutan key & batas kirimnya diaudit',
   'modules/auth/auth.hook.ts': 'Origin asing / tanpa deklarasi akses; izin rute diaudit di sini',

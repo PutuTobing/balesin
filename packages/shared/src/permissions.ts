@@ -85,7 +85,7 @@ export const PERMISSIONS = [
   'sending.resume',
   /** Sinkron, buat, dan ajukan template pesan Meta (termasuk preset industri). */
   'templates.manage',
-  /** Template percakapan / quick reply `/`. */
+  /** Balasan cepat (quick reply `/`). */
   'quick_replies.manage',
   // ── Inbox ─────────────────────────────────────────────────────────────────
   /** Baca percakapan, pesan, media, panel detail. Bercakupan. */
@@ -307,7 +307,7 @@ export const PERMISSION_LABELS: Readonly<Record<Permission, string>> = {
   'broadcast.approve': 'Setujui broadcast di atas ambang',
   'sending.resume': 'Lanjutkan pengiriman setelah rem darurat',
   'templates.manage': 'Kelola template pesan',
-  'quick_replies.manage': 'Kelola template percakapan',
+  'quick_replies.manage': 'Kelola balasan cepat',
   'inbox.view': 'Lihat percakapan',
   'inbox.reply': 'Balas percakapan yang sudah ada',
   'inbox.initiate': 'Mulai percakapan ke nomor baru',

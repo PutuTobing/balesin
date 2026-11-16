@@ -3,7 +3,7 @@
  * (docs/security-reviews/2026-11-19-fase3-webhook-keluar.md).
  *
  * `it` = perilaku aman yang harus tetap benar. `it.fails` = temuan terbuka (perilaku yang
- * DIHARAPKAN; gagal sekarang) — ubah ke `it` setelah diperbaiki.
+ * DIHARAPKAN; gagal sekarang) — ubah ke `it` setelah diperbaiki. R1 & R2 sudah diperbaiki (semua `it`).
  */
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -61,16 +61,16 @@ describe('review keamanan — klasifikasi & URL', () => {
     expect('error' in parseWebhookUrl('https://[::1]/', [])).toBe(true);
   });
 
-  it.fails('IPv4-compatible IPv6 (::/96, mis. ::7f00:1) diperlakukan terlarang', () => {
+  it('IPv4-compatible IPv6 (::/96, mis. ::7f00:1) diperlakukan terlarang', () => {
     expect(classifyAddress('::7f00:1')).toBe('forbidden');
   });
 
-  it.fails('6to4 yang membungkus loopback/metadata (2002::/16) diperlakukan terlarang', () => {
+  it('6to4 yang membungkus loopback/metadata (2002::/16) diperlakukan terlarang', () => {
     expect(classifyAddress('2002:7f00:1::1')).toBe('forbidden');
     expect(classifyAddress('2002:a9fe:a9fe::1')).toBe('forbidden');
   });
 
-  it.fails('NAT64 local-use (64:ff9b:1::/48, RFC 8215) diperlakukan terlarang', () => {
+  it('NAT64 local-use (64:ff9b:1::/48, RFC 8215) diperlakukan terlarang', () => {
     expect(classifyAddress('64:ff9b:1::a9fe:a9fe')).toBe('forbidden');
   });
 });
@@ -148,19 +148,16 @@ describe('review keamanan — pengiriman', () => {
     expect(result.snippet).not.toMatch(/\p{Cc}/u);
   });
 
-  it.fails(
-    'waktu resolusi DNS ikut batas waktu total (DNS lambat tidak menahan worker melewati timeoutMs)',
-    async () => {
-      const result = await deliverWebhook({
-        ...base,
-        url: 'https://dns-lambat.invalid/hook',
-        timeoutMs: 200,
-        lookup: () =>
-          new Promise((resolve) =>
-            setTimeout(() => resolve([{ address: '127.0.0.1', family: 4 }]), 1_500),
-          ),
-      });
-      expect(result.durationMs).toBeLessThan(1_000);
-    },
-  );
+  it('waktu resolusi DNS ikut batas waktu total (DNS lambat tidak menahan worker melewati timeoutMs)', async () => {
+    const result = await deliverWebhook({
+      ...base,
+      url: 'https://dns-lambat.invalid/hook',
+      timeoutMs: 200,
+      lookup: () =>
+        new Promise((resolve) =>
+          setTimeout(() => resolve([{ address: '127.0.0.1', family: 4 }]), 1_500),
+        ),
+    });
+    expect(result.durationMs).toBeLessThan(1_000);
+  });
 });

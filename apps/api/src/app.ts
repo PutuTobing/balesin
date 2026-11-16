@@ -41,7 +41,10 @@ import { createApiKeysService } from './modules/api-keys/api-keys.service';
 import { outgoingWebhooksRoutes } from './modules/outgoing-webhooks/outgoing-webhooks.routes';
 import { createOutgoingWebhooksService } from './modules/outgoing-webhooks/outgoing-webhooks.service';
 import { apiDocsRoutes } from './modules/public-api/api-docs.routes';
-import { publicApiRoutes } from './modules/public-api/public-api.routes';
+import { publicApiRoutes, publicOrganizationRate } from './modules/public-api/public-api.routes';
+import { createMediaUrlSigner } from './modules/compat-mobichat/media-signature';
+import { mobichatRoutes } from './modules/compat-mobichat/mobichat.routes';
+import { createMobichatService } from './modules/compat-mobichat/mobichat.service';
 import { apiKeyPepper as deriveApiKeyPepper } from './modules/api-keys/api-key-token';
 import { registerAuthHook } from './modules/auth/auth.hook';
 import { authRoutes } from './modules/auth/auth.routes';
@@ -152,7 +155,10 @@ export interface AppDeps {
     smtpTimeouts?: Partial<SmtpTimeouts>;
     /** Klien Graph API (mis. `sleep` instan supaya backoff tidak memperlambat tes). */
     meta?: Partial<Omit<MetaGraphClientOptions, 'version' | 'baseUrl' | 'environment'>>;
-    /** HANYA tes: webhook keluar boleh ke 127.0.0.1 (server penerima tiruan). */
+    /**
+     * HANYA tes: webhook keluar & unduhan `media_url` (kompatibel MobiChat) boleh ke 127.0.0.1
+     * (server tiruan).
+     */
     webhookAllowLoopback?: boolean;
     /** Origin server push TIRUAN yang boleh didaftarkan (tes saja; produksi: layanan push dikenal). */
     pushEndpointOrigins?: readonly string[];
@@ -523,18 +529,15 @@ export async function buildApp(deps: AppDeps) {
   await app.register(inboxStreamRoutes, { hub: inboxStream, appOrigin: config.appOrigin });
   await app.register(outboundRoutes, { outbound, limiter });
   await app.register(sendingLimitsRoutes, { sendingLimits, cookieSecure: config.cookieSecure });
-  await app.register(assignmentRoutes, {
+  const assignment = createAssignmentService({
     db,
+    publisher: inboxEvents,
+    accessDenied,
     limiter,
-    assignment: createAssignmentService({
-      db,
-      publisher: inboxEvents,
-      accessDenied,
-      limiter,
-      notifications: deps.notificationQueue,
-      logger: deps.logger,
-    }),
+    notifications: deps.notificationQueue,
+    logger: deps.logger,
   });
+  await app.register(assignmentRoutes, { db, limiter, assignment });
   const contactsService = createContactsService({
     db,
     publisher: inboxEvents,
@@ -550,6 +553,7 @@ export async function buildApp(deps: AppDeps) {
       db,
       secretBox,
       twoFactor,
+      apiKeyPepper,
       ...(deps.overrides?.webhookAllowLoopback ? { allowLoopback: true } : {}),
     }),
   });
@@ -560,6 +564,22 @@ export async function buildApp(deps: AppDeps) {
     apiKeys: createApiKeysService({ db, pepper: apiKeyPepper, twoFactor }),
   });
   await app.register(publicApiRoutes, { db, limiter, outbound, contacts: contactsService });
+  const panel = createPanelService({ db, publisher: inboxEvents, accessDenied });
+  // Lapisan kompatibel MobiChat (Fase 3): `/api/public/*` + `/api/bot/*`, header `X-API-Key`.
+  const mediaSigner = createMediaUrlSigner(config.masterKey, new URL(config.appUrl).origin);
+  await app.register(mobichatRoutes, {
+    signer: mediaSigner,
+    mobichat: createMobichatService({
+      db,
+      outbound,
+      assignment,
+      panel,
+      contacts: contactsService,
+      signer: mediaSigner,
+      organizationRate: publicOrganizationRate(limiter),
+      ...(deps.overrides?.webhookAllowLoopback ? { remote: { allowLoopback: true } } : {}),
+    }),
+  });
   await app.register(apiDocsRoutes, { db, apiUrl: config.apiUrl });
   // Notifikasi Web Push (Fase 2 butir 10).
   await app.register(notificationsRoutes, {
@@ -585,7 +605,7 @@ export async function buildApp(deps: AppDeps) {
   await app.register(panelRoutes, {
     db,
     limiter,
-    panel: createPanelService({ db, publisher: inboxEvents, accessDenied }),
+    panel,
   });
   await app.register(quickRepliesRoutes, {
     limiter,

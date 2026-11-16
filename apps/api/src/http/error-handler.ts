@@ -23,7 +23,7 @@ import {
  * rahasia).
  */
 
-interface ErrorResponse {
+export interface ErrorResponse {
   statusCode: number;
   code: ErrorCode;
   message: string;
@@ -142,8 +142,15 @@ function envelope(response: ErrorResponse, requestId: string): ErrorEnvelope {
   };
 }
 
-/** Error handler Fastify (`app.setErrorHandler`). */
-export function handleError(error: unknown, request: FastifyRequest, reply: FastifyReply) {
+/**
+ * Bagian bersama penanganan error: ubah ke status/kode/pesan, catat ke log, pasang `Retry-After`.
+ * Dipakai `handleError` (amplop standar) dan lapisan kompatibel MobiChat (bentuk body MobiChat).
+ */
+export function prepareErrorReply(
+  error: unknown,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): ErrorResponse {
   const response = toErrorResponse(error);
 
   if (response.statusCode >= 500) {
@@ -163,6 +170,12 @@ export function handleError(error: unknown, request: FastifyRequest, reply: Fast
     // Setiap 429 membawa `Retry-After` (web menampilkan hitung mundur dari header ini).
     void reply.header('retry-after', String(DEFAULT_RETRY_AFTER_SECONDS));
   }
+  return response;
+}
+
+/** Error handler Fastify (`app.setErrorHandler`). */
+export function handleError(error: unknown, request: FastifyRequest, reply: FastifyReply) {
+  const response = prepareErrorReply(error, request, reply);
   return reply.status(response.statusCode).send(envelope(response, request.id));
 }
 

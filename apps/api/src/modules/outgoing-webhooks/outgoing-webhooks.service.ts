@@ -8,6 +8,7 @@ import {
   type SecretBox,
 } from '@balesin/core';
 import {
+  apiKeys,
   newId,
   organizations,
   webhookDeliveries,
@@ -24,13 +25,15 @@ import {
   type IdentityConfirmation,
   type OutgoingWebhook,
   type OutgoingWebhookEvent,
+  type OutgoingWebhookFormat,
   type PrivateNetworkSettings,
   type UpdateOutgoingWebhookRequest,
   type WebhookDelivery,
 } from '@balesin/shared';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import type { ClientInfo } from '../../http/client-info';
+import { parseApiKey, secretMatches } from '../api-keys/api-key-token';
 import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
 import { assertActorStillAuthorized } from '../auth/actor-check';
 import type { AuthContext } from '../auth/session.service';
@@ -73,6 +76,8 @@ export interface OutgoingWebhooksService {
     id: string,
     confirmation: IdentityConfirmation | undefined,
     context: WebhookContext,
+    /** `revokePrevious` = rahasia lama langsung tidak berlaku (review Info 6). */
+    options?: { revokePrevious?: boolean },
   ): Promise<{ webhook: OutgoingWebhook; secret: string }>;
   test(auth: AuthContext, id: string): Promise<WebhookDelivery>;
   deliveries(
@@ -98,7 +103,25 @@ function hostOf(url: string): string {
   }
 }
 
-function toWebhook(row: WebhookEndpointRow): OutgoingWebhook {
+/** Ringkasan key yang dipakai mode MobiChat (nama + status), tanpa rahasia. */
+interface KeyInfo {
+  name: string;
+  revokedAt: Date | null;
+  expiresAt: Date | null;
+}
+
+function keyStatus(key: KeyInfo | undefined, at: Date): 'active' | 'expired' | 'revoked' {
+  if (!key || key.revokedAt !== null) return 'revoked';
+  if (key.expiresAt !== null && key.expiresAt.getTime() <= at.getTime()) return 'expired';
+  return 'active';
+}
+
+function toWebhook(
+  row: WebhookEndpointRow,
+  keys: ReadonlyMap<string, KeyInfo> = new Map(),
+  at: Date = new Date(),
+): OutgoingWebhook {
+  const key = row.mobichatApiKeyId ? keys.get(row.mobichatApiKeyId) : undefined;
   return {
     id: row.id,
     url: row.url,
@@ -111,6 +134,17 @@ function toWebhook(row: WebhookEndpointRow): OutgoingWebhook {
     secretRotatedAt: row.secretRotatedAt.toISOString(),
     previousSecretExpiresAt: row.previousSecretExpiresAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
+    format: row.format as OutgoingWebhookFormat,
+    mobichat:
+      row.format === 'mobichat' && row.mobichatApiKeyId && row.mobichatApiKeyLast4
+        ? {
+            baseUrl: row.mobichatBaseUrl,
+            apiKeyLast4: row.mobichatApiKeyLast4,
+            apiKeyId: row.mobichatApiKeyId,
+            apiKeyName: key?.name ?? null,
+            apiKeyStatus: keyStatus(key, at),
+          }
+        : null,
   };
 }
 
@@ -137,6 +171,30 @@ const secretContext = (organizationId: string, id: string) => ({
   purpose: 'webhook_endpoints.secret',
   subjectId: id,
 });
+/** AAD API key mode MobiChat (dibaca worker dengan konteks yang SAMA). */
+export const mobichatKeyContext = (organizationId: string, id: string) => ({
+  organizationId,
+  purpose: 'webhook_endpoints.mobichat_api_key',
+  subjectId: id,
+});
+
+/**
+ * Alamat Balesin untuk `mobichat_base_url`: http/https, tanpa kredensial/query/fragmen, tanpa `/`
+ * di akhir (workflow menambah `/api/public/...` sendiri).
+ */
+export function normalizeMobichatBaseUrl(raw: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+  if (url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '') {
+    return null;
+  }
+  return `${url.origin}${url.pathname}`.replace(/\/+$/, '');
+}
 
 function invalid(field: string, message: string): AppError {
   return new AppError('VALIDATION_ERROR', {
@@ -148,6 +206,8 @@ function invalid(field: string, message: string): AppError {
 export function createOutgoingWebhooksService(deps: {
   db: Database;
   secretBox: SecretBox | null;
+  /** Pepper API key (verifikasi key yang ditempel di mode MobiChat). `null` = tanpa master key. */
+  apiKeyPepper?: Buffer | null;
   twoFactor: Pick<TwoFactorService, 'confirmIdentity'>;
   /** HANYA tes: izinkan URL ke 127.0.0.1 (server penerima tiruan). */
   allowLoopback?: boolean;
@@ -177,6 +237,74 @@ export function createOutgoingWebhooksService(deps: {
     return parsed.url.href;
   }
 
+  async function keysOf(organizationId: string, rows: readonly WebhookEndpointRow[]) {
+    const ids = [
+      ...new Set(rows.map((row) => row.mobichatApiKeyId).filter((id): id is string => !!id)),
+    ];
+    if (ids.length === 0) return new Map<string, KeyInfo>();
+    const found = await db
+      .select({
+        id: apiKeys.id,
+        name: apiKeys.name,
+        revokedAt: apiKeys.revokedAt,
+        expiresAt: apiKeys.expiresAt,
+      })
+      .from(apiKeys)
+      .where(and(eq(apiKeys.organizationId, organizationId), inArray(apiKeys.id, ids)));
+    return new Map(found.map(({ id, ...info }) => [id, info] as const));
+  }
+
+  async function view(row: WebhookEndpointRow): Promise<OutgoingWebhook> {
+    return toWebhook(row, await keysOf(row.organizationId, [row]), now());
+  }
+
+  /**
+   * API key yang ditempel untuk mode MobiChat: harus key SAH milik organisasi ini (bentuk, rahasia,
+   * belum dicabut/kedaluwarsa) — salah ketik atau key organisasi lain ditolak sebelum disimpan.
+   */
+  async function verifyMobichatKey(organizationId: string, token: string) {
+    const parsed = parseApiKey(token.trim());
+    const pepper = deps.apiKeyPepper ?? null;
+    if (!pepper) throw new AppError('SERVICE_UNAVAILABLE', { message: UNAVAILABLE });
+    const [key] = parsed
+      ? await db
+          .select()
+          .from(apiKeys)
+          .where(
+            and(
+              eq(apiKeys.organizationId, organizationId),
+              eq(apiKeys.lookupKey, parsed.lookupKey),
+            ),
+          )
+          .limit(1)
+      : [];
+    if (
+      !parsed ||
+      !key ||
+      !secretMatches(pepper, parsed, key.secretHash) ||
+      key.revokedAt !== null ||
+      (key.expiresAt !== null && key.expiresAt.getTime() <= now().getTime())
+    ) {
+      throw invalid(
+        'mobichat.apiKey',
+        'API key tidak valid, sudah dicabut, atau kedaluwarsa. Tempel API key utuh dari Pengaturan → API key.',
+      );
+    }
+    return { id: key.id, token: token.trim(), last4: token.trim().slice(-4) };
+  }
+
+  function checkBaseUrl(value: string | null | undefined): string | null {
+    if (value === undefined || value === null || value.trim() === '') return null;
+    const normalized = normalizeMobichatBaseUrl(value);
+    if (!normalized) {
+      throw invalid(
+        'mobichat.baseUrl',
+        'Alamat Balesin harus diawali https:// (atau http://), tanpa nama pengguna, query, atau #.',
+      );
+    }
+    return normalized;
+  }
+
   async function one(organizationId: string, id: string): Promise<WebhookEndpointRow> {
     const [row] = await db
       .select()
@@ -201,7 +329,9 @@ export function createOutgoingWebhooksService(deps: {
         .from(webhookEndpoints)
         .where(eq(webhookEndpoints.organizationId, organizationId))
         .orderBy(desc(webhookEndpoints.createdAt));
-      return rows.map(toWebhook);
+      const keys = await keysOf(organizationId, rows);
+      const at = now();
+      return rows.map((row) => toWebhook(row, keys, at));
     },
 
     async create(auth, input, context) {
@@ -214,6 +344,12 @@ export function createOutgoingWebhooksService(deps: {
         'Masukkan password (dan kode verifikasi) untuk membuat webhook.',
       );
       const url = await checkUrl(auth.organizationId, input.url);
+      const format = input.format ?? 'native';
+      const mobichatKey =
+        format === 'mobichat' && input.mobichat
+          ? await verifyMobichatKey(auth.organizationId, input.mobichat.apiKey)
+          : null;
+      const mobichatBaseUrl = format === 'mobichat' ? checkBaseUrl(input.mobichat?.baseUrl) : null;
       const id = newId();
       const secret = newSecret();
       await db.transaction(async (tx) => {
@@ -233,7 +369,19 @@ export function createOutgoingWebhooksService(deps: {
           url,
           description: input.description ?? null,
           events: [...input.events],
+          format,
           secretEncrypted: sealer.encrypt(secret, secretContext(auth.organizationId, id)),
+          ...(mobichatKey
+            ? {
+                mobichatBaseUrl,
+                mobichatApiKeyId: mobichatKey.id,
+                mobichatApiKeyLast4: mobichatKey.last4,
+                mobichatApiKeyEncrypted: sealer.encrypt(
+                  mobichatKey.token,
+                  mobichatKeyContext(auth.organizationId, id),
+                ),
+              }
+            : {}),
           createdByUserId: auth.user.id,
         });
         await recordAudit(tx, {
@@ -247,16 +395,54 @@ export function createOutgoingWebhooksService(deps: {
             change: 'created',
             host: hostOf(url),
             events: input.events.join(','),
+            format,
+            ...(mobichatKey
+              ? {
+                  mobichatApiKeyId: mobichatKey.id,
+                  ...(mobichatBaseUrl ? { mobichatBaseHost: hostOf(mobichatBaseUrl) } : {}),
+                }
+              : {}),
             actorRole: role,
           },
           client: context.client,
         });
       });
-      return { webhook: toWebhook(await one(auth.organizationId, id)), secret };
+      return { webhook: await view(await one(auth.organizationId, id)), secret };
     },
 
     async update(auth, id, input, context) {
       const current = await one(auth.organizationId, id);
+      if (input.mobichat !== undefined && current.format !== 'mobichat') {
+        throw invalid('mobichat', 'Pengaturan MobiChat hanya untuk webhook format MobiChat.');
+      }
+      if (
+        input.events !== undefined &&
+        current.format === 'mobichat' &&
+        input.events.some((event) => event !== 'message.received')
+      ) {
+        throw invalid(
+          'events',
+          'Mode MobiChat hanya mengirim event "message.received" (pesan masuk).',
+        );
+      }
+      // Kunci & alamat balik menentukan ke mana n8n mengirim API key → wajib konfirmasi identitas.
+      const mobichatKey =
+        input.mobichat?.apiKey !== undefined
+          ? await verifyMobichatKey(auth.organizationId, input.mobichat.apiKey)
+          : null;
+      const baseUrlChange =
+        input.mobichat?.baseUrl !== undefined ? checkBaseUrl(input.mobichat.baseUrl) : undefined;
+      const baseUrlChanged =
+        baseUrlChange !== undefined && baseUrlChange !== current.mobichatBaseUrl;
+      if (mobichatKey || baseUrlChanged) {
+        await confirm(
+          auth,
+          input.confirmation,
+          'webhook.update_mobichat',
+          context,
+          'Masukkan password (dan kode verifikasi) untuk mengubah API key / alamat Balesin di webhook MobiChat.',
+        );
+      }
       let url: string | undefined;
       if (input.url !== undefined) {
         url = await checkUrl(auth.organizationId, input.url);
@@ -288,6 +474,20 @@ export function createOutgoingWebhooksService(deps: {
           patch.description = input.description;
           changedFields.push('description');
         }
+        if (mobichatKey) {
+          const sealer = box();
+          patch.mobichatApiKeyId = mobichatKey.id;
+          patch.mobichatApiKeyLast4 = mobichatKey.last4;
+          patch.mobichatApiKeyEncrypted = sealer.encrypt(
+            mobichatKey.token,
+            mobichatKeyContext(auth.organizationId, id),
+          );
+          changedFields.push('mobichatApiKey');
+        }
+        if (baseUrlChanged) {
+          patch.mobichatBaseUrl = baseUrlChange;
+          changedFields.push('mobichatBaseUrl');
+        }
         if (input.enabled !== undefined && input.enabled !== current.enabled) {
           patch.enabled = input.enabled;
           patch.disabledReason = input.enabled ? null : 'manual';
@@ -316,12 +516,16 @@ export function createOutgoingWebhooksService(deps: {
             ...(url !== undefined ? { host: hostOf(url), previousHost: hostOf(current.url) } : {}),
             ...(input.events !== undefined ? { events: input.events.join(',') } : {}),
             ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
+            ...(mobichatKey ? { mobichatApiKeyId: mobichatKey.id } : {}),
+            ...(baseUrlChanged
+              ? { mobichatBaseHost: baseUrlChange ? hostOf(baseUrlChange) : 'APP_URL' }
+              : {}),
             actorRole: role,
           },
           client: context.client,
         });
       });
-      return toWebhook(await one(auth.organizationId, id));
+      return view(await one(auth.organizationId, id));
     },
 
     async remove(auth, client, id) {
@@ -349,7 +553,7 @@ export function createOutgoingWebhooksService(deps: {
       });
     },
 
-    async rotateSecret(auth, id, confirmation, context) {
+    async rotateSecret(auth, id, confirmation, context, options = {}) {
       const sealer = box();
       await confirm(
         auth,
@@ -378,11 +582,12 @@ export function createOutgoingWebhooksService(deps: {
           .set({
             secretEncrypted: sealer.encrypt(secret, secretContext(auth.organizationId, id)),
             secretRotatedAt: at,
-            // Rahasia lama tetap ikut ditandatangani selama masa tumpang tindih.
-            previousSecretEncrypted: current.secretEncrypted,
-            previousSecretExpiresAt: new Date(
-              at.getTime() + OUTGOING_WEBHOOK_SECRET_OVERLAP_HOURS * 3600_000,
-            ),
+            // Rahasia lama tetap ikut ditandatangani selama masa tumpang tindih — kecuali dicabut
+            // seketika (rahasia bocor).
+            previousSecretEncrypted: options.revokePrevious ? null : current.secretEncrypted,
+            previousSecretExpiresAt: options.revokePrevious
+              ? null
+              : new Date(at.getTime() + OUTGOING_WEBHOOK_SECRET_OVERLAP_HOURS * 3600_000),
           })
           .where(eq(webhookEndpoints.id, id));
         await recordAudit(tx, {
@@ -391,11 +596,16 @@ export function createOutgoingWebhooksService(deps: {
           action: AUDIT_ACTIONS.outgoingWebhookSecretRotated,
           targetType: 'webhook',
           targetId: id,
-          metadata: { change: 'secret_rotated', host: hostOf(current.url), actorRole: role },
+          metadata: {
+            change: 'secret_rotated',
+            host: hostOf(current.url),
+            revokePrevious: options.revokePrevious === true,
+            actorRole: role,
+          },
           client: context.client,
         });
       });
-      return { webhook: toWebhook(await one(auth.organizationId, id)), secret };
+      return { webhook: await view(await one(auth.organizationId, id)), secret };
     },
 
     async test(auth, id) {
@@ -412,12 +622,28 @@ export function createOutgoingWebhooksService(deps: {
           endpointId: id,
           eventId,
           event: OUTGOING_WEBHOOK_TEST_EVENT,
-          payload: {
-            id: eventId,
-            event: OUTGOING_WEBHOOK_TEST_EVENT,
-            created_at: at.toISOString(),
-            data: { message: 'Event tes dari Pengaturan → Webhook.' },
-          },
+          payload:
+            endpoint.format === 'mobichat'
+              ? {
+                  event: OUTGOING_WEBHOOK_TEST_EVENT,
+                  event_id: eventId,
+                  created_at: at.toISOString(),
+                  message_text: 'Event tes dari Pengaturan → Webhook.',
+                  message_type: 'text',
+                  sender: 'system',
+                  message: {
+                    type: 'system',
+                    sender: 'system',
+                    text: 'Event tes dari Pengaturan → Webhook.',
+                    attachments: [],
+                  },
+                }
+              : {
+                  id: eventId,
+                  event: OUTGOING_WEBHOOK_TEST_EVENT,
+                  created_at: at.toISOString(),
+                  data: { message: 'Event tes dari Pengaturan → Webhook.' },
+                },
           nextAttemptAt: at,
         })
         .returning();
