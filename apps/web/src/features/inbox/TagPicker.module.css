@@ -1,0 +1,211 @@
+.tags {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+ul.list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+/* ---------- Chip tag: titik berwarna + nama (teks selalu --ink: kontras terjamin) ---------- */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  max-width: 100%;
+  min-height: 1.75rem;
+  padding: 0 var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.chip:has(.chipRemove) {
+  padding-right: var(--space-4);
+}
+
+.dot {
+  flex: none;
+  width: var(--space-8);
+  height: var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--ink-2);
+}
+
+/*
+ * Kunci palet tag (TAG_COLORS) → token desain. Ungu & toska belum punya token sendiri: sementara
+ * memakai token terdekat (dicatat di laporan; perlu token palet tag di design-tokens.ts).
+ */
+.chip[data-color='blue'] .dot,
+.chip[data-color='purple'] .dot {
+  background: var(--primary);
+}
+
+.chip[data-color='green'] .dot,
+.chip[data-color='teal'] .dot {
+  background: var(--success);
+}
+
+.chip[data-color='yellow'] .dot {
+  background: var(--warning);
+}
+
+.chip[data-color='orange'] .dot {
+  background: var(--accent);
+}
+
+.chip[data-color='red'] .dot {
+  background: var(--danger);
+}
+
+.chip[data-color='purple'] .dot,
+.chip[data-color='teal'] .dot {
+  /* Bentuk berbeda (cincin) supaya tidak sama persis dengan biru/hijau. */
+  border: 2px solid var(--surface);
+  outline: 2px solid currentcolor;
+  outline-offset: -2px;
+}
+
+.chipName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chipRemove {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--radius-pill);
+  color: var(--ink-2);
+}
+
+.chipRemove:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.add {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 1.75rem;
+  padding: 0 var(--space-12) 0 var(--space-8);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-pill);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.add:hover {
+  border-color: var(--primary);
+  color: var(--ink);
+}
+
+.error {
+  color: var(--danger-ink);
+  font-size: var(--text-12);
+}
+
+.empty {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+/* ---------- Pemilih tag ---------- */
+
+.popover {
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: min(18rem, calc(100vw - var(--space-32)));
+  max-height: min(22rem, 60dvh);
+  padding: var(--space-8);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+}
+
+.search {
+  height: var(--size-control);
+  padding: 0 var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: var(--text-14);
+}
+
+.search:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+
+ul.options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  overflow-y: auto;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  width: 100%;
+  min-height: var(--size-control);
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-input);
+  color: var(--ink);
+  font-size: var(--text-13);
+  text-align: left;
+}
+
+.option:hover {
+  background: var(--surface-2);
+}
+
+.check {
+  flex: none;
+  color: var(--primary);
+}
+
+.createText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .add,
+  .option {
+    min-height: var(--size-touch);
+  }
+
+  .chipRemove {
+    width: var(--size-touch);
+    height: var(--size-touch);
+    margin: calc(var(--space-8) * -1) 0;
+  }
+
+  .search {
+    height: var(--size-touch);
+    font-size: var(--text-16);
+  }
+}

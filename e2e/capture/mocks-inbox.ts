@@ -58,6 +58,7 @@ function conversation(init: PhotoConversationInit) {
       nameSource: init.source ?? (init.name.startsWith('+') ? 'none' : 'whatsapp'),
       phone: init.phone,
       waUsername: init.username ?? null,
+      tags: init.n === 1 ? PHOTO_CONTACT_TAGS : [],
     },
     assignee: init.assignee ? { id: id('a1a2b3c4', init.n), name: init.assignee } : null,
     unreadCount: init.unread ?? 0,
@@ -79,6 +80,28 @@ function conversation(init: PhotoConversationInit) {
   };
 }
 
+/** Tag contoh organisasi (warna = kunci palet, lihat TAG_COLORS). */
+export const PHOTO_TAGS = [
+  { name: 'Pelanggan prioritas', color: 'yellow', contactCount: 18 },
+  { name: 'Langganan 50 Mbps', color: 'blue', contactCount: 214 },
+  { name: 'Tunggakan', color: 'red', contactCount: 9 },
+  { name: 'Mitra', color: 'purple', contactCount: 12 },
+  { name: 'Bisnis', color: 'teal', contactCount: 31 },
+  { name: 'Pelanggan baru', color: 'green', contactCount: 46 },
+  { name: 'Survei lokasi', color: 'orange', contactCount: 7 },
+  { name: 'Arsip', color: 'gray', contactCount: 3 },
+].map((item, index) => ({
+  id: `7a9b0c1d-0000-4000-8000-00000000000${String(index + 1)}`,
+  createdAt: ago(30 * 24 * HOUR),
+  updatedAt: ago(30 * 24 * HOUR),
+  ...item,
+}));
+const tagRef = (index: number) => {
+  const tag = PHOTO_TAGS[index]!;
+  return { id: tag.id, name: tag.name, color: tag.color };
+};
+const PHOTO_CONTACT_TAGS = [tagRef(1), tagRef(0)];
+
 /** Agen contoh (nama pengirim pesan keluar). */
 const AGENT_CITRA = 'a1a2b3c4-0000-4000-8000-0000000000c1';
 const AGENTS = [
@@ -97,7 +120,7 @@ const SAMPLE_IMAGE = readFileSync(
   new URL('../../apps/web/src/assets/illustrations/login-hero-768.webp', import.meta.url),
 );
 
-/** Template percakapan contoh (quick reply `/`). */
+/** Balasan cepat contoh (quick reply `/`). */
 export const PHOTO_QUICK_REPLIES = [
   {
     shortcut: 'salam',
@@ -324,6 +347,7 @@ export const PHOTO_MESSAGES = [
       name: 'Rumah',
       address: 'Jl. Pahlawan No. 12, Kedaton',
     },
+    starredAt: ago(25 * HOUR),
     createdAt: ago(26 * HOUR - 3 * MINUTE),
   }),
   message(5, {
@@ -363,6 +387,7 @@ export const PHOTO_MESSAGES = [
     senderUserId: AGENT_CITRA,
     text: 'Sudah kami terima kak. Tim teknisi dijadwalkan datang hari ini.',
     status: 'delivered',
+    starredAt: ago(15 * MINUTE),
     replyTo: { messageId: id('e1a2b3c4', 7) },
     createdAt: ago(20 * MINUTE),
   }),
@@ -413,8 +438,87 @@ const PHOTO_CONTACT = {
   name: null,
   profileName: 'Budi Santoso',
   waUsername: 'budi.s',
+  tags: PHOTO_CONTACT_TAGS,
+  email: 'budi.santoso@contoh.id',
+  notes: 'Rumah di ujung gang, pagar hijau. Lebih mudah dihubungi sore hari.',
+  attributes: [
+    { key: 'ID pelanggan', value: 'PLG-0412' },
+    { key: 'Paket', value: 'Rumahan 50 Mbps' },
+  ],
   createdAt: ago(40 * 24 * HOUR),
   updatedAt: ago(2 * MINUTE),
+};
+
+/** Catatan sesi contoh (Rina = sesi foto; catatan Agus tidak bisa diubah olehnya). */
+const PHOTO_NOTES = [
+  {
+    id: '8b9c0d1e-0000-4000-8000-000000000001',
+    body: 'Sudah cek dari NOC: ONT tidak terdeteksi sejak 06.10. Kemungkinan kabel drop putus.',
+    author: { id: 'a1a2b3c4-0000-4000-8000-0000000000a9', name: 'Agus' },
+    createdAt: ago(35 * MINUTE),
+    updatedAt: ago(35 * MINUTE),
+    edited: false,
+    canEdit: false,
+    canDelete: true,
+  },
+  {
+    id: '8b9c0d1e-0000-4000-8000-000000000002',
+    body: 'Pelanggan minta teknisi datang setelah jam 2 siang.',
+    author: { id: AGENT_CITRA, name: 'Rina Kartika' },
+    createdAt: ago(18 * MINUTE),
+    updatedAt: ago(12 * MINUTE),
+    edited: true,
+    canEdit: true,
+    canDelete: true,
+  },
+];
+
+const event = (n: number, init: Record<string, unknown>) => ({
+  id: `9c0d1e2f-0000-4000-8000-00000000000${String(n)}`,
+  actor: { id: AGENT_CITRA, name: 'Rina Kartika' },
+  assignee: null,
+  previousAssignee: null,
+  tag: null,
+  fields: null,
+  ...init,
+});
+
+/** Log contoh (terlama dulu, seperti server). */
+const PHOTO_EVENTS = [
+  event(1, { kind: 'claimed', createdAt: ago(40 * MINUTE) }),
+  event(2, {
+    kind: 'tag_added',
+    tag: { name: 'Pelanggan prioritas', color: 'yellow' },
+    createdAt: ago(38 * MINUTE),
+  }),
+  event(3, {
+    kind: 'assigned',
+    assignee: { id: 'a1a2b3c4-0000-4000-8000-0000000000a9', name: 'Agus' },
+    previousAssignee: { id: AGENT_CITRA, name: 'Rina Kartika' },
+    createdAt: ago(36 * MINUTE),
+  }),
+  event(4, {
+    kind: 'note_added',
+    actor: { id: 'a1a2b3c4-0000-4000-8000-0000000000a9', name: 'Agus' },
+    createdAt: ago(35 * MINUTE),
+  }),
+  event(5, {
+    kind: 'contact_updated',
+    fields: ['email', 'attributes'],
+    createdAt: ago(20 * MINUTE),
+  }),
+  event(6, {
+    kind: 'tag_removed',
+    tag: { name: 'Survei lokasi', color: 'orange' },
+    createdAt: ago(16 * MINUTE),
+  }),
+];
+
+const onlyFilter = (only: string | null) => (row: (typeof PHOTO_MESSAGES)[number]) => {
+  if (only === 'starred') return Boolean((row as { starredAt?: string }).starredAt);
+  if (only === 'media') return ['image', 'video'].includes(row.type);
+  if (only === 'files') return ['document', 'audio'].includes(row.type);
+  return true;
 };
 
 export interface InboxMockOptions {
@@ -434,8 +538,18 @@ export interface InboxMockOptions {
   send?: (route: Route) => Promise<void>;
   /** Rem darurat sedang ditarik (pengaturan batas kirim, terlihat oleh Owner/Admin). */
   paused?: boolean;
-  /** Template percakapan (bawaan: contoh). */
+  /** Alasan rem ditarik (bawaan: tanpa alasan). */
+  pausedReason?: string;
+  /** Pesan keluar 24 jam terakhir di Batas kirim (bawaan 128). */
+  sentLast24Hours?: number;
+  /** Jawaban khusus `GET /settings/sending-limits` (memuat / gagal). */
+  sendingLimits?: (route: Route) => Promise<void> | undefined;
+  /** Balasan cepat (bawaan: contoh). */
   quickReplies?: typeof PHOTO_QUICK_REPLIES;
+  /** Master tag (bawaan: contoh). */
+  tags?: typeof PHOTO_TAGS;
+  /** Catatan sesi chat contoh (bawaan: contoh). */
+  notes?: typeof PHOTO_NOTES;
 }
 
 /** Pasang semua jawaban tiruan inbox + WebSocket diam (hanya `hello`). */
@@ -525,28 +639,46 @@ export async function inboxMocks(page: Page, options: InboxMockOptions = {}): Pr
         202,
       );
     }
-    if (options.messages) return options.messages(route);
-    const conversationId = new URL(route.request().url()).pathname.split('/').at(-2);
+    const url = new URL(route.request().url());
+    const only = url.searchParams.get('only');
+    if (options.messages && !only) return options.messages(route);
+    const conversationId = url.pathname.split('/').at(-2);
     const rows = conversationId === PHOTO_CHAT.id ? PHOTO_MESSAGES : PHOTO_MESSAGES.slice(-3);
-    return json(route, { messages: [...rows].reverse(), nextCursor: null });
+    return json(route, { messages: rows.filter(onlyFilter(only)).reverse(), nextCursor: null });
+  });
+  await page.route(`${API}/tags`, (route) => json(route, { tags: options.tags ?? PHOTO_TAGS }));
+  await page.route(/\/api\/v1\/conversations\/[0-9a-f-]{36}\/notes$/, (route) => {
+    const conversationId = new URL(route.request().url()).pathname.split('/').at(-2);
+    return json(route, {
+      notes: conversationId === PHOTO_CHAT.id ? (options.notes ?? PHOTO_NOTES) : [],
+    });
+  });
+  await page.route(/\/api\/v1\/conversations\/[0-9a-f-]{36}\/events$/, (route) => {
+    const conversationId = new URL(route.request().url()).pathname.split('/').at(-2);
+    return json(route, { events: conversationId === PHOTO_CHAT.id ? PHOTO_EVENTS : [] });
   });
   await page.route(`${API}/inbox/agents`, (route) => json(route, { agents: AGENTS }));
   await page.route(`${API}/inbox/sending-status`, (route) =>
     json(route, { paused: options.paused === true }),
   );
-  await page.route(`${API}/settings/sending-limits`, (route) =>
-    json(route, {
+  await page.route(`${API}/settings/sending-limits`, (route) => {
+    if (options.sendingLimits) return options.sendingLimits(route);
+    return json(route, {
       limits: {
         dailyPerUser: 500,
         dailyPerOrganization: 5000,
         perConversationPerMinute: 20,
         paused: options.paused
-          ? { at: ago(10 * MINUTE), by: { id: AGENT_CITRA, name: 'Rina Kartika' }, reason: null }
+          ? {
+              at: ago(10 * MINUTE),
+              by: { id: AGENT_CITRA, name: 'Rina Kartika' },
+              reason: options.pausedReason ?? null,
+            }
           : null,
-        sentLast24Hours: 128,
+        sentLast24Hours: options.sentLast24Hours ?? 128,
       },
-    }),
-  );
+    });
+  });
   await page.route(/\/api\/v1\/messages\/[0-9a-f-]{36}\/media$/, (route) =>
     route.fulfill({
       status: 200,
@@ -555,9 +687,21 @@ export async function inboxMocks(page: Page, options: InboxMockOptions = {}): Pr
       body: SAMPLE_IMAGE,
     }),
   );
-  await page.route(/\/api\/v1\/quick-replies(\?|$)/, (route) =>
-    json(route, { quickReplies: options.quickReplies ?? PHOTO_QUICK_REPLIES }),
-  );
+  // Menyaring seperti server (`q` pada shortcut/judul/isi) supaya "/zzz" tampil "tidak ada yang cocok".
+  await page.route(/\/api\/v1\/quick-replies(\?|$)/, (route) => {
+    const q = (new URL(route.request().url()).searchParams.get('q') ?? '').toLocaleLowerCase(
+      'id-ID',
+    );
+    const all = options.quickReplies ?? PHOTO_QUICK_REPLIES;
+    const quickReplies = q
+      ? all.filter((item) =>
+          [item.shortcut, item.title, item.body].some((text) =>
+            text.toLocaleLowerCase('id-ID').includes(q),
+          ),
+        )
+      : all;
+    return json(route, { quickReplies });
+  });
   await page.route(/\/api\/v1\/quick-replies\/[0-9a-f-]{36}\/use$/, (route) =>
     json(route, {
       text: 'Halo kak Budi Santoso, dengan Rina dari tim CS. Ada yang bisa kami bantu?',
@@ -633,6 +777,10 @@ export async function inboxMocks(page: Page, options: InboxMockOptions = {}): Pr
               profileName:
                 found.contact.nameSource === 'whatsapp' ? found.contact.displayName : null,
               waUsername: found.contact.waUsername,
+              tags: [],
+              email: null,
+              notes: null,
+              attributes: [],
             },
     });
   });

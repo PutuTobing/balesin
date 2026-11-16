@@ -140,21 +140,19 @@ test('rem darurat: banner, Kirim & Lampirkan nonaktif (draf tetap), lalu dilanju
   }
 });
 
-test('template percakapan: dibuat di Pengaturan, dipakai dengan "/" di composer', async ({
-  page,
-}) => {
+test('balasan cepat: dibuat di Pengaturan, dipakai dengan "/" di composer', async ({ page }) => {
   const shortcut = `salam${Date.now().toString(36)}`;
-  await openApp(page, '/pengaturan/template-percakapan');
+  await openApp(page, '/pengaturan/balasan-cepat');
   await page
-    .getByRole('button', { name: /Tambah template|Buat template pertama/ })
+    .getByRole('button', { name: /Tambah balasan cepat|Buat balasan cepat pertama/ })
     .first()
     .click();
-  const dialog = page.getByRole('dialog', { name: 'Tambah template percakapan' });
+  const dialog = page.getByRole('dialog', { name: 'Tambah balasan cepat' });
   await dialog.getByLabel('Shortcut').fill(shortcut);
   await dialog.getByLabel('Judul').fill('Salam pembuka');
   await dialog.getByLabel('Isi pesan').fill('Halo kak {nama}, dengan {agen} di sini.');
   await dialog.getByRole('button', { name: 'Simpan' }).click();
-  await expect(page.getByText(`Template /${shortcut} ditambahkan.`)).toBeVisible();
+  await expect(page.getByText(`Balasan cepat /${shortcut} ditambahkan.`)).toBeVisible();
 
   await openApp(page, `/inbox?chat=${conversationId}`);
   const chat = page.getByRole('region', { name: 'Ruang chat' });

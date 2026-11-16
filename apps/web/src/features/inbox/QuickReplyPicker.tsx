@@ -43,7 +43,7 @@ export function QuickReplyPicker({
         <div className={styles.note}>
           <p>{search ? q.notFound(search) : q.empty}</p>
           {canManage ? (
-            <Link to="/pengaturan/template-percakapan" className={styles.manage}>
+            <Link to="/pengaturan/balasan-cepat" className={styles.manage}>
               {q.manage}
             </Link>
           ) : null}

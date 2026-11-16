@@ -197,6 +197,11 @@
   text-wrap: pretty;
 }
 
+.closed > .closedBody {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
 .closedAction {
   display: flex;
   flex-direction: column;
@@ -248,4 +253,18 @@
   .send {
     transition: none;
   }
+}
+
+/* Tautan di kotak rem darurat (pengelola batas kirim): target sentuh penuh. */
+.noticeLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--size-touch);
+  color: var(--primary);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.noticeLink:hover {
+  text-decoration: underline;
 }

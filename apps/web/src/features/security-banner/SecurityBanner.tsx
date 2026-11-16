@@ -24,9 +24,18 @@ const MAIN_CONTENT_ID = 'konten';
  * pengguna — kenyamanan saja; bila penyimpanan diblokir, banner tetap bisa ditutup untuk kunjungan
  * ini.
  */
+const SENDING_KINDS: ReadonlySet<string> = new Set([
+  'sending_paused',
+  'sending_limit_reached',
+  'sending_limits_changed',
+]);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function SecurityBanner() {
   const session = useSession();
   const canView = useCan('audit.view');
+  const canChannels = useCan('channels.manage');
+  const canSendingLimits = useCan('sending.limits.manage');
   const summary = useQuery({ ...securitySummaryQuery, enabled: canView });
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const userId = session?.user.id ?? '';
@@ -86,6 +95,26 @@ export function SecurityBanner() {
         </p>
       </div>
       <div className={styles.actions}>
+        {latest.kind === 'webhook_signature_failed' &&
+        typeof latest.details.channelId === 'string' &&
+        UUID.test(latest.details.channelId) &&
+        canChannels ? (
+          // Webhook ditolak di satu channel: langsung ke halaman nomornya (S3 kritikus Channel).
+          <Link
+            to="/pengaturan/channel/$channelId"
+            params={{ channelId: latest.details.channelId }}
+            className={styles.review}
+            onClick={dismiss}
+          >
+            {copy.reviewChannel}
+          </Link>
+        ) : null}
+        {SENDING_KINDS.has(latest.kind) && canSendingLimits ? (
+          // Rem ditarik / batas tercapai / batas diubah: langsung ke Pengaturan → Batas kirim.
+          <Link to="/pengaturan/batas-kirim" className={styles.review} onClick={dismiss}>
+            {copy.reviewSending}
+          </Link>
+        ) : null}
         <Link
           to="/pengaturan/audit"
           search={auditSearchFor(events, summary.data.since)}

@@ -2,6 +2,7 @@ import { CONVERSATION_WINDOW_FILTERS, conversationWindowFilterSchema } from '@ba
 import { Check, SlidersHorizontal, X } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
 import { useRef, useState, type ReactNode } from 'react';
+import { TagChip } from './TagPicker';
 import { useEdgeFade } from './use-edge-fade';
 import { Icon } from '../../components/ui/Icon';
 import { Tooltip } from '../../components/ui/Tooltip';
@@ -94,6 +95,24 @@ export function InboxFilterMenu({
                 {options.agents.map((agent) => (
                   <Radio key={agent.id} value={agent.id} onSelect={keepOpen}>
                     {agent.name}
+                  </Radio>
+                ))}
+              </DropdownMenu.RadioGroup>
+            </Section>
+          ) : null}
+
+          {options.tags && options.tags.length > 0 ? (
+            <Section title={f.tag}>
+              <DropdownMenu.RadioGroup
+                value={filters.tagId ?? ANY}
+                onValueChange={(value) => onChange({ ...filters, tagId: value || undefined })}
+              >
+                <Radio value={ANY} onSelect={keepOpen}>
+                  {f.anyTag}
+                </Radio>
+                {options.tags.map((tag) => (
+                  <Radio key={tag.id} value={tag.id} onSelect={keepOpen}>
+                    <TagChip tag={tag} />
                   </Radio>
                 ))}
               </DropdownMenu.RadioGroup>

@@ -8,6 +8,7 @@ import {
   MoreHorizontal,
   Reply,
   RotateCcw,
+  Star,
   User,
 } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
@@ -205,6 +206,12 @@ function MessageRow({
               </p>
             ) : null}
             <p className={styles.meta}>
+              {message.starredAt ? (
+                <span className={styles.starred}>
+                  <Icon icon={Star} size={16} />
+                  <span className="sr-only">{t.inbox.actions.starred}</span>
+                </span>
+              ) : null}
               <time dateTime={message.createdAt}>{time}</time>
               {outbound && message.status ? (
                 <DeliveryIcon status={message.status} className={styles.status} />
@@ -322,6 +329,13 @@ function MessageMenu({
           <DropdownMenu.Item className={styles.menuItem} onSelect={() => actions.onReply(message)}>
             <Icon icon={Reply} size={16} />
             {a.reply}
+          </DropdownMenu.Item>
+          <DropdownMenu.Item
+            className={styles.menuItem}
+            onSelect={() => actions.onStar(message, !message.starredAt)}
+          >
+            <Icon icon={Star} size={16} />
+            {message.starredAt ? a.unstar : a.star}
           </DropdownMenu.Item>
           {ownReaction ? (
             <DropdownMenu.Item

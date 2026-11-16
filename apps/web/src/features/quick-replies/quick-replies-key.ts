@@ -1,2 +1,2 @@
-/** Kunci cache template percakapan (dibatalkan setelah buat/ubah/hapus). */
+/** Kunci cache balasan cepat (dibatalkan setelah buat/ubah/hapus). */
 export const quickRepliesKey = ['inbox', 'quick-replies'] as const;

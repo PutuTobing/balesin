@@ -6,6 +6,10 @@ import {
   type Conversation,
   type Message,
   type QuickReply,
+  type Tag,
+  type ConversationNote,
+  type ConversationEvent,
+  type MessageListFilter,
 } from '@balesin/shared';
 import type { FakeHandler, FakeInbox } from './fake-api';
 
@@ -36,6 +40,7 @@ export function fakeConversation(overrides: Partial<Conversation> = {}): Convers
       nameSource: 'whatsapp',
       phone: '+6281234567890',
       waUsername: null,
+      tags: [],
     },
     assignee: null,
     unreadCount: 0,
@@ -80,6 +85,7 @@ export function fakeMessage(overrides: Partial<Message> = {}): Message {
     failure: null,
     senderUserId: null,
     mediaAvailable: false,
+    starredAt: null,
     createdAt: '2026-11-16T03:00:00.000Z',
     ...overrides,
   };
@@ -96,10 +102,62 @@ export function fakeContact(overrides: Partial<Contact> = {}): Contact {
     name: null,
     profileName: 'Budi Santoso',
     waUsername: null,
+    tags: [],
+    email: null,
+    notes: null,
+    attributes: [],
     createdAt: '2026-11-16T02:00:00.000Z',
     updatedAt: '2026-11-16T02:00:00.000Z',
     ...overrides,
   };
+}
+
+export function fakeTag(overrides: Partial<Tag> = {}): Tag {
+  return {
+    id: overrides.id ?? uuid('a0000000'),
+    name: 'Pelanggan baru',
+    color: 'blue',
+    contactCount: 3,
+    createdAt: '2026-11-10T03:00:00.000Z',
+    updatedAt: '2026-11-10T03:00:00.000Z',
+    ...overrides,
+  };
+}
+
+export function fakeNote(overrides: Partial<ConversationNote> = {}): ConversationNote {
+  return {
+    id: overrides.id ?? uuid('b0000000'),
+    body: 'Pelanggan minta dihubungi setelah jam 5 sore.',
+    author: { id: SELF_ID, name: 'Rina Kartika' },
+    createdAt: '2026-11-16T03:10:00.000Z',
+    updatedAt: '2026-11-16T03:10:00.000Z',
+    edited: false,
+    canEdit: true,
+    canDelete: true,
+    ...overrides,
+  };
+}
+
+export function fakeEvent(overrides: Partial<ConversationEvent> = {}): ConversationEvent {
+  return {
+    id: overrides.id ?? uuid('9e000000'),
+    kind: 'claimed',
+    actor: { id: SELF_ID, name: 'Rina Kartika' },
+    assignee: null,
+    previousAssignee: null,
+    tag: null,
+    fields: null,
+    createdAt: '2026-11-16T03:05:00.000Z',
+    ...overrides,
+  };
+}
+
+/** Saringan `?only=` daftar pesan (panel Berkas). */
+function onlyFilter(message: Message, only: MessageListFilter | null): boolean {
+  if (only === 'starred') return Boolean(message.starredAt);
+  if (only === 'media') return ['image', 'video'].includes(message.type);
+  if (only === 'files') return ['document', 'audio'].includes(message.type);
+  return true;
 }
 
 export function fakeQuickReply(overrides: Partial<QuickReply> = {}): QuickReply {
@@ -188,6 +246,10 @@ export function fakeInboxRoutes(
       respond({ quickReply: fakeQuickReply(body as Partial<QuickReply>) }, 201),
     ),
     [`GET ${API_ROUTES.channels.list}`]: guard(() => respond({ channels: inbox.channels ?? [] })),
+    [`GET ${API_ROUTES.tags.list}`]: guard(() => respond({ tags: inbox.tags ?? [] })),
+    [`POST ${API_ROUTES.tags.list}`]: guard(({ body }) =>
+      respond({ tag: fakeTag({ ...(body as Partial<Tag>), contactCount: 0 }) }, 201),
+    ),
   };
   for (const quickReply of inbox.quickReplies ?? []) {
     const quickReplyId = quickReply.id;
@@ -206,11 +268,33 @@ export function fakeInboxRoutes(
     routes[`GET ${apiPath(API_ROUTES.inbox.conversation, { conversationId })}`] = guard(() =>
       respond({ conversation }),
     );
-    routes[`GET ${apiPath(API_ROUTES.inbox.messages, { conversationId })}`] = guard(() =>
-      respond({
-        messages: [...(inbox.messages?.[conversationId] ?? [])].reverse(),
+    routes[`GET ${apiPath(API_ROUTES.inbox.messages, { conversationId })}`] = guard(({ query }) => {
+      const only = query.get('only') as MessageListFilter | null;
+      return respond({
+        messages: [...(inbox.messages?.[conversationId] ?? [])]
+          .filter((message) => onlyFilter(message, only))
+          .reverse(),
         nextCursor: null,
-      }),
+      });
+    });
+    routes[`GET ${apiPath(API_ROUTES.inbox.notes, { conversationId })}`] = guard(() =>
+      respond({ notes: inbox.notes?.[conversationId] ?? [] }),
+    );
+    routes[`POST ${apiPath(API_ROUTES.inbox.notes, { conversationId })}`] = guard(({ body }) =>
+      respond({ note: fakeNote({ body: (body as { body: string }).body }) }, 201),
+    );
+    for (const note of inbox.notes?.[conversationId] ?? []) {
+      const noteId = note.id;
+      routes[`PATCH ${apiPath(API_ROUTES.inbox.note, { conversationId, noteId })}`] = guard(
+        ({ body }) =>
+          respond({ note: { ...note, body: (body as { body: string }).body, edited: true } }),
+      );
+      routes[`DELETE ${apiPath(API_ROUTES.inbox.note, { conversationId, noteId })}`] = guard(() =>
+        respond({ deleted: true }),
+      );
+    }
+    routes[`GET ${apiPath(API_ROUTES.inbox.events, { conversationId })}`] = guard(() =>
+      respond({ events: inbox.events?.[conversationId] ?? [] }),
     );
     // Kirim pesan: 202 `pending`, isi dari body (teks/media/reaksi).
     routes[`POST ${apiPath(API_ROUTES.inbox.messages, { conversationId })}`] = guard(({ body }) => {
@@ -295,6 +379,12 @@ export function fakeInboxRoutes(
     });
     for (const message of inbox.messages?.[conversationId] ?? []) {
       const messageId = message.id;
+      routes[`PUT ${apiPath(API_ROUTES.inbox.star, { messageId })}`] = guard(() =>
+        respond({ message: { ...message, starredAt: new Date().toISOString() } }),
+      );
+      routes[`DELETE ${apiPath(API_ROUTES.inbox.star, { messageId })}`] = guard(() =>
+        respond({ message: { ...message, starredAt: null } }),
+      );
       routes[`POST ${apiPath(API_ROUTES.inbox.retry, { messageId })}`] = guard(() =>
         respond({ message: { ...message, status: 'pending', failure: null } }, 202),
       );
@@ -324,9 +414,67 @@ export function fakeInboxRoutes(
         profileName:
           conversation.contact.nameSource === 'whatsapp' ? conversation.contact.displayName : null,
       });
-    routes[`GET ${apiPath(API_ROUTES.inbox.contact, { contactId: contact.id })}`] = guard(() =>
+    const contactId = contact.id;
+    routes[`GET ${apiPath(API_ROUTES.inbox.contact, { contactId })}`] = guard(() =>
       respond({ contact }),
     );
+    routes[`PATCH ${apiPath(API_ROUTES.inbox.contact, { contactId })}`] = guard(({ body }) => {
+      const changes = body as Partial<Contact>;
+      const name = changes.name === undefined ? contact.name : changes.name;
+      return respond({
+        contact: {
+          ...contact,
+          ...changes,
+          name,
+          displayName: name ?? contact.profileName ?? contact.phone ?? contact.displayName,
+          nameSource: name ? 'team' : 'whatsapp',
+        },
+      });
+    });
+    routes[`DELETE ${apiPath(API_ROUTES.inbox.contact, { contactId })}`] = guard(() =>
+      respond({
+        deleted: { messages: 3, conversations: 1, webhookEvents: 2, mediaFiles: 0 },
+      }),
+    );
+    routes[`GET ${apiPath(API_ROUTES.inbox.contactExport, { contactId })}`] = guard(() =>
+      respond({
+        exportedAt: '2026-11-16T04:00:00.000Z',
+        contact: {
+          id: contactId,
+          number: contact.number,
+          channelType: contact.channelType,
+          phone: contact.phone,
+          waUsername: contact.waUsername,
+          name: contact.name,
+          profileName: contact.profileName,
+          email: contact.email ?? null,
+          notes: contact.notes ?? null,
+          attributes: contact.attributes ?? [],
+          tags: (contact.tags ?? []).map((tag) => tag.name),
+          createdAt: contact.createdAt,
+        },
+        conversations: [],
+        messages: [],
+        truncated: false,
+      }),
+    );
+    routes[`POST ${apiPath(API_ROUTES.inbox.contactTags, { contactId })}`] = guard(({ body }) => {
+      const tag = inbox.tags?.find((item) => item.id === (body as { tagId: string }).tagId);
+      const tags = [...(contact.tags ?? [])];
+      if (tag) tags.push({ id: tag.id, name: tag.name, color: tag.color });
+      return respond({ contact: { ...contact, tags } });
+    });
+    for (const tag of [...(inbox.tags ?? []), ...(contact.tags ?? [])]) {
+      routes[`DELETE ${apiPath(API_ROUTES.inbox.contactTag, { contactId, tagId: tag.id })}`] =
+        guard(() =>
+          respond({
+            contact: {
+              ...contact,
+              tags: (contact.tags ?? []).filter((item) => item.id !== tag.id),
+            },
+          }),
+        );
+    }
   }
   return routes;
 }

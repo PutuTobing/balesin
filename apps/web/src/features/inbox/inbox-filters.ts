@@ -1,5 +1,6 @@
 import {
   type ChannelSummary,
+  type TagRef,
   type ConversationCountsResponse,
   type ConversationStatus,
   type ConversationWindowFilter,
@@ -10,6 +11,8 @@ import type { InboxTab } from './inbox-search';
 /** Saringan daftar chat (selain tab & kata pencarian). Semua opsional. */
 export interface InboxFilters {
   channelId?: string;
+  /** Tag kontak (percakapan yang kontaknya memakai tag ini). */
+  tagId?: string;
   /** UUID agen, `me`, atau `unassigned`. */
   assignee?: string;
   window?: ConversationWindowFilter;
@@ -60,9 +63,13 @@ export function searchTerm(raw: string): SearchTerm {
 
 /** Jumlah saringan aktif (lencana tombol saring). */
 export function activeFilterCount(filters: InboxFilters): number {
-  return [filters.channelId, filters.assignee, filters.window, filters.unread || undefined].filter(
-    (value) => value !== undefined,
-  ).length;
+  return [
+    filters.channelId,
+    filters.tagId,
+    filters.assignee,
+    filters.window,
+    filters.unread || undefined,
+  ].filter((value) => value !== undefined).length;
 }
 
 export function hasFilters(filters: InboxFilters): boolean {
@@ -77,6 +84,7 @@ export function conversationQueryString(
   const entries: [string, string | number | boolean | undefined][] = [
     ['status', params.status],
     ['channelId', params.channelId],
+    ['tagId', params.tagId],
     ['assignee', params.assignee],
     ['window', params.window],
     ['unread', params.unread ? 'true' : undefined],
@@ -96,6 +104,7 @@ export function compactParams(params: ConversationParams): ConversationParams {
   const result: ConversationParams = {};
   if (params.status) result.status = params.status;
   if (params.channelId) result.channelId = params.channelId;
+  if (params.tagId) result.tagId = params.tagId;
   if (params.assignee) result.assignee = params.assignee;
   if (params.window) result.window = params.window;
   if (params.unread) result.unread = true;
@@ -112,6 +121,8 @@ export interface FilterOptions {
   channels: ChannelSummary[];
   /** `null` = saringan agen tidak ditampilkan (mis. Teknisi: hanya chat miliknya). */
   agents: AgentOption[] | null;
+  /** Master tag (saringan tag); kosong = bagian tag tidak tampil. */
+  tags?: TagRef[];
 }
 
 const f = t.inbox.filters;
@@ -138,6 +149,12 @@ export function filterChips(filters: InboxFilters, options: FilterOptions, selfI
                 f.unknownAgent,
             );
     chips.push({ key: 'assignee', label: name });
+  }
+  if (filters.tagId) {
+    chips.push({
+      key: 'tagId',
+      label: f.chipTag(options.tags?.find((tag) => tag.id === filters.tagId)?.name ?? f.unknownTag),
+    });
   }
   if (filters.channelId) {
     chips.push({

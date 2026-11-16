@@ -273,16 +273,38 @@ const channelsRoute = createRoute({
   pendingComponent: ChannelsSkeleton,
 });
 
-/** Pengaturan → Template percakapan: izin `quick_replies.manage` (Owner, Admin, Supervisor). */
+/** Pengaturan → Balasan cepat: izin `quick_replies.manage` (Owner, Admin, Supervisor). */
 const quickRepliesRoute = createRoute({
   getParentRoute,
-  path: 'pengaturan/template-percakapan',
+  path: 'pengaturan/balasan-cepat',
   staticData: { page: { title: t.quickReplies.title, parent: 'settings' } },
   beforeLoad: ({ context }) => guardPermission(context.session, 'quick_replies.manage'),
   component: lazyRouteComponent(
     () => import('../features/quick-replies/QuickRepliesPage'),
     'QuickRepliesPage',
   ),
+});
+
+/** Pengaturan → Batas kirim & rem darurat: `sending.limits.manage` (Owner, Admin). */
+const sendingLimitsRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/batas-kirim',
+  staticData: { page: { title: t.sendingLimits.title, parent: 'settings' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'sending.limits.manage'),
+  component: lazyRouteComponent(
+    () => import('../features/sending-limits/SendingLimitsPage'),
+    'SendingLimitsPage',
+  ),
+});
+
+/** Alamat lama (sebelum istilah "balasan cepat") dialihkan. */
+const oldQuickRepliesRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/template-percakapan',
+  beforeLoad: () => {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error -- pola resmi TanStack Router
+    throw redirect({ to: '/pengaturan/balasan-cepat', replace: true });
+  },
 });
 
 /** Channel → Tambah nomor (wizard). Rute statis ini menang atas `$channelId`. */
@@ -427,6 +449,8 @@ const appChildren = [
   emailSettingsRoute,
   channelsRoute,
   quickRepliesRoute,
+  oldQuickRepliesRoute,
+  sendingLimitsRoute,
   channelWizardRoute,
   channelRoute,
   teamRoute,

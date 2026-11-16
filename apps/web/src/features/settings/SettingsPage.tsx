@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import {
   ChevronRight,
+  Gauge,
   History,
   Mail,
   MessageSquareText,
@@ -35,6 +36,7 @@ import {
   twoFactorStatusQuery,
 } from '../../lib/api/queries';
 import { TwoFactorBadge } from '../security/TwoFactorBadge';
+import { sendingLimitsQuery } from '../inbox/inbox-queries';
 import styles from './Settings.module.css';
 
 const APPEARANCE_HEADING_ID = 'pengaturan-tampilan';
@@ -57,17 +59,19 @@ export function SettingsPage() {
   const canAudit = useCan('audit.view');
   const canChannels = useCan('channels.manage');
   const canQuickReplies = useCan('quick_replies.manage');
+  const canSendingLimits = useCan('sending.limits.manage');
 
   return (
     <Page>
       <div className={styles.content}>
-        {canChannels || canTeam || canEmail || canAudit || canQuickReplies ? (
+        {canChannels || canTeam || canEmail || canAudit || canQuickReplies || canSendingLimits ? (
           <OrganizationSettings
             showChannels={canChannels}
             showTeam={canTeam}
             showEmail={canEmail}
             showAudit={canAudit}
             showQuickReplies={canQuickReplies}
+            showSendingLimits={canSendingLimits}
             canInvite={canInvite}
             canManageTeam={canManageTeam}
           />
@@ -151,6 +155,7 @@ function OrganizationSettings({
   showEmail,
   showAudit,
   showQuickReplies,
+  showSendingLimits,
   canInvite,
   canManageTeam,
 }: {
@@ -159,6 +164,7 @@ function OrganizationSettings({
   showEmail: boolean;
   showAudit: boolean;
   showQuickReplies: boolean;
+  showSendingLimits: boolean;
   canInvite: boolean;
   canManageTeam: boolean;
 }) {
@@ -174,6 +180,7 @@ function OrganizationSettings({
         {showTeam ? <TeamMenuItem canInvite={canInvite} canManage={canManageTeam} /> : null}
         {showEmail ? <EmailMenuItem /> : null}
         {showQuickReplies ? <QuickRepliesMenuItem /> : null}
+        {showSendingLimits ? <SendingLimitsMenuItem /> : null}
         {showAudit ? <AuditMenuItem /> : null}
       </ul>
     </section>
@@ -242,7 +249,7 @@ function ChannelsMenuItem() {
   );
 }
 
-/** Template percakapan `/`: jumlah template. */
+/** Balasan cepat `/`: jumlah balasan. */
 function QuickRepliesMenuItem() {
   const list = useQuery({
     queryKey: [...quickRepliesKey, ''],
@@ -250,7 +257,7 @@ function QuickRepliesMenuItem() {
   });
   return (
     <li>
-      <Link to="/pengaturan/template-percakapan" className={styles.menuLink}>
+      <Link to="/pengaturan/balasan-cepat" className={styles.menuLink}>
         <span className={styles.menuIcon}>
           <Icon icon={MessageSquareText} size={20} />
         </span>
@@ -264,6 +271,39 @@ function QuickRepliesMenuItem() {
               {t.quickReplies.menuCount(list.data.quickReplies.length)}
             </span>
           ) : list.isPending ? (
+            <Skeleton className={styles.statusSkeleton} />
+          ) : null}
+        </span>
+        <Icon icon={ChevronRight} size={16} className={styles.chevron} />
+      </Link>
+    </li>
+  );
+}
+
+/** Batas kirim: pesan 24 jam, atau "Rem darurat ditarik" (merah) saat pengiriman dihentikan. */
+function SendingLimitsMenuItem() {
+  const limits = useQuery(sendingLimitsQuery);
+  const data = limits.data?.limits;
+  return (
+    <li>
+      <Link to="/pengaturan/batas-kirim" className={styles.menuLink}>
+        <span className={styles.menuIcon}>
+          <Icon icon={Gauge} size={20} />
+        </span>
+        <span className={styles.menuText}>
+          <span className={styles.menuLabel}>{t.sendingLimits.title}</span>
+          <span className={styles.menuHint}>{t.sendingLimits.menuHint}</span>
+        </span>
+        <span className={styles.menuStatus}>
+          {data ? (
+            data.paused ? (
+              <span className={styles.menuDanger}>{t.sendingLimits.menuPaused}</span>
+            ) : (
+              <span className={styles.menuCount}>
+                {t.sendingLimits.menuRunning(data.sentLast24Hours)}
+              </span>
+            )
+          ) : limits.isPending ? (
             <Skeleton className={styles.statusSkeleton} />
           ) : null}
         </span>

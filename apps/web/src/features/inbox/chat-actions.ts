@@ -13,6 +13,8 @@ export interface ChatActions {
   onReply: (message: Message) => void;
   onReact: (message: Message, emoji: string) => void;
   onRetry: (message: Message) => void;
+  /** Tandai / lepas tanda pesan (bintang bersama). */
+  onStar: (message: Message, starred: boolean) => void;
   /** ID pesan yang sedang dikirim ulang. */
   retrying: ReadonlySet<string>;
   /** Nama agen pengirim pesan keluar. */
@@ -29,6 +31,7 @@ export const ChatActionsContext = createContext<ChatActions>({
   onReply: noop,
   onReact: noop,
   onRetry: noop,
+  onStar: noop,
   retrying: new Set(),
   agentName: () => null,
   selfId: null,

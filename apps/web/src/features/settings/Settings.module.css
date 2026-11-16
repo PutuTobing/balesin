@@ -185,6 +185,13 @@
   white-space: nowrap;
 }
 
+.menuDanger {
+  color: var(--danger-ink);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
 .statusSeparator {
   color: var(--ink-2);
   font-size: var(--text-14);

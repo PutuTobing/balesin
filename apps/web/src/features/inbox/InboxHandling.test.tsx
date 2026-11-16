@@ -82,6 +82,21 @@ describe('penanganan percakapan', () => {
     expect(chat().getByRole('button', { name: h.reopen })).toBeEnabled();
   });
 
+  it('HP: chat selesai punya "Buka lagi" di dasar layar → reopen', async () => {
+    const resolved = { ...served, status: 'resolved' as const };
+    act(() => setMediaQuery(media.hp, true));
+    const { api } = await renderApp(`/inbox?chat=${served.id}`, {
+      inbox: { ...inbox, conversations: [resolved] },
+    });
+    await chat().findByText('Halo kak');
+    const note = await chat().findByText(k.resolved);
+    const footer = within(note.parentElement!);
+    fireEvent.click(footer.getByRole('button', { name: h.reopen }));
+    await waitFor(() =>
+      expect(api.requests.some((request) => request.path.endsWith('/reopen'))).toBe(true),
+    );
+  });
+
   it('alihkan: dialog agen aktif dengan bebannya → assign userId', async () => {
     const { api } = await openChat();
     const menu = await openMenu();
@@ -129,7 +144,7 @@ describe('penanganan percakapan', () => {
   });
 });
 
-describe('template percakapan "/" di composer', () => {
+describe('balasan cepat "/" di composer', () => {
   it('slashQuery hanya untuk "/kata" utuh', () => {
     expect(slashQuery('/')).toBe('');
     expect(slashQuery('/sal')).toBe('sal');
@@ -174,9 +189,15 @@ describe('template percakapan "/" di composer', () => {
   });
 });
 
-describe('Pengaturan → Template percakapan', () => {
+describe('Pengaturan → Balasan cepat', () => {
+  it('alamat lama /pengaturan/template-percakapan dialihkan ke /pengaturan/balasan-cepat', async () => {
+    const { router } = await renderApp('/pengaturan/template-percakapan', { inbox });
+    await waitFor(() => expect(router.state.location.pathname).toBe('/pengaturan/balasan-cepat'));
+    expect(await screen.findByText('/salam')).toBeVisible();
+  });
+
   it('daftar, tambah (validasi klien), hapus dengan konfirmasi', async () => {
-    const { api } = await renderApp('/pengaturan/template-percakapan', { inbox });
+    const { api } = await renderApp('/pengaturan/balasan-cepat', { inbox });
     expect(await screen.findByText('/salam')).toBeVisible();
     expect(screen.getAllByText(t.quickReplies.used(12), { exact: false })).toHaveLength(2);
 
@@ -213,7 +234,7 @@ describe('Pengaturan → Template percakapan', () => {
   });
 
   it('CS tanpa quick_replies.manage dialihkan dari halaman kelola', async () => {
-    const { router } = await renderApp('/pengaturan/template-percakapan', {
+    const { router } = await renderApp('/pengaturan/balasan-cepat', {
       inbox,
       session: fakeSession('cs'),
     });

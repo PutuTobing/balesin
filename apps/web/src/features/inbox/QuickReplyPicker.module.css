@@ -103,8 +103,24 @@ ul.list {
 }
 
 @media (max-width: 640px) {
+  /* HP: baris 1 = shortcut + judul, baris 2 = isi — mulai di x yang sama dengan shortcut. */
+  .option {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: var(--space-8);
+    row-gap: var(--space-4);
+  }
+
+  .texts {
+    display: contents;
+  }
+
   .shortcut {
     min-width: 0;
+  }
+
+  .body {
+    grid-column: 1 / -1;
   }
 
   .hint {

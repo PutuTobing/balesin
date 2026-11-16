@@ -39,6 +39,7 @@ import { NumberFacts } from './NumberFacts';
 import { SectionNav } from './SectionNav';
 import './route-state';
 import { TestPanel } from './TestPanel';
+import { WebhookHealthCard } from './WebhookHealthCard';
 import { WebhookPanel } from './WebhookPanel';
 
 const routeApi = getRouteApi('/_app/pengaturan/channel/$channelId');
@@ -327,6 +328,7 @@ function WebhookCard({ channelId }: { channelId: string }) {
           {isApiError(webhook.error) ? webhook.error.message : t.api.network}
         </Notice>
       )}
+      <WebhookHealthCard channelId={channelId} />
       <ConfirmDialog
         open={asking}
         title={t.channels.webhook.rotateTitle}

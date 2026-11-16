@@ -32,7 +32,7 @@ import { quickRepliesKey } from './quick-replies-key';
 const q = t.quickReplies;
 
 /**
- * Pengaturan → Template percakapan (izin `quick_replies.manage`): daftar template `/` yang dipakai
+ * Pengaturan → Balasan cepat (izin `quick_replies.manage`): daftar template `/` yang dipakai
  * tim di composer, dengan cari, buat, ubah, dan hapus. Variabel hanya `{nama}` dan `{agen}`.
  */
 export function QuickRepliesPage() {
@@ -64,15 +64,21 @@ export function QuickRepliesPage() {
     );
   }, [list.data, search]);
 
+  // Tombol tambah di baris pencarian (bukan kepala halaman): judul tidak terpotong di HP.
   const addButton = (
-    <Button variant="primary" onClick={() => setEditing('new')}>
+    <Button
+      variant="primary"
+      className={styles.add}
+      aria-label={q.add}
+      onClick={() => setEditing('new')}
+    >
       <Icon icon={Plus} size={16} />
-      {q.add}
+      <span className={styles.addLabel}>{q.add}</span>
     </Button>
   );
 
   return (
-    <Page actions={list.data && list.data.quickReplies.length > 0 ? addButton : undefined}>
+    <Page>
       <div className={styles.content}>
         <p className={styles.intro}>{q.intro}</p>
         {done ? (
@@ -112,13 +118,18 @@ export function QuickRepliesPage() {
           />
         ) : (
           <>
-            <SearchField
-              value={search}
-              onChange={setSearch}
-              label={q.searchLabel}
-              placeholder={q.searchPlaceholder}
-              clearLabel={q.clearSearch}
-            />
+            <div className={styles.toolbar}>
+              <div className={styles.searchBox}>
+                <SearchField
+                  value={search}
+                  onChange={setSearch}
+                  label={q.searchLabel}
+                  placeholder={q.searchPlaceholder}
+                  clearLabel={q.clearSearch}
+                />
+              </div>
+              {addButton}
+            </div>
             {items.length === 0 ? (
               <p className={styles.note}>{q.notFound(search.trim())}</p>
             ) : (
@@ -300,20 +311,34 @@ function QuickReplyDialog({
           <TextAreaField
             ref={bodyRef}
             label={q.bodyLabel}
-            hint={q.bodyHint}
             value={body}
             onChange={(event) => setBody(event.target.value)}
             error={errors.body}
             rows={6}
             maxLength={QUICK_REPLY_BODY_MAX}
           />
-          <div className={styles.variables} role="group" aria-label={q.variablesLabel}>
-            {QUICK_REPLY_VARIABLES.map((variable) => (
-              <Button key={variable} variant="ghost" onClick={() => insert(variable)}>
-                <Icon icon={Plus} size={16} />
-                {q.insertVariable(`{${variable}}`, QUICK_REPLY_VARIABLE_LABELS[variable])}
-              </Button>
-            ))}
+          {/* Tepat di bawah kotak isi: kiri sisipkan variabel, kanan penghitung. */}
+          <div className={styles.bodyFooter}>
+            <div className={styles.variables} role="group" aria-label={q.variablesLabel}>
+              <span className={styles.insertLabel} aria-hidden="true">
+                {q.insertLabel}
+              </span>
+              {QUICK_REPLY_VARIABLES.map((variable) => (
+                <button
+                  key={variable}
+                  type="button"
+                  className={styles.variable}
+                  title={QUICK_REPLY_VARIABLE_LABELS[variable]}
+                  aria-label={q.insertVariable(
+                    `{${variable}}`,
+                    QUICK_REPLY_VARIABLE_LABELS[variable],
+                  )}
+                  onClick={() => insert(variable)}
+                >
+                  {`{${variable}}`}
+                </button>
+              ))}
+            </div>
             <span className={styles.count}>
               {body.length.toLocaleString('id-ID')} / {QUICK_REPLY_BODY_MAX.toLocaleString('id-ID')}
             </span>

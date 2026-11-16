@@ -34,17 +34,31 @@ interface Expectation {
   team: boolean;
   email: boolean;
   audit: boolean;
-  /** Template percakapan (`quick_replies.manage`). */
+  /** Balasan cepat (`quick_replies.manage`). */
   quickReplies: boolean;
+  /** Batas kirim & rem darurat (`sending.limits.manage`). */
+  sendingLimits: boolean;
 }
 
 /** Matriks izin halaman Pengaturan organisasi (team.invite/manage, settings.email.manage, audit.view). */
 const MATRIX: Record<'owner' | ExtraRole, Expectation> = {
-  owner: { team: true, email: true, audit: true, quickReplies: true },
-  admin: { team: true, email: true, audit: true, quickReplies: true },
-  supervisor: { team: false, email: false, audit: false, quickReplies: true },
-  cs: { team: false, email: false, audit: false, quickReplies: false },
-  teknisi: { team: false, email: false, audit: false, quickReplies: false },
+  owner: { team: true, email: true, audit: true, quickReplies: true, sendingLimits: true },
+  admin: { team: true, email: true, audit: true, quickReplies: true, sendingLimits: true },
+  supervisor: {
+    team: false,
+    email: false,
+    audit: false,
+    quickReplies: true,
+    sendingLimits: false,
+  },
+  cs: { team: false, email: false, audit: false, quickReplies: false, sendingLimits: false },
+  teknisi: {
+    team: false,
+    email: false,
+    audit: false,
+    quickReplies: false,
+    sendingLimits: false,
+  },
 };
 
 async function signInAs(browser: Browser, hp: boolean, user: ExtraUser): Promise<WatchedPage> {
@@ -89,13 +103,19 @@ async function openSettingsFromNav(page: Page): Promise<void> {
 
 async function expectSettingsMenu(page: Page, expected: Expectation): Promise<void> {
   const organization = page.getByRole('region', { name: 'Pengaturan organisasi' });
-  const any = expected.team || expected.email || expected.audit || expected.quickReplies;
+  const any =
+    expected.team ||
+    expected.email ||
+    expected.audit ||
+    expected.quickReplies ||
+    expected.sendingLimits;
   await expect(organization).toHaveCount(any ? 1 : 0);
   const menu = (name: RegExp) => page.getByRole('main').getByRole('link', { name });
   await expect(menu(/^Tim/)).toHaveCount(expected.team ? 1 : 0);
   await expect(menu(/^Email pengirim/)).toHaveCount(expected.email ? 1 : 0);
   await expect(menu(/^Audit log/)).toHaveCount(expected.audit ? 1 : 0);
-  await expect(menu(/^Template percakapan/)).toHaveCount(expected.quickReplies ? 1 : 0);
+  await expect(menu(/^Balasan cepat/)).toHaveCount(expected.quickReplies ? 1 : 0);
+  await expect(menu(/^Batas kirim/)).toHaveCount(expected.sendingLimits ? 1 : 0);
   // Semua peran: Keamanan akun.
   await expect(menu(/^Keamanan akun/)).toHaveCount(1);
   await expectNoHorizontalScroll(page);
@@ -127,6 +147,9 @@ for (const role of ['admin', 'supervisor', 'cs', 'teknisi'] as const) {
       if (!expected.team) await expectRedirectedToSettings(page, `/pengaturan/tim/${ownerId}`);
       if (!expected.email) await expectRedirectedToSettings(page, '/pengaturan/email');
       if (!expected.audit) await expectRedirectedToSettings(page, '/pengaturan/audit');
+      if (!expected.sendingLimits) {
+        await expectRedirectedToSettings(page, '/pengaturan/batas-kirim');
+      }
       if (!expected.audit) {
         await expectRedirectedToSettings(page, `/pengaturan/audit?userId=${ownerId}`);
       }

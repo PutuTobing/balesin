@@ -89,7 +89,8 @@
 }
 
 .agent:focus-visible {
-  outline-offset: 2px;
+  /* Di dalam kartu: cincin tidak terpotong wadah daftar yang bergulir. */
+  outline-offset: -2px;
 }
 
 .radio {

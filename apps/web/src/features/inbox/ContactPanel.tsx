@@ -1,5 +1,14 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ReactNode } from 'react';
+import { Pencil } from 'lucide-react';
+import { Tabs } from 'radix-ui';
+import { useState, type ReactNode } from 'react';
+import { Button } from '../../components/ui/Button';
+import { Icon } from '../../components/ui/Icon';
+import { useCan } from '../auth/session';
+import { ContactEditDialog } from './ContactEditDialog';
+import { ContactPrivacy } from './ContactPrivacy';
+import { FilesTab, LogTab, NotesTab } from './PanelTabs';
+import { ContactTags } from './TagPicker';
 import { Skeleton, SkeletonRegion } from '../../components/ui/Skeleton';
 import { t } from '../../i18n/id';
 import { formatDateTime } from '../../lib/format';
@@ -11,11 +20,55 @@ import { useMinuteClock } from './use-minute-clock';
 
 const d = t.inbox.detail;
 
+const p = t.inbox.panel;
+type PanelTab = 'info' | 'notes' | 'files' | 'log';
+const PANEL_TABS: PanelTab[] = ['info', 'notes', 'files', 'log'];
+
 /**
- * Isi panel detail untuk chat yang terbuka: identitas kontak + ringkasan percakapan. Data dari
- * cache yang sama dengan ruang chat (tidak ada permintaan ganda). Tag, catatan, dan aksi menyusul.
+ * Panel detail chat yang terbuka (butir 8): tab Info (identitas, tag, percakapan, kontak), Catatan
+ * sesi, Berkas (media/file/ditandai), dan Log. Data dari cache yang sama dengan ruang chat.
  */
-export function ContactPanel({ conversationId }: { conversationId: string }) {
+export function ContactPanel({
+  conversationId,
+  onClosed,
+}: {
+  conversationId: string;
+  /** Chat tidak tersedia lagi setelah tindakan di panel (mis. kontak dihapus). */
+  onClosed?: () => void;
+}) {
+  const [tab, setTab] = useState<PanelTab>('info');
+  return (
+    <Tabs.Root
+      value={tab}
+      onValueChange={(value) => setTab(PANEL_TABS.find((item) => item === value) ?? 'info')}
+      className={styles.root}
+    >
+      <Tabs.List className={styles.tabs} aria-label={p.tabsLabel}>
+        {PANEL_TABS.map((id) => (
+          <Tabs.Trigger key={id} value={id} className={styles.tab}>
+            {p.tabs[id]}
+          </Tabs.Trigger>
+        ))}
+      </Tabs.List>
+      <Tabs.Content value="info" className={styles.content}>
+        <InfoTab conversationId={conversationId} onClosed={onClosed} />
+      </Tabs.Content>
+      <Tabs.Content value="notes" className={styles.content}>
+        <NotesTab conversationId={conversationId} />
+      </Tabs.Content>
+      <Tabs.Content value="files" className={styles.content}>
+        <FilesTab conversationId={conversationId} />
+      </Tabs.Content>
+      <Tabs.Content value="log" className={styles.content}>
+        <LogTab conversationId={conversationId} />
+      </Tabs.Content>
+    </Tabs.Root>
+  );
+}
+
+function InfoTab({ conversationId, onClosed }: { conversationId: string; onClosed?: () => void }) {
+  const canManage = useCan('contacts.manage');
+  const [editing, setEditing] = useState(false);
   const queryClient = useQueryClient();
   const now = useMinuteClock();
   const forgotten = useQuery(goneQuery(conversationId)).data;
@@ -54,6 +107,15 @@ export function ContactPanel({ conversationId }: { conversationId: string }) {
         ) : null}
       </div>
 
+      {contact ? (
+        <section className={styles.section} aria-labelledby="detail-tag">
+          <h3 id="detail-tag" className={styles.sectionTitle}>
+            {p.tags}
+          </h3>
+          <ContactTags contact={contact} canManage={canManage} />
+        </section>
+      ) : null}
+
       <section className={styles.section} aria-labelledby="detail-percakapan">
         <h3 id="detail-percakapan" className={styles.sectionTitle}>
           {d.conversation}
@@ -72,9 +134,17 @@ export function ContactPanel({ conversationId }: { conversationId: string }) {
       </section>
 
       <section className={styles.section} aria-labelledby="detail-kontak">
-        <h3 id="detail-kontak" className={styles.sectionTitle}>
-          {d.contact}
-        </h3>
+        <div className={styles.sectionHead}>
+          <h3 id="detail-kontak" className={styles.sectionTitle}>
+            {d.contact}
+          </h3>
+          {canManage && contact ? (
+            <Button variant="ghost" onClick={() => setEditing(true)}>
+              <Icon icon={Pencil} size={16} />
+              {p.editContact}
+            </Button>
+          ) : null}
+        </div>
         {contactResult.isError ? (
           <p className={styles.note}>{d.failed}</p>
         ) : !contact ? (
@@ -93,10 +163,36 @@ export function ContactPanel({ conversationId }: { conversationId: string }) {
             {contact.waUsername ? (
               <Fact term={d.username}>{formatUsername(contact.waUsername)}</Fact>
             ) : null}
+            <Fact term={p.email}>
+              {contact.email ? <EmailText email={contact.email} /> : <Muted>{d.notSet}</Muted>}
+            </Fact>
+            {contact.notes ? (
+              <Fact term={p.notes}>
+                <span className={styles.multiline} dir="auto">
+                  {contact.notes}
+                </span>
+              </Fact>
+            ) : null}
+            {(contact.attributes ?? []).map((attribute) => (
+              <Fact key={attribute.key} term={attribute.key}>
+                <span dir="auto">{attribute.value}</span>
+              </Fact>
+            ))}
             <Fact term={d.createdAt}>{formatDateTime(contact.createdAt)}</Fact>
           </dl>
         )}
       </section>
+      {contact ? (
+        <ContactPrivacy contact={contact} conversationId={conversationId} onDeleted={onClosed} />
+      ) : null}
+      {contact && editing ? (
+        <ContactEditDialog
+          contact={contact}
+          open
+          onClose={() => setEditing(false)}
+          onSaved={() => setEditing(false)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -124,5 +220,18 @@ function PanelSkeleton({ rows = 5 }: { rows?: number }) {
         </div>
       ))}
     </SkeletonRegion>
+  );
+}
+
+/** Email panjang dipatah setelah "@" (bukan di tengah kata). */
+function EmailText({ email }: { email: string }) {
+  const at = email.indexOf('@');
+  if (at < 0) return <span className={styles.email}>{email}</span>;
+  return (
+    <span className={styles.email}>
+      {email.slice(0, at)}
+      <wbr />
+      {email.slice(at)}
+    </span>
   );
 }

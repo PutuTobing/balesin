@@ -126,4 +126,9 @@ export const SECURITY_EVENT_FILTERS: Readonly<
     action: 'channel.webhook_signature_rejected',
     targetType: 'channel',
   },
+  sending_paused: { action: 'sending.paused' },
+  sending_limit_reached: { action: 'sending.limit_reached' },
+  sending_limits_changed: { action: 'settings.sending_limits.updated' },
+  inbox_bulk_action: { action: 'inbox.bulk_action' },
+  quick_reply_risky: { targetType: 'quick_reply' },
 };

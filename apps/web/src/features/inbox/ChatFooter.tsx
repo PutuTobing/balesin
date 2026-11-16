@@ -1,9 +1,12 @@
+import { Link } from '@tanstack/react-router';
 import type { Conversation, Message } from '@balesin/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../components/ui/Button';
 import { FormErrorNotice } from '../../components/ui/FormErrorNotice';
 import { Notice } from '../../components/ui/Notice';
 import { t } from '../../i18n/id';
+import { media, useMediaQuery } from '../../lib/media';
+import type { ReactNode } from 'react';
 import { endpoints } from '../../lib/api/endpoints';
 import { formatClock } from '../../lib/format';
 import type { Lock } from '../../lib/use-lock';
@@ -50,13 +53,27 @@ export function ChatFooter({
   const now = useMinuteClock();
   const { paused, reason } = useSendingPaused();
   const selfId = useSession()?.user.id ?? null;
+  const isHp = useMediaQuery(media.hp);
+  const canManageLimits = useCan('sending.limits.manage');
   const window = windowState(conversation.windowExpiresAt, now);
   const windowOpen = window.kind === 'open' || window.kind === 'expiring';
 
   const notices = (
     <>
       {paused ? (
-        <Notice id={PAUSED_NOTICE_ID} tone="warning" role="status" title={k.pausedTitle}>
+        <Notice
+          id={PAUSED_NOTICE_ID}
+          tone="warning"
+          role="status"
+          title={k.pausedTitle}
+          actions={
+            canManageLimits ? (
+              <Link to="/pengaturan/batas-kirim" className={styles.noticeLink}>
+                {k.pausedManage}
+              </Link>
+            ) : undefined
+          }
+        >
           {k.pausedBody}
           {reason ? ` ${k.pausedReason(reason)}` : null}
         </Notice>
@@ -84,7 +101,13 @@ export function ChatFooter({
     return <FooterNote>{k.readOnly}</FooterNote>;
   }
   if (conversation.status === 'resolved') {
-    return <FooterNote>{k.resolved}</FooterNote>;
+    return (
+      <FooterNote
+        action={isHp ? <ReopenButton conversation={conversation} onError={onError} /> : null}
+      >
+        {k.resolved}
+      </FooterNote>
+    );
   }
   if (!windowOpen) {
     const none = window.kind === 'none';
@@ -124,11 +147,41 @@ export function ChatFooter({
   );
 }
 
-function FooterNote({ children }: { children: string }) {
+function FooterNote({ children, action }: { children: string; action?: ReactNode }) {
   return (
-    <div className={styles.closed} role="status">
-      <p className={styles.closedBody}>{children}</p>
+    <div className={styles.closed}>
+      <p className={styles.closedBody} role="status">
+        {children}
+      </p>
+      {action}
     </div>
+  );
+}
+
+/** HP: "Buka lagi" juga di dasar layar chat selesai (desktop: tombol di kepala chat). */
+function ReopenButton({
+  conversation,
+  onError,
+}: {
+  conversation: Conversation;
+  onError: (error: unknown) => void;
+}) {
+  const queryClient = useQueryClient();
+  const reopen = useMutation({
+    mutationFn: () => endpoints.inbox.reopen(conversation.id),
+    onMutate: () => onError(null),
+    onSuccess: ({ conversation: updated }) => {
+      if (updated) storeConversation(queryClient, updated);
+      else forgetConversation(queryClient, conversation.id);
+      void queryClient.invalidateQueries({ queryKey: inboxKeys.countsAll });
+      void queryClient.invalidateQueries({ queryKey: inboxKeys.conversationLists });
+    },
+    onError,
+  });
+  return (
+    <Button variant="secondary" loading={reopen.isPending} onClick={() => reopen.mutate()}>
+      {reopen.isPending ? t.inbox.handling.working : t.inbox.handling.reopen}
+    </Button>
   );
 }
 

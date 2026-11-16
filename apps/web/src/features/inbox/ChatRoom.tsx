@@ -341,6 +341,17 @@ function ChatBody({
           .then(({ message: sent }) => storeMessage(queryClient, conversation.id, sent))
           .catch(onError);
       },
+      onStar: (message, starred) => {
+        endpoints.inbox
+          .star(message.id, starred)
+          .then(({ message: updated }) => {
+            storeMessage(queryClient, conversation.id, updated);
+            void queryClient.invalidateQueries({
+              queryKey: ['inbox', 'messages-only', conversation.id],
+            });
+          })
+          .catch(onError);
+      },
       onRetry: (message) => {
         setError(null);
         setRetrying((current) => new Set(current).add(message.id));
@@ -458,6 +469,37 @@ function ChatHistory({
     }
     outboxCount.current = outbox.length;
   }, [outbox.length]);
+
+  // Kiriman gagal: baris "Belum terkirim" + "Kirim ulang" dirender sesudahnya, dan pemberitahuan
+  // galat di footer memperkecil riwayat — tetap menempel di dasar supaya tombolnya terlihat utuh
+  // (kritikus CH2).
+  const failedCount = outbox.filter((item) => item.state === 'failed').length;
+  const failedSeen = useRef(failedCount);
+  useEffect(() => {
+    const grew = failedCount > failedSeen.current;
+    failedSeen.current = failedCount;
+    if (!grew) return;
+    atBottom.current = true;
+    const frame = requestAnimationFrame(() => {
+      const box = scrollRef.current;
+      if (box) box.scrollTop = box.scrollHeight;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [failedCount]);
+
+  // Tinggi riwayat berubah (footer bertambah/berkurang, keyboard HP, isi baru di bawah): bila
+  // sedang di dasar, tetap di dasar.
+  const ready = !query.isPending;
+  useEffect(() => {
+    const box = scrollRef.current;
+    if (!ready || !box || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (atBottom.current) box.scrollTop = box.scrollHeight;
+    });
+    observer.observe(box);
+    for (const child of Array.from(box.children)) observer.observe(child);
+    return () => observer.disconnect();
+  }, [ready]);
 
   const onScroll = () => {
     const box = scrollRef.current;

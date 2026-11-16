@@ -32,7 +32,13 @@ import {
   type ConversationParams,
   type InboxFilters,
 } from './inbox-filters';
-import { agentsQuery, countsQuery, inboxChannelsQuery, reviveConversation } from './inbox-queries';
+import {
+  agentsQuery,
+  countsQuery,
+  inboxChannelsQuery,
+  reviveConversation,
+  tagsQuery,
+} from './inbox-queries';
 import type { InboxTab } from './inbox-search';
 import { InboxFilterMenu } from './InboxFilterMenu';
 import { useDetailPanel } from './use-detail-panel';
@@ -134,7 +140,8 @@ export function InboxScreen({
       .filter((agent) => agent.id !== session?.user.id)
       .map((agent) => ({ id: agent.id, name: agent.name }));
   }, [isTechnician, agentList, session?.user.id]);
-  const filterOptions = { channels, agents };
+  const tags = useQuery({ ...tagsQuery, enabled: !loading }).data?.tags;
+  const filterOptions = { channels, agents, tags };
   const chips = filterChips(filters, filterOptions, session?.user.id);
   const inboxEmpty =
     counts !== undefined && counts.counts.all === 0 && !hasFilters(filters) && !term.query;
@@ -296,7 +303,7 @@ export function InboxScreen({
             />
             <h2 className={styles.detailTitle}>{t.inbox.detail.title}</h2>
           </header>
-          <ContactPanel conversationId={chatId} />
+          <ContactPanel conversationId={chatId} onClosed={onCloseChat} />
         </aside>
       ) : null}
 
@@ -306,7 +313,7 @@ export function InboxScreen({
           onHide={(viaKeyboard) => setDetailOpen(false, viaKeyboard)}
         >
           {chatOpen ? (
-            <ContactPanel conversationId={chatId} />
+            <ContactPanel conversationId={chatId} onClosed={onCloseChat} />
           ) : (
             <p className={styles.detailEmpty}>{t.inbox.detail.emptyBody}</p>
           )}

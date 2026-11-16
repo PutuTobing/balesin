@@ -613,6 +613,25 @@ button.stepButton:hover {
   font-weight: var(--weight-semibold);
 }
 
+/* Diagnosis webhook: judul + tombol "Periksa lagi" sebaris, dipisah garis dari isian webhook. */
+.subHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--line);
+}
+
+.healthProblems {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding-left: var(--space-16);
+}
+
 /* ---------- Ringkasan nomor ---------- */
 
 .summaryHead {

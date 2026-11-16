@@ -340,6 +340,57 @@ describe('halaman nomor WhatsApp', () => {
   });
 });
 
+const health = (overrides: Record<string, unknown> = {}) => ({
+  health: {
+    status: 'attention',
+    lastReceivedAt: '2026-11-16T03:00:00.000Z',
+    lastProcessedAt: '2026-11-16T03:00:01.000Z',
+    last24h: {
+      received: 1240,
+      processed: 1236,
+      skipped: 0,
+      pending: 0,
+      failed: 2,
+      rejected: 0,
+      expiredPending: 0,
+      signatureFailures: 3,
+    },
+    stalledPending: 0,
+    lastSignatureFailureAt: '2026-11-16T02:00:00.000Z',
+    checkedAt: '2026-11-16T03:05:00.000Z',
+    ...overrides,
+  },
+});
+
+describe('diagnosis webhook', () => {
+  const h = t.channels.webhookHealth;
+
+  it('perlu dicek: alasan berupa hitungan (tanda tangan, gagal) + angka 24 jam', async () => {
+    await renderApp(path, {
+      routes: detailRoutes(channel, {
+        [`GET ${at(API_ROUTES.channels.webhookHealth)}`]: () => json(health()),
+      }),
+    });
+    expect(await screen.findByText(h.attentionTitle)).toBeVisible();
+    expect(
+      screen.getByText(/3 kiriman ditolak karena tanda tangan Meta tidak cocok/),
+    ).toBeVisible();
+    expect(screen.getByText(h.failed(2))).toBeVisible();
+    expect(screen.getByText('1.240')).toBeVisible();
+  });
+
+  it('tidak ada data 24 jam: petunjuk langganan webhook', async () => {
+    await renderApp(path, {
+      routes: detailRoutes(channel, {
+        [`GET ${at(API_ROUTES.channels.webhookHealth)}`]: () =>
+          json(health({ status: 'idle', lastReceivedAt: null, lastProcessedAt: null })),
+      }),
+    });
+    expect(await screen.findByText(h.idleTitle)).toBeVisible();
+    expect(screen.getAllByText(h.never)).toHaveLength(2);
+  });
+});
+
 describe('daftar channel & menu Pengaturan', () => {
   it('kosong: ajakan menghubungkan nomor pertama', async () => {
     await renderApp('/pengaturan/channel');

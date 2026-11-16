@@ -311,6 +311,18 @@ describe('cari & saring', () => {
     ).toEqual(['Hampir habis', 'Ditangani saya', 'Channel: CS Utama', 'Belum dibaca']);
   });
 
+  it('saringan tag kontak: query string, hitungan, dan label chip', () => {
+    const tagId = '6f1c2a90-2222-4c4c-9a9a-000000000001';
+    expect(conversationQueryString({ tagId })).toBe(`?tagId=${tagId}`);
+    expect(activeFilterCount({ tagId })).toBe(1);
+    expect(
+      filterChips(
+        { tagId },
+        { channels: [], agents: [], tags: [{ id: tagId, name: 'VIP', color: 'yellow' }] },
+      ).map((chip) => chip.label),
+    ).toEqual([t.inbox.filters.chipTag('VIP')]);
+  });
+
   it('parameter URL chat hanya UUID', () => {
     const id = '6F1C2A90-1111-4C4C-9A9A-000000000001';
     expect(parseChatId(id)).toBe(id.toLowerCase());
@@ -403,6 +415,33 @@ describe('event real-time → cache', () => {
       client.getQueryData<InfiniteData<MessageListResponse>>(inboxKeys.messages(conversation.id)),
     );
     expect(messages[0]?.status).toBe('read');
+  });
+
+  it('conversation.detail mengambil ulang hanya bagian yang berubah + log', () => {
+    vi.useFakeTimers();
+    const { client, conversation } = seed();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    const id = conversation.id;
+    applyInboxEvent(client, { type: 'conversation.detail', conversationId: id, section: 'notes' });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: inboxKeys.notes(id) });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: inboxKeys.events(id) });
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: inboxKeys.messages(id) });
+
+    invalidate.mockClear();
+    applyInboxEvent(client, { type: 'conversation.detail', conversationId: id, section: 'stars' });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: inboxKeys.messages(id) });
+
+    invalidate.mockClear();
+    applyInboxEvent(client, { type: 'conversation.detail', conversationId: id, section: 'tags' });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: inboxKeys.contact(conversation.contact.id),
+    });
+    vi.advanceTimersByTime(LIST_REFRESH_DELAY_MS);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: inboxKeys.conversationLists });
+
+    invalidate.mockClear();
+    applyInboxEvent(client, { type: 'tags.changed' });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: inboxKeys.tags });
   });
 
   it('percakapan yang tidak tersedia lagi dibuang dari cache', () => {

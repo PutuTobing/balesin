@@ -2,8 +2,10 @@ import type {
   Conversation,
   ConversationListResponse,
   ConversationResponse,
+  Contact,
   InboxStreamEvent,
   Message,
+  MessageListFilter,
   MessageListResponse,
 } from '@balesin/shared';
 import {
@@ -35,6 +37,12 @@ export const inboxKeys = {
   contact: (id: string) => ['inbox', 'contact', id] as const,
   channels: ['inbox', 'channels'] as const,
   agents: ['inbox', 'agents'] as const,
+  tags: ['inbox', 'tags'] as const,
+  notes: (id: string) => ['inbox', 'notes', id] as const,
+  events: (id: string) => ['inbox', 'events', id] as const,
+  /** Pesan tersaring panel detail (`only=starred|media|files`). */
+  messagesOnly: (id: string, only: MessageListFilter) =>
+    ['inbox', 'messages-only', id, only] as const,
   sendingLimits: ['inbox', 'sending-limits'] as const,
   sendingStatus: ['inbox', 'sending-status'] as const,
   /** Rem darurat diketahui sedang ditarik (dari 423 atau pengaturan batas kirim). */
@@ -151,6 +159,71 @@ export const sendingPausedQuery = queryOptions({
   staleTime: Infinity,
   enabled: false,
 });
+
+/** Master tag (pilih tag kontak, saringan tag). */
+export const tagsQuery = queryOptions({
+  queryKey: inboxKeys.tags,
+  queryFn: ({ signal }) => endpoints.tags.list(signal),
+  staleTime: 5 * 60_000,
+  retry: retryTransient,
+});
+
+export function notesQuery(conversationId: string) {
+  return queryOptions({
+    queryKey: inboxKeys.notes(conversationId),
+    queryFn: ({ signal }) => endpoints.inbox.notes(conversationId, signal),
+    retry: retryTransient,
+  });
+}
+
+export function eventsQuery(conversationId: string) {
+  return queryOptions({
+    queryKey: inboxKeys.events(conversationId),
+    queryFn: ({ signal }) => endpoints.inbox.events(conversationId, signal),
+    retry: retryTransient,
+  });
+}
+
+/** Media / file / pesan ditandai di panel detail (kursor sama dengan riwayat). */
+export function messagesOnlyQuery(conversationId: string, only: MessageListFilter) {
+  return infiniteQueryOptions({
+    queryKey: inboxKeys.messagesOnly(conversationId, only),
+    queryFn: ({ signal, pageParam }) =>
+      endpoints.inbox.messages(conversationId, pageParam, signal, only),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.nextCursor,
+    retry: retryTransient,
+  });
+}
+
+/** Kontak dari jawaban server (ubah kontak, pasang/lepas tag): kontak + ringkasan di percakapan. */
+export function storeContact(queryClient: QueryClient, contact: Contact): void {
+  queryClient.setQueryData(inboxKeys.contact(contact.id), { contact });
+  queryClient.setQueriesData<ConversationPages>(
+    { queryKey: inboxKeys.conversationLists },
+    (data) =>
+      data && {
+        ...data,
+        pages: data.pages.map((page) => ({
+          ...page,
+          conversations: page.conversations.map((item) =>
+            item.contact.id === contact.id
+              ? {
+                  ...item,
+                  contact: {
+                    ...item.contact,
+                    displayName: contact.displayName,
+                    nameSource: contact.nameSource,
+                    tags: contact.tags,
+                  },
+                }
+              : item,
+          ),
+        })),
+      },
+  );
+  scheduleListRefresh(queryClient);
+}
 
 export const inboxChannelsQuery = queryOptions({
   queryKey: inboxKeys.channels,
@@ -346,6 +419,27 @@ export function applyInboxEvent(queryClient: QueryClient, event: InboxStreamEven
       scheduleListRefresh(queryClient);
       return;
     }
+    case 'conversation.detail': {
+      // Hanya ID + bagian: ambil ulang bagian yang berubah (cakupan ditegakkan server lagi).
+      const id = event.conversationId;
+      void queryClient.invalidateQueries({ queryKey: inboxKeys.events(id) });
+      if (event.section === 'notes') {
+        void queryClient.invalidateQueries({ queryKey: inboxKeys.notes(id) });
+      } else if (event.section === 'stars') {
+        void queryClient.invalidateQueries({ queryKey: inboxKeys.messages(id) });
+        void queryClient.invalidateQueries({ queryKey: ['inbox', 'messages-only', id] });
+      } else {
+        const contactId = queryClient.getQueryData<ConversationResponse>(inboxKeys.conversation(id))
+          ?.conversation.contact.id;
+        if (contactId)
+          void queryClient.invalidateQueries({ queryKey: inboxKeys.contact(contactId) });
+        scheduleListRefresh(queryClient);
+      }
+      return;
+    }
+    case 'tags.changed':
+      void queryClient.invalidateQueries({ queryKey: inboxKeys.tags });
+      return;
     case 'sending.changed':
       // Rem darurat ditarik/dilanjutkan: banner & tombol kirim semua pengguna ikut berubah.
       queryClient.setQueryData(inboxKeys.sendingStatus, { paused: event.paused });

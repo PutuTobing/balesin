@@ -439,8 +439,22 @@ ol.timeline {
 
 @media (max-width: 640px) {
   /* Kepala chat HP: ruang untuk nama + nomor utuh (avatar ada di layar detail). */
-  .headerAvatar {
+  .header .headerAvatar {
     display: none;
+  }
+
+  /* Nomor tidak pernah terpotong (keamanan identitas); nama yang memendek. */
+  .header .headerText {
+    min-width: min-content;
+  }
+
+  .header .name {
+    contain: inline-size;
+  }
+
+  .header .sub {
+    overflow: visible;
+    text-overflow: clip;
   }
 
   .bubbleWrap {
@@ -784,4 +798,14 @@ ol.timeline {
   .messageMenuButton {
     transition: none;
   }
+}
+
+/* Pesan ditandai: bintang kecil di samping jam. */
+.starred {
+  display: inline-flex;
+  color: var(--warning-ink);
+}
+
+.starred svg {
+  fill: currentColor;
 }

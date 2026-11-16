@@ -37,6 +37,8 @@ export const queryKeys = {
   channels: ['settings', 'channels'] as const,
   channel: (channelId: string) => ['settings', 'channels', channelId] as const,
   channelWebhook: (channelId: string) => ['settings', 'channels', channelId, 'webhook'] as const,
+  channelWebhookHealth: (channelId: string) =>
+    ['settings', 'channels', channelId, 'webhook-health'] as const,
   businessProfile: (channelId: string) =>
     ['settings', 'channels', channelId, 'business-profile'] as const,
 };
@@ -239,6 +241,15 @@ export function channelWebhookQuery(channelId: string) {
     queryKey: queryKeys.channelWebhook(channelId),
     queryFn: ({ signal }) => endpoints.channels.webhook(channelId, signal),
     gcTime: 0,
+  });
+}
+
+/** Diagnosis webhook 24 jam; dimuat ulang tiap menit selama halaman nomor terbuka. */
+export function channelWebhookHealthQuery(channelId: string) {
+  return queryOptions({
+    queryKey: queryKeys.channelWebhookHealth(channelId),
+    queryFn: ({ signal }) => endpoints.channels.webhookHealth(channelId, signal),
+    refetchInterval: 60_000,
   });
 }
 

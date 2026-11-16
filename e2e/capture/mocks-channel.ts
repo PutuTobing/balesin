@@ -144,6 +144,32 @@ export const PHOTO_PROFILE = {
   vertical: 'PROF_SERVICES',
 };
 
+/** Diagnosis webhook contoh: hanya hitungan dan waktu. */
+function photoHealth(status: 'ok' | 'idle' | 'attention') {
+  const idle = status === 'idle';
+  const attention = status === 'attention';
+  return {
+    health: {
+      status,
+      lastReceivedAt: idle ? null : ago(0.05),
+      lastProcessedAt: idle ? null : ago(0.05),
+      last24h: {
+        received: idle ? 0 : 1_284,
+        processed: idle ? 0 : attention ? 1_270 : 1_284,
+        skipped: 0,
+        pending: 0,
+        failed: attention ? 2 : 0,
+        rejected: 0,
+        expiredPending: 0,
+        signatureFailures: attention ? 12 : 0,
+      },
+      stalledPending: 0,
+      lastSignatureFailureAt: attention ? ago(0.4) : null,
+      checkedAt: ago(0),
+    },
+  };
+}
+
 /**
  * Halaman nomor: channel, webhook, dan profil bisnis. Mengembalikan pengganti channel yang dijawab
  * GET berikutnya (mis. setelah tes koneksi, seperti server sungguhan yang mencatat hasil tes).
@@ -151,7 +177,12 @@ export const PHOTO_PROFILE = {
 export async function channelDetail(
   page: Page,
   channel: PhotoChannel,
-  options: { profile?: 'ok' | 'meta-error' | 'hang'; webhookWarning?: boolean } = {},
+  options: {
+    profile?: 'ok' | 'meta-error' | 'hang';
+    webhookWarning?: boolean;
+    /** Diagnosis webhook 24 jam (bawaan `ok`). */
+    health?: 'ok' | 'idle' | 'attention';
+  } = {},
 ): Promise<(next: PhotoChannel) => void> {
   const base = `${API}/settings/channels/${channel.id}`;
   let current = channel;
@@ -160,6 +191,9 @@ export async function channelDetail(
   );
   await page.route(`${base}/webhook`, (route) =>
     json(route, photoWebhook(channel.id, options.webhookWarning ? HTTPS_WARNING : null)),
+  );
+  await page.route(`${base}/webhook-health`, (route) =>
+    json(route, photoHealth(options.health ?? 'ok')),
   );
   await page.route(`${base}/business-profile`, (route) => {
     if (route.request().method() !== 'GET') return route.fallback();

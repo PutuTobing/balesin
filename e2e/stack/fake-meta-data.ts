@@ -48,6 +48,11 @@ export const FAKE_META = {
       display: '+62 811-0000-1014',
       verifiedName: 'Maju Jaya Inbox Balas',
     },
+    inboxDetail: {
+      id: '100000000000015',
+      display: '+62 811-0000-1015',
+      verifiedName: 'Maju Jaya Inbox Detail',
+    },
   },
   profile: {
     about: 'Internet cepat untuk rumah dan kantor.',

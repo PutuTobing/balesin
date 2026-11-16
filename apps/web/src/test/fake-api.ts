@@ -33,6 +33,9 @@ import {
   type InboxAgent,
   type Message,
   type QuickReply,
+  type Tag,
+  type ConversationNote,
+  type ConversationEvent,
 } from '@balesin/shared';
 import { vi } from 'vitest';
 import { fakeInboxRoutes } from './fake-inbox';
@@ -387,6 +390,12 @@ export interface FakeInbox {
   quickReplies?: QuickReply[];
   /** Rem darurat ditarik (`GET /inbox/sending-status`). */
   paused?: boolean;
+  /** Master tag organisasi (`GET /tags`). */
+  tags?: Tag[];
+  /** Catatan sesi per percakapan. */
+  notes?: Record<string, ConversationNote[]>;
+  /** Log percakapan per percakapan (terlama dulu). */
+  events?: Record<string, ConversationEvent[]>;
 }
 
 export interface FakeApi {

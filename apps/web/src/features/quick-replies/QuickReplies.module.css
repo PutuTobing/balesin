@@ -104,18 +104,91 @@ ul.list,
   gap: var(--space-8);
 }
 
+.bodyField {
+  gap: var(--space-4);
+}
+
+.bodyFooter {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
 .variables {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-8);
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.insertLabel {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+.variable {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--size-control);
+  padding: 0 var(--space-8);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+}
+
+.variable:hover {
+  background: var(--surface-2);
 }
 
 .count {
-  margin-left: auto;
+  flex: none;
+  padding-top: var(--space-8);
   color: var(--ink-2);
   font-size: var(--text-12);
   font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Baris cari + tambah ---------- */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.searchBox {
+  flex: 1;
+  min-width: 0;
+}
+
+.add {
+  flex: none;
+}
+
+@media (max-width: 640px) {
+  /* HP: tombol tambah jadi ikon 44×44 berlabel. */
+  .add {
+    width: var(--size-touch);
+    height: var(--size-touch);
+    padding: 0;
+  }
+
+  .addLabel {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .variable {
+    min-height: var(--size-touch);
+  }
 }
 
 /* ---------- Kerangka ---------- */

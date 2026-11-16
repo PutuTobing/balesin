@@ -308,6 +308,34 @@ export const channelScreens: Screen[] = [
     prepare: (page) => scrollTo(page, 'Webhook'),
   },
   {
+    name: 'nomor-webhook-diagnosis',
+    path: detailPath(MAIN.id),
+    before: async (page) => {
+      await quietSecurity(page);
+      await channelDetail(page, MAIN, { health: 'attention' });
+    },
+    waitFor: 'text=Ada yang perlu dicek',
+    prepare: async (page) => {
+      await page
+        .getByRole('heading', { level: 3, name: 'Diagnosis 24 jam terakhir' })
+        .scrollIntoViewIfNeeded();
+    },
+  },
+  {
+    name: 'nomor-webhook-diagnosis-kosong',
+    path: detailPath(MAIN.id),
+    before: async (page) => {
+      await quietSecurity(page);
+      await channelDetail(page, MAIN, { health: 'idle' });
+    },
+    waitFor: 'text=Belum ada data masuk 24 jam terakhir',
+    prepare: async (page) => {
+      await page
+        .getByRole('heading', { level: 3, name: 'Diagnosis 24 jam terakhir' })
+        .scrollIntoViewIfNeeded();
+    },
+  },
+  {
     name: 'nomor-profil',
     path: detailPath(MAIN.id),
     before: async (page) => {

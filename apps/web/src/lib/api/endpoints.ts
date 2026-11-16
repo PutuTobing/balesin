@@ -11,8 +11,21 @@ import {
   channelTestResultSchema,
   channelSummaryListResponseSchema,
   channelWebhookResponseSchema,
+  webhookHealthResponseSchema,
   contactResponseSchema,
   conversationActionResponseSchema,
+  conversationEventListResponseSchema,
+  contactExportSchema,
+  deleteContactResponseSchema,
+  conversationNoteListResponseSchema,
+  conversationNoteResponseSchema,
+  tagListResponseSchema,
+  tagResponseSchema,
+  type CreateTagRequest,
+  type MessageListFilter,
+  type PauseSendingRequest,
+  type UpdateContactRequest,
+  type UpdateSendingLimitsRequest,
   quickReplyListResponseSchema,
   quickReplyResponseSchema,
   useQuickReplyResponseSchema,
@@ -458,6 +471,12 @@ export function createEndpoints(client: ApiClient) {
           schema: channelWebhookResponseSchema,
           signal,
         }),
+      /** Diagnosis webhook 24 jam: hanya hitungan & waktu, tanpa payload (`channels.manage`). */
+      webhookHealth: (channelId: string, signal?: AbortSignal) =>
+        client.request(apiPath(API_ROUTES.channels.webhookHealth, { channelId }), {
+          schema: webhookHealthResponseSchema,
+          signal,
+        }),
       rotateVerifyToken: (channelId: string) =>
         client.request(apiPath(API_ROUTES.channels.rotateVerifyToken, { channelId }), {
           method: 'POST',
@@ -497,13 +516,86 @@ export function createEndpoints(client: ApiClient) {
           schema: conversationResponseSchema,
           signal,
         }),
-      messages: (conversationId: string, cursor: string | null, signal?: AbortSignal) =>
-        client.request(
-          `${apiPath(API_ROUTES.inbox.messages, { conversationId })}${
-            cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''
-          }`,
+      messages: (
+        conversationId: string,
+        cursor: string | null,
+        signal?: AbortSignal,
+        only?: MessageListFilter,
+      ) => {
+        const query = new URLSearchParams();
+        if (cursor) query.set('cursor', cursor);
+        if (only) query.set('only', only);
+        const text = query.toString();
+        return client.request(
+          `${apiPath(API_ROUTES.inbox.messages, { conversationId })}${text ? `?${text}` : ''}`,
           { schema: messageListResponseSchema, signal },
-        ),
+        );
+      },
+      /** Ubah kontak (`contacts.manage`): nama tim, email, catatan, atribut. */
+      updateContact: (contactId: string, body: UpdateContactRequest) =>
+        client.request(apiPath(API_ROUTES.inbox.contact, { contactId }), {
+          method: 'PATCH',
+          body,
+          schema: contactResponseSchema,
+        }),
+      /** Hapus kontak + data pribadinya (`contacts.delete`, wajib konfirmasi identitas). */
+      deleteContact: (contactId: string, confirmation: IdentityConfirmation) =>
+        client.request(apiPath(API_ROUTES.inbox.contact, { contactId }), {
+          method: 'DELETE',
+          body: { confirmation },
+          schema: deleteContactResponseSchema,
+        }),
+      /** Data pribadi satu kontak (JSON, `contacts.export`) untuk permintaan akses data. */
+      exportContact: (contactId: string) =>
+        client.request(apiPath(API_ROUTES.inbox.contactExport, { contactId }), {
+          schema: contactExportSchema,
+          csrf: true,
+        }),
+      addTag: (contactId: string, tagId: string) =>
+        client.request(apiPath(API_ROUTES.inbox.contactTags, { contactId }), {
+          method: 'POST',
+          body: { tagId },
+          schema: contactResponseSchema,
+        }),
+      removeTag: (contactId: string, tagId: string) =>
+        client.request(apiPath(API_ROUTES.inbox.contactTag, { contactId, tagId }), {
+          method: 'DELETE',
+          schema: contactResponseSchema,
+        }),
+      notes: (conversationId: string, signal?: AbortSignal) =>
+        client.request(apiPath(API_ROUTES.inbox.notes, { conversationId }), {
+          schema: conversationNoteListResponseSchema,
+          signal,
+        }),
+      addNote: (conversationId: string, body: string) =>
+        client.request(apiPath(API_ROUTES.inbox.notes, { conversationId }), {
+          method: 'POST',
+          body: { body },
+          schema: conversationNoteResponseSchema,
+        }),
+      updateNote: (conversationId: string, noteId: string, body: string) =>
+        client.request(apiPath(API_ROUTES.inbox.note, { conversationId, noteId }), {
+          method: 'PATCH',
+          body: { body },
+          schema: conversationNoteResponseSchema,
+        }),
+      deleteNote: (conversationId: string, noteId: string) =>
+        client.request(apiPath(API_ROUTES.inbox.note, { conversationId, noteId }), {
+          method: 'DELETE',
+          schema: z.object({ deleted: z.literal(true) }),
+        }),
+      /** Tandai / lepas tanda pesan (bintang, satu tanda bersama). */
+      star: (messageId: string, starred: boolean) =>
+        client.request(apiPath(API_ROUTES.inbox.star, { messageId }), {
+          method: starred ? 'PUT' : 'DELETE',
+          schema: messageResponseSchema,
+        }),
+      /** Riwayat penanganan + kejadian kontak (tab "Log"). */
+      events: (conversationId: string, signal?: AbortSignal) =>
+        client.request(apiPath(API_ROUTES.inbox.events, { conversationId }), {
+          schema: conversationEventListResponseSchema,
+          signal,
+        }),
       /** Tandai sudah dibaca (POST ber-CSRF, idempoten). */
       markRead: (conversationId: string) =>
         client.request(apiPath(API_ROUTES.inbox.read, { conversationId }), {
@@ -591,7 +683,7 @@ export function createEndpoints(client: ApiClient) {
         }),
     },
     /**
-     * Template percakapan / quick reply `/`: daftar & pakai (`inbox.reply`), kelola
+     * Balasan cepat / quick reply `/`: daftar & pakai (`inbox.reply`), kelola
      * (`quick_replies.manage`).
      */
     quickReplies: {
@@ -625,12 +717,43 @@ export function createEndpoints(client: ApiClient) {
           schema: z.object({ deleted: z.literal(true) }),
         }),
     },
-    /** Batas kirim & rem darurat (izin `sending.limits.manage`). */
+    /** Master tag (lihat `inbox.view`; buat `contacts.manage`). */
+    tags: {
+      list: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.tags.list, { schema: tagListResponseSchema, signal }),
+      create: (body: CreateTagRequest) =>
+        client.request(API_ROUTES.tags.list, {
+          method: 'POST',
+          body,
+          schema: tagResponseSchema,
+        }),
+    },
+    /** Batas kirim & rem darurat (izin `sending.limits.manage`; lanjutkan = `sending.resume`). */
     sendingLimits: {
       get: (signal?: AbortSignal) =>
         client.request(API_ROUTES.sendingLimits.settings, {
           schema: sendingLimitsResponseSchema,
           signal,
+        }),
+      /** Wajib konfirmasi identitas. */
+      update: (body: UpdateSendingLimitsRequest) =>
+        client.request(API_ROUTES.sendingLimits.settings, {
+          method: 'PUT',
+          body,
+          schema: sendingLimitsResponseSchema,
+        }),
+      /** Tarik rem darurat (tanpa konfirmasi identitas — arah aman, harus cepat). */
+      pause: (body: PauseSendingRequest) =>
+        client.request(API_ROUTES.sendingLimits.pause, {
+          method: 'POST',
+          body,
+          schema: sendingLimitsResponseSchema,
+        }),
+      resume: (confirmation: IdentityConfirmation) =>
+        client.request(API_ROUTES.sendingLimits.resume, {
+          method: 'POST',
+          body: { confirmation },
+          schema: sendingLimitsResponseSchema,
         }),
     },
     emailSettings: {
