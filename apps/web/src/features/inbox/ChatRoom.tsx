@@ -19,6 +19,7 @@ import {
   conversationQuery,
   flattenMessages,
   forgetConversation,
+  goneQuery,
   inboxKeys,
   isNotFound,
   messagesQuery,
@@ -37,6 +38,10 @@ interface ChatRoomProps {
   onBack?: () => void;
   /** Tombol tampil/sembunyikan panel detail (desktop/tablet). */
   detailToggle?: ReactNode;
+  /** HP: kepala chat menjadi tombol pembuka detail (layar bertumpuk). */
+  onOpenDetail?: () => void;
+  /** HP: chat dibuka dari daftar → fokus ke judul chat. */
+  focusTitle?: boolean;
   refetchInterval: number;
 }
 
@@ -45,19 +50,29 @@ interface ChatRoomProps {
  * yang dimuat mundur dengan kursor saat digulir ke atas. Kirim pesan menyusul (butir 6), jadi
  * tidak ada composer. Membuka chat menandainya sudah dibaca.
  */
-export function ChatRoom({ conversationId, onBack, detailToggle, refetchInterval }: ChatRoomProps) {
+export function ChatRoom({
+  conversationId,
+  onBack,
+  detailToggle,
+  onOpenDetail,
+  focusTitle = false,
+  refetchInterval,
+}: ChatRoomProps) {
   const queryClient = useQueryClient();
+  const forgotten = useQuery(goneQuery(conversationId)).data;
   const conversationResult = useQuery({
     ...conversationQuery(conversationId, queryClient),
+    enabled: !forgotten,
     refetchInterval,
   });
-  const gone = isNotFound(conversationResult.error);
+  const notFound = isNotFound(conversationResult.error);
+  const gone = forgotten || notFound;
   const conversation = gone ? undefined : conversationResult.data?.conversation;
 
   // Cakupan hilang (dialihkan/dihapus): buang data lama, jangan tetap ditampilkan.
   useEffect(() => {
-    if (gone) forgetConversation(queryClient, conversationId);
-  }, [gone, queryClient, conversationId]);
+    if (notFound) forgetConversation(queryClient, conversationId);
+  }, [notFound, queryClient, conversationId]);
 
   useMarkRead(conversation);
 
@@ -104,7 +119,13 @@ export function ChatRoom({ conversationId, onBack, detailToggle, refetchInterval
 
   return (
     <div className={styles.room}>
-      <ChatHeader conversation={conversation} onBack={onBack} detailToggle={detailToggle} />
+      <ChatHeader
+        conversation={conversation}
+        onBack={onBack}
+        detailToggle={detailToggle}
+        onOpenDetail={onOpenDetail}
+        focusTitle={focusTitle}
+      />
       <ChatHistory
         key={conversation.id}
         conversation={conversation}
@@ -174,26 +195,47 @@ function ChatHeader({
   conversation,
   onBack,
   detailToggle,
+  onOpenDetail,
+  focusTitle,
 }: {
   conversation: Conversation;
   onBack?: () => void;
   detailToggle?: ReactNode;
+  onOpenDetail?: () => void;
+  focusTitle?: boolean;
 }) {
   const now = useMinuteClock();
   const contact = useQuery(contactQuery(conversation.contact.id)).data?.contact;
   const identity = contact ? contactIdentity(contact) : summaryIdentity(conversation.contact);
-  const sub = [identity.handle, identity.fromWhatsApp ? t.inbox.item.fromWhatsApp : null].filter(
-    Boolean,
-  );
+  // HP: subjudul cukup nomor/@username (penanda "dari WhatsApp" ada di layar detail).
+  const sub = [
+    identity.handle,
+    identity.fromWhatsApp && !onOpenDetail ? t.inbox.item.fromWhatsApp : null,
+  ].filter(Boolean);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (focusTitle) titleRef.current?.focus({ preventScroll: true });
+  }, [focusTitle]);
   return (
     <header className={styles.header}>
       {onBack ? <IconButton label={t.inbox.chat.back} icon={ArrowLeft} onClick={onBack} /> : null}
-      <ContactAvatar name={identity.name} size="sm" />
-      <div className={styles.headerText}>
-        <h2 className={styles.name} dir="auto">
-          {identity.name}
-        </h2>
-        {sub.length > 0 ? <p className={styles.sub}>{sub.join(' · ')}</p> : null}
+      <div className={styles.identity}>
+        <ContactAvatar name={identity.name} size="sm" />
+        <div className={styles.headerText}>
+          <h2 ref={titleRef} tabIndex={-1} className={styles.name} dir="auto">
+            {identity.name}
+          </h2>
+          {sub.length > 0 ? <p className={styles.sub}>{sub.join(' · ')}</p> : null}
+        </div>
+        {onOpenDetail ? (
+          // Area tekan selebar identitas (≥ 44px); judul tetap heading untuk pembaca layar.
+          <button
+            type="button"
+            className={styles.identityButton}
+            aria-label={t.inbox.chat.openDetail(identity.name)}
+            onClick={onOpenDetail}
+          />
+        ) : null}
       </div>
       <WindowCountdown expiresAt={conversation.windowExpiresAt} now={now} showEnd />
       {detailToggle}

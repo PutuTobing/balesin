@@ -103,14 +103,38 @@ describe('identitas kontak', () => {
   });
 
   it('daftar: nomor selalu di samping nama yang bukan nomor itu sendiri', () => {
-    const summary = { id: 'x', number: 3, displayName: 'Budi', phone: '+6281234567890' };
+    const summary = {
+      id: 'x',
+      number: 3,
+      displayName: 'Budi',
+      nameSource: 'team' as const,
+      phone: '+6281234567890',
+      waUsername: null,
+    };
     expect(summaryIdentity(summary)).toEqual({
       name: 'Budi',
       handle: '+62 812-3456-7890',
       fromWhatsApp: false,
     });
+    // Nama kiriman pelanggan: penanda "dari WhatsApp".
+    expect(summaryIdentity({ ...summary, nameSource: 'whatsapp' }).fromWhatsApp).toBe(true);
+    // Tanpa nomor: @username menyertai nama; username sebagai nama tidak diulang.
+    expect(summaryIdentity({ ...summary, phone: null, waUsername: 'budi.s' }).handle).toBe(
+      '@budi.s',
+    );
+    expect(
+      summaryIdentity({
+        ...summary,
+        nameSource: 'none',
+        displayName: '@budi.s',
+        phone: null,
+        waUsername: 'budi.s',
+      }),
+    ).toEqual({ name: '@budi.s', handle: null, fromWhatsApp: false });
     // Nama tampilan = nomor: tidak diulang dua kali.
-    expect(summaryIdentity({ ...summary, displayName: '+6281234567890' })).toEqual({
+    expect(
+      summaryIdentity({ ...summary, nameSource: 'none', displayName: '+6281234567890' }),
+    ).toEqual({
       name: '+62 812-3456-7890',
       handle: null,
       fromWhatsApp: false,
@@ -194,7 +218,9 @@ describe('isi pesan sebagai teks', () => {
     ).toBe('-5.39714, 105.26679');
     const unsupported = messageBody(fakeMessage({ type: 'unsupported', rawType: 'order' }));
     expect(unsupported.label).toBe(t.inbox.content.unsupported);
-    expect(unsupported.detail).toBe('Jenis: order');
+    expect(unsupported.detail).toBe('Pesanan dari katalog');
+    // Jenis tak dikenal: tanpa keterangan (nama mentah tidak ditampilkan).
+    expect(messageBody(fakeMessage({ type: 'unsupported', rawType: 'x_baru' })).detail).toBeNull();
     expect(
       messageBody(
         fakeMessage({

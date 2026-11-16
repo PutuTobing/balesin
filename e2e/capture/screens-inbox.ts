@@ -1,6 +1,13 @@
 import type { Page } from '@playwright/test';
 import { apiError, sessionAs } from './mocks';
-import { PHOTO_CHAT, PHOTO_CONVERSATIONS, inboxMocks } from './mocks-inbox';
+import type { WebSocketRoute } from '@playwright/test';
+import {
+  PHOTO_CHAT,
+  PHOTO_CONVERSATIONS,
+  PHOTO_NEW_MESSAGE,
+  growingMessages,
+  inboxMocks,
+} from './mocks-inbox';
 import { quietSecurity } from './mocks-tim';
 import type { Screen } from './screens';
 
@@ -13,6 +20,12 @@ async function settle(page: Page): Promise<void> {
 
 async function search(page: Page, text: string): Promise<void> {
   await page.getByRole('searchbox', { name: 'Cari chat' }).fill(text);
+}
+
+/** Tutup menu saring; fokus kembali ke tombolnya (benar), tetapi tooltip-nya jangan ikut terfoto. */
+async function closeFilter(page: Page): Promise<void> {
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: /^Saring chat/ }).blur();
 }
 
 async function openFilter(page: Page): Promise<void> {
@@ -77,6 +90,70 @@ export const inboxScreens: Screen[] = [
       await scrollHistoryTop(page);
       await settle(page);
     },
+  },
+  // Riwayat digulir ke atas, lalu pesan masuk baru lewat WebSocket → tombol "Ada pesan baru".
+  (() => {
+    let socket: WebSocketRoute | undefined;
+    const history = growingMessages();
+    return {
+      name: 'inbox-pesan-baru',
+      path: CHAT,
+      before: async (page: Page) => {
+        await quietSecurity(page);
+        await inboxMocks(page, {
+          messages: history.handler,
+          onSocket: (ws) => {
+            socket = ws;
+          },
+        });
+      },
+      waitFor: 'text=Info dari grup RT',
+      prepare: async (page: Page) => {
+        await scrollHistoryTop(page);
+        history.add(PHOTO_NEW_MESSAGE);
+        socket?.send(
+          JSON.stringify({
+            type: 'message.created',
+            conversationId: PHOTO_CHAT.id,
+            messageId: PHOTO_NEW_MESSAGE.id,
+            direction: 'inbound',
+            createdAt: PHOTO_NEW_MESSAGE.createdAt,
+          }),
+        );
+        await page.getByRole('button', { name: 'Ada pesan baru' }).waitFor();
+        await settle(page);
+      },
+    } satisfies Screen;
+  })(),
+  // Desktop: panel detail disembunyikan → kolom pesan di tengah.
+  {
+    name: 'inbox-chat-detail-tertutup',
+    path: CHAT,
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page);
+    },
+    waitFor: 'text=Info dari grup RT',
+    prepare: async (page) => {
+      const hide = page.getByRole('button', { name: 'Sembunyikan detail' });
+      if (await hide.isVisible()) {
+        await hide.click();
+        await page.getByRole('button', { name: 'Tampilkan detail' }).waitFor();
+        await page.getByRole('button', { name: 'Tampilkan detail' }).blur();
+      }
+      await settle(page);
+    },
+  },
+  // HP: detail sebagai layar bertumpuk (`&detail=1`); desktop sama dengan inbox-chat.
+  {
+    name: 'inbox-chat-detail-hp',
+    path: `${CHAT}&detail=1`,
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page);
+    },
+    waitFor: 'text=Nama profil WhatsApp',
+    prepare: settle,
   },
   // Sesi habis + nomor tanpa nama, panel detail kontak bernama tim.
   {
@@ -227,7 +304,7 @@ export const inboxScreens: Screen[] = [
     prepare: async (page) => {
       await openFilter(page);
       await page.getByRole('menuitemradio', { name: 'Hampir habis' }).click();
-      await page.keyboard.press('Escape');
+      await closeFilter(page);
       await page.getByRole('list', { name: 'Saringan aktif' }).waitFor();
       await page.getByText('Budi Santoso').waitFor({ state: 'detached' });
       await settle(page);
@@ -244,7 +321,7 @@ export const inboxScreens: Screen[] = [
     prepare: async (page) => {
       await openFilter(page);
       await page.getByRole('menuitemradio', { name: 'Kedaluwarsa' }).click();
-      await page.keyboard.press('Escape');
+      await closeFilter(page);
       await page.getByText('Tidak ada chat yang cocok').waitFor();
       await settle(page);
     },

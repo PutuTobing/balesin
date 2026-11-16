@@ -5,7 +5,7 @@ import { t } from '../../i18n/id';
 import { formatDateTime } from '../../lib/format';
 import styles from './ContactPanel.module.css';
 import { contactIdentity, formatPhone, formatUsername } from './contact-identity';
-import { contactQuery, conversationQuery, isNotFound } from './inbox-queries';
+import { contactQuery, conversationQuery, goneQuery, isNotFound } from './inbox-queries';
 import { ContactAvatar, WindowCountdown } from './InboxBits';
 import { useMinuteClock } from './use-minute-clock';
 
@@ -18,15 +18,20 @@ const d = t.inbox.detail;
 export function ContactPanel({ conversationId }: { conversationId: string }) {
   const queryClient = useQueryClient();
   const now = useMinuteClock();
-  const conversationResult = useQuery(conversationQuery(conversationId, queryClient));
-  const gone = isNotFound(conversationResult.error);
+  const forgotten = useQuery(goneQuery(conversationId)).data;
+  const conversationResult = useQuery({
+    ...conversationQuery(conversationId, queryClient),
+    enabled: !forgotten,
+  });
+  const gone = forgotten || isNotFound(conversationResult.error);
   const conversation = gone ? undefined : conversationResult.data?.conversation;
   const contactResult = useQuery({
     ...contactQuery(conversation?.contact.id ?? ''),
     enabled: conversation !== undefined,
   });
 
-  if (gone) return <p className={styles.note}>{d.emptyBody}</p>;
+  // Tidak tersedia lagi (dialihkan/dihapus): keterangan, bukan kerangka selamanya.
+  if (gone) return <p className={styles.note}>{d.unavailable}</p>;
   if (!conversation) return <PanelSkeleton />;
 
   const contact = contactResult.data?.contact;

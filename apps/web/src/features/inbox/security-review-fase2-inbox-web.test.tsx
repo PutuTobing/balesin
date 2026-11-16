@@ -1,6 +1,6 @@
 /**
  * Review keamanan Fase 2 — web inbox (docs/security-reviews/2026-11-17-fase2-inbox-web.md).
- * Penjaga regresi (`it`) + temuan yang dikunci `it.fails`. API & WebSocket tiruan (jsdom).
+ * Penjaga regresi (`it`); temuan R1 sudah ditutup (dulu `it.fails`). API & WebSocket tiruan (jsdom).
  */
 import { API_ROUTES, apiPath } from '@balesin/shared';
 import { act, screen, waitFor, within } from '@testing-library/react';
@@ -186,10 +186,10 @@ describe('sesi berakhir / keluar', () => {
   });
 });
 
-describe('R1 — 404 saat chat terbuka: sebagian cache lama tetap tersimpan', () => {
-  // `forgetConversation` membuang pesan + baris daftar, tetapi query detail percakapan (nama,
-  // nomor, cuplikan pesan terakhir) dan kontak (nomor, nama profil) tetap di cache sampai gc.
-  it.fails('detail percakapan & kontak yang sudah di luar cakupan dibuang dari cache', async () => {
+describe('R1 — 404 saat chat terbuka: semua cache lama dibuang (ditutup)', () => {
+  // `forgetConversation` membuang pesan, baris daftar, detail percakapan, dan kontak; panel
+  // detail menampilkan "tidak tersedia", bukan kerangka selamanya.
+  it('detail percakapan & kontak yang sudah di luar cakupan dibuang dari cache', async () => {
     act(() => setMediaQuery(media.desktop, true));
     const { api, queryClient } = await renderApp(`/inbox?chat=${evil.id}`, { inbox });
     await chatRegion().findByText(new RegExp(SECRET_TEXT));
@@ -217,5 +217,9 @@ describe('R1 — 404 saat chat terbuka: sebagian cache lama tetap tersimpan', ()
 
     expect(queryClient.getQueryData(inboxKeys.conversation(evil.id))).toBeUndefined();
     expect(queryClient.getQueryData(inboxKeys.contact(evil.contact.id))).toBeUndefined();
+    expect(queryClient.getQueryData(inboxKeys.messages(evil.id))).toBeUndefined();
+    const detail = within(screen.getByRole('complementary', { name: t.inbox.detail.label }));
+    expect(await detail.findByText(t.inbox.detail.unavailable)).toBeVisible();
+    expect(document.body.textContent).not.toContain(SECRET_TEXT);
   });
 });

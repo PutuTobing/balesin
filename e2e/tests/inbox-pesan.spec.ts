@@ -208,7 +208,8 @@ test('pesan masuk bertanda tangan tampil di daftar, bisa dibuka, dan pesan baru 
   await expect(chat.getByText('Halo kak, internet mati. <b>tolong</b>')).toBeVisible();
   await expect(chat.getByText('Dokumen: tagihan-november.pdf')).toBeVisible();
   await expect(chat.getByRole('heading', { level: 2, name: customer.name })).toBeVisible();
-  await expect(chat.getByText(/dari WhatsApp/)).toBeVisible();
+  // Desktop: penanda di kepala chat. HP: subjudul cukup nomor, penanda ada di layar detail.
+  if (!hp) await expect(chat.getByText(/dari WhatsApp/)).toBeVisible();
   await expect(chat.getByRole('textbox')).toHaveCount(0);
 
   // Pesan baru saat chat terbuka → muncul tanpa muat ulang.
@@ -229,9 +230,18 @@ test('pesan masuk bertanda tangan tampil di daftar, bisa dibuka, dan pesan baru 
   if (hp) {
     // HP: chat = layar bertumpuk tanpa navigasi bawah; kembali ke daftar.
     await expect(page.getByRole('navigation', { name: 'Navigasi utama' })).toBeHidden();
+    await expect(chat.getByRole('heading', { level: 2, name: customer.name })).toBeFocused();
+    // Detail sebagai layar bertumpuk (`&detail=1`); kembali = ke chat.
+    await chat.getByRole('button', { name: `Lihat detail ${customer.name}` }).click();
+    await expect(page).toHaveURL(/[?&]detail=1/);
+    const detail = page.getByRole('complementary', { name: 'Detail kontak' });
+    await expect(detail.getByText('dari WhatsApp')).toBeVisible();
+    await expect(detail.getByText(setup.channelName)).toBeVisible();
+    await detail.getByRole('button', { name: 'Kembali ke chat' }).click();
+    await expect(page).not.toHaveURL(/detail=/);
     await chat.getByRole('button', { name: 'Kembali ke daftar chat' }).click();
     await expect(page).not.toHaveURL(/chat=/);
-    await expect(conversationRow(page, customer.name)).toBeVisible();
+    await expect(conversationRow(page, customer.name)).toBeFocused();
   } else {
     const detail = page.getByRole('complementary', { name: 'Detail kontak' });
     await expect(detail.getByText('Nama profil WhatsApp')).toBeVisible();

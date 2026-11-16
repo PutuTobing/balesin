@@ -44,17 +44,20 @@ function isSameHandle(name: string, handle: string, raw: string | null): boolean
 }
 
 /**
- * Identitas dari ringkasan kontak di daftar (`displayName` + `phone`). Sumber nama tidak
- * diketahui dari ringkasan, jadi penanda "dari WhatsApp" hanya tampil di ruang chat/detail
- * (yang memuat kontak lengkap).
+ * Identitas dari ringkasan kontak di daftar. Nomor (atau @username bila tanpa nomor) selalu
+ * menyertai nama; `nameSource: 'whatsapp'` = nama kiriman pelanggan → penanda "dari WhatsApp".
  */
 export function summaryIdentity(contact: ContactSummary): ContactIdentity {
   const phone = formatPhone(contact.phone);
-  const handle = phone && !isSameHandle(contact.displayName, phone, contact.phone) ? phone : null;
+  const handleValue = phone ?? formatUsername(contact.waUsername);
+  const same =
+    handleValue !== null &&
+    (isSameHandle(contact.displayName, handleValue, contact.phone) ||
+      contact.displayName === contact.waUsername);
   return {
-    name: phone && !handle ? phone : contact.displayName,
-    handle,
-    fromWhatsApp: false,
+    name: same && handleValue ? handleValue : contact.displayName,
+    handle: same ? null : handleValue,
+    fromWhatsApp: contact.nameSource === 'whatsapp',
   };
 }
 

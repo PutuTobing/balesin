@@ -29,7 +29,9 @@ export function fakeConversation(overrides: Partial<Conversation> = {}): Convers
       id: uuid('d0000000'),
       number: 1,
       displayName: 'Budi Santoso',
+      nameSource: 'whatsapp',
       phone: '+6281234567890',
+      waUsername: null,
     },
     assignee: null,
     unreadCount: 0,
@@ -46,6 +48,8 @@ export function fakeConversation(overrides: Partial<Conversation> = {}): Convers
     },
     createdAt: '2026-11-16T02:00:00.000Z',
     resolvedAt: null,
+    firstAssignedAt: null,
+    firstResponseAt: null,
     ...overrides,
   };
 }
@@ -82,6 +86,7 @@ export function fakeContact(overrides: Partial<Contact> = {}): Contact {
     id: overrides.id ?? uuid('d0000000'),
     number: 1,
     displayName: 'Budi Santoso',
+    nameSource: 'whatsapp',
     phone: '+6281234567890',
     channelType: 'whatsapp',
     name: null,
@@ -168,8 +173,12 @@ export function fakeInboxRoutes(
       fakeContact({
         id: conversation.contact.id,
         displayName: conversation.contact.displayName,
+        nameSource: conversation.contact.nameSource,
         phone: conversation.contact.phone,
-        profileName: conversation.contact.displayName,
+        waUsername: conversation.contact.waUsername,
+        name: conversation.contact.nameSource === 'team' ? conversation.contact.displayName : null,
+        profileName:
+          conversation.contact.nameSource === 'whatsapp' ? conversation.contact.displayName : null,
       });
     routes[`GET ${apiPath(API_ROUTES.inbox.contact, { contactId: contact.id })}`] = guard(() =>
       respond({ contact }),

@@ -2,7 +2,13 @@ import { randomBytes } from 'node:crypto';
 import { request } from '@playwright/test';
 import { Redis } from 'ioredis';
 import pg from 'pg';
-import { E2E_ADMIN_DATABASE_URL, E2E_DATABASE_NAME, E2E_OWNER, E2E_REDIS_URL } from '../stack/env';
+import {
+  E2E_ADMIN_DATABASE_URL,
+  E2E_DATABASE_NAME,
+  E2E_OWNER,
+  E2E_REDIS_URL,
+  assertTestRedisUrl,
+} from '../stack/env';
 import { BASE_URL } from '../viewports';
 import { totpAtStep, totpStep } from './two-factor';
 
@@ -186,6 +192,7 @@ export async function userId(email: string): Promise<string> {
  * yang sedang diuji tidak disentuh (kunci Redis lain).
  */
 export async function releaseLoginIpBudget(): Promise<void> {
+  assertTestRedisUrl(E2E_REDIS_URL);
   const redis = new Redis(E2E_REDIS_URL, { lazyConnect: true, maxRetriesPerRequest: 1 });
   await redis.connect();
   try {
@@ -203,6 +210,7 @@ export async function releaseLoginIpBudget(): Promise<void> {
  * tes (fixture). Batas lajunya sendiri diuji di tes integrasi API.
  */
 export async function releaseInboxReadBudget(): Promise<void> {
+  assertTestRedisUrl(E2E_REDIS_URL);
   const redis = new Redis(E2E_REDIS_URL, { lazyConnect: true, maxRetriesPerRequest: 1 });
   await redis.connect();
   try {

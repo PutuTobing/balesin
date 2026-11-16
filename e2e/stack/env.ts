@@ -72,3 +72,19 @@ export function backendEnv(): Record<string, string> {
     SMTP_HOST: '',
   };
 }
+
+/**
+ * Pengaman skrip yang MENGHAPUS data Redis (`flushdb`, hapus kunci batas laju): hanya Redis di mesin
+ * ini (localhost/127.0.0.1/::1) dan bukan DB 0 (DB bawaan yang dipakai pengembangan/produksi).
+ * Salah isi `E2E_REDIS_URL` tidak boleh menghapus Redis sungguhan (review web inbox, Info 5).
+ */
+export function assertTestRedisUrl(url: string): void {
+  const parsed = new URL(url);
+  const host = parsed.hostname.replace(/^\[|\]$/g, '');
+  const db = Number(parsed.pathname.replace(/^\//, '') || '0');
+  if (!['localhost', '127.0.0.1', '::1'].includes(host) || !Number.isInteger(db) || db === 0) {
+    throw new Error(
+      'Redis E2E harus di mesin ini (localhost) dan bukan DB 0. Periksa E2E_REDIS_URL.',
+    );
+  }
+}

@@ -52,6 +52,8 @@ export const t = {
       selesai: 'Selesai',
     },
     empty: {
+      /** Inbox benar-benar kosong (desktop): ajakan lengkap ada di ruang chat. */
+      listHint: 'Chat baru muncul di daftar ini.',
       semua: {
         title: 'Belum ada chat',
         body: (mascot: string) => `Tenang, ${mascot} jaga inbox-nya.`,
@@ -81,6 +83,7 @@ export const t = {
     searchTooShort: 'Ketik minimal 2 huruf untuk mulai mencari.',
     searchLimited: 'Pencarian dibatasi sementara',
     searchSlowTitle: 'Pencarian terlalu lama',
+    searchSlowBody: 'Persempit kata kuncinya, lalu cari lagi.',
     searchAgain: 'Cari lagi',
     filteredEmpty: {
       title: 'Tidak ada chat yang cocok',
@@ -94,6 +97,7 @@ export const t = {
     tabCountLabel: (count: number) => `${count} chat`,
     loadingMore: 'Memuat chat berikutnya…',
     loadMore: 'Muat chat berikutnya',
+    rowsHint: 'Pakai panah atas dan bawah untuk berpindah chat.',
     loadMoreFailed: 'Chat berikutnya belum bisa dimuat.',
     endOfList: 'Sudah semua chat.',
     filters: {
@@ -108,6 +112,13 @@ export const t = {
       unassigned: 'Belum ada agen',
       window: 'Sesi 24 jam',
       anyWindow: 'Semua sesi',
+      /** "Broadcast" (label PRD) membingungkan di grup "Sesi 24 jam": pelanggan belum pernah membalas. */
+      windowLabels: {
+        open: 'Terbuka',
+        expiring: 'Hampir habis',
+        expired: 'Kedaluwarsa',
+        none: 'Belum pernah membalas',
+      },
       unreadOnly: 'Hanya yang belum dibaca',
       clearAll: 'Hapus semua saringan',
       activeLabel: 'Saringan aktif',
@@ -120,6 +131,7 @@ export const t = {
     },
     item: {
       fromWhatsApp: 'dari WhatsApp',
+      fromWhatsAppHint: 'Nama dari profil WhatsApp pelanggan, belum diberi nama oleh tim',
       unread: (count: number) => `${count} pesan belum dibaca`,
       unreadShort: (count: number) => (count > 99 ? '99+' : String(count)),
       assignee: (name: string) => `Ditangani ${name}`,
@@ -163,6 +175,7 @@ export const t = {
         `Tenang, ${mascot} jaga inbox-nya. Chat pelanggan muncul di sini begitu ada yang masuk.`,
       connectChannel: 'Sambungkan nomor WhatsApp',
       back: 'Kembali ke daftar chat',
+      openDetail: (name: string) => `Lihat detail ${name}`,
       history: 'Riwayat pesan',
       loadingOlder: 'Memuat pesan sebelumnya…',
       loadOlder: 'Muat pesan sebelumnya',
@@ -221,7 +234,15 @@ export const t = {
       reaction: 'Reaksi',
       system: 'Pemberitahuan sistem',
       unsupported: 'Jenis pesan ini belum bisa ditampilkan',
-      unsupportedType: (type: string) => `Jenis: ${type}`,
+      unsupportedKinds: {
+        order: 'Pesanan dari katalog',
+        ephemeral: 'Pesan sementara',
+        poll: 'Polling',
+        event: 'Undangan acara',
+        request_welcome: 'Pelanggan membuka chat pertama kali',
+        group_invite: 'Undangan grup',
+        product: 'Produk dari katalog',
+      },
       coordinates: (lat: string, lng: string) => `${lat}, ${lng}`,
     },
     detail: {
@@ -229,6 +250,7 @@ export const t = {
       title: 'Detail',
       show: 'Tampilkan detail',
       hide: 'Sembunyikan detail',
+      backToChat: 'Kembali ke chat',
       emptyBody:
         'Info kontak, agen yang menangani, tag, dan catatan tampil di sini saat chat dibuka.',
       conversation: 'Percakapan',
@@ -245,6 +267,7 @@ export const t = {
       notSet: 'Belum diisi',
       createdAt: 'Tercatat sejak',
       failed: 'Detail kontak belum bisa dimuat.',
+      unavailable: 'Detail chat ini tidak tersedia lagi untukmu.',
     },
   },
 

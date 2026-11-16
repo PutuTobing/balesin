@@ -1,5 +1,5 @@
 import type { Message } from '@balesin/shared';
-import { Bot, Forward, Info, Megaphone, Reply } from 'lucide-react';
+import { Bot, CircleAlert, Forward, Info, Megaphone, Reply } from 'lucide-react';
 import { Fragment, memo } from 'react';
 import { Icon } from '../../components/ui/Icon';
 import { t } from '../../i18n/id';
@@ -143,7 +143,11 @@ function MessageRow({
             </p>
           ) : null}
           {body.detail ? (
-            <p className={styles.detail} dir="auto">
+            <p
+              className={styles.detail}
+              dir="auto"
+              title={message.type === 'unsupported' ? (message.rawType ?? undefined) : undefined}
+            >
               {body.detail}
             </p>
           ) : null}
@@ -158,13 +162,6 @@ function MessageRow({
               <DeliveryIcon status={message.status} className={styles.status} />
             ) : null}
           </p>
-          {outbound && message.status === 'failed' ? (
-            <p className={styles.failed}>
-              {message.errorCode !== null
-                ? c.failedCode(message.errorCode)
-                : c.deliveryStatus.failed}
-            </p>
-          ) : null}
         </div>
         {reaction ? (
           <span className={styles.reaction}>
@@ -172,9 +169,23 @@ function MessageRow({
             <span className="sr-only">{c.reaction(reaction)}</span>
           </span>
         ) : null}
+        {outbound && message.status === 'failed' ? (
+          // Di bawah gelembung (di atas --bg): kontras cukup di kedua tema, dan kalimat penyebab +
+          // solusi dari server tidak melebarkan gelembung. Kirim ulang menyusul bersama composer.
+          <p className={styles.failed}>
+            <Icon icon={CircleAlert} size={16} />
+            <span>{failureText(message)}</span>
+          </p>
+        ) : null}
       </div>
     </li>
   );
+}
+
+/** Penyebab + solusi dari server (`failure.message`); kode Meta hanya cadangan. */
+function failureText(message: Message): string {
+  if (message.failure?.message) return message.failure.message;
+  return message.errorCode !== null ? c.failedCode(message.errorCode) : c.deliveryStatus.failed;
 }
 
 function quoteText(message: Message): string {

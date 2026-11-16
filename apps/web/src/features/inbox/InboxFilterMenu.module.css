@@ -108,7 +108,8 @@
 
 /* ---------- Saringan aktif ---------- */
 
-.chips {
+/* `ul.` : mengalahkan reset `ul[class]` di styles/base.css (gutter 16px). */
+ul.chips {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-8);
@@ -153,6 +154,19 @@
   from {
     opacity: 0;
     transform: translateY(calc(var(--space-4) * -1));
+  }
+}
+
+/* Masih ada pilihan di bawah: tepi bawah memudar (tanda bisa digulir). */
+.menu[data-fade-end] {
+  mask-image: linear-gradient(to bottom, var(--ink) calc(100% - var(--space-32)), transparent);
+}
+
+@media (max-width: 640px) {
+  /* Menu dibuka dari baris judul (tinggi 56px): sisa tinggi layar dipakai seluruhnya. */
+  .menu {
+    width: min(20rem, calc(100vw - var(--space-32)));
+    max-height: calc(100dvh - var(--size-bar) - var(--space-24));
   }
 }
 

@@ -1,4 +1,4 @@
-import type { Page, Route } from '@playwright/test';
+import type { Page, Route, WebSocketRoute } from '@playwright/test';
 import { apiError, json } from './mocks';
 
 /**
@@ -39,6 +39,9 @@ interface PhotoConversationInit {
   last: { direction: 'inbound' | 'outbound'; type?: string; text: string | null; status?: string };
   assignee?: string;
   channel?: typeof CHANNEL;
+  /** Asal nama: bawaan `none` untuk nomor, selain itu `whatsapp` (nama profil pelanggan). */
+  source?: 'team' | 'whatsapp' | 'none';
+  username?: string;
 }
 
 function conversation(init: PhotoConversationInit) {
@@ -51,7 +54,9 @@ function conversation(init: PhotoConversationInit) {
       id: id('d1a2b3c4', init.n),
       number: 200 + init.n,
       displayName: init.name,
+      nameSource: init.source ?? (init.name.startsWith('+') ? 'none' : 'whatsapp'),
       phone: init.phone,
+      waUsername: init.username ?? null,
     },
     assignee: init.assignee ? { id: id('a1a2b3c4', init.n), name: init.assignee } : null,
     unreadCount: init.unread ?? 0,
@@ -68,6 +73,8 @@ function conversation(init: PhotoConversationInit) {
     },
     createdAt: ago(init.lastAgo + 2 * HOUR),
     resolvedAt: init.status === 'resolved' ? ago(init.lastAgo) : null,
+    firstAssignedAt: init.assignee ? ago(init.lastAgo + HOUR) : null,
+    firstResponseAt: null,
   };
 }
 
@@ -88,6 +95,7 @@ export const PHOTO_CONVERSATIONS = [
   conversation({
     n: 2,
     name: 'ID0412+SITI AMINAH@KEDATON',
+    source: 'team',
     phone: '+6285267001122',
     status: 'served',
     assignee: 'Citra',
@@ -99,6 +107,7 @@ export const PHOTO_CONVERSATIONS = [
   conversation({
     n: 3,
     name: 'Rahmat Hidayat',
+    source: 'team',
     phone: '+6281377889900',
     status: 'served',
     assignee: 'Agus',
@@ -147,6 +156,7 @@ export const PHOTO_CONVERSATIONS = [
   conversation({
     n: 7,
     name: 'Yohanes Siregar',
+    source: 'team',
     phone: '+6281299998888',
     status: 'resolved',
     assignee: 'Agus',
@@ -315,6 +325,12 @@ export const PHOTO_MESSAGES = [
     text: 'Pengingat: tagihan bulan ini jatuh tempo tanggal 20.',
     status: 'failed',
     errorCode: 131047,
+    failure: {
+      reason: 'window_closed',
+      code: 131047,
+      message: 'Sesi 24 jam sudah habis. Pelanggan perlu membalas dulu, atau kirim template.',
+      retryable: false,
+    },
     createdAt: ago(6 * MINUTE),
   }),
   message(16, {
@@ -332,6 +348,7 @@ const PHOTO_CONTACT = {
   id: PHOTO_CHAT.contact.id,
   number: PHOTO_CHAT.contact.number,
   displayName: 'Budi Santoso',
+  nameSource: 'whatsapp',
   phone: '+6281234567890',
   channelType: 'whatsapp',
   name: null,
@@ -352,6 +369,8 @@ export interface InboxMockOptions {
   messages?: (route: Route) => Promise<void>;
   /** Jawaban daftar (tanpa `q`). */
   list?: (route: Route) => Promise<void>;
+  /** Akses ke WebSocket tiruan (mis. mengirim `message.created` saat foto disiapkan). */
+  onSocket?: (socket: WebSocketRoute) => void;
 }
 
 /** Pasang semua jawaban tiruan inbox + WebSocket diam (hanya `hello`). */
@@ -359,6 +378,7 @@ export async function inboxMocks(page: Page, options: InboxMockOptions = {}): Pr
   const conversations = options.conversations ?? PHOTO_CONVERSATIONS;
   await page.routeWebSocket('**/api/v1/inbox/stream', (ws) => {
     ws.send(JSON.stringify({ type: 'hello', heartbeatSeconds: 30 }));
+    options.onSocket?.(ws);
   });
   await page.route(`${API}/channels`, (route) =>
     json(route, {
@@ -368,21 +388,16 @@ export async function inboxMocks(page: Page, options: InboxMockOptions = {}): Pr
       ],
     }),
   );
-  await page.route(/\/api\/v1\/conversations\/counts(\?|$)/, (route) =>
-    json(route, options.counts ?? COUNTS),
-  );
-  await page.route(/\/api\/v1\/conversations(\?|$)/, async (route) => {
-    const query = new URL(route.request().url()).searchParams;
+  const select = (query: URLSearchParams) => {
     const q = query.get('q');
-    if (q && options.search) return options.search(route);
-    if (!q && options.list) return options.list(route);
     const status = query.get('status');
     const window = query.get('window');
     const now = Date.now();
-    const rows = conversations.filter((item) => {
+    return conversations.filter((item) => {
       if (status && item.status !== STATUS_FOR_TAB[status]) return false;
       if (q && !item.contact.displayName.toLowerCase().includes(q.toLowerCase())) return false;
       if (query.get('unread') === 'true' && item.unreadCount === 0) return false;
+      if (query.get('channelId') && item.channel.id !== query.get('channelId')) return false;
       if (window) {
         const end = item.windowExpiresAt ? Date.parse(item.windowExpiresAt) - now : null;
         const kind =
@@ -391,7 +406,31 @@ export async function inboxMocks(page: Page, options: InboxMockOptions = {}): Pr
       }
       return true;
     });
-    return json(route, { conversations: rows, nextCursor: null });
+  };
+  await page.route(/\/api\/v1\/conversations\/counts(\?|$)/, (route) => {
+    if (options.counts) return json(route, options.counts);
+    const query = new URL(route.request().url()).searchParams;
+    // Tanpa saringan: angka contoh inbox yang ramai. Dengan saringan: dihitung dari data tiruan.
+    if ([...query.keys()].length === 0) return json(route, COUNTS);
+    const rows = select(query);
+    const count = (status: Status) => rows.filter((item) => item.status === status).length;
+    return json(route, {
+      counts: {
+        all: rows.length,
+        bot: count('bot'),
+        unserved: count('unserved'),
+        served: count('served'),
+        resolved: count('resolved'),
+      },
+      unreadOpen: rows.filter((item) => item.status !== 'resolved' && item.unreadCount > 0).length,
+    });
+  });
+  await page.route(/\/api\/v1\/conversations(\?|$)/, async (route) => {
+    const query = new URL(route.request().url()).searchParams;
+    const q = query.get('q');
+    if (q && options.search) return options.search(route);
+    if (!q && options.list) return options.list(route);
+    return json(route, { conversations: select(query), nextCursor: null });
   });
   await page.route(/\/api\/v1\/conversations\/[0-9a-f-]{36}$/, (route) => {
     if (options.conversation) return options.conversation(route);
@@ -426,11 +465,29 @@ export async function inboxMocks(page: Page, options: InboxMockOptions = {}): Pr
               ...PHOTO_CONTACT,
               id: found.contact.id,
               displayName: found.contact.displayName,
+              nameSource: found.contact.nameSource,
               phone: found.contact.phone,
-              name: found.contact.displayName,
-              profileName: null,
-              waUsername: null,
+              // Kontak tanpa nama (hanya nomor): `name` null seperti data sungguhan.
+              name: found.contact.nameSource === 'team' ? found.contact.displayName : null,
+              profileName:
+                found.contact.nameSource === 'whatsapp' ? found.contact.displayName : null,
+              waUsername: found.contact.waUsername,
             },
     });
   });
+}
+
+/** Pesan masuk baru untuk foto "Ada pesan baru" (dikirim lewat WebSocket tiruan). */
+export const PHOTO_NEW_MESSAGE = message(18, {
+  text: 'Kak, sekarang lampunya kedip-kedip merah. Perlu saya restart?',
+  createdAt: new Date().toISOString(),
+});
+
+/** Mock riwayat yang bisa ditambah pesan baru (lihat layar `inbox-pesan-baru`). */
+export function growingMessages() {
+  const rows = [...PHOTO_MESSAGES];
+  return {
+    add: (row: (typeof PHOTO_MESSAGES)[number]) => rows.push(row),
+    handler: (route: Route) => json(route, { messages: [...rows].reverse(), nextCursor: null }),
+  };
 }

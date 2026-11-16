@@ -4,7 +4,8 @@ import { useInboxRoute } from './use-inbox-tab';
 
 /** Halaman /inbox: tab & chat terbuka dari URL, pembaruan real-time lewat WebSocket. */
 export function InboxPage() {
-  const { tab, onTabChange, chatId, openChat, closeChat } = useInboxRoute();
+  const { tab, onTabChange, chatId, openChat, closeChat, detailOpen, openDetail, closeDetail } =
+    useInboxRoute();
   const streamStatus = useInboxStream();
   return (
     <InboxScreen
@@ -13,6 +14,9 @@ export function InboxPage() {
       chatId={chatId}
       onOpenChat={openChat}
       onCloseChat={closeChat}
+      hpDetailOpen={detailOpen}
+      onOpenHpDetail={openDetail}
+      onCloseHpDetail={closeDetail}
       streamStatus={streamStatus}
     />
   );

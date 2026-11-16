@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { ArrowLeft, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import {
   useEffect,
   useMemo,
@@ -33,7 +33,7 @@ import {
   type ConversationParams,
   type InboxFilters,
 } from './inbox-filters';
-import { countsQuery, inboxChannelsQuery } from './inbox-queries';
+import { countsQuery, inboxChannelsQuery, reviveConversation } from './inbox-queries';
 import type { InboxTab } from './inbox-search';
 import { InboxFilterMenu } from './InboxFilterMenu';
 import { useDetailPanel } from './use-detail-panel';
@@ -61,6 +61,10 @@ export interface InboxScreenProps {
   loading?: boolean;
   /** Status sambungan real-time (menentukan penyegaran cadangan lewat REST). */
   streamStatus?: StreamStatus;
+  /** HP: panel detail sebagai layar bertumpuk di atas chat (`&detail=1`). */
+  hpDetailOpen?: boolean;
+  onOpenHpDetail?: () => void;
+  onCloseHpDetail?: () => void;
 }
 
 /**
@@ -76,10 +80,14 @@ export function InboxScreen({
   onCloseChat,
   loading: routeLoading = false,
   streamStatus = 'connecting',
+  hpDetailOpen = false,
+  onOpenHpDetail,
+  onCloseHpDetail,
 }: InboxScreenProps) {
   usePageTitle(t.inbox.title);
   const { mascotName } = useBrand();
   const isHp = useMediaQuery(media.hp);
+  const queryClient = useQueryClient();
   const session = useSession();
   // Sesi baru saja berakhir (keluar / dicabut): jangan memuat apa pun lagi — permintaan baru hanya
   // akan ditolak 401 sementara aplikasi sedang pindah ke halaman masuk.
@@ -179,6 +187,31 @@ export function InboxScreen({
     );
 
   const chatOpen = chatId !== null && !loading;
+  const hpDetail = isHp && chatOpen && hpDetailOpen;
+
+  // HP, keyboard & pembaca layar: membuka chat dari daftar memindah fokus ke judul chat; kembali
+  // ke daftar mengembalikan fokus ke baris chat yang tadi dibuka.
+  const [focusChatTitle, setFocusChatTitle] = useState(false);
+  const lastOpened = useRef<string | null>(null);
+  useEffect(() => {
+    if (chatOpen || !isHp || !lastOpened.current) return;
+    const id = lastOpened.current;
+    lastOpened.current = null;
+    const frame = requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLElement>(`[data-conversation-id="${CSS.escape(id)}"]`)
+        ?.focus({ preventScroll: false });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [chatOpen, isHp]);
+  const openFromList = (id: string) => {
+    reviveConversation(queryClient, id);
+    if (isHp) {
+      lastOpened.current = id;
+      setFocusChatTitle(true);
+    }
+    onOpenChat?.(id, { push: isHp });
+  };
 
   return (
     <div
@@ -187,6 +220,7 @@ export function InboxScreen({
       data-chat={chatOpen ? 'open' : 'closed'}
       // HP: chat terbuka = layar penuh bertumpuk; kerangka aplikasi menyembunyikan navigasi bawah.
       data-hp-immersive={chatOpen ? '' : undefined}
+      data-hp-detail={hpDetail ? 'open' : undefined}
     >
       <ConversationList
         className={styles.listColumn}
@@ -207,7 +241,7 @@ export function InboxScreen({
         counts={loading ? undefined : counts}
         inboxEmpty={inboxEmpty}
         selectedId={chatId}
-        onOpen={(id) => onOpenChat?.(id, { push: isHp })}
+        onOpen={openFromList}
         refetchInterval={refetchInterval}
       />
 
@@ -217,6 +251,8 @@ export function InboxScreen({
             key={chatId}
             conversationId={chatId}
             onBack={isHp ? onCloseChat : undefined}
+            onOpenDetail={isHp ? onOpenHpDetail : undefined}
+            focusTitle={focusChatTitle}
             detailToggle={showDetailButton(false)}
             refetchInterval={refetchInterval}
           />
@@ -246,6 +282,21 @@ export function InboxScreen({
           </>
         )}
       </section>
+
+      {hpDetail ? (
+        // HP: layar bertumpuk ketiga (daftar → chat → detail); kembali = tutup detail.
+        <aside className={styles.detail} aria-label={t.inbox.detail.label}>
+          <header className={styles.detailHeader} data-hp="">
+            <IconButton
+              label={t.inbox.detail.backToChat}
+              icon={ArrowLeft}
+              onClick={() => onCloseHpDetail?.()}
+            />
+            <h2 className={styles.detailTitle}>{t.inbox.detail.title}</h2>
+          </header>
+          <ContactPanel conversationId={chatId} />
+        </aside>
+      ) : null}
 
       {detailOpen && !isHp ? (
         <DetailPanel

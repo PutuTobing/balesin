@@ -16,6 +16,10 @@ export interface InboxRoute {
   openChat: (conversationId: string, options?: { push?: boolean }) => void;
   /** Tutup percakapan (kembali ke daftar). */
   closeChat: () => void;
+  /** HP: panel detail sebagai layar bertumpuk (`&detail=1`). */
+  detailOpen: boolean;
+  openDetail: () => void;
+  closeDetail: () => void;
 }
 
 /** Tab aktif & chat terbuka dari URL (`/inbox?tab=…&chat=…`). Khusus rute /inbox. */
@@ -26,6 +30,7 @@ export function useInboxRoute(): InboxRoute {
   // Chat dibuka dari daftar dengan entri riwayat baru: "kembali" = langkah mundur browser,
   // bukan entri baru (yang membuat tombol kembali browser membuka chat itu lagi).
   const pushedFromList = useRef(false);
+  const pushedDetail = useRef(false);
 
   const onTabChange = useCallback(
     (next: InboxTab) => {
@@ -55,7 +60,24 @@ export function useInboxRoute(): InboxRoute {
       router.history.back();
       return;
     }
-    void navigate({ search: (prev) => ({ ...prev, chat: undefined }), replace: true });
+    void navigate({
+      search: (prev) => ({ ...prev, chat: undefined, detail: undefined }),
+      replace: true,
+    });
+  }, [navigate, router]);
+
+  const openDetail = useCallback(() => {
+    pushedDetail.current = true;
+    void navigate({ search: (prev) => ({ ...prev, detail: 1 as const }) });
+  }, [navigate]);
+
+  const closeDetail = useCallback(() => {
+    if (pushedDetail.current) {
+      pushedDetail.current = false;
+      router.history.back();
+      return;
+    }
+    void navigate({ search: (prev) => ({ ...prev, detail: undefined }), replace: true });
   }, [navigate, router]);
 
   return {
@@ -64,6 +86,9 @@ export function useInboxRoute(): InboxRoute {
     chatId: search.chat ?? null,
     openChat,
     closeChat,
+    detailOpen: search.detail === 1 && search.chat !== undefined,
+    openDetail,
+    closeDetail,
   };
 }
 

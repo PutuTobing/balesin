@@ -162,12 +162,21 @@ export function messageBody(message: Message): MessageBody {
       return {
         icon,
         label: c.unsupported,
-        detail: message.rawType ? c.unsupportedType(message.rawType) : null,
+        detail: unsupportedKind(message.rawType),
         text,
       };
     default:
       return { icon, label: typeLabel(message.type), detail: null, text };
   }
+}
+
+/**
+ * Jenis Meta yang belum didukung, dalam bahasa Indonesia. Nama mentah tidak ditampilkan (cukup di
+ * `title`); jenis yang tidak dikenal tidak diberi keterangan.
+ */
+export function unsupportedKind(rawType: string | null): string | null {
+  if (!rawType) return null;
+  return (c.unsupportedKinds as Readonly<Record<string, string>>)[rawType] ?? null;
 }
 
 /**

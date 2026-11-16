@@ -33,6 +33,8 @@ export const inboxKeys = {
   messages: (id: string) => ['inbox', 'messages', id] as const,
   contact: (id: string) => ['inbox', 'contact', id] as const,
   channels: ['inbox', 'channels'] as const,
+  /** Penanda (tanpa data pribadi): percakapan ini tidak tersedia lagi untuk pengguna ini. */
+  gone: (id: string) => ['inbox', 'gone', id] as const,
 };
 
 /**
@@ -168,7 +170,15 @@ export function patchConversation(
  * tampil, lalu muat ulang daftar.
  */
 export function forgetConversation(queryClient: QueryClient, conversationId: string): void {
+  // Penanda dulu: pemakai detail percakapan berhenti memuat (tidak ada permintaan ulang yang
+  // berujung 404 lagi) begitu datanya dibuang di bawah.
+  queryClient.setQueryData(inboxKeys.gone(conversationId), true);
+  const contactId = queryClient.getQueryData<ConversationResponse>(
+    inboxKeys.conversation(conversationId),
+  )?.conversation.contact.id;
+  queryClient.removeQueries({ queryKey: inboxKeys.conversation(conversationId), exact: true });
   queryClient.removeQueries({ queryKey: inboxKeys.messages(conversationId) });
+  if (contactId) queryClient.removeQueries({ queryKey: inboxKeys.contact(contactId) });
   queryClient.setQueriesData<ConversationPages>(
     { queryKey: inboxKeys.conversationLists },
     (data) =>
@@ -181,6 +191,22 @@ export function forgetConversation(queryClient: QueryClient, conversationId: str
       },
   );
   scheduleListRefresh(queryClient);
+}
+
+/** Percakapan boleh dimuat lagi (dibuka dari daftar / ada event untuknya = masuk cakupan lagi). */
+export function reviveConversation(queryClient: QueryClient, conversationId: string): void {
+  queryClient.removeQueries({ queryKey: inboxKeys.gone(conversationId), exact: true });
+}
+
+/** `true` setelah `forgetConversation` untuk percakapan ini. */
+export function goneQuery(conversationId: string) {
+  return queryOptions({
+    queryKey: inboxKeys.gone(conversationId),
+    queryFn: () => false,
+    initialData: false,
+    staleTime: Infinity,
+    enabled: false,
+  });
 }
 
 /** Simpan percakapan dari jawaban server (mis. setelah tandai dibaca). */
@@ -239,6 +265,8 @@ export function applyInboxEvent(queryClient: QueryClient, event: InboxStreamEven
       return;
     case 'conversation.updated': {
       const now = Date.now();
+      // Server hanya mengirim event dalam cakupan penerima: percakapan ini terlihat lagi.
+      reviveConversation(queryClient, event.conversationId);
       patchConversation(queryClient, event.conversationId, (conversation) => ({
         ...conversation,
         status: event.status,

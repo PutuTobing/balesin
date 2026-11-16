@@ -32,7 +32,9 @@ const budi = fakeConversation({
     id: 'd0000000-0000-4000-8000-0000000000b1',
     number: 1,
     displayName: 'Budi Santoso',
+    nameSource: 'whatsapp',
     phone: '+6281234567890',
+    waUsername: null,
   },
 });
 const sari = fakeConversation({
@@ -43,7 +45,9 @@ const sari = fakeConversation({
     id: 'd0000000-0000-4000-8000-0000000000b2',
     number: 2,
     displayName: '<img src=x onerror=alert(1)>',
+    nameSource: 'team',
     phone: '+6285700001111',
+    waUsername: null,
   },
   lastMessage: {
     direction: 'outbound',
@@ -74,6 +78,20 @@ const messages = [
     text: '<script>alert(1)</script> Mohon tunggu',
     status: 'delivered',
     createdAt: inFuture(-30 * 60_000),
+  }),
+  fakeMessage({
+    direction: 'outbound',
+    senderKind: 'broadcast',
+    text: 'Pengingat tagihan',
+    status: 'failed',
+    errorCode: 131047,
+    failure: {
+      reason: 'window_closed',
+      code: 131047,
+      message: 'Sesi 24 jam sudah habis. Pelanggan perlu membalas dulu, atau kirim template.',
+      retryable: false,
+    },
+    createdAt: inFuture(-20 * 60_000),
   }),
 ];
 
@@ -121,6 +139,19 @@ describe('daftar percakapan', () => {
       `${t.inbox.tabs.dilayani}, ${t.inbox.tabCountLabel(1)}`,
     );
     expect(list().getByRole('tab', { name: t.inbox.tabs.semua })).toHaveTextContent(/^Semua$/);
+  });
+
+  it('keyboard: daftar satu tab stop, panah atas/bawah berpindah baris', async () => {
+    await renderApp('/inbox', { inbox });
+    const first = await list().findByRole('button', { name: /Budi Santoso/ });
+    const second = list().getByRole('button', { name: /Citra/ });
+    expect(first).toHaveAttribute('tabindex', '0');
+    expect(second).toHaveAttribute('tabindex', '-1');
+    first.focus();
+    fireEvent.keyDown(first, { key: 'ArrowDown' });
+    expect(second).toHaveFocus();
+    fireEvent.keyDown(second, { key: 'Home' });
+    expect(first).toHaveFocus();
   });
 
   it('pencarian menunggu 2 huruf, lalu dikirim ke server sebagai q', async () => {
@@ -309,16 +340,45 @@ describe('ruang chat baca-saja', () => {
     expect(chatRegion().queryByText('Halo kak, internet mati')).toBeNull();
   });
 
-  it('HP: chat menjadi layar bertumpuk dengan tombol kembali', async () => {
+  it('HP: chat bertumpuk, fokus ke judul, detail bertumpuk, kembali ke baris yang sama', async () => {
     act(() => setMediaQuery(media.hp, true));
     const { router } = await renderApp('/inbox', { inbox });
-    fireEvent.click(await list().findByRole('button', { name: /Budi Santoso/ }));
+    const row = await list().findByRole('button', { name: /Budi Santoso/ });
+    fireEvent.click(row);
 
-    const back = await chatRegion().findByRole('button', { name: t.inbox.chat.back });
+    const title = await chatRegion().findByRole('heading', { level: 2, name: 'Budi Santoso' });
+    await waitFor(() => expect(title).toHaveFocus());
     expect(document.querySelector('[data-hp-immersive]')).not.toBeNull();
-    expect(screen.queryByRole('complementary', { name: t.inbox.detail.label })).toBeNull();
-    fireEvent.click(back);
+    // HP: subjudul cukup nomor ("dari WhatsApp" ada di layar detail).
+    expect(chatRegion().getByText('+62 812-3456-7890')).toBeVisible();
+    expect(chatRegion().queryByText(/dari WhatsApp/)).toBeNull();
+
+    // Kepala chat → detail bertumpuk (`&detail=1`).
+    fireEvent.click(
+      chatRegion().getByRole('button', { name: t.inbox.chat.openDetail('Budi Santoso') }),
+    );
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ detail: 1 }));
+    const detail = within(await screen.findByRole('complementary', { name: t.inbox.detail.label }));
+    expect(await detail.findByText(t.inbox.item.fromWhatsApp)).toBeVisible();
+    expect(detail.getByText(t.inbox.detail.status)).toBeVisible();
+    fireEvent.click(detail.getByRole('button', { name: t.inbox.detail.backToChat }));
+    await waitFor(() => expect(router.state.location.search).not.toHaveProperty('detail'));
+
+    fireEvent.click(chatRegion().getByRole('button', { name: t.inbox.chat.back }));
     await waitFor(() => expect(router.state.location.search).not.toHaveProperty('chat'));
+    await waitFor(() => expect(list().getByRole('button', { name: /Budi Santoso/ })).toHaveFocus());
+  });
+
+  it('pesan gagal: penyebab + solusi dari server di bawah gelembung', async () => {
+    act(() => setMediaQuery(media.desktop, true));
+    await renderApp(`/inbox?chat=${budi.id}`, { inbox });
+    const reason = await chatRegion().findByText(
+      'Sesi 24 jam sudah habis. Pelanggan perlu membalas dulu, atau kirim template.',
+    );
+    expect(chatRegion().queryByText(/kode 131047/)).toBeNull();
+    // Di luar gelembung (latar halaman), bukan di dalamnya.
+    expect(reason.closest('li')?.textContent).toContain('Pengingat tagihan');
+    expect(reason.parentElement?.previousElementSibling).not.toBeNull();
   });
 
   it('WebSocket inbox disambungkan ke origin aplikasi tanpa token', async () => {

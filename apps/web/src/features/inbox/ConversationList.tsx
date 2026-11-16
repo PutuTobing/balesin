@@ -1,7 +1,7 @@
 import type { ConversationCountsResponse } from '@balesin/shared';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { Tabs } from 'radix-ui';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { useBrand } from '../../brand/brand';
 import { ChatIllustration } from '../../components/illustrations/illustrations';
 import { Button } from '../../components/ui/Button';
@@ -29,9 +29,33 @@ import {
 import { conversationsQuery } from './inbox-queries';
 import { INBOX_TABS, parseInboxTab, type InboxTab } from './inbox-search';
 import { FilterChips } from './InboxFilterMenu';
+import { useEdgeFade } from './use-edge-fade';
 import { useMinuteClock } from './use-minute-clock';
 
 const SKELETON_ROWS = 7;
+const ROVING_HINT_ID = 'inbox-rows-hint';
+
+/**
+ * Daftar chat = satu tab stop (baris terpilih, atau baris pertama); panah atas/bawah, Home, End
+ * berpindah baris. Tab langsung keluar ke ruang chat, bukan melewati setiap baris.
+ */
+function moveRowFocus(event: KeyboardEvent<HTMLUListElement>) {
+  const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End'];
+  if (!keys.includes(event.key)) return;
+  const rows = Array.from(
+    event.currentTarget.querySelectorAll<HTMLButtonElement>('button[data-conversation-id]'),
+  );
+  const current = rows.indexOf(document.activeElement as HTMLButtonElement);
+  if (current === -1) return;
+  event.preventDefault();
+  const next =
+    event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? rows.length - 1
+        : Math.min(rows.length - 1, Math.max(0, current + (event.key === 'ArrowDown' ? 1 : -1)));
+  rows[next]?.focus();
+}
 
 export interface ConversationListProps {
   tab: InboxTab;
@@ -65,6 +89,14 @@ export interface ConversationListProps {
  */
 export function ConversationList(props: ConversationListProps) {
   const { tab, onTabChange, search, onSearchChange, chips, filterControl, counts } = props;
+  const tabsRef = useRef<HTMLDivElement>(null);
+  useEdgeFade(tabsRef, 'x', [counts]);
+  // Tab aktif selalu terlihat (tab bisa digeser di layar sempit).
+  useEffect(() => {
+    tabsRef.current
+      ?.querySelector('[data-state="active"]')
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [tab]);
   return (
     <section className={cx(styles.list, props.className)} aria-label={t.inbox.listLabel}>
       <Tabs.Root
@@ -86,17 +118,12 @@ export function ConversationList(props: ConversationListProps) {
               clearLabel={t.inbox.clearSearch}
               maxLength={SEARCH_MAX}
             />
-            {props.searchTooShort ? (
-              <p className={styles.searchHint} role="status">
-                {t.inbox.searchTooShort}
-              </p>
-            ) : null}
           </div>
           <FilterChips
             chips={chips}
             onRemove={(key) => props.onFiltersChange({ ...props.filters, [key]: undefined })}
           />
-          <Tabs.List className={styles.tabs} aria-label={t.inbox.tabsLabel}>
+          <Tabs.List ref={tabsRef} className={styles.tabs} aria-label={t.inbox.tabsLabel}>
             {INBOX_TABS.map((id) => {
               const count = counts?.counts[TAB_COUNT_KEY[id]];
               // Hitungan hanya untuk antrian yang masih berjalan; "Semua" dan "Selesai" terus
@@ -121,6 +148,12 @@ export function ConversationList(props: ConversationListProps) {
         </header>
 
         <Tabs.Content value={tab} className={styles.listBody} tabIndex={-1}>
+          {props.searchTooShort ? (
+            // Di dalam isi daftar, bukan di bawah kolom cari: tab tidak terdorong saat mengetik.
+            <p className={styles.searchHint} role="status">
+              {t.inbox.searchTooShort}
+            </p>
+          ) : null}
           {props.loading ? <ConversationRowsSkeleton /> : <ListBody {...props} />}
         </Tabs.Content>
       </Tabs.Root>
@@ -184,28 +217,38 @@ function ListBody({
   if (list.isPending && !limited) return <ConversationRowsSkeleton />;
 
   if (list.isError && list.data === undefined) {
-    if (searching && (limited || (isApiError(error) && error.status === 503))) {
+    const retrySearch = (
+      <SubmitButton
+        type="button"
+        variant="secondary"
+        size="md"
+        pending={list.isFetching}
+        pendingLabel={t.common.loading}
+        lock={lock}
+        onClick={() => void list.refetch()}
+      >
+        {t.inbox.searchAgain}
+      </SubmitButton>
+    );
+    if (searching && limited) {
       return (
         <div className={styles.notice}>
           <FormErrorNotice
             error={error}
             lock={lock}
             lockedTitle={t.inbox.searchLimited}
-            failedTitle={t.inbox.searchSlowTitle}
-            actions={
-              <SubmitButton
-                type="button"
-                variant="secondary"
-                size="md"
-                pending={list.isFetching}
-                pendingLabel={t.common.loading}
-                lock={lock}
-                onClick={() => void list.refetch()}
-              >
-                {t.inbox.searchAgain}
-              </SubmitButton>
-            }
+            actions={retrySearch}
           />
+        </div>
+      );
+    }
+    if (searching && isApiError(error) && error.status === 503) {
+      // Judul sudah menyebut masalahnya; isi cukup jalan keluarnya (pesan server mengulang judul).
+      return (
+        <div className={styles.notice}>
+          <Notice tone="danger" role="alert" title={t.inbox.searchSlowTitle} actions={retrySearch}>
+            {t.inbox.searchSlowBody}
+          </Notice>
         </div>
       );
     }
@@ -225,6 +268,7 @@ function ListBody({
   }
 
   const conversations = list.data?.pages.flatMap((page) => page.conversations) ?? [];
+  const selectedInList = conversations.some((item) => item.id === selectedId);
 
   if (conversations.length === 0) {
     if (searching) {
@@ -267,25 +311,29 @@ function ListBody({
         illustration={isHp ? <ChatIllustration /> : undefined}
         title={empty.title}
         // Inbox benar-benar kosong di desktop: ajakan lengkap sudah ada di ruang chat, jangan diulang.
-        body={inboxEmpty ? undefined : empty.body(mascotName)}
+        body={inboxEmpty ? t.inbox.empty.listHint : empty.body(mascotName)}
       />
     );
   }
 
   return (
     <>
-      <ul className={styles.items}>
-        {conversations.map((conversation) => (
+      <ul className={styles.items} aria-describedby={ROVING_HINT_ID} onKeyDown={moveRowFocus}>
+        {conversations.map((conversation, index) => (
           <ConversationItem
             key={conversation.id}
             conversation={conversation}
             selected={conversation.id === selectedId}
+            tabStop={selectedInList ? conversation.id === selectedId : index === 0}
             showStatus={tab === 'semua'}
             now={now}
             onOpen={onOpen}
           />
         ))}
       </ul>
+      <p id={ROVING_HINT_ID} className="sr-only">
+        {t.inbox.rowsHint}
+      </p>
       <div ref={sentinelRef} className={styles.listEnd}>
         {isFetchingNextPage ? (
           <ConversationRowsSkeleton rows={2} />

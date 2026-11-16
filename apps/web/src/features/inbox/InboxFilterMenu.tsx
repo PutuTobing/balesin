@@ -1,11 +1,8 @@
-import {
-  CONVERSATION_WINDOW_FILTERS,
-  CONVERSATION_WINDOW_FILTER_LABELS,
-  conversationWindowFilterSchema,
-} from '@balesin/shared';
+import { CONVERSATION_WINDOW_FILTERS, conversationWindowFilterSchema } from '@balesin/shared';
 import { Check, SlidersHorizontal, X } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
-import type { ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
+import { useEdgeFade } from './use-edge-fade';
 import { Icon } from '../../components/ui/Icon';
 import { Tooltip } from '../../components/ui/Tooltip';
 import { t } from '../../i18n/id';
@@ -34,9 +31,12 @@ export function InboxFilterMenu({
   const label = count > 0 ? f.openWithCount(count) : f.open;
   const keepOpen = (event: Event) => event.preventDefault();
   const showChannels = options.channels.length > 1 || filters.channelId !== undefined;
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEdgeFade(menuRef, 'y', [open, options.agents?.length, options.channels.length]);
 
   return (
-    <DropdownMenu.Root modal={false}>
+    <DropdownMenu.Root modal={false} open={open} onOpenChange={setOpen}>
       <Tooltip label={f.open} side="bottom">
         <DropdownMenu.Trigger asChild>
           <button type="button" className={styles.trigger} aria-label={label}>
@@ -51,6 +51,7 @@ export function InboxFilterMenu({
       </Tooltip>
       <DropdownMenu.Portal>
         <DropdownMenu.Content
+          ref={menuRef}
           align="end"
           sideOffset={4}
           collisionPadding={8}
@@ -69,7 +70,7 @@ export function InboxFilterMenu({
               </Radio>
               {CONVERSATION_WINDOW_FILTERS.map((value) => (
                 <Radio key={value} value={value} onSelect={keepOpen}>
-                  {CONVERSATION_WINDOW_FILTER_LABELS[value]}
+                  {t.inbox.filters.windowLabels[value]}
                 </Radio>
               ))}
             </DropdownMenu.RadioGroup>

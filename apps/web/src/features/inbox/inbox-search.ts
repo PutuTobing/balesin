@@ -11,6 +11,8 @@ export interface InboxSearch {
   tab?: InboxTab;
   /** ID percakapan yang sedang dibuka (UUID). */
   chat?: string;
+  /** HP: panel detail dibuka sebagai layar bertumpuk di atas chat (`&detail=1`). */
+  detail?: 1;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -34,5 +36,6 @@ export function parseInboxSearch(search: Record<string, unknown>): InboxSearch {
   return {
     tab: tab === DEFAULT_INBOX_TAB ? undefined : tab,
     chat: parseChatId(search.chat),
+    detail: search.detail === 1 || search.detail === '1' ? 1 : undefined,
   };
 }

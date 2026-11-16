@@ -40,27 +40,38 @@
   padding: 0 var(--space-16) var(--space-8);
 }
 
-.searchHint {
-  padding-top: var(--space-8);
-  color: var(--ink-2);
-  font-size: var(--text-12);
-}
-
 /* ---------- Tab status + hitungan ---------- */
 
 .tabs {
   display: flex;
-  /* 8px di sini + 8px padding tab: teks tab pertama dan terakhir sejajar gutter 16px. */
+  /* 8px di sini + 8px padding tepi tab pertama/terakhir: teks sejajar gutter 16px. */
   padding: 0 var(--space-8);
   border-bottom: 1px solid var(--line);
-  /* Dengan hitungan, tab bisa lebih lebar dari kolom: geser mendatar, tanpa batang gulir. */
+  /* Kelima tab muat di kolom 360px; bila tetap meluap (angka besar) bisa digeser + tepi pudar. */
   overflow-x: auto;
   scrollbar-width: none;
-  scroll-padding-inline: var(--space-16);
 }
 
 .tabs::-webkit-scrollbar {
   display: none;
+}
+
+.tabs[data-fade-end] {
+  mask-image: linear-gradient(to right, var(--ink) calc(100% - var(--space-24)), transparent);
+}
+
+.tabs[data-fade-start] {
+  mask-image: linear-gradient(to left, var(--ink) calc(100% - var(--space-24)), transparent);
+}
+
+.tabs[data-fade-start][data-fade-end] {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    var(--ink) var(--space-24),
+    var(--ink) calc(100% - var(--space-24)),
+    transparent
+  );
 }
 
 /*
@@ -74,8 +85,8 @@
   flex: 1 0 auto;
   justify-content: center;
   height: var(--size-touch);
-  /* Ruang 8px di kiri-kanan teks: cincin fokus tidak menabrak huruf. */
-  padding: 0 var(--space-8);
+  /* 4px di kiri-kanan teks (cincin fokus di dalam kotak, tidak menabrak huruf). */
+  padding: 0 var(--space-4);
   border-radius: var(--radius-input);
   color: var(--ink-2);
   font-size: var(--text-13);
@@ -87,11 +98,13 @@
 .tab:first-child {
   flex-grow: 0.5;
   justify-content: flex-start;
+  padding-left: var(--space-8);
 }
 
 .tab:last-child {
   flex-grow: 0.5;
   justify-content: flex-end;
+  padding-right: var(--space-8);
 }
 
 .tab:hover,
@@ -117,24 +130,19 @@
   border-bottom-color: var(--primary);
 }
 
+/* Hitungan: angka biasa, tanpa latar (hemat ruang supaya kelima tab muat). */
 .tabCount {
-  display: inline-grid;
-  place-items: center;
-  min-width: 1.25rem;
-  height: 1.125rem;
-  padding: 0 var(--space-4);
-  border-radius: var(--radius-pill);
-  background: var(--surface-2);
   color: var(--ink-2);
   font-size: var(--text-12);
   font-weight: var(--weight-semibold);
   font-variant-numeric: tabular-nums;
-  line-height: 1;
 }
 
-.tab[data-state='active'] .tabCount {
-  background: var(--primary-soft);
-  color: var(--ink);
+@media (prefers-reduced-motion: reduce) {
+  .tab,
+  .tabLabel {
+    transition: none;
+  }
 }
 
 /* ---------- Isi daftar ---------- */
@@ -152,7 +160,14 @@
   outline-offset: -2px;
 }
 
-.items {
+/* `ul.` : mengalahkan reset `ul[class]` di styles/base.css. */
+.searchHint {
+  padding: var(--space-12) var(--space-16) var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+ul.items {
   display: flex;
   flex-direction: column;
   padding: var(--space-4) 0;
@@ -201,6 +216,22 @@
   min-width: 0;
 }
 
+.nameWrap {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: baseline;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.fromWa {
+  flex: none;
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
 .name {
   flex: 0 1 auto;
   min-width: 0;
@@ -216,17 +247,10 @@
   font-weight: var(--weight-bold);
 }
 
-/* Nomor tidak pernah terpotong habis: nama yang mengalah lebih dulu. */
+/* Nomor/@username tidak pernah terpotong: channel & agen sesudahnya yang mengalah. */
 .handle {
-  flex: 0 0 auto;
-  max-width: 55%;
-  overflow: hidden;
-  color: var(--ink-2);
-  font-size: var(--text-12);
+  flex: none;
   font-variant-numeric: tabular-nums;
-  line-height: var(--leading-title);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .time {
@@ -298,14 +322,19 @@
 }
 
 .meta {
+  display: flex;
   flex: 1;
   min-width: 0;
-  overflow: hidden;
   color: var(--ink-2);
   font-size: var(--text-12);
   line-height: var(--leading-title);
+  white-space: pre;
+}
+
+.metaRest {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .countdown {

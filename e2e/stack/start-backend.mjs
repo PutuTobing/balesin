@@ -50,7 +50,20 @@ async function resetDatabase() {
   log(`database ${databaseName} dibuat ulang`);
 }
 
+/** Sama dengan `assertTestRedisUrl` (env.ts): flushdb hanya untuk Redis lokal, bukan DB 0. */
+function assertTestRedisUrl(url) {
+  const parsed = new URL(url);
+  const host = parsed.hostname.replace(/^\[|\]$/g, '');
+  const db = Number(parsed.pathname.replace(/^\//, '') || '0');
+  if (!['localhost', '127.0.0.1', '::1'].includes(host) || !Number.isInteger(db) || db === 0) {
+    throw new Error(
+      'Redis E2E harus di mesin ini (localhost) dan bukan DB 0. Periksa E2E_REDIS_URL.',
+    );
+  }
+}
+
 async function resetRedis() {
+  assertTestRedisUrl(required('REDIS_URL'));
   const redis = new Redis(required('REDIS_URL'), { lazyConnect: true, maxRetriesPerRequest: 1 });
   await redis.connect();
   try {

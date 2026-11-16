@@ -1,5 +1,4 @@
 import {
-  CONVERSATION_WINDOW_FILTER_LABELS,
   type ChannelSummary,
   type ConversationCountsResponse,
   type ConversationStatus,
@@ -126,7 +125,7 @@ export interface FilterChip {
 export function filterChips(filters: InboxFilters, options: FilterOptions, selfId?: string) {
   const chips: FilterChip[] = [];
   if (filters.window) {
-    chips.push({ key: 'window', label: CONVERSATION_WINDOW_FILTER_LABELS[filters.window] });
+    chips.push({ key: 'window', label: t.inbox.filters.windowLabels[filters.window] });
   }
   if (filters.assignee) {
     const name =

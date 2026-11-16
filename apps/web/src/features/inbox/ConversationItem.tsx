@@ -37,6 +37,8 @@ export function DeliveryIcon({
 interface ConversationItemProps {
   conversation: Conversation;
   selected: boolean;
+  /** Satu-satunya baris yang dicapai dengan Tab (baris lain lewat panah atas/bawah). */
+  tabStop: boolean;
   /** Tampilkan status percakapan (hanya di tab "Semua"; tab lain sudah menyatakannya). */
   showStatus: boolean;
   now: number;
@@ -50,6 +52,7 @@ interface ConversationItemProps {
 export const ConversationItem = memo(function ConversationItem({
   conversation,
   selected,
+  tabStop,
   showStatus,
   now,
   onOpen,
@@ -58,6 +61,7 @@ export const ConversationItem = memo(function ConversationItem({
   const preview = previewContent(conversation.lastMessage);
   const unread = conversation.unreadCount;
   const last = conversation.lastMessage;
+  // Nomor/@username di awal baris meta (tidak pernah terpotong); sisanya boleh mengalah.
   const meta = [
     conversation.channel.name,
     showStatus ? t.inbox.item.status[conversation.status] : null,
@@ -70,16 +74,32 @@ export const ConversationItem = memo(function ConversationItem({
         type="button"
         className={styles.item}
         aria-current={selected ? 'true' : undefined}
+        tabIndex={tabStop ? 0 : -1}
         data-unread={unread > 0 ? '' : undefined}
+        data-conversation-id={conversation.id}
         onClick={() => onOpen(conversation.id)}
       >
         <ContactAvatar name={identity.name} />
         <span className={styles.lines}>
           <span className={styles.line}>
-            <span className={styles.name} dir="auto">
-              {identity.name}
+            <span className={styles.nameWrap}>
+              {identity.fromWhatsApp ? (
+                // Seperti WhatsApp: "~" = nama dari profil pelanggan, belum diberi nama oleh tim.
+                <span
+                  className={styles.fromWa}
+                  aria-hidden="true"
+                  title={t.inbox.item.fromWhatsAppHint}
+                >
+                  ~
+                </span>
+              ) : null}
+              <span className={styles.name} dir="auto">
+                {identity.name}
+              </span>
+              {identity.fromWhatsApp ? (
+                <span className="sr-only"> ({t.inbox.item.fromWhatsApp})</span>
+              ) : null}
             </span>
-            {identity.handle ? <span className={styles.handle}>{identity.handle}</span> : null}
             <time className={styles.time} dateTime={conversation.lastMessageAt}>
               {formatListTime(conversation.lastMessageAt, new Date(now))}
             </time>
@@ -104,7 +124,15 @@ export const ConversationItem = memo(function ConversationItem({
             ) : null}
           </span>
           <span className={styles.line}>
-            <span className={styles.meta}>{meta.join(' · ')}</span>
+            <span className={styles.meta}>
+              {identity.handle ? <span className={styles.handle}>{identity.handle}</span> : null}
+              {meta.length > 0 ? (
+                <span className={styles.metaRest}>
+                  {identity.handle ? ' · ' : ''}
+                  {meta.join(' · ')}
+                </span>
+              ) : null}
+            </span>
             <WindowCountdown
               expiresAt={conversation.windowExpiresAt}
               now={now}
