@@ -1,6 +1,7 @@
 /* ---------- Composer: menempel di dasar ruang chat ---------- */
 
 .composer {
+  position: relative;
   display: flex;
   flex: none;
   flex-direction: column;

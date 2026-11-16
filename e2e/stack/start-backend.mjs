@@ -11,7 +11,8 @@
  * setelah tes selesai; kalau salah satu anak mati, proses ini ikut keluar supaya tes gagal jelas.
  */
 import { spawn } from 'node:child_process';
-import { EOL } from 'node:os';
+import { rm } from 'node:fs/promises';
+import os, { EOL } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -60,6 +61,18 @@ function assertTestRedisUrl(url) {
       'Redis E2E harus di mesin ini (localhost) dan bukan DB 0. Periksa E2E_REDIS_URL.',
     );
   }
+}
+
+/** Kosongkan folder media E2E (hanya folder khusus E2E di direktori sementara sistem). */
+async function resetMediaDir() {
+  const dir = process.env.MEDIA_DIR;
+  if (!dir) return;
+  const resolved = path.resolve(dir);
+  if (path.basename(resolved) !== 'balesin-e2e-media' || !resolved.startsWith(os.tmpdir())) {
+    throw new Error('MEDIA_DIR E2E harus folder balesin-e2e-media di direktori sementara sistem.');
+  }
+  await rm(resolved, { recursive: true, force: true });
+  log('folder media E2E dikosongkan');
 }
 
 async function resetRedis() {
@@ -174,6 +187,7 @@ process.on('SIGTERM', () => shutdown(0));
 try {
   await resetDatabase();
   await resetRedis();
+  await resetMediaDir();
   await run('migrasi', ['--filter', '@balesin/db', 'exec', 'tsx', 'src/migrate.ts'], {
     wait: true,
   });

@@ -11,7 +11,7 @@ import {
   User,
 } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
-import { Fragment, memo } from 'react';
+import { Fragment, memo, useState, type MouseEvent } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Icon } from '../../components/ui/Icon';
 import { QUICK_REACTIONS, useChatActions } from './chat-actions';
@@ -63,6 +63,7 @@ function MessageRow({
   byId: Map<string, Message>;
 }) {
   const actions = useChatActions();
+  const [menuOpen, setMenuOpen] = useState(false);
   const time = formatClockTime(message.createdAt);
 
   if (message.type === 'system') {
@@ -107,16 +108,32 @@ function MessageRow({
     outbound && message.senderKind === 'agent'
       ? message.senderUserId && message.senderUserId === actions.selfId
         ? t.inbox.actions.you
-        : actions.agentName(message.senderUserId)
+        : (message.senderName ?? actions.agentName(message.senderUserId))
       : null;
   const actionable = actions.canReply && isActionable(message);
   const media = message.mediaAvailable ? <MessageMedia message={message} /> : null;
+  const visualMedia =
+    media !== null &&
+    (message.media?.kind === 'image' ||
+      message.media?.kind === 'sticker' ||
+      message.media?.kind === 'video');
+  /** Layar sentuh: ketuk gelembung membuka menu aksi (tanpa tombol "⋯" di setiap gelembung). */
+  const openFromBubble = (event: MouseEvent<HTMLDivElement>) => {
+    if (!actionable || !window.matchMedia('(hover: none)').matches) return;
+    if ((event.target as Element).closest('button, a, audio, video, input')) return;
+    setMenuOpen(true);
+  };
 
   return (
     <li className={styles.row} data-dir={outbound ? 'out' : 'in'}>
       <div className={styles.bubbleLine}>
         <div className={styles.bubbleWrap}>
-          <div className={styles.bubble}>
+          <div
+            className={styles.bubble}
+            data-media={visualMedia ? '' : undefined}
+            data-actionable={actionable ? '' : undefined}
+            onClick={openFromBubble}
+          >
             <span className="sr-only">{agent ?? c.senders[message.senderKind]}: </span>
             {senderLabel ? (
               <p className={styles.sender}>
@@ -166,7 +183,8 @@ function MessageRow({
               </div>
             ) : null}
             {media}
-            {body.label && !(media && message.type !== 'document') ? (
+            {/* Media tampil (termasuk kartu dokumen): label jenis tidak diulang. */}
+            {body.label && !media ? (
               <p className={styles.attachment}>
                 {body.icon ? <Icon icon={body.icon} size={16} /> : null}
                 <span dir="auto">{body.label}</span>
@@ -238,20 +256,44 @@ function MessageRow({
             </div>
           ) : null}
         </div>
-        {actionable ? <MessageMenu message={message} ownReaction={reaction?.out} /> : null}
+        {actionable ? (
+          <MessageMenu
+            message={message}
+            ownReaction={reaction?.out}
+            time={time}
+            open={menuOpen}
+            onOpenChange={setMenuOpen}
+          />
+        ) : null}
       </div>
     </li>
   );
 }
 
 /** Menu aksi pesan: reaksi cepat dan balas-kutip. */
-function MessageMenu({ message, ownReaction }: { message: Message; ownReaction?: string }) {
+function MessageMenu({
+  message,
+  ownReaction,
+  time,
+  open,
+  onOpenChange,
+}: {
+  message: Message;
+  ownReaction?: string;
+  time: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const actions = useChatActions();
   const a = t.inbox.actions;
   return (
-    <DropdownMenu.Root modal={false}>
+    <DropdownMenu.Root modal={false} open={open} onOpenChange={onOpenChange}>
       <DropdownMenu.Trigger asChild>
-        <button type="button" className={styles.messageMenuButton} aria-label={a.open}>
+        <button
+          type="button"
+          className={styles.messageMenuButton}
+          aria-label={time ? a.openAt(time) : a.open}
+        >
           <Icon icon={MoreHorizontal} size={16} />
         </button>
       </DropdownMenu.Trigger>

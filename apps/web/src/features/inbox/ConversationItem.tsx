@@ -64,8 +64,15 @@ export const ConversationItem = memo(function ConversationItem({
   // Nomor/@username di awal baris meta (tidak pernah terpotong); sisanya boleh mengalah.
   // Urutan: nomor · agen (atau status bila belum ada agen, hanya di tab Semua) · channel.
   // Nomor dan agen tidak pernah terpotong; nama channel yang mengalah lebih dulu.
-  const who =
-    conversation.assignee?.name ?? (showStatus ? t.inbox.item.status[conversation.status] : null);
+  // Tab Semua: chat selesai tetap menyebut statusnya ("Selesai · Agus").
+  const statusLabel = t.inbox.item.status[conversation.status];
+  const who = conversation.assignee
+    ? showStatus && conversation.status === 'resolved'
+      ? `${statusLabel} · ${conversation.assignee.name}`
+      : conversation.assignee.name
+    : showStatus
+      ? statusLabel
+      : null;
   const parts = [identity.handle, who].filter((part): part is string => Boolean(part));
 
   return (

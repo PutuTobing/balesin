@@ -112,7 +112,9 @@ test('unggah gambar → pratinjau → kirim → gambar tampil lewat Blob', async
   await expect(image).toHaveAttribute('src', /^blob:/);
 });
 
-test('rem darurat: 423 + banner, lalu dilanjutkan', async ({ page, expectHttpError }) => {
+test('rem darurat: banner, Kirim & Lampirkan nonaktif (draf tetap), lalu dilanjutkan', async ({
+  page,
+}) => {
   owner = await ownerApi();
   const pause = await owner.api.post('/api/v1/settings/sending-limits/pause', {
     headers: { 'x-csrf-token': owner.csrf },
@@ -120,14 +122,15 @@ test('rem darurat: 423 + banner, lalu dilanjutkan', async ({ page, expectHttpErr
   });
   expect(pause.ok()).toBe(true);
   try {
-    expectHttpError(`/api/v1/conversations/${conversationId}/messages`, 423);
+    // Owner (sesi proyek) melihat status rem dari pengaturan batas kirim.
     await openApp(page, `/inbox?chat=${conversationId}`);
     const chat = page.getByRole('region', { name: 'Ruang chat' });
-    const box = chat.getByRole('textbox', { name: 'Tulis balasan' });
-    await box.fill('Pesan saat rem ditarik');
-    await box.press('Enter');
     await expect(chat.getByText('Pengiriman sedang dihentikan')).toBeVisible();
-    await expect(chat.getByText('Belum terkirim', { exact: true })).toBeVisible();
+    const box = chat.getByRole('textbox', { name: 'Tulis balasan' });
+    await box.fill('Draf saat rem ditarik');
+    await expect(chat.getByRole('button', { name: 'Kirim', exact: true })).toBeDisabled();
+    await expect(chat.getByRole('button', { name: 'Lampirkan berkas' })).toBeDisabled();
+    await box.fill('');
   } finally {
     const resume = await owner.api.post('/api/v1/settings/sending-limits/resume', {
       headers: { 'x-csrf-token': owner.csrf },
@@ -137,7 +140,42 @@ test('rem darurat: 423 + banner, lalu dilanjutkan', async ({ page, expectHttpErr
   }
 });
 
-test('di luar jendela 24 jam: composer diganti penjelasan + "Kirim template" nonaktif', async ({
+test('template percakapan: dibuat di Pengaturan, dipakai dengan "/" di composer', async ({
+  page,
+}) => {
+  const shortcut = `salam${Date.now().toString(36)}`;
+  await openApp(page, '/pengaturan/template-percakapan');
+  await page
+    .getByRole('button', { name: /Tambah template|Buat template pertama/ })
+    .first()
+    .click();
+  const dialog = page.getByRole('dialog', { name: 'Tambah template percakapan' });
+  await dialog.getByLabel('Shortcut').fill(shortcut);
+  await dialog.getByLabel('Judul').fill('Salam pembuka');
+  await dialog.getByLabel('Isi pesan').fill('Halo kak {nama}, dengan {agen} di sini.');
+  await dialog.getByRole('button', { name: 'Simpan' }).click();
+  await expect(page.getByText(`Template /${shortcut} ditambahkan.`)).toBeVisible();
+
+  await openApp(page, `/inbox?chat=${conversationId}`);
+  const chat = page.getByRole('region', { name: 'Ruang chat' });
+  const box = chat.getByRole('textbox', { name: 'Tulis balasan' });
+  await box.fill(`/${shortcut}`);
+  await expect(chat.getByRole('option', { name: new RegExp(shortcut) })).toBeVisible();
+  await box.press('Enter');
+  await expect(box).toHaveValue(/^Halo kak Yanti Balas, dengan .+ di sini\.$/);
+  await box.fill('');
+});
+
+test('tandai selesai lalu buka lagi', async ({ page }) => {
+  await openApp(page, `/inbox?chat=${conversationId}`);
+  const chat = page.getByRole('region', { name: 'Ruang chat' });
+  await chat.getByRole('button', { name: 'Tandai selesai' }).click();
+  await expect(chat.getByText(/Chat ini sudah selesai/)).toBeVisible();
+  await chat.getByRole('button', { name: 'Buka lagi' }).click();
+  await expect(chat.getByRole('textbox', { name: 'Tulis balasan' })).toBeVisible();
+});
+
+test('di luar jendela 24 jam: composer diganti penjelasan (tanpa tombol nonaktif)', async ({
   page,
 }) => {
   await e2eSql(
@@ -148,5 +186,5 @@ test('di luar jendela 24 jam: composer diganti penjelasan + "Kirim template" non
   const chat = page.getByRole('region', { name: 'Ruang chat' });
   await expect(chat.getByText('Sesi 24 jam sudah habis')).toBeVisible();
   await expect(chat.getByRole('textbox', { name: 'Tulis balasan' })).toHaveCount(0);
-  await expect(chat.getByRole('button', { name: /Kirim template/ })).toBeDisabled();
+  await expect(chat.getByRole('button', { name: /template/i })).toHaveCount(0);
 });

@@ -13,10 +13,16 @@ import {
   channelWebhookResponseSchema,
   contactResponseSchema,
   conversationActionResponseSchema,
+  quickReplyListResponseSchema,
+  quickReplyResponseSchema,
+  useQuickReplyResponseSchema,
+  type CreateQuickReplyRequest,
+  type UpdateQuickReplyRequest,
   conversationCountsResponseSchema,
   inboxAgentListResponseSchema,
   messageResponseSchema,
   sendingLimitsResponseSchema,
+  sendingStatusResponseSchema,
   uploadMediaResponseSchema,
   type SendMessageRequest,
   conversationListResponseSchema,
@@ -81,6 +87,7 @@ import {
   type TwoFactorReauthRequest,
   type VerifyTwoFactorRequest,
 } from '@balesin/shared';
+import { z } from 'zod';
 import { api, type ApiClient } from './client';
 
 /** Saringan & kursor daftar percakapan → query string (lihat `features/inbox/inbox-filters.ts`). */
@@ -538,9 +545,38 @@ export function createEndpoints(client: ApiClient) {
           signal,
           accept: '*/*',
         }),
-      /** Agen inbox (nama pengirim pesan keluar, saringan agen). */
+      /** Rem darurat ditarik atau tidak (semua peran ber-`inbox.view`, tanpa rincian). */
+      sendingStatus: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.inbox.sendingStatus, {
+          schema: sendingStatusResponseSchema,
+          signal,
+        }),
+      /** Agen inbox (saringan agen, alihkan). */
       agents: (signal?: AbortSignal) =>
         client.request(API_ROUTES.inbox.agents, { schema: inboxAgentListResponseSchema, signal }),
+      /** Tugaskan/alihkan ke agen (`inbox.assign`). */
+      assign: (conversationId: string, userId: string) =>
+        client.request(apiPath(API_ROUTES.inbox.assign, { conversationId }), {
+          method: 'POST',
+          body: { userId },
+          schema: conversationActionResponseSchema,
+        }),
+      /** Kembalikan ke antrian (Teknisi: hanya chat miliknya). */
+      unassign: (conversationId: string) =>
+        client.request(apiPath(API_ROUTES.inbox.unassign, { conversationId }), {
+          method: 'POST',
+          schema: conversationActionResponseSchema,
+        }),
+      resolve: (conversationId: string) =>
+        client.request(apiPath(API_ROUTES.inbox.resolve, { conversationId }), {
+          method: 'POST',
+          schema: conversationActionResponseSchema,
+        }),
+      reopen: (conversationId: string) =>
+        client.request(apiPath(API_ROUTES.inbox.reopen, { conversationId }), {
+          method: 'POST',
+          schema: conversationActionResponseSchema,
+        }),
       /** Ambil chat dari antrian / ambil alih dari bot (`inbox.assign`). */
       claim: (conversationId: string) =>
         client.request(apiPath(API_ROUTES.inbox.claim, { conversationId }), {
@@ -552,6 +588,41 @@ export function createEndpoints(client: ApiClient) {
         client.request(API_ROUTES.channels.list, {
           schema: channelSummaryListResponseSchema,
           signal,
+        }),
+    },
+    /**
+     * Template percakapan / quick reply `/`: daftar & pakai (`inbox.reply`), kelola
+     * (`quick_replies.manage`).
+     */
+    quickReplies: {
+      list: (q: string | null, signal?: AbortSignal) =>
+        client.request(`${API_ROUTES.quickReplies.list}${q ? `?q=${encodeURIComponent(q)}` : ''}`, {
+          schema: quickReplyListResponseSchema,
+          signal,
+        }),
+      /** Isi variabel untuk percakapan ini (+ penghitung pemakaian) → teks siap di composer. */
+      use: (quickReplyId: string, conversationId: string) =>
+        client.request(apiPath(API_ROUTES.quickReplies.use, { quickReplyId }), {
+          method: 'POST',
+          body: { conversationId },
+          schema: useQuickReplyResponseSchema,
+        }),
+      create: (body: CreateQuickReplyRequest) =>
+        client.request(API_ROUTES.quickReplies.list, {
+          method: 'POST',
+          body,
+          schema: quickReplyResponseSchema,
+        }),
+      update: (quickReplyId: string, body: UpdateQuickReplyRequest) =>
+        client.request(apiPath(API_ROUTES.quickReplies.quickReply, { quickReplyId }), {
+          method: 'PATCH',
+          body,
+          schema: quickReplyResponseSchema,
+        }),
+      remove: (quickReplyId: string) =>
+        client.request(apiPath(API_ROUTES.quickReplies.quickReply, { quickReplyId }), {
+          method: 'DELETE',
+          schema: z.object({ deleted: z.literal(true) }),
         }),
     },
     /** Batas kirim & rem darurat (izin `sending.limits.manage`). */

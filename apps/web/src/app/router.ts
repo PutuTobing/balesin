@@ -273,6 +273,18 @@ const channelsRoute = createRoute({
   pendingComponent: ChannelsSkeleton,
 });
 
+/** Pengaturan → Template percakapan: izin `quick_replies.manage` (Owner, Admin, Supervisor). */
+const quickRepliesRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/template-percakapan',
+  staticData: { page: { title: t.quickReplies.title, parent: 'settings' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'quick_replies.manage'),
+  component: lazyRouteComponent(
+    () => import('../features/quick-replies/QuickRepliesPage'),
+    'QuickRepliesPage',
+  ),
+});
+
 /** Channel → Tambah nomor (wizard). Rute statis ini menang atas `$channelId`. */
 const channelWizardRoute = createRoute({
   getParentRoute,
@@ -414,6 +426,7 @@ const appChildren = [
   settingsRoute,
   emailSettingsRoute,
   channelsRoute,
+  quickRepliesRoute,
   channelWizardRoute,
   channelRoute,
   teamRoute,

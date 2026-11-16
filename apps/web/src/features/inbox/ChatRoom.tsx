@@ -24,6 +24,7 @@ import { useLock } from '../../lib/use-lock';
 import { useCan, useSession } from '../auth/session';
 import { ChatActionsContext, type ChatActions } from './chat-actions';
 import { ChatFooter } from './ChatFooter';
+import { HandlingActions } from './HandlingActions';
 import { newClientMessageId, noteSendError, useOutbox } from './outbox';
 import { OutboxRows } from './OutboxRows';
 import { windowState } from './inbox-time';
@@ -59,6 +60,8 @@ interface ChatRoomProps {
   onOpenDetail?: () => void;
   /** HP: chat dibuka dari daftar → fokus ke judul chat. */
   focusTitle?: boolean;
+  /** Chat tidak lagi boleh dilihat setelah sebuah tindakan (mis. dikembalikan ke antrian). */
+  onClosed?: () => void;
   refetchInterval: number;
 }
 
@@ -73,6 +76,7 @@ export function ChatRoom({
   detailToggle,
   onOpenDetail,
   focusTitle = false,
+  onClosed,
   refetchInterval,
 }: ChatRoomProps) {
   const queryClient = useQueryClient();
@@ -136,17 +140,12 @@ export function ChatRoom({
 
   return (
     <div className={styles.room}>
-      <ChatHeader
-        conversation={conversation}
-        onBack={onBack}
-        detailToggle={detailToggle}
-        onOpenDetail={onOpenDetail}
-        focusTitle={focusTitle}
-      />
       <ChatBody
         key={conversation.id}
         conversation={conversation}
         refetchInterval={refetchInterval}
+        header={{ onBack, detailToggle, onOpenDetail, focusTitle }}
+        onClosed={onClosed}
       />
     </div>
   );
@@ -214,13 +213,8 @@ function ChatHeader({
   detailToggle,
   onOpenDetail,
   focusTitle,
-}: {
-  conversation: Conversation;
-  onBack?: () => void;
-  detailToggle?: ReactNode;
-  onOpenDetail?: () => void;
-  focusTitle?: boolean;
-}) {
+  actions,
+}: HeaderProps & { conversation: Conversation; actions?: ReactNode }) {
   const now = useMinuteClock();
   const contact = useQuery(contactQuery(conversation.contact.id)).data?.contact;
   const identity = contact ? contactIdentity(contact) : summaryIdentity(conversation.contact);
@@ -237,7 +231,7 @@ function ChatHeader({
     <header className={styles.header}>
       {onBack ? <IconButton label={t.inbox.chat.back} icon={ArrowLeft} onClick={onBack} /> : null}
       <div className={styles.identity}>
-        <ContactAvatar name={identity.name} size="sm" />
+        <ContactAvatar name={identity.name} size="sm" className={styles.headerAvatar} />
         <div className={styles.headerText}>
           <h2 ref={titleRef} tabIndex={-1} className={styles.name} dir="auto">
             {identity.name}
@@ -258,6 +252,7 @@ function ChatHeader({
         ) : null}
       </div>
       <WindowCountdown expiresAt={conversation.windowExpiresAt} now={now} showEnd />
+      {actions}
       {detailToggle}
     </header>
   );
@@ -267,12 +262,23 @@ function ChatHeader({
  * Riwayat + dasar ruang chat (composer) dengan aksi pesan bersama: balas-kutip, reaksi, kirim
  * ulang. Error kirim terakhir ditampilkan sekali di atas composer (429 → hitung mundur).
  */
+interface HeaderProps {
+  onBack?: () => void;
+  detailToggle?: ReactNode;
+  onOpenDetail?: () => void;
+  focusTitle?: boolean;
+}
+
 function ChatBody({
   conversation,
   refetchInterval,
+  header,
+  onClosed,
 }: {
   conversation: Conversation;
   refetchInterval: number;
+  header: HeaderProps;
+  onClosed?: () => void;
 }) {
   const queryClient = useQueryClient();
   const session = useSession();
@@ -283,17 +289,30 @@ function ChatBody({
   const agents = useQuery({ ...agentsQuery, enabled: canAssign }).data?.agents;
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [error, setError] = useState<unknown>(null);
+  /** Error terakhir berasal dari tindakan penanganan (judul berbeda dari gagal kirim). */
+  const [handlingFailed, setHandlingFailed] = useState(false);
   const [retrying, setRetrying] = useState<ReadonlySet<string>>(new Set());
   const lock = useLock();
   const { lockFor } = lock;
 
   const onError = useCallback(
     (next: unknown) => {
+      setHandlingFailed(false);
       setError(next);
       if (isApiError(next) && next.status === 429) lockFor(next.retryAfterSeconds ?? 30);
       if (next) noteSendError(queryClient, conversation.id, next);
     },
     [lockFor, queryClient, conversation.id],
+  );
+
+  // Gagal kirim pesan: item outbox sudah menjelaskan + "Kirim ulang". Hanya batas (429, berlaku
+  // untuk percakapan) yang tampil sekali di atas composer; 423 = banner rem darurat.
+  const onSendError = useCallback(
+    (next: unknown) => {
+      if (isApiError(next) && next.status === 429) onError(next);
+      else if (next) noteSendError(queryClient, conversation.id, next);
+    },
+    [onError, queryClient, conversation.id],
   );
 
   const window = windowState(conversation.windowExpiresAt, now);
@@ -352,17 +371,34 @@ function ChatBody({
 
   return (
     <ChatActionsContext.Provider value={actions}>
+      <ChatHeader
+        conversation={conversation}
+        {...header}
+        actions={
+          <HandlingActions
+            conversation={conversation}
+            onClosed={onClosed}
+            onError={(next) => {
+              setError(next);
+              setHandlingFailed(next !== null);
+              if (isApiError(next) && next.status === 429) lockFor(next.retryAfterSeconds ?? 30);
+            }}
+          />
+        }
+      />
       <ChatHistory
         conversation={conversation}
         refetchInterval={refetchInterval}
-        onError={onError}
+        onError={onSendError}
       />
       <ChatFooter
         conversation={conversation}
         replyTo={replyable ? replyTo : null}
         onCancelReply={() => setReplyTo(null)}
         error={error}
+        errorTitle={handlingFailed ? t.inbox.handling.failedTitle : undefined}
         onError={onError}
+        onSendError={onSendError}
         lock={lock}
       />
     </ChatActionsContext.Provider>

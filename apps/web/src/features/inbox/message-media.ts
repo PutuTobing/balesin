@@ -8,16 +8,48 @@ import { endpoints } from '../../lib/api/endpoints';
  * komponennya dilepas.
  */
 const CACHE_SIZE = 40;
+/** Batas total byte cache media (review composer R2). */
+export const CACHE_MAX_BYTES = 50 * 1024 * 1024;
 const blobs = new Map<string, { blob: Blob; filename: string | null }>();
+
+function cachedBytes(): number {
+  let total = 0;
+  for (const { blob } of blobs.values()) total += blob.size;
+  return total;
+}
 
 function remember(messageId: string, value: { blob: Blob; filename: string | null }): void {
   blobs.delete(messageId);
+  if (value.blob.size > CACHE_MAX_BYTES) return;
   blobs.set(messageId, value);
-  while (blobs.size > CACHE_SIZE) {
+  while (blobs.size > CACHE_SIZE || cachedBytes() > CACHE_MAX_BYTES) {
     const oldest = blobs.keys().next().value;
     if (oldest === undefined) break;
     blobs.delete(oldest);
   }
+}
+
+/**
+ * Tipe yang boleh dipakai object URL: hanya gambar/audio/video umum. Selain itu (dokumen, SVG,
+ * HTML, tak dikenal) Blob dibungkus ulang sebagai `application/octet-stream`, apa pun kata server.
+ */
+const SAFE_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'audio/ogg',
+  'audio/mpeg',
+  'audio/aac',
+  'audio/mp4',
+  'audio/amr',
+  'video/mp4',
+  'video/3gpp',
+]);
+
+export function safeBlob(blob: Blob): Blob {
+  const type = blob.type.split(';')[0]?.trim().toLowerCase() ?? '';
+  return new Blob([blob], { type: SAFE_TYPES.has(type) ? type : 'application/octet-stream' });
 }
 
 /** Kosongkan cache (keluar dari aplikasi / tes). */
@@ -55,12 +87,16 @@ export function filenameFromDisposition(header: string | null): string | null {
   return clean ? clean : null;
 }
 
-async function fetchMedia(messageId: string, signal?: AbortSignal) {
-  const cached = blobs.get(messageId);
+async function fetchMedia(messageId: string, signal?: AbortSignal, cache = true) {
+  const cached = cache ? blobs.get(messageId) : undefined;
   if (cached) return cached;
   const { blob, headers } = await endpoints.inbox.media(messageId, signal);
-  const value = { blob, filename: filenameFromDisposition(headers.get('content-disposition')) };
-  remember(messageId, value);
+  const value = {
+    blob: safeBlob(blob),
+    filename: filenameFromDisposition(headers.get('content-disposition')),
+  };
+  // Dokumen tidak disimpan di memori (sekali unduh); gambar/audio/video boleh (R2).
+  if (cache) remember(messageId, value);
   return value;
 }
 
@@ -121,7 +157,7 @@ export function useMessageMedia(messageId: string, auto: boolean): MediaState {
 
 /** Unduh berkas pesan sebagai lampiran (nama dari server). */
 export async function downloadMessageMedia(messageId: string, fallbackName: string): Promise<void> {
-  const { blob, filename } = await fetchMedia(messageId);
+  const { blob, filename } = await fetchMedia(messageId, undefined, false);
   const url = URL.createObjectURL(blob);
   try {
     const link = document.createElement('a');

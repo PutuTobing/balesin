@@ -77,7 +77,8 @@ test('pesan masuk bertanda tangan tampil di daftar, bisa dibuka, dan pesan baru 
   const chat = page.getByRole('region', { name: 'Ruang chat' });
   // HTML dari pelanggan tampil sebagai teks.
   await expect(chat.getByText('Halo kak, internet mati. <b>tolong</b>')).toBeVisible();
-  await expect(chat.getByText('Dokumen: tagihan-november.pdf')).toBeVisible();
+  // Kartu berkas: nama berkas sekali saja (bukan label "Dokumen: …").
+  await expect(chat.getByText('tagihan-november.pdf', { exact: true })).toBeVisible();
   await expect(chat.getByRole('heading', { level: 2, name: customer.name })).toBeVisible();
   // Desktop: penanda di kepala chat. HP: subjudul cukup nomor, penanda ada di layar detail.
   if (!hp) await expect(chat.getByText(/dari WhatsApp/)).toBeVisible();

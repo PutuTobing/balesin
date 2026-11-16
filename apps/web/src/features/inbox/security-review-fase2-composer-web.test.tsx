@@ -1,6 +1,6 @@
 /**
  * Review keamanan Fase 2 — composer web (docs/security-reviews/2026-11-18-fase2-composer-web.md).
- * Penjaga regresi (`it`) + temuan yang dikunci `it.fails`. API & WebSocket tiruan (jsdom).
+ * Penjaga regresi (`it`); temuan R1 sudah ditutup (dulu `it.fails`). API & WebSocket tiruan (jsdom).
  */
 import { API_ROUTES, apiPath } from '@balesin/shared';
 import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
@@ -88,35 +88,32 @@ describe('penjaga regresi', () => {
   });
 });
 
-describe('R1 — cache modul (outbox & media) tidak dibuang saat keluar', () => {
+describe('R1 — cache modul (outbox & media) dibuang saat keluar (ditutup)', () => {
   // `outbox.ts` (draf/teks gagal kirim + File) dan `message-media.ts` (≤ 40 Blob media, mis. foto
   // KTP) hidup di variabel modul. `clearAppData` hanya membuang cache Query; `resetOutbox` dan
   // `clearMediaCache` hanya dipanggil tes. Pengguna berikutnya di tab yang sama (komputer bersama)
   // melihat draf gagal milik pengguna sebelumnya dan bisa "Kirim ulang" atas namanya sendiri.
-  it.fails(
-    'setelah keluar, draf gagal kirim pengguna sebelumnya tidak tampil untuk pengguna berikutnya',
-    async () => {
-      await openChat({
-        routes: {
-          [`POST ${apiPath(API_ROUTES.inbox.messages, { conversationId: open.id })}`]: () =>
-            apiError(503, 'SERVICE_UNAVAILABLE', 'Server sibuk.'),
-        },
-      });
-      const box = chat().getByRole('textbox', { name: k.label });
-      fireEvent.change(box, { target: { value: DRAFT } });
-      fireEvent.keyDown(box, { key: 'Enter' });
-      expect(await chat().findByText(k.notSent)).toBeVisible();
+  it('setelah keluar, draf gagal kirim pengguna sebelumnya tidak tampil untuk pengguna berikutnya', async () => {
+    await openChat({
+      routes: {
+        [`POST ${apiPath(API_ROUTES.inbox.messages, { conversationId: open.id })}`]: () =>
+          apiError(503, 'SERVICE_UNAVAILABLE', 'Server sibuk.'),
+      },
+    });
+    const box = chat().getByRole('textbox', { name: k.label });
+    fireEvent.change(box, { target: { value: DRAFT } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    expect(await chat().findByText(k.notSent)).toBeVisible();
 
-      await logout();
-      await waitFor(() => expect(screen.getByRole('heading', { level: 1 })).toBeVisible());
-      cleanup();
+    await logout();
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1 })).toBeVisible());
+    cleanup();
 
-      await openChat({ session: fakeSession('cs', 'Dewi CS') });
-      expect(chat().queryByText(DRAFT)).toBeNull(); // saat ini draf A tampil + "Kirim ulang"
-    },
-  );
+    await openChat({ session: fakeSession('cs', 'Dewi CS') });
+    expect(chat().queryByText(DRAFT)).toBeNull();
+  });
 
-  it.fails('setelah keluar, media yang sudah diunduh tidak dipakai ulang dari memori', async () => {
+  it('setelah keluar, media yang sudah diunduh tidak dipakai ulang dari memori', async () => {
     const first = await openChat();
     await chat().findByRole('img', { name: t.inbox.media.imageAlt('Foto KTP') });
     const mediaPath = apiPath(API_ROUTES.inbox.media, { messageId: photo.id });
@@ -129,6 +126,6 @@ describe('R1 — cache modul (outbox & media) tidak dibuang saat keluar', () => 
     const second = await openChat({ session: fakeSession('cs', 'Dewi CS') });
     await chat().findByRole('img', { name: t.inbox.media.imageAlt('Foto KTP') });
     // Cache sudah dibuang → pengguna kedua mengunduh lewat server (cakupannya diperiksa ulang).
-    expect(second.api.requests.filter((request) => request.path === mediaPath)).toHaveLength(1); // saat ini 0
+    expect(second.api.requests.filter((request) => request.path === mediaPath)).toHaveLength(1);
   });
 });

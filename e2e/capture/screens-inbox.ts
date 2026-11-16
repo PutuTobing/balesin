@@ -17,6 +17,23 @@ const CHAT = `/inbox?chat=${PHOTO_CHAT.id}`;
 const APP_ICON = readFileSync(new URL('../../assets/brand/app-icon.png', import.meta.url));
 const EXPIRED = PHOTO_CONVERSATIONS[5]!;
 
+/**
+ * Menu aksi pesan pelanggan terakhir: desktop lewat tombol "⋯", HP (sentuh) dengan mengetuk
+ * gelembungnya.
+ */
+async function openLastMessageMenu(page: Page): Promise<void> {
+  const chat = page.getByRole('region', { name: 'Ruang chat' });
+  if ((page.viewportSize()?.width ?? 1440) <= 640) {
+    await chat.getByText('Kak, internet di rumah mati sejak pagi. Lampu LOS merah.').last().click();
+  } else {
+    await chat
+      .getByRole('button', { name: /^Aksi untuk pesan/ })
+      .last()
+      .click();
+  }
+  await page.getByRole('menu').waitFor();
+}
+
 async function settle(page: Page): Promise<void> {
   await page.mouse.move(1, 1);
 }
@@ -104,11 +121,7 @@ export const inboxScreens: Screen[] = [
       await inboxMocks(page);
     },
     waitFor: 'text=Info dari grup RT',
-    prepare: async (page) => {
-      const chat = page.getByRole('region', { name: 'Ruang chat' });
-      await chat.getByRole('button', { name: 'Aksi pesan' }).last().click();
-      await page.getByRole('menu').waitFor();
-    },
+    prepare: openLastMessageMenu,
   },
   // Balas-kutip: kutipan di atas composer + teks yang sedang diketik.
   {
@@ -121,7 +134,7 @@ export const inboxScreens: Screen[] = [
     waitFor: 'text=Info dari grup RT',
     prepare: async (page) => {
       const chat = page.getByRole('region', { name: 'Ruang chat' });
-      await chat.getByRole('button', { name: 'Aksi pesan' }).last().click();
+      await openLastMessageMenu(page);
       await page.getByRole('menuitem', { name: 'Balas' }).click();
       await chat
         .getByRole('textbox', { name: 'Tulis balasan' })
@@ -206,6 +219,104 @@ export const inboxScreens: Screen[] = [
     },
     waitFor: 'text=Pengiriman sedang dihentikan',
     prepare: settle,
+  },
+  // ── Butir 7: penanganan percakapan ──
+  {
+    name: 'inbox-chat-tindakan',
+    path: CHAT,
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page);
+    },
+    waitFor: 'text=Info dari grup RT',
+    prepare: async (page) => {
+      await page.getByRole('button', { name: 'Tindakan chat' }).click();
+      await page.getByRole('menu').waitFor();
+    },
+  },
+  {
+    name: 'inbox-chat-alihkan',
+    path: CHAT,
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page);
+    },
+    waitFor: 'text=Info dari grup RT',
+    prepare: async (page) => {
+      await page.getByRole('button', { name: 'Tindakan chat' }).click();
+      await page.getByRole('menuitem', { name: /Tugaskan ke agen|Alihkan/ }).click();
+      const dialog = page.getByRole('dialog');
+      await dialog.getByRole('radio', { name: /Citra/ }).click();
+    },
+  },
+  // Chat milik agen lain: strip "Ditangani … · Ambil alih" di atas composer.
+  {
+    name: 'inbox-chat-agen-lain',
+    path: `/inbox?chat=${PHOTO_CONVERSATIONS[2]!.id}`,
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page);
+    },
+    waitFor: 'text=Ditangani Agus',
+    prepare: settle,
+  },
+  // Chat selesai: catatan + "Buka lagi".
+  {
+    name: 'inbox-chat-selesai',
+    path: `/inbox?chat=${PHOTO_CONVERSATIONS[6]!.id}`,
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page);
+    },
+    waitFor: 'text=Chat ini sudah selesai',
+    prepare: settle,
+  },
+  // ── Butir 9: template "/" di composer ──
+  {
+    name: 'inbox-chat-template',
+    path: CHAT,
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page);
+    },
+    waitFor: 'text=Info dari grup RT',
+    prepare: async (page) => {
+      const chat = page.getByRole('region', { name: 'Ruang chat' });
+      await chat.getByRole('textbox', { name: 'Tulis balasan' }).fill('/');
+      await chat.getByRole('listbox').waitFor();
+      await chat.getByRole('textbox', { name: 'Tulis balasan' }).press('ArrowDown');
+    },
+  },
+  {
+    name: 'pengaturan-template-percakapan',
+    path: '/pengaturan/template-percakapan',
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page);
+    },
+    waitFor: 'text=/salam',
+  },
+  {
+    name: 'pengaturan-template-percakapan-kosong',
+    path: '/pengaturan/template-percakapan',
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page, { quickReplies: [] });
+    },
+    waitFor: 'text=Belum ada template percakapan',
+  },
+  {
+    name: 'pengaturan-template-percakapan-form',
+    path: '/pengaturan/template-percakapan',
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page);
+    },
+    waitFor: 'text=/salam',
+    prepare: async (page) => {
+      await page.getByRole('button', { name: 'Ubah /gangguan' }).click();
+      await page.getByRole('dialog').waitFor();
+    },
   },
   // Riwayat digulir ke atas, lalu pesan masuk baru lewat WebSocket → tombol "Ada pesan baru".
   (() => {

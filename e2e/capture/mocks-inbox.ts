@@ -97,6 +97,41 @@ const SAMPLE_IMAGE = readFileSync(
   new URL('../../apps/web/src/assets/illustrations/login-hero-768.webp', import.meta.url),
 );
 
+/** Template percakapan contoh (quick reply `/`). */
+export const PHOTO_QUICK_REPLIES = [
+  {
+    shortcut: 'salam',
+    title: 'Salam pembuka',
+    body: 'Halo kak {nama}, dengan {agen} dari tim CS. Ada yang bisa kami bantu?',
+    usageCount: 214,
+  },
+  {
+    shortcut: 'gangguan',
+    title: 'Cek gangguan',
+    body: 'Mohon maaf atas gangguannya kak {nama}. Boleh kirim foto lampu modem saat ini?',
+    usageCount: 96,
+  },
+  {
+    shortcut: 'jam-buka',
+    title: 'Jam operasional',
+    body: 'Tim CS kami siap membantu setiap hari pukul 08.00–21.00 WIB.',
+    usageCount: 41,
+  },
+  {
+    shortcut: 'tagihan',
+    title: 'Info tagihan',
+    body: 'Tagihan bulan ini bisa dicek di aplikasi atau dibayar lewat transfer bank.',
+    usageCount: 0,
+  },
+].map((item, index) => ({
+  id: `f1a2b3c4-0000-4000-8000-00000000000${String(index + 1)}`,
+  lastUsedAt: item.usageCount ? ago(index * HOUR + 5 * MINUTE) : null,
+  updatedBy: { id: AGENT_CITRA, name: 'Rina Kartika' },
+  createdAt: ago(20 * 24 * HOUR),
+  updatedAt: ago((index + 1) * 26 * HOUR),
+  ...item,
+}));
+
 export const PHOTO_CONVERSATIONS = [
   conversation({
     n: 1,
@@ -399,6 +434,8 @@ export interface InboxMockOptions {
   send?: (route: Route) => Promise<void>;
   /** Rem darurat sedang ditarik (pengaturan batas kirim, terlihat oleh Owner/Admin). */
   paused?: boolean;
+  /** Template percakapan (bawaan: contoh). */
+  quickReplies?: typeof PHOTO_QUICK_REPLIES;
 }
 
 /** Pasang semua jawaban tiruan inbox + WebSocket diam (hanya `hello`). */
@@ -480,6 +517,7 @@ export async function inboxMocks(page: Page, options: InboxMockOptions = {}): Pr
             direction: 'outbound',
             senderKind: 'agent',
             text: body.text ?? body.caption ?? null,
+            senderName: 'Rina Kartika',
             status: 'pending',
             createdAt: new Date().toISOString(),
           }),
@@ -493,6 +531,9 @@ export async function inboxMocks(page: Page, options: InboxMockOptions = {}): Pr
     return json(route, { messages: [...rows].reverse(), nextCursor: null });
   });
   await page.route(`${API}/inbox/agents`, (route) => json(route, { agents: AGENTS }));
+  await page.route(`${API}/inbox/sending-status`, (route) =>
+    json(route, { paused: options.paused === true }),
+  );
   await page.route(`${API}/settings/sending-limits`, (route) =>
     json(route, {
       limits: {
@@ -513,6 +554,33 @@ export async function inboxMocks(page: Page, options: InboxMockOptions = {}): Pr
       headers: { 'content-disposition': `attachment; filename*=UTF-8''tagihan-november-2026.pdf` },
       body: SAMPLE_IMAGE,
     }),
+  );
+  await page.route(/\/api\/v1\/quick-replies(\?|$)/, (route) =>
+    json(route, { quickReplies: options.quickReplies ?? PHOTO_QUICK_REPLIES }),
+  );
+  await page.route(/\/api\/v1\/quick-replies\/[0-9a-f-]{36}\/use$/, (route) =>
+    json(route, {
+      text: 'Halo kak Budi Santoso, dengan Rina dari tim CS. Ada yang bisa kami bantu?',
+    }),
+  );
+  await page.route(
+    /\/api\/v1\/conversations\/[0-9a-f-]{36}\/(assign|unassign|resolve|reopen)$/,
+    (route) => {
+      const url = new URL(route.request().url());
+      const conversationId = url.pathname.split('/').at(-2);
+      const found = conversations.find((item) => item.id === conversationId);
+      const action = url.pathname.split('/').at(-1);
+      return json(route, {
+        conversation: found
+          ? {
+              ...found,
+              status:
+                action === 'resolve' ? 'resolved' : action === 'unassign' ? 'unserved' : 'served',
+              resolvedAt: action === 'resolve' ? new Date().toISOString() : null,
+            }
+          : null,
+      });
+    },
   );
   await page.route(/\/api\/v1\/conversations\/[0-9a-f-]{36}\/(claim|media)$/, (route) => {
     const url = new URL(route.request().url());

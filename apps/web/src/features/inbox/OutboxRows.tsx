@@ -63,10 +63,14 @@ export function OutboxRows({
             </div>
             {item.state === 'failed' ? (
               <div className={styles.failedBlock}>
-                <p className={styles.failed}>
-                  <Icon icon={CircleAlert} size={16} />
-                  <span>{isApiError(item.error) ? item.error.message : t.api.network}</span>
-                </p>
+                {/* 429/423: penjelasannya sudah di atas composer (sekali per kejadian). */}
+                {isApiError(item.error) &&
+                (item.error.status === 429 || item.error.status === 423) ? null : (
+                  <p className={styles.failed}>
+                    <Icon icon={CircleAlert} size={16} />
+                    <span>{isApiError(item.error) ? item.error.message : t.api.network}</span>
+                  </p>
+                )}
                 <div className={styles.outboxActions}>
                   <Button variant="ghost" onClick={() => removeOutboxItem(item)}>
                     <Icon icon={Trash2} size={16} />

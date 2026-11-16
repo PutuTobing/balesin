@@ -1,15 +1,13 @@
 import type { Conversation, Message } from '@balesin/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { MessageSquareText } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { FormErrorNotice } from '../../components/ui/FormErrorNotice';
-import { Icon } from '../../components/ui/Icon';
 import { Notice } from '../../components/ui/Notice';
 import { t } from '../../i18n/id';
 import { endpoints } from '../../lib/api/endpoints';
 import { formatClock } from '../../lib/format';
 import type { Lock } from '../../lib/use-lock';
-import { useCan } from '../auth/session';
+import { useCan, useSession } from '../auth/session';
 import { Composer } from './Composer';
 import styles from './Composer.module.css';
 import { forgetConversation, inboxKeys, storeConversation } from './inbox-queries';
@@ -18,13 +16,17 @@ import { windowState } from './inbox-time';
 import { useMinuteClock } from './use-minute-clock';
 
 const k = t.inbox.compose;
+const PAUSED_NOTICE_ID = 'rem-darurat-ditarik';
 
 interface ChatFooterProps {
   conversation: Conversation;
   replyTo: Message | null;
   onCancelReply: () => void;
   error: unknown;
+  /** Judul kotak error (bawaan: gagal kirim). */
+  errorTitle?: string;
   onError: (error: unknown) => void;
+  onSendError: (error: unknown) => void;
   lock: Lock;
 }
 
@@ -38,20 +40,23 @@ export function ChatFooter({
   replyTo,
   onCancelReply,
   error,
+  errorTitle,
   onError,
+  onSendError,
   lock,
 }: ChatFooterProps) {
   const canReply = useCan('inbox.reply');
   const canAssign = useCan('inbox.assign');
   const now = useMinuteClock();
   const { paused, reason } = useSendingPaused();
+  const selfId = useSession()?.user.id ?? null;
   const window = windowState(conversation.windowExpiresAt, now);
   const windowOpen = window.kind === 'open' || window.kind === 'expiring';
 
   const notices = (
     <>
       {paused ? (
-        <Notice tone="warning" role="status" title={k.pausedTitle}>
+        <Notice id={PAUSED_NOTICE_ID} tone="warning" role="status" title={k.pausedTitle}>
           {k.pausedBody}
           {reason ? ` ${k.pausedReason(reason)}` : null}
         </Notice>
@@ -61,7 +66,7 @@ export function ChatFooter({
           error={error}
           lock={lock}
           lockedTitle={k.limitedTitle}
-          failedTitle={k.failedTitle}
+          failedTitle={errorTitle ?? k.failedTitle}
           actions={
             lock.locked ? null : (
               <Button variant="ghost" onClick={() => onError(null)}>
@@ -91,15 +96,6 @@ export function ChatFooter({
             <p className={styles.closedTitle}>{none ? k.windowNoneTitle : k.windowClosedTitle}</p>
             <p className={styles.closedBody}>{none ? k.windowNoneBody : k.windowClosedBody}</p>
           </div>
-          <div className={styles.closedAction}>
-            <Button disabled aria-describedby="kirim-template-alasan">
-              <Icon icon={MessageSquareText} size={16} />
-              {k.sendTemplate}
-            </Button>
-            <p id="kirim-template-alasan" className={styles.closedHint}>
-              {k.templateSoon}
-            </p>
-          </div>
         </div>
       </>
     );
@@ -108,16 +104,21 @@ export function ChatFooter({
   return (
     <>
       {hasNotices ? <div className={styles.notices}>{notices}</div> : null}
-      {canAssign && (conversation.status === 'unserved' || conversation.status === 'bot') ? (
-        <ClaimBar conversation={conversation} onError={onError} />
+      {canAssign &&
+      (conversation.status === 'unserved' ||
+        conversation.status === 'bot' ||
+        (conversation.assignee !== null && conversation.assignee.id !== selfId)) ? (
+        <ClaimBar conversation={conversation} selfId={selfId} onError={onError} />
       ) : null}
       <Composer
         conversation={conversation}
         replyTo={replyTo}
         onCancelReply={onCancelReply}
         onError={onError}
+        onSendError={onSendError}
         locked={lock.locked}
         lockLabel={lock.locked ? formatClock(lock.secondsLeft) : null}
+        pausedNoticeId={paused ? PAUSED_NOTICE_ID : undefined}
       />
     </>
   );
@@ -131,18 +132,31 @@ function FooterNote({ children }: { children: string }) {
   );
 }
 
-/** "Ambil chat" (antrian terbuka) / "Ambil alih" (dari bot) — klaim atomik di server. */
+/**
+ * Bilah penanganan di atas composer: "Ambil chat" (antrian terbuka), "Ambil alih" (dari bot, atau
+ * chat yang sedang ditangani agen lain — supaya dua orang tidak membalas tanpa sadar). Tombol
+ * sekunder: "Kirim" tetap satu-satunya tombol utama di dasar layar.
+ */
 function ClaimBar({
   conversation,
+  selfId,
   onError,
 }: {
   conversation: Conversation;
+  selfId: string | null;
   onError: (error: unknown) => void;
 }) {
   const queryClient = useQueryClient();
+  const other =
+    conversation.assignee !== null && conversation.assignee.id !== selfId
+      ? conversation.assignee
+      : null;
   const bot = conversation.status === 'bot';
   const claim = useMutation({
-    mutationFn: () => endpoints.inbox.claim(conversation.id),
+    mutationFn: () =>
+      other && selfId
+        ? endpoints.inbox.assign(conversation.id, selfId)
+        : endpoints.inbox.claim(conversation.id),
     onMutate: () => onError(null),
     onSuccess: ({ conversation: updated }) => {
       if (updated) storeConversation(queryClient, updated);
@@ -158,9 +172,9 @@ function ClaimBar({
   });
   return (
     <div className={styles.handling}>
-      <span>{bot ? k.withBot : k.unassigned}</span>
-      <Button variant="primary" loading={claim.isPending} onClick={() => claim.mutate()}>
-        {claim.isPending ? k.claiming : bot ? k.takeOver : k.claim}
+      <span>{other ? k.handledBy(other.name) : bot ? k.withBot : k.unassigned}</span>
+      <Button variant="secondary" loading={claim.isPending} onClick={() => claim.mutate()}>
+        {claim.isPending ? k.claiming : other || bot ? k.takeOver : k.claim}
       </Button>
     </div>
   );

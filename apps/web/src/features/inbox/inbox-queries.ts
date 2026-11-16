@@ -36,6 +36,7 @@ export const inboxKeys = {
   channels: ['inbox', 'channels'] as const,
   agents: ['inbox', 'agents'] as const,
   sendingLimits: ['inbox', 'sending-limits'] as const,
+  sendingStatus: ['inbox', 'sending-status'] as const,
   /** Rem darurat diketahui sedang ditarik (dari 423 atau pengaturan batas kirim). */
   sendingPaused: ['inbox', 'sending-paused'] as const,
   /** Penanda (tanpa data pribadi): percakapan ini tidak tersedia lagi untuk pengguna ini. */
@@ -130,6 +131,15 @@ export const sendingLimitsQuery = queryOptions({
   queryKey: inboxKeys.sendingLimits,
   queryFn: ({ signal }) => endpoints.sendingLimits.get(signal),
   refetchInterval: 60_000,
+  retry: retryTransient,
+});
+
+/** Status rem darurat untuk semua peran (`GET /inbox/sending-status`; event `sending.changed`). */
+export const sendingStatusQuery = queryOptions({
+  queryKey: inboxKeys.sendingStatus,
+  queryFn: ({ signal }) => endpoints.inbox.sendingStatus(signal),
+  staleTime: 60_000,
+  refetchInterval: 120_000,
   retry: retryTransient,
 });
 
@@ -336,6 +346,12 @@ export function applyInboxEvent(queryClient: QueryClient, event: InboxStreamEven
       scheduleListRefresh(queryClient);
       return;
     }
+    case 'sending.changed':
+      // Rem darurat ditarik/dilanjutkan: banner & tombol kirim semua pengguna ikut berubah.
+      queryClient.setQueryData(inboxKeys.sendingStatus, { paused: event.paused });
+      if (!event.paused) queryClient.setQueryData(inboxKeys.sendingPaused, false);
+      void queryClient.invalidateQueries({ queryKey: inboxKeys.sendingLimits });
+      return;
     case 'conversation.removed':
       // Agen lama yang kehilangan akses (mis. Teknisi dialihkan): buang semua datanya.
       forgetConversation(queryClient, event.conversationId);

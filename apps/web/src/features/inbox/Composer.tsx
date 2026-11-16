@@ -1,4 +1,4 @@
-import type { Conversation, Message } from '@balesin/shared';
+import type { Conversation, Message, QuickReply } from '@balesin/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { FileText, Music, Paperclip, Reply, SendHorizontal, Video, X } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
@@ -10,6 +10,9 @@ import styles from './Composer.module.css';
 import { ACCEPT, checkAttachment, guessMediaKind } from './attachments';
 import { messageBody } from './message-content';
 import { createOutboxItem, sendOutboxItem } from './outbox';
+import { slashQuery, useQuickReplies } from './quick-replies';
+import { QuickReplyPicker } from './QuickReplyPicker';
+import { endpoints } from '../../lib/api/endpoints';
 
 const k = t.inbox.compose;
 const MAX_TEXT = 4096;
@@ -19,12 +22,16 @@ interface ComposerProps {
   conversation: Conversation;
   replyTo: Message | null;
   onCancelReply: () => void;
-  /** Error kirim terbaru (ditampilkan ruang chat dengan pola `FormErrorNotice`). */
+  /** Error selain kirim pesan (mis. template `/`), ditampilkan di atas composer. */
   onError: (error: unknown) => void;
+  /** Gagal kirim pesan: keterangannya sudah ada di item outbox; hanya 429 yang ke atas composer. */
+  onSendError: (error: unknown) => void;
   /** Kunci 429: tombol kirim nonaktif selama hitung mundur. */
   locked: boolean;
   lockLabel: string | null;
   disabled?: boolean;
+  /** Rem darurat ditarik: kirim & lampirkan nonaktif (draf tetap bisa ditulis). */
+  pausedNoticeId?: string;
 }
 
 /**
@@ -37,10 +44,13 @@ export function Composer({
   replyTo,
   onCancelReply,
   onError,
+  onSendError,
   locked,
   lockLabel,
   disabled = false,
+  pausedNoticeId,
 }: ComposerProps) {
+  const paused = pausedNoticeId !== undefined;
   const queryClient = useQueryClient();
   const isHp = useMediaQuery(media.hp);
   const [text, setText] = useState('');
@@ -50,6 +60,30 @@ export function Composer({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const hintId = useId();
+  const pickerId = useId();
+
+  // Template `/`: seluruh isi kolom berupa `/kata` → daftar template (Escape menutup sampai isi berubah).
+  const [dismissedFor, setDismissedFor] = useState<string | null>(null);
+  const [active, setActive] = useState(0);
+  const [usingTemplate, setUsingTemplate] = useState(false);
+  const search = slashQuery(text);
+  const pickerOpen = search !== null && dismissedFor !== text && !file;
+  const templates = useQuickReplies(pickerOpen ? search : null);
+  const activeIndex = Math.min(active, Math.max(0, templates.items.length - 1));
+
+  const pickTemplate = (template: QuickReply) => {
+    setUsingTemplate(true);
+    onError(null);
+    endpoints.quickReplies
+      .use(template.id, conversation.id)
+      .then(({ text: filled }) => {
+        setText(filled);
+        setActive(0);
+        inputRef.current?.focus();
+      })
+      .catch(onError)
+      .finally(() => setUsingTemplate(false));
+  };
 
   // Balas-kutip dipilih → fokus ke kolom tulis.
   useEffect(() => {
@@ -63,6 +97,18 @@ export function Composer({
     element.style.height = 'auto';
     element.style.height = `${element.scrollHeight}px`;
   }, [text]);
+
+  // Lampiran yang belum dikirim: pratinjaunya dicabut saat composer dilepas (pindah chat).
+  const previewRef = useRef<string | null>(null);
+  useEffect(() => {
+    previewRef.current = preview;
+  }, [preview]);
+  useEffect(
+    () => () => {
+      if (previewRef.current) URL.revokeObjectURL(previewRef.current);
+    },
+    [],
+  );
 
   const clearFile = () => {
     if (preview) URL.revokeObjectURL(preview);
@@ -84,7 +130,8 @@ export function Composer({
 
   const trimmed = text.trim();
   const tooLong = text.length > MAX_TEXT;
-  const canSend = !disabled && !locked && !tooLong && (file !== null || trimmed.length > 0);
+  const canSend =
+    !disabled && !paused && !locked && !tooLong && (file !== null || trimmed.length > 0);
 
   const send = () => {
     if (!canSend) return;
@@ -103,11 +150,32 @@ export function Composer({
     if (fileRef.current) fileRef.current.value = '';
     onCancelReply();
     onError(null);
-    sendOutboxItem(queryClient, item).catch(onError);
+    sendOutboxItem(queryClient, item).catch(onSendError);
     inputRef.current?.focus();
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (pickerOpen && !event.nativeEvent.isComposing) {
+      const count = templates.items.length;
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        if (count > 0) {
+          setActive((activeIndex + (event.key === 'ArrowDown' ? 1 : count - 1)) % count);
+        }
+        return;
+      }
+      if ((event.key === 'Enter' || event.key === 'Tab') && !event.shiftKey && count > 0) {
+        event.preventDefault();
+        const chosen = templates.items[activeIndex];
+        if (chosen) pickTemplate(chosen);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setDismissedFor(text);
+        return;
+      }
+    }
     if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
     // HP: Enter = baris baru (papan ketik sentuh); kirim lewat tombol.
     if (isHp) return;
@@ -120,6 +188,18 @@ export function Composer({
 
   return (
     <div className={styles.composer}>
+      {pickerOpen ? (
+        <QuickReplyPicker
+          id={pickerId}
+          search={search}
+          items={templates.items}
+          loading={templates.loading}
+          failed={templates.failed}
+          activeIndex={activeIndex}
+          onActiveChange={setActive}
+          onPick={pickTemplate}
+        />
+      ) : null}
       {replyTo ? (
         <div className={styles.reply}>
           <Icon icon={Reply} size={16} className={styles.replyIcon} />
@@ -181,18 +261,31 @@ export function Composer({
           label={k.attach}
           icon={Paperclip}
           tooltipSide="top"
-          disabled={disabled}
+          disabled={disabled || paused}
+          aria-describedby={pausedNoticeId}
           onClick={() => fileRef.current?.click()}
         />
         <textarea
           ref={inputRef}
           value={text}
-          onChange={(event) => setText(event.target.value)}
+          onChange={(event) => {
+            setText(event.target.value);
+            setActive(0);
+          }}
           onKeyDown={onKeyDown}
           rows={1}
           aria-label={k.label}
+          aria-autocomplete="list"
+          aria-expanded={pickerOpen}
+          aria-controls={pickerOpen && templates.items.length > 0 ? pickerId : undefined}
+          aria-activedescendant={
+            pickerOpen && templates.items[activeIndex]
+              ? `${pickerId}-${templates.items[activeIndex].id}`
+              : undefined
+          }
+          aria-busy={usingTemplate || undefined}
           aria-describedby={isHp ? undefined : hintId}
-          placeholder={file ? k.captionPlaceholder : k.placeholder}
+          placeholder={paused ? k.pausedPlaceholder : file ? k.captionPlaceholder : k.placeholder}
           className={styles.input}
           disabled={disabled}
           enterKeyHint={isHp ? 'enter' : 'send'}
@@ -202,6 +295,7 @@ export function Composer({
           className={styles.send}
           onClick={send}
           disabled={!canSend}
+          aria-describedby={pausedNoticeId}
           aria-label={lockLabel ?? k.send}
         >
           {lockLabel ? (

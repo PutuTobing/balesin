@@ -438,6 +438,11 @@ ol.timeline {
 }
 
 @media (max-width: 640px) {
+  /* Kepala chat HP: ruang untuk nama + nomor utuh (avatar ada di layar detail). */
+  .headerAvatar {
+    display: none;
+  }
+
   .bubbleWrap {
     max-width: 85%;
   }
@@ -495,11 +500,41 @@ ol.timeline {
   color: var(--ink);
 }
 
-@media (pointer: coarse) {
+/*
+ * Layar sentuh: tidak ada "⋯" di setiap gelembung — ketuk gelembung membuka menu. Tombolnya tetap
+ * ada (keyboard/pembaca layar) tanpa memakan tempat, dan tampil di sudut gelembung saat menunya
+ * terbuka atau tombolnya difokus.
+ */
+@media (hover: none) {
+  .bubbleLine {
+    position: relative;
+  }
+
   .messageMenuButton {
+    position: absolute;
+    top: calc(var(--space-12) * -1);
     width: var(--size-touch);
     height: var(--size-touch);
+    pointer-events: none;
+  }
+
+  .row[data-dir='in'] .messageMenuButton {
+    left: min(100% - var(--size-touch), 75%);
+  }
+
+  .row[data-dir='out'] .messageMenuButton {
+    right: min(100% - var(--size-touch), 75%);
+  }
+
+  .messageMenuButton[data-state='open'],
+  .messageMenuButton:focus-visible {
+    background: var(--surface);
+    box-shadow: var(--shadow-1);
     opacity: 1;
+  }
+
+  .bubble[data-actionable] {
+    cursor: pointer;
   }
 }
 
@@ -612,6 +647,16 @@ ol.timeline {
 
 /* ---------- Media: bingkai berukuran tetap (tanpa lompatan layout) ---------- */
 
+/* Gelembung gambar/video/stiker seukuran medianya; keterangan & jam membungkus mengikutinya. */
+.bubble[data-media] {
+  width: min-content;
+  max-width: 100%;
+}
+
+.bubble[data-media] .mediaFrame {
+  width: min(17.5rem, 65vw);
+}
+
 .mediaFrame {
   position: relative;
   display: grid;
@@ -679,14 +724,18 @@ ol.timeline {
   color: var(--ink-2);
 }
 
+/* Nama berkas boleh dua baris (tidak terpotong buruk di HP); satu-satunya tempat namanya tampil. */
 .documentName {
+  display: -webkit-box;
   flex: 1;
   min-width: 0;
   overflow: hidden;
   font-size: var(--text-13);
   font-weight: var(--weight-semibold);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .mediaError {

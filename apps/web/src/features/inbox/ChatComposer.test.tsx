@@ -146,7 +146,7 @@ describe('composer', () => {
 
   it('balas-kutip: pilih "Balas" di menu pesan → kutipan di composer → replyToMessageId', async () => {
     const { api } = await openChat();
-    fireEvent.keyDown(chat().getAllByRole('button', { name: t.inbox.actions.open })[0]!, {
+    fireEvent.keyDown(chat().getAllByRole('button', { name: /Aksi untuk pesan/ })[0]!, {
       key: 'Enter',
     });
     const menu = await screen.findByRole('menu');
@@ -167,7 +167,7 @@ describe('composer', () => {
 
   it('reaksi: emoji dari menu pesan dikirim sebagai pesan reaksi', async () => {
     const { api } = await openChat();
-    fireEvent.keyDown(chat().getAllByRole('button', { name: t.inbox.actions.open })[0]!, {
+    fireEvent.keyDown(chat().getAllByRole('button', { name: /Aksi untuk pesan/ })[0]!, {
       key: 'Enter',
     });
     const menu = await screen.findByRole('menu');
@@ -234,15 +234,88 @@ describe('composer', () => {
     );
   });
 
-  it('di luar jendela 24 jam: composer diganti penjelasan + "Kirim template" nonaktif', async () => {
+  it('di luar jendela 24 jam: composer diganti penjelasan, tanpa tombol nonaktif / janji fitur', async () => {
     await openChat(closed.id);
     expect(chat().queryByRole('textbox', { name: k.label })).toBeNull();
     expect(chat().getByText(k.windowClosedTitle)).toBeVisible();
-    const template = chat().getByRole('button', { name: new RegExp(k.sendTemplate) });
-    expect(template).toBeDisabled();
-    expect(template).toHaveAccessibleDescription(k.templateSoon);
+    expect(chat().getByText(k.windowClosedBody)).toBeVisible();
+    expect(chat().queryByRole('button', { name: /template/i })).toBeNull();
     // Pesan di luar jendela tidak bisa dibalas/diberi reaksi.
-    expect(chat().queryByRole('button', { name: t.inbox.actions.open })).toBeNull();
+    expect(chat().queryByRole('button', { name: /Aksi untuk pesan/ })).toBeNull();
+  });
+
+  it('rem darurat: Kirim & Lampirkan nonaktif, draf tetap bisa ditulis, tanpa POST', async () => {
+    const { api } = await openChat(open.id, { session: fakeSession('owner') });
+    // Pengelola melihat status rem dari pengaturan batas kirim.
+    api.on(
+      `GET ${API_ROUTES.sendingLimits.settings}`,
+      () =>
+        new Response(
+          JSON.stringify({
+            limits: {
+              dailyPerUser: 500,
+              dailyPerOrganization: 5000,
+              perConversationPerMinute: 20,
+              paused: { at: new Date().toISOString(), by: null, reason: null },
+              sentLast24Hours: 3,
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+    // Status rem juga diketahui dari 423 pada kiriman sebelumnya.
+    api.on(`POST ${apiPath(API_ROUTES.inbox.messages, { conversationId: open.id })}`, () =>
+      apiError(423, 'SENDING_PAUSED', 'Pengiriman sedang dihentikan.'),
+    );
+    const box = chat().getByRole('textbox', { name: k.label });
+    fireEvent.change(box, { target: { value: 'Pesan pertama' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    expect(await chat().findByText(k.pausedTitle)).toBeVisible();
+    const posts = () =>
+      api.requests.filter(
+        (request) => request.method === 'POST' && request.path.endsWith('/messages'),
+      ).length;
+    const before = posts();
+    fireEvent.change(box, { target: { value: 'Draf saat rem ditarik' } });
+    expect(box).toHaveValue('Draf saat rem ditarik');
+    expect(chat().getByRole('button', { name: k.send })).toBeDisabled();
+    expect(chat().getByRole('button', { name: k.attach })).toBeDisabled();
+    fireEvent.keyDown(box, { key: 'Enter' });
+    expect(posts()).toBe(before);
+  });
+
+  it('event WS sending.changed: banner rem darurat untuk semua peran (CS juga)', async () => {
+    await openChat(open.id, { session: fakeSession('cs') });
+    expect(chat().queryByText(k.pausedTitle)).toBeNull();
+    act(() => {
+      FakeSocket.latest()?.receive({ type: 'hello', heartbeatSeconds: 30 });
+      FakeSocket.latest()?.receive({ type: 'sending.changed', paused: true });
+    });
+    expect(await chat().findByText(k.pausedTitle)).toBeVisible();
+    expect(chat().getByRole('button', { name: k.send })).toBeDisabled();
+    act(() => {
+      FakeSocket.latest()?.receive({ type: 'sending.changed', paused: false });
+    });
+    await waitFor(() => expect(chat().queryByText(k.pausedTitle)).toBeNull());
+  });
+
+  it('rem darurat sudah ditarik saat chat dibuka (GET /inbox/sending-status)', async () => {
+    await openChat(open.id, { session: fakeSession('cs'), inbox: { ...inbox, paused: true } });
+    expect(await chat().findByText(k.pausedTitle)).toBeVisible();
+  });
+
+  it('gagal kirim (500): keterangan sekali di item, tanpa kotak galat di atas composer', async () => {
+    await openChat(open.id, {
+      routes: {
+        [`POST ${apiPath(API_ROUTES.inbox.messages, { conversationId: open.id })}`]: () =>
+          apiError(500, 'INTERNAL_ERROR', 'Server sedang bermasalah.'),
+      },
+    });
+    const box = chat().getByRole('textbox', { name: k.label });
+    fireEvent.change(box, { target: { value: 'Halo' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    expect(await chat().findAllByText('Server sedang bermasalah.')).toHaveLength(1);
+    expect(chat().queryByText(k.failedTitle)).toBeNull();
   });
 
   it('Teknisi tanpa inbox.assign tidak melihat "Ambil chat"; CS bisa mengambil chat', async () => {
@@ -275,6 +348,23 @@ describe('composer', () => {
   it('nama agen pengirim tampil dari daftar agen', async () => {
     await openChat();
     expect(await chat().findByText('Citra')).toBeVisible();
+  });
+
+  it('nama pengirim dari server (senderName) juga untuk Teknisi tanpa daftar agen', async () => {
+    const named = fakeMessage({
+      direction: 'outbound',
+      senderKind: 'agent',
+      senderUserId: '0b0e2d8c-6d3f-4b8a-9d55-5e2f8a1c0011',
+      senderName: 'Dimas Agen',
+      text: 'Teknisi meluncur',
+      status: 'delivered',
+      createdAt: inFuture(-5 * 60_000),
+    });
+    await openChat(open.id, {
+      session: fakeSession('teknisi'),
+      inbox: { ...inbox, messages: { [open.id]: [inbound, named] } },
+    });
+    expect(await chat().findByText('Dimas Agen')).toBeVisible();
   });
 });
 

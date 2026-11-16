@@ -387,6 +387,11 @@ const COUNTS = {
   member_joined: 0,
   password_reset_burst: 0,
   webhook_signature_failed: 0,
+  sending_paused: 0,
+  sending_limit_reached: 0,
+  sending_limits_changed: 0,
+  inbox_bulk_action: 0,
+  quick_reply_risky: 0,
 };
 
 /** Ringkasan keamanan tiruan dengan kejadian `warning` (banner tampil untuk Owner/Admin). */

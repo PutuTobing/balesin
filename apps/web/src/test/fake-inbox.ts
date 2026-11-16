@@ -5,6 +5,7 @@ import {
   type Contact,
   type Conversation,
   type Message,
+  type QuickReply,
 } from '@balesin/shared';
 import type { FakeHandler, FakeInbox } from './fake-api';
 
@@ -101,6 +102,21 @@ export function fakeContact(overrides: Partial<Contact> = {}): Contact {
   };
 }
 
+export function fakeQuickReply(overrides: Partial<QuickReply> = {}): QuickReply {
+  return {
+    id: overrides.id ?? uuid('f0000000'),
+    shortcut: 'salam',
+    title: 'Salam pembuka',
+    body: 'Halo kak {nama}, dengan {agen} di sini. Ada yang bisa kami bantu?',
+    usageCount: 12,
+    lastUsedAt: '2026-11-16T03:00:00.000Z',
+    updatedBy: { id: SELF_ID, name: 'Rina Kartika' },
+    createdAt: '2026-11-10T03:00:00.000Z',
+    updatedAt: '2026-11-15T03:00:00.000Z',
+    ...overrides,
+  };
+}
+
 export function fakeChannelSummary(overrides: Partial<ChannelSummary> = {}): ChannelSummary {
   return {
     id: FAKE_CHANNEL_ID,
@@ -156,8 +172,35 @@ export function fakeInboxRoutes(
       });
     }),
     [`GET ${API_ROUTES.inbox.agents}`]: guard(() => respond({ agents: inbox.agents ?? [] })),
+    [`GET ${API_ROUTES.inbox.sendingStatus}`]: guard(() =>
+      respond({ paused: inbox.paused ?? false }),
+    ),
+    [`GET ${API_ROUTES.quickReplies.list}`]: guard(({ query }) => {
+      const q = query.get('q')?.toLowerCase();
+      const all = inbox.quickReplies ?? [];
+      return respond({
+        quickReplies: q
+          ? all.filter((item) => item.shortcut.includes(q) || item.title.toLowerCase().includes(q))
+          : all,
+      });
+    }),
+    [`POST ${API_ROUTES.quickReplies.list}`]: guard(({ body }) =>
+      respond({ quickReply: fakeQuickReply(body as Partial<QuickReply>) }, 201),
+    ),
     [`GET ${API_ROUTES.channels.list}`]: guard(() => respond({ channels: inbox.channels ?? [] })),
   };
+  for (const quickReply of inbox.quickReplies ?? []) {
+    const quickReplyId = quickReply.id;
+    routes[`POST ${apiPath(API_ROUTES.quickReplies.use, { quickReplyId })}`] = guard(() =>
+      respond({ text: quickReply.body.replace('{nama}', 'Budi').replace('{agen}', 'Rina') }),
+    );
+    routes[`PATCH ${apiPath(API_ROUTES.quickReplies.quickReply, { quickReplyId })}`] = guard(
+      ({ body }) => respond({ quickReply: { ...quickReply, ...(body as object) } }),
+    );
+    routes[`DELETE ${apiPath(API_ROUTES.quickReplies.quickReply, { quickReplyId })}`] = guard(() =>
+      respond({ deleted: true }),
+    );
+  }
   for (const conversation of conversations) {
     const conversationId = conversation.id;
     routes[`GET ${apiPath(API_ROUTES.inbox.conversation, { conversationId })}`] = guard(() =>
@@ -222,6 +265,34 @@ export function fakeInboxRoutes(
         },
       }),
     );
+    const action = (changes: Partial<Conversation> | null) =>
+      guard(() => respond({ conversation: changes ? { ...conversation, ...changes } : null }));
+    routes[`POST ${apiPath(API_ROUTES.inbox.assign, { conversationId })}`] = guard(({ body }) =>
+      respond({
+        conversation: {
+          ...conversation,
+          status: 'served',
+          assignee: {
+            id: (body as { userId: string }).userId,
+            name:
+              inbox.agents?.find((agent) => agent.id === (body as { userId: string }).userId)
+                ?.name ?? 'Agen',
+          },
+        },
+      }),
+    );
+    routes[`POST ${apiPath(API_ROUTES.inbox.unassign, { conversationId })}`] = action({
+      status: 'unserved',
+      assignee: null,
+    });
+    routes[`POST ${apiPath(API_ROUTES.inbox.resolve, { conversationId })}`] = action({
+      status: 'resolved',
+      resolvedAt: new Date().toISOString(),
+    });
+    routes[`POST ${apiPath(API_ROUTES.inbox.reopen, { conversationId })}`] = action({
+      status: 'served',
+      resolvedAt: null,
+    });
     for (const message of inbox.messages?.[conversationId] ?? []) {
       const messageId = message.id;
       routes[`POST ${apiPath(API_ROUTES.inbox.retry, { messageId })}`] = guard(() =>

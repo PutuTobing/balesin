@@ -32,6 +32,7 @@ import {
   type Conversation,
   type InboxAgent,
   type Message,
+  type QuickReply,
 } from '@balesin/shared';
 import { vi } from 'vitest';
 import { fakeInboxRoutes } from './fake-inbox';
@@ -383,6 +384,9 @@ export interface FakeInbox {
   contacts?: Contact[];
   channels?: ChannelSummary[];
   agents?: InboxAgent[];
+  quickReplies?: QuickReply[];
+  /** Rem darurat ditarik (`GET /inbox/sending-status`). */
+  paused?: boolean;
 }
 
 export interface FakeApi {

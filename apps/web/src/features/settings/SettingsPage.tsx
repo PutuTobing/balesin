@@ -1,6 +1,14 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ChevronRight, History, Mail, ShieldCheck, Smartphone, UsersRound } from 'lucide-react';
+import {
+  ChevronRight,
+  History,
+  Mail,
+  MessageSquareText,
+  ShieldCheck,
+  Smartphone,
+  UsersRound,
+} from 'lucide-react';
 import { RadioGroup } from 'radix-ui';
 import { useEffect } from 'react';
 import { useBrand } from '../../brand/brand';
@@ -13,6 +21,8 @@ import { parsePreference, type ResolvedTheme, type ThemePreference } from '../..
 import { useTheme } from '../../theme/theme-context';
 import { themeOptions } from '../../theme/theme-options';
 import { useCan } from '../auth/session';
+import { endpoints } from '../../lib/api/endpoints';
+import { quickRepliesKey } from '../quick-replies/quick-replies-key';
 import { EmailStatusBadge } from '../email-settings/EmailStatusBadge';
 import { ChannelsMenuStatus } from '../channels/ChannelsMenuStatus';
 import {
@@ -46,16 +56,18 @@ export function SettingsPage() {
   const canEmail = useCan('settings.email.manage');
   const canAudit = useCan('audit.view');
   const canChannels = useCan('channels.manage');
+  const canQuickReplies = useCan('quick_replies.manage');
 
   return (
     <Page>
       <div className={styles.content}>
-        {canChannels || canTeam || canEmail || canAudit ? (
+        {canChannels || canTeam || canEmail || canAudit || canQuickReplies ? (
           <OrganizationSettings
             showChannels={canChannels}
             showTeam={canTeam}
             showEmail={canEmail}
             showAudit={canAudit}
+            showQuickReplies={canQuickReplies}
             canInvite={canInvite}
             canManageTeam={canManageTeam}
           />
@@ -138,6 +150,7 @@ function OrganizationSettings({
   showTeam,
   showEmail,
   showAudit,
+  showQuickReplies,
   canInvite,
   canManageTeam,
 }: {
@@ -145,6 +158,7 @@ function OrganizationSettings({
   showTeam: boolean;
   showEmail: boolean;
   showAudit: boolean;
+  showQuickReplies: boolean;
   canInvite: boolean;
   canManageTeam: boolean;
 }) {
@@ -159,6 +173,7 @@ function OrganizationSettings({
         {showChannels ? <ChannelsMenuItem /> : null}
         {showTeam ? <TeamMenuItem canInvite={canInvite} canManage={canManageTeam} /> : null}
         {showEmail ? <EmailMenuItem /> : null}
+        {showQuickReplies ? <QuickRepliesMenuItem /> : null}
         {showAudit ? <AuditMenuItem /> : null}
       </ul>
     </section>
@@ -218,6 +233,37 @@ function ChannelsMenuItem() {
           {channels.data ? (
             <ChannelsMenuStatus channels={channels.data.channels} />
           ) : channels.isPending ? (
+            <Skeleton className={styles.statusSkeleton} />
+          ) : null}
+        </span>
+        <Icon icon={ChevronRight} size={16} className={styles.chevron} />
+      </Link>
+    </li>
+  );
+}
+
+/** Template percakapan `/`: jumlah template. */
+function QuickRepliesMenuItem() {
+  const list = useQuery({
+    queryKey: [...quickRepliesKey, ''],
+    queryFn: ({ signal }) => endpoints.quickReplies.list(null, signal),
+  });
+  return (
+    <li>
+      <Link to="/pengaturan/template-percakapan" className={styles.menuLink}>
+        <span className={styles.menuIcon}>
+          <Icon icon={MessageSquareText} size={20} />
+        </span>
+        <span className={styles.menuText}>
+          <span className={styles.menuLabel}>{t.quickReplies.title}</span>
+          <span className={styles.menuHint}>{t.quickReplies.menuHint}</span>
+        </span>
+        <span className={styles.menuStatus}>
+          {list.data ? (
+            <span className={styles.menuCount}>
+              {t.quickReplies.menuCount(list.data.quickReplies.length)}
+            </span>
+          ) : list.isPending ? (
             <Skeleton className={styles.statusSkeleton} />
           ) : null}
         </span>

@@ -252,6 +252,7 @@ export function InboxScreen({
             key={chatId}
             conversationId={chatId}
             onBack={isHp ? onCloseChat : undefined}
+            onClosed={onCloseChat}
             onOpenDetail={isHp ? onOpenHpDetail : undefined}
             focusTitle={focusChatTitle}
             detailToggle={showDetailButton(false)}

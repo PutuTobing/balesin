@@ -11,6 +11,8 @@ import {
 import { infiniteQueryOptions, queryOptions, type QueryClient } from '@tanstack/react-query';
 import { api, isApiError } from './client';
 import { endpoints } from './endpoints';
+import { clearMediaCache } from '../../features/inbox/message-media';
+import { resetOutbox } from '../../features/inbox/outbox';
 
 /** Kunci query di satu tempat supaya invalidasi tidak salah ketik. */
 export const queryKeys = {
@@ -310,12 +312,21 @@ export function clearSessionData(queryClient: QueryClient): void {
  * Panggil `clearAppData` setelah layar itu ditutup.
  */
 export function endSession(queryClient: QueryClient): void {
+  // Cache modul (draf gagal kirim, Blob media) tidak memicu permintaan ulang: aman dibuang sekarang.
+  resetOutbox();
+  clearMediaCache();
   api.setCsrfToken(null);
   queryClient.setQueryData(queryKeys.session, null);
 }
 
-/** Hapus data aplikasi milik pengguna, kecuali sesi itu sendiri dan data publik. */
+/**
+ * Hapus data aplikasi milik pengguna, kecuali sesi itu sendiri dan data publik. Termasuk cache di
+ * luar Query: draf/pesan gagal kirim (outbox) dan Blob media yang sudah diunduh (review composer
+ * R1) — pengguna berikutnya di tab yang sama tidak boleh melihatnya.
+ */
 export function clearAppData(queryClient: QueryClient): void {
+  resetOutbox();
+  clearMediaCache();
   queryClient.removeQueries({
     predicate: (query) =>
       query.queryKey[0] !== queryKeys.branding[0] &&
