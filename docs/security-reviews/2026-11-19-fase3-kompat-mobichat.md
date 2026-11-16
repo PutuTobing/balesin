@@ -111,3 +111,16 @@ Berkas baru: `apps/api/src/modules/compat-mobichat/security-review-fase3-kompat-
 | `apps/worker`: `vitest run src/queues` | 86 lulus, 1 gagal (Info 6, pohon kerja) |
 | `tsc --noEmit` (api, worker) + ESLint berkas tes baru | bersih |
 | `pnpm audit` | 2 moderate dev-only, tidak ada yang baru |
+
+---
+
+## Putaran 2 — verifikasi perbaikan (commit `d93859b`)
+
+| Butir | Bukti | Status |
+|---|---|---|
+| S1 key di potongan jawaban | `apps/worker/src/queues/webhooks-out.ts:736-752` `scrubSnippet`: key yang disisipkan diganti `[REDACTED]` (utuh, berapa kali pun) + awalan key ≥ 12 karakter di ujung potongan (terpotong batas 500 byte) + `scrubSecretsInText` (`blsn_live_…`, `whsec_…` baru di `packages/core/src/redact.ts`, Bearer, token Meta), sebelum disimpan → riwayat & API tidak memuat key. Tes penjaga S1 diubah `it.fails` → `it` dan lulus (DB + `GET …/deliveries`); tes unit baru `apps/worker/src/queues/security-review-fase3-scrub-snippet.test.ts` (4 lulus: utuh/berulang, terpotong 12/20/30/hampir utuh, pola umum tanpa key, teks biasa utuh) | **Tertutup** |
+| Info 2 nilai penyalahgunaan `conversations:write` | `apps/api/src/modules/inbox/assignment.service.ts:538-590`: lepas hanya dari `bot` (`agent_id` diabaikan), tugaskan hanya dari bot/antrian (dipegang agen → 409), selesai hanya `bot` (409) | **Tertutup** |
+| Info 5 key tanpa TLS | kontrak mewajibkan peringatan UI untuk `http://` (DECISIONS 2026-11-19) | **Diterima + peringatan** (cek di review UI saat formulir MobiChat dibuat) |
+
+Sisa: potongan jawaban yang tersimpan SEBELUM perbaikan (≤ 7 hari) tidak disensor ulang — habis oleh
+retensi; kosongkan sekali bila sudah ada pemakaian produksi. Putusan tetap **AMAN**.
