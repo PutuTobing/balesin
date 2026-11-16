@@ -1,7 +1,7 @@
 # Progress
 
 **Fase aktif:** 2 — WhatsApp & Inbox inti
-**Terakhir diperbarui:** 2026-11-16 (Fase 2 butir 1–3 selesai dibangun; revisi desain Channel berjalan)
+**Terakhir diperbarui:** 2026-11-16 (Fase 2 butir 1–4 selesai; butir 5 inbox real-time berjalan)
 
 ## Selesai
 
@@ -37,29 +37,24 @@
 - Butir 1–2 **backend**: channel WhatsApp Cloud API (kredensial terenkripsi, klien Graph v26.0
   dengan `appsecret_proof`, tes koneksi, profil bisnis, pemberitahuan Owner), review security AMAN.
   Kontrak: `docs/KONTRAK-API-CHANNEL.md`.
-
-- Butir 1–2 **web** (60be001): Pengaturan → Channel, wizard 9 langkah, halaman nomor, profil
-  bisnis, E2E dengan server Meta tiruan. `disabledAt` + 404 untuk ID bukan UUID (294e0d6, migrasi
-  0011). Security web **AMAN** (`docs/security-reviews/2026-11-16-fase2-channel-web.md`, R1/R2 Rendah).
+- Butir 1–2 **web**: Pengaturan → Channel, wizard 9 langkah, halaman nomor (navigasi bagian ≥1024px),
+  profil bisnis, ganti kredensial, nonaktif/hapus; E2E dengan server Meta tiruan. Kritikus **LOLOS**
+  putaran 4 (`docs/design-reviews/2026-11-16-fase2-channel.md`); security web **AMAN**
+  (`docs/security-reviews/2026-11-16-fase2-channel-web.md`, R1/R2 sudah ditutup).
 - Butir 3 **webhook masuk** (4642360 + pengerasan 2609aa2): security **AMAN** putaran 2
-  (`docs/security-reviews/2026-11-16-fase2-webhook.md`). Ditunda: S3 `TRUST_PROXY` → Fase 7;
-  S4 retensi payload → butir kontak (wajib sebelum produksi). Catatan N1: handler jangan
-  `UPDATE channels` di transaksi yang memegang `FOR SHARE`; N2: jejak tahan lama untuk baris ditolak DB.
+  (`docs/security-reviews/2026-11-16-fase2-webhook.md`).
+- Butir 4 **kontak & percakapan otomatis + jendela 24 jam** (b03de89, bff5abd; migrasi 0012–0013):
+  kontak BSUID/E.164, percakapan = satu sesi, pesan + status maju, retensi payload, API baca inbox.
+  Security **AMAN** putaran 2 (`docs/security-reviews/2026-11-16-fase2-kontak-percakapan.md`).
+  Kontrak: `docs/KONTRAK-API-INBOX.md`.
 
 ## Sedang dikerjakan
-- **Revisi layar Channel putaran 1** (kritikus REVISI, `docs/design-reviews/2026-11-16-fase2-channel.md`):
-  W1–W9 + S1/S2 + tampilan `disabledAt` + security web R1 (isian rahasia tak terkendali, ubah
-  `it.fails` jadi `it`) dan R2 (autocomplete/abaikan password manager) + Q1/Q2 mock & foto.
-  **Dihentikan di tengah jalan (16 Nov)** — perubahan belum di-commit ada di working tree
-  (`apps/web/src/features/channels/**`, `base.css`, `id.ts`, `RichText`, `CodeField`, `Field`,
-  `packages/shared/src/channels.ts`, `e2e/capture/*channel*`, `e2e/tests/channel.spec.ts`, baru:
-  `SectionNav.tsx`, `MasterKeyCommand.tsx`). Lanjutkan: frontend menuntaskan + root checks + e2e +
-  screenshots → commit → kritikus putaran 2 → QA → centang butir 1–3 di ROADMAP.
-- **Lalu Fase 2 butir 4 — kontak & percakapan otomatis + jendela 24 jam**: isi `InboundEventHandlers`
-  di `apps/worker/src/queues/webhooks.ts` (kunci kontak BSUID `sender.userId`, jendela dari
-  `receivedAt`), retensi payload `webhook_events` (S4), perhatikan N1/N2. Sisa Rendah audit akhir
-  Fase 1 (R1 audit penolakan CSRF bersesi, sisa R5, F.5 Origin WebSocket, F.11 RLS) dikerjakan
-  bersama butir inbox real-time.
+- **Fase 2 butir 5 — inbox real-time (backend)**: WebSocket (cek Origin, sesi cookie, putus saat
+  sesi dicabut), pub/sub Redis disaring per RBAC, hitungan per tab, filter jendela 24 jam, tandai
+  dibaca, sisa Rendah audit akhir Fase 1 (R1 CSRF, R5, F.11 RLS). Lalu frontend layar inbox.
+- Saran desain Channel terbuka (tidak menahan): S3 tautan channel di banner webhook, S10 ilustrasi
+  per langkah wizard (BUTUH-TOBING #5), S11 nasib riwayat chat saat channel dihapus (putuskan di
+  butir ruang chat), P4-S1 ruang kosong di bawah kartu terakhir.
 
 ## Catatan untuk sesi berikutnya
 

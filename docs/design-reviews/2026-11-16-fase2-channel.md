@@ -480,3 +480,50 @@ tersisa — layar Channel siap **LOLOS**.
 Worktree dihapus (folder + `git worktree prune`; `git worktree list` hanya repo utama), port 3191/5191 kosong,
 `balesin_kd_e2e` di-drop, Redis db 11 `DBSIZE` 0. Berkas repo yang ditulis: bagian ini dan 6 berkas `p3-*.png`. Tidak
 ada kode produk yang diubah, tidak ada commit.
+
+---
+
+# Putaran 4 (verifikasi terbatas)
+
+- **Tanggal:** 2026-11-16 · **Penilai:** `kritikus-desain` · **Putaran:** 4
+- **Kode yang dinilai:** `e562489` ("fix(channel): penanda navigasi bagian mengikuti pilihan pengguna"):
+  `pickActiveSection`/`isScrolledToBottom` di `section-nav.ts`, kunci pilihan setelah lompat, pemicu event `scroll`.
+- **Cara:** worktree sementara dari HEAD (edit backend yang belum di-commit di working tree utama tidak ikut), API 3191 /
+  web 5191, `balesin_kd_e2e`, Redis db 11. Foto ulang `nomor` dan `nomor-bawah` (390/1440 × terang/gelap). Spek ukur
+  **28 uji lulus** di 1440 terang & gelap: 6 lompatan × (klik, Enter), gulir roda dari atas ke dasar (langkah 120 px),
+  lompat ke "Nama channel" lalu gulir roda ke atas (kunci harus lepas). Setiap kasus mencatat `aria-current`, fokus,
+  `h1`, `scrollTop` dokumen, dan leluhur non-gulir.
+- **Screenshot:** berkas berawalan `p4-`.
+
+## Putusan akhir: LOLOS
+
+| Yang diukur | Hasil | Status |
+|---|---|---|
+| Lompat ke 6 bagian, klik & Enter, terang & gelap (24 kasus) | `aria-current="location"` selalu di tautan yang dipilih, fokus di kartu yang sama (`#ringkasan`, `#webhook`, `#profil-bisnis`, `#nama`, `#kredensial`, `#akses`). Termasuk "Nama channel" dan "Akses channel" yang gagal di putaran 3 (`p4-lompat-Nama-channel--1440-terang.png`, `p4-lompat-Akses-channel--1440-gelap.png`) | Lolos |
+| Kerangka aplikasi tetap | `h1` y 16, `scrollTop` dokumen 0, 0 leluhur non-gulir yang tergulir, di semua 28 kasus | Lolos |
+| Kunci lepas saat pengguna menggulir | Lompat ke "Nama channel" (gulir 1999) → 3 putaran roda ke atas (gulir 1639) → penanda pindah ke "Profil bisnis", bagian yang memang sedang di atas | Lolos |
+| Gulir roda ke dasar | Penanda berurutan Ringkasan → Webhook → Profil bisnis → Akses channel (di dasar, gulir 2022/2022). Terang & gelap sama | Diterima (lihat catatan) |
+
+**Catatan gulir bebas:** "Nama channel" dan "Kredensial Meta" tidak pernah ditandai saat menggulir dengan roda, karena
+keduanya tidak bisa naik sampai tepi atas wadah sebelum halaman mentok di dasar (sisa gulir setelah Profil bisnis
+hanya ±100 px). Di dasar penanda langsung ke bagian terakhir. Ini batas umum pola *scrollspy* dan sesuai aturan yang saya
+minta di R2. Kriteria "berpindah urut" di putaran 3 terlalu ketat untuk tata letak ini, jadi saya **terima**. Yang penting
+untuk aksesibilitas — penanda mengikuti pilihan pengguna saat melompat — sudah benar.
+
+Nilai `nomor` 1440 terang & gelap: 1 Hierarki 5 · 2 Token 5 · 3 Tipografi 5 · 4 Kerapian 5 · 5 Responsif 5 · 6 Keadaan 5 ·
+7 Aksesibilitas 5 · 8 Bahasa 5 · 9 Profesional 5 · 10 Kecepatan 5. 390 tidak berubah dari putaran 2/3 (≥ 4). Dengan ini
+semua layar Pengaturan → Channel ≥ 4 di 390 & 1440, terang & gelap, tanpa pelanggaran §3.
+
+### Saran tersisa (tidak menahan)
+
+- **P4-S1.** Bila ingin "Nama channel" dan "Kredensial Meta" ikut ditandai saat menggulir bebas, tambahkan ruang kosong
+  di bawah kartu terakhir (`padding-bottom` wadah isi ≈ tinggi layar − tinggi kartu "Akses channel") supaya setiap kartu
+  bisa naik sampai atas, atau geser garis aktif secara proporsional di layar terakhir.
+- S3 (channel di banner webhook), S10 (ilustrasi per langkah wizard), S11 (nasib riwayat chat saat hapus channel) dari
+  putaran 1 tetap terbuka sebagai saran.
+
+## Bersih-bersih putaran 4
+
+Worktree dihapus (folder + `git worktree prune`; `git worktree list` hanya repo utama), port 3191/5191 kosong,
+`balesin_kd_e2e` di-drop, Redis db 11 `DBSIZE` 0. Berkas repo yang ditulis: bagian ini dan 5 berkas `p4-*.png`. Tidak ada
+kode produk yang diubah, tidak ada commit.

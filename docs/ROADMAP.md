@@ -26,10 +26,10 @@ Orkestrator mengerjakan dari atas ke bawah. Tandai `[x]` saat Definition of Done
 - [x] Review `security` + `kritikus-desain` untuk semua layar auth
 
 ## Fase 2 — WhatsApp & Inbox inti
-- [ ] Wizard koneksi WhatsApp manual (teks dari `SETUP-META.md`), enkripsi kredensial, tes koneksi
-- [ ] Halaman nomor WhatsApp: quality rating, status, batas pesan, edit profil bisnis dari UI
-- [ ] Webhook masuk: verifikasi, signature, idempotensi, worker
-- [ ] Kontak & percakapan otomatis, jendela 24 jam
+- [x] Wizard koneksi WhatsApp manual (teks dari `SETUP-META.md`), enkripsi kredensial, tes koneksi
+- [x] Halaman nomor WhatsApp: quality rating, status, batas pesan, edit profil bisnis dari UI
+- [x] Webhook masuk: verifikasi, signature, idempotensi, worker
+- [x] Kontak & percakapan otomatis, jendela 24 jam
 - [ ] Inbox real-time: tab Semua/Bot/Belum dilayani/Dilayani/Selesai, cari, filter (termasuk filter status sesi + hitung mundur)
 - [ ] Ruang chat: teks, gambar, dokumen, audio/VN, video, lokasi, reaksi, balas-kutip, status centang
 - [ ] Assign/ambil/alihkan/antrian terbuka, tandai selesai
