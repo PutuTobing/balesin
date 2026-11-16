@@ -1,7 +1,7 @@
 # Progress
 
 **Fase aktif:** 2 — WhatsApp & Inbox inti
-**Terakhir diperbarui:** 2026-11-17 (butir 5 web + butir 6 backend selesai; butir 7 & revisi inbox dihentikan sementara)
+**Terakhir diperbarui:** 2026-11-17 (butir 6–7 backend selesai; composer web & butir 8–9 backend dihentikan sementara)
 
 ## Selesai
 
@@ -51,25 +51,27 @@
 - Butir 5 **inbox real-time**: backend (72b4fd2, 320ae51; security AMAN putaran 2,
   `docs/security-reviews/2026-11-16-fase2-inbox-realtime.md`) + web (1c767ec: daftar, tab, cari,
   saring, hitung mundur 24 jam, ruang chat baca-saja, panel detail, klien WS; security web AMAN,
-  `docs/security-reviews/2026-11-17-fase2-inbox-web.md`). **Kritikus REVISI** (lihat di bawah).
-- Butir 6 **ruang chat backend** (908e3da): kirim teks/media/lokasi/reaksi/kutip lewat worker,
-  jendela 24 jam di server, error Meta → Indonesia + kirim ulang, upload magic bytes, unduh media
-  aman, migrasi 0014. Security AMAN dengan **S1/S2 Sedang wajib sebelum produksi**
-  (`docs/security-reviews/2026-11-17-fase2-ruang-chat.md`). Web composer belum.
+  `docs/security-reviews/2026-11-17-fase2-inbox-web.md`). Revisi putaran 1 d5ecc74; kritikus putaran
+  2 tinggal **R1 urutan baris meta** (nomor · agen/status · channel).
+- Butir 6 **ruang chat backend** (908e3da) + pengerasan (6d609c5): kirim teks/media/lokasi/reaksi/
+  kutip lewat worker, jendela 24 jam di server, error Meta → Indonesia + kirim ulang, media dialirkan ke
+  disk, Office bermakro ditolak, klaim kirim atomik, migrasi 0014/0016. Security AMAN putaran 2
+  (`docs/security-reviews/2026-11-17-fase2-ruang-chat.md`); sisa **R5** (klaim baru saat job diulang).
+- Butir 7 **penanganan percakapan backend** (6d609c5, migrasi 0015): claim/assign/unassign/resolve/
+  reopen, `conversation_events`, `GET /inbox/agents`; **batas kirim harian + rem darurat** (API
+  `/settings/sending-limits`). Security AMAN (`docs/security-reviews/2026-11-17-fase2-penanganan-percakapan.md`).
 
 ## Sedang dikerjakan (dihentikan 17 Nov, belum di-commit)
-- **Backend butir 7 — assign/ambil/alihkan/selesai** + kebutuhan frontend (`nameSource`/`waUsername`
-  di ringkasan kontak, endpoint daftar agen `inbox.view`), lalu **perbaikan security ruang chat**
-  (S1 media dialirkan/single-flight/batas konkurensi, S2 batas harian + rem darurat via API pengaturan,
-  R1 validasi isi Office, R2 penulis asli saat kirim ulang, R3 klaim `pending`→`sending`, R4 metadata
-  media). Sudah ada di working tree: migrasi 0015 `penanganan_percakapan`, `conversation-events`,
-  `assignment.service.ts`, modul `sending-limits`, perubahan shared/db/worker. Backend berhenti di
-  "R1 validasi wadah Office di core". Lanjutkan → laporkan → commit → security.
-- **Revisi inbox web putaran 1** (`docs/design-reviews/2026-11-17-fase2-inbox.md`, W1–W10 + S2/S3/S4/
-  S6/S7 + Q1–Q3 + security web R1 cache) — **belum mulai**; frontend juga harus menyesuaikan fake/mock
-  dengan skema `nameSource`/`waUsername` dari backend. Commit web SETELAH commit backend butir 7.
-- Berikutnya: butir 6 web (composer, unggah, unduh media via fetch+CSRF → Blob, kirim ulang), UI
-  butir 7 (ambil/alihkan/selesai), layar pengaturan batas kirim + rem darurat, butir 8–12.
+- **Frontend butir 6 web — composer** (teks, kutip, reaksi, lampiran, media via fetch+CSRF → Blob,
+  kirim ulang, jendela 24 jam/`WINDOW_CLOSED`, rem darurat 423, 429) + **R1 kritikus inbox** + saran
+  P2-S1/S2/S3. Berhenti di "MessageTimeline rewrite". Lanjutkan → root checks + e2e + screenshots →
+  commit → kritikus (putaran 3 inbox + composer) → security web.
+- **Backend butir 8–9** (tag, kontak, catatan sesi, pesan ditandai, daftar media, log; quick reply `/`)
+  + sisipan security: R5 ruang chat (`it.fails`), R1 butir 7 alarm aksi massal, Info 1 daftar agen,
+  OLE `embeddings/*.bin`. Berhenti di "update inbox.repo, inbox-view, inbox.routes". Lanjutkan →
+  laporkan → commit → security.
+- Berikutnya: UI butir 7 (ambil/alihkan/selesai), Pengaturan → Batas kirim + banner rem darurat,
+  UI butir 8–9, butir 10 notifikasi + PWA, 11 tampilan HP penuh, 12 E2E ujung ke ujung.
 - Saran desain Channel terbuka (tidak menahan): S3 tautan channel di banner webhook, S10 ilustrasi
   per langkah wizard (BUTUH-TOBING #5), S11 nasib riwayat chat saat channel dihapus (putuskan di
   butir ruang chat), P4-S1 ruang kosong di bawah kartu terakhir.
