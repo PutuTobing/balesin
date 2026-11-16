@@ -49,3 +49,61 @@ export function cleanCustomerText(value: string | null | undefined, max = 256): 
   const codePoints = Array.from(cleaned);
   return codePoints.length > max ? codePoints.slice(0, max).join('').trimEnd() : cleaned;
 }
+
+/** Panjang maksimal URL referral iklan yang disimpan. */
+const MAX_URL_LENGTH = 2_048;
+
+/**
+ * URL kiriman pelanggan/iklan yang AMAN untuk disimpan (review kontak R2): hanya `http:`/`https:`
+ * yang sah menurut `URL` (tanpa karakter tak terlihat). Skema lain (`javascript:`, `data:`, …) →
+ * `null`. Klien tetap wajib menampilkannya sebagai teks, bukan tautan langsung.
+ */
+export function safeHttpUrl(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > MAX_URL_LENGTH) return null;
+  if (INVISIBLE_CHARACTER_PATTERN.test(trimmed)) return null;
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+  return url.href.length <= MAX_URL_LENGTH ? url.href : null;
+}
+
+const INVISIBLE_REMOVE = new RegExp(INVISIBLE_CHARACTER_PATTERN.source, 'gu');
+
+/**
+ * Nama berkas kiriman pelanggan (review kontak R2): karakter tak terlihat/pengubah arah DIBUANG (bukan
+ * diganti spasi, supaya `tagihan\u202efdp.exe` tampil apa adanya: `tagihanfdp.exe`), hanya bagian
+ * setelah `/` atau `\` terakhir (basename), spasi dirapatkan, maks. 255 titik kode. `null` bila
+ * kosong atau hanya `.`/`..`. Nama ini HANYA untuk ditampilkan; berkas disimpan dengan nama buatan
+ * server, dan `Content-Disposition` unduhan memakai `filename*` RFC 5987.
+ */
+export function cleanFileName(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const visible = value.replace(INVISIBLE_REMOVE, '');
+  const base = visible.split(/[\\/]/).at(-1) ?? '';
+  const cleaned = base.replace(/\s+/gu, ' ').trim();
+  if (cleaned.length === 0 || cleaned === '.' || cleaned === '..') return null;
+  const codePoints = Array.from(cleaned);
+  return codePoints.length > 255 ? codePoints.slice(0, 255).join('').trimEnd() : cleaned;
+}
+
+/**
+ * Kunci advisory lock transaksi untuk identitas kontak, SUDAH terurut (urutan tetap = bebas deadlock).
+ * SATU-SATUNYA sumber format kunci: worker (pesan masuk) dan api (hapus kontak, CRM nanti) wajib
+ * memakai ini lalu mengunci dengan `lockAdvisoryKeys` (`@balesin/db`).
+ */
+export function contactIdentityLockKeys(
+  organizationId: string,
+  channelType: string,
+  identity: { bsuid: string | null; phone: string | null },
+): string[] {
+  const keys: string[] = [];
+  if (identity.bsuid) keys.push(`contact:${organizationId}:${channelType}:bsuid:${identity.bsuid}`);
+  if (identity.phone) keys.push(`contact:${organizationId}:${channelType}:phone:${identity.phone}`);
+  return keys.sort();
+}

@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 
 import { closeDb, createDb, type Database } from './client';
@@ -289,6 +290,25 @@ describe('messages', () => {
       db.insert(messages).values(inbound(base, { conversationId: foreign.conversation.id })),
     );
     expect(error.code).toBe(PG_ERROR_CODES.foreignKeyViolation);
+  });
+});
+
+describe('pencarian kontak (review kontak R3)', () => {
+  it('ekstensi pg_trgm terpasang dan indeks trigram ada di kolom yang dicari', async () => {
+    const extension = await db.execute(
+      sql`select extname from pg_extension where extname = 'pg_trgm'`,
+    );
+    expect(extension.rows).toHaveLength(1);
+    const indexes = await db.execute<{ indexname: string; indexdef: string }>(
+      sql`select indexname, indexdef from pg_indexes where tablename = 'contacts' and indexname like '%trgm%' order by indexname`,
+    );
+    expect(indexes.rows.map((row) => row.indexname)).toEqual([
+      'contacts_name_trgm_idx',
+      'contacts_phone_trgm_idx',
+      'contacts_profile_name_trgm_idx',
+      'contacts_wa_username_trgm_idx',
+    ]);
+    for (const row of indexes.rows) expect(row.indexdef).toContain('gin_trgm_ops');
   });
 });
 

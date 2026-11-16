@@ -29,8 +29,10 @@ numerik, URL `/inbox/<number>`). Respons API memakai UUID `id` + `number`.
    ditimpa profil WhatsApp.
 3. Percakapan terbuka kontak × channel dipakai; bila tidak ada (atau yang terakhir `resolved`) dibuat
    **percakapan baru** berstatus `unserved` (titik kait bot: `initialConversationStatus`).
-4. Pesan disimpan idempoten (`wamid`); balas-kutip/reaksi ditautkan ke pesan sasaran di channel yang
-   sama bila ada.
+4. Pesan disimpan idempoten (`wamid`); balas-kutip/reaksi ditautkan ke pesan sasaran hanya bila
+   pesan itu milik KONTAK YANG SAMA di channel yang sama (review kontak R1) — selain itu hanya wamid
+   sasarannya yang disimpan. `referral.sourceUrl` hanya http(s), nama berkas media dibersihkan
+   (`cleanFileName`) — juga saat dibaca api (R2).
 5. Pesan pelanggan (selain reaksi & pesan sistem) memperbarui `last_inbound_at` = `received_at`
    kejadian (jam server), `window_expires_at` = +24 jam, `last_message_at`, `unread_count` + 1 —
    dengan `greatest` sehingga kejadian yang diproses tidak urut tidak memundurkan jendela. Reaksi &
@@ -50,7 +52,7 @@ Semua `GET`, sesi penuh, respons hanya lewat skema Zod (tanpa payload mentah, BS
 
 | Endpoint | Izin | Keterangan |
 |---|---|---|
-| `GET /api/v1/conversations` | `inbox.view` | Query: `status` (`bot`/`unserved`/`served`/`resolved`; kosong = Semua), `channelId`, `q` (nama tim/profil/username, atau potongan nomor ≥ 3 digit — `0812…` juga dicari sebagai `62812…`; `%`/`_` bukan wildcard), `cursor`, `limit` (1–100, bawaan 30). Urut `lastMessageAt` terbaru dulu. → `{ conversations, nextCursor }` |
+| `GET /api/v1/conversations` | `inbox.view` | Query: `status` (`bot`/`unserved`/`served`/`resolved`; kosong = Semua), `channelId`, `q` (2–100 karakter: nama tim/profil/username, atau potongan nomor ≥ 3 digit — `0812…` juga dicari sebagai `62812…`; `%`/`_` bukan wildcard), `cursor`, `limit` (1–100, bawaan 30). Urut `lastMessageAt` terbaru dulu. → `{ conversations, nextCursor }`. Batas laju per pengguna: 240/menit (`inbox-daftar`) + pencarian 60/menit (`inbox-cari`) → 429 + `Retry-After`; pencarian > 3 detik → 503 "Pencarian terlalu lama. Persempit kata kuncinya lalu coba lagi." |
 | `GET /api/v1/conversations/:conversationId` | `inbox.view` | → `{ conversation }` |
 | `GET /api/v1/conversations/:conversationId/messages` | `inbox.view` | Terbaru dulu; `nextCursor` = halaman pesan yang lebih lama. → `{ messages, nextCursor }` |
 | `GET /api/v1/contacts/:contactId` | `contacts.view` | → `{ contact }` |
@@ -81,7 +83,8 @@ Base64url dari `<waktu mikrodetik UTC>|<uuid>`; rusak/dibuat-buat → 400 `VALID
 - Job `maintenance` (`webhook-payload-retention`, tiap jam, BullMQ Job Scheduler) mengosongkan
   `payload` kejadian `processed`/`skipped`/`failed` yang `received_at`-nya lebih tua dari
   `organizations.webhook_payload_retention_days` (`{}` + `payload_purged_at`). Kunci dedup tetap.
-  Kejadian macet `pending` > 30 hari → `failed` (`expired_pending`) dan dikosongkan.
+  Kejadian macet `pending` lebih lama dari retensi organisasi → `failed` (`expired_pending`) dan
+  dikosongkan. Baris dihapus seluruhnya setelah `max(35 hari, retensi organisasi)` (review kontak R5).
 - Kejadian field lain (`other`) hanya menyimpan `{ wabaId, valueSha256 }` sejak diterima (baris lama
   diubah migrasi 0012).
 - `deleteContactData(tx, organizationId, contactId)` (`apps/api/src/modules/contacts/contacts.repo.ts`):
@@ -104,4 +107,8 @@ ditolak → log `error`.
   `webhook_events` (`external_id`).
 - Unduh media (ID media Meta lewat Graph API), siaran WebSocket: job terpisah, bukan di transaksi
   worker.
-- Urutan kunci untuk modul yang mengunci keduanya: kontak → percakapan.
+- Urutan kunci untuk modul yang mengunci keduanya: kontak → percakapan. Kunci identitas kontak:
+  `contactIdentityLockKeys` (`@balesin/core`) + `lockAdvisoryKeys` (`@balesin/db`).
+- Unduh media (butir ruang chat): `Content-Disposition` dengan `filename*` RFC 5987 dari nama yang
+  sudah dibersihkan, `Content-Type` hasil deteksi isi, nama di storage = ID buatan server.
+- Impor kontak / kirim ke nomor (Fase 4): selesaikan review kontak R4 lebih dulu (DECISIONS).

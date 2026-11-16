@@ -1,7 +1,7 @@
 /**
  * Review keamanan Fase 2 butir 4 — kontak & percakapan dari webhook
- * (docs/security-reviews/2026-11-16-fase2-kontak-percakapan.md). Penjaga regresi (`it`) + temuan
- * yang dikunci `it.fails` (harus menjadi `it` setelah diperbaiki). Postgres sungguhan; notifikasi
+ * (docs/security-reviews/2026-11-16-fase2-kontak-percakapan.md). Penjaga regresi + temuan R1/R2 yang
+ * sudah diperbaiki (dulu dikunci `it.fails`). Postgres sungguhan; notifikasi
  * disusun di sini dan dipecah `splitWhatsAppWebhook` seperti penerima api.
  */
 import { randomBytes } from 'node:crypto';
@@ -171,41 +171,35 @@ describe('R1 — balas-kutip/reaksi ditautkan ke pesan kontak LAIN di channel ya
   // Teknisi (cakupan per percakapan), `replyTo.messageId`/`reaction.messageId` menunjuk pesan di
   // luar cakupannya, dan UI yang kelak menampilkan kutipan/reaksi pada sasaran akan mencampur dua
   // pelanggan.
-  it.fails(
-    'balas-kutip Budi ke wamid pesan Ani tidak ditautkan (replyToMessageId null)',
-    async () => {
-      const aniWamid = wamid();
-      await deliver(notification(ANI, { id: aniWamid }));
-      await deliver(notification(BUDI, { context: { id: aniWamid } }));
-      const rows = await messageRows();
-      const budiReply = rows.find((row) => row.replyToWamid === aniWamid);
-      expect(budiReply).toBeDefined();
-      expect(budiReply?.replyToMessageId).toBeNull(); // saat ini = ID pesan Ani
-    },
-  );
+  it('balas-kutip Budi ke wamid pesan Ani tidak ditautkan (replyToMessageId null)', async () => {
+    const aniWamid = wamid();
+    await deliver(notification(ANI, { id: aniWamid }));
+    await deliver(notification(BUDI, { context: { id: aniWamid } }));
+    const rows = await messageRows();
+    const budiReply = rows.find((row) => row.replyToWamid === aniWamid);
+    expect(budiReply).toBeDefined();
+    expect(budiReply?.replyToMessageId).toBeNull();
+  });
 
-  it.fails(
-    'reaksi Budi ke wamid pesan Ani tidak ditautkan (reactionToMessageId null)',
-    async () => {
-      const aniWamid = wamid();
-      await deliver(notification(ANI, { id: aniWamid }));
-      await deliver(notification(BUDI, {})); // Budi punya percakapan terbuka
-      await deliver(
-        notification(BUDI, {
-          type: 'reaction',
-          text: undefined,
-          reaction: { message_id: aniWamid, emoji: '😂' },
-        }),
-      );
-      const reaction = (await messageRows()).find((row) => row.type === 'reaction');
-      expect(reaction).toBeDefined();
-      expect(reaction?.reactionToMessageId).toBeNull(); // saat ini = ID pesan Ani
-    },
-  );
+  it('reaksi Budi ke wamid pesan Ani tidak ditautkan (reactionToMessageId null)', async () => {
+    const aniWamid = wamid();
+    await deliver(notification(ANI, { id: aniWamid }));
+    await deliver(notification(BUDI, {})); // Budi punya percakapan terbuka
+    await deliver(
+      notification(BUDI, {
+        type: 'reaction',
+        text: undefined,
+        reaction: { message_id: aniWamid, emoji: '😂' },
+      }),
+    );
+    const reaction = (await messageRows()).find((row) => row.type === 'reaction');
+    expect(reaction).toBeDefined();
+    expect(reaction?.reactionToMessageId).toBeNull();
+  });
 });
 
 describe('R2 — teks pelanggan berisiko disimpan & dikirim ke web apa adanya', () => {
-  it.fails('referral.source_url bukan http(s) (mis. javascript:) tidak disimpan', async () => {
+  it('referral.source_url bukan http(s) (mis. javascript:) tidak disimpan', async () => {
     await deliver(
       notification(ANI, {
         referral: {
@@ -220,10 +214,10 @@ describe('R2 — teks pelanggan berisiko disimpan & dikirim ke web apa adanya', 
     const [row] = await messageRows();
     const referral = (row?.extras as { referral?: { sourceUrl?: string | null } }).referral;
     expect(referral).toBeDefined();
-    expect(referral?.sourceUrl ?? null).toBeNull(); // saat ini 'javascript:…'
+    expect(referral?.sourceUrl ?? null).toBeNull();
   });
 
-  it.fails('nama berkas dokumen tanpa pengubah arah (U+202E) / pemisah path', async () => {
+  it('nama berkas dokumen tanpa pengubah arah (U+202E) / pemisah path', async () => {
     await deliver(
       notification(ANI, {
         type: 'document',
@@ -237,7 +231,7 @@ describe('R2 — teks pelanggan berisiko disimpan & dikirim ke web apa adanya', 
     );
     const [row] = await messageRows();
     const filename = (row?.media as { filename?: string | null } | null)?.filename ?? '';
-    expect(filename).not.toMatch(/[‪-‮⁦-⁩]/); // saat ini memuat U+202E
+    expect(filename).not.toMatch(/[‪-‮⁦-⁩]/);
     expect(filename).not.toMatch(/[\\/]/);
   });
 });

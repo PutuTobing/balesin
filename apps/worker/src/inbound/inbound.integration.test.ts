@@ -26,7 +26,6 @@ import { and, asc, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
 
 import { processWebhookJob } from '../queues/webhooks';
-import { contactIdentityLockKey } from './contacts';
 import { countsAsCustomerMessage, inboundOccurredAt, messageTypeOf } from './handlers';
 
 const WABA = '102290129340398';
@@ -237,7 +236,7 @@ describe('pesan masuk pertama', () => {
     // Cap waktu Meta 3 jam "di depan" jam server: tidak dipakai untuk jendela (R4).
     const metaTime = new Date(receivedAt.getTime() + 3 * 60 * 60 * 1000);
     const { eventIds, results } = await deliver(
-      messageNotification({ timestamp: unix(metaTime) }, { name: '  Budi‮ Santoso ' }),
+      messageNotification({ timestamp: unix(metaTime) }, { name: '  Budi\u202e Santoso ' }),
       { receivedAt },
     );
     expect(results).toEqual([{ status: 'processed' }]);
@@ -644,13 +643,5 @@ describe('status pesan keluar', () => {
     await deliver(messageNotification({ id }));
     await deliver(statusNotification(id, 'read'));
     expect((await messageRows())[0]?.status).toBeNull();
-  });
-});
-
-describe('kunci identitas kontak', () => {
-  it('format kunci advisory stabil (dipakai juga oleh hapus kontak di api)', () => {
-    expect(contactIdentityLockKey('org-1', 'whatsapp', 'phone', '+62811')).toBe(
-      'contact:org-1:whatsapp:phone:+62811',
-    );
   });
 });

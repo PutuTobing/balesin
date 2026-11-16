@@ -103,6 +103,8 @@ export const webhookEvents = pgTable(
     index('webhook_events_retention_idx')
       .on(table.receivedAt)
       .where(sql`${table.payloadPurgedAt} is null`),
+    // Penghapusan baris lama (review kontak R5): tertua dulu, lintas organisasi.
+    index('webhook_events_received_at_idx').on(table.receivedAt),
     index('webhook_events_organization_id_contact_id_idx')
       .on(table.organizationId, table.contactId)
       .where(sql`${table.contactId} is not null`),

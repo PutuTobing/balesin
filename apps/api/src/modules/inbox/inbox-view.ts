@@ -1,3 +1,4 @@
+import { cleanFileName, safeHttpUrl } from '@balesin/core';
 import type { ContactRow } from '@balesin/db';
 import {
   MESSAGE_MEDIA_KINDS,
@@ -94,10 +95,12 @@ export function toConversation(
 
 const nullableText = z.string().nullable().catch(null);
 
+// R2 (review kontak): dibersihkan lagi saat dibaca — juga untuk baris yang tersimpan sebelum
+// pembersihan di worker.
 const storedMediaSchema = z.object({
   kind: z.enum(MESSAGE_MEDIA_KINDS),
   mimeType: nullableText,
-  filename: nullableText,
+  filename: nullableText.transform(cleanFileName),
   voice: z.boolean().catch(false),
   animated: z.boolean().catch(false),
 });
@@ -118,7 +121,7 @@ const storedInteractiveSchema = z.object({
 
 const storedReferralSchema = z.object({
   sourceType: nullableText,
-  sourceUrl: nullableText,
+  sourceUrl: nullableText.transform(safeHttpUrl),
   headline: nullableText,
   body: nullableText,
 });

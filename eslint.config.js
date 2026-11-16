@@ -80,6 +80,33 @@ export default tseslint.config(
     },
   },
 
+  // Kode api (selain tes) tidak boleh mengimpor kode worker: api dan worker adalah proses/image
+  // terpisah (review kontak Info 3). Aturan `no-restricted-imports` tidak digabung antar-blok, jadi
+  // larangan library WhatsApp tidak resmi diulang di sini.
+  {
+    files: ['apps/api/src/**/*.ts'],
+    ignores: ['apps/api/src/**/*.test.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: UNOFFICIAL_WHATSAPP_LIBS,
+              message:
+                'Library WhatsApp tidak resmi dilarang. Pakai WhatsApp Cloud API resmi Meta (CLAUDE.md).',
+            },
+            {
+              group: ['**/worker/src/**', '@balesin/worker', '@balesin/worker/**'],
+              message:
+                'Kode api tidak boleh mengimpor kode worker. Pindahkan logika bersama ke packages/core atau packages/db.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   // Berkas JS biasa (konfigurasi, hook) tidak perlu lint berbasis tipe.
   {
     files: ['**/*.{js,mjs,cjs}'],

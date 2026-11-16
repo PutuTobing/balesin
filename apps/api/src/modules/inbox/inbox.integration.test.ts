@@ -22,14 +22,14 @@ import {
   messageListResponseSchema,
   type ConversationListResponse,
 } from '@balesin/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 // Kode worker yang sama dengan produksi (tes saja; api tidak bergantung pada worker saat berjalan).
-import { contactIdentityLockKey as workerLockKey } from '../../../../worker/src/inbound/contacts';
 import { processWebhookJob } from '../../../../worker/src/queues/webhooks';
 import { createPasswordHasher } from '../auth/password-hasher';
-import { contactIdentityLockKey, deleteContactData } from '../contacts/contacts.repo';
+import { deleteContactData } from '../contacts/contacts.repo';
+import { INBOX_SEARCH_RULE, withStatementTimeout } from './inbox.routes';
 import {
   FAKE_WEBHOOK_DEFAULTS,
   buttonMessageNotification,
@@ -401,8 +401,10 @@ describe('GET /conversations: tab, channel, cari, kursor', () => {
       );
     expect(await names('bunga')).toEqual(['Bunga Lestari']);
     expect(await names('100%')).toEqual(['Candra 100% Asli']);
-    expect(await names('%')).toEqual(['Candra 100% Asli']);
-    expect(await names('_')).toEqual(['Dewi_Sartika']);
+    expect(await names('0%')).toEqual(['Candra 100% Asli']);
+    expect(await names('i_')).toEqual(['Dewi_Sartika']);
+    // Minimal 2 karakter (review kontak R3).
+    expect((await get(owner, `${API_ROUTES.inbox.conversations}?q=a`)).statusCode).toBe(400);
     expect(await names('0812-0000-0002')).toEqual(['Bunga Lestari']);
     expect(await names('+62 812 0000 0003')).toEqual(['Candra 100% Asli']);
     expect(await names('99990')).toEqual(['Eko Teknisi']);
@@ -440,6 +442,71 @@ describe('GET /conversations: tab, channel, cari, kursor', () => {
     const second = await messagesOf(owner, conversation!.id, `?limit=3&cursor=${first.nextCursor}`);
     expect(second.messages.map((row) => row.text)).toEqual(['pesan 2', 'pesan 1']);
     expect(second.nextCursor).toBeNull();
+  });
+});
+
+describe('pengerasan review kontak (R2, R3)', () => {
+  it('R2: URL iklan bukan http(s) & nama berkas berbahaya dibersihkan juga saat dibaca', async () => {
+    await receive(textMessageNotification());
+    const [row] = await harness.db.select().from(conversations);
+    // Baris lama (tersimpan sebelum pembersihan di worker) langsung di database.
+    await harness.db.insert(messages).values({
+      organizationId,
+      conversationId: row!.id,
+      contactId: row!.contactId,
+      channelId,
+      direction: 'inbound',
+      senderKind: 'customer',
+      type: 'document',
+      wamid: fakeWamid(),
+      media: {
+        kind: 'document',
+        metaMediaId: '1',
+        mimeType: 'application/pdf',
+        sha256: null,
+        filename: '../tagihan\u202efdp.exe',
+        voice: false,
+        animated: false,
+      },
+      extras: {
+        referral: {
+          sourceUrl: 'javascript:alert(document.cookie)',
+          sourceId: '1',
+          sourceType: 'ad',
+          headline: 'Promo',
+          body: 'Klik',
+          ctwaClid: 'x',
+        },
+      },
+      occurredAt: new Date(),
+      receivedAt: new Date(),
+    });
+    const { messages: rows } = await messagesOf(owner, row!.id);
+    const document = rows.find((message) => message.type === 'document');
+    expect(document?.media?.filename).toBe('tagihanfdp.exe');
+    expect(document?.referral).toMatchObject({ sourceUrl: null, headline: 'Promo' });
+  });
+
+  it('R3: pencarian dibatasi per pengguna (429 + Retry-After), daftar biasa tidak ikut tertahan', async () => {
+    const cs = await signIn('cs', 'Sinta CS');
+    for (let index = 0; index < INBOX_SEARCH_RULE.limit; index += 1) {
+      expect((await get(cs, `${API_ROUTES.inbox.conversations}?q=budi`)).statusCode).toBe(200);
+    }
+    const limited = await get(cs, `${API_ROUTES.inbox.conversations}?q=budi`);
+    expect(limited.statusCode).toBe(429);
+    expect(limited.headers['retry-after']).toBeDefined();
+    expect(errorEnvelopeSchema.parse(limited.json()).error.code).toBe('RATE_LIMITED');
+    // Daftar tanpa pencarian dan pengguna lain tetap bisa.
+    expect((await get(cs, API_ROUTES.inbox.conversations)).statusCode).toBe(200);
+    expect((await get(owner, `${API_ROUTES.inbox.conversations}?q=budi`)).statusCode).toBe(200);
+  });
+
+  it('R3: query yang melewati statement_timeout lokal → 503 dengan pesan jelas', async () => {
+    await expect(
+      withStatementTimeout(harness.db, 50, (tx) => tx.execute(sql`select pg_sleep(1)`)),
+    ).rejects.toMatchObject({ code: 'SERVICE_UNAVAILABLE' });
+    // Batasnya hanya untuk transaksi itu (SET LOCAL).
+    await expect(harness.db.execute(sql`select pg_sleep(0.1)`)).resolves.toBeDefined();
   });
 });
 
@@ -560,6 +627,33 @@ describe('cakupan & isolasi', () => {
 });
 
 describe('hapus kontak (UU PDP): deleteContactData', () => {
+  it('kejadian belum-diproses bernomor sama tetapi BSUID LAIN (nomor didaur ulang) tidak ikut dikosongkan', async () => {
+    await receive(textMessageNotification());
+    const [contact] = await harness.db.select().from(contacts);
+    const { body, headers } = signedWebhook(
+      textMessageNotification({
+        body: 'pesan pemilik baru',
+        customer: { userId: 'ID.pemilik-baru', name: 'Pemilik Baru' },
+      }),
+      APP_SECRET,
+    );
+    await harness.app.inject({
+      method: 'POST',
+      url: apiPath(WEBHOOK_ROUTES.whatsapp, { channelId }),
+      headers,
+      payload: body,
+      remoteAddress: META_IP,
+    });
+    harness.webhookJobs.splice(0);
+    await harness.db.transaction((tx) => deleteContactData(tx, organizationId, contact!.id));
+    const pending = await harness.db
+      .select()
+      .from(webhookEvents)
+      .where(eq(webhookEvents.status, 'pending'));
+    expect(pending).toHaveLength(1);
+    expect(JSON.stringify(pending[0]?.payload)).toContain('pesan pemilik baru');
+  });
+
   it('menghapus pesan/percakapan/kontak dan mengosongkan kejadian webhook terkait; kiriman ulang tidak menghidupkannya', async () => {
     const notification = textMessageNotification({ body: SECRET_TEXT });
     await receive(notification);
@@ -645,11 +739,5 @@ describe('hapus kontak (UU PDP): deleteContactData', () => {
     expect(
       await harness.db.transaction((tx) => deleteContactData(tx, organizationId, contact!.id)),
     ).toBeUndefined();
-  });
-
-  it('kunci advisory identitas sama dengan worker', () => {
-    expect(contactIdentityLockKey(organizationId, 'whatsapp', 'bsuid', 'ID.1')).toBe(
-      workerLockKey(organizationId, 'whatsapp', 'bsuid', 'ID.1'),
-    );
   });
 });

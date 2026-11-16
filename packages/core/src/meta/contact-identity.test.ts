@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { cleanCustomerText, waIdToE164, whatsAppContactIdentity } from './contact-identity';
+import {
+  cleanCustomerText,
+  cleanFileName,
+  contactIdentityLockKeys,
+  safeHttpUrl,
+  waIdToE164,
+  whatsAppContactIdentity,
+} from './contact-identity';
 import { splitWhatsAppWebhook } from './webhook-payload';
 
 describe('waIdToE164', () => {
@@ -54,7 +61,7 @@ describe('whatsAppContactIdentity', () => {
   it('BSUID berkarakter aneh/terlalu panjang dianggap tidak ada', () => {
     expect(whatsAppContactIdentity({ userId: 'ID 1; drop', waId: null }).bsuid).toBeNull();
     expect(whatsAppContactIdentity({ userId: 'x'.repeat(257), waId: null }).bsuid).toBeNull();
-    expect(whatsAppContactIdentity({ userId: 'ID.‮1', waId: null }).bsuid).toBeNull();
+    expect(whatsAppContactIdentity({ userId: 'ID.\u202e1', waId: null }).bsuid).toBeNull();
   });
 });
 
@@ -75,8 +82,8 @@ function hasLoneSurrogate(text: string): boolean {
 
 describe('cleanCustomerText', () => {
   it('membuang pengubah arah, lebar-nol, baris baru; merapatkan spasi', () => {
-    expect(cleanCustomerText('  Budi‮  Santoso\n')).toBe('Budi Santoso');
-    expect(cleanCustomerText('A​B⁦C')).toBe('A B C');
+    expect(cleanCustomerText('  Budi\u202e  Santoso\n')).toBe('Budi Santoso');
+    expect(cleanCustomerText('A\u200bB\u2066C')).toBe('A B C');
   });
 
   it('emoji gabungan (ZWJ) dipertahankan', () => {
@@ -84,7 +91,7 @@ describe('cleanCustomerText', () => {
   });
 
   it('kosong → null; dipotong per titik kode (emoji tidak terbelah)', () => {
-    expect(cleanCustomerText('‮​ ')).toBeNull();
+    expect(cleanCustomerText('\u202e\u200b ')).toBeNull();
     expect(cleanCustomerText(null)).toBeNull();
     const cleaned = cleanCustomerText('😀'.repeat(300));
     expect(Array.from(cleaned ?? '')).toHaveLength(256);
@@ -109,5 +116,55 @@ describe('kejadian field lain (S4)', () => {
     expect(payload.wabaId).toBe('102290129340398');
     expect(payload.valueSha256).toMatch(/^[0-9a-f]{64}$/);
     expect(JSON.stringify(item?.payload)).not.toContain('tagihan_bulanan');
+  });
+});
+
+describe('safeHttpUrl (review kontak R2)', () => {
+  it('hanya http/https yang sah', () => {
+    expect(safeHttpUrl('https://fb.me/iklan?id=1')).toBe('https://fb.me/iklan?id=1');
+    expect(safeHttpUrl(' http://contoh.test/a ')).toBe('http://contoh.test/a');
+    for (const value of [
+      'javascript:alert(document.cookie)',
+      'JaVaScRiPt:alert(1)',
+      'data:text/html,<script>alert(1)</script>',
+      'vbscript:msgbox(1)',
+      'file:///etc/passwd',
+      '//contoh.test/tanpa-skema',
+      'https://contoh.test/\u202egnp.exe',
+      'bukan url',
+      '',
+      null,
+      `https://contoh.test/${'a'.repeat(3000)}`,
+    ]) {
+      expect(safeHttpUrl(value), String(value).slice(0, 40)).toBeNull();
+    }
+  });
+});
+
+describe('cleanFileName (review kontak R2)', () => {
+  it('membuang pengubah arah/karakter tak terlihat dan pemisah path; basename; maks 255', () => {
+    expect(cleanFileName('../tagihan\u202efdp.exe')).toBe('tagihanfdp.exe');
+    expect(cleanFileName('..\\..\\windows\\system32\\ktp.pdf')).toBe('ktp.pdf');
+    expect(cleanFileName('/etc/passwd')).toBe('passwd');
+    expect(cleanFileName('foto\u0000ktp\n.jpg')).toBe('fotoktp.jpg');
+    expect(cleanFileName('  bukti   transfer.png ')).toBe('bukti transfer.png');
+    expect(cleanFileName('../')).toBeNull();
+    expect(cleanFileName('..')).toBeNull();
+    expect(cleanFileName('\u202e\u200b')).toBeNull();
+    expect(cleanFileName(null)).toBeNull();
+    const long = cleanFileName(`${'é'.repeat(300)}.pdf`);
+    expect(Array.from(long ?? '')).toHaveLength(255);
+  });
+});
+
+describe('contactIdentityLockKeys', () => {
+  it('format tetap, terurut, hanya identitas yang ada', () => {
+    expect(
+      contactIdentityLockKeys('org-1', 'whatsapp', { bsuid: 'ID.1', phone: '+62811' }),
+    ).toEqual(['contact:org-1:whatsapp:bsuid:ID.1', 'contact:org-1:whatsapp:phone:+62811']);
+    expect(contactIdentityLockKeys('org-1', 'whatsapp', { bsuid: null, phone: '+62811' })).toEqual([
+      'contact:org-1:whatsapp:phone:+62811',
+    ]);
+    expect(contactIdentityLockKeys('org-1', 'whatsapp', { bsuid: null, phone: null })).toEqual([]);
   });
 });

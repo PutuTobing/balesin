@@ -1,6 +1,8 @@
 import {
   WebhookPayloadError,
   cleanCustomerText,
+  cleanFileName,
+  safeHttpUrl,
   isStatusAdvance,
   whatsAppContactIdentity,
   type InboundMessageType,
@@ -95,18 +97,27 @@ export function inboundOccurredAt(sentAt: Date, receivedAt: Date): Date {
 function extrasOf(message: NormalizedInboundMessage): MessageExtras {
   const extras: MessageExtras = {};
   if (message.reply) extras.interactive = message.reply;
-  if (message.referral) extras.referral = message.referral;
+  if (message.referral) {
+    // R2 (review kontak): URL iklan hanya http(s); teks iklan dari pengiklan tidak tepercaya.
+    extras.referral = { ...message.referral, sourceUrl: safeHttpUrl(message.referral.sourceUrl) };
+  }
   if (message.sharedContacts > 0) extras.sharedContacts = message.sharedContacts;
   if (message.context?.forwarded) extras.forwarded = true;
   if (message.context?.frequentlyForwarded) extras.frequentlyForwarded = true;
   return extras;
 }
 
+/**
+ * ID pesan ber-wamid ini di channel yang sama; bila `contactId` diberikan, hanya pesan KONTAK ITU
+ * (review kontak R1: balas-kutip/reaksi tidak boleh menaut pesan pelanggan lain — tanpa kecocokan,
+ * hanya wamid sasarannya yang disimpan).
+ */
 async function messageIdByWamid(
   tx: DbExecutor,
   organizationId: string,
   channelId: string,
   wamid: string | null | undefined,
+  contactId?: string,
 ): Promise<string | null> {
   if (!wamid) return null;
   const [row] = await tx
@@ -117,6 +128,7 @@ async function messageIdByWamid(
         eq(messages.organizationId, organizationId),
         eq(messages.channelId, channelId),
         eq(messages.wamid, wamid),
+        contactId === undefined ? undefined : eq(messages.contactId, contactId),
       ),
     )
     .limit(1);
@@ -254,7 +266,7 @@ export function createInboundHandlers(options: InboundHandlerOptions = {}): Inbo
               metaMediaId: message.media.id,
               mimeType: message.media.mimeType,
               sha256: message.media.sha256,
-              filename: message.media.filename,
+              filename: cleanFileName(message.media.filename),
               voice: message.media.voice,
               animated: message.media.animated,
             }
@@ -267,6 +279,7 @@ export function createInboundHandlers(options: InboundHandlerOptions = {}): Inbo
           organizationId,
           channelId,
           message.context?.messageId,
+          contact.id,
         ),
         reactionEmoji: message.reaction?.emoji ?? null,
         reactionToWamid: message.reaction?.messageId ?? null,
@@ -275,6 +288,7 @@ export function createInboundHandlers(options: InboundHandlerOptions = {}): Inbo
           organizationId,
           channelId,
           message.reaction?.messageId,
+          contact.id,
         ),
         errorCode: message.errors[0]?.code ?? null,
         occurredAt: inboundOccurredAt(message.sentAt, receivedAt),

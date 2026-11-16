@@ -367,7 +367,7 @@ export async function buildApp(deps: AppDeps) {
   await app.register(teamRoutes, { team, cookieSecure: config.cookieSecure });
   await app.register(auditRoutes, { audit });
   await app.register(channelsRoutes, { channels, limiter, cookieSecure: config.cookieSecure });
-  await app.register(inboxRoutes, { db });
+  await app.register(inboxRoutes, { db, limiter });
   // Publik: penerima webhook Meta (keaslian dari tanda tangan App Secret, bukan sesi).
   await app.register(whatsAppWebhookRoutes, { guard: webhookGuard, webhooks: whatsAppWebhooks });
 

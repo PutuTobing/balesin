@@ -1,25 +1,18 @@
-import { contacts, conversations, messages, webhookEvents, type DbExecutor } from '@balesin/db';
-import type { ChannelType } from '@balesin/shared';
+import { contactIdentityLockKeys } from '@balesin/core';
+import {
+  contacts,
+  conversations,
+  lockAdvisoryKeys,
+  messages,
+  webhookEvents,
+  type DbExecutor,
+} from '@balesin/db';
 import { and, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 
 /**
  * Data kontak (CRM). Fungsi hapus di sini dipakai endpoint "Hapus kontak (UU PDP)" yang menyusul
  * (izin `contacts.delete`, konfirmasi identitas, audit — butir CRM).
  */
-
-/**
- * Kunci advisory identitas kontak — HARUS sama persis dengan `contactIdentityLockKey` di worker
- * (`apps/worker/src/inbound/contacts.ts`): keduanya menserialkan pembuatan/penghapusan kontak per
- * identitas. Tes integrasi memeriksa kesamaannya.
- */
-export function contactIdentityLockKey(
-  organizationId: string,
-  channelType: ChannelType,
-  kind: 'bsuid' | 'phone',
-  value: string,
-): string {
-  return `contact:${organizationId}:${channelType}:${kind}:${value}`;
-}
 
 export interface DeletedContactData {
   messages: number;
@@ -35,19 +28,26 @@ export interface DeletedContactData {
  */
 function payloadMatchesIdentity(waBsuid: string | null, phone: string | null): SQL | undefined {
   const conditions: SQL[] = [];
+  const message = sql`${webhookEvents.payload} -> 'message'`;
+  const contact = sql`${webhookEvents.payload} -> 'contact'`;
+  const status = sql`${webhookEvents.payload} -> 'status'`;
   if (waBsuid) {
     conditions.push(
-      sql`${webhookEvents.payload} -> 'message' ->> 'from_user_id' = ${waBsuid}`,
-      sql`${webhookEvents.payload} -> 'contact' ->> 'user_id' = ${waBsuid}`,
-      sql`${webhookEvents.payload} -> 'status' ->> 'recipient_user_id' = ${waBsuid}`,
+      sql`${message} ->> 'from_user_id' = ${waBsuid}`,
+      sql`${contact} ->> 'user_id' = ${waBsuid}`,
+      sql`${status} ->> 'recipient_user_id' = ${waBsuid}`,
     );
   }
   if (phone) {
     const waId = phone.replace(/^\+/, '');
+    // Kontak ber-BSUID: kejadian dengan nomor yang sama tetapi BSUID LAIN milik orang lain (nomor
+    // didaur ulang) tidak ikut dikosongkan (review kontak Info 1).
+    const sameOrNoBsuid = (bsuidField: SQL) =>
+      waBsuid ? sql`(${bsuidField} is null or ${bsuidField} = ${waBsuid})` : sql`true`;
     conditions.push(
-      sql`${webhookEvents.payload} -> 'message' ->> 'from' = ${waId}`,
-      sql`${webhookEvents.payload} -> 'contact' ->> 'wa_id' = ${waId}`,
-      sql`${webhookEvents.payload} -> 'status' ->> 'recipient_id' = ${waId}`,
+      sql`(${message} ->> 'from' = ${waId} and ${sameOrNoBsuid(sql`${message} ->> 'from_user_id'`)})`,
+      sql`(${contact} ->> 'wa_id' = ${waId} and ${sameOrNoBsuid(sql`${contact} ->> 'user_id'`)})`,
+      sql`(${status} ->> 'recipient_id' = ${waId} and ${sameOrNoBsuid(sql`${status} ->> 'recipient_user_id'`)})`,
     );
   }
   return conditions.length > 0 ? or(...conditions) : undefined;
@@ -112,19 +112,13 @@ export async function deleteContactData(
     )
     .returning({ id: webhookEvents.id });
 
-  const keys = [
-    contact.waBsuid
-      ? contactIdentityLockKey(organizationId, contact.channelType, 'bsuid', contact.waBsuid)
-      : null,
-    contact.phone
-      ? contactIdentityLockKey(organizationId, contact.channelType, 'phone', contact.phone)
-      : null,
-  ]
-    .filter((key): key is string => key !== null)
-    .sort();
-  for (const key of keys) {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
-  }
+  await lockAdvisoryKeys(
+    tx,
+    contactIdentityLockKeys(organizationId, contact.channelType, {
+      bsuid: contact.waBsuid,
+      phone: contact.phone,
+    }),
+  );
 
   const [locked] = await tx
     .select({ id: contacts.id })

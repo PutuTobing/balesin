@@ -18,7 +18,11 @@ import { UnrecoverableError } from 'bullmq';
 import { eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 
-import { processMaintenanceJob, purgeWebhookPayloads, STALE_PENDING_DAYS } from './maintenance';
+import {
+  WEBHOOK_EVENT_ROW_RETENTION_DAYS,
+  processMaintenanceJob,
+  purgeWebhookPayloads,
+} from './maintenance';
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = new Date('2026-11-16T12:00:00Z');
@@ -99,32 +103,36 @@ describe('purgeWebhookPayloads', () => {
       fresh: await eventAt(standard, 7),
       oldSkipped: await eventAt(standard, 9, { status: 'skipped' }),
       oldFailed: await eventAt(standard, 9, { status: 'failed' }),
-      oldPending: await eventAt(standard, 9, { status: 'pending' }),
-      stalePending: await eventAt(standard, STALE_PENDING_DAYS + 1, { status: 'pending' }),
+      freshPending: await eventAt(standard, 7, { status: 'pending' }),
+      // R5: `pending` lebih tua dari retensi organisasi (8 hari) → gagal & dikosongkan.
+      stalePending: await eventAt(standard, 9, { status: 'pending' }),
+      shortStalePending: await eventAt(short, 2, { status: 'pending' }),
       shortOld: await eventAt(short, 2),
       shortFresh: await eventAt(short, 0.5),
     };
 
     const result = await purgeWebhookPayloads(db, { now: NOW });
     expect(result.purged).toBeGreaterThanOrEqual(4);
-    expect(result.expiredPending).toBeGreaterThanOrEqual(1);
+    expect(result.expiredPending).toBeGreaterThanOrEqual(2);
 
     const rows = await rowsOf(Object.values(ids));
     for (const id of [ids.old, ids.oldSkipped, ids.oldFailed, ids.shortOld]) {
       expect(rows.get(id)).toMatchObject({ payload: {}, payloadPurgedAt: NOW });
       expect(rows.get(id)?.dedupKey).toMatch(/^m:wamid\.retensi-/);
     }
-    for (const id of [ids.fresh, ids.oldPending, ids.shortFresh]) {
+    for (const id of [ids.fresh, ids.freshPending, ids.shortFresh]) {
       expect(rows.get(id)?.payloadPurgedAt).toBeNull();
       expect(JSON.stringify(rows.get(id)?.payload)).toContain('ISI PESAN PRIBADI');
     }
-    expect(rows.get(ids.oldPending)?.status).toBe('pending');
-    expect(rows.get(ids.stalePending)).toMatchObject({
-      status: 'failed',
-      lastError: 'expired_pending',
-      payload: {},
-      payloadPurgedAt: NOW,
-    });
+    expect(rows.get(ids.freshPending)?.status).toBe('pending');
+    for (const id of [ids.stalePending, ids.shortStalePending]) {
+      expect(rows.get(id)).toMatchObject({
+        status: 'failed',
+        lastError: 'expired_pending',
+        payload: {},
+        payloadPurgedAt: NOW,
+      });
+    }
 
     // Putaran berikutnya tidak menyentuh baris yang sudah dikosongkan (cap waktunya tetap).
     await purgeWebhookPayloads(db, { now: new Date(NOW.getTime() + DAY) });
@@ -143,6 +151,31 @@ describe('purgeWebhookPayloads', () => {
       .where(eq(organizations.id, target.organizationId));
     await purgeWebhookPayloads(db, { now: NOW });
     expect((await rowsOf([id])).get(id)?.payloadPurgedAt).toEqual(NOW);
+  });
+
+  it('baris dihapus setelah max(35 hari, retensi organisasi); pending tidak dihapus langsung', async () => {
+    const standard = await organizationWithChannel();
+    const long = await organizationWithChannel(60);
+    const ids = {
+      keep: await eventAt(standard, WEBHOOK_EVENT_ROW_RETENTION_DAYS - 1),
+      drop: await eventAt(standard, WEBHOOK_EVENT_ROW_RETENTION_DAYS + 1),
+      dropPurged: await eventAt(standard, WEBHOOK_EVENT_ROW_RETENTION_DAYS + 1, {
+        payload: {},
+        payloadPurgedAt: new Date(NOW.getTime() - 20 * DAY),
+      }),
+      // Pending lama: lebih dulu menjadi `failed` (expired), lalu baris lama itu ikut dihapus.
+      oldPending: await eventAt(standard, WEBHOOK_EVENT_ROW_RETENTION_DAYS + 5, {
+        status: 'pending',
+      }),
+      longKeep: await eventAt(long, 40),
+      longDrop: await eventAt(long, 61),
+    };
+    const result = await purgeWebhookPayloads(db, { now: NOW });
+    expect(result.deleted).toBeGreaterThanOrEqual(4);
+    const rows = await rowsOf(Object.values(ids));
+    expect([...rows.keys()].sort()).toEqual([ids.keep, ids.longKeep].sort());
+    // Organisasi dengan retensi 60 hari: payload hari ke-40 masih ada.
+    expect(rows.get(ids.longKeep)?.payloadPurgedAt).toBeNull();
   });
 
   it('bekerja per batch sampai habis', async () => {

@@ -63,6 +63,12 @@ export const contacts = pgTable(
       .on(table.organizationId, table.channelType, table.phone)
       .where(sql`${table.phone} is not null`),
     index('contacts_organization_id_created_at_idx').on(table.organizationId, table.createdAt),
+    // Pencarian inbox `ILIKE '%…%'` (review kontak R3): indeks trigram (ekstensi `pg_trgm`, dibuat
+    // migrasi 0013) — dipakai untuk ILIKE/LIKE tanpa `lower()`.
+    index('contacts_name_trgm_idx').using('gin', table.name.op('gin_trgm_ops')),
+    index('contacts_profile_name_trgm_idx').using('gin', table.profileName.op('gin_trgm_ops')),
+    index('contacts_wa_username_trgm_idx').using('gin', table.waUsername.op('gin_trgm_ops')),
+    index('contacts_phone_trgm_idx').using('gin', table.phone.op('gin_trgm_ops')),
     check(
       'contacts_whatsapp_identity_required',
       sql`${table.channelType} <> 'whatsapp' or ${table.waBsuid} is not null or ${table.phone} is not null`,

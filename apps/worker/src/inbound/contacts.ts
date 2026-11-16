@@ -1,7 +1,7 @@
-import type { Logger, WhatsAppContactIdentity } from '@balesin/core';
-import { contacts, type ContactRow, type DbExecutor } from '@balesin/db';
+import { contactIdentityLockKeys, type Logger, type WhatsAppContactIdentity } from '@balesin/core';
+import { contacts, lockAdvisoryKeys, type ContactRow, type DbExecutor } from '@balesin/db';
 import type { ChannelType } from '@balesin/shared';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 /**
  * Kontak dari pesan masuk WhatsApp (docs/DECISIONS.md 2026-11-16 "Kontak WhatsApp").
@@ -20,35 +20,17 @@ import { and, eq, sql } from 'drizzle-orm';
  * dikunci `FOR UPDATE` (urutan kunci: kontak → percakapan).
  */
 
-/** Kunci advisory untuk satu identitas kontak. */
-export function contactIdentityLockKey(
-  organizationId: string,
-  channelType: ChannelType,
-  kind: 'bsuid' | 'phone',
-  value: string,
-): string {
-  return `contact:${organizationId}:${channelType}:${kind}:${value}`;
-}
-
+/**
+ * Mengunci identitas kontak (advisory lock transaksi). Format kunci dari `contactIdentityLockKeys`
+ * (`@balesin/core`) — sama dengan hapus kontak di api.
+ */
 export async function lockContactIdentities(
   tx: DbExecutor,
   organizationId: string,
   channelType: ChannelType,
   identity: WhatsAppContactIdentity,
 ): Promise<void> {
-  const keys = [
-    identity.bsuid
-      ? contactIdentityLockKey(organizationId, channelType, 'bsuid', identity.bsuid)
-      : null,
-    identity.phone
-      ? contactIdentityLockKey(organizationId, channelType, 'phone', identity.phone)
-      : null,
-  ]
-    .filter((key): key is string => key !== null)
-    .sort();
-  for (const key of keys) {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
-  }
+  await lockAdvisoryKeys(tx, contactIdentityLockKeys(organizationId, channelType, identity));
 }
 
 export interface ResolveContactInput {

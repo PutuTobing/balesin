@@ -7,4 +7,5 @@
 export * from './client';
 export * from './errors';
 export * from './ids';
+export * from './locks';
 export * from './schema';

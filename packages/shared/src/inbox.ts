@@ -119,11 +119,14 @@ const pageLimitSchema = z.coerce
 export const conversationListQuerySchema = z.object({
   status: conversationStatusSchema.optional(),
   channelId: z.uuid({ error: 'Channel tidak valid.' }).optional(),
-  /** Nama kontak (diedit tim / profil WhatsApp / username) atau potongan nomor. */
+  /**
+   * Nama kontak (diedit tim / profil WhatsApp / username) atau potongan nomor; 2–100 karakter.
+   * Dibatasi laju per pengguna dan waktu query (review kontak R3).
+   */
   q: z
     .string()
     .trim()
-    .min(1, 'Kata pencarian kosong.')
+    .min(2, 'Kata pencarian minimal 2 karakter.')
     .max(100, 'Kata pencarian terlalu panjang (maks. 100 karakter).')
     .optional(),
   cursor: inboxCursorSchema.optional(),

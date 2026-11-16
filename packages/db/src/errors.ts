@@ -7,6 +7,8 @@ export const PG_ERROR_CODES = {
   checkViolation: '23514',
   notNullViolation: '23502',
   invalidTextRepresentation: '22P02',
+  /** Query dibatalkan (mis. `statement_timeout`). */
+  queryCanceled: '57014',
 } as const;
 
 export type PgErrorCode = (typeof PG_ERROR_CODES)[keyof typeof PG_ERROR_CODES];

@@ -1,5 +1,5 @@
 import { AppError } from '@balesin/core';
-import type { Database } from '@balesin/db';
+import { PG_ERROR_CODES, getPgError, type Database, type DbExecutor } from '@balesin/db';
 import {
   API_ROUTES,
   INBOX_PAGE_DEFAULT,
@@ -13,9 +13,11 @@ import {
   messageListQuerySchema,
   messageListResponseSchema,
 } from '@balesin/shared';
+import { sql } from 'drizzle-orm';
 import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 
+import { enforceRateLimit, type RateLimitRule, type RateLimiter } from '../../http/rate-limit';
 import { requirePermission } from '../../http/route-access';
 import { permissionGrant } from '../auth/permission-grant';
 import {
@@ -32,7 +34,58 @@ import { toContact, toConversation, toMessage } from './inbox-view';
 
 export interface InboxRoutesOptions {
   db: Database;
+  limiter: RateLimiter;
   now?: () => Date;
+  /** Batas waktu query pencarian (bawaan `SEARCH_TIMEOUT_MS`). */
+  searchTimeoutMs?: number;
+}
+
+/**
+ * Batas laju per pengguna (review kontak R3): daftar dimuat ulang oleh web secara wajar (polling,
+ * ganti tab), pencarian `ILIKE` jauh lebih mahal sehingga punya ember sendiri yang lebih ketat.
+ */
+export const INBOX_LIST_RULE: RateLimitRule = {
+  name: 'inbox-daftar',
+  limit: 240,
+  windowSeconds: 60,
+};
+export const INBOX_SEARCH_RULE: RateLimitRule = {
+  name: 'inbox-cari',
+  limit: 60,
+  windowSeconds: 60,
+};
+
+/** `statement_timeout` lokal untuk query pencarian: pencarian lambat tidak menahan koneksi DB. */
+export const SEARCH_TIMEOUT_MS = 3_000;
+
+const listLimitMessage = (wait: string) =>
+  `Daftar percakapan dimuat terlalu sering. Coba lagi dalam ${wait}.`;
+const searchLimitMessage = (wait: string) =>
+  `Terlalu banyak pencarian dalam waktu singkat. Coba lagi dalam ${wait}.`;
+const SEARCH_TOO_SLOW = 'Pencarian terlalu lama. Persempit kata kuncinya lalu coba lagi.';
+
+/**
+ * Menjalankan `work` di transaksi dengan `statement_timeout` lokal (`SET LOCAL`, hanya transaksi
+ * ini). Query yang dibatalkan Postgres (57014) → 503 dengan pesan yang bisa ditindaklanjuti.
+ */
+export async function withStatementTimeout<T>(
+  db: Database,
+  timeoutMs: number,
+  work: (tx: DbExecutor) => Promise<T>,
+): Promise<T> {
+  try {
+    return await db.transaction(async (tx) => {
+      await tx.execute(
+        sql.raw(`set local statement_timeout = ${String(Math.max(1, Math.floor(timeoutMs)))}`),
+      );
+      return work(tx);
+    });
+  } catch (error) {
+    if (getPgError(error)?.code === PG_ERROR_CODES.queryCanceled) {
+      throw new AppError('SERVICE_UNAVAILABLE', { message: SEARCH_TOO_SLOW });
+    }
+    throw error;
+  }
 }
 
 /**
@@ -56,6 +109,7 @@ const errors = {
   403: errorEnvelopeSchema,
   404: errorEnvelopeSchema,
   429: errorEnvelopeSchema,
+  503: errorEnvelopeSchema,
 };
 
 const UUID = z.uuid();
@@ -85,8 +139,9 @@ function cursorOf(value: string | undefined): Cursor | undefined {
 }
 
 export const inboxRoutes: FastifyPluginCallbackZod<InboxRoutesOptions> = (app, options, done) => {
-  const { db } = options;
+  const { db, limiter } = options;
   const now = options.now ?? (() => new Date());
+  const searchTimeoutMs = options.searchTimeoutMs ?? SEARCH_TIMEOUT_MS;
   const routes = API_ROUTES.inbox;
 
   app.get(
@@ -102,20 +157,27 @@ export const inboxRoutes: FastifyPluginCallbackZod<InboxRoutesOptions> = (app, o
       const grant = await permissionGrant(request, 'inbox.view');
       const { cursor, limit, ...filter } = request.query;
       const pageSize = limit ?? INBOX_PAGE_DEFAULT;
-      const rows = await listConversations(db, grant, filter, {
-        limit: pageSize + 1,
-        cursor: cursorOf(cursor),
-      });
-      const page = rows.slice(0, pageSize);
+      const page = { limit: pageSize + 1, cursor: cursorOf(cursor) };
+      await enforceRateLimit(limiter, INBOX_LIST_RULE, grant.userId, listLimitMessage);
+      let rows;
+      if (filter.q === undefined) {
+        rows = await listConversations(db, grant, filter, page);
+      } else {
+        await enforceRateLimit(limiter, INBOX_SEARCH_RULE, grant.userId, searchLimitMessage);
+        rows = await withStatementTimeout(db, searchTimeoutMs, (tx) =>
+          listConversations(tx, grant, filter, page),
+        );
+      }
+      const visible = rows.slice(0, pageSize);
       const lastMessages = await lastMessagesOf(
         db,
         grant.organizationId,
-        page.map((row) => row.id),
+        visible.map((row) => row.id),
       );
       const at = now();
-      const last = page.at(-1);
+      const last = visible.at(-1);
       return {
-        conversations: page.map((row) => toConversation(row, lastMessages.get(row.id), at)),
+        conversations: visible.map((row) => toConversation(row, lastMessages.get(row.id), at)),
         nextCursor:
           rows.length > pageSize && last
             ? encodeCursor({ atExact: last.lastMessageAtExact, id: last.id })
