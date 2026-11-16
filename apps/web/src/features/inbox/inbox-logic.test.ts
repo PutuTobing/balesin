@@ -248,7 +248,7 @@ describe('isi pesan sebagai teks', () => {
     const removed = fakeMessage({ type: 'reaction', reaction: { emoji: null, messageId: null } });
     const model = buildTimeline([target, ...reactions, lonely, removed]);
     expect(model.rows.map((row) => row.id)).toEqual([target.id, lonely.id]);
-    expect(model.reactions.get(target.id)).toBe('❤️');
+    expect(model.reactions.get(target.id)).toEqual({ in: '❤️' });
 
     const cleared = buildTimeline([
       target,

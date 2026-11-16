@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 /**
  * Lingkungan E2E: API + worker + web dijalankan khusus untuk tes, terpisah dari pengembangan.
  *
@@ -24,6 +26,9 @@ export const E2E_SETUP_TOKEN = '6oQXFl6twGPArbJ9AQBAo1326SDiDalQaJzLXbAic34';
 /** 32 byte bernilai tetap (base64): kunci khusus tes, bukan rahasia. */
 export const E2E_MASTER_KEY = Buffer.alloc(32, 7).toString('base64');
 export const E2E_SESSION_SECRET = 'E2eSesiTes_9fK2xQ7mL4pR8vW1zN6bH3yT5uJ0';
+
+/** Folder media E2E (di luar repo), dipakai bersama api & worker. */
+export const E2E_MEDIA_DIR = join(tmpdir(), 'balesin-e2e-media');
 
 export const MAILPIT_API_URL = process.env.MAILPIT_API_URL ?? 'http://localhost:8025';
 
@@ -70,6 +75,8 @@ export function backendEnv(): Record<string, string> {
     E2E_DATABASE_NAME,
     // Cadangan .env tidak dipakai di E2E.
     SMTP_HOST: '',
+    // Media (unggahan & unduhan) di SATU folder bersama api + worker (cwd keduanya berbeda).
+    MEDIA_DIR: E2E_MEDIA_DIR,
   };
 }
 

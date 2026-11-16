@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
 import { apiError, sessionAs } from './mocks';
 import type { WebSocketRoute } from '@playwright/test';
@@ -12,6 +13,8 @@ import { quietSecurity } from './mocks-tim';
 import type { Screen } from './screens';
 
 const CHAT = `/inbox?chat=${PHOTO_CHAT.id}`;
+/** Gambar lampiran contoh: ikon aplikasi (aset merek sendiri). */
+const APP_ICON = readFileSync(new URL('../../assets/brand/app-icon.png', import.meta.url));
 const EXPIRED = PHOTO_CONVERSATIONS[5]!;
 
 async function settle(page: Page): Promise<void> {
@@ -90,6 +93,119 @@ export const inboxScreens: Screen[] = [
       await scrollHistoryTop(page);
       await settle(page);
     },
+  },
+  // ── Butir 6: composer, aksi pesan, media ──
+  // Menu aksi pesan (reaksi cepat + Balas) pada pesan pelanggan terakhir.
+  {
+    name: 'inbox-chat-menu-pesan',
+    path: CHAT,
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page);
+    },
+    waitFor: 'text=Info dari grup RT',
+    prepare: async (page) => {
+      const chat = page.getByRole('region', { name: 'Ruang chat' });
+      await chat.getByRole('button', { name: 'Aksi pesan' }).last().click();
+      await page.getByRole('menu').waitFor();
+    },
+  },
+  // Balas-kutip: kutipan di atas composer + teks yang sedang diketik.
+  {
+    name: 'inbox-chat-balas',
+    path: CHAT,
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page);
+    },
+    waitFor: 'text=Info dari grup RT',
+    prepare: async (page) => {
+      const chat = page.getByRole('region', { name: 'Ruang chat' });
+      await chat.getByRole('button', { name: 'Aksi pesan' }).last().click();
+      await page.getByRole('menuitem', { name: 'Balas' }).click();
+      await chat
+        .getByRole('textbox', { name: 'Tulis balasan' })
+        .fill('Baik kak, kami cek dari sini dulu ya. Mohon modemnya jangan dicabut.');
+      await settle(page);
+    },
+  },
+  // Lampiran dipilih: pratinjau + keterangan.
+  {
+    name: 'inbox-chat-lampiran',
+    path: CHAT,
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page);
+    },
+    waitFor: 'text=Info dari grup RT',
+    prepare: async (page) => {
+      const chat = page.getByRole('region', { name: 'Ruang chat' });
+      await chat.getByTestId('composer-file').setInputFiles({
+        name: 'panduan-reset-modem.png',
+        mimeType: 'image/png',
+        buffer: APP_ICON,
+      });
+      await chat.getByRole('textbox', { name: 'Tulis balasan' }).fill('Ikuti langkah ini ya kak');
+      await settle(page);
+    },
+  },
+  // Terkirim (optimistis → pending) setelah Enter.
+  {
+    name: 'inbox-chat-terkirim',
+    path: CHAT,
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page);
+    },
+    waitFor: 'text=Info dari grup RT',
+    prepare: async (page) => {
+      const chat = page.getByRole('region', { name: 'Ruang chat' });
+      const box = chat.getByRole('textbox', { name: 'Tulis balasan' });
+      await box.fill('Teknisi kami meluncur sekitar jam 2 siang ya kak.');
+      // Tombol kirim (di HP Enter = baris baru).
+      await chat.getByRole('button', { name: 'Kirim', exact: true }).click();
+      await chat.getByRole('listitem').filter({ hasText: 'Teknisi kami meluncur' }).waitFor();
+      await settle(page);
+    },
+  },
+  // 429: pesan server + tombol kirim terkunci dengan hitung mundur; item "Belum terkirim".
+  {
+    name: 'inbox-chat-dibatasi',
+    path: CHAT,
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page, {
+        send: (route) =>
+          apiError(
+            route,
+            429,
+            'RATE_LIMITED',
+            'Batas 20 pesan per menit untuk percakapan ini tercapai. Tunggu sebentar, lalu kirim lagi.',
+            { 'retry-after': '42' },
+          ),
+      });
+    },
+    waitFor: 'text=Info dari grup RT',
+    prepare: async (page) => {
+      const chat = page.getByRole('region', { name: 'Ruang chat' });
+      const box = chat.getByRole('textbox', { name: 'Tulis balasan' });
+      await box.fill('Sudah kami jadwalkan ya kak.');
+      await chat.getByRole('button', { name: 'Kirim', exact: true }).click();
+      await chat.getByText('Pengiriman dibatasi sementara').waitFor();
+      await box.blur();
+      await settle(page);
+    },
+  },
+  // Rem darurat ditarik (Owner melihatnya dari pengaturan batas kirim).
+  {
+    name: 'inbox-chat-rem-darurat',
+    path: CHAT,
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page, { paused: true });
+    },
+    waitFor: 'text=Pengiriman sedang dihentikan',
+    prepare: settle,
   },
   // Riwayat digulir ke atas, lalu pesan masuk baru lewat WebSocket → tombol "Ada pesan baru".
   (() => {

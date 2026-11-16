@@ -104,7 +104,8 @@
 .tab:last-child {
   flex-grow: 0.5;
   justify-content: flex-end;
-  padding-right: var(--space-8);
+  /* 4px (bukan 8): kelima tab muat di kolom 360px tanpa pudar tepi yang menutupi "Selesai". */
+  padding-right: var(--space-4);
 }
 
 .tab:hover,
@@ -329,6 +330,14 @@ ul.items {
   font-size: var(--text-12);
   line-height: var(--leading-title);
   white-space: pre;
+}
+
+.metaWho {
+  /* Agen/status utuh; hanya nama yang sangat panjang dibatasi. Channel yang mengalah. */
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .metaRest {

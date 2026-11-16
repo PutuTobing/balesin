@@ -1,13 +1,27 @@
 import type { Message } from '@balesin/shared';
-import { Bot, CircleAlert, Forward, Info, Megaphone, Reply } from 'lucide-react';
+import {
+  Bot,
+  CircleAlert,
+  Forward,
+  Info,
+  Megaphone,
+  MoreHorizontal,
+  Reply,
+  RotateCcw,
+  User,
+} from 'lucide-react';
+import { DropdownMenu } from 'radix-ui';
 import { Fragment, memo } from 'react';
+import { Button } from '../../components/ui/Button';
 import { Icon } from '../../components/ui/Icon';
+import { QUICK_REACTIONS, useChatActions } from './chat-actions';
 import { t } from '../../i18n/id';
 import styles from './Chat.module.css';
 import { DeliveryIcon } from './ConversationItem';
 import { dayKey, formatClockTime, formatDayLabel } from './inbox-time';
 import { linkHost, messageBody } from './message-content';
-import { buildTimeline } from './timeline';
+import { MessageMedia } from './MessageMedia';
+import { buildTimeline, isActionable, type MessageReactions } from './timeline';
 
 const c = t.inbox.chat;
 
@@ -45,9 +59,10 @@ function MessageRow({
   byId,
 }: {
   message: Message;
-  reaction: string | undefined;
+  reaction: MessageReactions | undefined;
   byId: Map<string, Message>;
 }) {
+  const actions = useChatActions();
   const time = formatClockTime(message.createdAt);
 
   if (message.type === 'system') {
@@ -88,97 +103,198 @@ function MessageRow({
         : null;
   const quoted = message.replyTo?.messageId ? byId.get(message.replyTo.messageId) : undefined;
   const host = linkHost(message.referral?.sourceUrl);
+  const agent =
+    outbound && message.senderKind === 'agent'
+      ? message.senderUserId && message.senderUserId === actions.selfId
+        ? t.inbox.actions.you
+        : actions.agentName(message.senderUserId)
+      : null;
+  const actionable = actions.canReply && isActionable(message);
+  const media = message.mediaAvailable ? <MessageMedia message={message} /> : null;
 
   return (
     <li className={styles.row} data-dir={outbound ? 'out' : 'in'}>
-      <div className={styles.bubbleWrap}>
-        <div className={styles.bubble}>
-          <span className="sr-only">{c.senders[message.senderKind]}: </span>
-          {senderLabel ? (
-            <p className={styles.sender}>
-              <Icon icon={message.senderKind === 'bot' ? Bot : Megaphone} size={16} />
-              {senderLabel}
-            </p>
-          ) : null}
-          {message.forwarded ? (
-            <p className={styles.tag}>
-              <Icon icon={Forward} size={16} />
-              {c.forwarded}
-            </p>
-          ) : null}
-          {message.replyTo ? (
-            <div className={styles.quote}>
-              <Icon icon={Reply} size={16} />
-              <span className={styles.quoteText} dir="auto">
-                {quoted ? quoteText(quoted) : c.replyToUnknown}
-              </span>
-            </div>
-          ) : null}
-          {message.referral ? (
-            <div className={styles.referral}>
-              <p className={styles.tag}>{c.referral}</p>
-              {message.referral.headline ? (
-                <p className={styles.referralTitle} dir="auto">
-                  {message.referral.headline}
-                </p>
-              ) : null}
-              {message.referral.body ? (
-                <p className={styles.referralBody} dir="auto">
-                  {message.referral.body}
-                </p>
-              ) : null}
-              {message.referral.sourceUrl ? (
-                // Tautan iklan TIDAK tepercaya: teks biasa (bukan tautan), host ditonjolkan.
-                <p className={styles.referralUrl}>
-                  {host ? <strong>{c.referralLink(host)}</strong> : null}
-                  <span className={styles.url}>{message.referral.sourceUrl}</span>
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-          {body.label ? (
-            <p className={styles.attachment}>
-              {body.icon ? <Icon icon={body.icon} size={16} /> : null}
-              <span dir="auto">{body.label}</span>
-            </p>
-          ) : null}
-          {body.detail ? (
-            <p
-              className={styles.detail}
-              dir="auto"
-              title={message.type === 'unsupported' ? (message.rawType ?? undefined) : undefined}
-            >
-              {body.detail}
-            </p>
-          ) : null}
-          {body.text ? (
-            <p className={styles.text} dir="auto">
-              {body.text}
-            </p>
-          ) : null}
-          <p className={styles.meta}>
-            <time dateTime={message.createdAt}>{time}</time>
-            {outbound && message.status ? (
-              <DeliveryIcon status={message.status} className={styles.status} />
+      <div className={styles.bubbleLine}>
+        <div className={styles.bubbleWrap}>
+          <div className={styles.bubble}>
+            <span className="sr-only">{agent ?? c.senders[message.senderKind]}: </span>
+            {senderLabel ? (
+              <p className={styles.sender}>
+                <Icon icon={message.senderKind === 'bot' ? Bot : Megaphone} size={16} />
+                {senderLabel}
+              </p>
+            ) : agent ? (
+              <p className={styles.sender} aria-hidden="true">
+                <Icon icon={User} size={16} />
+                {agent}
+              </p>
             ) : null}
-          </p>
+            {message.forwarded ? (
+              <p className={styles.tag}>
+                <Icon icon={Forward} size={16} />
+                {c.forwarded}
+              </p>
+            ) : null}
+            {message.replyTo ? (
+              <div className={styles.quote}>
+                <Icon icon={Reply} size={16} />
+                <span className={styles.quoteText} dir="auto">
+                  {quoted ? quoteText(quoted) : c.replyToUnknown}
+                </span>
+              </div>
+            ) : null}
+            {message.referral ? (
+              <div className={styles.referral}>
+                <p className={styles.tag}>{c.referral}</p>
+                {message.referral.headline ? (
+                  <p className={styles.referralTitle} dir="auto">
+                    {message.referral.headline}
+                  </p>
+                ) : null}
+                {message.referral.body ? (
+                  <p className={styles.referralBody} dir="auto">
+                    {message.referral.body}
+                  </p>
+                ) : null}
+                {message.referral.sourceUrl ? (
+                  // Tautan iklan TIDAK tepercaya: teks biasa (bukan tautan), host ditonjolkan.
+                  <p className={styles.referralUrl}>
+                    {host ? <strong>{c.referralLink(host)}</strong> : null}
+                    <span className={styles.url}>{message.referral.sourceUrl}</span>
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            {media}
+            {body.label && !(media && message.type !== 'document') ? (
+              <p className={styles.attachment}>
+                {body.icon ? <Icon icon={body.icon} size={16} /> : null}
+                <span dir="auto">{body.label}</span>
+              </p>
+            ) : null}
+            {body.detail ? (
+              <p
+                className={styles.detail}
+                dir="auto"
+                title={message.type === 'unsupported' ? (message.rawType ?? undefined) : undefined}
+              >
+                {body.detail}
+              </p>
+            ) : null}
+            {body.text ? (
+              <p className={styles.text} dir="auto">
+                {body.text}
+              </p>
+            ) : null}
+            <p className={styles.meta}>
+              <time dateTime={message.createdAt}>{time}</time>
+              {outbound && message.status ? (
+                <DeliveryIcon status={message.status} className={styles.status} />
+              ) : null}
+            </p>
+          </div>
+          {reaction?.in || reaction?.out ? (
+            <span className={styles.reactions}>
+              {reaction.in ? (
+                <span className={styles.reaction}>
+                  <span aria-hidden="true">{reaction.in}</span>
+                  <span className="sr-only">
+                    {c.reaction(reaction.in)} ({t.inbox.actions.customer})
+                  </span>
+                </span>
+              ) : null}
+              {reaction.out ? (
+                <span className={styles.reaction} data-own="">
+                  <span aria-hidden="true">{reaction.out}</span>
+                  <span className="sr-only">
+                    {c.reaction(reaction.out)} ({t.inbox.actions.you})
+                  </span>
+                </span>
+              ) : null}
+            </span>
+          ) : null}
+          {outbound && message.status === 'failed' ? (
+            // Di bawah gelembung (di atas --bg): kontras cukup di kedua tema, dan kalimat penyebab +
+            // solusi dari server tidak melebarkan gelembung.
+            <div className={styles.failedBlock}>
+              <p className={styles.failed}>
+                <Icon icon={CircleAlert} size={16} />
+                <span>{failureText(message)}</span>
+              </p>
+              {message.failure?.retryable && actions.canRetry ? (
+                <Button
+                  size="md"
+                  variant="ghost"
+                  className={styles.retry}
+                  loading={actions.retrying.has(message.id)}
+                  onClick={() => actions.onRetry(message)}
+                >
+                  {actions.retrying.has(message.id) ? null : <Icon icon={RotateCcw} size={16} />}
+                  {actions.retrying.has(message.id)
+                    ? t.inbox.compose.sending
+                    : t.inbox.compose.resend}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
-        {reaction ? (
-          <span className={styles.reaction}>
-            <span aria-hidden="true">{reaction}</span>
-            <span className="sr-only">{c.reaction(reaction)}</span>
-          </span>
-        ) : null}
-        {outbound && message.status === 'failed' ? (
-          // Di bawah gelembung (di atas --bg): kontras cukup di kedua tema, dan kalimat penyebab +
-          // solusi dari server tidak melebarkan gelembung. Kirim ulang menyusul bersama composer.
-          <p className={styles.failed}>
-            <Icon icon={CircleAlert} size={16} />
-            <span>{failureText(message)}</span>
-          </p>
-        ) : null}
+        {actionable ? <MessageMenu message={message} ownReaction={reaction?.out} /> : null}
       </div>
     </li>
+  );
+}
+
+/** Menu aksi pesan: reaksi cepat dan balas-kutip. */
+function MessageMenu({ message, ownReaction }: { message: Message; ownReaction?: string }) {
+  const actions = useChatActions();
+  const a = t.inbox.actions;
+  return (
+    <DropdownMenu.Root modal={false}>
+      <DropdownMenu.Trigger asChild>
+        <button type="button" className={styles.messageMenuButton} aria-label={a.open}>
+          <Icon icon={MoreHorizontal} size={16} />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          className={styles.messageMenu}
+          side="top"
+          align={message.direction === 'outbound' ? 'end' : 'start'}
+          sideOffset={4}
+          collisionPadding={8}
+        >
+          <DropdownMenu.Group className={styles.reactionRow} aria-label={a.react}>
+            {QUICK_REACTIONS.map((emoji) => (
+              <DropdownMenu.Item
+                key={emoji}
+                className={styles.reactionItem}
+                data-active={ownReaction === emoji ? '' : undefined}
+                aria-label={a.reactWith(emoji)}
+                onSelect={() => actions.onReact(message, emoji)}
+              >
+                {emoji}
+              </DropdownMenu.Item>
+            ))}
+          </DropdownMenu.Group>
+          <DropdownMenu.Separator className={styles.menuSeparator} />
+          <DropdownMenu.Item className={styles.menuItem} onSelect={() => actions.onReply(message)}>
+            <Icon icon={Reply} size={16} />
+            {a.reply}
+          </DropdownMenu.Item>
+          {ownReaction ? (
+            <DropdownMenu.Item
+              className={styles.menuItem}
+              onSelect={() => actions.onReact(message, '')}
+            >
+              <span className={styles.menuEmoji} aria-hidden="true">
+                {ownReaction}
+              </span>
+              {a.removeReaction}
+            </DropdownMenu.Item>
+          ) : null}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }
 

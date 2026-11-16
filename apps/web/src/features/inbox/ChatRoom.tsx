@@ -1,7 +1,15 @@
-import type { Conversation } from '@balesin/shared';
+import type { Conversation, Message } from '@balesin/shared';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowLeft } from 'lucide-react';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ArrowDown, ArrowLeft, ChevronRight } from 'lucide-react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { LoadFailedIllustration } from '../../components/illustrations/illustrations';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -12,6 +20,13 @@ import { Skeleton, SkeletonRegion } from '../../components/ui/Skeleton';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
+import { useLock } from '../../lib/use-lock';
+import { useCan, useSession } from '../auth/session';
+import { ChatActionsContext, type ChatActions } from './chat-actions';
+import { ChatFooter } from './ChatFooter';
+import { newClientMessageId, noteSendError, useOutbox } from './outbox';
+import { OutboxRows } from './OutboxRows';
+import { windowState } from './inbox-time';
 import styles from './Chat.module.css';
 import { contactIdentity, summaryIdentity } from './contact-identity';
 import {
@@ -24,6 +39,8 @@ import {
   isNotFound,
   messagesQuery,
   storeConversation,
+  agentsQuery,
+  storeMessage,
 } from './inbox-queries';
 import { ContactAvatar, WindowCountdown } from './InboxBits';
 import { MessageTimeline } from './MessageTimeline';
@@ -126,7 +143,7 @@ export function ChatRoom({
         onOpenDetail={onOpenDetail}
         focusTitle={focusTitle}
       />
-      <ChatHistory
+      <ChatBody
         key={conversation.id}
         conversation={conversation}
         refetchInterval={refetchInterval}
@@ -228,6 +245,9 @@ function ChatHeader({
           {sub.length > 0 ? <p className={styles.sub}>{sub.join(' · ')}</p> : null}
         </div>
         {onOpenDetail ? (
+          <Icon icon={ChevronRight} size={16} className={styles.identityChevron} />
+        ) : null}
+        {onOpenDetail ? (
           // Area tekan selebar identitas (≥ 44px); judul tetap heading untuk pembaca layar.
           <button
             type="button"
@@ -243,14 +263,123 @@ function ChatHeader({
   );
 }
 
-function ChatHistory({
+/**
+ * Riwayat + dasar ruang chat (composer) dengan aksi pesan bersama: balas-kutip, reaksi, kirim
+ * ulang. Error kirim terakhir ditampilkan sekali di atas composer (429 → hitung mundur).
+ */
+function ChatBody({
   conversation,
   refetchInterval,
 }: {
   conversation: Conversation;
   refetchInterval: number;
 }) {
+  const queryClient = useQueryClient();
+  const session = useSession();
+  const canReply = useCan('inbox.reply');
+  const now = useMinuteClock();
+  // `GET /inbox/agents` hanya untuk pemegang `inbox.assign` (Teknisi: tanpa nama agen lain).
+  const canAssign = useCan('inbox.assign');
+  const agents = useQuery({ ...agentsQuery, enabled: canAssign }).data?.agents;
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [retrying, setRetrying] = useState<ReadonlySet<string>>(new Set());
+  const lock = useLock();
+  const { lockFor } = lock;
+
+  const onError = useCallback(
+    (next: unknown) => {
+      setError(next);
+      if (isApiError(next) && next.status === 429) lockFor(next.retryAfterSeconds ?? 30);
+      if (next) noteSendError(queryClient, conversation.id, next);
+    },
+    [lockFor, queryClient, conversation.id],
+  );
+
+  const window = windowState(conversation.windowExpiresAt, now);
+  const replyable =
+    canReply &&
+    conversation.status !== 'resolved' &&
+    (window.kind === 'open' || window.kind === 'expiring');
+
+  const actions = useMemo<ChatActions>(
+    () => ({
+      canReply: replyable,
+      canRetry: canReply,
+      selfId: session?.user.id ?? null,
+      retrying,
+      agentName: (userId) => agents?.find((agent) => agent.id === userId)?.name ?? null,
+      onReply: (message) => setReplyTo(message),
+      onReact: (message, emoji) => {
+        setError(null);
+        endpoints.inbox
+          .send(conversation.id, {
+            type: 'reaction',
+            clientMessageId: newClientMessageId(),
+            targetMessageId: message.id,
+            emoji,
+          })
+          .then(({ message: sent }) => storeMessage(queryClient, conversation.id, sent))
+          .catch(onError);
+      },
+      onRetry: (message) => {
+        setError(null);
+        setRetrying((current) => new Set(current).add(message.id));
+        endpoints.inbox
+          .retry(message.id)
+          .then(({ message: sent }) => storeMessage(queryClient, conversation.id, sent))
+          .catch(onError)
+          .finally(() =>
+            setRetrying((current) => {
+              const next = new Set(current);
+              next.delete(message.id);
+              return next;
+            }),
+          );
+      },
+    }),
+    [
+      replyable,
+      canReply,
+      session?.user.id,
+      retrying,
+      agents,
+      conversation.id,
+      queryClient,
+      onError,
+    ],
+  );
+
+  return (
+    <ChatActionsContext.Provider value={actions}>
+      <ChatHistory
+        conversation={conversation}
+        refetchInterval={refetchInterval}
+        onError={onError}
+      />
+      <ChatFooter
+        conversation={conversation}
+        replyTo={replyable ? replyTo : null}
+        onCancelReply={() => setReplyTo(null)}
+        error={error}
+        onError={onError}
+        lock={lock}
+      />
+    </ChatActionsContext.Provider>
+  );
+}
+
+function ChatHistory({
+  conversation,
+  refetchInterval,
+  onError,
+}: {
+  conversation: Conversation;
+  refetchInterval: number;
+  onError: (error: unknown) => void;
+}) {
   const query = useInfiniteQuery({ ...messagesQuery(conversation.id), refetchInterval });
+  const outbox = useOutbox(conversation.id);
   const messages = useMemo(() => flattenMessages(query.data), [query.data]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const topRef = useRef<HTMLDivElement>(null);
@@ -282,6 +411,17 @@ function ChatHistory({
     }
     edges.current = { first, last, height: box.scrollHeight, top: box.scrollTop };
   }, [messages]);
+
+  // Pesan yang baru saja dikirim dari sini selalu terlihat.
+  const outboxCount = useRef(outbox.length);
+  useLayoutEffect(() => {
+    const box = scrollRef.current;
+    if (box && outbox.length > outboxCount.current) {
+      box.scrollTop = box.scrollHeight;
+      setUnseen(false);
+    }
+    outboxCount.current = outbox.length;
+  }, [outbox.length]);
 
   const onScroll = () => {
     const box = scrollRef.current;
@@ -364,11 +504,12 @@ function ChatHistory({
             <p className={styles.historyNote}>{t.inbox.chat.start}</p>
           ) : null}
         </div>
-        {messages.length === 0 ? (
+        {messages.length === 0 && outbox.length === 0 ? (
           <p className={styles.historyNote}>{t.inbox.chat.noMessages}</p>
         ) : (
           <MessageTimeline messages={messages} />
         )}
+        <OutboxRows items={outbox} onError={onError} />
       </div>
       {unseen ? (
         <button type="button" className={styles.jump} onClick={jumpToLatest}>

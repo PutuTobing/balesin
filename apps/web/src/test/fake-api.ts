@@ -30,6 +30,7 @@ import {
   type ChannelSummary,
   type Contact,
   type Conversation,
+  type InboxAgent,
   type Message,
 } from '@balesin/shared';
 import { vi } from 'vitest';
@@ -381,6 +382,7 @@ export interface FakeInbox {
   messages?: Record<string, Message[]>;
   contacts?: Contact[];
   channels?: ChannelSummary[];
+  agents?: InboxAgent[];
 }
 
 export interface FakeApi {

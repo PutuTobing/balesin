@@ -12,7 +12,13 @@ import {
   channelSummaryListResponseSchema,
   channelWebhookResponseSchema,
   contactResponseSchema,
+  conversationActionResponseSchema,
   conversationCountsResponseSchema,
+  inboxAgentListResponseSchema,
+  messageResponseSchema,
+  sendingLimitsResponseSchema,
+  uploadMediaResponseSchema,
+  type SendMessageRequest,
   conversationListResponseSchema,
   conversationResponseSchema,
   messageListResponseSchema,
@@ -502,10 +508,57 @@ export function createEndpoints(client: ApiClient) {
           schema: contactResponseSchema,
           signal,
         }),
+      /** Kirim pesan (CSRF). 202 `pending` atau 200 bila `clientMessageId` sama sudah pernah dikirim. */
+      send: (conversationId: string, body: SendMessageRequest) =>
+        client.request(apiPath(API_ROUTES.inbox.messages, { conversationId }), {
+          method: 'POST',
+          body,
+          schema: messageResponseSchema,
+        }),
+      /** Unggah satu berkas (multipart `file`, CSRF) → `mediaId` untuk dikirim. */
+      upload: (conversationId: string, file: File, signal?: AbortSignal) => {
+        const form = new FormData();
+        form.append('file', file, file.name);
+        return client.request(apiPath(API_ROUTES.inbox.upload, { conversationId }), {
+          method: 'POST',
+          body: form,
+          schema: uploadMediaResponseSchema,
+          signal,
+        });
+      },
+      /** Kirim ulang pesan keluar yang gagal (`failure.retryable`). */
+      retry: (messageId: string) =>
+        client.request(apiPath(API_ROUTES.inbox.retry, { messageId }), {
+          method: 'POST',
+          schema: messageResponseSchema,
+        }),
+      /** Berkas media pesan (GET ber-CSRF) → Blob; tidak pernah `<img src>` langsung ke API. */
+      media: (messageId: string, signal?: AbortSignal) =>
+        client.download(apiPath(API_ROUTES.inbox.media, { messageId }), {
+          signal,
+          accept: '*/*',
+        }),
+      /** Agen inbox (nama pengirim pesan keluar, saringan agen). */
+      agents: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.inbox.agents, { schema: inboxAgentListResponseSchema, signal }),
+      /** Ambil chat dari antrian / ambil alih dari bot (`inbox.assign`). */
+      claim: (conversationId: string) =>
+        client.request(apiPath(API_ROUTES.inbox.claim, { conversationId }), {
+          method: 'POST',
+          schema: conversationActionResponseSchema,
+        }),
       /** Ringkasan channel untuk saringan (nama saja, semua peran ber-`inbox.view`). */
       channels: (signal?: AbortSignal) =>
         client.request(API_ROUTES.channels.list, {
           schema: channelSummaryListResponseSchema,
+          signal,
+        }),
+    },
+    /** Batas kirim & rem darurat (izin `sending.limits.manage`). */
+    sendingLimits: {
+      get: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.sendingLimits.settings, {
+          schema: sendingLimitsResponseSchema,
           signal,
         }),
     },

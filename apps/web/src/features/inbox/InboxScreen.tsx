@@ -16,7 +16,6 @@ import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { IconButton } from '../../components/ui/IconButton';
 import { t } from '../../i18n/id';
-import { teamUsersQuery } from '../../lib/api/queries';
 import { media, useMediaQuery } from '../../lib/media';
 import { usePageTitle } from '../../lib/use-page-title';
 import { useCan, useSession } from '../auth/session';
@@ -33,7 +32,7 @@ import {
   type ConversationParams,
   type InboxFilters,
 } from './inbox-filters';
-import { countsQuery, inboxChannelsQuery, reviveConversation } from './inbox-queries';
+import { agentsQuery, countsQuery, inboxChannelsQuery, reviveConversation } from './inbox-queries';
 import type { InboxTab } from './inbox-search';
 import { InboxFilterMenu } from './InboxFilterMenu';
 import { useDetailPanel } from './use-detail-panel';
@@ -92,7 +91,6 @@ export function InboxScreen({
   // Sesi baru saja berakhir (keluar / dicabut): jangan memuat apa pun lagi — permintaan baru hanya
   // akan ditolak 401 sementara aplikasi sedang pindah ke halaman masuk.
   const loading = routeLoading || session === null;
-  const canManageTeam = useCan('team.manage');
   const canManageChannels = useCan('channels.manage');
   const detail = useDetailPanel();
   const { open: detailOpen, overlay: detailOverlay, setOpen: setDetailPanelOpen } = detail;
@@ -125,14 +123,17 @@ export function InboxScreen({
     refetchInterval,
   }).data;
   const channels = useQuery({ ...inboxChannelsQuery, enabled: !loading }).data?.channels ?? [];
-  const team = useQuery({ ...teamUsersQuery, enabled: !loading && canManageTeam }).data;
+  // Daftar agen (`GET /inbox/agents`, izin `inbox.assign` di server): Owner/Admin/Supervisor/CS.
+  const canAssign = useCan('inbox.assign');
+  const agentList = useQuery({ ...agentsQuery, enabled: !loading && canAssign }).data?.agents;
   const isTechnician = session?.user.role === 'teknisi';
   const agents = useMemo<AgentOption[] | null>(() => {
     if (isTechnician) return null;
-    return (team?.users ?? [])
-      .filter((user) => user.status !== 'disabled' && user.id !== session?.user.id)
-      .map((user) => ({ id: user.id, name: user.name }));
-  }, [isTechnician, team, session?.user.id]);
+    // Yang nonaktif tetap ada (saringan percakapan lama); diri sendiri = "Ditangani saya".
+    return (agentList ?? [])
+      .filter((agent) => agent.id !== session?.user.id)
+      .map((agent) => ({ id: agent.id, name: agent.name }));
+  }, [isTechnician, agentList, session?.user.id]);
   const filterOptions = { channels, agents };
   const chips = filterChips(filters, filterOptions, session?.user.id);
   const inboxEmpty =

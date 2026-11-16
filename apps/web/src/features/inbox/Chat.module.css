@@ -33,6 +33,12 @@
   min-height: var(--size-touch);
 }
 
+.identityChevron {
+  flex: none;
+  margin-left: calc(var(--space-8) * -1);
+  color: var(--ink-2);
+}
+
 .identityButton {
   position: absolute;
   inset: 0;
@@ -446,5 +452,287 @@ ol.timeline {
 
   .jump {
     height: var(--size-touch);
+  }
+}
+
+/* ---------- Baris pesan + menu aksi ---------- */
+
+.bubbleLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  /* Selebar baris: batas lebar gelembung (75%) dihitung dari lebar ruang chat. */
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.row[data-dir='out'] .bubbleLine {
+  flex-direction: row-reverse;
+}
+
+.messageMenuButton {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--size-control);
+  height: var(--size-control);
+  border-radius: var(--radius-pill);
+  color: var(--ink-2);
+  /* Desktop: muncul saat baris disorot/difokus; HP (sentuh): selalu terlihat. */
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.row:hover .messageMenuButton,
+.messageMenuButton:focus-visible,
+.messageMenuButton[data-state='open'] {
+  opacity: 1;
+}
+
+.messageMenuButton:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+@media (pointer: coarse) {
+  .messageMenuButton {
+    width: var(--size-touch);
+    height: var(--size-touch);
+    opacity: 1;
+  }
+}
+
+.messageMenu {
+  z-index: 40;
+  min-width: 13rem;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+}
+
+.reactionRow {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.reactionItem {
+  display: grid;
+  place-items: center;
+  width: var(--size-control);
+  height: var(--size-control);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-20);
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.reactionItem[data-highlighted] {
+  outline: none;
+  background: var(--surface-2);
+}
+
+.reactionItem[data-active] {
+  background: var(--primary-soft);
+}
+
+.menuSeparator {
+  height: 1px;
+  margin: var(--space-4) 0;
+  background: var(--line);
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: var(--size-control);
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-input);
+  color: var(--ink);
+  font-size: var(--text-14);
+  cursor: pointer;
+  user-select: none;
+}
+
+.menuItem[data-highlighted] {
+  outline: none;
+  background: var(--surface-2);
+}
+
+.menuEmoji {
+  width: var(--space-16);
+  text-align: center;
+}
+
+@media (pointer: coarse) {
+  .reactionItem {
+    width: var(--size-touch);
+    height: var(--size-touch);
+  }
+
+  .menuItem {
+    min-height: var(--size-touch);
+  }
+}
+
+.reactions {
+  display: flex;
+  gap: var(--space-4);
+  margin-top: calc(var(--space-4) * -1);
+  margin-inline: var(--space-12);
+}
+
+.reactions .reaction {
+  margin: 0;
+}
+
+.reaction[data-own] {
+  border-color: var(--primary);
+}
+
+.failedBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-4);
+}
+
+.row[data-dir='in'] .failedBlock {
+  align-items: flex-start;
+}
+
+.retry {
+  color: var(--primary);
+}
+
+/* ---------- Media: bingkai berukuran tetap (tanpa lompatan layout) ---------- */
+
+.mediaFrame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(17.5rem, 100%);
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+}
+
+.mediaFrame[data-kind='video'] {
+  aspect-ratio: 16 / 9;
+}
+
+.stickerFrame {
+  display: grid;
+  place-items: center;
+  width: 8rem;
+  height: 8rem;
+}
+
+.mediaImage {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.mediaSkeleton {
+  position: absolute;
+  inset: 0;
+}
+
+.mediaSkeletonBlock {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.audio {
+  width: min(16rem, 100%);
+  height: var(--size-touch);
+}
+
+.audioPlaceholder {
+  display: flex;
+  align-items: center;
+  min-height: var(--size-touch);
+}
+
+.documentCard {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: min(15rem, 100%);
+  padding: var(--space-8);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.documentIcon {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.documentName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mediaError {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-12);
+  text-align: center;
+}
+
+.mediaErrorText {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  flex-basis: 100%;
+}
+
+/* ---------- Pesan yang sedang dikirim dari browser ini ---------- */
+
+.outboxRow .bubble {
+  opacity: 0.85;
+}
+
+.outboxThumb {
+  width: min(17.5rem, 100%);
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+  object-fit: contain;
+}
+
+.outboxState {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+.outboxActions {
+  display: flex;
+  gap: var(--space-8);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .messageMenuButton {
+    transition: none;
   }
 }

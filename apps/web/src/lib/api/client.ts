@@ -107,7 +107,7 @@ export interface ApiClient {
    * mewajibkannya walau GET). Error tetap amplop JSON biasa dan diperlakukan sama dengan
    * `request` (401/403/429). Tanpa token di URL: sesi lewat cookie.
    */
-  download(path: string, options?: { signal?: AbortSignal }): Promise<BlobResult>;
+  download(path: string, options?: { signal?: AbortSignal; accept?: string }): Promise<BlobResult>;
   setCsrfToken(token: string | null): void;
   getCsrfToken(): string | null;
   /** Dipanggil saat API menjawab 401 `UNAUTHENTICATED` (sesi habis/dicabut). */
@@ -135,13 +135,15 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     forceCsrf = false,
   ) {
     const headers: Record<string, string> = { accept };
-    if (body !== undefined) headers['content-type'] = 'application/json';
+    const multipart = typeof FormData !== 'undefined' && body instanceof FormData;
+    if (body !== undefined && !multipart) headers['content-type'] = 'application/json';
     if ((MUTATING.has(method) || forceCsrf) && csrfToken) headers[CSRF_HEADER_NAME] = csrfToken;
     try {
       return await doFetch(path, {
         method,
         headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
+        // FormData: browser mengisi `content-type` multipart + boundary sendiri.
+        body: body === undefined ? undefined : multipart ? body : JSON.stringify(body),
         credentials: 'include',
         signal,
       });
@@ -231,8 +233,13 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     return parsed.data;
   }
 
-  async function download(path: string, { signal }: { signal?: AbortSignal } = {}) {
-    const accept = 'text/csv, application/json';
+  async function download(
+    path: string,
+    {
+      signal,
+      accept = 'text/csv, application/json',
+    }: { signal?: AbortSignal; accept?: string } = {},
+  ) {
     let response = await send(path, 'GET', undefined, signal, accept, true);
     if (!response.ok) {
       let error = await toError(response);

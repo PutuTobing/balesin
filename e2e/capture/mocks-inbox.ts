@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import type { Page, Route, WebSocketRoute } from '@playwright/test';
 import { apiError, json } from './mocks';
 
@@ -77,6 +78,24 @@ function conversation(init: PhotoConversationInit) {
     firstResponseAt: null,
   };
 }
+
+/** Agen contoh (nama pengirim pesan keluar). */
+const AGENT_CITRA = 'a1a2b3c4-0000-4000-8000-0000000000c1';
+const AGENTS = [
+  { id: AGENT_CITRA, name: 'Citra', role: 'cs', active: true, openConversations: 4 },
+  {
+    id: 'a1a2b3c4-0000-4000-8000-0000000000a9',
+    name: 'Agus',
+    role: 'teknisi',
+    active: true,
+    openConversations: 2,
+  },
+];
+
+/** Gambar contoh untuk media (ilustrasi aplikasi sendiri, bukan foto pelanggan). */
+const SAMPLE_IMAGE = readFileSync(
+  new URL('../../apps/web/src/assets/illustrations/login-hero-768.webp', import.meta.url),
+);
 
 export const PHOTO_CONVERSATIONS = [
   conversation({
@@ -275,6 +294,7 @@ export const PHOTO_MESSAGES = [
   message(5, {
     direction: 'outbound',
     senderKind: 'agent',
+    senderUserId: AGENT_CITRA,
     text: 'Baik kak Budi, kami cek dulu jaringannya ya. Mohon ditunggu sebentar.',
     status: 'read',
     createdAt: ago(25 * HOUR),
@@ -284,10 +304,12 @@ export const PHOTO_MESSAGES = [
     type: 'image',
     text: 'Lampu LOS merah dari pagi',
     media: media('image', { mimeType: 'image/jpeg' }),
+    mediaAvailable: true,
     createdAt: ago(40 * MINUTE),
   }),
   message(8, {
     type: 'document',
+    mediaAvailable: true,
     media: media('document', {
       mimeType: 'application/pdf',
       filename: 'tagihan-november-2026.pdf',
@@ -296,12 +318,14 @@ export const PHOTO_MESSAGES = [
   }),
   message(9, {
     type: 'audio',
+    mediaAvailable: true,
     media: media('audio', { mimeType: 'audio/ogg', voice: true }),
     createdAt: ago(36 * MINUTE),
   }),
   message(10, {
     direction: 'outbound',
     senderKind: 'agent',
+    senderUserId: AGENT_CITRA,
     text: 'Sudah kami terima kak. Tim teknisi dijadwalkan datang hari ini.',
     status: 'delivered',
     replyTo: { messageId: id('e1a2b3c4', 7) },
@@ -371,6 +395,10 @@ export interface InboxMockOptions {
   list?: (route: Route) => Promise<void>;
   /** Akses ke WebSocket tiruan (mis. mengirim `message.created` saat foto disiapkan). */
   onSocket?: (socket: WebSocketRoute) => void;
+  /** Jawaban kirim pesan (bawaan 202 `pending`). */
+  send?: (route: Route) => Promise<void>;
+  /** Rem darurat sedang ditarik (pengaturan batas kirim, terlihat oleh Owner/Admin). */
+  paused?: boolean;
 }
 
 /** Pasang semua jawaban tiruan inbox + WebSocket diam (hanya `hello`). */
@@ -441,10 +469,75 @@ export async function inboxMocks(page: Page, options: InboxMockOptions = {}): Pr
       : apiError(route, 404, 'NOT_FOUND', 'Data tidak ditemukan.');
   });
   await page.route(/\/api\/v1\/conversations\/[0-9a-f-]{36}\/messages/, (route) => {
+    if (route.request().method() === 'POST') {
+      if (options.send) return options.send(route);
+      const body = route.request().postDataJSON() as { text?: string; caption?: string };
+      return json(
+        route,
+        {
+          message: message(900, {
+            id: 'e1a2b3c4-0000-4000-8000-000000000900',
+            direction: 'outbound',
+            senderKind: 'agent',
+            text: body.text ?? body.caption ?? null,
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+          }),
+        },
+        202,
+      );
+    }
     if (options.messages) return options.messages(route);
     const conversationId = new URL(route.request().url()).pathname.split('/').at(-2);
     const rows = conversationId === PHOTO_CHAT.id ? PHOTO_MESSAGES : PHOTO_MESSAGES.slice(-3);
     return json(route, { messages: [...rows].reverse(), nextCursor: null });
+  });
+  await page.route(`${API}/inbox/agents`, (route) => json(route, { agents: AGENTS }));
+  await page.route(`${API}/settings/sending-limits`, (route) =>
+    json(route, {
+      limits: {
+        dailyPerUser: 500,
+        dailyPerOrganization: 5000,
+        perConversationPerMinute: 20,
+        paused: options.paused
+          ? { at: ago(10 * MINUTE), by: { id: AGENT_CITRA, name: 'Rina Kartika' }, reason: null }
+          : null,
+        sentLast24Hours: 128,
+      },
+    }),
+  );
+  await page.route(/\/api\/v1\/messages\/[0-9a-f-]{36}\/media$/, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'image/webp',
+      headers: { 'content-disposition': `attachment; filename*=UTF-8''tagihan-november-2026.pdf` },
+      body: SAMPLE_IMAGE,
+    }),
+  );
+  await page.route(/\/api\/v1\/conversations\/[0-9a-f-]{36}\/(claim|media)$/, (route) => {
+    const url = new URL(route.request().url());
+    const conversationId = url.pathname.split('/').at(-2);
+    const found = conversations.find((item) => item.id === conversationId);
+    if (url.pathname.endsWith('/media')) {
+      return json(
+        route,
+        {
+          media: {
+            id: 'b1a2b3c4-0000-4000-8000-000000000001',
+            kind: 'image',
+            mimeType: 'image/jpeg',
+            filename: 'foto.jpg',
+            sizeBytes: 182_000,
+          },
+        },
+        201,
+      );
+    }
+    return json(route, {
+      conversation: found
+        ? { ...found, status: 'served', assignee: { id: AGENT_CITRA, name: 'Rina Kartika' } }
+        : null,
+    });
   });
   await page.route(/\/api\/v1\/conversations\/[0-9a-f-]{36}\/read$/, (route) => {
     const conversationId = new URL(route.request().url()).pathname.split('/').at(-2);

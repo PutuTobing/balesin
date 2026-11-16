@@ -62,11 +62,11 @@ export const ConversationItem = memo(function ConversationItem({
   const unread = conversation.unreadCount;
   const last = conversation.lastMessage;
   // Nomor/@username di awal baris meta (tidak pernah terpotong); sisanya boleh mengalah.
-  const meta = [
-    conversation.channel.name,
-    showStatus ? t.inbox.item.status[conversation.status] : null,
-    conversation.assignee?.name ?? null,
-  ].filter((part): part is string => Boolean(part));
+  // Urutan: nomor · agen (atau status bila belum ada agen, hanya di tab Semua) · channel.
+  // Nomor dan agen tidak pernah terpotong; nama channel yang mengalah lebih dulu.
+  const who =
+    conversation.assignee?.name ?? (showStatus ? t.inbox.item.status[conversation.status] : null);
+  const parts = [identity.handle, who].filter((part): part is string => Boolean(part));
 
   return (
     <li className={styles.itemWrap}>
@@ -116,6 +116,12 @@ export const ConversationItem = memo(function ConversationItem({
                 {preview.text}
               </span>
             </span>
+            {/* Sesi 24 jam di baris cuplikan: baris meta utuh untuk nomor + agen/status. */}
+            <WindowCountdown
+              expiresAt={conversation.windowExpiresAt}
+              now={now}
+              className={styles.countdown}
+            />
             {unread > 0 ? (
               <span className={styles.unread}>
                 <span aria-hidden="true">{t.inbox.item.unreadShort(unread)}</span>
@@ -126,18 +132,17 @@ export const ConversationItem = memo(function ConversationItem({
           <span className={styles.line}>
             <span className={styles.meta}>
               {identity.handle ? <span className={styles.handle}>{identity.handle}</span> : null}
-              {meta.length > 0 ? (
-                <span className={styles.metaRest}>
+              {who ? (
+                <span className={styles.metaWho}>
                   {identity.handle ? ' · ' : ''}
-                  {meta.join(' · ')}
+                  {who}
                 </span>
               ) : null}
+              <span className={styles.metaRest}>
+                {parts.length > 0 ? ' · ' : ''}
+                {conversation.channel.name}
+              </span>
             </span>
-            <WindowCountdown
-              expiresAt={conversation.windowExpiresAt}
-              now={now}
-              className={styles.countdown}
-            />
           </span>
         </span>
       </button>

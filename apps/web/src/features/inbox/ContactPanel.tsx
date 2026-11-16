@@ -4,7 +4,7 @@ import { Skeleton, SkeletonRegion } from '../../components/ui/Skeleton';
 import { t } from '../../i18n/id';
 import { formatDateTime } from '../../lib/format';
 import styles from './ContactPanel.module.css';
-import { contactIdentity, formatPhone, formatUsername } from './contact-identity';
+import { contactIdentity, formatPhone, formatUsername, summaryIdentity } from './contact-identity';
 import { contactQuery, conversationQuery, goneQuery, isNotFound } from './inbox-queries';
 import { ContactAvatar, WindowCountdown } from './InboxBits';
 import { useMinuteClock } from './use-minute-clock';
@@ -36,7 +36,9 @@ export function ContactPanel({ conversationId }: { conversationId: string }) {
 
   const contact = contactResult.data?.contact;
   const identity = contact ? contactIdentity(contact) : null;
-  const name = identity?.name ?? conversation.contact.displayName;
+  const fallback = summaryIdentity(conversation.contact);
+  const name = identity?.name ?? fallback.name;
+  const handle = identity ? identity.handle : fallback.handle;
 
   return (
     <div className={styles.panel}>
@@ -45,11 +47,8 @@ export function ContactPanel({ conversationId }: { conversationId: string }) {
         <p className={styles.name} dir="auto">
           {name}
         </p>
-        {(identity?.handle ?? formatPhone(conversation.contact.phone)) ? (
-          <p className={styles.handle}>
-            {identity?.handle ?? formatPhone(conversation.contact.phone)}
-          </p>
-        ) : null}
+        {/* Nama yang sama dengan nomornya tidak ditulis dua kali. */}
+        {handle ? <p className={styles.handle}>{handle}</p> : null}
         {identity?.fromWhatsApp ? (
           <p className={styles.badge}>{t.inbox.item.fromWhatsApp}</p>
         ) : null}

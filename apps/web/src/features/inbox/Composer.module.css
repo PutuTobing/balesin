@@ -1,0 +1,250 @@
+/* ---------- Composer: menempel di dasar ruang chat ---------- */
+
+.composer {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12) var(--space-12);
+  /* HP: di atas indikator beranda; papan ketik mengecilkan tata letak (interactive-widget). */
+  padding-bottom: calc(var(--space-12) + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-8);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--size-touch);
+  max-height: 10rem;
+  padding: var(--space-12);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: var(--text-14);
+  line-height: var(--leading-text);
+  resize: none;
+}
+
+.input::placeholder {
+  color: var(--ink-2);
+  opacity: 1;
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+
+.input:disabled {
+  opacity: 0.6;
+}
+
+.send {
+  display: grid;
+  flex: none;
+  place-items: center;
+  min-width: var(--size-touch);
+  height: var(--size-touch);
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-card);
+  background: var(--primary);
+  color: var(--on-primary);
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.send:disabled {
+  background: var(--surface-2);
+  color: var(--ink-2);
+  cursor: not-allowed;
+}
+
+.sendLock {
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Kutipan balasan & lampiran ---------- */
+
+.reply,
+.attachment {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-12);
+  border-left: 2px solid var(--primary);
+  border-radius: var(--radius-input);
+  background: var(--surface-2);
+}
+
+.attachment {
+  padding-left: var(--space-4);
+  border-left-color: var(--line);
+}
+
+.replyIcon {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.replyText,
+.fileText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.replyWho {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.replySnippet,
+.fileName {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--text-13);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileSize {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-variant-numeric: tabular-nums;
+}
+
+.thumb,
+.fileIcon {
+  flex: none;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--radius-input);
+}
+
+.thumb {
+  object-fit: cover;
+}
+
+.fileIcon {
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  color: var(--ink-2);
+}
+
+.fileError {
+  color: var(--danger-ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.counter {
+  align-self: flex-end;
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-variant-numeric: tabular-nums;
+}
+
+.counter[data-over] {
+  color: var(--danger-ink);
+  font-weight: var(--weight-semibold);
+}
+
+/* ---------- Pengganti composer (jendela habis, selesai, baca saja) ---------- */
+
+.closed {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-16);
+  padding-bottom: calc(var(--space-12) + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.closedText {
+  display: flex;
+  flex: 1 1 18rem;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.closedTitle {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.closedBody {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.closedAction {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-4);
+}
+
+.closedHint {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+/* ---------- Bilah penanganan & pemberitahuan di atas composer ---------- */
+
+.handling {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  padding: var(--space-8) var(--space-12) var(--space-8) var(--space-16);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.notices {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12) 0;
+}
+
+@media (max-width: 640px) {
+  .input {
+    /* 16px: iOS tidak memperbesar halaman saat kolom difokus. */
+    font-size: var(--text-16);
+  }
+
+  .closedAction {
+    align-items: stretch;
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .send {
+    transition: none;
+  }
+}

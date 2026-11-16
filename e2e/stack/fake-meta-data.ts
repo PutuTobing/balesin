@@ -27,6 +27,27 @@ export const FAKE_META = {
       display: '+62 811-0000-1002',
       verifiedName: 'Maju Jaya HP',
     },
+    /** Inbox (`inbox-pesan.spec.ts`): satu nomor per tes supaya tidak bentrok dengan Channel. */
+    inboxDesktop: {
+      id: '100000000000011',
+      display: '+62 811-0000-1011',
+      verifiedName: 'Maju Jaya Inbox',
+    },
+    inboxHp: {
+      id: '100000000000012',
+      display: '+62 811-0000-1012',
+      verifiedName: 'Maju Jaya Inbox HP',
+    },
+    inboxScope: {
+      id: '100000000000013',
+      display: '+62 811-0000-1013',
+      verifiedName: 'Maju Jaya Inbox Cakupan',
+    },
+    inboxReply: {
+      id: '100000000000014',
+      display: '+62 811-0000-1014',
+      verifiedName: 'Maju Jaya Inbox Balas',
+    },
   },
   profile: {
     about: 'Internet cepat untuk rumah dan kantor.',

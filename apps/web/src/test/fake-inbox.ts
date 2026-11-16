@@ -10,6 +10,9 @@ import type { FakeHandler, FakeInbox } from './fake-api';
 
 /** Data inbox tiruan untuk tes komponen (bentuk sama dengan skema `@balesin/shared`). */
 
+/** ID pengguna sesi tiruan (`fakeSession`). */
+const SELF_ID = '0b0e2d8c-6d3f-4b8a-9d55-5e2f8a1c0001';
+
 export const FAKE_CHANNEL_ID = '6f1c2a90-1111-4c4c-9a9a-000000000001';
 
 let sequence = 0;
@@ -152,6 +155,7 @@ export function fakeInboxRoutes(
         unreadOpen: all.filter((item) => item.status !== 'resolved' && item.unreadCount > 0).length,
       });
     }),
+    [`GET ${API_ROUTES.inbox.agents}`]: guard(() => respond({ agents: inbox.agents ?? [] })),
     [`GET ${API_ROUTES.channels.list}`]: guard(() => respond({ channels: inbox.channels ?? [] })),
   };
   for (const conversation of conversations) {
@@ -165,6 +169,75 @@ export function fakeInboxRoutes(
         nextCursor: null,
       }),
     );
+    // Kirim pesan: 202 `pending`, isi dari body (teks/media/reaksi).
+    routes[`POST ${apiPath(API_ROUTES.inbox.messages, { conversationId })}`] = guard(({ body }) => {
+      const request = body as Record<string, unknown>;
+      return respond(
+        {
+          message: fakeMessage({
+            direction: 'outbound',
+            senderKind: 'agent',
+            senderUserId: SELF_ID,
+            status: 'pending',
+            type:
+              request.type === 'reaction'
+                ? 'reaction'
+                : request.type === 'media'
+                  ? 'image'
+                  : 'text',
+            text: (request.text as string | undefined) ?? (request.caption as string) ?? null,
+            reaction:
+              request.type === 'reaction'
+                ? {
+                    emoji: (request.emoji as string) || null,
+                    messageId: request.targetMessageId as string,
+                  }
+                : null,
+            createdAt: new Date().toISOString(),
+          }),
+        },
+        202,
+      );
+    });
+    routes[`POST ${apiPath(API_ROUTES.inbox.upload, { conversationId })}`] = guard(() =>
+      respond(
+        {
+          media: {
+            id: '7a000000-0000-4000-8000-000000000001',
+            kind: 'image',
+            mimeType: 'image/jpeg',
+            filename: 'foto.jpg',
+            sizeBytes: 1234,
+          },
+        },
+        201,
+      ),
+    );
+    routes[`POST ${apiPath(API_ROUTES.inbox.claim, { conversationId })}`] = guard(() =>
+      respond({
+        conversation: {
+          ...conversation,
+          status: 'served',
+          assignee: { id: SELF_ID, name: 'Rina Kartika' },
+        },
+      }),
+    );
+    for (const message of inbox.messages?.[conversationId] ?? []) {
+      const messageId = message.id;
+      routes[`POST ${apiPath(API_ROUTES.inbox.retry, { messageId })}`] = guard(() =>
+        respond({ message: { ...message, status: 'pending', failure: null } }, 202),
+      );
+      routes[`GET ${apiPath(API_ROUTES.inbox.media, { messageId })}`] = guard(
+        () =>
+          new Response(new Blob(['gambar'], { type: 'image/png' }), {
+            status: 200,
+            headers: {
+              'content-type': 'image/png',
+              'content-disposition': `attachment; filename="file.bin"; filename*=UTF-8''tagihan%20nov.pdf`,
+            },
+          }),
+      );
+    }
     routes[`POST ${apiPath(API_ROUTES.inbox.read, { conversationId })}`] = guard(() =>
       respond({ conversation: { ...conversation, unreadCount: 0 } }),
     );

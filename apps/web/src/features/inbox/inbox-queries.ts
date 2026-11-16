@@ -3,6 +3,7 @@ import type {
   ConversationListResponse,
   ConversationResponse,
   InboxStreamEvent,
+  Message,
   MessageListResponse,
 } from '@balesin/shared';
 import {
@@ -33,6 +34,10 @@ export const inboxKeys = {
   messages: (id: string) => ['inbox', 'messages', id] as const,
   contact: (id: string) => ['inbox', 'contact', id] as const,
   channels: ['inbox', 'channels'] as const,
+  agents: ['inbox', 'agents'] as const,
+  sendingLimits: ['inbox', 'sending-limits'] as const,
+  /** Rem darurat diketahui sedang ditarik (dari 423 atau pengaturan batas kirim). */
+  sendingPaused: ['inbox', 'sending-paused'] as const,
   /** Penanda (tanpa data pribadi): percakapan ini tidak tersedia lagi untuk pengguna ini. */
   gone: (id: string) => ['inbox', 'gone', id] as const,
 };
@@ -111,6 +116,31 @@ export function contactQuery(contactId: string) {
     retry: retryTransient,
   });
 }
+
+/** Agen inbox: nama pengirim pesan keluar (`senderUserId`) dan saringan agen. */
+export const agentsQuery = queryOptions({
+  queryKey: inboxKeys.agents,
+  queryFn: ({ signal }) => endpoints.inbox.agents(signal),
+  staleTime: 5 * 60_000,
+  retry: retryTransient,
+});
+
+/** Batas kirim & rem darurat — hanya untuk pemegang `sending.limits.manage`. */
+export const sendingLimitsQuery = queryOptions({
+  queryKey: inboxKeys.sendingLimits,
+  queryFn: ({ signal }) => endpoints.sendingLimits.get(signal),
+  refetchInterval: 60_000,
+  retry: retryTransient,
+});
+
+/** Rem darurat diketahui ditarik (dari jawaban 423). Tidak pernah diambil dari server sendiri. */
+export const sendingPausedQuery = queryOptions({
+  queryKey: inboxKeys.sendingPaused,
+  queryFn: () => false,
+  initialData: false,
+  staleTime: Infinity,
+  enabled: false,
+});
 
 export const inboxChannelsQuery = queryOptions({
   queryKey: inboxKeys.channels,
@@ -209,6 +239,29 @@ export function goneQuery(conversationId: string) {
   });
 }
 
+/**
+ * Pesan dari jawaban kirim/kirim ulang: dimasukkan (atau diganti) di halaman terbaru riwayat,
+ * supaya tampil seketika; event `message.created`/`message.status` lalu menyegarkannya.
+ */
+export function storeMessage(queryClient: QueryClient, conversationId: string, message: Message) {
+  queryClient.setQueryData<MessagePages>(inboxKeys.messages(conversationId), (data) => {
+    if (!data) return data;
+    const exists = data.pages.some((page) => page.messages.some((item) => item.id === message.id));
+    return {
+      ...data,
+      pages: data.pages.map((page, index) => ({
+        ...page,
+        messages: exists
+          ? page.messages.map((item) => (item.id === message.id ? message : item))
+          : index === 0
+            ? [message, ...page.messages]
+            : page.messages,
+      })),
+    };
+  });
+  scheduleListRefresh(queryClient);
+}
+
 /** Simpan percakapan dari jawaban server (mis. setelah tandai dibaca). */
 export function storeConversation(queryClient: QueryClient, conversation: Conversation): void {
   patchConversation(queryClient, conversation.id, () => conversation);
@@ -283,6 +336,10 @@ export function applyInboxEvent(queryClient: QueryClient, event: InboxStreamEven
       scheduleListRefresh(queryClient);
       return;
     }
+    case 'conversation.removed':
+      // Agen lama yang kehilangan akses (mis. Teknisi dialihkan): buang semua datanya.
+      forgetConversation(queryClient, event.conversationId);
+      return;
     case 'message.created':
       void queryClient.invalidateQueries({ queryKey: inboxKeys.messages(event.conversationId) });
       scheduleListRefresh(queryClient);

@@ -291,7 +291,8 @@ describe('ruang chat baca-saja', () => {
     expect(chat.getByText('<script>alert(1)</script> Mohon tunggu')).toBeVisible();
     expect(chat.getByText(t.inbox.chat.senders.bot, { selector: 'p' })).toBeVisible();
     expect(chat.getByText(t.inbox.chat.deliveryStatus.delivered)).toBeInTheDocument();
-    expect(chat.queryByRole('textbox')).toBeNull();
+    // Jendela terbuka + izin membalas: composer tersedia.
+    expect(chat.getByRole('textbox', { name: t.inbox.compose.label })).toBeEnabled();
 
     await waitFor(() =>
       expect(
@@ -378,7 +379,8 @@ describe('ruang chat baca-saja', () => {
     expect(chatRegion().queryByText(/kode 131047/)).toBeNull();
     // Di luar gelembung (latar halaman), bukan di dalamnya.
     expect(reason.closest('li')?.textContent).toContain('Pengingat tagihan');
-    expect(reason.parentElement?.previousElementSibling).not.toBeNull();
+    const bubbleText = chatRegion().getByText('Pengingat tagihan');
+    expect(bubbleText.parentElement?.contains(reason)).toBe(false);
   });
 
   it('WebSocket inbox disambungkan ke origin aplikasi tanpa token', async () => {
