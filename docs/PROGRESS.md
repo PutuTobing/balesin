@@ -88,6 +88,12 @@
 **Ditunda / menunggu**
 - Owner lupa password tanpa SMTP butuh perintah CLI pemulihan → Fase 7 (wajib sebelum produksi);
   production wajib `BALESIN_MASTER_KEY`; catatan rilis migrasi 0007; CSP produksi (pratinjau email,
-  Radix `<style>`); peran DB runtime terpisah dari pemilik tabel (trigger audit).
+  Radix `<style>`); peran DB runtime terpisah dari pemilik tabel (trigger audit); `TRUST_PROXY` diisi
+  installer + peringatan health/banner (webhook S3); hak `CREATE` pada database untuk
+  `CREATE EXTENSION pg_trgm` (migrasi 0013) saat `balesin update`.
+- Fase 4 (impor kontak/kirim ke nomor/broadcast): R4 kontak hanya-nomor vs BSUID pertama.
+- Web inbox: teks pesan & nama profil `dir="auto"`; nomor/@username selalu di samping nama profil WA;
+  `sourceUrl`/`filename` sebagai teks (tonjolkan hostname); layar diagnosis webhook (`expired_pending`,
+  baris ditolak N2); banner `webhook_signature_failed` menautkan ke channel (butuh `channelId`).
 - Pose Kak Sky (BUTUH-TOBING #5), kredensial Meta (#3), detail SMTP (#4).
 - Poles desain: tab "Bot" di 360px 42px; bedakan "inbox kosong" vs "belum memilih chat".
