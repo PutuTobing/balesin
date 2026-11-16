@@ -5,6 +5,9 @@ import {
   ChevronRight,
   Gauge,
   History,
+  KeyRound,
+  Webhook,
+  type LucideIcon,
   Mail,
   MessageSquareText,
   ShieldCheck,
@@ -38,6 +41,7 @@ import {
 } from '../../lib/api/queries';
 import { TwoFactorBadge } from '../security/TwoFactorBadge';
 import { sendingLimitsQuery } from '../inbox/inbox-queries';
+import { integrationKeys } from '../integrations/integration-queries';
 import { usePushDevice } from '../notifications/use-push-device';
 import styles from './Settings.module.css';
 
@@ -62,11 +66,20 @@ export function SettingsPage() {
   const canChannels = useCan('channels.manage');
   const canQuickReplies = useCan('quick_replies.manage');
   const canSendingLimits = useCan('sending.limits.manage');
+  const canApiKeys = useCan('api_keys.manage');
+  const canWebhooks = useCan('integrations.manage');
 
   return (
     <Page>
       <div className={styles.content}>
-        {canChannels || canTeam || canEmail || canAudit || canQuickReplies || canSendingLimits ? (
+        {canChannels ||
+        canTeam ||
+        canEmail ||
+        canAudit ||
+        canQuickReplies ||
+        canSendingLimits ||
+        canApiKeys ||
+        canWebhooks ? (
           <OrganizationSettings
             showChannels={canChannels}
             showTeam={canTeam}
@@ -74,6 +87,8 @@ export function SettingsPage() {
             showAudit={canAudit}
             showQuickReplies={canQuickReplies}
             showSendingLimits={canSendingLimits}
+            showApiKeys={canApiKeys}
+            showWebhooks={canWebhooks}
             canInvite={canInvite}
             canManageTeam={canManageTeam}
           />
@@ -158,6 +173,8 @@ function OrganizationSettings({
   showAudit,
   showQuickReplies,
   showSendingLimits,
+  showApiKeys,
+  showWebhooks,
   canInvite,
   canManageTeam,
 }: {
@@ -167,6 +184,8 @@ function OrganizationSettings({
   showAudit: boolean;
   showQuickReplies: boolean;
   showSendingLimits: boolean;
+  showApiKeys: boolean;
+  showWebhooks: boolean;
   canInvite: boolean;
   canManageTeam: boolean;
 }) {
@@ -183,6 +202,8 @@ function OrganizationSettings({
         {showEmail ? <EmailMenuItem /> : null}
         {showQuickReplies ? <QuickRepliesMenuItem /> : null}
         {showSendingLimits ? <SendingLimitsMenuItem /> : null}
+        {showApiKeys ? <ApiKeysMenuItem /> : null}
+        {showWebhooks ? <WebhooksMenuItem /> : null}
         {showAudit ? <AuditMenuItem /> : null}
       </ul>
     </section>
@@ -273,6 +294,81 @@ function QuickRepliesMenuItem() {
               {t.quickReplies.menuCount(list.data.quickReplies.length)}
             </span>
           ) : list.isPending ? (
+            <Skeleton className={styles.statusSkeleton} />
+          ) : null}
+        </span>
+        <Icon icon={ChevronRight} size={16} className={styles.chevron} />
+      </Link>
+    </li>
+  );
+}
+
+/** API key: jumlah key aktif. */
+function ApiKeysMenuItem() {
+  const list = useQuery({
+    queryKey: integrationKeys.apiKeys,
+    queryFn: ({ signal }) => endpoints.apiKeys.list(signal),
+  });
+  const active = list.data?.apiKeys.filter((key) => key.status === 'active').length;
+  return (
+    <MenuRow
+      to="/pengaturan/api-key"
+      icon={KeyRound}
+      label={t.apiKeys.title}
+      hint={t.apiKeys.menuHint}
+      status={active === undefined ? null : t.apiKeys.menuCount(active)}
+      loading={list.isPending}
+    />
+  );
+}
+
+/** Webhook keluar: jumlah webhook. */
+function WebhooksMenuItem() {
+  const list = useQuery({
+    queryKey: integrationKeys.webhooks,
+    queryFn: ({ signal }) => endpoints.webhooks.list(signal),
+  });
+  return (
+    <MenuRow
+      to="/pengaturan/webhook"
+      icon={Webhook}
+      label={t.webhooks.title}
+      hint={t.webhooks.menuHint}
+      status={list.data ? t.webhooks.menuCount(list.data.webhooks.length) : null}
+      loading={list.isPending}
+    />
+  );
+}
+
+function MenuRow({
+  to,
+  icon,
+  label,
+  hint,
+  status,
+  loading,
+}: {
+  to: '/pengaturan/api-key' | '/pengaturan/webhook';
+  icon: LucideIcon;
+  label: string;
+  hint: string;
+  status: string | null;
+  loading: boolean;
+}) {
+  return (
+    <li>
+      <Link to={to} className={styles.menuLink}>
+        <span className={styles.menuIcon}>
+          <Icon icon={icon} size={20} />
+        </span>
+        <span className={styles.menuText}>
+          <span className={styles.menuLabel}>{label}</span>
+          <span className={styles.menuHint}>{hint}</span>
+        </span>
+        <span className={styles.menuStatus}>
+          {status ? (
+            <span className={styles.menuCount}>{status}</span>
+          ) : loading ? (
             <Skeleton className={styles.statusSkeleton} />
           ) : null}
         </span>

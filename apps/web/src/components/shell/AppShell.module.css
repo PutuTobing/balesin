@@ -32,6 +32,8 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  /* iPhone mendatar (viewport-fit=cover): konten tidak masuk ke area poni/sudut kanan. */
+  padding-right: env(safe-area-inset-right, 0px);
 }
 
 /* Fokus terprogram setelah pindah halaman: tidak perlu cincin di seluruh area konten. */

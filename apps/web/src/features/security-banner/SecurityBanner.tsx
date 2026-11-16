@@ -36,6 +36,8 @@ export function SecurityBanner() {
   const canView = useCan('audit.view');
   const canChannels = useCan('channels.manage');
   const canSendingLimits = useCan('sending.limits.manage');
+  const canApiKeys = useCan('api_keys.manage');
+  const canWebhooks = useCan('integrations.manage');
   const summary = useQuery({ ...securitySummaryQuery, enabled: canView });
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const userId = session?.user.id ?? '';
@@ -113,6 +115,17 @@ export function SecurityBanner() {
           // Rem ditarik / batas tercapai / batas diubah: langsung ke Pengaturan → Batas kirim.
           <Link to="/pengaturan/batas-kirim" className={styles.review} onClick={dismiss}>
             {copy.reviewSending}
+          </Link>
+        ) : null}
+        {latest.kind === 'api_key_changed' && canApiKeys ? (
+          <Link to="/pengaturan/api-key" className={styles.review} onClick={dismiss}>
+            {copy.reviewApiKeys}
+          </Link>
+        ) : null}
+        {(latest.kind === 'webhook_changed' || latest.kind === 'webhook_disabled') &&
+        canWebhooks ? (
+          <Link to="/pengaturan/webhook" className={styles.review} onClick={dismiss}>
+            {copy.reviewWebhooks}
           </Link>
         ) : null}
         <Link

@@ -84,6 +84,7 @@
   display: flex;
   flex: 1 0 auto;
   justify-content: center;
+  min-width: var(--size-touch);
   height: var(--size-touch);
   /* 4px di kiri-kanan teks (cincin fokus di dalam kotak, tidak menabrak huruf). */
   padding: 0 var(--space-4);

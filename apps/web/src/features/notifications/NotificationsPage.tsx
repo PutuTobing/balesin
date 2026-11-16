@@ -13,6 +13,7 @@ import { TextField } from '../../components/ui/Field';
 import { Icon } from '../../components/ui/Icon';
 import { Notice } from '../../components/ui/Notice';
 import { Page } from '../../components/ui/Page';
+import { RichText } from '../../components/ui/RichText';
 import { Skeleton, SkeletonRegion } from '../../components/ui/Skeleton';
 import { StatusBadge, type StatusTone } from '../../components/ui/StatusBadge';
 import { t } from '../../i18n/id';
@@ -80,6 +81,7 @@ export function NotificationsPage() {
 // ── Perangkat ini ───────────────────────────────────────────────────────────
 
 function deviceStatus(state: PushDeviceState): { tone: StatusTone; label: string } {
+  if (state.support === 'ios-install') return { tone: 'warning', label: copy.statusNeedsInstall };
   if (state.support !== 'supported') return { tone: 'neutral', label: copy.statusUnsupported };
   if (state.permission === 'denied') return { tone: 'danger', label: copy.statusBlocked };
   if (state.subscribed) return { tone: 'success', label: copy.statusOn };
@@ -142,7 +144,7 @@ function DeviceCard({ devices }: { devices: number | null }) {
 
       {device.support === 'ios-install' ? (
         <Notice tone="info" title={copy.iosTitle}>
-          {copy.iosBody}
+          <RichText text={copy.iosBody} />
         </Notice>
       ) : device.support === 'unsupported' ? (
         <Notice tone="info" title={copy.unsupportedTitle}>
@@ -345,11 +347,14 @@ function OrganizationCard() {
   const settings = useQuery(notificationSettingsQuery);
   return (
     <section className={styles.card} aria-labelledby="notifikasi-organisasi">
-      <div className={styles.cardHead}>
-        <h2 id="notifikasi-organisasi" className={styles.cardTitle}>
-          {copy.orgTitle}
-        </h2>
-        <p className={styles.hint}>{copy.orgHint}</p>
+      <div className={styles.cardHeadRow}>
+        <div className={styles.cardHead}>
+          <h2 id="notifikasi-organisasi" className={styles.cardTitle}>
+            {copy.orgTitle}
+          </h2>
+          <p className={styles.hint}>{copy.orgHint}</p>
+        </div>
+        <StatusBadge tone="neutral" label={copy.ownerOnly} />
       </div>
       {settings.data ? (
         <OrganizationForm settings={settings.data.settings} />
@@ -432,7 +437,7 @@ function OrganizationForm({ settings }: { settings: NotificationSettings }) {
         </Notice>
       ) : null}
       <div className={styles.actions}>
-        <Button type="submit" loading={saving}>
+        <Button type="submit" variant="primary" loading={saving}>
           {saving ? copy.saving : copy.saveOrg}
         </Button>
       </div>

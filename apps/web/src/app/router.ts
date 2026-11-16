@@ -285,6 +285,30 @@ const quickRepliesRoute = createRoute({
   ),
 });
 
+/** Pengaturan → API key: `api_keys.manage` (Owner, Admin). */
+const apiKeysRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/api-key',
+  staticData: { page: { title: t.apiKeys.title, parent: 'settings' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'api_keys.manage'),
+  component: lazyRouteComponent(
+    () => import('../features/integrations/ApiKeysPage'),
+    'ApiKeysPage',
+  ),
+});
+
+/** Pengaturan → Webhook keluar: `integrations.manage` (Owner, Admin). */
+const webhooksRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/webhook',
+  staticData: { page: { title: t.webhooks.title, parent: 'settings' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'integrations.manage'),
+  component: lazyRouteComponent(
+    () => import('../features/integrations/WebhooksPage'),
+    'WebhooksPage',
+  ),
+});
+
 /** Pengaturan → Notifikasi: per pengguna (`inbox.view`); bagian organisasi = `organization.manage`. */
 const notificationsRoute = createRoute({
   getParentRoute,
@@ -464,6 +488,8 @@ const appChildren = [
   oldQuickRepliesRoute,
   sendingLimitsRoute,
   notificationsRoute,
+  apiKeysRoute,
+  webhooksRoute,
   channelWizardRoute,
   channelRoute,
   teamRoute,

@@ -38,26 +38,51 @@ interface Expectation {
   quickReplies: boolean;
   /** Batas kirim & rem darurat (`sending.limits.manage`). */
   sendingLimits: boolean;
+  /** API key (`api_keys.manage`) dan Webhook (`integrations.manage`): Owner & Admin. */
+  integrations: boolean;
 }
 
 /** Matriks izin halaman Pengaturan organisasi (team.invite/manage, settings.email.manage, audit.view). */
 const MATRIX: Record<'owner' | ExtraRole, Expectation> = {
-  owner: { team: true, email: true, audit: true, quickReplies: true, sendingLimits: true },
-  admin: { team: true, email: true, audit: true, quickReplies: true, sendingLimits: true },
+  owner: {
+    team: true,
+    email: true,
+    audit: true,
+    quickReplies: true,
+    sendingLimits: true,
+    integrations: true,
+  },
+  admin: {
+    team: true,
+    email: true,
+    audit: true,
+    quickReplies: true,
+    sendingLimits: true,
+    integrations: true,
+  },
   supervisor: {
     team: false,
     email: false,
     audit: false,
     quickReplies: true,
     sendingLimits: false,
+    integrations: false,
   },
-  cs: { team: false, email: false, audit: false, quickReplies: false, sendingLimits: false },
+  cs: {
+    team: false,
+    email: false,
+    audit: false,
+    quickReplies: false,
+    sendingLimits: false,
+    integrations: false,
+  },
   teknisi: {
     team: false,
     email: false,
     audit: false,
     quickReplies: false,
     sendingLimits: false,
+    integrations: false,
   },
 };
 
@@ -116,6 +141,8 @@ async function expectSettingsMenu(page: Page, expected: Expectation): Promise<vo
   await expect(menu(/^Audit log/)).toHaveCount(expected.audit ? 1 : 0);
   await expect(menu(/^Balasan cepat/)).toHaveCount(expected.quickReplies ? 1 : 0);
   await expect(menu(/^Batas kirim/)).toHaveCount(expected.sendingLimits ? 1 : 0);
+  await expect(menu(/^API key/)).toHaveCount(expected.integrations ? 1 : 0);
+  await expect(menu(/^Webhook/)).toHaveCount(expected.integrations ? 1 : 0);
   // Semua peran: Keamanan akun.
   await expect(menu(/^Keamanan akun/)).toHaveCount(1);
   await expectNoHorizontalScroll(page);
@@ -149,6 +176,10 @@ for (const role of ['admin', 'supervisor', 'cs', 'teknisi'] as const) {
       if (!expected.audit) await expectRedirectedToSettings(page, '/pengaturan/audit');
       if (!expected.sendingLimits) {
         await expectRedirectedToSettings(page, '/pengaturan/batas-kirim');
+      }
+      if (!expected.integrations) {
+        await expectRedirectedToSettings(page, '/pengaturan/api-key');
+        await expectRedirectedToSettings(page, '/pengaturan/webhook');
       }
       if (!expected.audit) {
         await expectRedirectedToSettings(page, `/pengaturan/audit?userId=${ownerId}`);

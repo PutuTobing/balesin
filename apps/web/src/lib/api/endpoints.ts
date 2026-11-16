@@ -79,6 +79,20 @@ import {
   verifySetupTokenResponseSchema,
   verifyTwoFactorResponseSchema,
   vapidPublicKeyResponseSchema,
+  apiKeyListResponseSchema,
+  apiKeyResponseSchema,
+  createApiKeyResponseSchema,
+  apiSettingsResponseSchema,
+  outgoingWebhookListResponseSchema,
+  outgoingWebhookResponseSchema,
+  outgoingWebhookSecretResponseSchema,
+  webhookDeliveryListResponseSchema,
+  webhookDeliveryResponseSchema,
+  privateNetworkResponseSchema,
+  type CreateApiKeyRequest,
+  type ApiSettings,
+  type CreateOutgoingWebhookRequest,
+  type UpdateOutgoingWebhookRequest,
   pushSubscriptionResponseSchema,
   pushSubscriptionDeletedResponseSchema,
   notificationPreferencesResponseSchema,
@@ -735,6 +749,90 @@ export function createEndpoints(client: ApiClient) {
           method: 'POST',
           body,
           schema: tagResponseSchema,
+        }),
+    },
+    /** API key API publik (`api_keys.manage`; docs/KONTRAK-API-PUBLIK.md). */
+    apiKeys: {
+      list: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.apiKeys.list, { schema: apiKeyListResponseSchema, signal }),
+      /** Wajib konfirmasi identitas. Jawaban memuat `secret` — tampil SEKALI, jangan disimpan. */
+      create: (body: CreateApiKeyRequest) =>
+        client.request(API_ROUTES.apiKeys.list, {
+          method: 'POST',
+          body,
+          schema: createApiKeyResponseSchema,
+        }),
+      revoke: (apiKeyId: string) =>
+        client.request(apiPath(API_ROUTES.apiKeys.revoke, { apiKeyId }), {
+          method: 'POST',
+          schema: apiKeyResponseSchema,
+        }),
+      settings: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.apiKeys.settings, { schema: apiSettingsResponseSchema, signal }),
+      updateSettings: (body: ApiSettings) =>
+        client.request(API_ROUTES.apiKeys.settings, {
+          method: 'PUT',
+          body,
+          schema: apiSettingsResponseSchema,
+        }),
+    },
+    /** Webhook keluar (`integrations.manage`; docs/KONTRAK-WEBHOOK-KELUAR.md). */
+    webhooks: {
+      list: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.outgoingWebhooks.list, {
+          schema: outgoingWebhookListResponseSchema,
+          signal,
+        }),
+      create: (body: CreateOutgoingWebhookRequest) =>
+        client.request(API_ROUTES.outgoingWebhooks.list, {
+          method: 'POST',
+          body,
+          schema: outgoingWebhookSecretResponseSchema,
+        }),
+      update: (webhookId: string, body: UpdateOutgoingWebhookRequest) =>
+        client.request(apiPath(API_ROUTES.outgoingWebhooks.webhook, { webhookId }), {
+          method: 'PATCH',
+          body,
+          schema: outgoingWebhookResponseSchema,
+        }),
+      remove: (webhookId: string) =>
+        client.request(apiPath(API_ROUTES.outgoingWebhooks.webhook, { webhookId }), {
+          method: 'DELETE',
+          schema: z.object({ deleted: z.literal(true) }),
+        }),
+      rotateSecret: (webhookId: string, confirmation: IdentityConfirmation) =>
+        client.request(apiPath(API_ROUTES.outgoingWebhooks.rotateSecret, { webhookId }), {
+          method: 'POST',
+          body: { confirmation },
+          schema: outgoingWebhookSecretResponseSchema,
+        }),
+      test: (webhookId: string) =>
+        client.request(apiPath(API_ROUTES.outgoingWebhooks.test, { webhookId }), {
+          method: 'POST',
+          schema: webhookDeliveryResponseSchema,
+        }),
+      deliveries: (webhookId: string, cursor: string | null, signal?: AbortSignal) =>
+        client.request(
+          `${apiPath(API_ROUTES.outgoingWebhooks.deliveries, { webhookId })}?limit=20${
+            cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''
+          }`,
+          { schema: webhookDeliveryListResponseSchema, signal },
+        ),
+      redeliver: (webhookId: string, deliveryId: string) =>
+        client.request(apiPath(API_ROUTES.outgoingWebhooks.redeliver, { webhookId, deliveryId }), {
+          method: 'POST',
+          schema: webhookDeliveryResponseSchema,
+        }),
+      privateNetwork: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.outgoingWebhooks.privateNetwork, {
+          schema: privateNetworkResponseSchema,
+          signal,
+        }),
+      updatePrivateNetwork: (cidrs: string[], confirmation: IdentityConfirmation) =>
+        client.request(API_ROUTES.outgoingWebhooks.privateNetwork, {
+          method: 'PUT',
+          body: { cidrs, confirmation },
+          schema: privateNetworkResponseSchema,
         }),
     },
     /** Notifikasi Web Push (docs/KONTRAK-API-NOTIFIKASI.md). */

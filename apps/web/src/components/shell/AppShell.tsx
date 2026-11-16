@@ -5,6 +5,7 @@ import { useBrand } from '../../brand/brand';
 import { t } from '../../i18n/id';
 import { cx } from '../../lib/cx';
 import { media, useMediaQuery } from '../../lib/media';
+import { useVisualViewportFit } from '../../lib/use-visual-viewport';
 import { useSession } from '../../features/auth/session';
 import { SecurityBanner } from '../../features/security-banner/SecurityBanner';
 import { UpdateBanner } from '../../pwa/UpdateBanner';
@@ -26,7 +27,10 @@ const MAIN_ID = 'konten';
 export function AppShell() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const mainRef = useRef<HTMLElement>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
   const previousPathname = useRef(pathname);
+  // Keyboard layar iOS: kerangka mengikuti area terlihat supaya composer tidak tertutup (CS3).
+  useVisualViewportFit(shellRef);
 
   // Pindah halaman → fokus ke konten, supaya pembaca layar dan keyboard mulai dari isi baru.
   useEffect(() => {
@@ -41,7 +45,7 @@ export function AppShell() {
   };
 
   return (
-    <div className={styles.shell}>
+    <div ref={shellRef} className={styles.shell}>
       <a href={`#${MAIN_ID}`} className={styles.skip} onClick={skipToContent}>
         {t.common.skipToContent}
       </a>

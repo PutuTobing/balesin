@@ -25,6 +25,7 @@ import { accountScreens } from './screens-akun';
 import { channelScreens } from './screens-channel';
 import { inboxScreens } from './screens-inbox';
 import { notificationScreens } from './screens-notifikasi';
+import { integrationScreens } from './screens-integrasi';
 import { teamScreens } from './screens-tim';
 
 export interface Screen {
@@ -989,4 +990,5 @@ export const screens: Screen[] = [
   ...channelScreens,
   ...inboxScreens,
   ...notificationScreens,
+  ...integrationScreens,
 ];

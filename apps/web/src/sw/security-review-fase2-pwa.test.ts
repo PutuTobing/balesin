@@ -93,17 +93,18 @@ describe('review keamanan — URL klik notifikasi', () => {
     }
   });
 
-  it.fails(
-    'R1: segmen titik ter-encode tidak boleh menghasilkan path "//host" setelah normalisasi URL',
-    () => {
-      for (const path of ['/.%2e//evil.example', '/x/%2e%2e//evil.example', '/./%2e%2e//evil.example']) {
-        expect(isAppPath(path), path).toBe(true);
-        const resolved = resolveAppUrl(path, ORIGIN);
-        if (resolved === null) continue;
-        expect(new URL(resolved).pathname.startsWith('//'), path).toBe(false);
-      }
-    },
-  );
+  it('R1: segmen titik ter-encode tidak boleh menghasilkan path "//host" setelah normalisasi URL', () => {
+    for (const path of [
+      '/.%2e//evil.example',
+      '/x/%2e%2e//evil.example',
+      '/./%2e%2e//evil.example',
+    ]) {
+      expect(isAppPath(path), path).toBe(true);
+      const resolved = resolveAppUrl(path, ORIGIN);
+      if (resolved === null) continue;
+      expect(new URL(resolved).pathname.startsWith('//'), path).toBe(false);
+    }
+  });
 
   it('klik: tanpa tab → jendela baru selalu di origin aplikasi', async () => {
     for (const path of [...EVIL_PATHS, ...TRICKY_SAME_ORIGIN]) {

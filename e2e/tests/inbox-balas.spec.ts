@@ -186,3 +186,86 @@ test('di luar jendela 24 jam: composer diganti penjelasan (tanpa tombol nonaktif
   await expect(chat.getByRole('textbox', { name: 'Tulis balasan' })).toHaveCount(0);
   await expect(chat.getByRole('button', { name: /template/i })).toHaveCount(0);
 });
+
+/**
+ * Ujung ke ujung di HP 390 px (butir 11/12): pesan masuk lewat webhook bertanda tangan → muncul di
+ * daftar → buka (layar bertumpuk) → balas → centang maju lewat status webhook → tandai selesai dari
+ * menu tindakan → kembali ke daftar. Di spec ini (bukan proyek hp-390) karena pengiriman harus
+ * berurutan dengan uji rem darurat di atas.
+ */
+test('HP 390: masuk → tampil → buka → balas → dibaca → tandai selesai', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const hpCustomer = randomCustomer('Sari Ponsel');
+  const inbound = 'Kak, wifi di rumah putus-putus sejak semalam.';
+  const reply = 'Baik kak Sari, kami cek dari sini ya.';
+  await deliver(
+    setup,
+    textMessageNotification({
+      phoneNumberId: setup.phoneNumberId,
+      wabaId: FAKE_META.wabaId,
+      customer: hpCustomer,
+      body: inbound,
+    }),
+  );
+  await expect.poll(() => conversationIdOf(hpCustomer.waId).catch(() => '')).not.toBe('');
+  const hpConversation = await conversationIdOf(hpCustomer.waId);
+
+  await openApp(page, '/inbox');
+  // HP: navigasi bawah tampil di daftar.
+  await expect(page.getByRole('navigation', { name: 'Navigasi utama' })).toBeVisible();
+  await conversationRow(page, hpCustomer.name).click();
+  await expect(page).toHaveURL(new RegExp(`chat=${hpConversation}`));
+  const chat = page.getByRole('region', { name: 'Ruang chat' });
+  await expect(chat.getByText(inbound)).toBeVisible();
+  // Layar chat HP imersif: navigasi bawah disembunyikan, composer di dasar layar.
+  await expect(page.getByRole('navigation', { name: 'Navigasi utama' })).toBeHidden();
+
+  // Belum ditangani: ambil chat dulu, lalu balas.
+  const claim = chat.getByRole('button', { name: 'Ambil chat' });
+  if (await claim.isVisible()) await claim.click();
+  const box = chat.getByRole('textbox', { name: 'Tulis balasan' });
+  await box.fill(reply);
+  // HP: Enter = baris baru (keyboard ponsel); kirim lewat tombol.
+  await chat.getByRole('button', { name: 'Kirim', exact: true }).click();
+  await expect(box).toHaveValue('');
+  await expect(chat.getByText(reply)).toBeVisible();
+  const composerBox = await box.boundingBox();
+  expect((composerBox?.y ?? 0) + (composerBox?.height ?? 0)).toBeLessThanOrEqual(844);
+
+  const wamid = async () => {
+    const rows = await e2eSql<{ wamid: string | null }>(
+      `select wamid from messages where conversation_id = $1 and direction = 'outbound' and text = $2`,
+      [hpConversation, reply],
+    );
+    return rows[0]?.wamid ?? null;
+  };
+  await expect.poll(wamid, { timeout: 30_000 }).not.toBeNull();
+  const id = (await wamid()) ?? '';
+  for (const status of ['sent', 'delivered', 'read'] as const) {
+    await deliver(
+      setup,
+      statusNotification({
+        phoneNumberId: setup.phoneNumberId,
+        wabaId: FAKE_META.wabaId,
+        wamid: id,
+        status,
+        recipientWaId: hpCustomer.waId,
+      }),
+    );
+  }
+  const bubble = chat.getByRole('listitem').filter({ hasText: reply });
+  await expect(bubble.getByText('Dibaca')).toBeAttached({ timeout: 20_000 });
+
+  // HP: "Tandai selesai" ada di menu tindakan kepala chat.
+  await chat.getByRole('button', { name: 'Tindakan chat' }).click();
+  await page.getByRole('menuitem', { name: 'Tandai selesai' }).click();
+  await expect(chat.getByText(/Chat ini sudah selesai/)).toBeVisible();
+  // Dibuka lagi supaya tab "Selesai" tetap kosong untuk inbox.spec (tidak ada chat selesai).
+  await chat.getByRole('button', { name: 'Buka lagi' }).click();
+  await expect(chat.getByRole('textbox', { name: 'Tulis balasan' })).toBeVisible();
+
+  // Kembali (tombol kembali browser) → daftar, navigasi bawah tampil lagi.
+  await page.goBack();
+  await expect(page).not.toHaveURL(/chat=/);
+  await expect(page.getByRole('navigation', { name: 'Navigasi utama' })).toBeVisible();
+});

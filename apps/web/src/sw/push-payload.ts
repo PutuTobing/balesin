@@ -67,5 +67,9 @@ export function resolveAppUrl(path: unknown, origin: string): string | null {
   } catch {
     return null;
   }
-  return url.origin === origin ? url.href : null;
+  if (url.origin !== origin) return null;
+  // Normalisasi URL bisa mengubah `/.%2e//host` menjadi `//host` (review PWA R1): path seperti itu
+  // ditafsirkan sebagai host lain begitu dipakai ulang sebagai path relatif.
+  if (url.pathname.startsWith('//') || url.pathname.includes('\\')) return null;
+  return `${origin}${url.pathname}${url.search}`;
 }

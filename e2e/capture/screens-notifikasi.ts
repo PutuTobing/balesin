@@ -157,6 +157,17 @@ export const notificationScreens: Screen[] = [
     { quiet: true },
   ),
   screen(
+    'notifikasi-jam-tenang',
+    { permission: 'granted', subscribed: true },
+    'text=Kirim notifikasi tes',
+    {
+      quiet: true,
+      prepare: async (page) => {
+        await page.getByLabel('Selesai').scrollIntoViewIfNeeded();
+      },
+    },
+  ),
+  screen(
     'notifikasi-tes-terkirim',
     { permission: 'granted', subscribed: true },
     'text=Kirim notifikasi tes',

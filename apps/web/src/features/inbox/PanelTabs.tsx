@@ -314,15 +314,18 @@ function FileRow({ message, starred }: { message: Message; starred: boolean }) {
           </p>
         </>
       ) : message.type === 'audio' ? (
-        // Audio sebagai kartu (sejajar dengan kartu dokumen): jenis + pengirim, lalu tombol putar.
-        <div className={styles.audioCard}>
-          <p className={styles.audioLabel}>
-            {body.icon ? <Icon icon={body.icon} size={16} /> : null}
-            {p.audioFrom(body.label ?? '', t.inbox.chat.senders[message.senderKind])}
-          </p>
-          <MessageMedia message={message} />
+        // Audio sebagai kartu (sejajar dengan kartu dokumen): jenis + pengirim, lalu tombol putar;
+        // waktu di bawah kartu, sama dengan dokumen.
+        <>
+          <div className={styles.audioCard}>
+            <p className={styles.audioLabel}>
+              {body.icon ? <Icon icon={body.icon} size={16} /> : null}
+              {p.audioFrom(body.label ?? '', t.inbox.chat.senders[message.senderKind])}
+            </p>
+            <MessageMedia message={message} />
+          </div>
           <p className={styles.fileMeta}>{formatDateTime(message.createdAt)}</p>
-        </div>
+        </>
       ) : (
         <>
           <MessageMedia message={message} />

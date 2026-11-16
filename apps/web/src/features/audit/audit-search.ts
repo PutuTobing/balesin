@@ -131,4 +131,7 @@ export const SECURITY_EVENT_FILTERS: Readonly<
   sending_limits_changed: { action: 'settings.sending_limits.updated' },
   inbox_bulk_action: { action: 'inbox.bulk_action' },
   quick_reply_risky: { targetType: 'quick_reply' },
+  api_key_changed: { targetType: 'api_key' },
+  webhook_changed: { targetType: 'webhook' },
+  webhook_disabled: { action: 'webhook.auto_disabled' },
 };
