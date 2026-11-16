@@ -8,8 +8,12 @@ import {
   type InvitationEmailPayload,
   type SecurityNoticeAdminEmailPayload,
   type SecurityNoticeEmailPayload,
+  type SendMessageJobPayload,
   type WebhookEventJobPayload,
 } from '@balesin/core';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { createLogCapture, type LogCapture } from '@balesin/core/testing';
 import { createDb, type Database } from '@balesin/db';
 import { SMTP_ALLOWED_PORTS } from '@balesin/shared';
@@ -18,6 +22,7 @@ import { Redis } from 'ioredis';
 import { buildApp, type App, type AppConfig, type AppDeps } from '../app';
 import type { ReadinessProbes } from '../modules/health/health.service';
 import type { EmailNotifier } from '../queues/email-queue';
+import type { OutboundMessageEnqueuer } from '../queues/message-queue';
 import type { WebhookEventEnqueuer } from '../queues/webhook-queue';
 
 export const TEST_APP_ORIGIN = 'http://localhost:5173';
@@ -34,6 +39,8 @@ export interface TestAppOptions {
   notifier?: EmailNotifier;
   /** Pengganti pengantre kejadian webhook (bawaan: mencatat ke `webhookJobs`). */
   webhookQueue?: WebhookEventEnqueuer;
+  /** Pengganti pengantre pesan keluar (bawaan: mencatat ke `messageJobs`). */
+  messageQueue?: OutboundMessageEnqueuer;
   overrides?: AppDeps['overrides'];
 }
 
@@ -57,6 +64,8 @@ export interface TestApp {
   channelChangeNotices: ChannelChangedEmailPayload[];
   /** Job kejadian webhook masuk yang diantrekan (bila `webhookQueue` tidak diganti). */
   webhookJobs: WebhookEventJobPayload[];
+  /** Job pesan keluar yang diantrekan (bila `messageQueue` tidak diganti). */
+  messageJobs: Array<SendMessageJobPayload & { attempt: number }>;
 }
 
 const healthy = () => Promise.resolve();
@@ -90,6 +99,8 @@ export function defaultTestConfig(): AppConfig {
     // Tes memakai server Meta tiruan (`testing/fake-meta.ts`) bila perlu; panggilan lain diblokir
     // `offlineMetaFetch` di bawah.
     metaGraphBaseUrl: null,
+    // Folder media per proses tes (dibuat saat dipakai; tidak pernah folder proyek).
+    mediaDir: join(tmpdir(), `balesin-tes-media-${String(process.pid)}`),
   };
 }
 
@@ -128,6 +139,7 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<TestAp
   const emailSettingsNotices: EmailSettingsChangedEmailPayload[] = [];
   const channelChangeNotices: ChannelChangedEmailPayload[] = [];
   const webhookJobs: WebhookEventJobPayload[] = [];
+  const messageJobs: Array<SendMessageJobPayload & { attempt: number }> = [];
   const record =
     <T>(list: T[]) =>
     (payload: T) => {
@@ -160,6 +172,12 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<TestAp
         return Promise.resolve();
       },
     },
+    messageQueue: options.messageQueue ?? {
+      enqueue: (job, attempt) => {
+        messageJobs.push({ ...job, attempt });
+        return Promise.resolve();
+      },
+    },
     overrides: {
       ...options.overrides,
       meta: { fetch: offlineMetaFetch, ...options.overrides?.meta },
@@ -176,6 +194,7 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<TestAp
     emailSettingsNotices,
     channelChangeNotices,
     webhookJobs,
+    messageJobs,
   };
 }
 

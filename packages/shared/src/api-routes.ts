@@ -168,8 +168,14 @@ export const API_ROUTES = {
     stream: `${API_PREFIX}/inbox/stream`,
     /** GET — satu percakapan. */
     conversation: `${API_PREFIX}/conversations/:conversationId`,
-    /** GET — pesan percakapan, terbaru dulu (kursor = lebih lama). */
+    /** GET — pesan percakapan, terbaru dulu (kursor = lebih lama); POST — kirim pesan (CSRF). */
     messages: `${API_PREFIX}/conversations/:conversationId/messages`,
+    /** POST — unggah media untuk dikirim di percakapan ini (multipart, CSRF). */
+    upload: `${API_PREFIX}/conversations/:conversationId/media`,
+    /** POST — kirim ulang pesan keluar yang gagal (CSRF). */
+    retry: `${API_PREFIX}/messages/:messageId/retry`,
+    /** GET — unduh media pesan (CSRF: memakai jatah + menulis cache). */
+    media: `${API_PREFIX}/messages/:messageId/media`,
     /** GET — satu kontak. */
     contact: `${API_PREFIX}/contacts/:contactId`,
   },

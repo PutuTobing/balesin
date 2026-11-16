@@ -69,6 +69,8 @@ export interface MetaRequest<T> {
   query?: Readonly<Record<string, MetaQueryValue>>;
   /** Dikirim sebagai JSON (karakter non-ASCII di-escape `\uXXXX`). */
   body?: Readonly<Record<string, unknown>>;
+  /** Dikirim sebagai `multipart/form-data` (unggah media). Tidak boleh bersama `body`. */
+  form?: FormData;
   /** Skema jawaban sukses. Jawaban yang tidak cocok → `unexpected_response`. */
   schema: z.ZodType<T>;
   /** `true` = aman diulang otomatis walau bukan GET (hasilnya sama bila terkirim dua kali). */
@@ -118,9 +120,34 @@ export interface MetaGraphClientOptions {
   now?: () => number;
 }
 
+/**
+ * Host unduhan media Meta yang dipercaya (URL dari `GET /{media-id}`). Selain ini — termasuk
+ * redirect ke host lain — ditolak supaya token tidak pernah terkirim ke server pihak ketiga (SSRF).
+ */
+export const META_MEDIA_HOSTS: ReadonlySet<string> = new Set(['lookaside.fbsbx.com']);
+
+export interface MetaDownloadRequest {
+  operation: string;
+  /** URL dari jawaban `GET /{media-id}` — BUKAN dari klien. */
+  url: string;
+  maxBytes: number;
+  signal?: AbortSignal;
+}
+
+export interface MetaDownload {
+  bytes: Buffer;
+  /** `Content-Type` dari Meta (TIDAK tepercaya; pemanggil wajib mendeteksi sendiri). */
+  contentType: string | null;
+}
+
 export interface MetaGraphClient {
   readonly version: string;
   request<T>(credentials: MetaCredentials, request: MetaRequest<T>): Promise<T>;
+  /**
+   * Unduh berkas media Meta dengan token di header. Hanya `https://lookaside.fbsbx.com` (atau host
+   * server Meta tiruan di development/test), tanpa mengikuti redirect, ukuran dibatasi `maxBytes`.
+   */
+  download(credentials: MetaCredentials, request: MetaDownloadRequest): Promise<MetaDownload>;
 }
 
 /** HMAC-SHA256 token akses dengan App Secret sebagai kunci, heks huruf kecil (dokumentasi Meta). */
@@ -322,8 +349,11 @@ export function createMetaGraphClient(options: MetaGraphClientOptions): MetaGrap
       authorization: `Bearer ${credentials.accessToken.reveal()}`,
       accept: 'application/json',
     };
-    let body: string | undefined;
-    if (request.body !== undefined) {
+    let body: string | FormData | undefined;
+    if (request.form !== undefined) {
+      // `fetch` mengisi `content-type` + boundary sendiri.
+      body = request.form;
+    } else if (request.body !== undefined) {
       headers['content-type'] = 'application/json';
       body = asciiJson(request.body);
     }
@@ -497,6 +527,81 @@ export function createMetaGraphClient(options: MetaGraphClientOptions): MetaGrap
         if (!canRetry || request.signal?.aborted) throw error;
         await sleep(backoffDelayMs(attempt, { baseDelayMs, maxDelayMs, random }));
       }
+    },
+
+    async download(credentials, request) {
+      const fail = (kind: MetaApiError['kind'], extra: { httpStatus?: number } = {}) =>
+        new MetaApiError({
+          kind,
+          retryable: kind === 'temporarily_unavailable' || kind === 'network_error',
+          operation: request.operation,
+          ...extra,
+        });
+      let url: URL;
+      try {
+        url = new URL(request.url);
+      } catch {
+        throw fail('unexpected_response');
+      }
+      const official = url.protocol === 'https:' && META_MEDIA_HOSTS.has(url.hostname);
+      // Server Meta tiruan (dev/test, loopback — sudah dijaga `normalizeBaseUrl`).
+      const fake = !base.startsWith(META_GRAPH_HOST) && url.origin === new URL(base).origin;
+      if ((!official && !fake) || url.username || url.password) {
+        logger?.warn(
+          { operation: request.operation, reason: 'untrusted_media_host' },
+          'URL media Meta bukan host Meta resmi — tidak diunduh',
+        );
+        throw fail('unexpected_response');
+      }
+      const startedAt = now();
+      let response: Response;
+      try {
+        const signal = AbortSignal.timeout(timeoutMs * 6);
+        response = await doFetch(url, {
+          method: 'GET',
+          headers: { authorization: `Bearer ${credentials.accessToken.reveal()}` },
+          redirect: 'manual',
+          signal: request.signal ? AbortSignal.any([signal, request.signal]) : signal,
+        });
+      } catch {
+        throw fail('network_error');
+      }
+      const logBase = { operation: request.operation, status: response.status };
+      if (response.status < 200 || response.status >= 300) {
+        await response.body?.cancel().catch(() => undefined);
+        logger?.warn(logBase, 'Unduhan media Meta gagal');
+        const kind =
+          response.status === 404 || response.status === 410
+            ? 'not_found'
+            : response.status === 401
+              ? 'token_invalid'
+              : response.status >= 500
+                ? 'temporarily_unavailable'
+                : 'unexpected_response';
+        throw fail(kind, { httpStatus: response.status });
+      }
+      const declared = Number(response.headers.get('content-length'));
+      if (Number.isFinite(declared) && declared > request.maxBytes) {
+        await response.body?.cancel().catch(() => undefined);
+        throw fail('invalid_parameter');
+      }
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      if (response.body) {
+        for await (const chunk of response.body as AsyncIterable<Uint8Array>) {
+          total += chunk.byteLength;
+          if (total > request.maxBytes) {
+            await response.body.cancel().catch(() => undefined);
+            throw fail('invalid_parameter');
+          }
+          chunks.push(chunk);
+        }
+      }
+      logger?.info(
+        { ...logBase, bytes: total, durationMs: now() - startedAt },
+        'Media Meta diunduh',
+      );
+      return { bytes: Buffer.concat(chunks), contentType: response.headers.get('content-type') };
     },
   };
 }

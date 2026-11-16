@@ -370,7 +370,9 @@ export function createInboundHandlers(options: InboundHandlerOptions = {}): Inbo
         .set({
           status: update.status,
           statusUpdatedAt: receivedAt,
-          ...(update.status === 'failed' ? { errorCode: update.errors[0]?.code ?? null } : {}),
+          ...(update.status === 'failed'
+            ? { errorCode: update.errors[0]?.code ?? null, failureReason: 'delivery_failed' }
+            : {}),
         })
         .where(and(eq(messages.organizationId, organizationId), eq(messages.id, message.id)));
       context.emit({

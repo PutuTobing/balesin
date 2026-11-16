@@ -231,6 +231,6 @@ describe('R1 — navigasi biasa ke alamat stream dicatat sebagai "CSRF ditolak" 
       headers: { 'sec-fetch-site': 'cross-site', 'sec-fetch-mode': 'navigate' },
     });
     expect([403, 404]).toContain(response.statusCode);
-    expect(await csrfAudits()).toEqual([]); // saat ini 1 entri atas nama Owner
+    expect(await csrfAudits()).toEqual([]);
   });
 });

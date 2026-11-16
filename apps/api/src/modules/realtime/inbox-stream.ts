@@ -195,6 +195,30 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
   const pendingTimers = new Set<ReturnType<typeof setTimeout>>();
   const sessionRecheckDelays = options.sessionRecheckDelaysMs ?? [250, 2_000];
 
+  /**
+   * Pemeriksaan karena sinyal, per kunci (organisasi|pengguna), TIDAK tumpang tindih (review
+   * real-time putaran 2 Info 2): sinyal yang datang saat pemeriksaan kunci yang sama berjalan cukup
+   * menandai "ulangi sekali lagi" — banjir sinyal tidak menjadi banjir query.
+   */
+  const signalChecks = new Map<string, { again: boolean }>();
+  async function checkOnce(key: string, match: (client: StreamClient) => boolean): Promise<void> {
+    const running = signalChecks.get(key);
+    if (running) {
+      running.again = true;
+      return;
+    }
+    const state = { again: false };
+    signalChecks.set(key, state);
+    try {
+      do {
+        state.again = false;
+        await checkClients(match);
+      } while (state.again);
+    } finally {
+      signalChecks.delete(key);
+    }
+  }
+
   /** Validasi ulang socket yang cocok (sesi, 2FA, peran) — dipakai berkala dan saat sinyal. */
   async function checkClients(match: (client: StreamClient) => boolean): Promise<void> {
     for (const client of [...clients]) {
@@ -275,10 +299,11 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
       if (![...clients].some(matches)) return;
       // Sinyal diterbitkan dari dalam transaksi pencabutan (belum tentu sudah commit): periksa lagi
       // beberapa saat kemudian. Sinyal palsu hanya memicu pemeriksaan, tidak pernah menutup sesi sah.
+      const key = `${event.organizationId}|${event.userId ?? '*'}`;
       for (const delay of sessionRecheckDelays) {
         const timer = setTimeout(() => {
           pendingTimers.delete(timer);
-          void checkClients(matches);
+          void checkOnce(key, matches);
         }, delay);
         timer.unref();
         pendingTimers.add(timer);

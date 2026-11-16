@@ -136,6 +136,11 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'GET /api/v1/inbox/stream': 'inbox.view',
   'GET /api/v1/conversations/:conversationId': 'inbox.view',
   'GET /api/v1/conversations/:conversationId/messages': 'inbox.view',
+  // ruang chat: balas = inbox.reply (Teknisi: yang di-assign); unduh media = inbox.view
+  'POST /api/v1/conversations/:conversationId/messages': 'inbox.reply',
+  'POST /api/v1/conversations/:conversationId/media': 'inbox.reply',
+  'POST /api/v1/messages/:messageId/retry': 'inbox.reply',
+  'GET /api/v1/messages/:messageId/media': 'inbox.view',
   'GET /api/v1/contacts/:contactId': 'contacts.view',
   // penerima webhook Meta: publik — keaslian dari verify token (GET) / tanda tangan App Secret (POST)
   'GET /webhooks/whatsapp/:channelId': 'public',
@@ -220,6 +225,7 @@ const SAMPLE_PARAMS: Readonly<Record<string, string>> = {
   channelId: '00000000-0000-4000-8000-0000000000dd',
   conversationId: '00000000-0000-4000-8000-0000000000ee',
   contactId: '00000000-0000-4000-8000-0000000000ff',
+  messageId: '00000000-0000-4000-8000-0000000000a1',
 };
 
 function concreteUrl(pattern: string): string {

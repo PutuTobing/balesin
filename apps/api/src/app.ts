@@ -16,7 +16,8 @@ import {
   type Redis,
   type SmtpTimeouts,
 } from '@balesin/core';
-import type { Database } from '@balesin/db';
+import { userSessions, type Database } from '@balesin/db';
+import { and, eq } from 'drizzle-orm';
 import { configureZodLocale } from '@balesin/shared';
 import Fastify, { LogController, type FastifyBaseLogger } from 'fastify';
 import {
@@ -64,6 +65,9 @@ import { channelsRoutes } from './modules/channels/channels.routes';
 import { createChannelsService } from './modules/channels/channels.service';
 import { createAuditService } from './modules/audit/audit.service';
 import { inboxRoutes } from './modules/inbox/inbox.routes';
+import { createMediaStore } from './modules/messages/media-store';
+import { outboundRoutes } from './modules/messages/outbound.routes';
+import { createOutboundService, type OutboundService } from './modules/messages/outbound.service';
 import { createInboxStreamHub, type InboxStreamHub } from './modules/realtime/inbox-stream';
 import { inboxStreamRoutes } from './modules/realtime/inbox-stream.routes';
 import { sessionsRoutes } from './modules/sessions/sessions.routes';
@@ -77,6 +81,7 @@ import { createWebhookGuard } from './modules/webhooks/webhook-guard';
 import { whatsAppWebhookRoutes } from './modules/webhooks/whatsapp-webhook.routes';
 import { createWhatsAppWebhookService } from './modules/webhooks/whatsapp-webhook.service';
 import type { EmailNotifier } from './queues/email-queue';
+import type { OutboundMessageEnqueuer } from './queues/message-queue';
 import type { WebhookEventEnqueuer } from './queues/webhook-queue';
 
 export type AppConfig = Pick<
@@ -94,6 +99,7 @@ export type AppConfig = Pick<
   | 'apiUrl'
   | 'metaGraphVersion'
   | 'metaGraphBaseUrl'
+  | 'mediaDir'
 >;
 
 export interface AppDeps {
@@ -110,6 +116,8 @@ export interface AppDeps {
   notifier: EmailNotifier;
   /** Pengantre kejadian webhook masuk (diproses worker). */
   webhookQueue: WebhookEventEnqueuer;
+  /** Pengantre pesan keluar (dikirim worker ke Meta). */
+  messageQueue: OutboundMessageEnqueuer;
   /** Titik ganti untuk tes. Tidak diisi di `index.ts`. */
   overrides?: {
     /** Awalan kunci Redis batas laju, supaya tes tidak saling mengganggu. */
@@ -223,8 +231,17 @@ export async function buildApp(deps: AppDeps) {
   const sessions: SessionService = {
     ...baseSessions,
     async revoke(executor, organizationId, sessionRef) {
+      // Pemilik sesi disertakan supaya hub hanya memeriksa socket pengguna itu (review real-time
+      // putaran 2 Info 1), bukan seluruh organisasi.
+      const [owner] = await executor
+        .select({ userId: userSessions.userId })
+        .from(userSessions)
+        .where(
+          and(eq(userSessions.organizationId, organizationId), eq(userSessions.id, sessionRef)),
+        )
+        .limit(1);
       const revoked = await baseSessions.revoke(executor, organizationId, sessionRef);
-      if (revoked) void sessionRevocations.publish({ organizationId });
+      if (revoked) void sessionRevocations.publish({ organizationId, userId: owner?.userId });
       return revoked;
     },
     async revokeAllForUser(executor, organizationId, userId, exceptSessionRef) {
@@ -362,6 +379,33 @@ export async function buildApp(deps: AppDeps) {
   app.decorate('inboxStream', inboxStream);
   app.addHook('onClose', () => inboxStream.close());
 
+  // Ruang chat: kirim pesan (antrean worker), unggah/unduh media (disk `MEDIA_DIR`).
+  const outbound = createOutboundService({
+    db,
+    store: createMediaStore(config.mediaDir),
+    meta,
+    secretBox,
+    queue: deps.messageQueue,
+    publisher: inboxEvents,
+    logger: deps.logger,
+  });
+  // Pembersih salinan media kedaluwarsa (retensi organisasi), tiap jam. Idempoten bila api
+  // berjalan lebih dari satu proses.
+  const mediaJanitor = setInterval(
+    () => {
+      outbound.purgeExpiredMedia().catch((err: unknown) => {
+        deps.logger.warn({ err }, 'Pembersih media gagal');
+      });
+    },
+    60 * 60 * 1000,
+  );
+  mediaJanitor.unref();
+  app.addHook('onClose', (_instance, done) => {
+    clearInterval(mediaJanitor);
+    done();
+  });
+  app.decorate('outbound', outbound);
+
   const webhookGuard = createWebhookGuard({ db, limiter });
   const whatsAppWebhooks = createWhatsAppWebhookService({
     db,
@@ -426,6 +470,7 @@ export async function buildApp(deps: AppDeps) {
   await app.register(channelsRoutes, { channels, limiter, cookieSecure: config.cookieSecure });
   await app.register(inboxRoutes, { db, limiter, publisher: inboxEvents });
   await app.register(inboxStreamRoutes, { hub: inboxStream, appOrigin: config.appOrigin });
+  await app.register(outboundRoutes, { outbound, limiter });
   // Publik: penerima webhook Meta (keaslian dari tanda tangan App Secret, bukan sesi).
   await app.register(whatsAppWebhookRoutes, { guard: webhookGuard, webhooks: whatsAppWebhooks });
 
@@ -443,5 +488,7 @@ declare module 'fastify' {
     backgroundTasks: BackgroundTasks;
     /** Hub WebSocket inbox (lihat `modules/realtime/inbox-stream.ts`). */
     inboxStream: InboxStreamHub;
+    /** Layanan ruang chat (kirim, media) — untuk tes pembersih media. */
+    outbound: OutboundService;
   }
 }

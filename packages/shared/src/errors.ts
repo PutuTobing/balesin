@@ -33,6 +33,11 @@ export const ERROR_CODES = [
    */
   'META_REQUEST_FAILED',
   'SERVICE_UNAVAILABLE',
+  /**
+   * Pesan biasa ditolak karena jendela layanan 24 jam WhatsApp sudah lewat (hanya template yang
+   * boleh dikirim). Web menampilkan penjelasan + ajakan memakai template.
+   */
+  'WINDOW_CLOSED',
 ] as const;
 
 export const errorCodeSchema = z.enum(ERROR_CODES);
@@ -59,6 +64,7 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
   INTERNAL_ERROR: 500,
   META_REQUEST_FAILED: 502,
   SERVICE_UNAVAILABLE: 503,
+  WINDOW_CLOSED: 409,
 };
 
 /** Pesan bawaan (dipakai server bila tidak ada pesan khusus, dan web sebagai cadangan). */
@@ -92,6 +98,8 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   INTERNAL_ERROR: 'Terjadi kesalahan di server. Coba lagi beberapa saat lagi.',
   META_REQUEST_FAILED: 'Permintaan ke Meta gagal. Coba lagi beberapa saat lagi.',
   SERVICE_UNAVAILABLE: 'Layanan sedang tidak tersedia. Coba lagi beberapa saat lagi.',
+  WINDOW_CLOSED:
+    'Sudah lebih dari 24 jam sejak pesan terakhir pelanggan. Pesan biasa tidak bisa dikirim — tunggu pelanggan membalas, atau kirim template (segera hadir).',
 };
 
 export const errorDetailLocationSchema = z.enum(['body', 'query', 'params', 'headers']);

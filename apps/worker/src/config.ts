@@ -4,6 +4,7 @@ import {
   envParse,
   envRequired,
   isProductionLike,
+  metaGraphEnvShape,
   parseEnv,
   resolveSmtpFallback,
   smtpFallbackEnvShape,
@@ -33,6 +34,10 @@ export interface WorkerConfig {
   smtpFallback: SmtpFallbackConfig | null;
   /** Port SMTP yang boleh dituju saat mengirim email. */
   smtpAllowedPorts: number[];
+  /** Versi Graph API Meta yang dikunci (sama dengan api). */
+  metaGraphVersion: string;
+  /** HANYA development/test: server Meta tiruan di loopback. `null` = graph.facebook.com. */
+  metaGraphBaseUrl: string | null;
 }
 
 /**
@@ -51,6 +56,7 @@ export function loadConfig(source: EnvSource): WorkerConfig {
           : 'harus berupa URL http(s) tanpa query, contoh: https://balesin.perusahaan.co.id',
       ),
       ...smtpFallbackEnvShape(),
+      ...metaGraphEnvShape(production),
     }),
     source,
   );
@@ -65,5 +71,7 @@ export function loadConfig(source: EnvSource): WorkerConfig {
     masterKey: env.BALESIN_MASTER_KEY,
     smtpFallback: resolveSmtpFallback(env),
     smtpAllowedPorts: allowedSmtpPorts(isProduction),
+    metaGraphVersion: env.META_GRAPH_VERSION,
+    metaGraphBaseUrl: env.META_GRAPH_BASE_URL ?? null,
   };
 }

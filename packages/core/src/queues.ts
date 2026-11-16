@@ -23,6 +23,11 @@ export const QUEUE_NAMES = {
    * `webhook_events` (review webhook S4). Payload job kosong.
    */
   maintenance: 'maintenance',
+  /**
+   * Pesan keluar ke Meta (Fase 2 butir 6): satu job = satu baris `messages` berstatus `pending`.
+   * Payload hanya ID; isi pesan dibaca worker dari database.
+   */
+  messages: 'messages',
 } as const;
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
@@ -82,6 +87,35 @@ export const webhookEventJobResultSchema = z.object({
   reason: z.enum(['already_done', 'not_found', 'unhandled', 'channel_inactive']).optional(),
 });
 export type WebhookEventJobResult = z.infer<typeof webhookEventJobResultSchema>;
+
+// ── Antrian `messages` (pesan keluar) ───────────────────────────────────────
+
+export const MESSAGE_JOBS = {
+  /** Kirim satu pesan keluar ke Graph API. */
+  send: 'send',
+} as const;
+
+export const sendMessageJobPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  messageId: z.uuid(),
+});
+export type SendMessageJobPayload = z.infer<typeof sendMessageJobPayloadSchema>;
+
+/**
+ * 5 percobaan, jeda eksponensial mulai 10 detik — HANYA untuk penolakan yang jelas belum diproses
+ * Meta (batas laju, gangguan sementara). Penolakan lain / koneksi putus langsung `failed` (worker).
+ */
+export const MESSAGE_JOB_OPTIONS = {
+  attempts: 5,
+  backoff: { type: 'exponential', delay: 10_000 },
+  removeOnComplete: { age: 24 * 60 * 60, count: 10_000 },
+  removeOnFail: { age: 7 * 24 * 60 * 60, count: 10_000 },
+};
+
+/** ID job = pesan + percobaan ke-n (kirim ulang manual memakai nomor percobaan baru). */
+export function sendMessageJobId(messageId: string, attempt: number): string {
+  return `msg-${messageId}-${String(attempt)}`;
+}
 
 // ── Antrian `maintenance` ───────────────────────────────────────────────────
 

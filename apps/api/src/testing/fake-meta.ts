@@ -5,7 +5,10 @@
  *
  * Meniru perilaku yang dipakai Balesin: token Bearer, `appsecret_proof` (HMAC-SHA256 heks),
  * `GET /{phone-number-id}`, `GET /{waba-id}/phone_numbers`, `GET|POST
- * /{phone-number-id}/whatsapp_business_profile`, dengan amplop error Meta. Setiap permintaan
+ * /{phone-number-id}/whatsapp_business_profile`, `POST /{phone-number-id}/messages` (kirim pesan →
+ * wamid), `POST /{phone-number-id}/media` (unggah multipart → ID media), `GET /{media-id}` (URL
+ * unduhan) dan `GET /download/{media-id}` (berkas, butuh token Bearer — meniru lookaside), dengan
+ * amplop error Meta. Setiap permintaan
  * dicatat (`requests`) supaya tes bisa memeriksa header/query yang dikirim. Kesalahan bisa
  * disuntikkan per path lewat `failNext`.
  */
@@ -45,9 +48,26 @@ export interface FakeFailure {
   method?: string;
 }
 
+/** Berkas media di server tiruan (unggahan Balesin, atau media masuk yang disiapkan tes). */
+export interface FakeMedia {
+  bytes: Buffer;
+  mimeType: string;
+}
+
+/** Pesan yang dikirim Balesin lewat `POST /{phone-number-id}/messages`. */
+export interface FakeSentMessage {
+  phoneNumberId: string;
+  wamid: string;
+  body: Record<string, unknown>;
+}
+
 export interface FakeMeta {
   url: string;
   requests: FakeMetaRequest[];
+  /** Pesan yang diterima server tiruan (urut). */
+  sentMessages: FakeSentMessage[];
+  /** ID media → berkas. Tes boleh mengisi untuk mensimulasikan media masuk. */
+  media: Map<string, FakeMedia>;
   /** Token sah → App Secret aplikasinya. */
   tokens: Map<string, { appSecret: string; expired?: boolean; noPermission?: boolean }>;
   phoneNumbers: Map<string, FakePhoneNumber>;
@@ -71,16 +91,43 @@ function send(response: ServerResponse, status: number, body: unknown, headers =
   response.end(JSON.stringify(body));
 }
 
-async function readBody(request: IncomingMessage): Promise<unknown> {
+async function readRaw(request: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) chunks.push(chunk as Buffer);
-  const text = Buffer.concat(chunks).toString('utf8');
+  return Buffer.concat(chunks);
+}
+
+function parseBody(raw: Buffer, contentType: string | undefined): unknown {
+  if (contentType?.startsWith('multipart/form-data')) return { multipartBytes: raw.length };
+  const text = raw.toString('utf8');
   if (text === '') return undefined;
   try {
     return JSON.parse(text);
   } catch {
     return text;
   }
+}
+
+/** Isi berkas `file` dari multipart (cukup untuk tes; satu berkas, batas sederhana). */
+function multipartFile(raw: Buffer, contentType: string): FakeMedia | null {
+  const boundary = /boundary=([^;]+)/.exec(contentType)?.[1]?.replace(/^"|"$/g, '');
+  if (!boundary) return null;
+  const marker = Buffer.from(`--${boundary}`);
+  let start = raw.indexOf(marker);
+  while (start !== -1) {
+    const next = raw.indexOf(marker, start + marker.length);
+    if (next === -1) break;
+    const part = raw.subarray(start + marker.length, next);
+    const headerEnd = part.indexOf('\r\n\r\n');
+    const headers = part.subarray(0, headerEnd).toString('utf8');
+    if (/name="file"/.test(headers)) {
+      const type = /content-type:\s*([^\r\n]+)/i.exec(headers)?.[1] ?? 'application/octet-stream';
+      // Buang CRLF penutup sebelum batas berikutnya.
+      return { bytes: Buffer.from(part.subarray(headerEnd + 4, part.length - 2)), mimeType: type };
+    }
+    start = next;
+  }
+  return null;
 }
 
 export async function startFakeMeta(): Promise<FakeMeta> {
@@ -92,13 +139,17 @@ export async function startFakeMeta(): Promise<FakeMeta> {
   const phoneNumbers = new Map<string, FakePhoneNumber>();
   const wabas = new Set<string>();
   const failures = new Map<string, FakeFailure[]>();
+  const sentMessages: FakeSentMessage[] = [];
+  const media = new Map<string, FakeMedia>();
+  let sequence = 0;
 
   const server = createServer((request, response) => {
     void (async () => {
       const url = new URL(request.url ?? '/', 'http://127.0.0.1');
       const [, version = '', ...segments] = url.pathname.split('/');
       const path = `/${segments.join('/')}`;
-      const body = await readBody(request);
+      const raw = await readRaw(request);
+      const body = parseBody(raw, request.headers['content-type']);
       const authorization = request.headers.authorization ?? null;
       requests.push({
         method: request.method ?? 'GET',
@@ -117,6 +168,18 @@ export async function startFakeMeta(): Promise<FakeMeta> {
       if (failure) return send(response, failure.status, failure.body, failure.headers);
 
       const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : '';
+      // Unduhan berkas (meniru lookaside.fbsbx.com): tanpa versi, hanya token Bearer.
+      if (version === 'download') {
+        const file = media.get(segments[0] ?? '');
+        if (!tokens.has(token)) return send(response, 401, { error: 'unauthorized' });
+        if (!file) return send(response, 404, { error: 'not found' });
+        response.writeHead(200, {
+          'content-type': file.mimeType,
+          'content-length': String(file.bytes.length),
+        });
+        response.end(file.bytes);
+        return;
+      }
       const app = tokens.get(token);
       if (!app) {
         return send(
@@ -161,6 +224,38 @@ export async function startFakeMeta(): Promise<FakeMeta> {
         );
 
       const [first = '', second] = segments;
+      if (segments.length === 1 && request.method === 'GET' && media.has(first)) {
+        const file = media.get(first);
+        return send(response, 200, {
+          messaging_product: 'whatsapp',
+          id: first,
+          url: `http://127.0.0.1:${String((server.address() as AddressInfo).port)}/download/${first}?sig=uji`,
+          mime_type: file?.mimeType,
+          file_size: file?.bytes.length,
+        });
+      }
+      if (second === 'messages' && request.method === 'POST') {
+        if (!phoneNumbers.has(first)) return missing(first);
+        const payload = (body ?? {}) as Record<string, unknown>;
+        if (payload.status === 'read') return send(response, 200, { success: true });
+        sequence += 1;
+        const wamid = `wamid.FAKE${String(Date.now())}${String(sequence)}`;
+        sentMessages.push({ phoneNumberId: first, wamid, body: payload });
+        return send(response, 200, {
+          messaging_product: 'whatsapp',
+          contacts: [{ input: payload.to, wa_id: payload.to }],
+          messages: [{ id: wamid }],
+        });
+      }
+      if (second === 'media' && request.method === 'POST') {
+        if (!phoneNumbers.has(first)) return missing(first);
+        const file = multipartFile(raw, request.headers['content-type'] ?? '');
+        if (!file) return send(response, 400, metaErrorBody(100, 'Param file must be a file'));
+        sequence += 1;
+        const id = `${String(9_000_000_000 + sequence)}`;
+        media.set(id, file);
+        return send(response, 200, { id });
+      }
       if (segments.length === 1 && request.method === 'GET') {
         const number = phoneNumbers.get(first);
         if (!number) return missing(first);
@@ -207,6 +302,8 @@ export async function startFakeMeta(): Promise<FakeMeta> {
   return {
     url: `http://127.0.0.1:${port}`,
     requests,
+    sentMessages,
+    media,
     tokens,
     phoneNumbers,
     wabas,
@@ -219,6 +316,8 @@ export async function startFakeMeta(): Promise<FakeMeta> {
       phoneNumbers.clear();
       wabas.clear();
       failures.clear();
+      sentMessages.length = 0;
+      media.clear();
     },
     close: () =>
       new Promise<void>((resolve, reject) => {

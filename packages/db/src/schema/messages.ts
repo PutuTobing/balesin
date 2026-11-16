@@ -25,6 +25,7 @@ import {
 import { channels } from './channels';
 import { createdAtColumn, idColumn, timestamptz, updatedAtColumn } from './columns';
 import { contacts } from './contacts';
+import { mediaFiles } from './media-files';
 import { conversations } from './conversations';
 import { organizations } from './organizations';
 import { users } from './users';
@@ -125,6 +126,14 @@ export const messages = pgTable(
     statusUpdatedAt: timestamptz('status_updated_at'),
     /** Kode error Meta (pesan gagal / jenis belum didukung) — bukan teks error mentah. */
     errorCode: integer('error_code'),
+    /** Pesan keluar `failed`: `OUTBOUND_FAILURE_REASONS` (`@balesin/shared`). */
+    failureReason: text('failure_reason'),
+    /** Kunci idempotensi dari klien (`clientMessageId`), unik per pengirim. */
+    idempotencyKey: text('idempotency_key'),
+    /** Berapa kali pesan keluar sudah dicoba kirim (termasuk kirim ulang). */
+    sendAttempts: integer('send_attempts').notNull().default(0),
+    /** Salinan lokal media (unggahan untuk pesan keluar / cache unduhan pesan masuk). */
+    mediaFileId: uuid('media_file_id'),
     occurredAt: timestamptz('occurred_at').notNull(),
     /** Pesan masuk: waktu kejadian webhook diterima server. */
     receivedAt: timestamptz('received_at'),
@@ -155,6 +164,14 @@ export const messages = pgTable(
       foreignColumns: [users.organizationId, users.id],
     }).onDelete('restrict'),
     uniqueIndex('messages_channel_id_wamid_unique').on(table.channelId, table.wamid),
+    uniqueIndex('messages_idempotency_unique')
+      .on(table.organizationId, table.senderUserId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} is not null`),
+    foreignKey({
+      name: 'messages_organization_id_media_file_id_fk',
+      columns: [table.organizationId, table.mediaFileId],
+      foreignColumns: [mediaFiles.organizationId, mediaFiles.id],
+    }).onDelete('restrict'),
     // Ruang chat: pesan satu percakapan, terbaru dulu.
     index('messages_conversation_id_occurred_at_idx').on(
       table.conversationId,
@@ -182,6 +199,15 @@ export const messages = pgTable(
       'messages_raw_type_format',
       sql`${table.rawType} is null or ${table.rawType} ~ '^[a-z_]{1,64}$'`,
     ),
+    check(
+      'messages_failure_reason_format',
+      sql`${table.failureReason} is null or ${table.failureReason} ~ '^[a-z_]{1,64}$'`,
+    ),
+    check(
+      'messages_idempotency_key_format',
+      sql`${table.idempotencyKey} is null or ${table.idempotencyKey} ~ '^[0-9a-f-]{36}$'`,
+    ),
+    check('messages_send_attempts_nonnegative', sql`${table.sendAttempts} >= 0`),
     check(
       'messages_reaction_emoji_length',
       sql`${table.reactionEmoji} is null or char_length(${table.reactionEmoji}) between 1 and 64`,

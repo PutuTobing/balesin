@@ -16,6 +16,7 @@
     "@balesin/shared": "workspace:*",
     "@fastify/cors": "11.4.1",
     "@fastify/helmet": "13.2.0",
+    "@fastify/multipart": "10.1.8",
     "@fastify/websocket": "11.3.7",
     "@node-rs/argon2": "2.2.2",
     "@zxcvbn-ts/language-common": "3.0.4",

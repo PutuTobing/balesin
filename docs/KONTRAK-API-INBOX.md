@@ -1,4 +1,4 @@
-# Kontrak API — Inbox: kontak, percakapan, pesan, real-time (Fase 2 butir 4–5)
+# Kontrak API — Inbox: kontak, percakapan, pesan, real-time, ruang chat (Fase 2 butir 4–6)
 
 Butir ini membangun **model data + pemrosesan otomatis** pesan masuk WhatsApp dan **API baca
 minimal** sebagai fondasi layar inbox. Belum ada aksi tulis (assign, balas, selesai, ubah kontak) —
@@ -152,6 +152,68 @@ pemrosesan (hanya log).
 **Proxy (devops, Fase 7).** Reverse proxy wajib meneruskan upgrade WebSocket untuk
 `/api/v1/inbox/stream` (`proxy_http_version 1.1`, `Upgrade`/`Connection`, `proxy_read_timeout` > 30
 detik). Dev server web perlu `ws: true` pada proxy `/api`.
+
+## Ruang chat — kirim pesan & media (butir 6)
+
+| Endpoint | Izin | Keterangan |
+|---|---|---|
+| `POST /api/v1/conversations/:conversationId/messages` | `inbox.reply` (cakupan) | CSRF. Body `sendMessageRequestSchema` (`type`: `text` / `media` / `location` / `reaction`, `clientMessageId` UUID wajib). → **202** `{ message }` (status `pending`) atau **200** bila `clientMessageId` yang sama sudah pernah dikirim (idempoten, per pengirim) |
+| `POST /api/v1/conversations/:conversationId/media` | `inbox.reply` (cakupan) | CSRF, `multipart/form-data` isian `file` (satu berkas). → **201** `{ media: { id, kind, mimeType, filename, sizeBytes } }`; lalu kirim `{ type: 'media', mediaId: id, caption? }` |
+| `POST /api/v1/messages/:messageId/retry` | `inbox.reply` (cakupan) | CSRF. Hanya pesan keluar `failed` yang `failure.retryable` (maks. 5 percobaan). → **202** `{ message }` (`pending`); pengirimnya menjadi pengguna yang menekan "Kirim ulang" |
+| `GET /api/v1/messages/:messageId/media` | `inbox.view` (cakupan) | **Wajib `X-CSRF-Token`** walau GET (memakai jatah Meta + menulis cache) — web memanggil lewat `fetch` lalu `Blob`/`URL.createObjectURL`, bukan `<img src>`. Berkas biner (lihat Header) |
+
+**Jendela 24 jam ditegakkan server**: di luar jendela → **409 `WINDOW_CLOSED`** (pesan: tunggu
+pelanggan membalas atau kirim template). Diperiksa lagi oleh worker saat benar-benar mengirim.
+Template Meta = fase berikutnya (titik kait di `outbound.service.ts`).
+
+**Jenis pesan.**
+- `text`: 1–4.096 karakter, tanpa NUL; `replyToMessageId` opsional (balas-kutip).
+- `media`: `mediaId` dari unggahan pengguna yang SAMA di channel percakapan itu, belum kedaluwarsa;
+  `caption` ≤ 1.024 (diabaikan untuk audio). Jenis pesan = jenis berkas hasil deteksi.
+- `location`: `latitude`, `longitude`, `name?`, `address?`.
+- `reaction`: `targetMessageId` + `emoji` (satu emoji; `''` = hapus reaksi).
+- Pesan yang dikutip/diberi reaksi harus milik kontak & channel yang sama dan sudah punya wamid
+  (belum terkirim → 409).
+
+**Unggahan.** Jenis ditentukan dari ISI (magic bytes), bukan nama/`Content-Type`:
+gambar JPEG/PNG ≤ 5 MB; audio OGG/MP3/AAC/M4A/AMR ≤ 16 MB; video MP4/3GP ≤ 16 MB; dokumen PDF,
+Word/Excel/PowerPoint (lama & baru), TXT ≤ 100 MB. Selain itu **415**, terlalu besar **413**. Nama
+berkas dibersihkan (`cleanFileName`). Disimpan di `MEDIA_DIR/uploads/<uuid>` lalu diunggah ke Meta
+(`/{phone-number-id}/media`); salinan lokal & ID Meta berlaku `min(retensi organisasi, 29)` hari.
+Batas laju 20 unggahan/menit per pengguna. Tidak ada URL dari klien (tanpa SSRF).
+
+**Unduhan media masuk.** Pertama kali: `GET /{media-id}` → URL → unduh dengan token hanya dari
+`https://lookaside.fbsbx.com` (server tiruan di dev/test), tanpa redirect, maks. 100 MB → disimpan
+`MEDIA_DIR/inbound/<uuid>` (retensi organisasi, bawaan 30 hari) lalu disajikan dari cache.
+
+Header unduhan: `Content-Type` = hasil deteksi isi bila termasuk gambar/audio/video yang aman
+(`inline`), selain itu `application/octet-stream` + `attachment` (PDF, dokumen, tak dikenali; SVG/HTML
+tidak pernah inline); `Content-Disposition` dengan `filename` ASCII + `filename*=UTF-8''…`
+(RFC 5987); `X-Content-Type-Options: nosniff`; `Content-Security-Policy: default-src 'none';
+sandbox`; `Cache-Control: private, max-age=300`. Batas 120 unduhan/menit per pengguna.
+
+**Batas kirim**: 30 pesan/menit per pengguna dan 600/menit per organisasi → 429. Batas harian yang
+bisa diatur (`sending.limits.manage`, SECURITY §5) menyusul bersama Pengaturan → Batas kirim.
+
+**Status & kegagalan.** Pesan keluar `pending` → worker mengirim → Meta menerima (wamid tersimpan,
+masih `pending`) → webhook `sent` → `delivered` → `read` (hanya maju). Status yang datang sebelum
+wamid tersimpan diputar ulang dari `webhook_events`. `failed` membawa `failure: { reason, code,
+message, retryable }` — `message` menjelaskan penyebab + solusi (mis. 131047 di luar jendela, 131026
+tidak terkirim, 130429 batas laju, 131049, 131051, 131053, 131030, 190 token). Alasan
+(`OUTBOUND_FAILURE_REASONS`): `window_closed`, `channel_unavailable`, `recipient_unavailable`
+(pelanggan username tanpa nomor — kirim ke BSUID menyusul), `sender_not_allowed`,
+`media_unavailable`, `meta_rejected`, `delivery_failed` (webhook), `delivery_unknown` (koneksi putus;
+TIDAK diulang otomatis — bisa saja sudah terkirim), `credentials_unavailable`, `queue_unavailable`.
+
+**Worker** (`apps/worker/src/queues/messages.ts`, antrian `messages`, payload ID saja): memeriksa
+ULANG saat kirim — channel aktif, pengirim aktif & masih memegang `inbox.reply` dalam cakupan
+percakapan (Teknisi: agen percakapan), jendela 24 jam, media, nomor pelanggan. Kirim lewat klien
+Graph terpusat (kelompok laju `messaging`, tidak diulang otomatis oleh klien). Batas laju/gangguan
+sementara Meta → diulang BullMQ (5×, eksponensial mulai 10 dtk). Tanpa kunci/transaksi selama
+panggilan HTTP.
+
+**Bentuk `Message` (tambahan)**: `failure`, `senderUserId`, `mediaAvailable`.
+
 
 ## Retensi & hapus per kontak (UU PDP, review webhook S4)
 

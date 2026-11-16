@@ -328,9 +328,25 @@ export const messageSchema = z.object({
   status: messageDeliveryStatusSchema.nullable(),
   /** Kode error Meta (pesan gagal / jenis belum didukung). */
   errorCode: z.number().int().nullable(),
+  /** Pesan keluar yang gagal: alasan + penjelasan + boleh dikirim ulang. */
+  failure: z
+    .object({
+      reason: z.string(),
+      code: z.number().int().nullable(),
+      message: z.string(),
+      retryable: z.boolean(),
+    })
+    .nullable(),
+  /** Agen pengirim (pesan keluar oleh manusia). */
+  senderUserId: z.uuid().nullable(),
+  /** Media bisa diunduh lewat `GET /messages/:id/media`. */
+  mediaAvailable: z.boolean(),
   createdAt: isoDateTimeSchema,
 });
 export type Message = z.infer<typeof messageSchema>;
+
+export const messageResponseSchema = z.object({ message: messageSchema });
+export type MessageResponse = z.infer<typeof messageResponseSchema>;
 
 export const messageListResponseSchema = z.object({
   /** Terbaru dulu. */

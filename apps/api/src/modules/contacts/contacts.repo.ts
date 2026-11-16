@@ -3,11 +3,12 @@ import {
   contacts,
   conversations,
   lockAdvisoryKeys,
+  mediaFiles,
   messages,
   webhookEvents,
   type DbExecutor,
 } from '@balesin/db';
-import { and, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
 
 /**
  * Data kontak (CRM). Fungsi hapus di sini dipakai endpoint "Hapus kontak (UU PDP)" yang menyusul
@@ -135,6 +136,30 @@ export async function deleteContactData(
       and(eq(webhookEvents.organizationId, organizationId), eq(webhookEvents.contactId, contactId)),
     )
     .returning({ id: webhookEvents.id });
+
+  // Salinan media lokal (unggahan & cache unduhan) pesan kontak ini: dimajukan kedaluwarsanya
+  // supaya pembersih media menghapus berkasnya dari disk (UU PDP).
+  await tx
+    .update(mediaFiles)
+    .set({ expiresAt: now })
+    .where(
+      and(
+        eq(mediaFiles.organizationId, organizationId),
+        inArray(
+          mediaFiles.id,
+          tx
+            .select({ id: sql<string>`${messages.mediaFileId}` })
+            .from(messages)
+            .where(
+              and(
+                eq(messages.organizationId, organizationId),
+                eq(messages.contactId, contactId),
+                isNotNull(messages.mediaFileId),
+              ),
+            ),
+        ),
+      ),
+    );
 
   const deletedMessages = await tx
     .delete(messages)

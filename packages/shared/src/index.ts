@@ -18,6 +18,7 @@ export * from './fields';
 export * from './health';
 export * from './inbox';
 export * from './invitations';
+export * from './outbound';
 export * from './links';
 export * from './password';
 export * from './password-reset';

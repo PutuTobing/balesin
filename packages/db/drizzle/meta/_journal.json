@@ -99,6 +99,13 @@
       "when": 1794804240033,
       "tag": "0013_pencarian_trigram_retensi_baris",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794807299087,
+      "tag": "0014_ruang_chat_media",
+      "breakpoints": true
     }
   ]
 }

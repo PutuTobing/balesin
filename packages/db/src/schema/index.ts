@@ -12,6 +12,7 @@ export * from './email-settings';
 export * from './email-settings-change-notices';
 export * from './installation';
 export * from './invitations';
+export * from './media-files';
 export * from './messages';
 export * from './organization-logos';
 export * from './organizations';

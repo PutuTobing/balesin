@@ -24,6 +24,11 @@ export const organizations = pgTable(
      * `.env`. Batas = `WEBHOOK_PAYLOAD_RETENTION_DAYS` di `@balesin/shared`.
      */
     webhookPayloadRetentionDays: integer('webhook_payload_retention_days').notNull().default(8),
+    /**
+     * Retensi salinan lokal media (unggahan & unduhan) dalam hari (`MEDIA_RETENTION_DAYS`,
+     * SECURITY.md §10 "retensi media dapat diatur"). UI menyusul; nilai di DB, bukan `.env`.
+     */
+    mediaRetentionDays: integer('media_retention_days').notNull().default(30),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
@@ -31,6 +36,10 @@ export const organizations = pgTable(
     check(
       'organizations_brand_color_hex',
       sql`${table.brandColor} is null or ${table.brandColor} ~ '^#[0-9a-f]{6}$'`,
+    ),
+    check(
+      'organizations_media_retention_days_range',
+      sql`${table.mediaRetentionDays} between 1 and 365`,
     ),
     check(
       'organizations_webhook_payload_retention_days_range',

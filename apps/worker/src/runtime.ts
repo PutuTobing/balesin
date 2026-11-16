@@ -2,6 +2,7 @@ import type { Logger } from '@balesin/core';
 import type { Queue, Worker } from 'bullmq';
 
 import { createEmailWorker, type EmailJobDeps } from './queues/email';
+import { createMessageWorker, type MessageJobDeps } from './queues/messages';
 import {
   createMaintenanceQueue,
   createMaintenanceWorker,
@@ -28,6 +29,8 @@ export interface WorkerServices {
    * tidak membutuhkannya tidak mendaftarkan jadwal di Redis.
    */
   maintenance?: Omit<MaintenanceJobDeps, 'logger'>;
+  /** Antrian `messages` (pesan keluar ke Meta). Opsional untuk tes yang tidak membutuhkannya. */
+  messages?: Omit<MessageJobDeps, 'logger'>;
 }
 
 const ERROR_LOG_INTERVAL_MS = 30_000;
@@ -46,6 +49,9 @@ export function startWorkers(
     createEmailWorker(options, { ...services.email, logger }),
     createWebhookWorker(options, { ...services.webhooks, logger }),
   ];
+  if (services.messages) {
+    workers.push(createMessageWorker(options, { ...services.messages, logger }));
+  }
   let maintenanceQueue: Queue | undefined;
   if (services.maintenance) {
     workers.push(createMaintenanceWorker(options, { ...services.maintenance, logger }));

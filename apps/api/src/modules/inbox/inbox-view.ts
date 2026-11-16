@@ -1,7 +1,11 @@
 import { cleanFileName, safeHttpUrl } from '@balesin/core';
 import type { ContactRow } from '@balesin/db';
 import {
+  MAX_SEND_ATTEMPTS,
   MESSAGE_MEDIA_KINDS,
+  isRetryableFailure,
+  outboundFailureMessage,
+  outboundFailureReasonSchema,
   type Contact,
   type ContactSummary,
   type Conversation,
@@ -160,6 +164,27 @@ export function toMessage(row: MessageRowView): Message {
       typeof shared === 'number' && Number.isInteger(shared) && shared > 0 ? shared : 0,
     status: row.status,
     errorCode: row.errorCode,
+    failure: failureOf(row),
+    senderUserId: row.senderUserId,
+    mediaAvailable: row.media !== null || row.mediaFileId !== null,
     createdAt: row.occurredAt.toISOString(),
+  };
+}
+
+/** Pesan keluar `failed` → alasan + penjelasan Indonesia + boleh dikirim ulang. */
+export function failureOf(
+  row: Pick<
+    MessageRowView,
+    'direction' | 'status' | 'failureReason' | 'errorCode' | 'sendAttempts'
+  >,
+): Message['failure'] {
+  if (row.direction !== 'outbound' || row.status !== 'failed') return null;
+  const parsedReason = outboundFailureReasonSchema.safeParse(row.failureReason);
+  const reason = parsedReason.success ? parsedReason.data : 'delivery_failed';
+  return {
+    reason,
+    code: row.errorCode,
+    message: outboundFailureMessage(reason, row.errorCode),
+    retryable: isRetryableFailure(reason, row.errorCode) && row.sendAttempts < MAX_SEND_ATTEMPTS,
   };
 }

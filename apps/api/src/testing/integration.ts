@@ -49,6 +49,7 @@ import { inject } from 'vitest';
 import type { App, AppConfig, AppDeps } from '../app';
 import { sessionCookieName } from '../http/cookies';
 import type { EmailNotifier } from '../queues/email-queue';
+import type { OutboundMessageEnqueuer } from '../queues/message-queue';
 import type { WebhookEventEnqueuer } from '../queues/webhook-queue';
 import { buildTestApp, defaultTestConfig, TEST_APP_ORIGIN, type TestApp } from './build-test-app';
 
@@ -83,6 +84,8 @@ export interface HarnessOptions {
   notifier?: EmailNotifier;
   /** Pengganti pengantre kejadian webhook (bawaan: mencatat ke `webhookJobs`). */
   webhookQueue?: WebhookEventEnqueuer;
+  /** Pengganti pengantre pesan keluar (bawaan: mencatat ke `messageJobs`). */
+  messageQueue?: OutboundMessageEnqueuer;
   /** `false` = Redis yang tidak pernah tersambung (menguji perilaku saat Redis mati). */
   redis?: false;
 }
@@ -125,6 +128,7 @@ export async function createIntegrationHarness(
         redis: next.redis === false ? undefined : redis,
         notifier: next.notifier,
         webhookQueue: next.webhookQueue,
+        messageQueue: next.messageQueue,
         overrides: { rateLimitPrefix, ...next.overrides },
       });
     },
@@ -143,6 +147,7 @@ export async function createIntegrationHarness(
         built.emailSettingsNotices.length = 0;
         built.channelChangeNotices.length = 0;
         built.webhookJobs.length = 0;
+        built.messageJobs.length = 0;
         built.logs.lines.length = 0;
       }
     },
@@ -194,6 +199,10 @@ export async function createIntegrationHarness(
     get webhookJobs() {
       if (!built) throw new Error('Aplikasi tes belum dibangun');
       return built.webhookJobs;
+    },
+    get messageJobs() {
+      if (!built) throw new Error('Aplikasi tes belum dibangun');
+      return built.messageJobs;
     },
     get redis(): Redis {
       if (!redis) throw new Error('Redis tes belum tersambung');

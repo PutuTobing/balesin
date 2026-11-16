@@ -44,6 +44,7 @@ describe('migrasi dari nol', () => {
       'email_settings',
       'email_settings_change_notices',
       'installation',
+      'media_files',
       'messages',
       'organization_logos',
       'organizations',

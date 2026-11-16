@@ -2,6 +2,7 @@ import {
   closeRedis,
   createInboxEventPublisher,
   createLogger,
+  createMetaGraphClient,
   createRedis,
   createSecretBox,
   createShutdown,
@@ -39,17 +40,26 @@ function main(config: WorkerConfig): void {
     applicationName: 'balesin-worker',
     onPoolError: (err) => logger.error({ err }, 'Koneksi Postgres yang menganggur terputus'),
   });
+  const secretBox = config.masterKey ? createSecretBox(config.masterKey) : null;
+  const publisher = createInboxEventPublisher(redis, { logger });
+  // Klien Graph API terpusat (host tetap, versi terkunci, server tiruan hanya dev/test).
+  const meta = createMetaGraphClient({
+    version: config.metaGraphVersion,
+    baseUrl: config.metaGraphBaseUrl,
+    logger,
+  });
   const runtime = startWorkers({ connection: redis }, logger, {
     email: {
       appUrl: config.appUrl,
       db,
-      secretBox: config.masterKey ? createSecretBox(config.masterKey) : null,
+      secretBox,
       fallback: config.smtpFallback,
       allowedPorts: config.smtpAllowedPorts,
       plaintextLogin: plaintextLoginPolicy(config.isProduction),
     },
-    webhooks: { db, publisher: createInboxEventPublisher(redis, { logger }) },
+    webhooks: { db, publisher },
     maintenance: { db },
+    messages: { db, meta, secretBox, publisher },
   });
 
   const shutdown = createShutdown({
