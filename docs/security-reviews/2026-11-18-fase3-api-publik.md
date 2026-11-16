@@ -126,3 +126,17 @@ Berkas baru: `apps/api/src/modules/public-api/security-review-fase3-api-publik.i
 | ESLint berkas tes baru | bersih |
 | `tsc --noEmit` apps/api | 3 galat, semuanya di `audit.service.ts` (Info 5), tidak ada di berkas tes baru |
 | `pnpm audit` | 2 moderate dev-only (esbuild lewat drizzle-kit, minimatch lewat eslint), tidak ada yang baru |
+
+---
+
+## Putaran 2 — verifikasi perbaikan (commit `da3f141`)
+
+| Butir | Bukti | Status |
+|---|---|---|
+| R1 kuncian IP menolak key sah | `apps/api/src/modules/api-keys/api-key-auth.ts:63-77` — `peek` dipindah ke `fail()` (jalur gagal saja); key sah dari IP terkunci dilayani. Tes penjaga R1 diubah `it.fails` → `it` dan lulus | **Tertutup** |
+| R2 akuntabilitas | `contact_events.api_key_id` (FK komposit organisasi, `packages/db/src/schema/contact-events.ts`) diisi dari `updateFromApi(organizationId, key.id, …)` / tag; batas harian per key kini mengirim email Owner atas nama pembuat key + `apiKeyName` (`sending-limits.service.ts`). Diuji di `public-api.integration.test.ts` | **Tertutup** |
+| R3 batas organisasi 600/menit | `public-api.routes.ts` memanggil `enforceRateLimit(SEND_ORGANIZATION_RULE, organizationId)` di kirim & unggah publik. Tes penjaga baru "R3 (Putaran 2)" (ember organisasi dihabiskan → kirim API 429, tanpa pesan tersimpan) lulus | **Tertutup** |
+| Info 1 pencarian tanpa `statement_timeout` | pencarian kontak publik kini lewat `withStatementTimeout(db, SEARCH_TIMEOUT_MS, …)` | **Sebagian**: `GET /public/conversations?q=` masih tanpa `withStatementTimeout` (web membungkusnya di `inbox.routes.ts:175`). Tetap Info |
+| Info 5 pohon kerja | perubahan webhook keluar sudah di-commit; `tsc` apps/api bersih, tes "Owner/Admin + konfirmasi…" lulus | **Selesai** |
+
+Hasil: `vitest run src/modules/public-api` lulus semua (tanpa `it.fails` tersisa). Putusan tetap **AMAN**.

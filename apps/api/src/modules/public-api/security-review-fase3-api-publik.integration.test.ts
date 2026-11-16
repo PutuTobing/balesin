@@ -19,7 +19,9 @@ import {
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { createRateLimiter } from '../../http/rate-limit';
 import { apiKeyPepper, generateApiKey } from '../api-keys/api-key-token';
+import { SEND_ORGANIZATION_RULE } from '../messages/outbound.routes';
 import {
   call,
   completeSetup,
@@ -261,6 +263,19 @@ describe('review keamanan Fase 3 — scope & cakupan', () => {
     expect((await api(token, 'PATCH', contactUrl, { name: 'Dibajak' })).statusCode).toBe(404);
     const search = await api(token, 'GET', `${API_ROUTES.publicApi.contacts}?q=Pelanggan`);
     expect(search.json<{ contacts: unknown[] }>().contacts).toHaveLength(0);
+    expect(await harness.db.select().from(messages)).toHaveLength(0);
+  });
+
+  it('R3 (Putaran 2): batas kirim organisasi per menit juga berlaku untuk kirim lewat API', async () => {
+    const { conversation } = await openConversation();
+    const key = await createKey(['messages:send']);
+    const limiter = createRateLimiter(harness.redis, { prefix: harness.redisPrefix });
+    for (let used = 0; used < SEND_ORGANIZATION_RULE.limit; used += 1) {
+      await limiter.consume(SEND_ORGANIZATION_RULE, organizationId);
+    }
+    const url = apiPath(API_ROUTES.publicApi.messages, { conversationId: conversation.id });
+    const response = await api(key.secret, 'POST', url, { type: 'text', text: 'Banjir' });
+    expect(response.statusCode).toBe(429);
     expect(await harness.db.select().from(messages)).toHaveLength(0);
   });
 
