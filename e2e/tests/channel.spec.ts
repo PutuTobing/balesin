@@ -181,6 +181,38 @@ test('Owner: tambah nomor lewat wizard, tes gagal → ganti token → berhasil, 
     await expect(page.getByText(number.display).first()).toBeVisible();
     await expect(page.getByText('1.000 pelanggan per 24 jam')).toBeVisible();
 
+    // Navigasi bagian (desktop): setiap lompatan — klik maupun Enter — menandai bagian yang dipilih,
+    // termasuk bagian pendek dan bagian di dasar halaman; gulir sendiri sampai dasar → bagian terakhir.
+    const sections = page.getByRole('navigation', { name: 'Bagian halaman nomor' });
+    const labels = [
+      'Ringkasan',
+      'Webhook',
+      'Profil bisnis',
+      'Nama channel',
+      'Kredensial Meta',
+      'Akses channel',
+    ];
+    for (const viaKeyboard of [false, true]) {
+      for (const label of labels) {
+        const link = sections.getByRole('link', { name: label, exact: true });
+        if (viaKeyboard) {
+          await link.focus();
+          await page.keyboard.press('Enter');
+        } else {
+          await link.click();
+        }
+        await expect(link).toHaveAttribute('aria-current', 'location');
+        await expect(sections.locator('[aria-current]')).toHaveCount(1);
+      }
+    }
+    await sections.getByRole('link', { name: 'Ringkasan', exact: true }).click();
+    await page.mouse.move(400, 500);
+    for (let i = 0; i < 12; i += 1) await page.mouse.wheel(0, 600);
+    await expect(
+      sections.getByRole('link', { name: 'Akses channel', exact: true }),
+    ).toHaveAttribute('aria-current', 'location');
+    await sections.getByRole('link', { name: 'Profil bisnis', exact: true }).click();
+
     // Profil bisnis: dibaca dari Meta tiruan; Tentang + situs web wajib konfirmasi identitas.
     const about = page.getByLabel('Tentang', { exact: true });
     await expect(about).toHaveValue(FAKE_META.profile.about);

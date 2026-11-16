@@ -61,6 +61,39 @@ describe('halaman nomor WhatsApp', () => {
     expect(await screen.findByText(webhook.verifyToken)).toBeInTheDocument();
   });
 
+  it('navigasi bagian: keenam lompatan menandai bagian yang dipilih sampai pengguna menggulir sendiri', async () => {
+    await renderApp(path, { routes: detailRoutes() });
+    const nav = await screen.findByRole('navigation', { name: t.channels.sections.label });
+    const container = nav.closest<HTMLElement>('[class*="body"]')!;
+    const labels = [
+      t.channels.sections.summary,
+      t.channels.webhook.title,
+      t.channels.profile.title,
+      t.channels.rename.title,
+      t.channels.credentials.title,
+      t.channels.access.title,
+    ];
+    for (const label of labels) {
+      const link = within(nav).getByRole('link', { name: label });
+      fireEvent.click(link);
+      // Guliran dari kode (lompatan itu sendiri) tidak memindahkan penanda.
+      fireEvent.scroll(container);
+      expect(link).toHaveAttribute('aria-current', 'location');
+      expect(
+        within(nav)
+          .getAllByRole('link')
+          .filter((item) => item.hasAttribute('aria-current')),
+      ).toHaveLength(1);
+    }
+    fireEvent.click(within(nav).getByRole('link', { name: t.channels.rename.title }));
+    // Pengguna menggulir sendiri (roda) → kunci lepas, penanda mengikuti posisi gulir lagi.
+    fireEvent.wheel(container);
+    fireEvent.scroll(container);
+    expect(within(nav).getByRole('link', { name: t.channels.rename.title })).not.toHaveAttribute(
+      'aria-current',
+    );
+  });
+
   it('GET profil bisnis membawa header CSRF (rute itu memanggil Meta)', async () => {
     const { api } = await renderApp(path, { routes: detailRoutes() });
     await screen.findByDisplayValue(profile.about);

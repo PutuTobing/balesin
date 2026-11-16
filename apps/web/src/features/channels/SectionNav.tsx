@@ -1,7 +1,8 @@
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { t } from '../../i18n/id';
 import { scrollToTopOfContainer } from '../../lib/scroll';
 import styles from './Channels.module.css';
+import { SCROLL_KEYS, isScrolledToBottom, pickActiveSection } from './section-nav';
 
 const copy = t.channels.sections;
 
@@ -17,34 +18,55 @@ const SECTIONS = [
 
 /**
  * Daftar bagian halaman nomor yang menempel di kanan (desktop): halaman ±3 layar bisa dilompati
- * tanpa menggulir. Bagian yang sedang terbaca ditandai. Di HP/tablet tidak tampil.
+ * tanpa menggulir. Di HP/tablet tidak tampil.
+ *
+ * Penanda (`aria-current="location"`):
+ *  - setelah tautan dipilih, bagian itu DIKUNCI sampai pengguna sendiri menggulir (roda, sentuh,
+ *    tombol gulir). Guliran dari kode (lompatan itu sendiri, "Ganti kredensial") tidak melepasnya,
+ *    jadi bagian pendek atau bagian di dasar halaman tetap tertanda;
+ *  - saat menggulir bebas: bagian terakhir yang judulnya sudah sampai di atas wadah, atau bagian
+ *    terakhir bila wadah sudah di dasar (`pickActiveSection`).
  */
 export function SectionNav() {
   const [active, setActive] = useState<string>(SECTIONS[0].id);
+  const navRef = useRef<HTMLElement>(null);
+  const pinnedRef = useRef<string | null>(null);
 
   useEffect(() => {
-    // Browser lama / jsdom: tanpa penanda bagian aktif, tautan tetap berfungsi.
-    if (typeof IntersectionObserver === 'undefined') return;
-    // Bagian aktif = bagian terakhir yang tepi atasnya sudah melewati 40% tinggi layar (judulnya
-    // sedang/baru dibaca). Observer hanya pemicu saat tepi kartu melintasi pita itu.
-    const pick = () => {
-      const line = window.innerHeight * 0.4;
-      let current: string = SECTIONS[0].id;
-      for (const section of SECTIONS) {
+    const nav = navRef.current;
+    if (!nav) return;
+    // Didengarkan di dokumen (scroll lewat capture): wadah gulir = elemen yang tergulir dan memuat
+    // navigasi ini, tanpa bergantung pada gaya terhitung.
+    const pick = (event: Event) => {
+      const box = event.target;
+      if (!(box instanceof HTMLElement) || !box.contains(nav) || pinnedRef.current) return;
+      const positions = SECTIONS.flatMap((section) => {
         const element = document.getElementById(section.id);
-        if (element && element.getBoundingClientRect().top <= line) current = section.id;
-      }
-      setActive(current);
+        return element ? [{ id: section.id, top: element.getBoundingClientRect().top }] : [];
+      });
+      const next = pickActiveSection(
+        positions,
+        box.getBoundingClientRect().top,
+        isScrolledToBottom(box),
+      );
+      if (next) setActive(next);
     };
-    const observer = new IntersectionObserver(pick, {
-      rootMargin: '0px 0px -60% 0px',
-      threshold: [0, 1],
-    });
-    for (const section of SECTIONS) {
-      const element = document.getElementById(section.id);
-      if (element) observer.observe(element);
-    }
-    return () => observer.disconnect();
+    const release = () => {
+      pinnedRef.current = null;
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (SCROLL_KEYS.has(event.key)) release();
+    };
+    document.addEventListener('scroll', pick, { capture: true, passive: true });
+    document.addEventListener('wheel', release, { passive: true });
+    document.addEventListener('touchmove', release, { passive: true });
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('scroll', pick, { capture: true });
+      document.removeEventListener('wheel', release);
+      document.removeEventListener('touchmove', release);
+      document.removeEventListener('keydown', onKey);
+    };
   }, []);
 
   const jump = (event: MouseEvent<HTMLAnchorElement>, id: string) => {
@@ -52,14 +74,15 @@ export function SectionNav() {
     if (!target) return;
     // Tanpa mengubah alamat (riwayat router tetap bersih); fokus ikut pindah untuk keyboard.
     event.preventDefault();
+    pinnedRef.current = id;
+    setActive(id);
     scrollToTopOfContainer(target);
     target.setAttribute('tabindex', '-1');
     target.focus({ preventScroll: true });
-    setActive(id);
   };
 
   return (
-    <nav className={styles.sectionNav} aria-label={copy.label}>
+    <nav ref={navRef} className={styles.sectionNav} aria-label={copy.label}>
       <ul className={styles.sectionList}>
         {SECTIONS.map((section) => (
           <li key={section.id}>
