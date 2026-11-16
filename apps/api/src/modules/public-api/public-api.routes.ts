@@ -37,6 +37,7 @@ import { requireApiKeyScope } from '../../http/route-access';
 import { requireApiKey, type ApiKeyPrincipal } from '../api-keys/api-key-auth';
 import type { PermissionGrant } from '../auth/permission-grant';
 import type { ContactsService } from '../contacts/contacts.service';
+import type { AssignmentService } from '../inbox/assignment.service';
 import {
   contactTagsOf,
   conversationExtras,
@@ -60,6 +61,8 @@ export interface PublicApiRoutesOptions {
   limiter: RateLimiter;
   outbound: OutboundService;
   contacts: ContactsService;
+  /** Handoff bot → tim (`conversations:write`). */
+  assignment: Pick<AssignmentService, 'releaseAsApiKey'>;
   now?: () => Date;
 }
 
@@ -217,6 +220,46 @@ export const publicApiRoutes: FastifyPluginAsyncZod<PublicApiRoutesOptions> = as
       if (!row) throw new AppError('NOT_FOUND', { message: CONVERSATION_NOT_FOUND });
       const extras = await conversationExtras(db, key.organizationId, [row]);
       return {
+        conversation: toConversation(
+          row,
+          extras.lastMessages.get(row.id),
+          now(),
+          extras.tags.get(row.contact.id) ?? [],
+        ),
+      };
+    },
+  );
+
+  /**
+   * Bot menyerahkan percakapan ke tim (Fase 3): status `bot` → `unserved` + kejadian `handoff` +
+   * webhook `conversation.handoff` + push antrian. Bukan `bot` (antrian/dipegang agen) → 200 tanpa
+   * perubahan (`changed: false`).
+   */
+  app.post(
+    routes.handoff,
+    {
+      config: { access: requireApiKeyScope('conversations:write') },
+      schema: {
+        params: conversationIdParamsSchema,
+        response: {
+          200: conversationResponseSchema.extend({ changed: z.boolean() }),
+          ...errors,
+        },
+      },
+    },
+    async (request) => {
+      const key = requireApiKey(request);
+      const id = uuidOr404(request.params.conversationId, CONVERSATION_NOT_FOUND);
+      const { changed } = await options.assignment.releaseAsApiKey(
+        { organizationId: key.organizationId, apiKeyId: key.id, client: clientInfo(request) },
+        id,
+        null,
+      );
+      const row = await findConversation(db, grantOf(key), id);
+      if (!row) throw new AppError('NOT_FOUND', { message: CONVERSATION_NOT_FOUND });
+      const extras = await conversationExtras(db, key.organizationId, [row]);
+      return {
+        changed,
         conversation: toConversation(
           row,
           extras.lastMessages.get(row.id),

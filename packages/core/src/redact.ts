@@ -130,6 +130,8 @@ const COMMON_PATTERNS: readonly Replacement[] = [
   [/\bEAA[A-Za-z0-9]{20,}/g, REDACTED],
   // API key Balesin: blsn_<prefix>_<secret> — prefix dibiarkan agar key bisa dikenali
   [/\b(blsn_[A-Za-z0-9]+_)[A-Za-z0-9_-]{8,}/g, `$1${REDACTED}`],
+  // Rahasia penanda tangan webhook keluar Balesin
+  [/\b(whsec_)[A-Za-z0-9_-]{8,}/g, `$1${REDACTED}`],
   // Token bot Telegram: <id bot>:<rahasia>, juga di path URL (/bot<id>:<rahasia>/…)
   [/(?<![A-Za-z0-9])((?:bot)?\d{6,12}:)[A-Za-z0-9_-]{30,}/g, `$1${REDACTED}`],
 ];

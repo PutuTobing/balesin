@@ -187,6 +187,11 @@ export const MAINTENANCE_JOBS = {
    * tua dari `SEND_CLAIM_STALE_MS` → `delivery_unknown`.
    */
   staleSendClaims: 'stale-send-claims',
+  /**
+   * Batas waktu bot (Fase 3): percakapan `bot` yang pesan pelanggannya tidak dibalas bot selama
+   * `channels.bot_timeout_minutes` → antrian tim (`handoff` oleh sistem), tiap menit.
+   */
+  botTimeouts: 'bot-timeouts',
 } as const;
 export type MaintenanceJobName = (typeof MAINTENANCE_JOBS)[keyof typeof MAINTENANCE_JOBS];
 

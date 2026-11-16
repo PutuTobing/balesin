@@ -30,7 +30,14 @@ Kejadian keamanan: `webhook_changed` (dibuat, URL diubah, rahasia dirotasi, allo
 `message.received`, `message.sent` (Meta menerima), `message.status` (sent/delivered/read/failed),
 `conversation.created`, `conversation.assigned` (diambil/ditugaskan), `conversation.unassigned`,
 `conversation.resolved`, `conversation.reopened`, `contact.created`, `contact.updated` (termasuk tag).
-Menyusul: `conversation.handoff`, `broadcast.completed`, `ticket.created`.
+`conversation.handoff` — bot berhenti memegang (bot meminta handoff, agen mematikan bot / mengambil
+alih, batas waktu bot); `data.actor` kosong bila oleh key/sistem. Menyusul: `broadcast.completed`,
+`ticket.created`.
+
+Opsi endpoint **`botOnly`** (buat/ubah, tanpa konfirmasi): `message.received` hanya dikirim bila
+percakapan berstatus `bot` SAAT DISPATCH — untuk penerima yang berperan bot (seperti bot eksternal
+MobiChat). Bawaan `false`: semua pesan masuk (workflow ULAN memutuskan diam sendiri dan tetap mencatat
+"chat menunggu").
 
 Kejadian dicatat sebagai **outbox** (`outgoing_events`, hanya ID + jenis) di transaksi yang SAMA
 dengan perubahannya, dan hanya bila ada endpoint aktif yang melanggan jenis itu.
@@ -52,11 +59,16 @@ X-Balesin-Signature: t=<unix detik>,v1=<hex>[,v1=<hex rahasia lama>]
   waktu-konstan dengan SALAH SATU `v1`, tolak bila `t` > 5 menit dari jam sekarang. `id` sama untuk
   kirim ulang (pakai untuk idempotensi); `X-Balesin-Delivery` beda tiap pengiriman.
 - `data` dibangun worker SAAT DISPATCH dari database: `message` (id, number, direction, sender_kind,
-  type, text, media {kind, mime_type, filename}, location, status, error_code, created_at),
+  type, text, media {kind, mime_type, filename}, location, `interactive` (balasan tombol/daftar
+  pelanggan `{type, id, title, description}`), `interactive_message` (tombol/daftar keluar), status,
+  error_code, created_at),
   `conversation` (id, number, status, channel_id, assignee {id,name}, window_expires_at, created_at,
   resolved_at), `contact` (id, number, phone, wa_username, name, profile_name, email, attributes,
   tags), `actor` {id,name} bila ada. Memuat data pelanggan seperlunya untuk bot/n8n (isi pesan,
   nomor); TANPA rahasia, ID media Meta, atau BSUID. Subjek sudah dihapus → tidak dikirim.
+- Potongan jawaban penerima disensor SEBELUM disimpan/ditampilkan (review MobiChat S1): API key yang
+  disisipkan (utuh atau terpotong di batas 500 byte) + pola rahasia yang dikenal (`blsn_live_…`,
+  `whsec_…`, Bearer, token Meta, …).
 - Worker (`webhooks-out`, job berkala tiap 5 dtk): sukses = 2xx. 408/429/5xx/jaringan/batas waktu →
   dicoba lagi setelah 30 dtk, 2 mnt, 10 mnt, 30 mnt, 2 jam (6 percobaan); 3xx (redirect TIDAK
   diikuti), 4xx lain, alamat terlarang → langsung gagal. Batas waktu 10 dtk; jawaban dibaca maks.
@@ -78,7 +90,8 @@ X-Balesin-Signature: t=<unix detik>,v1=<hex>[,v1=<hex rahasia lama>]
 - Jaringan privat (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7) hanya bila CIDR-nya ada di
   allowlist organisasi.
 - DNS di-resolve SEKALI lewat resolver c-ares (`dns.promises.Resolver`, A + AAAA, bukan threadpool;
-  `/etc/hosts` tidak dibaca) DI DALAM tenggat total 10 dtk; SEMUA alamat hasilnya harus lolos; soket
+  `/etc/hosts` tidak dibaca — **untuk alamat LAN tanpa DNS (mis. n8n di server internal), pakai IP**)
+  DI DALAM tenggat total 10 dtk; SEMUA alamat hasilnya harus lolos; soket
   disambungkan ke alamat yang sudah diperiksa (tanpa resolusi kedua → kebal DNS rebinding); SNI/Host
   tetap nama aslinya.
 - Kejadian outbox yang gagal dibangun dibuang per kejadian (savepoint) + dicatat (ID + kode galat), tidak

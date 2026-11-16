@@ -71,6 +71,20 @@ const OPERATIONS: readonly Operation[] = [
     responses: { 200: { description: 'Percakapan', schema: conversationResponseSchema } },
   },
   {
+    method: 'post',
+    path: routes.handoff,
+    scope: 'conversations:write',
+    summary: 'Bot menyerahkan percakapan ke tim',
+    description:
+      'Status `bot` → `unserved` (antrian "Belum dilayani"), event webhook `conversation.handoff`, notifikasi tim. Percakapan yang tidak dipegang bot → 200 dengan `changed: false`.',
+    responses: {
+      200: {
+        description: 'Keadaan percakapan sesudahnya',
+        schema: conversationResponseSchema.extend({ changed: z.boolean() }),
+      },
+    },
+  },
+  {
     method: 'get',
     path: routes.messages,
     scope: 'messages:read',

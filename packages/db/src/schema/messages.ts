@@ -3,6 +3,7 @@ import {
   MESSAGE_DIRECTIONS,
   MESSAGE_SENDER_KINDS,
   MESSAGE_TYPES,
+  type InteractiveMessage,
   type MessageMediaKind,
 } from '@balesin/shared';
 import { sql } from 'drizzle-orm';
@@ -73,6 +74,8 @@ export interface MessageExtras {
     ctwaClid: string | null;
   };
   sharedContacts?: number;
+  /** Pesan interaktif KELUAR (tombol/daftar) — dibangun ulang worker jadi payload Meta. */
+  interactiveMessage?: InteractiveMessage;
   forwarded?: boolean;
   frequentlyForwarded?: boolean;
 }

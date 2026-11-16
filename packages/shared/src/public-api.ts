@@ -12,7 +12,8 @@ import { tagNameSchema } from './tags';
  * Bentuk respons memakai skema yang SAMA dengan API web (`Conversation`, `Message`, `Contact`).
  */
 
-const [textOption, mediaOption, locationOption, reactionOption] = sendMessageRequestSchema.options;
+const [textOption, mediaOption, locationOption, reactionOption, interactiveOption] =
+  sendMessageRequestSchema.options;
 
 /**
  * `POST /public/conversations/:id/messages` — sama dengan API web tanpa `clientMessageId`;
@@ -23,6 +24,7 @@ export const publicSendMessageRequestSchema = z.discriminatedUnion('type', [
   mediaOption.omit({ clientMessageId: true }),
   locationOption.omit({ clientMessageId: true }),
   reactionOption.omit({ clientMessageId: true }),
+  interactiveOption.omit({ clientMessageId: true }),
 ]);
 export type PublicSendMessageRequest = z.infer<typeof publicSendMessageRequestSchema>;
 

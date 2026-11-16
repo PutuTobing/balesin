@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { CHANNEL_TYPES } from './channels';
 import { hasControlCharacters, isoDateTimeSchema } from './fields';
 import { identityConfirmationSchema } from './identity';
+import { interactiveMessageSchema } from './interactive';
 import { tagColorSchema, tagRefSchema } from './tags';
 
 /**
@@ -40,7 +41,10 @@ export const CONVERSATION_STATUS_LABELS: Readonly<Record<ConversationStatus, str
  *  - `unassigned` — dikembalikan ke antrian terbuka;
  *  - `resolved`   — ditandai selesai;
  *  - `reopened`   — dibuka lagi;
- *  - `note_added` / `note_updated` / `note_deleted` — catatan sesi (butir 8; TANPA isi catatan).
+ *  - `note_added` / `note_updated` / `note_deleted` — catatan sesi (butir 8; TANPA isi catatan);
+ *  - `handoff`     — bot menyerahkan ke manusia (bot minta, agen mematikan bot, atau bot tidak
+ *                    membalas sampai batas waktu) → antrian "Belum dilayani";
+ *  - `bot_resumed` — percakapan dikembalikan ke bot.
  */
 export const CONVERSATION_EVENT_KINDS = [
   'claimed',
@@ -51,6 +55,8 @@ export const CONVERSATION_EVENT_KINDS = [
   'note_added',
   'note_updated',
   'note_deleted',
+  'handoff',
+  'bot_resumed',
 ] as const;
 /** Jenis yang disimpan di `conversation_events` (enum database). */
 export type ConversationRecordKind = (typeof CONVERSATION_EVENT_KINDS)[number];
@@ -80,6 +86,8 @@ export const CONVERSATION_EVENT_LABELS: Readonly<Record<ConversationEventKind, s
   note_added: 'Menambah catatan',
   note_updated: 'Mengubah catatan',
   note_deleted: 'Menghapus catatan',
+  handoff: 'Menyerahkan dari bot ke tim',
+  bot_resumed: 'Mengembalikan ke bot',
   tag_added: 'Memasang tag',
   tag_removed: 'Melepas tag',
   contact_updated: 'Mengubah data kontak',
@@ -698,6 +706,11 @@ export const messageSchema = z.object({
       description: z.string().nullable(),
     })
     .nullable(),
+  /**
+   * Pesan interaktif KELUAR (tombol/daftar yang dikirim agen/bot). Server selalu mengisi (`null`
+   * untuk pesan lain); opsional di skema supaya data tiruan web lama tetap sah.
+   */
+  interactiveMessage: interactiveMessageSchema.nullable().optional(),
   /** Reaksi: emoji (`null` = reaksi dihapus) + pesan sasarannya bila ditemukan. */
   reaction: z.object({ emoji: z.string().nullable(), messageId: z.uuid().nullable() }).nullable(),
   /** Balas-kutip: pesan yang dikutip bila ditemukan di Balesin. */

@@ -20,6 +20,7 @@ import {
 import {
   OUTBOUND_MEDIA_LIMITS,
   apiKeyHasScope,
+  interactiveMessageSchema,
   updateContactRequestSchema,
   type MobichatMessage,
   type MobichatOutgoingMessage,
@@ -79,6 +80,44 @@ export interface SentSummary {
 }
 
 const CONVERSATION_NOT_FOUND = 'Percakapan tidak ditemukan.';
+
+/**
+ * Tombol/daftar gaya MobiChat (`message_type` `button`/`list`, `list_options[]`, `list_title`) →
+ * pesan interaktif Balesin, divalidasi dengan batas Meta yang SAMA dengan web/API v1.
+ */
+export function interactiveFromMobichat(item: MobichatOutgoingMessage) {
+  const body = item.text ?? item.message_text ?? '';
+  const options = item.list_options ?? [];
+  const candidate =
+    item.message_type === 'button'
+      ? {
+          kind: 'button' as const,
+          body,
+          buttons: options.map((option) => ({ id: option.id, title: option.title })),
+        }
+      : {
+          kind: 'list' as const,
+          body,
+          buttonText: item.list_title?.trim() || 'Pilih',
+          sections: [
+            {
+              rows: options.map((option) => ({
+                id: option.id,
+                title: option.title,
+                ...(option.description ? { description: option.description } : {}),
+              })),
+            },
+          ],
+        };
+  const parsed = interactiveMessageSchema.safeParse(candidate);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw new AppError('VALIDATION_ERROR', {
+      message: `list_options: ${issue?.message ?? 'Pesan tombol/daftar tidak valid.'}`,
+    });
+  }
+  return parsed.data;
+}
 
 /** `+6281…` → `6281…` (format nomor MobiChat). */
 export const digitsOf = (phone: string | null) => (phone ? phone.replace(/\D/g, '') : null);
@@ -269,7 +308,13 @@ export function createMobichatService(deps: MobichatServiceDeps) {
           idempotencyKey === undefined ? undefined : `${idempotencyKey}#${String(index)}`,
         );
         let input: SendMessageRequest;
-        if ((item.message_type ?? 'text') === 'media') {
+        if (item.message_type === 'button' || item.message_type === 'list') {
+          input = {
+            type: 'interactive',
+            clientMessageId,
+            interactive: interactiveFromMobichat(item),
+          };
+        } else if ((item.message_type ?? 'text') === 'media') {
           const caption = (item.caption ?? item.text ?? item.message_text)?.slice(0, 1024);
           input = {
             type: 'media',

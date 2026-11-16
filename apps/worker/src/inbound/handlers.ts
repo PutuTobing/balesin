@@ -10,8 +10,10 @@ import {
   type NormalizedInboundMessage,
 } from '@balesin/core';
 import {
+  channels,
   conversations,
   messages,
+  organizations,
   webhookEvents,
   type ConversationRow,
   type DbExecutor,
@@ -21,6 +23,8 @@ import {
 } from '@balesin/db';
 import {
   CUSTOMER_SERVICE_WINDOW_MS,
+  botHoursSchema,
+  isWithinBotHours,
   type ConversationStatus,
   type MessageType,
 } from '@balesin/shared';
@@ -50,10 +54,38 @@ const WINDOW_INTERVAL = sql.raw(`interval '${String(CUSTOMER_SERVICE_WINDOW_MS /
 
 export interface InboundHandlerOptions {
   /**
-   * Status percakapan BARU. TITIK KAIT bot (Fase 3): bila saklar bot channel aktif, kembalikan
-   * `bot` (lalu antrekan job kirim-ke-bot berisi ID pesan). Bawaan: `unserved` (antrian terbuka).
+   * Status percakapan BARU. Bawaan (`botAwareInitialStatus`): `bot` bila saklar bot channel aktif
+   * DAN sekarang dalam jam kerja bot (zona organisasi), selain itu `unserved` (antrian terbuka).
+   * Pesan diteruskan ke bot lewat webhook keluar (outbox `message.received`), bukan dari sini.
    */
-  initialConversationStatus?: (context: InboundEventContext) => ConversationStatus;
+  initialConversationStatus?: (
+    context: InboundEventContext,
+  ) => ConversationStatus | Promise<ConversationStatus>;
+}
+
+/**
+ * Status awal percakapan baru menurut saklar bot channel + jam kerja bot (Fase 3). Jam kerja dari
+ * `receivedAt` (jam server); `bot_hours` rusak → dianggap di luar jam kerja (aman: ke tim).
+ */
+export async function botAwareInitialStatus(
+  context: InboundEventContext,
+): Promise<ConversationStatus> {
+  const [row] = await context.tx
+    .select({
+      enabled: channels.botEnabled,
+      hours: channels.botHours,
+      timezone: organizations.timezone,
+    })
+    .from(channels)
+    .innerJoin(organizations, eq(organizations.id, channels.organizationId))
+    .where(
+      and(eq(channels.organizationId, context.organizationId), eq(channels.id, context.channelId)),
+    )
+    .limit(1);
+  if (!row?.enabled) return 'unserved';
+  const hours = botHoursSchema.safeParse(row.hours);
+  if (!hours.success) return 'unserved';
+  return isWithinBotHours(hours.data, row.timezone, context.receivedAt) ? 'bot' : 'unserved';
 }
 
 /** Jenis pesan Meta → jenis Balesin. */
@@ -195,7 +227,7 @@ async function linkEventToContact(context: InboundEventContext, contactId: strin
 }
 
 export function createInboundHandlers(options: InboundHandlerOptions = {}): InboundEventHandlers {
-  const initialStatus = options.initialConversationStatus ?? (() => 'unserved' as const);
+  const initialStatus = options.initialConversationStatus ?? botAwareInitialStatus;
 
   return {
     async message(message, context) {
@@ -242,7 +274,7 @@ export function createInboundHandlers(options: InboundHandlerOptions = {}): Inbo
             organizationId,
             contactId: contact.id,
             channelId,
-            status: initialStatus(context),
+            status: await initialStatus(context),
             lastMessageAt: receivedAt,
           })
           .returning();
@@ -336,6 +368,8 @@ export function createInboundHandlers(options: InboundHandlerOptions = {}): Inbo
           windowExpiresAt: sql`greatest(${conversations.lastInboundAt}, ${receivedAt}) + ${WINDOW_INTERVAL}`,
           lastMessageAt: sql`greatest(${conversations.lastMessageAt}, ${receivedAt})`,
           unreadCount: sql`${conversations.unreadCount} + 1`,
+          // Bot memegang: pesan pelanggan pertama yang belum dibalas bot (dasar batas waktu bot).
+          botAwaitingSince: sql`case when ${conversations.status} = 'bot' then coalesce(${conversations.botAwaitingSince}, ${receivedAt}) else null end`,
         })
         .where(
           and(

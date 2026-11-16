@@ -11,11 +11,23 @@ import {
   type InboxEventPublisher,
   type Logger,
 } from '@balesin/core';
-import { messages, type Database } from '@balesin/db';
+import {
+  channels,
+  conversationEvents,
+  conversations,
+  messages,
+  recordOutgoingEvent,
+  type Database,
+} from '@balesin/db';
 import { Queue, UnrecoverableError, Worker } from 'bullmq';
 import { and, eq, isNull, lt, sql } from 'drizzle-orm';
 
+import type { NotificationProducer } from './notifications';
 import type { QueueConnectionOptions } from './system';
+
+/** Pemeriksa batas waktu bot: tiap menit, maks. 200 percakapan per putaran. */
+export const BOT_TIMEOUTS_INTERVAL_MS = 60_000;
+const BOT_TIMEOUTS_BATCH = 200;
 
 /**
  * Antrian `maintenance`: pekerjaan berkala worker (BullMQ Job Scheduler, payload kosong).
@@ -170,6 +182,90 @@ export interface MaintenanceJobDeps {
   now?: () => Date;
   /** Event real-time untuk pesan yang ditandai `delivery_unknown` oleh pemeriksa klaim. */
   publisher?: InboxEventPublisher;
+  /** Push "kembali ke antrian" saat bot kehabisan waktu. */
+  notifications?: Pick<NotificationProducer, 'enqueue'>;
+}
+
+/**
+ * Batas waktu bot (Fase 3, PRD §3.4 "Aturan handoff"): percakapan berstatus `bot` yang pesan
+ * pelanggan PERTAMA-nya belum dibalas bot (`bot_awaiting_since`) lebih lama dari
+ * `channels.bot_timeout_minutes` → antrian tim (`unserved`). Dicatat sebagai kejadian `handoff`
+ * dengan pelaku SISTEM (tanpa pengguna/key) + webhook `conversation.handoff`; setelah commit: event
+ * real-time + push "kembali ke antrian" (hanya ID). `FOR UPDATE SKIP LOCKED` → aman bila worker ganda.
+ */
+export async function handoffTimedOutBots(
+  db: Database,
+  options: {
+    now?: Date | undefined;
+    publisher?: InboxEventPublisher;
+    notifications?: Pick<NotificationProducer, 'enqueue'>;
+  } = {},
+): Promise<number> {
+  const now = options.now ?? new Date();
+  const moved = await db.transaction(async (tx) => {
+    const due = await tx
+      .select({
+        id: conversations.id,
+        organizationId: conversations.organizationId,
+        contactId: conversations.contactId,
+      })
+      .from(conversations)
+      .innerJoin(
+        channels,
+        and(
+          eq(channels.organizationId, conversations.organizationId),
+          eq(channels.id, conversations.channelId),
+        ),
+      )
+      .where(
+        and(
+          eq(conversations.status, 'bot'),
+          sql`${conversations.botAwaitingSince} is not null`,
+          sql`${channels.botTimeoutMinutes} is not null`,
+          sql`${conversations.botAwaitingSince} <= ${now}::timestamptz - make_interval(mins => ${channels.botTimeoutMinutes})`,
+        ),
+      )
+      .limit(BOT_TIMEOUTS_BATCH)
+      .for('update', { of: conversations, skipLocked: true });
+    for (const row of due) {
+      await tx
+        .update(conversations)
+        .set({ status: 'unserved', assigneeUserId: null, botAwaitingSince: null })
+        .where(
+          and(eq(conversations.organizationId, row.organizationId), eq(conversations.id, row.id)),
+        );
+      await tx.insert(conversationEvents).values({
+        organizationId: row.organizationId,
+        conversationId: row.id,
+        kind: 'handoff',
+        actorUserId: null,
+        apiKeyId: null,
+      });
+      await recordOutgoingEvent(tx, {
+        organizationId: row.organizationId,
+        type: 'conversation.handoff',
+        conversationId: row.id,
+        contactId: row.contactId,
+      });
+    }
+    return due;
+  });
+  if (moved.length === 0) return 0;
+  await (options.publisher ?? NOOP_INBOX_EVENT_PUBLISHER).publish(
+    moved.map((row) => ({
+      type: 'conversation.updated' as const,
+      organizationId: row.organizationId,
+      conversationId: row.id,
+    })),
+  );
+  await options.notifications?.enqueue(
+    moved.map((row) => ({
+      organizationId: row.organizationId,
+      kind: 'queued' as const,
+      conversationId: row.id,
+    })),
+  );
+  return moved.length;
 }
 
 /**
@@ -245,6 +341,17 @@ export async function processMaintenanceJob(
       }
       return { stale };
     }
+    case MAINTENANCE_JOBS.botTimeouts: {
+      const moved = await handoffTimedOutBots(deps.db, {
+        now: deps.now?.(),
+        ...(deps.publisher ? { publisher: deps.publisher } : {}),
+        ...(deps.notifications ? { notifications: deps.notifications } : {}),
+      });
+      if (moved > 0) {
+        deps.logger.info({ moved }, 'Bot tidak membalas sampai batas waktu: percakapan ke antrian');
+      }
+      return { moved };
+    }
     default:
       throw new UnrecoverableError(`Job "${job.name}" tidak dikenal di antrian maintenance`);
   }
@@ -259,6 +366,15 @@ export function createMaintenanceQueue(options: QueueConnectionOptions): Queue {
 
 /** Mendaftarkan jadwal berkala (idempoten: memanggil ulang hanya memperbarui jadwal yang sama). */
 export async function scheduleMaintenanceJobs(queue: Queue): Promise<void> {
+  await queue.upsertJobScheduler(
+    MAINTENANCE_JOBS.botTimeouts,
+    { every: BOT_TIMEOUTS_INTERVAL_MS },
+    {
+      name: MAINTENANCE_JOBS.botTimeouts,
+      data: {},
+      opts: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 50 } },
+    },
+  );
   await queue.upsertJobScheduler(
     MAINTENANCE_JOBS.staleSendClaims,
     { every: STALE_SEND_CLAIMS_INTERVAL_MS },

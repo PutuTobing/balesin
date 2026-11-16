@@ -12,6 +12,8 @@ import {
   type Lookup,
   type SecretBox,
   type SecurityNoticeAdminEmailPayload,
+  REDACTED,
+  scrubSecretsInText,
 } from '@balesin/core';
 import {
   apiKeys,
@@ -188,6 +190,9 @@ async function messageData(db: DbExecutor, organizationId: string, messageId: st
         }
       : null,
     location: row.location ?? null,
+    // Balasan tombol/daftar pelanggan (id + judul pilihan) / pesan interaktif keluar.
+    interactive: interactiveReplyOf(row),
+    interactive_message: row.extras.interactiveMessage ?? null,
     status: row.status,
     error_code: row.errorCode,
     created_at: row.occurredAt.toISOString(),
@@ -221,6 +226,21 @@ export async function buildEventBody(
   // TITIK KAIT mode kompatibel MobiChat: endpoint `format = 'mobichat'` menambah
   // `mobichat_base_url`/`mobichat_api_key` + bentuk body MobiChat (butir berikutnya).
   return { id: event.id, event: event.type, created_at: event.createdAt.toISOString(), data };
+}
+
+/** Balasan tombol/daftar dari pelanggan: `{ type, id, title, description }` atau `null`. */
+function interactiveReplyOf(row: typeof messages.$inferSelect) {
+  const reply = (row.extras as { interactive?: Record<string, unknown> } | null)?.interactive;
+  if (!reply || row.direction !== 'inbound') return null;
+  const textOf = (value: unknown) => (typeof value === 'string' ? value : null);
+  const kind = textOf(reply.kind);
+  return {
+    type:
+      kind === 'list_reply' ? 'list_reply' : kind === 'nfm_reply' ? 'nfm_reply' : 'button_reply',
+    id: textOf(reply.id),
+    title: textOf(reply.title),
+    description: textOf(reply.description),
+  };
 }
 
 /** Teks ringkas pesan untuk bot (lokasi/tombol jadi teks; sama dengan riwayat kompatibel). */
@@ -314,6 +334,7 @@ export async function buildMobichatBody(
       : [];
   const text = mobichatText(message);
   const createdAt = message.occurredAt.toISOString();
+  const interactiveReply = interactiveReplyOf(message);
   return {
     event: event.type,
     event_id: event.id,
@@ -326,6 +347,10 @@ export async function buildMobichatBody(
     message_type: message.type,
     sender: 'user',
     type: 'user',
+    // Balasan tombol/daftar: id + judul pilihan (teks pesan = judul).
+    ...(interactiveReply
+      ? { interactive_reply: interactiveReply, reply_id: interactiveReply.id }
+      : {}),
     contact_name: fullName,
     tags: contact.tags,
     contact: contactBody,
@@ -344,6 +369,7 @@ export async function buildMobichatBody(
       text,
       message_text: text,
       message_type: message.type,
+      ...(interactiveReply ? { interactive_reply: interactiveReply } : {}),
       attachments,
       created_at: createdAt,
     },
@@ -457,7 +483,11 @@ async function dispatch(db: Database, logger: Logger, now: Date): Promise<number
 /** Bangun pengiriman untuk satu kejadian (di dalam savepoint `dispatch`). */
 async function dispatchOne(tx: DbExecutor, event: OutgoingEventRow, now: Date): Promise<number> {
   const endpoints = await tx
-    .select({ id: webhookEndpoints.id, format: webhookEndpoints.format })
+    .select({
+      id: webhookEndpoints.id,
+      format: webhookEndpoints.format,
+      botOnly: webhookEndpoints.botOnly,
+    })
     .from(webhookEndpoints)
     .where(
       and(
@@ -470,7 +500,26 @@ async function dispatchOne(tx: DbExecutor, event: OutgoingEventRow, now: Date): 
   // Satu body per format (dibangun sekali, hanya bila ada endpoint format itu).
   const bodies = new Map<string, Record<string, unknown> | null>();
   const rows = [];
+  // Endpoint "hanya saat bot": pesan masuk dikirim hanya bila bot memegang percakapan SAAT DISPATCH.
+  let botHolds: boolean | undefined;
   for (const endpoint of endpoints) {
+    if (endpoint.botOnly && event.type === 'message.received') {
+      if (botHolds === undefined) {
+        const [conversation] = event.conversationId
+          ? await tx
+              .select({ status: conversations.status })
+              .from(conversations)
+              .where(
+                and(
+                  eq(conversations.organizationId, event.organizationId),
+                  eq(conversations.id, event.conversationId),
+                ),
+              )
+          : [];
+        botHolds = conversation?.status === 'bot';
+      }
+      if (!botHolds) continue;
+    }
     if (!bodies.has(endpoint.format)) {
       bodies.set(
         endpoint.format,
@@ -567,6 +616,7 @@ async function attempt(
     secrets.push(secretBox.decrypt(endpoint.previousSecretEncrypted, secretContext(endpoint)));
   }
   let payload: Record<string, unknown> = delivery.payload;
+  let injectedKey: string | null = null;
   if (endpoint.format === 'mobichat') {
     const withKey = await withMobichatCredentials(deps, endpoint, payload, now);
     if (!withKey) {
@@ -574,6 +624,7 @@ async function attempt(
       return 'failed';
     }
     payload = withKey;
+    injectedKey = typeof withKey.mobichat_api_key === 'string' ? withKey.mobichat_api_key : null;
   }
   const body = JSON.stringify(payload);
   const timestamp = Math.floor(now.getTime() / 1000);
@@ -597,7 +648,9 @@ async function attempt(
     httpStatus: result.httpStatus,
     durationMs: result.durationMs,
     errorCode: result.errorCode,
-    responseSnippet: result.snippet,
+    // Penerima bisa memantulkan body (review MobiChat S1): key yang disisipkan + pola rahasia yang
+    // dikenal (`blsn_live_…`, `whsec_…`, Bearer, …) disensor SEBELUM disimpan/ditampilkan.
+    responseSnippet: scrubSnippet(result.snippet, injectedKey),
   };
   if (result.ok) {
     await finalize({ ...common, status: 'succeeded', nextAttemptAt: null, deliveredAt: now });
@@ -677,6 +730,23 @@ async function recordFinalFailure(deps: WebhooksOutDeps, endpoint: WebhookEndpoi
         );
       });
   }
+}
+
+/** Potongan jawaban penerima tanpa rahasia (key yang disisipkan, pola rahasia yang dikenal). */
+export function scrubSnippet(snippet: string | null, injectedKey: string | null): string | null {
+  if (snippet === null) return null;
+  let text = snippet;
+  if (injectedKey) {
+    text = text.split(injectedKey).join(REDACTED);
+    // Key terpotong di akhir potongan (batas 500 byte): ekor yang merupakan awalan key ikut disensor.
+    for (let length = Math.min(injectedKey.length - 1, text.length); length >= 12; length -= 1) {
+      if (text.endsWith(injectedKey.slice(0, length))) {
+        text = text.slice(0, text.length - length) + REDACTED;
+        break;
+      }
+    }
+  }
+  return scrubSecretsInText(text).slice(0, 500);
 }
 
 /** Host saja (tanpa path/query yang bisa memuat token) untuk audit/email. */

@@ -162,6 +162,13 @@
       "when": 1794866243360,
       "tag": "0022_kompat_mobichat",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794869398093,
+      "tag": "0023_bot_eksternal",
+      "breakpoints": true
     }
   ]
 }

@@ -22,7 +22,11 @@ import {
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { errorRef, processWebhooksOutTick } from '../../../../worker/src/queues/webhooks-out';
+import {
+  errorRef,
+  processWebhooksOutTick,
+  scrubSnippet,
+} from '../../../../worker/src/queues/webhooks-out';
 import {
   TEST_MASTER_KEY,
   call,
@@ -199,5 +203,23 @@ describe('Info 6: cabut rahasia lama seketika saat rotasi', () => {
     expect(signature.split(',')).not.toContain(sign(oldSecret));
     expect(signature.match(/v1=/g)).toHaveLength(1);
     expect(await harness.db.select().from(webhookDeliveries)).toHaveLength(1);
+  });
+});
+
+describe('review MobiChat S1: potongan jawaban tanpa rahasia', () => {
+  it('key yang disisipkan (utuh / terpotong di batas) + pola blsn_/whsec_ disensor', () => {
+    const key = ['blsn', 'live', 'a'.repeat(16), 'Z'.repeat(43)].join('_');
+    const whsec = `whsec_${'q'.repeat(30)}`;
+    const echoed = scrubSnippet(`{"mobichat_api_key":"${key}","x":"${whsec}"}`, key) ?? '';
+    expect(echoed).not.toContain('Z'.repeat(20));
+    expect(echoed).not.toContain('q'.repeat(20));
+    // Terpotong di akhir potongan 500 byte: awalan key ≥ 12 karakter ikut disensor.
+    const cut = scrubSnippet(`prefix ${key.slice(0, 30)}`, key) ?? '';
+    expect(cut).not.toContain(key.slice(0, 30));
+    // Key lain (bukan yang disisipkan) tetap tertangkap pola umum.
+    const other = ['blsn', 'live', 'b'.repeat(16), 'Y'.repeat(43)].join('_');
+    expect(scrubSnippet(other, null)).not.toContain('Y'.repeat(20));
+    expect(scrubSnippet(null, key)).toBeNull();
+    expect(scrubSnippet('diterima', key)).toBe('diterima');
   });
 });

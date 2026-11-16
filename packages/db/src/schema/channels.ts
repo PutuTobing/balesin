@@ -1,10 +1,11 @@
-import { CHANNEL_TYPES, type WhatsAppNumberSummary } from '@balesin/shared';
+import { CHANNEL_TYPES, type BotHours, type WhatsAppNumberSummary } from '@balesin/shared';
 import { sql } from 'drizzle-orm';
 import {
   boolean,
   check,
   foreignKey,
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -83,10 +84,23 @@ export const channels = pgTable(
     createdByUserId: uuid('created_by_user_id'),
     updatedByUserId: uuid('updated_by_user_id'),
     deletedAt: timestamptz('deleted_at'),
+    /**
+     * Bot eksternal (Fase 3): percakapan BARU masuk status `bot` bila aktif + dalam jam kerja bot
+     * (`bot_hours`, zona organisasi). `bot_timeout_minutes` = menit tanpa balasan bot sebelum
+     * otomatis ke antrian (`null` = tanpa batas).
+     */
+    botEnabled: boolean('bot_enabled').notNull().default(false),
+    botHours: jsonb('bot_hours').$type<BotHours>().notNull().default({ mode: 'always' }),
+    botTimeoutMinutes: integer('bot_timeout_minutes'),
+    botSettingsUpdatedAt: timestamptz('bot_settings_updated_at'),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
   (table) => [
+    check(
+      'channels_bot_timeout_range',
+      sql`${table.botTimeoutMinutes} is null or ${table.botTimeoutMinutes} between 1 and 1440`,
+    ),
     // Sasaran FK komposit (organization_id, id) untuk tabel percakapan/pesan nanti.
     unique('channels_organization_id_id_unique').on(table.organizationId, table.id),
     // Satu nomor hanya boleh menjadi satu channel hidup per organisasi.

@@ -371,7 +371,7 @@ describe('kontrak workflow ULAN (permintaan & pembaca asli)', () => {
       .select()
       .from(conversationEvents)
       .where(eq(conversationEvents.conversationId, row.id));
-    expect(events.map((event) => event.kind).sort()).toEqual(['note_added', 'unassigned']);
+    expect(events.map((event) => event.kind).sort()).toEqual(['handoff', 'note_added']);
     expect(events.every((event) => event.actorUserId === null && event.apiKeyId !== null)).toBe(
       true,
     );
@@ -609,7 +609,7 @@ describe('aturan tetap berlaku lewat jalur kompatibel', () => {
     expect(mobichatErrorSchema.parse(closed.json()).code).toBe('WINDOW_CLOSED');
   });
 
-  it('Bot API lama: /api/bot/reply teks berbentuk MobiChat; tombol/list ditolak jelas', async () => {
+  it('Bot API lama: /api/bot/reply teks, tombol & daftar berbentuk MobiChat; flow ditolak jelas', async () => {
     const { secret } = await createKey(['messages:send']);
     await receive(textMessageNotification({ body: 'Halo' }));
     const row = await onlyConversation();
@@ -621,13 +621,52 @@ describe('aturan tetap berlaku lewat jalur kompatibel', () => {
     expect(reply.statusCode, reply.body).toBe(200);
     const parsed = mobichatBotReplyResponseSchema.parse(reply.json());
     expect(parsed.result.data.contacts).toEqual([{ input: WA, wa_id: WA }]);
+    // Tombol (≤ 3) & daftar (≤ 10) kini didukung; flow belum; batas Meta ditegakkan.
     const button = await n8n(secret, 'POST', MOBICHAT_ROUTES.botReply, {
       conversation_id: row.number,
       message_type: 'button',
-      list_options: [{ id: '1', title: 'Ya' }],
+      message_text: 'Sudah bayar?',
+      list_options: [
+        { id: 'ya', title: 'Ya' },
+        { id: 'belum', title: 'Belum' },
+      ],
     });
-    expect(button.statusCode).toBe(400);
-    expect(mobichatBotErrorSchema.parse(button.json()).error).toContain('belum didukung');
+    expect(button.statusCode, button.body).toBe(200);
+    const list = await n8n(secret, 'POST', MOBICHAT_ROUTES.botReply, {
+      conversation_id: row.number,
+      message_type: 'list',
+      message_text: 'Pilih paket',
+      list_title: 'Lihat paket',
+      list_options: [
+        { id: 'p10', title: '10 Mbps', description: 'Rp150.000/bulan' },
+        { id: 'p20', title: '20 Mbps' },
+      ],
+    });
+    expect(list.statusCode, list.body).toBe(200);
+    const tooMany = await n8n(secret, 'POST', MOBICHAT_ROUTES.botReply, {
+      conversation_id: row.number,
+      message_type: 'button',
+      message_text: 'Pilih',
+      list_options: ['a', 'b', 'c', 'd'].map((id) => ({ id, title: id })),
+    });
+    expect(tooMany.statusCode).toBe(400);
+    expect(mobichatBotErrorSchema.parse(tooMany.json()).error).toContain('list_options');
+    const flow = await n8n(secret, 'POST', MOBICHAT_ROUTES.botReply, {
+      conversation_id: row.number,
+      message_type: 'flow',
+      message_text: 'Isi formulir',
+      flow_name: 'daftar',
+    });
+    expect(flow.statusCode).toBe(400);
+    expect(mobichatBotErrorSchema.parse(flow.json()).error).toContain('belum didukung');
+    const stored = await harness.db
+      .select()
+      .from(messages)
+      .where(and(eq(messages.conversationId, row.id), eq(messages.type, 'interactive')));
+    expect(stored.map((message) => message.extras.interactiveMessage?.kind).sort()).toEqual([
+      'button',
+      'list',
+    ]);
     const missing = await n8n(secret, 'POST', MOBICHAT_ROUTES.botReply, {
       conversation_id: 999999,
       message_text: 'x',
@@ -712,14 +751,38 @@ describe('aturan tetap berlaku lewat jalur kompatibel', () => {
         })
       ).statusCode,
     ).toBe(400);
-    // Lepas agen tertentu → antrian.
+    // Key tidak pernah mengeluarkan/mengalihkan agen manusia (review Info 2): agent_id diabaikan,
+    // assign ke agen lain 409, selesai hanya untuk chat bot.
     const unassign = await n8n(secret, 'POST', MOBICHAT_ROUTES.unassignAgent, {
       conversation_id: row.number,
       agent_id: cs.id,
     });
     expect(unassign.statusCode).toBe(200);
-    expect(await onlyConversation()).toMatchObject({ status: 'unserved', assigneeUserId: null });
-    // Selesai.
+    expect(await onlyConversation()).toMatchObject({ status: 'served', assigneeUserId: cs.id });
+    const other = await insertUser(harness.db, organizationId, {
+      role: 'cs',
+      email: 'cs2.kompat@majujaya.test',
+      name: 'Dewi CS',
+      passwordHash: await hasher.hash('sandi-uji-kompat-mobichat-02'),
+    });
+    expect(
+      (
+        await n8n(secret, 'POST', MOBICHAT_ROUTES.agents, {
+          conversation_id: row.number,
+          agent_id: other.id,
+        })
+      ).statusCode,
+    ).toBe(409);
+    const notBot = await n8n(secret, 'POST', MOBICHAT_ROUTES.conversationStatus, {
+      conversation_id: row.number,
+      status: 'resolved',
+    });
+    expect(notBot.statusCode).toBe(409);
+    // Selesai (chat dipegang bot).
+    await harness.db
+      .update(conversations)
+      .set({ status: 'bot', assigneeUserId: null })
+      .where(eq(conversations.id, row.id));
     const resolved = await n8n(secret, 'POST', MOBICHAT_ROUTES.conversationStatus, {
       conversation_id: row.number,
       status: 'resolved',

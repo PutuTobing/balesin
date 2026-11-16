@@ -429,9 +429,71 @@ Baris yang ditolak Postgres saat disimpan penerima diganti **baris stub tanpa pa
 terisi. Dihitung dengan `countRejectedWebhookEvents` (untuk layar diagnosis nanti). Bila stub pun
 ditolak → log `error`.
 
+## Bot eksternal (Fase 3)
+
+Bot = penerima webhook keluar (native atau format MobiChat) yang membalas lewat API key
+(docs/KONTRAK-API-PUBLIK.md, docs/KONTRAK-API-MOBICHAT.md). Skema: `packages/shared/src/bot.ts`.
+
+**Saklar bot channel** — `GET`/`PUT /api/v1/settings/channels/:channelId/bot` (`integrations.manage`,
+Owner/Admin; PUT ber-CSRF, 30/menit, diaudit `channel.bot_updated` tanpa data pelanggan, tanpa
+konfirmasi identitas — bisa dibalik kapan saja):
+
+```json
+{ "enabled": true,
+  "hours": { "mode": "always" }  |  { "mode": "schedule", "windows": [{ "day": 1, "start": "08:00", "end": "17:00" }] },
+  "timeoutMinutes": 10 }
+```
+
+- `day` 0 = Minggu … 6 = Sabtu, `HH:MM` 00:00–24:00, mulai < selesai (lewat tengah malam = dua
+  jendela), maks. 21 jendela; zona waktu = zona organisasi. `timeoutMinutes` 1–1.440 atau `null`.
+- Jawaban `{ settings: { …, timezone, activeNow, updatedAt } }` — `activeNow` = percakapan baru SAAT
+  INI masuk ke bot.
+- Berlaku untuk percakapan BARU: worker memberi status `bot` bila bot aktif + dalam jam kerja bot
+  (`botAwareInitialStatus`), selain itu `unserved`. Isi jam rusak → `unserved` (aman: ke tim).
+
+**Selama `bot`**: pesan pelanggan masuk ke tab "Bot", TIDAK memicu push ke manusia; bot menerima
+`message.received` lewat webhook keluar (opsi endpoint `botOnly`: hanya selama bot memegang).
+`conversations.bot_awaiting_since` = pesan pelanggan pertama yang belum dibalas bot (dikosongkan saat
+bot membalas lewat API key atau status bukan `bot`).
+
+**Handoff → tim** (kejadian `handoff`, webhook `conversation.handoff`, push "kembali ke antrian"):
+- bot meminta: `POST /api/v1/public/conversations/:id/handoff` atau MobiChat `unassign-agent` /
+  `conversation-status {status:"unserved"}`;
+- agen mematikan bot: `POST /api/v1/conversations/:id/bot { "active": false }`;
+- **batas waktu**: job maintenance `bot-timeouts` (tiap menit) memindahkan percakapan `bot` yang
+  `bot_awaiting_since` lebih tua dari `timeoutMinutes` channelnya → `unserved`, pelaku sistem;
+- agen "Ambil" (`claim`) dari bot → `served` + `conversation.handoff`.
+
+**Kembali ke bot**: `POST /api/v1/conversations/:id/bot { "active": true }` (`inbox.reply` + cakupan)
+→ status `bot`, tanpa pemegang, kejadian `bot_resumed`. Bot channel mati → 409; percakapan selesai →
+409; mengambil dari agen LAIN butuh `inbox.assign` (403 + audit penolakan). Jawaban = bentuk aksi
+penanganan (`{ conversation }`). Tab Log: `handoff` "Menyerahkan dari bot ke tim", `bot_resumed`
+"Mengembalikan ke bot" (pelaku pengguna / "Bot · <nama key>" / sistem bila `actor` `null`).
+
+## Pesan interaktif (Fase 3)
+
+`POST /conversations/:id/messages` menerima juga
+`{ type: "interactive", clientMessageId, interactive, replyToMessageId? }` (skema
+`packages/shared/src/interactive.ts`, batas Meta):
+
+- tombol: `{ kind: "button", body (≤ 1.024), header? (≤ 60), footer? (≤ 60), buttons: [{ id (≤ 256),
+  title (≤ 20) }] }` 1–3 tombol, ID & judul unik;
+- daftar: `{ kind: "list", body, header?, footer?, buttonText (≤ 20), sections: [{ title? (≤ 24, wajib
+  bila > 1 bagian), rows: [{ id (≤ 200), title (≤ 24), description? (≤ 72) }] }] }` total 1–10 baris,
+  ID unik.
+- Hanya di dalam jendela 24 jam (409 `WINDOW_CLOSED`), semua batas kirim & rem darurat berlaku. Disimpan
+  `type: interactive`, `text` = body, `extras.interactiveMessage`; respons `Message.interactiveMessage`
+  (pesan keluar; `null` lainnya). Worker membangun objek `interactive` Cloud API (`reply` buttons /
+  `sections` rows).
+- Balasan pelanggan (`button_reply`/`list_reply`) tetap tersimpan di `Message.interactive`
+  `{ kind, id, title, description }` dan diteruskan ke bot (webhook native `data.message.interactive`
+  `{ type, id, title, description }`; format MobiChat `interactive_reply` + `reply_id`,
+  `message_text` = judul pilihan).
+
 ## Titik kait berikutnya
 
-- Bot (Fase 3): `initialConversationStatus` + antre job kirim-ke-bot (ID saja).
+- Pesan otomatis saat diserahkan ke manusia / dikembalikan ke bot, sapaan & di luar jam kerja (PRD
+  §3.4 PENTING): kait di kejadian `handoff`/`bot_resumed` dan `botAwareInitialStatus`.
 - Pesan keluar: setelah `wamid` tersimpan, putar ulang status yang datang lebih dulu dari
   `webhook_events` (`external_id`).
 - Unduh media (ID media Meta lewat Graph API), siaran WebSocket: job terpisah, bukan di transaksi

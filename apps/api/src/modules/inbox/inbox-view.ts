@@ -3,6 +3,7 @@ import type { ContactRow } from '@balesin/db';
 import {
   MAX_SEND_ATTEMPTS,
   MESSAGE_MEDIA_KINDS,
+  interactiveMessageSchema,
   isRetryableFailure,
   outboundFailureMessage,
   outboundFailureReasonSchema,
@@ -166,6 +167,10 @@ export function toMessage(row: MessageRowView): Message {
     media: parsed(storedMediaSchema, row.media),
     location: parsed(storedLocationSchema, row.location),
     interactive: parsed(storedInteractiveSchema, extras.interactive),
+    interactiveMessage:
+      row.direction === 'outbound'
+        ? parsed(interactiveMessageSchema, extras.interactiveMessage)
+        : null,
     reaction:
       row.type === 'reaction'
         ? { emoji: row.reactionEmoji, messageId: row.reactionToMessageId }

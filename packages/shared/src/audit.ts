@@ -94,6 +94,8 @@ export const AUDIT_ACTIONS = {
   /** Channel dihapus: kredensialnya dimusnahkan dari database. */
   channelDeleted: 'channel.deleted',
   channelTested: 'channel.tested',
+  /** Saklar bot channel / jam kerja bot / batas waktu bot diubah (Fase 3). */
+  channelBotUpdated: 'channel.bot_updated',
   channelVerifyTokenRotated: 'channel.webhook_verify_token_rotated',
   /**
    * Profil bisnis diubah: `changedFields`, nilai lama (`previous`, `null` bila tidak terbaca) dan baru
@@ -216,6 +218,7 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'channel.enabled': 'Channel diaktifkan kembali',
   'channel.deleted': 'Channel dihapus',
   'channel.tested': 'Koneksi channel dites',
+  'channel.bot_updated': 'Pengaturan bot channel diubah',
   'channel.webhook_verify_token_rotated': 'Verify token webhook dibuat ulang',
   'channel.business_profile_updated': 'Profil bisnis WhatsApp diubah',
   'channel.business_profile_update_failed': 'Perubahan profil bisnis ditolak Meta',

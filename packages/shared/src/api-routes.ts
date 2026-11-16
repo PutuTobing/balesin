@@ -154,6 +154,8 @@ export const API_ROUTES = {
     rotateVerifyToken: `${API_PREFIX}/settings/channels/:channelId/webhook/verify-token`,
     /** GET — profil bisnis dari Meta; PUT — ubah profil bisnis. */
     businessProfile: `${API_PREFIX}/settings/channels/:channelId/business-profile`,
+    /** GET/PUT — saklar bot channel, jam kerja bot, batas waktu bot (`integrations.manage`). */
+    bot: `${API_PREFIX}/settings/channels/:channelId/bot`,
   },
   /**
    * Rem pengiriman (docs/KONTRAK-API-INBOX.md "Batas kirim & rem darurat"). GET/PUT =
@@ -178,6 +180,8 @@ export const API_ROUTES = {
     counts: `${API_PREFIX}/conversations/counts`,
     /** POST — tandai sudah dibaca (CSRF). */
     read: `${API_PREFIX}/conversations/:conversationId/read`,
+    /** POST `{ active }` — saklar bot per percakapan: matikan (ambil alih/serahkan ke tim) / nyalakan lagi. */
+    bot: `${API_PREFIX}/conversations/:conversationId/bot`,
     /** POST — ambil dari antrian terbuka (CSRF, `inbox.assign`). */
     claim: `${API_PREFIX}/conversations/:conversationId/claim`,
     /** POST — tugaskan/alihkan ke agen (CSRF, `inbox.assign`). */
@@ -257,6 +261,8 @@ export const API_ROUTES = {
     messages: `${API_PREFIX}/public/conversations/:conversationId/messages`,
     upload: `${API_PREFIX}/public/conversations/:conversationId/media`,
     message: `${API_PREFIX}/public/messages/:messageId`,
+    /** POST — bot menyerahkan percakapan ke tim (`conversations:write`). */
+    handoff: `${API_PREFIX}/public/conversations/:conversationId/handoff`,
     contacts: `${API_PREFIX}/public/contacts`,
     contact: `${API_PREFIX}/public/contacts/:contactId`,
     contactTags: `${API_PREFIX}/public/contacts/:contactId/tags`,

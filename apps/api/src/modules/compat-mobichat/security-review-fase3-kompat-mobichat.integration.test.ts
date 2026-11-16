@@ -327,56 +327,53 @@ describe('review keamanan — URL media bertanda tangan', () => {
 });
 
 describe('review keamanan — webhook format MobiChat', () => {
-  it.fails(
-    'R1: key yang disisipkan tidak tersimpan di potongan jawaban walau penerima memantulkan body',
-    async () => {
-      const { secret } = await createKey();
-      const created = await call(
-        harness.app,
-        'POST',
-        API_ROUTES.outgoingWebhooks.list,
-        {
-          url: `${echoOrigin}/webhook/mobichat-cs`,
-          events: ['message.received'],
-          format: 'mobichat',
-          mobichat: { apiKey: secret },
-          confirmation: await confirmationFor(),
-        },
-        { cookie: owner.cookie, csrf: owner.csrf },
-      );
-      expect(created.statusCode, created.body).toBe(201);
-      const { webhook } = outgoingWebhookSecretResponseSchema.parse(created.json());
-      const test = await call(
-        harness.app,
-        'POST',
-        apiPath(API_ROUTES.outgoingWebhooks.test, { webhookId: webhook.id }),
-        undefined,
-        { cookie: owner.cookie, csrf: owner.csrf },
-      );
-      expect(test.statusCode).toBe(201);
-      await processWebhooksOutTick({
-        db: harness.db,
-        logger: logs.logger,
-        secretBox: box,
-        appUrl: integrationConfig().appUrl,
-        allowLoopback: true,
-        timeoutMs: 2_000,
-      });
-      const rows = await harness.db
-        .select()
-        .from(webhookDeliveries)
-        .where(eq(webhookDeliveries.endpointId, webhook.id));
-      expect(rows[0]?.status).toBe('succeeded');
-      const listed = await call(
-        harness.app,
-        'GET',
-        apiPath(API_ROUTES.outgoingWebhooks.deliveries, { webhookId: webhook.id }),
-        undefined,
-        { cookie: owner.cookie },
-      );
-      const keyTail = secret.slice(-20);
-      expect(JSON.stringify(rows)).not.toContain(keyTail);
-      expect(listed.body).not.toContain(keyTail);
-    },
-  );
+  it('R1: key yang disisipkan tidak tersimpan di potongan jawaban walau penerima memantulkan body', async () => {
+    const { secret } = await createKey();
+    const created = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.outgoingWebhooks.list,
+      {
+        url: `${echoOrigin}/webhook/mobichat-cs`,
+        events: ['message.received'],
+        format: 'mobichat',
+        mobichat: { apiKey: secret },
+        confirmation: await confirmationFor(),
+      },
+      { cookie: owner.cookie, csrf: owner.csrf },
+    );
+    expect(created.statusCode, created.body).toBe(201);
+    const { webhook } = outgoingWebhookSecretResponseSchema.parse(created.json());
+    const test = await call(
+      harness.app,
+      'POST',
+      apiPath(API_ROUTES.outgoingWebhooks.test, { webhookId: webhook.id }),
+      undefined,
+      { cookie: owner.cookie, csrf: owner.csrf },
+    );
+    expect(test.statusCode).toBe(201);
+    await processWebhooksOutTick({
+      db: harness.db,
+      logger: logs.logger,
+      secretBox: box,
+      appUrl: integrationConfig().appUrl,
+      allowLoopback: true,
+      timeoutMs: 2_000,
+    });
+    const rows = await harness.db
+      .select()
+      .from(webhookDeliveries)
+      .where(eq(webhookDeliveries.endpointId, webhook.id));
+    expect(rows[0]?.status).toBe('succeeded');
+    const listed = await call(
+      harness.app,
+      'GET',
+      apiPath(API_ROUTES.outgoingWebhooks.deliveries, { webhookId: webhook.id }),
+      undefined,
+      { cookie: owner.cookie },
+    );
+    const keyTail = secret.slice(-20);
+    expect(JSON.stringify(rows)).not.toContain(keyTail);
+    expect(listed.body).not.toContain(keyTail);
+  });
 });

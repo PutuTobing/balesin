@@ -419,18 +419,34 @@ const botRoutes: FastifyPluginCallbackZod<MobichatRoutesOptions> = (app, options
     async (request) => {
       const key = requireApiKey(request);
       const type = request.body.message_type ?? 'text';
-      if (type !== 'text') {
+      if (type !== 'text' && type !== 'button' && type !== 'list') {
         throw new AppError('VALIDATION_ERROR', {
-          message: `message_type "${type.slice(0, 32)}" belum didukung Balesin (tombol/list/flow menyusul). Pakai "text".`,
+          message: `message_type "${type.slice(0, 32)}" belum didukung Balesin. Pakai "text", "button", atau "list".`,
         });
       }
       if (!request.body.message_text?.trim()) {
         throw new AppError('VALIDATION_ERROR', { message: 'message_text wajib diisi.' });
       }
+      if (type !== 'text' && !request.body.list_options?.length) {
+        throw new AppError('VALIDATION_ERROR', {
+          message: 'list_options wajib diisi untuk pesan tombol/daftar.',
+        });
+      }
       const summary = await mobichat.send(
         key,
         request.body.conversation_id,
-        [{ message_type: 'text', text: request.body.message_text }],
+        [
+          {
+            message_type: type,
+            text: request.body.message_text,
+            ...(request.body.list_title !== undefined
+              ? { list_title: request.body.list_title }
+              : {}),
+            ...(request.body.list_options !== undefined
+              ? { list_options: request.body.list_options }
+              : {}),
+          },
+        ],
         request.headers['idempotency-key'],
         clientInfo(request),
       );

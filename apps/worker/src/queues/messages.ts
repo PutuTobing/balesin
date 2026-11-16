@@ -36,6 +36,7 @@ import {
 } from '@balesin/db';
 import {
   apiKeyHasScope,
+  interactiveMessageSchema,
   isWithinScope,
   permissionScope,
   type OutboundFailureReason,
@@ -222,6 +223,13 @@ async function prepare(
       const wamid = await targetWamid(tx, message, message.reactionToMessageId);
       if (!wamid) return { failure: 'meta_rejected' };
       content = { type: 'reaction', targetWamid: wamid, emoji: message.reactionEmoji ?? '' };
+      break;
+    }
+    case 'interactive': {
+      // Disimpan api setelah divalidasi; dibaca ulang dengan skema yang sama (jsonb tidak tepercaya).
+      const parsed = interactiveMessageSchema.safeParse(message.extras.interactiveMessage);
+      if (message.direction !== 'outbound' || !parsed.success) return { failure: 'meta_rejected' };
+      content = { type: 'interactive', interactive: parsed.data };
       break;
     }
     case 'image':

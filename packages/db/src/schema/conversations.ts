@@ -57,6 +57,12 @@ export const conversations = pgTable(
     firstAssignedAt: timestamptz('first_assigned_at'),
     /** Laporan: pesan keluar pertama oleh agen (diisi sekali, saat pesan dikirim). */
     firstResponseAt: timestamptz('first_response_at'),
+    /**
+     * Bot (Fase 3): waktu pesan pelanggan PERTAMA yang belum dibalas bot selama status `bot` —
+     * diisi pesan masuk, dikosongkan saat bot membalas / status bukan `bot` lagi. Dasar batas waktu
+     * bot (`channels.bot_timeout_minutes`).
+     */
+    botAwaitingSince: timestamptz('bot_awaiting_since'),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
@@ -98,6 +104,14 @@ export const conversations = pgTable(
     ),
     index('conversations_organization_id_contact_id_idx').on(table.organizationId, table.contactId),
     check('conversations_unread_count_nonnegative', sql`${table.unreadCount} >= 0`),
+    check(
+      'conversations_bot_awaiting_only_bot',
+      sql`${table.status} = 'bot' or ${table.botAwaitingSince} is null`,
+    ),
+    // Pemeriksa batas waktu bot (tiap menit).
+    index('conversations_bot_awaiting_idx')
+      .on(table.botAwaitingSince)
+      .where(sql`${table.status} = 'bot' and ${table.botAwaitingSince} is not null`),
     check(
       'conversations_window_matches_inbound',
       sql`(${table.lastInboundAt} is null) = (${table.windowExpiresAt} is null)`,

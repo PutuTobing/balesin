@@ -28,7 +28,7 @@ sudah ada — kirim pesan, penanganan, catatan, kontak & tag; tidak ada logika b
 | `PUT /api/public/contacts` | `contacts:write` | ganti nama kontak percakapan |
 | `PUT /api/public/tags/whatsapp` | `contacts:write` | tambah tag (tag lama tetap) |
 | `GET /api/public/media/:messageNumber?exp=&kid=&sig=` | tanpa header (URL bertanda tangan) | berkas lampiran |
-| `POST /api/bot/reply` | `messages:send` | Bot API lama — teks saja |
+| `POST /api/bot/reply` | `messages:send` | Bot API lama — teks, tombol (`button`), daftar (`list`) |
 | `POST /api/bot/reply/media` | `messages:send` | Bot API lama — media dari URL |
 
 `conversation_id`/`conversationId` (keduanya diterima) = **`conversations.number`**; `id`/`message_id`
@@ -68,8 +68,10 @@ polos (n8n / penyedia AI) — header `nosniff`, CSP sandbox, `Cache-Control: pri
 ```
 
 - Maks. 5 pesan; dikirim berurutan; galat menghentikan sisanya (yang sebelumnya sudah terantre).
-- `message_type` lain (tombol, list, flow, template) → 400 "belum didukung" (pesan interaktif = butir
-  berikutnya).
+- `message_type: "button"` (`text` + `list_options` 1–3 `{id,title}`) dan `"list"` (`text` +
+  `list_title` = teks tombol pembuka, bawaan "Pilih" + `list_options` 1–10 `{id,title,description?}`)
+  → pesan interaktif dengan batas Meta yang sama dengan web (galat 400 menyebut `list_options`).
+  `flow`/template → 400 "belum didukung".
 - Semua aturan kirim tetap: jendela 24 jam (409), rem darurat (423), batas per percakapan & organisasi
   600/menit, **batas harian per key** (429), pelaku `senderKind: bot` + `api_key_id`.
 - Header `Idempotency-Key` opsional — berlaku per butir (`<key>#<urutan>`); diulang → pesan yang sama.
@@ -87,17 +89,20 @@ polos (n8n / penyedia AI) — header `nosniff`, CSP sandbox, `Cache-Control: pri
   Balesin (`bot`/`unserved`/`served`/`resolved`). `assignments`: `{ user: { id: "bot", name: "Bot",
   role: "chatbot" } }` saat status `bot`; agen pemegang `{ user: { id, name, email: null, role: "agent" } }`
   (email agen sengaja tidak dibuka).
-- `POST unassign-agent { conversation_id, agent_id? }`: tanpa `agent_id` (atau `agent_id` bukan ID
-  pengguna Balesin, mis. ID angka MobiChat) = **lepas bot**: status `bot` → `unserved` (antrian "Belum
-  dilayani"). Percakapan yang sudah di antrian atau dipegang agen **tidak diubah** (200 + pesan). Dengan
-  `agent_id` = UUID agen pemegang → lepas agen itu.
-- `POST conversation-status { status: "unserved" }` = lepas bot (cara lama); `"resolved"` = selesai;
-  status lain 400.
-- `POST agents { conversation_id, agent_id }` → agen aktif yang boleh membalas (UUID), selain itu 400.
+- **Key hanya bertindak atas percakapan bot / antrian** (review Info 2, DECISIONS): tidak pernah
+  mengeluarkan atau mengalihkan agen manusia.
+- `POST unassign-agent { conversation_id, agent_id? }` = **lepas bot** (handoff): status `bot` →
+  `unserved` (antrian "Belum dilayani"), kejadian `handoff`, webhook `conversation.handoff`, push
+  antrian. `agent_id` diabaikan. Percakapan yang tidak dipegang bot **tidak diubah** (200 + pesan).
+- `POST conversation-status { status: "unserved" }` = lepas bot (cara lama); `"resolved"` = selesai,
+  hanya untuk percakapan `bot` (lainnya 409); status lain 400.
+- `POST agents { conversation_id, agent_id }` → agen aktif yang boleh membalas (UUID), hanya dari
+  `bot`/antrian (dipegang agen lain → 409), selain itu 400.
 - Semua aksi dicatat di `conversation_events` dengan `api_key_id` (pelaku tampil "Bot · <nama key>" di
   tab Log) + webhook keluar `conversation.*`; key diperiksa ulang di transaksi akhir (dicabut → 401).
-- TITIK KAIT (butir "Bot eksternal"): saklar bot mengisi status `bot` untuk percakapan baru dan event
-  `conversation.handoff`. Sebelum itu tidak ada percakapan yang otomatis berstatus `bot`.
+- Status `bot` diisi saklar bot channel (Pengaturan → Channel → Bot) untuk percakapan baru; agen bisa
+  mematikan/menyalakan bot per percakapan; batas waktu bot memindahkan ke antrian (KONTRAK-API-INBOX
+  "Bot eksternal").
 
 ### Catatan, kontak, tag
 
@@ -141,6 +146,15 @@ Pengaturan → Webhook, `format: "mobichat"` (tidak bisa diubah setelah dibuat),
   ditempel admin. **Keduanya disisipkan SAAT KIRIM** — tidak pernah tersimpan di `webhook_deliveries`
   (riwayat/kirim ulang aman), key dibaca dari `webhook_endpoints.mobichat_api_key_encrypted`.
 - Lampiran tanpa URL (ambil URL bertanda tangan dari riwayat). Hanya pesan pelanggan (bukan agen/bot).
+- Balasan tombol/daftar pelanggan: `message_text` = judul pilihan, `reply_id` = ID pilihan,
+  `interactive_reply` / `message.interactive_reply` = `{ type: button_reply|list_reply, id, title,
+  description }`.
+- Opsi `botOnly` endpoint: kirim hanya selama bot memegang (bawaan: semua pesan pelanggan — workflow
+  ULAN memutuskan diam sendiri).
+- **Peringatan `http://`**: bila URL webhook atau `mobichat_base_url` memakai `http://`, API key
+  mengalir tanpa TLS. Hanya pantas untuk jaringan LAN tepercaya (allowlist IP privat); UI wajib
+  menampilkan peringatan. Alamat LAN tanpa DNS: pakai IP (resolver tidak membaca `/etc/hosts`).
+- Potongan jawaban penerima di riwayat disensor (key yang disisipkan + pola rahasia, review S1).
 - Key yang dipakai dicabut/kedaluwarsa → pengiriman gagal `mobichat_key_inactive` (tidak dikirim);
   daftar webhook menampilkan `apiKeyStatus`.
 - Tanda tangan `X-Balesin-Signature` tetap ada (penerima boleh mengabaikan).

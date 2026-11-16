@@ -97,6 +97,14 @@ const mediaUrlSchema = z
   .refine((value) => !hasControlCharacters(value), 'media_url memuat karakter khusus.');
 
 const fileNameSchema = looseText(240, 'file_name');
+
+/** Pilihan tombol/daftar gaya MobiChat (`list_options[]`); batas Meta diperiksa saat dikonversi. */
+export const mobichatListOptionSchema = z.object({
+  id: z.union([z.string().max(256), z.number()]).transform((value) => String(value)),
+  title: z.string().max(100),
+  description: z.string().max(200).optional(),
+});
+const listOptionsSchema = z.array(mobichatListOptionSchema).max(10, 'Maksimal 10 pilihan.');
 const captionSchema = looseText(1024, 'Caption');
 
 // ── Permintaan ──────────────────────────────────────────────────────────────
@@ -114,8 +122,8 @@ export const mobichatMessagesQuerySchema = z
   .refine(hasConversationRef, CONVERSATION_REQUIRED);
 
 /**
- * Satu pesan di `messages[]`. `message_type` selain `text`/`media` (tombol, list, flow, template)
- * belum didukung lapisan ini → 400 dengan pesan jelas (pesan interaktif = butir berikutnya).
+ * Satu pesan di `messages[]`: `text`, `media`, `button` (≤ 3 `list_options`), `list` (≤ 10
+ * `list_options`, `list_title` = teks tombol pembuka). `flow`/template belum didukung → 400.
  */
 export const mobichatOutgoingMessageSchema = z
   .object({
@@ -126,9 +134,24 @@ export const mobichatOutgoingMessageSchema = z
     media_type: mediaTypeSchema.optional(),
     media_url: mediaUrlSchema.optional(),
     file_name: fileNameSchema.optional(),
+    list_title: z.string().max(100).optional(),
+    list_options: listOptionsSchema.optional(),
   })
   .superRefine((value, context) => {
     const type = value.message_type ?? 'text';
+    if (type === 'button' || type === 'list') {
+      if (!(value.text ?? value.message_text)?.trim()) {
+        context.addIssue({ code: 'custom', path: ['text'], message: 'Isi pesan wajib diisi.' });
+      }
+      if (!value.list_options?.length) {
+        context.addIssue({
+          code: 'custom',
+          path: ['list_options'],
+          message: 'list_options wajib diisi untuk pesan tombol/daftar.',
+        });
+      }
+      return;
+    }
     if (type === 'text') {
       const text = value.text ?? value.message_text;
       if (text === undefined || text.trim() === '') {
@@ -156,7 +179,7 @@ export const mobichatOutgoingMessageSchema = z
     context.addIssue({
       code: 'custom',
       path: ['message_type'],
-      message: `message_type "${type.slice(0, 32)}" belum didukung Balesin. Pakai "text" atau "media".`,
+      message: `message_type "${type.slice(0, 32)}" belum didukung Balesin. Pakai "text", "media", "button", atau "list".`,
     });
   });
 export type MobichatOutgoingMessage = z.infer<typeof mobichatOutgoingMessageSchema>;
@@ -243,11 +266,16 @@ export const mobichatTagsRequestSchema = z.object({
     .max(20, 'Maksimal 20 tag per permintaan.'),
 });
 
-/** Bot API lama `POST /api/bot/reply`. Hanya `message_type` = `text` (lainnya belum didukung). */
+/**
+ * Bot API lama `POST /api/bot/reply`: `text`, `button` (`list_options` ≤ 3), `list` (`list_title` +
+ * `list_options` ≤ 10). `flow` belum didukung.
+ */
 export const mobichatBotReplyRequestSchema = z.object({
   conversation_id: mobichatIdSchema,
   message_text: looseText(4096, 'message_text').optional(),
   message_type: z.string().max(32).optional(),
+  list_title: z.string().max(100).optional(),
+  list_options: listOptionsSchema.optional(),
 });
 
 /** Bot API lama `POST /api/bot/reply/media`. */

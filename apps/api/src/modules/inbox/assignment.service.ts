@@ -2,6 +2,7 @@ import { AppError, type InboxEventPublisher, type Logger } from '@balesin/core';
 import {
   PG_ERROR_CODES,
   apiKeys,
+  channels,
   contactEvents,
   conversationEvents,
   conversations,
@@ -110,9 +111,9 @@ export interface AssignmentService {
   events(grant: PermissionGrant, conversationId: string): Promise<ConversationEvent[] | undefined>;
   agents(organizationId: string): Promise<InboxAgent[]>;
   /**
-   * Lapisan kompatibel MobiChat (`conversations:write`, pelaku = API key). `agentUserId` kosong =
-   * lepas BOT (status `bot` -> `unserved`, handoff); berisi = lepas agen itu bila ia pemegangnya.
-   * Percakapan yang sudah di antrian / dipegang agen lain = tidak berubah (`changed: false`).
+   * Lapisan kompatibel MobiChat / API v1 (`conversations:write`, pelaku = API key): lepas BOT
+   * (status `bot` → `unserved`, kejadian `handoff`). Key TIDAK PERNAH mengeluarkan agen manusia
+   * (review MobiChat Info 2): `agentUserId` diabaikan; bukan `bot` = tidak berubah (`changed: false`).
    */
   releaseAsApiKey(
     actor: ApiKeyActor,
@@ -121,6 +122,12 @@ export interface AssignmentService {
   ): Promise<{ changed: boolean }>;
   assignAsApiKey(actor: ApiKeyActor, conversationId: string, userId: string): Promise<void>;
   resolveAsApiKey(actor: ApiKeyActor, conversationId: string): Promise<{ changed: boolean }>;
+  /**
+   * Saklar bot per percakapan (`inbox.reply` + cakupan). `false` = serahkan ke tim (status `bot` →
+   * `unserved`, kejadian `handoff`); `true` = kembalikan ke bot (`bot_resumed`; bot channel harus
+   * aktif; mengambil dari agen LAIN butuh `inbox.assign`).
+   */
+  setBot(context: AssignmentContext, conversationId: string, active: boolean): Promise<boolean>;
 }
 
 const NOT_FOUND = 'Percakapan tidak ditemukan.';
@@ -212,10 +219,16 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
 
       const nextAssignee =
         change.assigneeUserId === undefined ? current.assigneeUserId : change.assigneeUserId;
+      const nextStatus = change.patch?.status ?? current.status;
       try {
         await tx
           .update(conversations)
-          .set({ ...change.patch, assigneeUserId: nextAssignee })
+          .set({
+            ...change.patch,
+            assigneeUserId: nextAssignee,
+            // Penanda "menunggu balasan bot" hanya bermakna selama bot memegang.
+            ...(nextStatus !== 'bot' || current.status !== 'bot' ? { botAwaitingSince: null } : {}),
+          })
           .where(
             and(eq(conversations.organizationId, organizationId), eq(conversations.id, current.id)),
           );
@@ -260,6 +273,16 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
           actorUserId,
         });
       }
+      // Bot berhenti memegang (diserahkan bot/agen/sistem, atau agen mengambil alih) → bot diberi tahu.
+      if (current.status === 'bot' && (nextStatus === 'unserved' || nextStatus === 'served')) {
+        await recordOutgoingEvent(tx, {
+          organizationId,
+          type: 'conversation.handoff',
+          conversationId: current.id,
+          contactId: current.contactId,
+          actorUserId,
+        });
+      }
       published = { previous: current.assigneeUserId, next: nextAssignee, kind: change.kind, role };
     });
     const done = published as {
@@ -295,7 +318,10 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
         conversationId,
         ...actorRef,
       });
-    } else if (done.next === null && (done.kind === 'unassigned' || done.kind === 'reopened')) {
+    } else if (
+      done.next === null &&
+      (done.kind === 'unassigned' || done.kind === 'reopened' || done.kind === 'handoff')
+    ) {
       await notifications.enqueue({ organizationId, kind: 'queued', conversationId, ...actorRef });
     }
     if (actor.kind === 'user' && BULK_ACTION_KINDS.has(done.kind)) {
@@ -509,20 +535,16 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
         };
       }),
 
-    async releaseAsApiKey(actor, conversationId, agentUserId) {
+    async releaseAsApiKey(actor, conversationId) {
       const changed = await mutate(
         { kind: 'apiKey', key: actor },
         conversationId,
         async (tx, conversation) => {
           if (conversation.status === 'resolved') throw await heldBy(tx, conversation);
-          const release =
-            agentUserId === null
-              ? // Handoff: hanya melepas BOT. Antrian / dipegang agen = tidak diubah.
-                conversation.status === 'bot'
-              : conversation.assigneeUserId !== null && conversation.assigneeUserId === agentUserId;
-          if (!release) return { kind: null };
-          // TITIK KAIT bot eksternal (butir berikutnya): event `conversation.handoff` + saklar bot.
-          return { kind: 'unassigned', assigneeUserId: null, patch: { status: 'unserved' } };
+          // Review MobiChat Info 2: key hanya bisa melepas BOT — tidak pernah mengeluarkan agen
+          // manusia dari percakapannya (`agent_id` dari MobiChat diabaikan).
+          if (conversation.status !== 'bot') return { kind: null };
+          return { kind: 'handoff', assigneeUserId: null, patch: { status: 'unserved' } };
         },
       );
       return { changed };
@@ -535,6 +557,8 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
         if (conversation.assigneeUserId === target.id && conversation.status === 'served') {
           return { kind: null };
         }
+        // Review MobiChat Info 2: key hanya menugaskan dari bot/antrian, tidak mengalihkan chat agen.
+        if (conversation.status === 'served') throw await heldBy(tx, conversation);
         return {
           kind: 'assigned',
           assigneeUserId: target.id,
@@ -548,18 +572,61 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
     },
 
     async resolveAsApiKey(actor, conversationId) {
-      const changed = await mutate({ kind: 'apiKey', key: actor }, conversationId, (_tx, row) =>
-        Promise.resolve(
-          row.status === 'resolved'
-            ? { kind: null }
-            : {
-                kind: 'resolved' as const,
-                patch: { status: 'resolved' as const, resolvedAt: now() },
-              },
-        ),
-      );
+      const changed = await mutate({ kind: 'apiKey', key: actor }, conversationId, (_tx, row) => {
+        if (row.status === 'resolved') return Promise.resolve({ kind: null });
+        // Review MobiChat Info 2: key hanya menyelesaikan percakapan yang dipegang bot.
+        if (row.status !== 'bot') {
+          throw new AppError('CONFLICT', {
+            message: 'Bot hanya bisa menyelesaikan percakapan yang sedang dipegang bot.',
+          });
+        }
+        return Promise.resolve({
+          kind: 'resolved' as const,
+          patch: { status: 'resolved' as const, resolvedAt: now() },
+        });
+      });
       return { changed };
     },
+
+    setBot: (context, conversationId, active) =>
+      mutate(asUser(context, 'inbox.reply'), conversationId, async (tx, conversation, role) => {
+        if (!active) {
+          // Matikan bot = serahkan ke antrian tim (mengambil sendiri = tombol "Ambil").
+          if (conversation.status !== 'bot') return { kind: null };
+          return { kind: 'handoff', assigneeUserId: null, patch: { status: 'unserved' } };
+        }
+        if (conversation.status === 'resolved') throw await heldBy(tx, conversation);
+        if (conversation.status === 'bot') return { kind: null };
+        const [channel] = await tx
+          .select({ botEnabled: channels.botEnabled })
+          .from(channels)
+          .where(
+            and(
+              eq(channels.organizationId, conversation.organizationId),
+              eq(channels.id, conversation.channelId),
+            ),
+          );
+        if (!channel?.botEnabled) {
+          throw new AppError('CONFLICT', {
+            message:
+              'Bot belum aktif untuk channel ini. Nyalakan dulu di Pengaturan → Channel → Bot.',
+          });
+        }
+        // Mengembalikan chat yang dipegang agen LAIN ke bot = mengambil dari rekan (PRD §4).
+        if (
+          conversation.assigneeUserId !== null &&
+          conversation.assigneeUserId !== context.auth.user.id &&
+          !hasPermission(role as Parameters<typeof hasPermission>[0], 'inbox.assign')
+        ) {
+          await forbidByRule(accessDenied, {
+            auth: context.auth,
+            rule: ACCESS_RULES.inboxUnassignOthers,
+            client: context.client,
+            message: 'Kamu hanya bisa mengembalikan ke bot percakapan yang kamu pegang.',
+          });
+        }
+        return { kind: 'bot_resumed', assigneeUserId: null, patch: { status: 'bot' } };
+      }),
 
     async events(grant, conversationId) {
       const [visible] = await db

@@ -42,6 +42,8 @@ import { outgoingWebhooksRoutes } from './modules/outgoing-webhooks/outgoing-web
 import { createOutgoingWebhooksService } from './modules/outgoing-webhooks/outgoing-webhooks.service';
 import { apiDocsRoutes } from './modules/public-api/api-docs.routes';
 import { publicApiRoutes, publicOrganizationRate } from './modules/public-api/public-api.routes';
+import { botRoutes } from './modules/bot/bot.routes';
+import { createBotService } from './modules/bot/bot.service';
 import { createMediaUrlSigner } from './modules/compat-mobichat/media-signature';
 import { mobichatRoutes } from './modules/compat-mobichat/mobichat.routes';
 import { createMobichatService } from './modules/compat-mobichat/mobichat.service';
@@ -538,6 +540,8 @@ export async function buildApp(deps: AppDeps) {
     logger: deps.logger,
   });
   await app.register(assignmentRoutes, { db, limiter, assignment });
+  // Bot eksternal (Fase 3): saklar bot channel + jam kerja + batas waktu.
+  await app.register(botRoutes, { limiter, bot: createBotService({ db }) });
   const contactsService = createContactsService({
     db,
     publisher: inboxEvents,
@@ -563,7 +567,13 @@ export async function buildApp(deps: AppDeps) {
     cookieSecure: config.cookieSecure,
     apiKeys: createApiKeysService({ db, pepper: apiKeyPepper, twoFactor }),
   });
-  await app.register(publicApiRoutes, { db, limiter, outbound, contacts: contactsService });
+  await app.register(publicApiRoutes, {
+    db,
+    limiter,
+    outbound,
+    contacts: contactsService,
+    assignment,
+  });
   const panel = createPanelService({ db, publisher: inboxEvents, accessDenied });
   // Lapisan kompatibel MobiChat (Fase 3): `/api/public/*` + `/api/bot/*`, header `X-API-Key`.
   const mediaSigner = createMediaUrlSigner(config.masterKey, new URL(config.appUrl).origin);

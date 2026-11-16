@@ -619,6 +619,12 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
         values.type = 'text';
         values.text = input.text;
         break;
+      case 'interactive':
+        // Tombol/daftar (sudah divalidasi batas Meta oleh skema). Isi utama = teks pratinjau.
+        values.type = 'interactive';
+        values.text = input.interactive.body;
+        values.extras = { interactiveMessage: input.interactive };
+        break;
       case 'location':
         values.type = 'location';
         values.location = {
@@ -689,6 +695,8 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
             lastMessageAt: sql`greatest(${conversations.lastMessageAt}, ${at})`,
             // Membalas = sudah membaca percakapan ini.
             unreadCount: 0,
+            // Bot membalas → tidak ada lagi pesan pelanggan yang menunggu bot (batas waktu bot).
+            ...(sender.apiKey ? { botAwaitingSince: null } : {}),
             // Laporan "waktu respons pertama": pesan keluar pertama agen (reaksi tidak dihitung).
             ...(values.type === 'reaction' || sender.apiKey
               ? {}

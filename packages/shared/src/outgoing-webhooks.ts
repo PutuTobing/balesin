@@ -20,6 +20,7 @@ export const OUTGOING_WEBHOOK_EVENTS = [
   'conversation.unassigned',
   'conversation.resolved',
   'conversation.reopened',
+  'conversation.handoff',
   'contact.created',
   'contact.updated',
 ] as const;
@@ -40,6 +41,7 @@ export const OUTGOING_WEBHOOK_EVENT_LABELS: Readonly<Record<OutgoingWebhookEvent
   'conversation.unassigned': 'Percakapan kembali ke antrian',
   'conversation.resolved': 'Percakapan selesai',
   'conversation.reopened': 'Percakapan dibuka lagi',
+  'conversation.handoff': 'Bot menyerahkan percakapan ke tim',
   'contact.created': 'Kontak baru',
   'contact.updated': 'Kontak diubah (termasuk tag)',
 };
@@ -127,6 +129,11 @@ export const createOutgoingWebhookRequestSchema = z
     format: outgoingWebhookFormatSchema.optional(),
     /** Wajib bila `format` = `mobichat`; dilarang untuk `native`. */
     mobichat: outgoingWebhookMobichatInputSchema.optional(),
+    /**
+     * `true` = `message.received` hanya dikirim saat BOT memegang percakapan (status `bot`) — untuk
+     * penerima yang berperan sebagai bot. Bawaan `false` (semua pesan masuk; bot memutuskan sendiri).
+     */
+    botOnly: z.boolean().optional(),
     confirmation: identityConfirmationSchema.optional(),
   })
   .superRefine((value, context) => {
@@ -168,10 +175,12 @@ export const updateOutgoingWebhookRequestSchema = z
     enabled: z.boolean().optional(),
     /** Hanya webhook format MobiChat. Mengubah `apiKey`/`baseUrl` = wajib konfirmasi identitas. */
     mobichat: outgoingWebhookMobichatPatchSchema.optional(),
+    botOnly: z.boolean().optional(),
     confirmation: identityConfirmationSchema.optional(),
   })
   .refine(
     (value) =>
+      value.botOnly !== undefined ||
       value.url !== undefined ||
       value.events !== undefined ||
       value.description !== undefined ||
@@ -206,6 +215,8 @@ export const outgoingWebhookSchema = z.object({
   createdAt: isoDateTimeSchema,
   /** Server selalu mengisi; opsional di skema supaya data tiruan web lama tetap sah. */
   format: outgoingWebhookFormatSchema.optional(),
+  /** `message.received` hanya saat bot memegang percakapan. Server selalu mengisi. */
+  botOnly: z.boolean().optional(),
   /**
    * Mode MobiChat (`null` untuk `native`). API key TIDAK PERNAH dikirim — hanya 4 karakter
    * terakhirnya + key yang dipakai (nama, status) supaya admin tahu kapan harus menggantinya.

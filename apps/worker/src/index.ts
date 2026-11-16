@@ -62,7 +62,7 @@ function main(config: WorkerConfig): void {
       plaintextLogin: plaintextLoginPolicy(config.isProduction),
     },
     webhooks: { db, publisher, notifications: notificationProducer },
-    maintenance: { db, publisher },
+    maintenance: { db, publisher, notifications: notificationProducer },
     messages: { db, meta, secretBox, publisher },
     notifications: { db, secretBox, appUrl: config.appUrl, throttle: redisThrottle(redis) },
     webhooksOut: { db, secretBox, appUrl: config.appUrl, notifyOwner: ownerNotifier.notify },

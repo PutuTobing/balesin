@@ -79,6 +79,8 @@ export const webhookEndpoints = pgTable(
     description: text('description'),
     events: text('events').array().notNull(),
     format: text('format').notNull().default('native'),
+    /** `message.received` hanya saat bot memegang percakapan (penerima berperan bot). */
+    botOnly: boolean('bot_only').notNull().default(false),
     /** Mode MobiChat: alamat Balesin yang dipanggil balik workflow (`null` = `APP_URL`). */
     mobichatBaseUrl: text('mobichat_base_url'),
     mobichatApiKeyEncrypted: text('mobichat_api_key_encrypted'),

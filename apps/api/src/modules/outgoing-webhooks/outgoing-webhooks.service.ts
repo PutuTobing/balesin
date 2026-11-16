@@ -135,6 +135,7 @@ function toWebhook(
     previousSecretExpiresAt: row.previousSecretExpiresAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     format: row.format as OutgoingWebhookFormat,
+    botOnly: row.botOnly,
     mobichat:
       row.format === 'mobichat' && row.mobichatApiKeyId && row.mobichatApiKeyLast4
         ? {
@@ -370,6 +371,7 @@ export function createOutgoingWebhooksService(deps: {
           description: input.description ?? null,
           events: [...input.events],
           format,
+          botOnly: input.botOnly ?? false,
           secretEncrypted: sealer.encrypt(secret, secretContext(auth.organizationId, id)),
           ...(mobichatKey
             ? {
@@ -396,6 +398,7 @@ export function createOutgoingWebhooksService(deps: {
             host: hostOf(url),
             events: input.events.join(','),
             format,
+            botOnly: input.botOnly ?? false,
             ...(mobichatKey
               ? {
                   mobichatApiKeyId: mobichatKey.id,
@@ -474,6 +477,10 @@ export function createOutgoingWebhooksService(deps: {
           patch.description = input.description;
           changedFields.push('description');
         }
+        if (input.botOnly !== undefined && input.botOnly !== current.botOnly) {
+          patch.botOnly = input.botOnly;
+          changedFields.push('botOnly');
+        }
         if (mobichatKey) {
           const sealer = box();
           patch.mobichatApiKeyId = mobichatKey.id;
@@ -516,6 +523,7 @@ export function createOutgoingWebhooksService(deps: {
             ...(url !== undefined ? { host: hostOf(url), previousHost: hostOf(current.url) } : {}),
             ...(input.events !== undefined ? { events: input.events.join(',') } : {}),
             ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
+            ...(patch.botOnly !== undefined ? { botOnly: patch.botOnly } : {}),
             ...(mobichatKey ? { mobichatApiKeyId: mobichatKey.id } : {}),
             ...(baseUrlChanged
               ? { mobichatBaseHost: baseUrlChange ? hostOf(baseUrlChange) : 'APP_URL' }

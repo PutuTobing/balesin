@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { MESSAGE_MEDIA_KINDS, type MessageMediaKind } from './inbox';
+import { interactiveMessageSchema } from './interactive';
 
 /**
  * Ruang chat — kirim pesan, unggah & unduh media (Fase 2 butir 6, docs/KONTRAK-API-INBOX.md
@@ -116,6 +117,13 @@ export const sendMessageRequestSchema = z.discriminatedUnion('type', [
     targetMessageId: z.uuid({ error: 'Pesan yang diberi reaksi tidak valid.' }),
     /** Satu emoji; string kosong = hapus reaksi. */
     emoji: z.string().max(16, 'Reaksi harus satu emoji.'),
+  }),
+  /** Tombol balasan (≤ 3) / daftar pilihan (≤ 10) — batas Meta di `interactive.ts`. */
+  z.object({
+    type: z.literal('interactive'),
+    clientMessageId,
+    interactive: interactiveMessageSchema,
+    replyToMessageId: replyTo,
   }),
 ]);
 export type SendMessageRequest = z.infer<typeof sendMessageRequestSchema>;

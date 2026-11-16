@@ -136,6 +136,9 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'POST /api/v1/settings/channels/:channelId/webhook/verify-token': 'channels.manage',
   'GET /api/v1/settings/channels/:channelId/business-profile': 'channels.manage',
   'PUT /api/v1/settings/channels/:channelId/business-profile': 'channels.manage',
+  // bot eksternal per channel (saklar, jam kerja bot, batas waktu)
+  'GET /api/v1/settings/channels/:channelId/bot': 'integrations.manage',
+  'PUT /api/v1/settings/channels/:channelId/bot': 'integrations.manage',
   // rem pengiriman (SECURITY §5): atur & tarik rem = sending.limits.manage; lanjutkan = sending.resume
   'GET /api/v1/settings/sending-limits': 'sending.limits.manage',
   'PUT /api/v1/settings/sending-limits': 'sending.limits.manage',
@@ -151,6 +154,7 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'POST /api/v1/conversations/:conversationId/unassign': 'inbox.reply',
   'POST /api/v1/conversations/:conversationId/resolve': 'inbox.reply',
   'POST /api/v1/conversations/:conversationId/reopen': 'inbox.reply',
+  'POST /api/v1/conversations/:conversationId/bot': 'inbox.reply',
   'GET /api/v1/conversations/:conversationId/events': 'inbox.view',
   'GET /api/v1/inbox/agents': 'inbox.assign',
   // WebSocket inbox: sesi + inbox.view (Origin & batas koneksi dicek sebelum upgrade)
@@ -222,6 +226,7 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'GET /api/v1/public/conversations/:conversationId/messages': 'apikey:messages:read',
   'POST /api/v1/public/conversations/:conversationId/messages': 'apikey:messages:send',
   'POST /api/v1/public/conversations/:conversationId/media': 'apikey:messages:send',
+  'POST /api/v1/public/conversations/:conversationId/handoff': 'apikey:conversations:write',
   'GET /api/v1/public/messages/:messageId': 'apikey:messages:read',
   'GET /api/v1/public/contacts': 'apikey:contacts:read',
   'POST /api/v1/public/contacts': 'apikey:contacts:write',

@@ -6,6 +6,7 @@ import {
   conversationEventListResponseSchema,
   conversationIdParamsSchema,
   conversationActionResponseSchema,
+  conversationBotRequestSchema,
   errorEnvelopeSchema,
   inboxAgentListResponseSchema,
 } from '@balesin/shared';
@@ -35,7 +36,9 @@ export interface AssignmentRoutesOptions {
  *  - ambil / tugaskan / alihkan = `inbox.assign` (Owner, Admin, Supervisor, CS);
  *  - kembalikan ke antrian = `inbox.reply` + cakupan; tanpa `inbox.assign` (Teknisi) hanya miliknya;
  *  - tandai selesai / buka lagi = `inbox.reply` + cakupan (Teknisi: yang di-assign);
- *  - riwayat = `inbox.view`; daftar agen = `inbox.assign` (review butir 7 Info 1).
+ *  - riwayat = `inbox.view`; daftar agen = `inbox.assign` (review butir 7 Info 1);
+ *  - saklar bot per percakapan (Fase 3) = `inbox.reply` + cakupan; mengembalikan chat agen LAIN ke
+ *    bot butuh `inbox.assign`.
  */
 export const ASSIGNMENT_RULE: RateLimitRule = { name: 'inbox-aksi', limit: 120, windowSeconds: 60 };
 
@@ -124,6 +127,25 @@ export const assignmentRoutes: FastifyPluginCallbackZod<AssignmentRoutesOptions>
       },
     );
   }
+
+  app.post(
+    routes.bot,
+    {
+      config: { access: requirePermission('inbox.reply') },
+      schema: {
+        params: conversationIdParamsSchema,
+        body: conversationBotRequestSchema,
+        response: { 200: conversationActionResponseSchema, ...errors },
+      },
+    },
+    async (request) => {
+      const id = idOf(request);
+      const context = contextOf(request);
+      await enforceRateLimit(limiter, ASSIGNMENT_RULE, context.auth.user.id, limitMessage);
+      await assignment.setBot(context, id, request.body.active);
+      return respond(request, id);
+    },
+  );
 
   app.post(
     routes.assign,

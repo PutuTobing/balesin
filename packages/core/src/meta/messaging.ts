@@ -1,4 +1,4 @@
-import type { OutboundMediaKind } from '@balesin/shared';
+import type { InteractiveMessage, OutboundMediaKind } from '@balesin/shared';
 import { z } from 'zod';
 
 import type { MetaCredentials, MetaGraphClient } from './graph-client';
@@ -30,7 +30,8 @@ export type OutboundContent =
       name: string | null;
       address: string | null;
     }
-  | { type: 'reaction'; targetWamid: string; emoji: string };
+  | { type: 'reaction'; targetWamid: string; emoji: string }
+  | { type: 'interactive'; interactive: InteractiveMessage };
 
 export interface OutboundEnvelope {
   /** Nomor tujuan tanpa `+` (wa_id). */
@@ -72,6 +73,8 @@ export function buildOutboundPayload(envelope: OutboundEnvelope): Record<string,
         type: 'reaction',
         reaction: { message_id: content.targetWamid, emoji: content.emoji },
       };
+    case 'interactive':
+      return { ...base, type: 'interactive', interactive: interactivePayload(content.interactive) };
     case 'media': {
       const media: Record<string, unknown> = { id: content.metaMediaId };
       // Audio tidak mendukung keterangan; nama berkas hanya untuk dokumen.
@@ -80,6 +83,42 @@ export function buildOutboundPayload(envelope: OutboundEnvelope): Record<string,
       return { ...base, type: content.kind, [content.kind]: media };
     }
   }
+}
+
+/** Objek `interactive` Cloud API (`button` → `reply` buttons, `list` → sections/rows). */
+export function interactivePayload(message: InteractiveMessage): Record<string, unknown> {
+  const shared: Record<string, unknown> = {
+    body: { text: message.body },
+    ...(message.header?.trim() ? { header: { type: 'text', text: message.header } } : {}),
+    ...(message.footer?.trim() ? { footer: { text: message.footer } } : {}),
+  };
+  if (message.kind === 'button') {
+    return {
+      type: 'button',
+      ...shared,
+      action: {
+        buttons: message.buttons.map((button) => ({
+          type: 'reply',
+          reply: { id: button.id, title: button.title },
+        })),
+      },
+    };
+  }
+  return {
+    type: 'list',
+    ...shared,
+    action: {
+      button: message.buttonText,
+      sections: message.sections.map((section) => ({
+        ...(section.title?.trim() ? { title: section.title } : {}),
+        rows: section.rows.map((row) => ({
+          id: row.id,
+          title: row.title,
+          ...(row.description?.trim() ? { description: row.description } : {}),
+        })),
+      })),
+    },
+  };
 }
 
 const sendResponseSchema = z.object({
