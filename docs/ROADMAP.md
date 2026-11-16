@@ -30,7 +30,7 @@ Orkestrator mengerjakan dari atas ke bawah. Tandai `[x]` saat Definition of Done
 - [x] Halaman nomor WhatsApp: quality rating, status, batas pesan, edit profil bisnis dari UI
 - [x] Webhook masuk: verifikasi, signature, idempotensi, worker
 - [x] Kontak & percakapan otomatis, jendela 24 jam
-- [ ] Inbox real-time: tab Semua/Bot/Belum dilayani/Dilayani/Selesai, cari, filter (termasuk filter status sesi + hitung mundur)
+- [x] Inbox real-time: tab Semua/Bot/Belum dilayani/Dilayani/Selesai, cari, filter (termasuk filter status sesi + hitung mundur)
 - [ ] Ruang chat: teks, gambar, dokumen, audio/VN, video, lokasi, reaksi, balas-kutip, status centang
 - [ ] Assign/ambil/alihkan/antrian terbuka, tandai selesai
 - [ ] Panel detail: info, tag, catatan, media, log
