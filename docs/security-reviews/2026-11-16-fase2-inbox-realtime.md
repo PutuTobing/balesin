@@ -155,3 +155,54 @@ menit yang sama **tidak tercatat**. Tidak ada data yang bocor.
 | `apps/worker`: `vitest run src/inbound` · `packages/core`: `vitest run src/inbox-events` | 30/30 · 3/3 lulus |
 | ESLint + Prettier + `tsc --noEmit` (apps/api) untuk berkas tes baru | bersih |
 | `pnpm audit` | 2 moderate dev-only (`esbuild` via drizzle-kit, `minimatch` via eslint), tidak ada yang baru |
+
+---
+
+## Putaran 2 — verifikasi perbaikan commit `320ae51`
+
+### Putusan putaran 2: AMAN
+
+R1 **tertutup**. R2 tertutup sebagian (penjaga tumpang tindih `revalidate`). Sisa R2 (gabung event, `message.status`
+selektif, batas laju per organisasi + `resync`, validasi ulang satu query) dicatat sebagai **syarat broadcast Fase 4**
+di DECISIONS 2026-11-16. Penundaan ini bisa diterima karena saat ini belum ada pesan keluar/broadcast bervolume.
+Info 2 (pencabutan seketika) dan Info 8 (nginx tidak menimpa `Origin`) sudah ditindaklanjuti.
+
+Tes R1 di `security-review-fase2-inbox-realtime.integration.test.ts` kini `it` dan lulus. Diff hanya menghapus `.fails`.
+Asersinya tetap `expect(await csrfAudits()).toEqual([])` dan status 403/404. Komentar "saat ini 1 entri…" masih
+tertinggal di baris itu (kosmetik, boleh dihapus kapan saja).
+
+Tidak ada temuan baru di atas Info.
+
+| # | Status | Bukti |
+|---|---|---|
+| R1 | ✅ | `inbox-stream.routes.ts`: `guard` keluar lebih awal bila `Upgrade` ≠ `websocket` (huruf kecil), sehingga GET biasa → 404 tanpa audit. Tidak ada celah lewat header `Upgrade` aneh: `@fastify/websocket` menyerahkan upgrade ke `ws.handleUpgrade`, yang menolak semua nilai selain `websocket` (`websocket-server.js:260` "Invalid Upgrade header" → 400). Aturan guard sama persis dengan aturan `ws`. Tes lama "tanpa upgrade → 404 tanpa audit, Origin apa pun" juga lulus |
+| R2 (sebagian) | ✅ | `revalidate` memakai satu `Promise` bersama (`revalidating`), sehingga putaran berbarengan digabung (tes "revalidate berbarengan memakai satu putaran") |
+| Info 2 | ✅ | `sessions.revoke`/`revokeAllForUser` dibungkus di `app.ts` → `session.revoked` (organisasi + pengguna, `strictObject`, tanpa token/ID sesi) di channel event inbox. Hub memeriksa ulang socket yang cocok 250 ms & 2 dtk kemudian lewat `peek`. Sinyal palsu hanya memicu pemeriksaan ulang dan tidak menutup sesi sah (tes "sinyal session.revoked palsu…"). Pemeriksaan 30 dtk tetap jaring pengaman |
+| Info 8 | ✅ | DECISIONS 2026-11-16 (devops Fase 7): upgrade WS diteruskan dan `Origin` tidak pernah ditimpa |
+
+### Catatan putaran 2 (Info)
+
+1. **`revoke` tanpa `userId`.** `revoke(executor, organizationId, sessionRef)` menerbitkan sinyal hanya dengan
+   organisasi. Akibatnya SEMUA socket organisasi diperiksa ulang dua kali (2 × `peek` per socket) setiap kali
+   seseorang logout atau mencabut satu sesi. Dengan ratusan socket, ini beban kecil tetapi tidak perlu. Saran: sertakan
+   `userId` (ambil dari baris sesi yang dicabut, `returning`) supaya hanya socket pengguna itu yang diperiksa.
+2. **Sinyal bersifat usaha terbaik.**
+   - `checkClients` dari sinyal tidak memakai penjaga tumpang tindih.
+   - `pendingTimers` bertambah dua per sinyal (dibersihkan setelah berjalan).
+   - Sinyal tidak melonjak dari jalur tanpa sesi (hanya revoke yang sah), jadi tidak ada vektor DoS dari luar.
+   - Penulis Redis bisa membanjiri sinyal, dan itu masuk ke batas laju per organisasi pada syarat Fase 4 (R2.3).
+3. **Sinyal diterbitkan dari dalam transaksi.**
+   - Pemeriksaan 250 ms bisa berjalan sebelum commit, sehingga belum melihat pencabutan.
+   - Pemeriksaan 2 dtk menutup celah untuk transaksi singkat. Transaksi yang lebih lama dari 2 dtk kembali ke
+     jaring 30 dtk.
+   - Bisa diterima. Alternatif lebih rapi: terbitkan setelah commit (pola `emit` + `publish` seperti worker).
+
+### Tes putaran 2
+
+| Perintah | Hasil |
+|---|---|
+| `apps/api`: `vitest run src/modules/realtime src/modules/auth src/modules/inbox src/modules/sessions src/modules/team` | 195/195 lulus, 12 berkas (termasuk R1 yang kini `it`, sinyal palsu, revalidate berbarengan) |
+| `packages/core`: `vitest run src/inbox-events` | 4/4 lulus |
+| Pemeriksaan sumber `ws@8.23.0` (`handleUpgrade`) & `@fastify/websocket@11.3.7` | nilai `Upgrade` selain `websocket` ditolak sebelum handler |
+
+Tidak ada kode produk yang diubah dan tidak ada commit. Stack E2E tidak dipakai.
