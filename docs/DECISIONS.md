@@ -179,3 +179,4 @@
 | 2026-11-19 | PWA: service worker buatan sendiri (plugin Vite kecil → `/sw.js`), bukan `vite-plugin-pwa`/Workbox; precache aset build saja, `/api/` & origin lain selalu ke jaringan, navigasi jaringan-dulu; pembaruan versi hanya setelah pengguna menekan "Muat ulang" | Kebutuhan kecil (precache + push), tanpa dependensi baru, perilaku bisa diaudit penuh |
 | 2026-11-19 | Manifest PWA bermerek: bawaan dari `DEFAULT_PRODUCT_NAME`, lalu diganti Blob URL berisi nama & logo organisasi setelah branding dimuat | White-label tanpa nama produk tertulis di kode |
 | 2026-11-19 | Devops Fase 7: nginx wajib melayani `/sw.js` dan `/manifest.webmanifest` dengan `Cache-Control: no-cache` | Mencegah pengguna tertahan di versi lama |
+| 2026-11-19 | Devops Fase 7 (CSP web): `worker-src 'self'`, `manifest-src 'self' blob:`; `index.html` juga `Cache-Control: no-cache` | Review security PWA Info 1 |
