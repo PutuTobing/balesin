@@ -111,7 +111,7 @@ HTTP biasa:
 | sesi terbatas 2FA / peran tanpa `inbox.view` | 403 |
 | `Origin` bukan origin aplikasi (termasuk tanpa `Origin`) | 403 `FORBIDDEN` + audit `auth.csrf.rejected` |
 | sudah 10 socket terbuka untuk pengguna ini (per proses api) | 429 `RATE_LIMITED` |
-| GET biasa tanpa upgrade | 404 |
+| GET biasa tanpa `Upgrade: websocket` (navigasi) | 404, tanpa pemeriksaan Origin/audit |
 
 **Pesan server → klien** (JSON, `inboxStreamEventSchema`). Isinya hanya ID + status — TANPA isi pesan,
 nama, nomor, atau BSUID; klien mengambil detail lewat REST (cakupan ditegakkan lagi):
@@ -139,8 +139,10 @@ dengan jeda bertambah (mis. 1, 2, 5, 10, 30 detik) lalu muat ulang daftar & hitu
 
 **Heartbeat & validasi ulang.** Server mengirim ping WebSocket tiap 30 detik (browser menjawab pong
 otomatis); tanpa pong sampai ping berikutnya → 4408. Tiap 30 detik sesi divalidasi ulang tanpa
-memperpanjang batas idle (socket terbuka tidak membuat sesi abadi); perubahan peran langsung
-mengubah cakupan event.
+memperpanjang batas idle (socket terbuka tidak membuat sesi abadi; putaran tidak pernah tumpang
+tindih); perubahan peran langsung mengubah cakupan event. Logout, cabut sesi, nonaktifkan, ganti
+peran, dan atur ulang password/2FA juga menerbitkan sinyal `session.revoked` sehingga socket
+terkait ditutup 4401 dalam ±2 detik.
 
 **Jalur event.** Worker (pesan masuk/status) dan api (tandai dibaca) menerbitkan event berisi ID ke
 Redis pub/sub `<awalan>:inbox-events` SETELAH transaksi commit; tiap proses api berlangganan dan

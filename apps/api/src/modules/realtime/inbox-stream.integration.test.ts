@@ -7,6 +7,7 @@
  */
 import {
   createInboxEventPublisher,
+  createSessionRevocationPublisher,
   createSecretBox,
   sealChannelSecret,
   Secret,
@@ -185,6 +186,7 @@ beforeAll(async () => {
         heartbeatMs: 3_600_000,
         revalidateMs: 3_600_000,
         maxConnectionsPerUser: MAX_CONNECTIONS,
+        sessionRecheckDelaysMs: [20, 300],
       },
     },
   });
@@ -244,11 +246,19 @@ describe('WebSocket: penolakan sebelum upgrade', () => {
     expect(harness.app.inboxStream.connections(owner.userId)).toBe(MAX_CONNECTIONS);
   });
 
-  it('permintaan HTTP biasa ke alamat stream (tanpa upgrade) → 404', async () => {
-    const response = await call(harness.app, 'GET', API_ROUTES.inbox.stream, undefined, {
-      cookie: owner.cookie,
-    });
-    expect(response.statusCode).toBe(404);
+  it('permintaan HTTP biasa ke alamat stream (tanpa upgrade) → 404 tanpa audit, Origin apa pun', async () => {
+    for (const origin of [TEST_APP_ORIGIN, null, 'https://penyerang.test']) {
+      const response = await call(harness.app, 'GET', API_ROUTES.inbox.stream, undefined, {
+        cookie: owner.cookie,
+        origin,
+      });
+      expect(response.statusCode, String(origin)).toBe(404);
+    }
+    const audits = await harness.db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.action, AUDIT_ACTIONS.csrfRejected));
+    expect(audits).toEqual([]);
   });
 });
 
@@ -411,6 +421,47 @@ describe('WebSocket: sesi, peran, heartbeat', () => {
       .from(userSessions)
       .where(eq(userSessions.userId, owner.userId));
     expect(after.map((row) => row.idle.getTime())).toEqual(before.map((row) => row.idle.getTime()));
+  });
+});
+
+describe('WebSocket: pencabutan sesi seketika & validasi ulang tidak tumpang tindih', () => {
+  it('keluar (logout) → socket sesi itu ditutup 4401 tanpa menunggu putaran 30 detik', async () => {
+    const stream = await connect(owner);
+    const logout = await call(harness.app, 'POST', API_ROUTES.auth.logout, undefined, {
+      cookie: owner.cookie,
+      csrf: owner.csrf,
+    });
+    expect(logout.statusCode, logout.body).toBeLessThan(300);
+    expect(await stream.closed).toBe(INBOX_STREAM_CLOSE_CODES.sessionEnded);
+  });
+
+  it('sinyal session.revoked palsu tidak menutup socket yang sesinya masih sah', async () => {
+    const stream = await connect(owner);
+    const publisher = createSessionRevocationPublisher(harness.redis, {
+      prefix: harness.redisPrefix,
+      logger: workerLogs.logger,
+    });
+    await publisher.publish({ organizationId, userId: owner.userId });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(stream.socket.readyState).toBe(stream.socket.OPEN);
+    expect(harness.app.inboxStream.connections(owner.userId)).toBe(1);
+  });
+
+  it('pencabutan langsung di database + sinyal → ditutup; revalidate berbarengan memakai satu putaran', async () => {
+    const stream = await connect(owner);
+    const first = harness.app.inboxStream.revalidate();
+    const second = harness.app.inboxStream.revalidate();
+    expect(second).toBe(first);
+    await first;
+    await harness.db
+      .update(userSessions)
+      .set({ revokedAt: new Date() })
+      .where(eq(userSessions.userId, owner.userId));
+    await createSessionRevocationPublisher(harness.redis, {
+      prefix: harness.redisPrefix,
+      logger: workerLogs.logger,
+    }).publish({ organizationId });
+    expect(await stream.closed).toBe(INBOX_STREAM_CLOSE_CODES.sessionEnded);
   });
 });
 

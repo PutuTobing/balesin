@@ -1,7 +1,7 @@
 /**
  * Review keamanan Fase 2 butir 5 — inbox real-time
  * (docs/security-reviews/2026-11-16-fase2-inbox-realtime.md). Penjaga regresi (`it`) + temuan yang
- * dikunci `it.fails` (harus menjadi `it` setelah diperbaiki). Postgres + Redis sungguhan; percakapan
+ * dulu dikunci `it.fails` (R1, kini diperbaiki). Postgres + Redis sungguhan; percakapan
  * disisipkan langsung ke database (tanpa webhook).
  */
 import { auditLogs, contacts, conversations, newId, userSessions } from '@balesin/db';
@@ -224,16 +224,13 @@ describe('R1 — navigasi biasa ke alamat stream dicatat sebagai "CSRF ditolak" 
   // TANPA `Origin`. Penjaga Origin di `preValidation` juga berjalan untuk GET biasa (bukan upgrade),
   // jadi korban tercatat `auth.csrf.rejected` padahal tidak ada pembajakan WebSocket. Penyerang cukup
   // memasang tautan untuk mengotori audit setiap pengguna (1×/menit) dan menutupi percobaan sungguhan.
-  it.fails(
-    'GET tanpa upgrade dan tanpa Origin (navigasi) tidak membuat audit csrf.rejected',
-    async () => {
-      const response = await call(harness.app, 'GET', API_ROUTES.inbox.stream, undefined, {
-        cookie: owner.cookie,
-        origin: null,
-        headers: { 'sec-fetch-site': 'cross-site', 'sec-fetch-mode': 'navigate' },
-      });
-      expect([403, 404]).toContain(response.statusCode);
-      expect(await csrfAudits()).toEqual([]); // saat ini 1 entri atas nama Owner
-    },
-  );
+  it('GET tanpa upgrade dan tanpa Origin (navigasi) tidak membuat audit csrf.rejected', async () => {
+    const response = await call(harness.app, 'GET', API_ROUTES.inbox.stream, undefined, {
+      cookie: owner.cookie,
+      origin: null,
+      headers: { 'sec-fetch-site': 'cross-site', 'sec-fetch-mode': 'navigate' },
+    });
+    expect([403, 404]).toContain(response.statusCode);
+    expect(await csrfAudits()).toEqual([]); // saat ini 1 entri atas nama Owner
+  });
 });

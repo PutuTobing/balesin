@@ -1,6 +1,7 @@
 import {
   inboxEventsChannel,
   parseInboxBusMessage,
+  parseSessionRevokedMessage,
   type InboxBusEvent,
   type Logger,
   type Redis,
@@ -31,6 +32,8 @@ import type { SessionService } from '../auth/session.service';
  *   sesi dicabut/kedaluwarsa, akun dinonaktifkan, atau 2FA kini wajib → tutup 4401; peran tidak lagi
  *   memegang `inbox.view` → 4403; peran berubah → cakupan baru langsung dipakai. Validasi ulang
  *   memakai `sessions.peek` (tidak memperpanjang sesi: socket terbuka tidak membuat sesi abadi).
+ * - Sinyal `session.revoked` (logout/cabut/nonaktifkan/ganti peran) → socket pengguna itu diperiksa
+ *   ulang 250 ms & 2 detik kemudian (tutup seketika). Putaran berkala tidak pernah tumpang tindih.
  * - Heartbeat: ping tiap `heartbeatMs`; tanpa pong sampai ping berikutnya → 4408.
  * - Batas `maxConnectionsPerUser` socket per pengguna per proses (tab/perangkat) → 4429.
  * - Klien yang lambat (antrean kirim > `MAX_BUFFERED_BYTES`) diputus supaya memori tidak bocor.
@@ -58,6 +61,8 @@ export interface InboxStreamHub {
   /** Mengantar satu event bus ke socket yang berhak (dipakai langganan Redis; publik untuk tes). */
   deliver(event: InboxBusEvent): Promise<number>;
   revalidate(): Promise<void>;
+  /** Sinyal pencabutan sesi: validasi ulang socket pengguna/organisasi itu sesaat lagi. */
+  onSessionRevoked(event: { organizationId: string; userId?: string | undefined }): void;
   heartbeat(): void;
   /** Jumlah socket terbuka (semua / satu pengguna). */
   connections(userId?: string): number;
@@ -74,6 +79,8 @@ export interface InboxStreamHubOptions {
   heartbeatMs?: number;
   revalidateMs?: number;
   maxConnectionsPerUser?: number;
+  /** Jeda pemeriksaan ulang setelah sinyal `session.revoked` (bawaan 250 ms dan 2 detik). */
+  sessionRecheckDelaysMs?: readonly number[];
 }
 
 function send(client: StreamClient, event: InboxStreamEvent): boolean {
@@ -184,6 +191,33 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
     };
   }
 
+  let revalidating: Promise<void> | null = null;
+  const pendingTimers = new Set<ReturnType<typeof setTimeout>>();
+  const sessionRecheckDelays = options.sessionRecheckDelaysMs ?? [250, 2_000];
+
+  /** Validasi ulang socket yang cocok (sesi, 2FA, peran) — dipakai berkala dan saat sinyal. */
+  async function checkClients(match: (client: StreamClient) => boolean): Promise<void> {
+    for (const client of [...clients]) {
+      if (!match(client) || !clients.has(client)) continue;
+      try {
+        const session = await sessions.peek(client.sessionTokenHash);
+        if (!session || session.user.id !== client.userId || session.twoFactor.enrollmentRequired) {
+          client.socket.close(INBOX_STREAM_CLOSE_CODES.sessionEnded, 'Sesi berakhir');
+          remove(client);
+          continue;
+        }
+        client.role = session.user.role;
+        if (permissionScope(client.role, 'inbox.view') === null) {
+          client.socket.close(INBOX_STREAM_CLOSE_CODES.forbidden, 'Akses inbox dicabut');
+          remove(client);
+        }
+      } catch (err) {
+        // Database sesaat bermasalah: socket dibiarkan, dicoba lagi di putaran berikutnya.
+        logger.warn({ err }, 'Validasi ulang socket inbox gagal');
+      }
+    }
+  }
+
   const hub: InboxStreamHub = {
     canConnect: (userId) => countFor(userId) < maxPerUser,
 
@@ -224,28 +258,30 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
       return delivered;
     },
 
-    async revalidate() {
-      for (const client of [...clients]) {
-        try {
-          const session = await sessions.peek(client.sessionTokenHash);
-          if (
-            !session ||
-            session.user.id !== client.userId ||
-            session.twoFactor.enrollmentRequired
-          ) {
-            client.socket.close(INBOX_STREAM_CLOSE_CODES.sessionEnded, 'Sesi berakhir');
-            remove(client);
-            continue;
-          }
-          client.role = session.user.role;
-          if (permissionScope(client.role, 'inbox.view') === null) {
-            client.socket.close(INBOX_STREAM_CLOSE_CODES.forbidden, 'Akses inbox dicabut');
-            remove(client);
-          }
-        } catch (err) {
-          // Database sesaat bermasalah: socket dibiarkan, dicoba lagi di putaran berikutnya.
-          logger.warn({ err }, 'Validasi ulang socket inbox gagal');
-        }
+    revalidate() {
+      // R2 (review real-time): putaran tidak pernah tumpang tindih — pemanggil berikutnya
+      // menunggu putaran yang sedang berjalan.
+      if (revalidating) return revalidating;
+      revalidating = checkClients(() => true).finally(() => {
+        revalidating = null;
+      });
+      return revalidating;
+    },
+
+    onSessionRevoked(event) {
+      const matches = (client: StreamClient) =>
+        client.organizationId === event.organizationId &&
+        (event.userId === undefined || client.userId === event.userId);
+      if (![...clients].some(matches)) return;
+      // Sinyal diterbitkan dari dalam transaksi pencabutan (belum tentu sudah commit): periksa lagi
+      // beberapa saat kemudian. Sinyal palsu hanya memicu pemeriksaan, tidak pernah menutup sesi sah.
+      for (const delay of sessionRecheckDelays) {
+        const timer = setTimeout(() => {
+          pendingTimers.delete(timer);
+          void checkClients(matches);
+        }, delay);
+        timer.unref();
+        pendingTimers.add(timer);
       }
     },
 
@@ -271,6 +307,8 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
     close() {
       clearInterval(heartbeatTimer);
       clearInterval(revalidateTimer);
+      for (const timer of pendingTimers) clearTimeout(timer);
+      pendingTimers.clear();
       for (const client of [...clients]) {
         client.socket.close(1001, 'Server berhenti');
         remove(client);
@@ -312,6 +350,11 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
     });
     subscriber.on('message', (received: string, raw: string) => {
       if (received !== channel) return;
+      const revoked = parseSessionRevokedMessage(raw);
+      if (revoked) {
+        hub.onSessionRevoked(revoked);
+        return;
+      }
       const event = parseInboxBusMessage(raw);
       if (!event) return;
       hub.deliver(event).catch((err: unknown) => {

@@ -106,3 +106,57 @@ export function parseInboxBusMessage(raw: string): InboxBusEvent | null {
   }
   return parsed.data;
 }
+
+// ── Pencabutan sesi (penutupan socket seketika) ─────────────────────────────
+
+/**
+ * Sinyal "sesi/akses pengguna ini mungkin baru dicabut" (logout, cabut sesi, nonaktifkan, ganti
+ * peran, atur ulang password/2FA). Hub api memvalidasi ulang socket pengguna itu (atau semua socket
+ * organisasi bila `userId` tidak ada) dari database — sinyal palsu hanya memicu pemeriksaan ulang,
+ * tidak pernah menutup socket yang sesinya masih sah.
+ */
+export const sessionRevokedBusEventSchema = z.strictObject({
+  v: z.literal(1),
+  type: z.literal('session.revoked'),
+  organizationId: z.uuid(),
+  userId: z.uuid().optional(),
+});
+export type SessionRevokedBusEvent = z.infer<typeof sessionRevokedBusEventSchema>;
+
+export interface SessionRevocationPublisher {
+  /** Tidak pernah melempar (usaha terbaik; validasi ulang berkala tetap menutup socket ≤ 30 dtk). */
+  publish(event: { organizationId: string; userId?: string | undefined }): Promise<void>;
+}
+
+export function createSessionRevocationPublisher(
+  redis: Redis,
+  options: { prefix?: string; logger: Pick<Logger, 'warn'> },
+): SessionRevocationPublisher {
+  const channel = inboxEventsChannel(options.prefix);
+  return {
+    async publish(event) {
+      try {
+        const message = sessionRevokedBusEventSchema.parse({
+          v: 1,
+          type: 'session.revoked',
+          organizationId: event.organizationId,
+          ...(event.userId ? { userId: event.userId } : {}),
+        });
+        await redis.publish(channel, JSON.stringify(message));
+      } catch (err) {
+        options.logger.warn({ err }, 'Sinyal pencabutan sesi gagal diterbitkan');
+      }
+    },
+  };
+}
+
+/** Pesan Redis → sinyal pencabutan sesi, atau `null`. */
+export function parseSessionRevokedMessage(raw: string): SessionRevokedBusEvent | null {
+  if (raw.length > 2_000) return null;
+  try {
+    const parsed = sessionRevokedBusEventSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}

@@ -5,6 +5,7 @@ import {
   dedupeInboxEvents,
   inboxEventsChannel,
   parseInboxBusMessage,
+  parseSessionRevokedMessage,
   type InboxBusEventInput,
 } from './inbox-events';
 import { createLogCapture } from './testing';
@@ -96,5 +97,37 @@ describe('penerbit', () => {
       ]),
     ).resolves.toBeUndefined();
     expect(logs.text()).toContain('gagal diterbitkan');
+  });
+});
+
+describe('parseSessionRevokedMessage', () => {
+  it('menerima sinyal sah (dengan/tanpa userId), menolak bentuk lain', () => {
+    expect(
+      parseSessionRevokedMessage(
+        JSON.stringify({ v: 1, type: 'session.revoked', organizationId: ORG }),
+      ),
+    ).toMatchObject({ organizationId: ORG });
+    expect(
+      parseSessionRevokedMessage(
+        JSON.stringify({ v: 1, type: 'session.revoked', organizationId: ORG, userId: CONV }),
+      ),
+    ).toMatchObject({ userId: CONV });
+    for (const raw of [
+      'x',
+      JSON.stringify({ v: 1, type: 'session.revoked' }),
+      JSON.stringify({ v: 1, type: 'session.revoked', organizationId: ORG, token: 'rahasia' }),
+      JSON.stringify({
+        v: 1,
+        type: 'conversation.updated',
+        organizationId: ORG,
+        conversationId: CONV,
+      }),
+    ]) {
+      expect(parseSessionRevokedMessage(raw)).toBeNull();
+    }
+    // Sinyal tidak dianggap event inbox (dan sebaliknya).
+    expect(
+      parseInboxBusMessage(JSON.stringify({ v: 1, type: 'session.revoked', organizationId: ORG })),
+    ).toBeNull();
   });
 });

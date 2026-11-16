@@ -25,7 +25,8 @@ export interface InboxStreamRoutesOptions {
  *    `FORBIDDEN` + audit `auth.csrf.rejected` (pembajakan WebSocket lintas situs; review akhir
  *    Fase 1 F.5/R1);
  *  - koneksi pengguna ini sudah mencapai batas → 429 `RATE_LIMITED`.
- * Permintaan HTTP biasa (tanpa upgrade) yang lolos semua itu dijawab 404 oleh plugin.
+ * Permintaan HTTP biasa (tanpa `Upgrade: websocket`) yang lolos hook auth dijawab 404 oleh plugin
+ * TANPA pemeriksaan Origin/audit (review real-time R1).
  */
 export const inboxStreamRoutes: FastifyPluginCallback<InboxStreamRoutesOptions> = (
   app,
@@ -35,6 +36,12 @@ export const inboxStreamRoutes: FastifyPluginCallback<InboxStreamRoutesOptions> 
   const { hub, appOrigin } = options;
 
   async function guard(request: FastifyRequest): Promise<void> {
+    // R1 (review real-time): GET biasa (navigasi tautan/bookmark — tanpa `Origin`) bukan upaya
+    // WebSocket. Tidak diperiksa/diaudit di sini; plugin menjawabnya 404. Hanya permintaan upgrade
+    // yang wajib Origin aplikasi (dan diaudit bila tidak), supaya audit `auth.csrf.rejected` tidak
+    // bisa dibanjiri tautan dari situs lain.
+    const upgrade = request.headers.upgrade;
+    if (typeof upgrade !== 'string' || upgrade.toLowerCase() !== 'websocket') return;
     const auth = requireAuth(request);
     const { origin } = request.headers;
     if (origin !== appOrigin) {

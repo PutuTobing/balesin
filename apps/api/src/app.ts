@@ -4,6 +4,7 @@ import websocket from '@fastify/websocket';
 import {
   createInboxEventPublisher,
   createMetaGraphClient,
+  createSessionRevocationPublisher,
   createSecretBox,
   deriveKey,
   plaintextLoginPolicy,
@@ -38,7 +39,7 @@ import { authRoutes } from './modules/auth/auth.routes';
 import { createAuthService } from './modules/auth/auth.service';
 import { createCsrfProtection } from './modules/auth/csrf';
 import { createPasswordHasher } from './modules/auth/password-hasher';
-import { createSessionService } from './modules/auth/session.service';
+import { createSessionService, type SessionService } from './modules/auth/session.service';
 import { createTrustedDevices } from './modules/auth/trusted-device';
 import { twoFactorRoutes } from './modules/two-factor/two-factor.routes';
 import { createTwoFactorService } from './modules/two-factor/two-factor.service';
@@ -119,7 +120,12 @@ export interface AppDeps {
     /** Klien Graph API (mis. `sleep` instan supaya backoff tidak memperlambat tes). */
     meta?: Partial<Omit<MetaGraphClientOptions, 'version' | 'baseUrl' | 'environment'>>;
     /** Selang heartbeat/validasi ulang WebSocket inbox dan batas koneksi per pengguna. */
-    inboxStream?: { heartbeatMs?: number; revalidateMs?: number; maxConnectionsPerUser?: number };
+    inboxStream?: {
+      heartbeatMs?: number;
+      revalidateMs?: number;
+      maxConnectionsPerUser?: number;
+      sessionRecheckDelaysMs?: readonly number[];
+    };
   };
 }
 
@@ -204,10 +210,34 @@ export async function buildApp(deps: AppDeps) {
   const sessionSecret = config.sessionSecret ?? new Secret(randomToken(48));
 
   const csrf = createCsrfProtection(sessionSecret);
-  const sessions = createSessionService(db, csrf);
+  const baseSessions = createSessionService(db, csrf);
   const devices = createTrustedDevices(sessionSecret);
   const hasher = createPasswordHasher();
   const redisPrefix = deps.overrides?.rateLimitPrefix ?? 'balesin';
+  // Pencabutan sesi → sinyal `session.revoked` lewat Redis supaya socket inbox pengguna itu ditutup
+  // seketika (validasi ulang berkala 30 detik tetap menjadi jaring pengaman).
+  const sessionRevocations = createSessionRevocationPublisher(deps.redis, {
+    prefix: redisPrefix,
+    logger: deps.logger,
+  });
+  const sessions: SessionService = {
+    ...baseSessions,
+    async revoke(executor, organizationId, sessionRef) {
+      const revoked = await baseSessions.revoke(executor, organizationId, sessionRef);
+      if (revoked) void sessionRevocations.publish({ organizationId });
+      return revoked;
+    },
+    async revokeAllForUser(executor, organizationId, userId, exceptSessionRef) {
+      const count = await baseSessions.revokeAllForUser(
+        executor,
+        organizationId,
+        userId,
+        exceptSessionRef,
+      );
+      if (count > 0) void sessionRevocations.publish({ organizationId, userId });
+      return count;
+    },
+  };
   const limiter = createRateLimiter(deps.redis, { prefix: redisPrefix });
   const secretBox = config.masterKey ? createSecretBox(config.masterKey) : null;
   const twoFactor = createTwoFactorService({
