@@ -264,3 +264,60 @@ tetap"). `pending` > 30 hari baru dikosongkan (`STALE_PENDING_DAYS`).
 | `packages/core`: `vitest run src/meta` | 106/106 lulus |
 | ESLint + Prettier + `tsc --noEmit` (apps/worker) untuk berkas tes baru | bersih |
 | `pnpm audit` | 2 moderate dev-only (`esbuild` via drizzle-kit, `minimatch` via eslint) |
+
+---
+
+## Putaran 2 — verifikasi perbaikan commit `bff5abd`
+
+### Putusan putaran 2: AMAN
+
+R1, R2, R3, R5, Info 1–3 **tertutup**. R4 ditunda ke Fase 4 sebagai syarat rilis fitur pembuat kontak hanya-nomor
+(DECISIONS 2026-11-16). Penundaan itu bisa diterima karena kontak hanya-nomor saat ini praktis tidak ada.
+
+Keempat tes yang dulu `it.fails` di `apps/worker/src/inbound/security-review-fase2-kontak.integration.test.ts` kini
+`it` dan lulus. Diff berkas tes hanya menghapus `.fails` dan komentar "saat ini …". Asersinya (`toBeNull()`,
+`not.toMatch(/[U+202A–U+202E U+2066–U+2069]/)`, `not.toMatch(/[\\/]/)`) tidak berubah.
+
+Tidak ada temuan baru di atas Info.
+
+| # | Status | Bukti |
+|---|---|---|
+| R1 | ✅ | `messageIdByWamid(..., contactId)` menambah `eq(messages.contact_id, contact.id)` untuk balasan dan reaksi (`handlers.ts`). Pesan keluar agen ke kontak yang sama tetap tertaut (`contact_id` sama). Tes R1 ×2 lulus |
+| R2 | ✅ | `safeHttpUrl`, yang menolak skema non-http(s), karakter tak terlihat, dan > 2.048. `cleanFileName`, yang membuang `\p{Cc}`/`\p{Cf}` termasuk NUL & pengubah arah, mengambil basename tanpa `/` `\`, menolak `.`/`..`, maks. 255. Keduanya dipakai di worker saat simpan **dan** di `inbox-view.ts` saat baca (data lama ikut aman). Uji ad-hoc: `JAVASCRIPT:…` → `null`, `data:` → `null`, `'a/b\..\c\0d\u202Eexe.pdf'` → `"cdexe.pdf"`, `'..'`/`'C:\x\..'` → `null` |
+| R3 | ✅ | Migrasi 0013: `pg_trgm` + GIN `gin_trgm_ops` pada `name`/`profile_name`/`wa_username`/`phone`. Batas laju per pengguna `inbox-daftar` 240/menit dan `inbox-cari` 60/menit (`grant.userId`). Pencarian di transaksi `SET LOCAL statement_timeout` 3 dtk (nilai angka dari opsi server lewat `sql.raw`, bukan input). `57014` → 503 "Pencarian terlalu lama…". `q` min. 2 |
+| R5 | ✅ | `maintenance.ts`: baris non-`pending` dihapus setelah `greatest(35, retensi)` hari (batch `SKIP LOCKED`, indeks `webhook_events_received_at_idx`). `pending` macet = retensi organisasi (bukan 30 hari) |
+| Info 1 | ✅ | `deleteContactData`: pencocokan nomor hanya untuk payload tanpa BSUID atau dengan BSUID yang sama (`sameOrNoBsuid`) |
+| Info 2 | ✅ | `contactIdentityLockKeys` (`@balesin/core`) + `lockAdvisoryKeys` (`@balesin/db`) dipakai worker dan api. Salinan format dihapus |
+| Info 3 | ✅ | ESLint `no-restricted-imports` (`**/worker/src/**`, `@balesin/worker`) untuk `apps/api/src/**` non-tes. Sudah dicek dengan berkas sementara (`'../../worker/src/queues/maintenance' import is restricted`), lalu dihapus |
+| R4 | ⏸ ditunda | DECISIONS 2026-11-16 → syarat butir impor kontak / kirim ke nomor / broadcast (Fase 4) |
+
+### Catatan putaran 2 (Info)
+
+1. **`safeHttpUrl` menerima userinfo.** `https://user:pw@evil.test/` lolos. Trik phishing
+   `https://bank.co.id@evil.test` jadi lebih meyakinkan bila web menampilkan URL apa adanya. Karena tampil sebagai
+   teks, risikonya kecil. Saran: tolak URL dengan `url.username`/`url.password`, atau tampilkan `url.hostname` dengan
+   jelas di web.
+2. **Pencarian 2 karakter tidak memakai indeks trigram** (trigram butuh ≥ 3 karakter), jadi Postgres memindai. Batas
+   60/menit + `statement_timeout` 3 dtk membatasi bebannya. Bila 503 "terlalu lama" sering muncul di data besar,
+   naikkan minimum teks ke 3 (nomor tetap ≥ 3 digit).
+3. **`CREATE EXTENSION pg_trgm`** butuh hak `CREATE` pada database (ekstensi "trusted" sejak PG 13). Installer Fase 7
+   wajib memastikan pengguna DB aplikasi adalah pemilik database, atau ekstensinya dipasang lebih dulu. Kalau tidak,
+   migrasi 0013 gagal saat `balesin update`. Teruskan ke devops.
+4. **Kejadian `error`/`other` tanpa cap waktu** bisa diputar ulang setelah barisnya dihapus (> 35 hari), karena
+   penerima hanya menolak basi berdasarkan `occurredAt`. Dampaknya nihil: `error` hanya mencatat kode, `other` disimpan
+   `skipped` berupa hash, dan pemutaran ulang tetap butuh tanda tangan App Secret.
+5. **Konsekuensi R5** (tercatat di DECISIONS): worker yang mati lebih lama dari retensi membuat kejadian `pending`
+   lama tidak diproses. Ini pilihan privasi yang disengaja. Ada baiknya layar diagnosis webhook kelak menampilkan
+   jumlah `expired_pending`.
+
+### Tes putaran 2
+
+| Perintah | Hasil |
+|---|---|
+| `apps/worker`: `vitest run src/inbound src/queues` (termasuk 5 tes review ini) | 99/99 lulus |
+| `apps/api`: `vitest run src/modules/inbox src/rbac-matrix src/modules/webhooks src/http` | 124/124 lulus |
+| `packages/core`: `vitest run src/meta` (termasuk `safeHttpUrl`/`cleanFileName`) | 109/109 lulus |
+| `packages/db`: `vitest run src/inbox src/migrations` | 20/20 lulus |
+| Uji ad-hoc aturan ESLint api→worker dan kasus tepi sanitasi (berkas sementara, sudah dihapus) | sesuai harapan (lihat tabel) |
+
+Tidak ada kode produk yang diubah dan tidak ada commit. Stack E2E tidak dipakai.
