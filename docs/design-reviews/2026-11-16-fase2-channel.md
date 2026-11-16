@@ -306,3 +306,119 @@ Worktree sementara dihapus (`git worktree remove` + hapus folder + `prune`; `git
 port 3191/5191 kosong, database `balesin_kd_e2e` di-drop, Redis db 11 `DBSIZE` 0. Berkas repo yang ditulis hanya
 laporan ini dan folder screenshot `docs/design-reviews/2026-11-16-fase2-channel/` (23 berkas, 3,4 MB). Tidak ada
 kode produk yang diubah, tidak ada commit.
+
+---
+
+# Putaran 2
+
+- **Tanggal:** 2026-11-16 · **Penilai:** `kritikus-desain` · **Putaran:** 2
+- **Kode yang dinilai:** `df8a0d7` ("fix(channel): revisi desain putaran 1 (W1–W9), navigasi bagian, isian rahasia tak
+  terkendali"), difoto dari HEAD `4bfd1d9` (sesudahnya hanya tes security). Stack E2E utama (3100/5180) tidak
+  disentuh.
+- **Screenshot sesudah:** berkas berawalan `p2-` di `docs/design-reviews/2026-11-16-fase2-channel/`.
+
+## Putusan putaran 2: REVISI (satu regresi kecil)
+
+W1–W9 semuanya memenuhi kriteria lolosnya, S1/S2/S4–S9/S12 dikerjakan, dan tidak ada pelanggaran §3 lagi. Yang menahan
+tinggal **satu regresi baru** dari S8: di `wizard-tanpa-kunci` paragraf penjelasan pecah menjadi lima baris terpisah
+(lihat R1). Perbaikannya satu baris. Setelah R1 diperbaiki, layar Channel **LOLOS**; cukup foto ulang
+`wizard-tanpa-kunci` 390/1440 terang/gelap.
+
+## Cara menilai
+
+1. **Foto.** Worktree sementara dari HEAD di scratchpad, `pnpm install --frozen-lockfile`, API **3191**, web **5191**,
+   database **`balesin_kd_e2e`**, Redis **db 11**. 38 layar `screens-channel.ts` (termasuk foto baru wizard langkah
+   2–4, `wizard-salin-id`, `nomor-gagal-tes-perbaiki`) + banner `webhook_signature_failed` + `pengaturan-owner`:
+   **187/187 lulus**. Layar kunci dibuka satu per satu (390 terang|gelap berdampingan, 1440 per tema).
+2. **Ukur** (spek di luar repo, **187 lulus**): audit generik 40 layar × 4 setelah jeda 800 ms; kerangka → isi halaman
+   nomor (terhubung, gagal, belum dites, nonaktif) dengan respons ditahan lalu dilepas; lebar **1024 × 768** untuk
+   halaman nomor, daftar, wizard, Pengaturan (terang & gelap); lompat lewat navigasi bagian dengan keyboard.
+
+## Hasil ukur revisi
+
+| Revisi | Kriteria lolos | Hasil | Status |
+|---|---|---|---|
+| **W1** status | tidak ada status sama dengan arti berbeda tanpa sumber | Kepala "● Koneksi gagal"; fakta "Status di Meta"; baris "Data dari Meta, dibaca hari ini, 10.42." Nonaktif: kotak "Dinonaktifkan sejak kemarin, 09.42" | Lolos |
+| **W2** aksi saat gagal | satu tombol berwarna "Ganti kredensial"; membuka form + fokus | Tombol primary di kotak gagal; "Tes koneksi" sekunder. `nomor-gagal-tes-perbaiki`: form terbuka, isian **Token System User** terfokus, fakta kredensial disembunyikan (S5). Petunjuk wizard baru tampil | Lolos |
+| **W3** huruf `<select>` | Plus Jakarta Sans | Keluarga huruf di 160 foto: Plus Jakarta Sans + JetBrains Mono saja (Arial hilang) | Lolos |
+| **W4** tautan foto profil | kontras ≥ 5:1, target ≥ 44 di 390 | `.photoNote` di `--surface` + garis; tidak ada teks < 4,5:1 di layar mana pun; tautan tidak lagi masuk daftar target < 44 | Lolos |
+| **W5** isian Tentang | tidak ada isian terpotong di 390 | Textarea 2 baris "Tentang" memuat teks utuh; label "Situs web 1/2". Satu-satunya "terpotong" adalah legenda `sr-only` | Lolos |
+| **W6** bahasa | tanpa "field"/"wizard"; waktu inline huruf kecil | "Kolom webhook yang perlu dilanggani", "Batal menambah nomor?", "Dibaca dari Meta hari ini, 11.30" | Lolos |
+| **W7** kerangka nomor | tidak ada elemen kerangka bergeser > 4 px | Kartu: atas 80, kiri 88, lebar 672 **Δ 0**. Kepala: nama (y 105, tinggi 24), nomor (133; 20,3), lencana (157,3; 24), bawah kepala 181,3 — **Δ 0** untuk terhubung, gagal, belum dites, nonaktif × 390/1440 × terang/gelap (16 varian). Isi lain tumbuh di bawah kepala | Lolos |
+| **W8** ringkasan menu | jumlah yang bermasalah disebut | "4 nomor · ● 1 koneksi gagal", sebaris di 1440 | Lolos |
+| **W9** letak aksi | semua aksi kartu sejajar tepi isi | Tes koneksi, Buat ulang verify token, Ganti kredensial, Nonaktifkan channel, Hapus channel semua di **x 113** (1440) / **x 33** (390). "Hapus channel" berbingkai dengan teks `--danger-ink`; merah penuh hanya di dialog | Lolos |
+| **S1** navigasi bagian | — | Menempel di kanan (x 784–976), bagian aktif `--primary-soft`. Enter pada "Profil bisnis": kartu itu naik ke atas dan menerima fokus, penanda ikut pindah | Baik |
+| **1024 × 768** | tanpa scroll horizontal, tidak bertabrakan | Nomor: kolom 88–760 + navigasi 784–976 (sisa kanan 48). Wizard: daftar langkah 88–328, kartu 352–1000 (sisa 24, sama dengan tepi kiri). Daftar & Pengaturan 88–760. Tidak ada scroll horizontal / teks terpotong / kontras < 4,5 di terang & gelap | Lolos |
+| Lebar kolom (S6) | — | Pengaturan, Channel, dan nomor kini sama 672 px (42rem) | Baik |
+
+Pemeriksaan generik: tidak ada scroll horizontal (160 foto); ukuran huruf 12/13/14/16/20; tidak ada warna di luar token
+(kecuali miniatur tema, sudah diterima); tidak ada teks aktif < 4,5:1; tautan panduan wizard di 390 kini setinggi 44 px.
+
+## Tabel nilai putaran 2
+
+Semua layar putaran 1 kini ≥ 4 di 390/1440 × terang/gelap, **kecuali**:
+
+| Layar | Ukuran · tema | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `wizard-tanpa-kunci` | 390 · 1440 T/G | 4 | 5 | **2** | **2** | 5 | 5 | 5 | 4 | **3** | 5 |
+
+Layar yang di putaran 1 bernilai < 4, sesudah revisi:
+
+| Layar | Ukuran · tema | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `pengaturan-channel` | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 4 | 5 |
+| `wizard-webhook`, `nomor-webhook` | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 4 | 4 | 5 |
+| `wizard-tes-gagal`, `wizard-tinggalkan` | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| `nomor-profil`, `nomor-profil-konfirmasi` | 390 · 1440 T/G | 4 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 4 | 5 |
+| `nomor-profil-gagal`, `nomor-bawah`, `nomor-ganti-kredensial` | 390 · 1440 T/G | 4 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 4 | 5 |
+| `nomor-gagal-tes`, `nomor-gagal-tes-perbaiki` | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 4 | 5 | 5 |
+| `nomor-tes-dibatasi` | 390 · 1440 T/G | 4 | 5 | 5 | 5 | 5 | 5 | 5 | 4 | 4 | 5 |
+| `nomor-nonaktif` | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| `nomor-memuat` | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 4 | 5 |
+
+## Revisi putaran 2
+
+### Wajib
+
+**R1. Paragraf "Token Meta belum bisa disimpan" di wizard pecah per potongan**
+— `apps/web/src/features/channels/ChannelWizardPage.tsx` (± baris 79–83), `Channels.module.css` (`.blockedBody`)
+
+- Sebab: `.blockedBody` adalah `display: flex; flex-direction: column; gap: 16px`, dan `<RichText>` mengembalikan
+  *fragment*. Setiap potongan teks dan setiap `<code>` jadi item flex sendiri: "BALESIN_MASTER_KEY" / "belum diisi di
+  berkas" / ".env" / "server, jadi token…" tampil sebagai baris-baris terpisah berjarak 16 px
+  (`p2-wizard-tanpa-kunci--390.png`, `p2-wizard-tanpa-kunci--1440-gelap.png`). Di halaman Channel (dalam `Notice`) teks
+  yang sama tampil benar.
+- Perbaikan: bungkus teks dalam satu paragraf:
+
+  ```tsx
+  <div className={styles.blockedBody}>
+    <p>
+      <RichText text={t.channels.list.noMasterKeyBody} />
+    </p>
+    <MasterKeyCommand />
+  </div>
+  ```
+
+- Kriteria lolos: di `wizard-tanpa-kunci` 390 & 1440 paragraf mengalir sebagai satu blok rata tengah dengan `<code>`
+  sebaris, lalu baris perintah + Salin di bawahnya.
+
+### Saran (tidak menahan)
+
+- **P2-S1. Penanda navigasi bagian setelah "Ganti kredensial".** Di `nomor-gagal-tes-perbaiki` 1440 form Kredensial
+  terbuka dan terfokus, tetapi penanda masih di "Nama channel" (kartu Kredensial mulai di y 414, di bawah garis 40% =
+  360). Gulir dengan `block: 'start'` atau set bagian aktif ke `kredensial` saat tombol itu ditekan.
+- **P2-S2. Teks bantuan webhook di halaman nomor**: "Ganti App Secret di Kredensial Meta pada halaman nomor." tampil
+  di halaman nomor itu sendiri. Di halaman nomor pakai "Ganti App Secret di kartu Kredensial Meta di bawah." (wizard
+  tetap kalimat lama).
+- **P2-S3 (`qa-tester`).** Mock `channelDetail`/`channelTest`: `number.fetchedAt` = 1 jam lalu, sehingga
+  `nomor-gagal-tes` menampilkan data "dibaca hari ini, 10.42" *setelah* tes gagal pukul 08.42, dan
+  `nomor-tes-berhasil` menampilkan "dibaca 10.42" padahal tes berhasil pukul 11.42. Server hanya memperbarui data nomor
+  lewat tes berhasil, jadi samakan `fetchedAt` dengan `testedAt` tes berhasil terakhir.
+- S3 (channel di banner webhook), S10 (ilustrasi per langkah), S11 (nasib riwayat chat saat hapus) tetap terbuka
+  sebagai saran.
+
+## Bersih-bersih putaran 2
+
+Worktree sementara dihapus (folder + `git worktree prune`; `git worktree list` hanya repo utama), port 3191/5191
+kosong, database `balesin_kd_e2e` di-drop, Redis db 11 `DBSIZE` 0. Berkas repo yang ditulis: bagian ini dan 21 berkas
+`p2-*.png`. Tidak ada kode produk yang diubah, tidak ada commit.
