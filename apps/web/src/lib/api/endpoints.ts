@@ -9,7 +9,13 @@ import {
   channelResponseSchema,
   channelSettingsListResponseSchema,
   channelTestResultSchema,
+  channelSummaryListResponseSchema,
   channelWebhookResponseSchema,
+  contactResponseSchema,
+  conversationCountsResponseSchema,
+  conversationListResponseSchema,
+  conversationResponseSchema,
+  messageListResponseSchema,
   createChannelResponseSchema,
   deleteChannelResponseSchema,
   updateBusinessProfileResponseSchema,
@@ -70,6 +76,9 @@ import {
   type VerifyTwoFactorRequest,
 } from '@balesin/shared';
 import { api, type ApiClient } from './client';
+
+/** Saringan & kursor daftar percakapan → query string (lihat `features/inbox/inbox-filters.ts`). */
+export type QueryString = string;
 
 /** Saringan audit log → query string (nilai kosong tidak dikirim). */
 export function auditQueryString(query: AuditLogListQuery | AuditLogFilter): string {
@@ -453,6 +462,51 @@ export function createEndpoints(client: ApiClient) {
           method: 'PUT',
           body,
           schema: updateBusinessProfileResponseSchema,
+        }),
+    },
+    /**
+     * Inbox (izin `inbox.view` / `contacts.view`, bercakupan — docs/KONTRAK-API-INBOX.md).
+     * `query` = query string yang sudah disusun (`conversationQueryString`), diawali `?` atau kosong.
+     */
+    inbox: {
+      conversations: (query: QueryString, signal?: AbortSignal) =>
+        client.request(`${API_ROUTES.inbox.conversations}${query}`, {
+          schema: conversationListResponseSchema,
+          signal,
+        }),
+      counts: (query: QueryString, signal?: AbortSignal) =>
+        client.request(`${API_ROUTES.inbox.counts}${query}`, {
+          schema: conversationCountsResponseSchema,
+          signal,
+        }),
+      conversation: (conversationId: string, signal?: AbortSignal) =>
+        client.request(apiPath(API_ROUTES.inbox.conversation, { conversationId }), {
+          schema: conversationResponseSchema,
+          signal,
+        }),
+      messages: (conversationId: string, cursor: string | null, signal?: AbortSignal) =>
+        client.request(
+          `${apiPath(API_ROUTES.inbox.messages, { conversationId })}${
+            cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''
+          }`,
+          { schema: messageListResponseSchema, signal },
+        ),
+      /** Tandai sudah dibaca (POST ber-CSRF, idempoten). */
+      markRead: (conversationId: string) =>
+        client.request(apiPath(API_ROUTES.inbox.read, { conversationId }), {
+          method: 'POST',
+          schema: conversationResponseSchema,
+        }),
+      contact: (contactId: string, signal?: AbortSignal) =>
+        client.request(apiPath(API_ROUTES.inbox.contact, { contactId }), {
+          schema: contactResponseSchema,
+          signal,
+        }),
+      /** Ringkasan channel untuk saringan (nama saja, semua peran ber-`inbox.view`). */
+      channels: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.channels.list, {
+          schema: channelSummaryListResponseSchema,
+          signal,
         }),
     },
     emailSettings: {

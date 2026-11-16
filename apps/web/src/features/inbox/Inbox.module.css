@@ -12,118 +12,8 @@
   grid-template-columns: var(--size-list) minmax(0, 1fr) var(--size-detail);
 }
 
-/* ---------- Daftar chat ---------- */
-
-.list {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
+.listColumn {
   min-height: 0;
-  border-right: 1px solid var(--line);
-  background: var(--surface);
-}
-
-.listInner {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.listHeader {
-  flex: none;
-}
-
-.titleRow {
-  display: flex;
-  align-items: center;
-  height: var(--size-bar);
-  padding: 0 var(--space-16);
-}
-
-.title {
-  font-size: var(--text-20);
-  font-weight: var(--weight-bold);
-  line-height: var(--leading-title);
-  letter-spacing: var(--tracking-title);
-}
-
-.searchRow {
-  padding: 0 var(--space-16) var(--space-8);
-}
-
-.tabs {
-  display: flex;
-  /* 8px di sini + 8px padding tab: teks tab pertama dan terakhir sejajar gutter 16px. */
-  padding: 0 var(--space-8);
-  border-bottom: 1px solid var(--line);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-/*
- * Sisa lebar dibagi rata ke semua tab sebagai ruang kosong. Tab tengah tumbuh penuh
- * dengan teks di tengah; tab pertama dan terakhir tumbuh separuh dengan teks menempel
- * ke tepi luar. Hasilnya jarak antar teks sama rata di semua lebar layar, teks tepi
- * tetap sejajar gutter, dan kotak tab pendek ("Bot") ikut melebar jadi target sentuh.
- */
-.tab {
-  display: flex;
-  flex: 1 0 auto;
-  justify-content: center;
-  height: var(--size-touch);
-  /* Ruang 8px di kiri-kanan teks: cincin fokus tidak menabrak huruf. */
-  padding: 0 var(--space-8);
-  border-radius: var(--radius-input);
-  color: var(--ink-2);
-  font-size: var(--text-13);
-  font-weight: var(--weight-semibold);
-  white-space: nowrap;
-  transition: color var(--duration-fast) var(--ease-out);
-}
-
-.tab:first-child {
-  flex-grow: 0.5;
-  justify-content: flex-start;
-}
-
-.tab:last-child {
-  flex-grow: 0.5;
-  justify-content: flex-end;
-}
-
-.tab:hover,
-.tab[data-state='active'] {
-  color: var(--ink);
-}
-
-.tab:focus-visible {
-  outline-offset: -2px;
-}
-
-/* Garis aktif selebar teks, di dasar tab. Garis atas transparan menjaga teks di tengah. */
-.tabLabel {
-  display: flex;
-  align-items: center;
-  border-top: 2px solid transparent;
-  border-bottom: 2px solid transparent;
-  transition: border-color var(--duration-fast) var(--ease-out);
-}
-
-.tab[data-state='active'] .tabLabel {
-  border-bottom-color: var(--primary);
-}
-
-.listBody {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-.listBody:focus-visible {
-  outline-offset: -2px;
 }
 
 /* ---------- Ruang chat ---------- */
@@ -176,54 +66,6 @@
   text-wrap: pretty;
 }
 
-/* ---------- Kerangka memuat: hanya isi daftar yang menunggu data ---------- */
-
-.skeletonRows {
-  display: flex;
-  flex-direction: column;
-}
-
-.skeletonRow {
-  display: flex;
-  align-items: center;
-  gap: var(--space-12);
-  height: 4.5rem;
-  padding: 0 var(--space-16);
-}
-
-.skeletonAvatar {
-  flex: none;
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: var(--radius-pill);
-}
-
-.skeletonLines {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: var(--space-8);
-  min-width: 0;
-}
-
-.skeletonName {
-  width: 46%;
-  height: var(--space-12);
-}
-
-.skeletonSnippet {
-  width: 82%;
-  height: var(--space-8);
-}
-
-.skeletonTime {
-  flex: none;
-  align-self: flex-start;
-  width: 2rem;
-  height: var(--space-8);
-  margin-top: var(--space-16);
-}
-
 /* ---------- Tablet: dua kolom, detail melayang ---------- */
 
 @media (max-width: 1023px) {
@@ -243,7 +85,7 @@
   }
 }
 
-/* ---------- HP: daftar saja ---------- */
+/* ---------- HP: daftar ATAU chat (layar bertumpuk) ---------- */
 
 @media (max-width: 640px) {
   .inbox,
@@ -251,12 +93,17 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .list {
-    border-right: 0;
-  }
-
   .chat,
   .detail {
     display: none;
+  }
+
+  .inbox[data-chat='open'] .listColumn {
+    display: none;
+  }
+
+  .inbox[data-chat='open'] .chat {
+    display: flex;
+    background: var(--bg);
   }
 }

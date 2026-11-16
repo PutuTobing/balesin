@@ -9,18 +9,30 @@ export const DEFAULT_INBOX_TAB: InboxTab = 'semua';
 export interface InboxSearch {
   /** Kosong = tab bawaan ("Semua"), supaya URL tetap bersih. */
   tab?: InboxTab;
+  /** ID percakapan yang sedang dibuka (UUID). */
+  chat?: string;
 }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function parseInboxTab(value: unknown): InboxTab {
   return INBOX_TABS.find((tab) => tab === value) ?? DEFAULT_INBOX_TAB;
 }
 
+/** ID percakapan dari URL: hanya UUID (huruf kecil), selain itu diabaikan. */
+export function parseChatId(value: unknown): string | undefined {
+  return typeof value === 'string' && UUID.test(value) ? value.toLowerCase() : undefined;
+}
+
 /**
  * Validasi parameter URL: nilai tak dikenal diabaikan, bukan membuat halaman gagal.
- * Kunci `tab` selalu dikembalikan (walau `undefined`) karena router menggabungkan hasil
+ * Kunci selalu dikembalikan (walau `undefined`) karena router menggabungkan hasil
  * ini di atas parameter mentah; tanpa itu nilai tak dikenal akan lolos ke halaman.
  */
 export function parseInboxSearch(search: Record<string, unknown>): InboxSearch {
   const tab = parseInboxTab(search.tab);
-  return { tab: tab === DEFAULT_INBOX_TAB ? undefined : tab };
+  return {
+    tab: tab === DEFAULT_INBOX_TAB ? undefined : tab,
+    chat: parseChatId(search.chat),
+  };
 }

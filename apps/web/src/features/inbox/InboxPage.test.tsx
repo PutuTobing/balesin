@@ -14,6 +14,7 @@ import { t } from '../../i18n/id';
 import { deviceKey } from '../../lib/device-storage';
 import { media } from '../../lib/media';
 import { setMediaQuery } from '../../test/match-media';
+import { installFakeApi } from '../../test/fake-api';
 import { createTestQueryClient } from '../../test/query-client';
 import { renderApp } from '../../test/render-app';
 import { InboxPage } from './InboxPage';
@@ -63,9 +64,12 @@ describe('daftar chat', () => {
     await renderApp('/inbox');
 
     const panel = within(list().getByRole('tabpanel'));
-    expect(panel.getByRole('heading', { name: t.inbox.empty.semua.title })).toBeVisible();
-    expect(panel.getByText(t.inbox.empty.semua.body(mascot))).toBeVisible();
-    expect(panel.getByText(new RegExp(mascot))).toBeVisible();
+    expect(await panel.findByRole('heading', { name: t.inbox.empty.semua.title })).toBeVisible();
+    // Inbox benar-benar kosong: ajakan bermaskot tampil sekali, di ruang chat.
+    const chat = within(screen.getByRole('region', { name: t.inbox.chat.label }));
+    expect(await chat.findByRole('heading', { name: t.inbox.chat.inboxEmptyTitle })).toBeVisible();
+    expect(chat.getByText(t.inbox.chat.inboxEmptyBody(mascot))).toBeVisible();
+    expect(panel.queryByText(new RegExp(mascot))).toBeNull();
   });
 
   it('ganti tab mengubah URL dan teks keadaan kosong', async () => {
@@ -78,7 +82,7 @@ describe('daftar chat', () => {
     );
     expect(router.state.location.search).toEqual({ tab: 'belum-dilayani' });
     expect(
-      list().getByRole('heading', { name: t.inbox.empty['belum-dilayani'].title }),
+      await list().findByRole('heading', { name: t.inbox.empty['belum-dilayani'].title }),
     ).toBeVisible();
 
     fireEvent.mouseDown(tab(t.inbox.tabs.semua));
@@ -90,7 +94,7 @@ describe('daftar chat', () => {
   it('membuka tab dari URL, dan kembali ke "Semua" bila nilainya tak dikenal', async () => {
     const first = await renderApp('/inbox?tab=selesai');
     expect(tab(t.inbox.tabs.selesai)).toHaveAttribute('aria-selected', 'true');
-    expect(list().getByRole('heading', { name: t.inbox.empty.selesai.title })).toBeVisible();
+    expect(await list().findByRole('heading', { name: t.inbox.empty.selesai.title })).toBeVisible();
     first.unmount();
 
     await renderApp('/inbox?tab=tidak-ada');
@@ -105,7 +109,7 @@ describe('daftar chat', () => {
 
     // Kata yang diketik tampil sebagai teks biasa (tidak ditafsirkan sebagai HTML).
     expect(
-      list().getByRole('heading', { name: t.inbox.searchEmpty.title('Budi <b>') }),
+      await list().findByRole('heading', { name: t.inbox.searchEmpty.title('Budi <b>') }),
     ).toBeVisible();
     expect(list().getByText(t.inbox.searchEmpty.body)).toBeVisible();
 
@@ -113,7 +117,7 @@ describe('daftar chat', () => {
     fireEvent.click(panel.getByRole('button', { name: t.inbox.clearSearch }));
 
     expect(input).toHaveValue('');
-    expect(list().getByRole('heading', { name: t.inbox.empty.semua.title })).toBeVisible();
+    expect(await list().findByRole('heading', { name: t.inbox.empty.semua.title })).toBeVisible();
   });
 });
 
@@ -124,8 +128,9 @@ describe('ruang chat dan panel detail', () => {
     act(() => setMediaQuery(media.desktop, true));
     await renderApp('/inbox');
 
+    // Belum ada chat sama sekali: ruang chat menjelaskan inbox kosong (bukan "pilih chat").
     const chat = within(screen.getByRole('region', { name: t.inbox.chat.label }));
-    expect(chat.getByRole('heading', { name: t.inbox.chat.emptyTitle })).toBeVisible();
+    expect(await chat.findByRole('heading', { name: t.inbox.chat.inboxEmptyTitle })).toBeVisible();
 
     const detail = within(screen.getByRole('complementary', { name: t.inbox.detail.label }));
     expect(detail.getByRole('heading', { name: t.inbox.detail.title })).toBeVisible();
@@ -309,6 +314,7 @@ describe('inbox saat memuat', () => {
       pendingComponent: InboxSkeleton,
       component: InboxPage,
     });
+    installFakeApi();
     const router = createRouter({
       routeTree: rootRoute.addChildren([appRoute.addChildren([inboxRoute])]),
       history: createMemoryHistory({ initialEntries: ['/inbox?tab=selesai'] }),

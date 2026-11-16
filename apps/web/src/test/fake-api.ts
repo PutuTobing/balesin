@@ -27,8 +27,13 @@ import {
   type TwoFactorEnrollmentSession,
   type TwoFactorStatusResponse,
   type UserRole,
+  type ChannelSummary,
+  type Contact,
+  type Conversation,
+  type Message,
 } from '@balesin/shared';
 import { vi } from 'vitest';
+import { fakeInboxRoutes } from './fake-inbox';
 
 /**
  * API tiruan untuk tes komponen: `fetch` global diganti penangan per path. Tanpa pengaturan
@@ -365,8 +370,17 @@ export interface FakeApiOptions {
   invitations?: InvitationListResponse;
   /** Bawaan: `true` (email pengirim instalasi sudah diatur). */
   passwordResetAvailable?: boolean;
+  /** Bawaan inbox: kosong (tanpa percakapan, hitungan 0, tanpa channel). */
+  inbox?: FakeInbox;
   /** Penangan tambahan, kunci `"METODE /path"`; mengalahkan bawaan. */
   routes?: Record<string, FakeHandler>;
+}
+
+export interface FakeInbox {
+  conversations?: Conversation[];
+  messages?: Record<string, Message[]>;
+  contacts?: Contact[];
+  channels?: ChannelSummary[];
 }
 
 export interface FakeApi {
@@ -443,6 +457,7 @@ export function installFakeApi(options: FakeApiOptions = {}): FakeApi {
     [`GET ${API_ROUTES.channels.settings}`]: fullSessionOnly(() =>
       json(options.channelSettings ?? { channels: [], canStoreSecrets: true, maxChannels: 20 }),
     ),
+    ...fakeInboxRoutes(options.inbox ?? {}, fullSessionOnly),
     [`GET ${API_ROUTES.passwordReset.status}`]: () =>
       json({ available: options.passwordResetAvailable ?? true }),
     [`POST ${API_ROUTES.auth.logout}`]: () => {

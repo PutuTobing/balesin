@@ -8,24 +8,28 @@ const TABS = [
   { name: 'Selesai', param: 'selesai' },
 ] as const;
 
+/** Nama tab bisa diikuti hitungan ("Dilayani, 3 chat") — cocokkan awal namanya saja. */
+const tabName = (name: string) => new RegExp(`^${name}\\s*(,|$)`);
+
 test.describe('inbox', () => {
   test('menampilkan lima tab, "Semua" terpilih secara bawaan', async ({ page }) => {
     await openApp(page, '/inbox');
     const tabs = page.getByRole('tablist', { name: 'Saring chat menurut status' });
     await expect(tabs.getByRole('tab')).toHaveCount(5);
     await expect(tabs.getByRole('tab', { name: 'Semua' })).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByText('Belum ada chat', { exact: true })).toBeVisible();
+    // Isi tab "Semua" tergantung tes lain (inbox-pesan mengirim pesan masuk); cukup panelnya tampil.
+    await expect(page.getByRole('tabpanel')).toBeVisible();
     await expectNoHorizontalScroll(page);
   });
 
   for (const tab of TABS) {
     test(`tab ${tab.name} tersimpan di URL dan bertahan setelah muat ulang`, async ({ page }) => {
       await openApp(page, '/inbox');
-      await page.getByRole('tab', { name: tab.name, exact: true }).click();
+      await page.getByRole('tab', { name: tabName(tab.name) }).click();
       if (tab.param) await expect(page).toHaveURL(new RegExp(`[?&]tab=${tab.param}$`));
       else await expect(page).not.toHaveURL(/tab=/);
       await page.reload();
-      await expect(page.getByRole('tab', { name: tab.name, exact: true })).toHaveAttribute(
+      await expect(page.getByRole('tab', { name: tabName(tab.name) })).toHaveAttribute(
         'aria-selected',
         'true',
       );
@@ -33,19 +37,20 @@ test.describe('inbox', () => {
   }
 
   test('membuka alamat dengan ?tab= langsung memilih tab itu', async ({ page }) => {
-    await openApp(page, '/inbox?tab=dilayani');
-    await expect(page.getByRole('tab', { name: 'Dilayani', exact: true })).toHaveAttribute(
+    // "Selesai": tidak ada tes yang menyelesaikan percakapan, jadi tab ini selalu kosong.
+    await openApp(page, '/inbox?tab=selesai');
+    await expect(page.getByRole('tab', { name: tabName('Selesai') })).toHaveAttribute(
       'aria-selected',
       'true',
     );
-    await expect(page.getByText('Belum ada chat yang dilayani')).toBeVisible();
+    await expect(page.getByText('Belum ada chat selesai')).toBeVisible();
   });
 
   test('ganti tab tidak menumpuk riwayat browser', async ({ page }) => {
     await openApp(page, '/kontak');
     await page.goto('/inbox');
-    await page.getByRole('tab', { name: 'Bot' }).click();
-    await page.getByRole('tab', { name: 'Selesai' }).click();
+    await page.getByRole('tab', { name: tabName('Bot') }).click();
+    await page.getByRole('tab', { name: tabName('Selesai') }).click();
     await page.goBack();
     await expect(page).toHaveURL(/\/kontak$/);
   });
@@ -69,7 +74,7 @@ test.describe('inbox', () => {
     await openApp(page, '/inbox');
     await page.getByRole('tab', { name: 'Semua' }).focus();
     await page.keyboard.press('ArrowRight');
-    await expect(page.getByRole('tab', { name: 'Bot' })).toBeFocused();
+    await expect(page.getByRole('tab', { name: tabName('Bot') })).toBeFocused();
   });
 
   test('pencarian tanpa hasil menampilkan pesan dan bisa dihapus', async ({ page }) => {
@@ -80,7 +85,7 @@ test.describe('inbox', () => {
     await expect(page.getByText('Coba nama atau nomor lain.')).toBeVisible();
     await page.getByRole('button', { name: 'Hapus pencarian' }).last().click();
     await expect(search).toHaveValue('');
-    await expect(page.getByText('Belum ada chat', { exact: true })).toBeVisible();
+    await expect(page.getByText(/Tidak ketemu chat untuk/)).toHaveCount(0);
   });
 
   test('pencarian berisi HTML dan teks panjang tidak merusak tata letak', async ({ page }) => {
@@ -93,16 +98,17 @@ test.describe('inbox', () => {
   });
 
   test('pencarian hanya spasi dianggap kosong', async ({ page }) => {
-    await openApp(page, '/inbox');
+    await openApp(page, '/inbox?tab=bot');
     await page.getByRole('searchbox', { name: 'Cari chat' }).fill('   ');
-    await expect(page.getByText('Belum ada chat', { exact: true })).toBeVisible();
+    await expect(page.getByText('Bot sedang tidak memegang chat')).toBeVisible();
+    await expect(page.getByText('Ketik minimal 2 huruf untuk mulai mencari.')).toHaveCount(0);
   });
 
   test('pencarian bertahan saat pindah tab', async ({ page }) => {
     await openApp(page, '/inbox');
     const search = page.getByRole('searchbox', { name: 'Cari chat' });
     await search.fill('budi');
-    await page.getByRole('tab', { name: 'Bot' }).click();
+    await page.getByRole('tab', { name: tabName('Bot') }).click();
     await expect(search).toHaveValue('budi');
     await expect(page.getByText(/Tidak ketemu chat untuk “budi”/)).toBeVisible();
   });

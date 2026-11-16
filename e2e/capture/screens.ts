@@ -23,6 +23,7 @@ import {
 } from './mocks';
 import { accountScreens } from './screens-akun';
 import { channelScreens } from './screens-channel';
+import { inboxScreens } from './screens-inbox';
 import { teamScreens } from './screens-tim';
 
 export interface Screen {
@@ -985,4 +986,5 @@ export const screens: Screen[] = [
 
   // Fase 2 butir 1–2: Channel (daftar, wizard tambah nomor, halaman nomor, profil bisnis).
   ...channelScreens,
+  ...inboxScreens,
 ];

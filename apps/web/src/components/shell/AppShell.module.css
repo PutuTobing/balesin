@@ -218,3 +218,13 @@
     line-height: var(--leading-title);
   }
 }
+
+/*
+ * Layar bertumpuk di HP (mis. ruang chat yang sedang dibuka, `data-hp-immersive`): memenuhi
+ * layar tanpa navigasi bawah; tombol/gesture kembali membawa pengguna ke daftar.
+ */
+@media (max-width: 640px) {
+  .shell:has([data-hp-immersive]) .nav {
+    display: none;
+  }
+}

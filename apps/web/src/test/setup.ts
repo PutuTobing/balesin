@@ -4,11 +4,15 @@ import { cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, vi } from 'vitest';
 import { clearHandoffEmail, clearLoginNotice } from '../features/auth/login-notice';
 import { api } from '../lib/api/client';
+import { setInboxSocketFactory } from '../features/inbox/use-inbox-stream';
 import { THEME_ATTRIBUTE } from '../theme/theme';
+import { FakeSocket } from './fake-socket';
 import { installMatchMedia, resetMatchMedia } from './match-media';
 
 installMatchMedia();
 configureZodLocale();
+// Inbox real-time: tidak ada server WebSocket di jsdom.
+setInboxSocketFactory((url) => new FakeSocket(url));
 
 // jsdom tidak punya ResizeObserver; primitives Radix (menu, tooltip) membutuhkannya.
 class ResizeObserverStub implements ResizeObserver {
@@ -37,4 +41,5 @@ afterEach(() => {
   window.localStorage.clear();
   document.documentElement.removeAttribute(THEME_ATTRIBUTE);
   document.title = '';
+  FakeSocket.reset();
 });

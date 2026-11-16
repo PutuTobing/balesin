@@ -1,5 +1,6 @@
 import { test as base, expect, type Page } from '@playwright/test';
 import { E2E_OWNER } from '../stack/env';
+import { releaseInboxReadBudget } from './pengguna';
 
 /**
  * Respons gagal yang memang diharapkan sebuah tes, mis. `{ path: '/api/v1/auth/me', status: 401 }`
@@ -41,6 +42,8 @@ export const test = base.extend<{
         return httpAllowList.some((rule) => rule.status === status && pathname === rule.path);
       };
 
+      // Jatah baca inbox per pengguna dipakai bersama seluruh suite (lihat releaseInboxReadBudget).
+      await releaseInboxReadBudget();
       const problems: string[] = [];
       page.on('console', (msg) => {
         if (msg.type() !== 'error' && msg.type() !== 'warning') return;

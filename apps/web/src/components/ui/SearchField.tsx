@@ -10,9 +10,18 @@ interface SearchFieldProps {
   label: string;
   placeholder: string;
   clearLabel: string;
+  /** Batas panjang ketikan (mis. batas kata pencarian server). */
+  maxLength?: number;
 }
 
-export function SearchField({ value, onChange, label, placeholder, clearLabel }: SearchFieldProps) {
+export function SearchField({
+  value,
+  onChange,
+  label,
+  placeholder,
+  clearLabel,
+  maxLength,
+}: SearchFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   return (
@@ -26,6 +35,7 @@ export function SearchField({ value, onChange, label, placeholder, clearLabel }:
         aria-label={label}
         placeholder={placeholder}
         autoComplete="off"
+        maxLength={maxLength}
         enterKeyHint="search"
         className={styles.input}
       />

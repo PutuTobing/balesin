@@ -1,18 +1,36 @@
-import { getRouteApi } from '@tanstack/react-router';
-import { useCallback } from 'react';
+import { getRouteApi, useRouter } from '@tanstack/react-router';
+import { useCallback, useRef } from 'react';
 import { DEFAULT_INBOX_TAB, parseInboxTab, type InboxTab } from './inbox-search';
 
 const routeApi = getRouteApi('/_app/inbox');
 
-/** Tab aktif Inbox dari URL (`/inbox?tab=…`) dan cara menggantinya. Khusus rute /inbox. */
-export function useInboxTab(): { tab: InboxTab; onTabChange: (tab: InboxTab) => void } {
+export interface InboxRoute {
+  tab: InboxTab;
+  onTabChange: (tab: InboxTab) => void;
+  /** Percakapan yang sedang dibuka (`?chat=`), atau `null`. */
+  chatId: string | null;
+  /**
+   * Buka percakapan. `push` (HP): masuk riwayat browser supaya tombol/gesture kembali menutup
+   * chat. Desktop mengganti alamat saja supaya berpindah chat tidak menumpuk riwayat.
+   */
+  openChat: (conversationId: string, options?: { push?: boolean }) => void;
+  /** Tutup percakapan (kembali ke daftar). */
+  closeChat: () => void;
+}
+
+/** Tab aktif & chat terbuka dari URL (`/inbox?tab=…&chat=…`). Khusus rute /inbox. */
+export function useInboxRoute(): InboxRoute {
   const search = routeApi.useSearch();
   const navigate = routeApi.useNavigate();
+  const router = useRouter();
+  // Chat dibuka dari daftar dengan entri riwayat baru: "kembali" = langkah mundur browser,
+  // bukan entri baru (yang membuat tombol kembali browser membuka chat itu lagi).
+  const pushedFromList = useRef(false);
 
   const onTabChange = useCallback(
     (next: InboxTab) => {
       void navigate({
-        search: next === DEFAULT_INBOX_TAB ? {} : { tab: next },
+        search: (prev) => ({ ...prev, tab: next === DEFAULT_INBOX_TAB ? undefined : next }),
         // Ganti tab tidak menumpuk riwayat browser.
         replace: true,
       });
@@ -20,5 +38,37 @@ export function useInboxTab(): { tab: InboxTab; onTabChange: (tab: InboxTab) => 
     [navigate],
   );
 
-  return { tab: parseInboxTab(search.tab), onTabChange };
+  const openChat = useCallback(
+    (conversationId: string, options: { push?: boolean } = {}) => {
+      pushedFromList.current = options.push === true;
+      void navigate({
+        search: (prev) => ({ ...prev, chat: conversationId }),
+        replace: options.push !== true,
+      });
+    },
+    [navigate],
+  );
+
+  const closeChat = useCallback(() => {
+    if (pushedFromList.current) {
+      pushedFromList.current = false;
+      router.history.back();
+      return;
+    }
+    void navigate({ search: (prev) => ({ ...prev, chat: undefined }), replace: true });
+  }, [navigate, router]);
+
+  return {
+    tab: parseInboxTab(search.tab),
+    onTabChange,
+    chatId: search.chat ?? null,
+    openChat,
+    closeChat,
+  };
+}
+
+/** Tab aktif Inbox dari URL dan cara menggantinya (dipakai kerangka memuat). */
+export function useInboxTab(): { tab: InboxTab; onTabChange: (tab: InboxTab) => void } {
+  const { tab, onTabChange } = useInboxRoute();
+  return { tab, onTabChange };
 }

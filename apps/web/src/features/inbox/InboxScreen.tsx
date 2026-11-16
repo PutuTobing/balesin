@@ -1,46 +1,136 @@
+import { useQuery } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import { PanelRightClose, PanelRightOpen } from 'lucide-react';
-import { Tabs } from 'radix-ui';
-import { useEffect, useRef, useState, type MouseEvent, type Ref } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+  type Ref,
+} from 'react';
 import { useBrand } from '../../brand/brand';
 import { ChatIllustration } from '../../components/illustrations/illustrations';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { IconButton } from '../../components/ui/IconButton';
-import { SearchField } from '../../components/ui/SearchField';
-import { Skeleton, SkeletonRegion } from '../../components/ui/Skeleton';
 import { t } from '../../i18n/id';
+import { teamUsersQuery } from '../../lib/api/queries';
 import { media, useMediaQuery } from '../../lib/media';
 import { usePageTitle } from '../../lib/use-page-title';
+import { useCan, useSession } from '../auth/session';
+import { ChatRoom } from './ChatRoom';
+import { ContactPanel } from './ContactPanel';
+import { ConversationList } from './ConversationList';
 import styles from './Inbox.module.css';
-import { INBOX_TABS, parseInboxTab, type InboxTab } from './inbox-search';
+import {
+  TAB_STATUS,
+  filterChips,
+  hasFilters,
+  type AgentOption,
+  searchTerm,
+  type ConversationParams,
+  type InboxFilters,
+} from './inbox-filters';
+import { countsQuery, inboxChannelsQuery } from './inbox-queries';
+import type { InboxTab } from './inbox-search';
+import { InboxFilterMenu } from './InboxFilterMenu';
 import { useDetailPanel } from './use-detail-panel';
+import { fallbackRefetchInterval } from './use-inbox-stream';
+import type { StreamStatus } from './inbox-stream';
 
 const DETAIL_PANEL_ID = 'inbox-detail';
-const SKELETON_ROWS = 7;
 /** Elemen yang memakai Escape untuk dirinya sendiri; panel detail tidak ikut tertutup. */
 const ESCAPE_OWNERS = '[role="menu"], [role="dialog"], input, textarea, [contenteditable="true"]';
+/** Jeda ketikan sebelum pencarian dikirim ke server. */
+export const SEARCH_DEBOUNCE_MS = 300;
 
 export interface InboxScreenProps {
   tab: InboxTab;
   onTabChange: (tab: InboxTab) => void;
+  /** Percakapan yang sedang dibuka (`?chat=`). */
+  chatId?: string | null;
+  onOpenChat?: (conversationId: string, options?: { push?: boolean }) => void;
+  onCloseChat?: () => void;
   /**
-   * Daftar chat sedang menunggu data. Hanya ISI daftar yang berganti jadi kerangka;
-   * judul, kolom cari, tab, ruang chat, dan panel detail tetap sama dan tetap bisa
-   * dipakai, jadi tidak ada yang melompat saat data tiba.
+   * Daftar chat sedang menunggu rute siap. Hanya ISI daftar yang berganti jadi kerangka;
+   * judul, kolom cari, tab, ruang chat, dan panel detail tetap sama dan tidak ada yang
+   * melompat saat data tiba. Selama kerangka tidak ada permintaan data.
    */
   loading?: boolean;
+  /** Status sambungan real-time (menentukan penyegaran cadangan lewat REST). */
+  streamStatus?: StreamStatus;
 }
 
 /**
  * Tampilan Inbox (DESIGN.md §2). Desktop: daftar 360px · ruang chat · panel detail 340px
  * yang bisa disembunyikan. Tablet: daftar + ruang chat, detail melayang. HP: daftar saja;
- * ruang chat dan detail menjadi layar bertumpuk saat chat dibuka.
+ * ruang chat menjadi layar bertumpuk (navigasi bawah disembunyikan) saat chat dibuka.
  */
-export function InboxScreen({ tab, onTabChange, loading = false }: InboxScreenProps) {
+export function InboxScreen({
+  tab,
+  onTabChange,
+  chatId = null,
+  onOpenChat,
+  onCloseChat,
+  loading: routeLoading = false,
+  streamStatus = 'connecting',
+}: InboxScreenProps) {
   usePageTitle(t.inbox.title);
+  const { mascotName } = useBrand();
+  const isHp = useMediaQuery(media.hp);
+  const session = useSession();
+  // Sesi baru saja berakhir (keluar / dicabut): jangan memuat apa pun lagi — permintaan baru hanya
+  // akan ditolak 401 sementara aplikasi sedang pindah ke halaman masuk.
+  const loading = routeLoading || session === null;
+  const canManageTeam = useCan('team.manage');
+  const canManageChannels = useCan('channels.manage');
   const detail = useDetailPanel();
   const { open: detailOpen, overlay: detailOverlay, setOpen: setDetailPanelOpen } = detail;
+  const refetchInterval = fallbackRefetchInterval(streamStatus);
 
+  // ── Cari & saring ──
+  const [search, setSearch] = useState('');
+  const [debounced, setDebounced] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(search), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [search]);
+  // Mengosongkan kolom langsung berlaku (tanpa menunggu jeda).
+  const onSearchChange = (value: string) => {
+    setSearch(value);
+    if (value.trim() === '') setDebounced('');
+  };
+  const term = searchTerm(debounced);
+  const typed = searchTerm(search);
+  const [filters, setFilters] = useState<InboxFilters>({});
+
+  const params: ConversationParams = {
+    status: TAB_STATUS[tab],
+    ...filters,
+    q: term.query ?? undefined,
+  };
+  const counts = useQuery({
+    ...countsQuery({ ...filters, q: term.query ?? undefined }),
+    enabled: !loading,
+    refetchInterval,
+  }).data;
+  const channels = useQuery({ ...inboxChannelsQuery, enabled: !loading }).data?.channels ?? [];
+  const team = useQuery({ ...teamUsersQuery, enabled: !loading && canManageTeam }).data;
+  const isTechnician = session?.user.role === 'teknisi';
+  const agents = useMemo<AgentOption[] | null>(() => {
+    if (isTechnician) return null;
+    return (team?.users ?? [])
+      .filter((user) => user.status !== 'disabled' && user.id !== session?.user.id)
+      .map((user) => ({ id: user.id, name: user.name }));
+  }, [isTechnician, team, session?.user.id]);
+  const filterOptions = { channels, agents };
+  const chips = filterChips(filters, filterOptions, session?.user.id);
+  const inboxEmpty =
+    counts !== undefined && counts.counts.all === 0 && !hasFilters(filters) && !term.query;
+
+  // ── Panel detail ──
   const showDetailRef = useRef<HTMLButtonElement>(null);
   const hideDetailRef = useRef<HTMLButtonElement>(null);
   const moveFocusAfterToggle = useRef(false);
@@ -58,18 +148,13 @@ export function InboxScreen({ tab, onTabChange, loading = false }: InboxScreenPr
     (detailOpen ? hideDetailRef : showDetailRef).current?.focus();
   }, [detailOpen]);
 
-  // Panel melayang (tablet) ditutup dengan Escape walau fokus tidak ada di dalam panel,
-  // mis. saat dibuka dengan mouse atau sentuhan.
+  // Panel melayang (tablet) ditutup dengan Escape walau fokus tidak ada di dalam panel.
   useEffect(() => {
     if (!detailOverlay || !detailOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       const target = event.target instanceof Element ? event.target : null;
-      // Escape milik lapisan di atasnya (menu, dialog) atau kolom yang sedang diketik.
       if (target?.closest(ESCAPE_OWNERS)) return;
-
-      // Fokus dikembalikan ke tombol pembuka hanya bila tadinya di dalam panel atau
-      // tidak di mana-mana; fokus pengguna di tempat lain tidak direbut.
       const active = document.activeElement;
       const panel = document.getElementById(DETAIL_PANEL_ID);
       moveFocusAfterToggle.current =
@@ -80,34 +165,99 @@ export function InboxScreen({ tab, onTabChange, loading = false }: InboxScreenPr
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [detailOverlay, detailOpen, setDetailPanelOpen]);
 
+  const showDetailButton = (floating: boolean) =>
+    detailOpen || isHp ? null : (
+      <IconButton
+        ref={showDetailRef}
+        label={t.inbox.detail.show}
+        icon={PanelRightOpen}
+        tooltipSide="left"
+        className={floating ? styles.showDetail : undefined}
+        aria-expanded={false}
+        onClick={(event) => setDetailOpen(true, isKeyboardClick(event))}
+      />
+    );
+
+  const chatOpen = chatId !== null && !loading;
+
   return (
-    <div className={styles.inbox} data-detail={detailOpen ? 'open' : 'closed'}>
-      <ConversationList tab={tab} onTabChange={onTabChange} loading={loading} />
+    <div
+      className={styles.inbox}
+      data-detail={detailOpen ? 'open' : 'closed'}
+      data-chat={chatOpen ? 'open' : 'closed'}
+      // HP: chat terbuka = layar penuh bertumpuk; kerangka aplikasi menyembunyikan navigasi bawah.
+      data-hp-immersive={chatOpen ? '' : undefined}
+    >
+      <ConversationList
+        className={styles.listColumn}
+        tab={tab}
+        onTabChange={onTabChange}
+        loading={loading}
+        search={search}
+        onSearchChange={onSearchChange}
+        query={term.query}
+        searchTooShort={typed.tooShort}
+        filters={filters}
+        onFiltersChange={setFilters}
+        chips={chips}
+        filterControl={
+          <InboxFilterMenu filters={filters} onChange={setFilters} options={filterOptions} />
+        }
+        params={params}
+        counts={loading ? undefined : counts}
+        inboxEmpty={inboxEmpty}
+        selectedId={chatId}
+        onOpen={(id) => onOpenChat?.(id, { push: isHp })}
+        refetchInterval={refetchInterval}
+      />
 
       <section className={styles.chat} aria-label={t.inbox.chat.label}>
-        {detailOpen ? null : (
-          <IconButton
-            ref={showDetailRef}
-            label={t.inbox.detail.show}
-            icon={PanelRightOpen}
-            tooltipSide="left"
-            className={styles.showDetail}
-            aria-expanded={false}
-            onClick={(event) => setDetailOpen(true, isKeyboardClick(event))}
+        {chatOpen ? (
+          <ChatRoom
+            key={chatId}
+            conversationId={chatId}
+            onBack={isHp ? onCloseChat : undefined}
+            detailToggle={showDetailButton(false)}
+            refetchInterval={refetchInterval}
           />
+        ) : (
+          <>
+            {showDetailButton(true)}
+            {inboxEmpty ? (
+              <EmptyState
+                illustration={<ChatIllustration />}
+                title={t.inbox.chat.inboxEmptyTitle}
+                body={t.inbox.chat.inboxEmptyBody(mascotName)}
+                actions={
+                  canManageChannels && channels.length === 0 ? (
+                    <Button asChild variant="primary">
+                      <Link to="/pengaturan/channel">{t.inbox.chat.connectChannel}</Link>
+                    </Button>
+                  ) : undefined
+                }
+              />
+            ) : (
+              <EmptyState
+                illustration={<ChatIllustration />}
+                title={t.inbox.chat.emptyTitle}
+                body={t.inbox.chat.emptyBody}
+              />
+            )}
+          </>
         )}
-        <EmptyState
-          illustration={<ChatIllustration />}
-          title={t.inbox.chat.emptyTitle}
-          body={t.inbox.chat.emptyBody}
-        />
       </section>
 
-      {detailOpen ? (
+      {detailOpen && !isHp ? (
         <DetailPanel
           hideButtonRef={hideDetailRef}
           onHide={(viaKeyboard) => setDetailOpen(false, viaKeyboard)}
-        />
+        >
+          {chatOpen ? (
+            <ContactPanel conversationId={chatId} />
+          ) : (
+            <p className={styles.detailEmpty}>{t.inbox.detail.emptyBody}</p>
+          )}
+        </DetailPanel>
       ) : null}
     </div>
   );
@@ -118,99 +268,13 @@ function isKeyboardClick(event: MouseEvent<HTMLElement>): boolean {
   return event.detail === 0;
 }
 
-interface ConversationListProps {
-  tab: InboxTab;
-  onTabChange: (tab: InboxTab) => void;
-  loading: boolean;
-}
-
-function ConversationList({ tab, onTabChange, loading }: ConversationListProps) {
-  const { mascotName } = useBrand();
-  const isHp = useMediaQuery(media.hp);
-  const [query, setQuery] = useState('');
-  const searching = query.trim().length > 0;
-  const empty = t.inbox.empty[tab];
-
-  return (
-    <section className={styles.list} aria-label={t.inbox.listLabel}>
-      <Tabs.Root
-        value={tab}
-        onValueChange={(value) => onTabChange(parseInboxTab(value))}
-        className={styles.listInner}
-      >
-        <header className={styles.listHeader}>
-          <div className={styles.titleRow}>
-            <h1 className={styles.title}>{t.inbox.title}</h1>
-          </div>
-          <div className={styles.searchRow}>
-            <SearchField
-              value={query}
-              onChange={setQuery}
-              label={t.inbox.searchLabel}
-              placeholder={t.inbox.searchPlaceholder}
-              clearLabel={t.inbox.clearSearch}
-            />
-          </div>
-          <Tabs.List className={styles.tabs} aria-label={t.inbox.tabsLabel}>
-            {INBOX_TABS.map((id) => (
-              <Tabs.Trigger key={id} value={id} className={styles.tab}>
-                <span className={styles.tabLabel}>{t.inbox.tabs[id]}</span>
-              </Tabs.Trigger>
-            ))}
-          </Tabs.List>
-        </header>
-
-        <Tabs.Content value={tab} className={styles.listBody}>
-          {loading ? (
-            <ConversationRowsSkeleton />
-          ) : searching ? (
-            <EmptyState
-              compact={!isHp}
-              align={isHp ? 'center' : 'top'}
-              title={t.inbox.searchEmpty.title(query.trim())}
-              body={t.inbox.searchEmpty.body}
-              actions={<Button onClick={() => setQuery('')}>{t.inbox.clearSearch}</Button>}
-            />
-          ) : (
-            <EmptyState
-              compact={!isHp}
-              align={isHp ? 'center' : 'top'}
-              // Di desktop ilustrasi ada di ruang chat; di HP daftar adalah seluruh layar.
-              illustration={isHp ? <ChatIllustration /> : undefined}
-              title={empty.title}
-              body={empty.body(mascotName)}
-            />
-          )}
-        </Tabs.Content>
-      </Tabs.Root>
-    </section>
-  );
-}
-
-/** Kerangka baris chat: avatar, nama, cuplikan pesan, jam. */
-function ConversationRowsSkeleton() {
-  return (
-    <SkeletonRegion className={styles.skeletonRows}>
-      {Array.from({ length: SKELETON_ROWS }, (_, index) => (
-        <div key={index} className={styles.skeletonRow}>
-          <Skeleton className={styles.skeletonAvatar} />
-          <div className={styles.skeletonLines}>
-            <Skeleton className={styles.skeletonName} />
-            <Skeleton className={styles.skeletonSnippet} />
-          </div>
-          <Skeleton className={styles.skeletonTime} />
-        </div>
-      ))}
-    </SkeletonRegion>
-  );
-}
-
 interface DetailPanelProps {
   hideButtonRef: Ref<HTMLButtonElement>;
   onHide: (viaKeyboard: boolean) => void;
+  children: ReactNode;
 }
 
-function DetailPanel({ hideButtonRef, onHide }: DetailPanelProps) {
+function DetailPanel({ hideButtonRef, onHide, children }: DetailPanelProps) {
   return (
     <aside id={DETAIL_PANEL_ID} className={styles.detail} aria-label={t.inbox.detail.label}>
       <header className={styles.detailHeader}>
@@ -225,7 +289,7 @@ function DetailPanel({ hideButtonRef, onHide }: DetailPanelProps) {
           onClick={(event) => onHide(isKeyboardClick(event))}
         />
       </header>
-      <p className={styles.detailEmpty}>{t.inbox.detail.emptyBody}</p>
+      {children}
     </aside>
   );
 }

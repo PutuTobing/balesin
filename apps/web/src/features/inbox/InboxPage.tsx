@@ -1,8 +1,19 @@
 import { InboxScreen } from './InboxScreen';
-import { useInboxTab } from './use-inbox-tab';
+import { useInboxStream } from './use-inbox-stream';
+import { useInboxRoute } from './use-inbox-tab';
 
-/** Halaman /inbox. */
+/** Halaman /inbox: tab & chat terbuka dari URL, pembaruan real-time lewat WebSocket. */
 export function InboxPage() {
-  const { tab, onTabChange } = useInboxTab();
-  return <InboxScreen tab={tab} onTabChange={onTabChange} />;
+  const { tab, onTabChange, chatId, openChat, closeChat } = useInboxRoute();
+  const streamStatus = useInboxStream();
+  return (
+    <InboxScreen
+      tab={tab}
+      onTabChange={onTabChange}
+      chatId={chatId}
+      onOpenChat={openChat}
+      onCloseChat={closeChat}
+      streamStatus={streamStatus}
+    />
+  );
 }

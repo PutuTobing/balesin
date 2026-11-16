@@ -64,3 +64,32 @@ describe('kontras token (DESIGN.md §1: teks minimal 4.5:1)', () => {
     expect(contrastRatio(danger, surface)).toBeLessThan(MIN_TEXT_CONTRAST);
   });
 });
+
+/**
+ * Inbox (Fase 2 butir 5): baris chat terpilih berlatar `primarySoft`, dan di atasnya tampil teks
+ * sekunder, centang dibaca (`primary`), serta lencana hitungan tab aktif (`ink`). Hitung mundur
+ * sesi punya latar `surface` sendiri (pasangan `warningInk`/`dangerInk` × `surface` sudah di
+ * `contrastPairs`). Ikon gagal kirim (`dangerInk`) cukup ambang grafis 3:1. Dicek di sini karena
+ * `contrastPairs` milik paket shared.
+ */
+describe('kontras baris chat terpilih (latar primarySoft)', () => {
+  const cases = themes.flatMap((theme) =>
+    (['ink', 'ink2', 'primary'] as const).map((fg) => ({
+      theme,
+      fg,
+      ratio: contrastRatio(color[theme][fg], color[theme].primarySoft),
+    })),
+  );
+
+  it.each(cases)('$theme: $fg di atas primarySoft ≥ 4.5', ({ ratio }) => {
+    expect(ratio).toBeGreaterThanOrEqual(MIN_TEXT_CONTRAST);
+  });
+});
+
+describe('ikon gagal kirim di baris chat terpilih', () => {
+  it.each(themes)('%s: dangerInk di atas primarySoft ≥ 3 (grafis)', (theme) => {
+    expect(contrastRatio(color[theme].dangerInk, color[theme].primarySoft)).toBeGreaterThanOrEqual(
+      MIN_GRAPHIC_CONTRAST,
+    );
+  });
+});

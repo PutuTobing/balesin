@@ -195,3 +195,23 @@ export async function releaseLoginIpBudget(): Promise<void> {
     redis.disconnect();
   }
 }
+
+/**
+ * Kosongkan jatah baca inbox per pengguna (`inbox-daftar` 240/menit, `inbox-cari` 60/menit) di Redis
+ * E2E. Hampir semua tes memakai SATU Owner bersama dan membuka /inbox (halaman awal setelah masuk),
+ * jadi suite paralel menghabiskan jatah yang untuk manusia sangat longgar. Dipanggil sebelum setiap
+ * tes (fixture). Batas lajunya sendiri diuji di tes integrasi API.
+ */
+export async function releaseInboxReadBudget(): Promise<void> {
+  const redis = new Redis(E2E_REDIS_URL, { lazyConnect: true, maxRetriesPerRequest: 1 });
+  await redis.connect();
+  try {
+    const keys = [
+      ...(await redis.keys('balesin:rl:inbox-daftar:*')),
+      ...(await redis.keys('balesin:rl:inbox-cari:*')),
+    ];
+    if (keys.length > 0) await redis.del(...keys);
+  } finally {
+    redis.disconnect();
+  }
+}
