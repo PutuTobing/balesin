@@ -52,6 +52,12 @@ export const ACCESS_RULES = {
   noteEditOthers: 'inbox.note.edit_others',
   /** Menghapus catatan sesi milik orang lain tanpa izin `inbox.notes.moderate`. */
   noteDeleteOthers: 'inbox.note.delete_others',
+  /** Menyetujui broadcast buatan/ajuan sendiri (persetujuan wajib orang lain, SECURITY §5). */
+  broadcastApproveOwn: 'broadcast.approve.own',
+  /** Melanjutkan broadcast yang dijeda rem otomatis/rem darurat tanpa izin `sending.resume`. */
+  broadcastResumeBrake: 'broadcast.resume.brake',
+  /** Melonggarkan pengaturan pelindung broadcast (ambang naik, rem otomatis longgar) selain Owner. */
+  broadcastSettingsLoosen: 'broadcast.settings.loosen',
 } as const;
 export type AccessRule = (typeof ACCESS_RULES)[keyof typeof ACCESS_RULES];
 

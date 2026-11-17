@@ -13,6 +13,8 @@ import type { ClientInfo } from '../../http/client-info';
 import type { CsrfProtection } from './csrf';
 import {
   findActiveSession,
+  findActiveSessions,
+  type ActiveSession,
   insertSession,
   revokeSession,
   revokeUserSessions,
@@ -84,6 +86,8 @@ export interface SessionService {
    * dengan keadaan 2FA sekarang.
    */
   peek(tokenHash: string): Promise<SessionSnapshot | undefined>;
+  /** `peek` untuk banyak hash dalam SATU query (validasi ulang socket inbox). */
+  peekMany(tokenHashes: readonly string[]): Promise<Map<string, SessionSnapshot>>;
   /**
    * Membuat sesi baru dengan token baru (rotasi). Satu-satunya tempat sesi dibuat: login,
    * langkah kedua 2FA, aktivasi 2FA, dan akhir wizard setup memanggil fungsi ini.
@@ -123,6 +127,21 @@ export interface IssueSessionInput {
   twoFactorVerified: boolean;
 }
 
+/** Sesi aktif → snapshot, atau `undefined` bila jenis sesinya tidak cocok dengan keadaan 2FA. */
+function snapshotOf(session: ActiveSession): SessionSnapshot | undefined {
+  const twoFactor = twoFactorState(session.user.role, session.twoFactorEnabled);
+  const expectedKind: SessionKind = twoFactor.enrollmentRequired
+    ? 'two_factor_enrollment'
+    : 'standard';
+  if (session.kind !== expectedKind) return undefined;
+  return {
+    sessionRef: session.id,
+    organizationId: session.organizationId,
+    user: session.user,
+    twoFactor,
+  };
+}
+
 export function createSessionService(db: Database, csrf: CsrfProtection): SessionService {
   return {
     async resolve(token) {
@@ -160,18 +179,17 @@ export function createSessionService(db: Database, csrf: CsrfProtection): Sessio
 
     async peek(tokenHash) {
       const session = await findActiveSession(db, tokenHash);
-      if (!session) return undefined;
-      const twoFactor = twoFactorState(session.user.role, session.twoFactorEnabled);
-      const expectedKind: SessionKind = twoFactor.enrollmentRequired
-        ? 'two_factor_enrollment'
-        : 'standard';
-      if (session.kind !== expectedKind) return undefined;
-      return {
-        sessionRef: session.id,
-        organizationId: session.organizationId,
-        user: session.user,
-        twoFactor,
-      };
+      return session ? snapshotOf(session) : undefined;
+    },
+
+    async peekMany(tokenHashes) {
+      const sessions = await findActiveSessions(db, tokenHashes);
+      const result = new Map<string, SessionSnapshot>();
+      for (const [hash, session] of sessions) {
+        const snapshot = snapshotOf(session);
+        if (snapshot) result.set(hash, snapshot);
+      }
+      return result;
     },
 
     async issue(executor, input) {

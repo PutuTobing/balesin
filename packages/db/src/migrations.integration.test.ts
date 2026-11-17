@@ -37,8 +37,13 @@ describe('migrasi dari nol', () => {
 
     expect(await publicTables()).toEqual([
       'account_tokens',
+      'alarm_events',
       'api_keys',
       'audit_logs',
+      'broadcast_campaigns',
+      'broadcast_connectors',
+      'broadcast_recipients',
+      'broadcast_settings',
       'channels',
       'contact_events',
       'contact_tags',
@@ -60,6 +65,7 @@ describe('migrasi dari nol', () => {
       'push_vapid_keys',
       'quick_replies',
       'tags',
+      'telegram_alarm_settings',
       'two_factor_challenges',
       'user_backup_codes',
       'user_invitations',

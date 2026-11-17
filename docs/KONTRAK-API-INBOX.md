@@ -122,6 +122,9 @@ nama, nomor, atau BSUID; klien mengambil detail lewat REST (cakupan ditegakkan l
 | `conversation.updated` | `conversationId`, `status`, `assigneeUserId`, `unreadCount`, `lastMessageAt`, `windowExpiresAt` | pesan masuk baru, tandai dibaca (nanti: assign, selesai) |
 | `message.created` | `conversationId`, `messageId`, `direction`, `createdAt` | pesan tersimpan (masuk; nanti keluar) |
 | `message.status` | `conversationId`, `messageId`, `status` | status pesan keluar maju |
+| `resync` | — | (Fase 4) terlalu banyak event untuk organisasi ini (mis. broadcast besar): event dibuang — web WAJIB memuat ulang daftar, hitungan, dan percakapan yang terbuka lewat REST |
+
+**Penggabungan (Fase 4, `docs/KONTRAK-API-BROADCAST.md`).** Event dari Redis digabung per 250 ms; > 20 `message.status` dalam satu jendela per organisasi diganti `conversation.updated` percakapannya (centang diperbarui saat riwayat dimuat ulang); maks. 200 event/detik per organisasi, kelebihannya → satu `resync` per 2 detik.
 
 Klien → server: tidak ada perintah; pesan diabaikan (maks. 1 KiB, lebih → ditutup 1009).
 

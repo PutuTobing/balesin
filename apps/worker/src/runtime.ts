@@ -1,6 +1,13 @@
 import type { Logger } from '@balesin/core';
 import type { Queue, Worker } from 'bullmq';
 
+import {
+  createBroadcastQueue,
+  createBroadcastWorker,
+  runEnqueuer,
+  scheduleBroadcastJobs,
+  type BroadcastJobDeps,
+} from './queues/broadcast';
 import { createEmailWorker, type EmailJobDeps } from './queues/email';
 import { createMessageWorker, type MessageJobDeps } from './queues/messages';
 import { createNotificationWorker, type NotificationJobDeps } from './queues/notifications';
@@ -42,6 +49,8 @@ export interface WorkerServices {
   notifications?: Omit<NotificationJobDeps, 'logger'>;
   /** Antrian `webhooks-out` (webhook keluar, job berkala tiap 5 dtk). Opsional untuk tes. */
   webhooksOut?: Omit<WebhooksOutDeps, 'logger'>;
+  /** Antrian `broadcast` (kampanye, rem otomatis, alarm Telegram). Opsional untuk tes. */
+  broadcast?: Omit<BroadcastJobDeps, 'logger' | 'enqueueRun'>;
 }
 
 const ERROR_LOG_INTERVAL_MS = 30_000;
@@ -68,6 +77,22 @@ export function startWorkers(
   }
   let maintenanceQueue: Queue | undefined;
   let webhooksOutQueue: Queue | undefined;
+  let broadcastQueue: Queue | undefined;
+  if (services.broadcast) {
+    const queue = createBroadcastQueue(options);
+    broadcastQueue = queue;
+    workers.push(
+      createBroadcastWorker(options, {
+        ...services.broadcast,
+        logger,
+        enqueueRun: runEnqueuer(queue),
+      }),
+    );
+    scheduleBroadcastJobs(queue).catch((err: unknown) => {
+      logger.error({ err }, 'Jadwal broadcast gagal didaftarkan');
+    });
+    queue.on('error', () => undefined);
+  }
   if (services.webhooksOut) {
     workers.push(createWebhooksOutWorker(options, { ...services.webhooksOut, logger }));
     const queue = createWebhooksOutQueue(options);
@@ -130,6 +155,10 @@ export function startWorkers(
       if (maintenanceQueue) {
         if (force) await maintenanceQueue.disconnect();
         else await maintenanceQueue.close();
+      }
+      if (broadcastQueue) {
+        if (force) await broadcastQueue.disconnect();
+        else await broadcastQueue.close();
       }
     },
   };

@@ -549,6 +549,7 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
     event === 'password_reset_burst' ||
     event === 'sending_paused' ||
     event === 'sending_limit_reached' ||
+    event === 'sending_auto_paused' ||
     event === 'webhook_disabled';
   const recipient = await findActiveUser(organizationId, recipientUserId, deps);
   // Pengguna yang baru dinonaktifkan tetap disebut di email "dinonaktifkan".
@@ -556,6 +557,7 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
     event === 'user_disabled' ||
     event === 'sending_paused' ||
     event === 'sending_limit_reached' ||
+    event === 'sending_auto_paused' ||
     event === 'webhook_disabled'
       ? await findUserAnyStateWithEmail(organizationId, subjectUserId, deps)
       : await findActiveUser(organizationId, subjectUserId, deps);
@@ -597,7 +599,9 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
         ? await findResetBurst(organizationId, auditLogId, deps)
         : undefined;
     const sending =
-      event === 'sending_paused' || event === 'sending_limit_reached'
+      event === 'sending_paused' ||
+      event === 'sending_limit_reached' ||
+      event === 'sending_auto_paused'
         ? await findSendingDetails(organizationId, auditLogId, deps)
         : undefined;
     const webhook =

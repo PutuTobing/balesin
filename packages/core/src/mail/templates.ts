@@ -669,6 +669,7 @@ export interface AdminAccountNoticeEmailInput {
     | 'password_reset_burst'
     | 'sending_paused'
     | 'sending_limit_reached'
+    | 'sending_auto_paused'
     | 'webhook_disabled';
   subject: { name: string; email: string; role: UserRole };
   /**
@@ -728,6 +729,26 @@ export function renderAdminAccountNoticeEmail(input: AdminAccountNoticeEmailInpu
       details,
       notes: [
         `Kalau kamu tidak mengenal anggota ini, nonaktifkan akunnya dari halaman Tim di ${product} sekarang, lalu periksa Audit log dan sesi aktif ${by}.`,
+      ],
+    });
+  }
+  if (input.event === 'sending_auto_paused') {
+    const reason = input.sending?.reason ? singleLine(input.sending.reason) : null;
+    return compose(input.brand, {
+      subject: `Rem otomatis pengiriman bekerja di ${product}`,
+      preheader: 'Pengiriman pesan dihentikan otomatis untuk melindungi nomor WhatsApp.',
+      heading: 'Pengiriman dihentikan otomatis',
+      paragraphs: [
+        hello(input.recipientName),
+        `${product} mendeteksi pola pengiriman yang tidak wajar dan menghentikannya otomatis untuk melindungi nomor WhatsApp dan saldo Meta. Pengiriman baru berlanjut setelah Owner atau Admin memeriksanya dan menekan Lanjutkan.`,
+        'Kamu menerima email ini karena kamu Owner.',
+      ],
+      details: [
+        { label: 'Waktu', value: when },
+        ...(reason ? [{ label: 'Alasan', value: reason }] : []),
+      ],
+      notes: [
+        `Periksa Broadcast dan Audit log di ${product} sebelum melanjutkan. Bila ada akun yang mencurigakan, nonaktifkan dulu akunnya.`,
       ],
     });
   }

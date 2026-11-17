@@ -1,6 +1,7 @@
 import { contactIdentityLockKeys } from '@balesin/core';
 import {
   contactEvents,
+  broadcastRecipients,
   contactTags,
   contacts,
   conversationEvents,
@@ -203,6 +204,15 @@ export async function deleteContactData(
       and(
         eq(conversationNotes.organizationId, organizationId),
         inArray(conversationNotes.conversationId, conversationsOfContact),
+      ),
+    );
+  // Penerima broadcast kontak ini (nomor + data kolom): ikut dihapus (laporan kampanye berkurang).
+  await tx
+    .delete(broadcastRecipients)
+    .where(
+      and(
+        eq(broadcastRecipients.organizationId, organizationId),
+        eq(broadcastRecipients.contactId, contactId),
       ),
     );
   await tx

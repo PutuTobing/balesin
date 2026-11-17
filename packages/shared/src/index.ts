@@ -10,6 +10,7 @@ export * from './audit';
 export * from './auth';
 export * from './bot';
 export * from './branding';
+export * from './broadcasts';
 export * from './channels';
 export * from './email';
 export * from './email-settings';

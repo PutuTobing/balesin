@@ -12,6 +12,7 @@ export * from './logger';
 export * from './mail';
 export * from './meta';
 export * from './net/outgoing-webhook';
+export * from './net/telegram';
 export * from './push/web-push';
 export * from './queues';
 export * from './redact';

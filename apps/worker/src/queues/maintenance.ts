@@ -4,6 +4,8 @@ import {
   QUEUE_NAMES,
   QUEUE_PREFIX,
   SEND_CLAIM_STALE_MS,
+  SENSITIVE_TEMPLATE_MAX_AGE_MS,
+  SENSITIVE_TEMPLATE_WIPE_INTERVAL_MS,
   STALE_SEND_CLAIMS_INTERVAL_MS,
   WEBHOOK_PAYLOAD_RETENTION_INTERVAL_MS,
   maintenanceJobPayloadSchema,
@@ -375,6 +377,46 @@ export async function markStaleSendClaims(
   return rows.length;
 }
 
+/**
+ * Jaring pengaman kode OTP (review template Info 1): pesan template `sensitive` yang nilainya belum
+ * dikosongkan dan lebih tua dari `SENSITIVE_TEMPLATE_MAX_AGE_MS` → `values = {}`, `headerText = null`,
+ * nilai tombol dikosongkan. Memakai indeks parsial `messages_sensitive_template_idx` (baris keluar dari
+ * indeks setelah dikosongkan). Maks. 500 baris per putaran.
+ */
+export async function wipeStaleSensitiveTemplates(
+  db: Database,
+  options: { now?: Date | undefined; limit?: number } = {},
+): Promise<number> {
+  const now = options.now ?? new Date();
+  const cutoff = new Date(now.getTime() - SENSITIVE_TEMPLATE_MAX_AGE_MS);
+  const result = await db.execute(sql`
+    update messages m set
+      extras = jsonb_set(
+        jsonb_set(
+          jsonb_set(m.extras, '{template,values}', '{}'::jsonb),
+          '{template,headerText}', 'null'::jsonb
+        ),
+        '{template,buttons}',
+        coalesce(
+          (select jsonb_agg(b || '{"value": ""}'::jsonb)
+             from jsonb_array_elements(m.extras -> 'template' -> 'buttons') b),
+          '[]'::jsonb
+        )
+      ),
+      updated_at = now()
+    where m.id in (
+      select id from messages
+      where (extras -> 'template' ->> 'sensitive') = 'true'
+        and (extras -> 'template' -> 'values') <> '{}'::jsonb
+        and created_at < ${cutoff}::timestamptz
+      order by created_at
+      limit ${options.limit ?? 500}
+      for update skip locked
+    )
+    returning m.id`);
+  return result.rows.length;
+}
+
 export async function processMaintenanceJob(
   job: MaintenanceJob,
   deps: MaintenanceJobDeps,
@@ -402,6 +444,11 @@ export async function processMaintenanceJob(
         deps.logger.warn({ stale }, 'Klaim kirim macet ditandai "mungkin terkirim"');
       }
       return { stale };
+    }
+    case MAINTENANCE_JOBS.sensitiveTemplateWipe: {
+      const wiped = await wipeStaleSensitiveTemplates(deps.db, { now: deps.now?.() });
+      if (wiped > 0) deps.logger.info({ wiped }, 'Nilai template sensitif lama dikosongkan');
+      return { wiped };
     }
     case MAINTENANCE_JOBS.templateSync: {
       const result = await syncAllTemplates(deps, deps.now?.() ?? new Date());
@@ -438,6 +485,15 @@ export async function scheduleMaintenanceJobs(queue: Queue): Promise<void> {
     { every: TEMPLATE_SYNC_INTERVAL_MS },
     {
       name: MAINTENANCE_JOBS.templateSync,
+      data: {},
+      opts: { attempts: 1, removeOnComplete: { count: 20 }, removeOnFail: { count: 20 } },
+    },
+  );
+  await queue.upsertJobScheduler(
+    MAINTENANCE_JOBS.sensitiveTemplateWipe,
+    { every: SENSITIVE_TEMPLATE_WIPE_INTERVAL_MS },
+    {
+      name: MAINTENANCE_JOBS.sensitiveTemplateWipe,
       data: {},
       opts: { attempts: 1, removeOnComplete: { count: 20 }, removeOnFail: { count: 20 } },
     },

@@ -24,6 +24,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 import { apiKeys } from './api-keys';
+import { broadcastCampaigns } from './broadcasts';
 import { channels } from './channels';
 import { createdAtColumn, idColumn, timestamptz, updatedAtColumn } from './columns';
 import { contacts } from './contacts';
@@ -181,6 +182,8 @@ export const messages = pgTable(
     templateCategory: text('template_category'),
     /** Pesan keluar yang dikirim lewat API publik (API key; `sender_user_id` kosong). */
     apiKeyId: uuid('api_key_id'),
+    /** Pesan keluar dari kampanye broadcast (Fase 4; `sender_kind = 'broadcast'`, tanpa pengirim). */
+    broadcastId: uuid('broadcast_id'),
     /** Salinan lokal media (unggahan untuk pesan keluar / cache unduhan pesan masuk). */
     mediaFileId: uuid('media_file_id'),
     occurredAt: timestamptz('occurred_at').notNull(),
@@ -264,6 +267,23 @@ export const messages = pgTable(
       columns: [table.organizationId, table.apiKeyId],
       foreignColumns: [apiKeys.organizationId, apiKeys.id],
     }).onDelete('restrict'),
+    foreignKey({
+      name: 'messages_organization_id_broadcast_id_fk',
+      columns: [table.organizationId, table.broadcastId],
+      foreignColumns: [broadcastCampaigns.organizationId, broadcastCampaigns.id],
+    }).onDelete('restrict'),
+    // Jaring pengaman kode OTP (review template Info 1): template sensitif yang nilainya belum
+    // (tanpa syarat kolom `type`: nilai enum `template` baru ditambah 0024 di transaksi yang sama;
+    // `extras.template` hanya ada di pesan template)
+    // dikosongkan — keluar dari indeks begitu dikosongkan job `sensitive-template-wipe`.
+    index('messages_sensitive_template_idx')
+      .on(table.createdAt)
+      .where(
+        sql`(${table.extras} -> 'template' ->> 'sensitive') = 'true' and (${table.extras} -> 'template' -> 'values') <> '{}'::jsonb`,
+      ),
+    index('messages_broadcast_id_idx')
+      .on(table.broadcastId)
+      .where(sql`${table.broadcastId} is not null`),
     // Batas kirim harian per API key (24 jam bergulir).
     index('messages_outbound_api_key_created_at_idx')
       .on(table.organizationId, table.apiKeyId, table.createdAt)

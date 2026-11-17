@@ -38,6 +38,12 @@ export const QUEUE_NAMES = {
    * membuat `webhook_deliveries`, mengirim yang jatuh tempo, dan menjalankan retensi riwayat.
    */
   webhooksOut: 'webhooks-out',
+  /**
+   * Broadcast (Fase 4): job berkala `tick` (mulai kampanye terjadwal, sapu rem darurat, bagi kerja),
+   * `run` per kampanye (payload hanya ID; kirim bertahap dengan throttle), `guard` (rem otomatis
+   * lonjakan pesan keluar + retensi data penerima), `alarms` (kirim outbox alarm ke Telegram).
+   */
+  broadcast: 'broadcast',
 } as const;
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
@@ -177,6 +183,36 @@ export const WEBHOOKS_OUT_JOBS = {
 export const WEBHOOKS_OUT_TICK_INTERVAL_MS = 5_000;
 export const webhooksOutJobPayloadSchema = z.strictObject({});
 
+// ── Antrian `broadcast` ─────────────────────────────────────────────────────
+
+export const BROADCAST_JOBS = {
+  tick: 'tick',
+  run: 'run',
+  guard: 'guard',
+  alarms: 'alarms',
+} as const;
+export type BroadcastJobName = (typeof BROADCAST_JOBS)[keyof typeof BROADCAST_JOBS];
+
+export const BROADCAST_TICK_INTERVAL_MS = 2_000;
+export const BROADCAST_GUARD_INTERVAL_MS = 60_000;
+export const BROADCAST_ALARMS_INTERVAL_MS = 10_000;
+/** Sewa pemroses satu kampanye; proses mati → diambil alih setelah sewa lewat. */
+export const BROADCAST_LEASE_MS = 60_000;
+/** Lama satu potongan kerja `run` sebelum job berikutnya mengambil alih. */
+export const BROADCAST_SLICE_MS = 25_000;
+
+export const broadcastRunJobPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  campaignId: z.uuid(),
+});
+export type BroadcastRunJobPayload = z.infer<typeof broadcastRunJobPayloadSchema>;
+export const broadcastScheduledJobPayloadSchema = z.strictObject({});
+
+/** Satu job `run` per kampanye per jendela 5 detik (tick yang sering tidak menggandakan job). */
+export function broadcastRunJobId(campaignId: string, now: number): string {
+  return `bc-${campaignId}-${String(Math.floor(now / 5_000))}`;
+}
+
 // ── Antrian `maintenance` ───────────────────────────────────────────────────
 
 export const MAINTENANCE_JOBS = {
@@ -194,6 +230,11 @@ export const MAINTENANCE_JOBS = {
   botTimeouts: 'bot-timeouts',
   /** Sinkron template Meta semua channel WhatsApp aktif (Fase 4), tiap 6 jam. */
   templateSync: 'template-sync',
+  /**
+   * Jaring pengaman kode OTP (review template Info 1): nilai template `sensitive` yang lebih tua dari
+   * `SENSITIVE_TEMPLATE_MAX_AGE_MS` dikosongkan walau job kirimnya tidak pernah selesai. Tiap 10 menit.
+   */
+  sensitiveTemplateWipe: 'sensitive-template-wipe',
 } as const;
 export type MaintenanceJobName = (typeof MAINTENANCE_JOBS)[keyof typeof MAINTENANCE_JOBS];
 
@@ -208,6 +249,9 @@ export const maintenanceJobPayloadSchema = z.strictObject({});
  * percobaan pertama dibiarkan selesai; klaim yang lebih tua ditandai `delivery_unknown`.
  */
 export const SEND_CLAIM_STALE_MS = 2 * 60 * 1000;
+/** Umur maksimal nilai template sensitif (kode OTP) di `messages.extras.template`. */
+export const SENSITIVE_TEMPLATE_MAX_AGE_MS = 60 * 60 * 1000;
+export const SENSITIVE_TEMPLATE_WIPE_INTERVAL_MS = 10 * 60 * 1000;
 /** Selang pemeriksa klaim kirim macet. */
 export const STALE_SEND_CLAIMS_INTERVAL_MS = 60 * 1000;
 
@@ -356,6 +400,9 @@ export const SECURITY_NOTICE_ADMIN_EVENTS = [
   // yang mencapai batas): ke semua Owner aktif (review ruang chat S2). Rincian dari baris audit.
   'sending_paused',
   'sending_limit_reached',
+  // Rem OTOMATIS (Fase 4): lonjakan pesan keluar menghentikan semua pengiriman, atau kampanye
+  // broadcast dijeda otomatis. Subjek = penerima sendiri (tidak ada pelaku); rincian dari audit.
+  'sending_auto_paused',
   // Webhook keluar dinonaktifkan otomatis setelah gagal beruntun (Fase 3): ke semua Owner aktif;
   // subjek = pembuat endpoint, rincian (host, jumlah gagal) dari baris audit.
   'webhook_disabled',

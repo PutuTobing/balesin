@@ -15,7 +15,7 @@ import {
   type InboxStreamEvent,
   type UserRole,
 } from '@balesin/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { WebSocket } from 'ws';
 
 import type { SessionService } from '../auth/session.service';
@@ -58,8 +58,14 @@ export interface InboxStreamHub {
     socket: WebSocket,
     identity: Pick<StreamClient, 'userId' | 'organizationId' | 'role' | 'sessionTokenHash'>,
   ): void;
-  /** Mengantar satu event bus ke socket yang berhak (dipakai langganan Redis; publik untuk tes). */
+  /** Mengantar satu event bus ke socket yang berhak (publik untuk tes; tanpa penggabungan). */
   deliver(event: InboxBusEvent): Promise<number>;
+  /**
+   * Mengantar SEKUMPULAN event (satu jendela penggabungan): dedupe, `message.status` massal digabung
+   * ke `conversation.updated`, keadaan dibaca dengan satu query `IN (…)` per jenis, batas laju per
+   * organisasi (lebih → `resync`). Dipakai langganan Redis.
+   */
+  deliverBatch(events: readonly InboxBusEvent[]): Promise<number>;
   revalidate(): Promise<void>;
   /** Sinyal pencabutan sesi: validasi ulang socket pengguna/organisasi itu sesaat lagi. */
   onSessionRevoked(event: { organizationId: string; userId?: string | undefined }): void;
@@ -81,6 +87,12 @@ export interface InboxStreamHubOptions {
   maxConnectionsPerUser?: number;
   /** Jeda pemeriksaan ulang setelah sinyal `session.revoked` (bawaan 250 ms dan 2 detik). */
   sessionRecheckDelaysMs?: readonly number[];
+  /** Jendela penggabungan event dari Redis (bawaan 250 ms; 0 = langsung, untuk tes). */
+  coalesceMs?: number;
+  /** Batas event per organisasi per detik; lebih dari itu → event dibuang + satu `resync`. */
+  maxEventsPerSecond?: number;
+  /** `message.status` per organisasi per batch di atas angka ini digabung ke `conversation.updated`. */
+  statusMergeThreshold?: number;
 }
 
 function send(client: StreamClient, event: InboxStreamEvent): boolean {
@@ -112,118 +124,306 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
     return count;
   }
 
-  async function payloadFor(event: InboxBusEvent): Promise<{
+  interface Payload {
     /** `undefined` = event tingkat organisasi (semua pemegang `inbox.view`). */
     assigneeUserId: string | null | undefined;
     message: InboxStreamEvent;
-  } | null> {
-    if (event.type === 'tags.changed') {
-      return { assigneeUserId: undefined, message: { type: 'tags.changed' } };
-    }
-    if (event.type === 'sending.changed') {
+  }
+
+  /**
+   * Keadaan terbaru untuk SEKUMPULAN event SATU organisasi: satu query percakapan `IN (…)`, satu
+   * query pesan `IN (…)`, satu query organisasi (syarat broadcast Fase 4, review real-time R2).
+   */
+  async function payloadsFor(
+    organizationId: string,
+    events: readonly InboxBusEvent[],
+  ): Promise<{ event: InboxBusEvent; payload: Payload }[]> {
+    const conversationIds = [
+      ...new Set(
+        events
+          .filter((event) => event.type !== 'conversation.deleted')
+          .map((event) => event.conversationId)
+          .filter((id): id is string => id !== undefined),
+      ),
+    ];
+    const messageIds = [
+      ...new Set(
+        events
+          .filter((event) => event.type === 'message.created' || event.type === 'message.status')
+          .map((event) => event.messageId)
+          .filter((id): id is string => id !== undefined),
+      ),
+    ];
+    const conversationRows = conversationIds.length
+      ? await db
+          .select({
+            id: conversations.id,
+            status: conversations.status,
+            assigneeUserId: conversations.assigneeUserId,
+            unreadCount: conversations.unreadCount,
+            lastMessageAt: conversations.lastMessageAt,
+            windowExpiresAt: conversations.windowExpiresAt,
+          })
+          .from(conversations)
+          .where(
+            and(
+              eq(conversations.organizationId, organizationId),
+              inArray(conversations.id, conversationIds),
+            ),
+          )
+      : [];
+    const byConversation = new Map(conversationRows.map((row) => [row.id, row]));
+    const messageRows = messageIds.length
+      ? await db
+          .select({
+            id: messages.id,
+            conversationId: messages.conversationId,
+            direction: messages.direction,
+            status: messages.status,
+            occurredAt: messages.occurredAt,
+          })
+          .from(messages)
+          .where(and(eq(messages.organizationId, organizationId), inArray(messages.id, messageIds)))
+      : [];
+    const byMessage = new Map(messageRows.map((row) => [row.id, row]));
+    let paused: boolean | null = null;
+    if (events.some((event) => event.type === 'sending.changed')) {
       const [org] = await db
         .select({ pausedAt: organizations.sendingPausedAt })
         .from(organizations)
-        .where(eq(organizations.id, event.organizationId));
-      if (!org) return null;
-      return {
-        assigneeUserId: undefined,
-        message: { type: 'sending.changed', paused: org.pausedAt !== null },
-      };
+        .where(eq(organizations.id, organizationId));
+      paused = org ? org.pausedAt !== null : null;
     }
-    if (event.conversationId === undefined) return null;
-    if (event.type === 'conversation.deleted') {
-      // Barisnya sudah dihapus: cakupan memakai agen pemegang TERAKHIR yang dibawa event (Teknisi
-      // lain tidak mendapat ID percakapan yang bukan miliknya).
-      return {
-        assigneeUserId: event.previousAssigneeUserId ?? null,
-        message: { type: 'conversation.removed', conversationId: event.conversationId },
-      };
-    }
-    const [conversation] = await db
-      .select({
-        id: conversations.id,
-        status: conversations.status,
-        assigneeUserId: conversations.assigneeUserId,
-        unreadCount: conversations.unreadCount,
-        lastMessageAt: conversations.lastMessageAt,
-        windowExpiresAt: conversations.windowExpiresAt,
-      })
-      .from(conversations)
-      .where(
-        and(
-          eq(conversations.organizationId, event.organizationId),
-          eq(conversations.id, event.conversationId),
-        ),
-      )
-      .limit(1);
-    if (!conversation) return null;
-    const { assigneeUserId } = conversation;
-    if (event.type === 'conversation.detail') {
-      if (event.section === undefined) return null;
-      return {
-        assigneeUserId,
-        message: {
-          type: 'conversation.detail',
-          conversationId: conversation.id,
-          section: event.section,
-        },
-      };
-    }
-    if (event.type === 'conversation.updated') {
-      return {
-        assigneeUserId,
-        message: {
-          type: 'conversation.updated',
-          conversationId: conversation.id,
-          status: conversation.status,
+
+    const payloadOf = (event: InboxBusEvent): Payload | null => {
+      if (event.type === 'tags.changed') {
+        return { assigneeUserId: undefined, message: { type: 'tags.changed' } };
+      }
+      if (event.type === 'sending.changed') {
+        return paused === null
+          ? null
+          : { assigneeUserId: undefined, message: { type: 'sending.changed', paused } };
+      }
+      if (event.conversationId === undefined) return null;
+      if (event.type === 'conversation.deleted') {
+        // Barisnya sudah dihapus: cakupan memakai agen pemegang TERAKHIR yang dibawa event
+        // (Teknisi lain tidak mendapat ID percakapan yang bukan miliknya).
+        return {
+          assigneeUserId: event.previousAssigneeUserId ?? null,
+          message: { type: 'conversation.removed', conversationId: event.conversationId },
+        };
+      }
+      const conversation = byConversation.get(event.conversationId);
+      if (!conversation) return null;
+      const { assigneeUserId } = conversation;
+      if (event.type === 'conversation.detail') {
+        if (event.section === undefined) return null;
+        return {
           assigneeUserId,
-          unreadCount: conversation.unreadCount,
-          lastMessageAt: conversation.lastMessageAt.toISOString(),
-          windowExpiresAt: conversation.windowExpiresAt?.toISOString() ?? null,
-        },
-      };
-    }
-    if (!event.messageId) return null;
-    const [message] = await db
-      .select({
-        id: messages.id,
-        direction: messages.direction,
-        status: messages.status,
-        occurredAt: messages.occurredAt,
-      })
-      .from(messages)
-      .where(
-        and(
-          eq(messages.organizationId, event.organizationId),
-          eq(messages.conversationId, conversation.id),
-          eq(messages.id, event.messageId),
-        ),
-      )
-      .limit(1);
-    if (!message) return null;
-    if (event.type === 'message.created') {
+          message: {
+            type: 'conversation.detail',
+            conversationId: conversation.id,
+            section: event.section,
+          },
+        };
+      }
+      if (event.type === 'conversation.updated') {
+        return {
+          assigneeUserId,
+          message: {
+            type: 'conversation.updated',
+            conversationId: conversation.id,
+            status: conversation.status,
+            assigneeUserId,
+            unreadCount: conversation.unreadCount,
+            lastMessageAt: conversation.lastMessageAt.toISOString(),
+            windowExpiresAt: conversation.windowExpiresAt?.toISOString() ?? null,
+          },
+        };
+      }
+      const message = event.messageId ? byMessage.get(event.messageId) : undefined;
+      if (!message || message.conversationId !== conversation.id) return null;
+      if (event.type === 'message.created') {
+        return {
+          assigneeUserId,
+          message: {
+            type: 'message.created',
+            conversationId: conversation.id,
+            messageId: message.id,
+            direction: message.direction,
+            createdAt: message.occurredAt.toISOString(),
+          },
+        };
+      }
+      if (message.status === null) return null;
       return {
         assigneeUserId,
         message: {
-          type: 'message.created',
+          type: 'message.status',
           conversationId: conversation.id,
           messageId: message.id,
-          direction: message.direction,
-          createdAt: message.occurredAt.toISOString(),
+          status: message.status,
         },
       };
-    }
-    if (message.status === null) return null;
-    return {
-      assigneeUserId,
-      message: {
-        type: 'message.status',
-        conversationId: conversation.id,
-        messageId: message.id,
-        status: message.status,
-      },
     };
+
+    const result: { event: InboxBusEvent; payload: Payload }[] = [];
+    for (const event of events) {
+      const payload = payloadOf(event);
+      if (payload) result.push({ event, payload });
+    }
+    return result;
+  }
+
+  function sendToGroup(group: Set<StreamClient>, event: InboxBusEvent, payload: Payload): number {
+    let delivered = 0;
+    for (const client of group) {
+      const scope = permissionScope(client.role, 'inbox.view');
+      const holders = payload.assigneeUserId ? [payload.assigneeUserId] : [];
+      const visible =
+        scope !== null &&
+        (payload.assigneeUserId === undefined ||
+          isWithinScope(scope, client.userId, { holderUserIds: holders }));
+      if (visible) {
+        if (send(client, payload.message)) delivered += 1;
+        continue;
+      }
+      // Agen sebelumnya yang kehilangan akses (mis. Teknisi yang percakapannya dialihkan): hanya
+      // ID, supaya web menutup panel dan membuang cache-nya.
+      if (
+        event.type === 'conversation.updated' &&
+        event.conversationId !== undefined &&
+        event.previousAssigneeUserId !== undefined &&
+        client.userId === event.previousAssigneeUserId
+      ) {
+        send(client, { type: 'conversation.removed', conversationId: event.conversationId });
+      }
+    }
+    return delivered;
+  }
+
+  // ── Penggabungan & batas laju per organisasi (syarat broadcast Fase 4) ──────
+  const coalesceMs = options.coalesceMs ?? 250;
+  const maxPerSecond = options.maxEventsPerSecond ?? 200;
+  const statusMergeThreshold = options.statusMergeThreshold ?? 20;
+  const rate = new Map<string, { windowStart: number; count: number; lastResync: number }>();
+  const pending = new Map<string, InboxBusEvent[]>();
+  let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function eventKey(event: InboxBusEvent): string {
+    return `${event.type}|${event.conversationId ?? ''}|${event.messageId ?? ''}|${event.previousAssigneeUserId ?? ''}|${event.section ?? ''}`;
+  }
+
+  async function deliverOrganization(
+    organizationId: string,
+    events: readonly InboxBusEvent[],
+  ): Promise<number> {
+    const group = byOrganization.get(organizationId);
+    if (!group || group.size === 0) return 0;
+    const seen = new Set<string>();
+    let unique = events.filter((event) => {
+      const key = eventKey(event);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    // Banyak status pesan sekaligus (mis. broadcast): digabung ke pembaruan percakapannya.
+    const statuses = unique.filter((event) => event.type === 'message.status');
+    if (statuses.length > statusMergeThreshold) {
+      const merged = new Set(
+        unique
+          .filter((event) => event.type === 'conversation.updated')
+          .map((event) => event.conversationId),
+      );
+      const extra: InboxBusEvent[] = [];
+      for (const event of statuses) {
+        if (event.conversationId && !merged.has(event.conversationId)) {
+          merged.add(event.conversationId);
+          extra.push({
+            v: 1,
+            type: 'conversation.updated',
+            organizationId,
+            conversationId: event.conversationId,
+          });
+        }
+      }
+      unique = [...unique.filter((event) => event.type !== 'message.status'), ...extra];
+    }
+    // Batas laju: kelebihan dibuang dan diganti SATU sinyal `resync` (klien memuat ulang lewat REST).
+    const nowMs = Date.now();
+    const state = rate.get(organizationId) ?? { windowStart: nowMs, count: 0, lastResync: 0 };
+    if (nowMs - state.windowStart >= 1_000) {
+      state.windowStart = nowMs;
+      state.count = 0;
+    }
+    rate.set(organizationId, state);
+    let delivered = 0;
+    if (state.count + unique.length > maxPerSecond) {
+      state.count = maxPerSecond;
+      if (nowMs - state.lastResync >= 2_000) {
+        state.lastResync = nowMs;
+        for (const client of group) {
+          if (
+            permissionScope(client.role, 'inbox.view') !== null &&
+            send(client, { type: 'resync' })
+          ) {
+            delivered += 1;
+          }
+        }
+      }
+      // Event tingkat organisasi (rem darurat, tag) tetap diantar.
+      unique = unique.filter(
+        (event) => event.type === 'sending.changed' || event.type === 'tags.changed',
+      );
+    } else {
+      state.count += unique.length;
+    }
+    for (const { event, payload } of await payloadsFor(organizationId, unique)) {
+      delivered += sendToGroup(group, event, payload);
+    }
+    return delivered;
+  }
+
+  async function deliverBatch(events: readonly InboxBusEvent[]): Promise<number> {
+    const byOrg = new Map<string, InboxBusEvent[]>();
+    for (const event of events) {
+      const list = byOrg.get(event.organizationId) ?? [];
+      list.push(event);
+      byOrg.set(event.organizationId, list);
+    }
+    let delivered = 0;
+    for (const [organizationId, list] of byOrg) {
+      delivered += await deliverOrganization(organizationId, list);
+    }
+    return delivered;
+  }
+
+  function flushPending() {
+    flushTimer = null;
+    const batch = [...pending.values()].flat();
+    pending.clear();
+    if (batch.length === 0) return;
+    deliverBatch(batch).catch((err: unknown) => {
+      logger.warn({ err, events: batch.length }, 'Event inbox gagal diantar ke socket');
+    });
+  }
+
+  function enqueue(event: InboxBusEvent) {
+    if (!byOrganization.has(event.organizationId)) return;
+    if (coalesceMs <= 0) {
+      deliverBatch([event]).catch((err: unknown) => {
+        logger.warn({ err, type: event.type }, 'Event inbox gagal diantar ke socket');
+      });
+      return;
+    }
+    const list = pending.get(event.organizationId) ?? [];
+    // Batas memori antrean gabungan per organisasi (kelebihan pasti melewati batas laju → resync).
+    if (list.length < maxPerSecond * 2) list.push(event);
+    pending.set(event.organizationId, list);
+    if (!flushTimer) {
+      flushTimer = setTimeout(flushPending, coalesceMs);
+      flushTimer.unref();
+    }
   }
 
   let revalidating: Promise<void> | null = null;
@@ -256,23 +456,29 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
 
   /** Validasi ulang socket yang cocok (sesi, 2FA, peran) — dipakai berkala dan saat sinyal. */
   async function checkClients(match: (client: StreamClient) => boolean): Promise<void> {
-    for (const client of [...clients]) {
-      if (!match(client) || !clients.has(client)) continue;
-      try {
-        const session = await sessions.peek(client.sessionTokenHash);
-        if (!session || session.user.id !== client.userId || session.twoFactor.enrollmentRequired) {
-          client.socket.close(INBOX_STREAM_CLOSE_CODES.sessionEnded, 'Sesi berakhir');
-          remove(client);
-          continue;
-        }
-        client.role = session.user.role;
-        if (permissionScope(client.role, 'inbox.view') === null) {
-          client.socket.close(INBOX_STREAM_CLOSE_CODES.forbidden, 'Akses inbox dicabut');
-          remove(client);
-        }
-      } catch (err) {
-        // Database sesaat bermasalah: socket dibiarkan, dicoba lagi di putaran berikutnya.
-        logger.warn({ err }, 'Validasi ulang socket inbox gagal');
+    const targets = [...clients].filter((client) => match(client));
+    if (targets.length === 0) return;
+    let snapshots: Awaited<ReturnType<SessionService['peekMany']>>;
+    try {
+      // SATU query untuk semua hash token sesi (syarat broadcast Fase 4, review real-time R2).
+      snapshots = await sessions.peekMany(targets.map((client) => client.sessionTokenHash));
+    } catch (err) {
+      // Database sesaat bermasalah: socket dibiarkan, dicoba lagi di putaran berikutnya.
+      logger.warn({ err }, 'Validasi ulang socket inbox gagal');
+      return;
+    }
+    for (const client of targets) {
+      if (!clients.has(client)) continue;
+      const session = snapshots.get(client.sessionTokenHash);
+      if (!session || session.user.id !== client.userId || session.twoFactor.enrollmentRequired) {
+        client.socket.close(INBOX_STREAM_CLOSE_CODES.sessionEnded, 'Sesi berakhir');
+        remove(client);
+        continue;
+      }
+      client.role = session.user.role;
+      if (permissionScope(client.role, 'inbox.view') === null) {
+        client.socket.close(INBOX_STREAM_CLOSE_CODES.forbidden, 'Akses inbox dicabut');
+        remove(client);
       }
     }
   }
@@ -301,36 +507,8 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
       send(client, { type: 'hello', heartbeatSeconds: INBOX_STREAM_HEARTBEAT_SECONDS });
     },
 
-    async deliver(event) {
-      const group = byOrganization.get(event.organizationId);
-      if (!group || group.size === 0) return 0;
-      const payload = await payloadFor(event);
-      if (!payload) return 0;
-      let delivered = 0;
-      for (const client of group) {
-        const scope = permissionScope(client.role, 'inbox.view');
-        const holders = payload.assigneeUserId ? [payload.assigneeUserId] : [];
-        const visible =
-          scope !== null &&
-          (payload.assigneeUserId === undefined ||
-            isWithinScope(scope, client.userId, { holderUserIds: holders }));
-        if (visible) {
-          if (send(client, payload.message)) delivered += 1;
-          continue;
-        }
-        // Agen sebelumnya yang kehilangan akses (mis. Teknisi yang percakapannya dialihkan): hanya
-        // ID, supaya web menutup panel dan membuang cache-nya.
-        if (
-          event.type === 'conversation.updated' &&
-          event.conversationId !== undefined &&
-          event.previousAssigneeUserId !== undefined &&
-          client.userId === event.previousAssigneeUserId
-        ) {
-          send(client, { type: 'conversation.removed', conversationId: event.conversationId });
-        }
-      }
-      return delivered;
-    },
+    deliver: (event) => deliverBatch([event]),
+    deliverBatch,
 
     revalidate() {
       // R2 (review real-time): putaran tidak pernah tumpang tindih — pemanggil berikutnya
@@ -382,6 +560,8 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
     close() {
       clearInterval(heartbeatTimer);
       clearInterval(revalidateTimer);
+      if (flushTimer) clearTimeout(flushTimer);
+      pending.clear();
       for (const timer of pendingTimers) clearTimeout(timer);
       pendingTimers.clear();
       for (const client of [...clients]) {
@@ -432,9 +612,7 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
       }
       const event = parseInboxBusMessage(raw);
       if (!event) return;
-      hub.deliver(event).catch((err: unknown) => {
-        logger.warn({ err, type: event.type }, 'Event inbox gagal diantar ke socket');
-      });
+      enqueue(event);
     });
   }
 

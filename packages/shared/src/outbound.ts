@@ -180,6 +180,8 @@ export const OUTBOUND_FAILURE_REASONS = [
   'credentials_unavailable',
   'queue_unavailable',
   'sending_paused',
+  /** Pesan broadcast tidak dikirim karena kampanyenya dijeda/dibatalkan (dikirim lagi saat dilanjutkan). */
+  'broadcast_stopped',
 ] as const;
 export const outboundFailureReasonSchema = z.enum(OUTBOUND_FAILURE_REASONS);
 export type OutboundFailureReason = z.infer<typeof outboundFailureReasonSchema>;
@@ -199,6 +201,8 @@ const REASON_MESSAGES: Readonly<Record<OutboundFailureReason, string>> = {
     'Koneksi ke Meta terputus saat mengirim, jadi pesan mungkin sudah terkirim. Pastikan pelanggan belum menerimanya sebelum kirim ulang.',
   sending_paused:
     'Pengiriman dihentikan sementara oleh rem darurat. Kirim ulang setelah Owner/Admin melanjutkan pengiriman.',
+  broadcast_stopped:
+    'Broadcast ini dijeda atau dibatalkan sebelum pesan terkirim. Pesan dikirim lagi otomatis bila kampanyenya dilanjutkan.',
   queue_unavailable:
     'Antrean pengiriman sedang bermasalah sehingga pesan belum dikirim. Kirim ulang beberapa saat lagi.',
   credentials_unavailable:

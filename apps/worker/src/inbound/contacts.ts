@@ -1,13 +1,18 @@
 import { contactIdentityLockKeys, type Logger, type WhatsAppContactIdentity } from '@balesin/core';
 import {
+  contactEvents,
   contacts,
   lockAdvisoryKeys,
+  messages,
   recordOutgoingEvent,
   type ContactRow,
   type DbExecutor,
 } from '@balesin/db';
 import type { ChannelType } from '@balesin/shared';
 import { and, eq } from 'drizzle-orm';
+
+/** Review kontak R4: kontak hanya-nomor semuda ini boleh dilekatkan BSUID pertama (hari). */
+export const IDENTITY_ATTACH_MAX_AGE_DAYS = 30;
 
 /**
  * Kontak dari pesan masuk WhatsApp (docs/DECISIONS.md 2026-11-16 "Kontak WhatsApp").
@@ -46,6 +51,8 @@ export interface ResolveContactInput {
   profileName: string | null;
   username: string | null;
   logger: Logger;
+  /** Waktu kejadian (jam server) untuk aturan R4. Bawaan: sekarang. */
+  now?: Date;
 }
 
 const CHANNEL_TYPE: ChannelType = 'whatsapp';
@@ -98,6 +105,72 @@ export async function resolveWhatsAppContact(
       'Nomor kontak berpindah ke pelanggan lain (BSUID berbeda) — dilepas dari kontak lama',
     );
     byPhone = undefined;
+  }
+
+  // Review kontak R4: kontak HANYA-NOMOR (tanpa BSUID) baru dilekatkan BSUID pertama bila memang
+  // pernah menerima pesan masuk WhatsApp atau baru dibuat (≤ 30 hari, mis. dari broadcast/impor).
+  // Selain itu nomornya mungkin sudah berpindah tangan: kontak baru dibuat bertanda "mungkin duplikat"
+  // (nomor dipindah ke kontak baru, kontak lama tetap sebagai catatan CRM) untuk digabung manual.
+  if (!byBsuid && byPhone && byPhone.waBsuid === null && identity.bsuid) {
+    const at = input.now ?? new Date();
+    const recent =
+      at.getTime() - byPhone.createdAt.getTime() <=
+      IDENTITY_ATTACH_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+    const [inbound] = recent
+      ? [true]
+      : await tx
+          .select({ id: messages.id })
+          .from(messages)
+          .where(
+            and(
+              eq(messages.organizationId, organizationId),
+              eq(messages.contactId, byPhone.id),
+              eq(messages.direction, 'inbound'),
+            ),
+          )
+          .limit(1);
+    if (inbound) {
+      await tx.insert(contactEvents).values({
+        organizationId,
+        contactId: byPhone.id,
+        kind: 'whatsapp_identity_attached',
+        actorUserId: null,
+      });
+    } else {
+      await tx
+        .update(contacts)
+        .set({ phone: null, waIdentityReleasedAt: at })
+        .where(and(eq(contacts.organizationId, organizationId), eq(contacts.id, byPhone.id)));
+      const [created] = await tx
+        .insert(contacts)
+        .values({
+          organizationId,
+          channelType: CHANNEL_TYPE,
+          waBsuid: identity.bsuid,
+          phone: identity.phone,
+          profileName: input.profileName,
+          waUsername: input.username,
+          possibleDuplicateOfContactId: byPhone.id,
+        })
+        .returning();
+      if (!created) throw new Error('INSERT kontak tidak mengembalikan baris');
+      await tx.insert(contactEvents).values({
+        organizationId,
+        contactId: created.id,
+        kind: 'possible_duplicate',
+        actorUserId: null,
+      });
+      await recordOutgoingEvent(tx, {
+        organizationId,
+        type: 'contact.created',
+        contactId: created.id,
+      });
+      logger.info(
+        { organizationId, contactId: created.id, duplicateContactId: byPhone.id },
+        'Kontak hanya-nomor lama tidak dilekatkan BSUID — kontak baru "mungkin duplikat"',
+      );
+      return created;
+    }
   }
 
   const existing = byBsuid ?? byPhone;

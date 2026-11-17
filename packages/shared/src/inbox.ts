@@ -66,8 +66,18 @@ export type ConversationRecordKind = (typeof CONVERSATION_EVENT_KINDS)[number];
  * percakapan kontak itu. Tanpa nilai data pelanggan: hanya nama tag / nama isian yang berubah.
  *  - `tag_added` / `tag_removed` — tag dipasang/dilepas;
  *  - `contact_updated` — isian kontak diubah (`fields`: `name`, `email`, `notes`, `attributes`).
+ *  - `whatsapp_identity_attached` — identitas WhatsApp (BSUID) pelanggan dilekatkan ke kontak yang
+ *    sebelumnya hanya punya nomor (review kontak R4: tim diberi tanda);
+ *  - `possible_duplicate` — kontak baru dibuat untuk pengirim yang nomornya pernah tercatat di kontak
+ *    lama tanpa identitas WhatsApp (kontak lama tidak dilekatkan otomatis; gabung manual).
  */
-export const CONTACT_EVENT_KINDS = ['tag_added', 'tag_removed', 'contact_updated'] as const;
+export const CONTACT_EVENT_KINDS = [
+  'tag_added',
+  'tag_removed',
+  'contact_updated',
+  'whatsapp_identity_attached',
+  'possible_duplicate',
+] as const;
 export type ContactEventKind = (typeof CONTACT_EVENT_KINDS)[number];
 
 /** Semua jenis baris tab "Log" (kejadian percakapan + kejadian kontaknya). */
@@ -91,6 +101,8 @@ export const CONVERSATION_EVENT_LABELS: Readonly<Record<ConversationEventKind, s
   tag_added: 'Memasang tag',
   tag_removed: 'Melepas tag',
   contact_updated: 'Mengubah data kontak',
+  whatsapp_identity_attached: 'Identitas WhatsApp dilekatkan ke kontak ini',
+  possible_duplicate: 'Mungkin duplikat kontak lain (nomor pernah tercatat)',
 };
 
 /** Isian kontak yang bisa diubah tim (dicatat di `contact_events.fields`, tanpa nilainya). */
@@ -858,5 +870,10 @@ export const inboxStreamEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('tags.changed') }),
   /** Rem darurat pengiriman ditarik (`paused: true`) / dilepas — tampilkan/sembunyikan banner. */
   z.object({ type: z.literal('sending.changed'), paused: z.boolean() }),
+  /**
+   * Terlalu banyak event untuk organisasi ini dalam waktu singkat (mis. broadcast besar): event
+   * dibuang, web memuat ulang daftar & percakapan yang terbuka lewat REST (`refreshInbox`).
+   */
+  z.object({ type: z.literal('resync') }),
 ]);
 export type InboxStreamEvent = z.infer<typeof inboxStreamEventSchema>;

@@ -284,6 +284,62 @@ export const API_ROUTES = {
     presets: `${API_PREFIX}/templates/presets`,
     fromPreset: `${API_PREFIX}/templates/presets/:presetId`,
   },
+  /**
+   * Broadcast / kampanye (Fase 4, docs/KONTRAK-API-BROADCAST.md). Lihat & kelola kampanye =
+   * `broadcast.send`; setujui/tolak = `broadcast.approve`; ekspor CSV laporan = `contacts.export`
+   * (data pribadi; GET ber-CSRF). Path ber-`:broadcastId` disusun dengan `apiPath`.
+   */
+  broadcasts: {
+    /** GET — daftar; POST — buat draf. */
+    list: `${API_PREFIX}/broadcasts`,
+    /** GET — detail; PATCH — ubah draf; DELETE — hapus draf. */
+    broadcast: `${API_PREFIX}/broadcasts/:broadcastId`,
+    /** POST multipart (`file`) — penerima dari CSV/XLSX (mengganti penerima sebelumnya). */
+    upload: `${API_PREFIX}/broadcasts/:broadcastId/recipients/upload`,
+    /** POST — penerima dari segmen kontak (tag/atribut). */
+    segment: `${API_PREFIX}/broadcasts/:broadcastId/recipients/segment`,
+    /** POST — penerima dari konektor REST. */
+    connector: `${API_PREFIX}/broadcasts/:broadcastId/recipients/connector`,
+    /** GET — daftar penerima + status pesan. */
+    recipients: `${API_PREFIX}/broadcasts/:broadcastId/recipients`,
+    /** GET — pratinjau per penerima (beberapa baris contoh). */
+    preview: `${API_PREFIX}/broadcasts/:broadcastId/preview`,
+    /** GET — estimasi biaya. */
+    estimate: `${API_PREFIX}/broadcasts/:broadcastId/estimate`,
+    /** POST — ajukan (jadwalkan / minta persetujuan) + konfirmasi identitas. */
+    submit: `${API_PREFIX}/broadcasts/:broadcastId/submit`,
+    /** POST — setujui (`broadcast.approve`, bukan pembuat) + konfirmasi identitas. */
+    approve: `${API_PREFIX}/broadcasts/:broadcastId/approve`,
+    /** POST — tolak (`broadcast.approve`) → kembali ke draf. */
+    reject: `${API_PREFIX}/broadcasts/:broadcastId/reject`,
+    /** POST — jeda seketika. */
+    pause: `${API_PREFIX}/broadcasts/:broadcastId/pause`,
+    /** POST — lanjutkan (+ konfirmasi identitas; setelah rem otomatis butuh `sending.resume`). */
+    resume: `${API_PREFIX}/broadcasts/:broadcastId/resume`,
+    /** POST — batalkan (penerima tertunda tidak dikirim). */
+    cancel: `${API_PREFIX}/broadcasts/:broadcastId/cancel`,
+    /** GET — laporan kampanye. */
+    report: `${API_PREFIX}/broadcasts/:broadcastId/report`,
+    /** GET (CSRF) — ekspor CSV laporan per penerima (`contacts.export`, diaudit). */
+    exportCsv: `${API_PREFIX}/broadcasts/:broadcastId/report/export`,
+    /** GET — pilihan konektor untuk pembuat kampanye (ID + nama). */
+    connectorOptions: `${API_PREFIX}/broadcasts/connectors`,
+    /** GET/PUT — pengaturan broadcast (ambang, cadangan kuota, rem otomatis, tarif). */
+    settings: `${API_PREFIX}/settings/broadcast`,
+    /** GET/POST — konektor REST (`integrations.manage`). */
+    connectors: `${API_PREFIX}/settings/broadcast-connectors`,
+    /** PATCH/DELETE — satu konektor. */
+    connectorItem: `${API_PREFIX}/settings/broadcast-connectors/:connectorId`,
+    /** POST — tes ambil data. */
+    connectorTest: `${API_PREFIX}/settings/broadcast-connectors/:connectorId/test`,
+  },
+  /** Alarm sistem ke Telegram (`integrations.manage`). */
+  alarms: {
+    /** GET/PUT/DELETE — token bot (terenkripsi) + ID chat. */
+    telegram: `${API_PREFIX}/settings/alarms/telegram`,
+    /** POST — kirim pesan tes. */
+    telegramTest: `${API_PREFIX}/settings/alarms/telegram/test`,
+  },
   /** Notifikasi Web Push (butir 10, docs/KONTRAK-API-NOTIFIKASI.md). */
   notifications: {
     /** GET — kunci publik VAPID (sesi). */

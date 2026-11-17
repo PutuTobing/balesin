@@ -68,7 +68,20 @@ export async function findActiveSession(
   db: DbExecutor,
   tokenHash: string,
 ): Promise<ActiveSession | undefined> {
-  const [row] = await db
+  return (await findActiveSessions(db, [tokenHash])).get(tokenHash);
+}
+
+/**
+ * Sesi aktif untuk BANYAK hash token dalam SATU query (validasi ulang socket inbox, syarat broadcast
+ * Fase 4 dari review real-time R2). Hash tanpa sesi aktif tidak ada di peta.
+ */
+export async function findActiveSessions(
+  db: DbExecutor,
+  tokenHashes: readonly string[],
+): Promise<Map<string, ActiveSession>> {
+  const result = new Map<string, ActiveSession>();
+  if (tokenHashes.length === 0) return result;
+  const rows = await db
     .select({
       id: userSessions.id,
       organizationId: userSessions.organizationId,
@@ -94,34 +107,34 @@ export async function findActiveSession(
     .innerJoin(organizations, eq(organizations.id, userSessions.organizationId))
     .where(
       and(
-        eq(userSessions.tokenHash, tokenHash),
+        inArray(userSessions.tokenHash, [...new Set(tokenHashes)]),
         isNull(userSessions.revokedAt),
         sql`${userSessions.idleExpiresAt} > now()`,
         sql`${userSessions.absoluteExpiresAt} > now()`,
         isNull(users.disabledAt),
         or(isNull(users.totpEnabledAt), isNotNull(userSessions.twoFactorVerifiedAt)),
       ),
-    )
-    .limit(1);
-  if (!row) return undefined;
-
-  return {
-    id: row.id,
-    organizationId: row.organizationId,
-    tokenHash: row.tokenHash,
-    idleExpiresAt: row.idleExpiresAt,
-    absoluteExpiresAt: row.absoluteExpiresAt,
-    needsTouch: row.needsTouch,
-    user: { id: row.userId, name: row.userName, email: row.userEmail, role: row.userRole },
-    organization: {
-      id: row.organizationId,
-      name: row.organizationName,
-      timezone: row.organizationTimezone,
-    },
-    twoFactorEnabled: row.twoFactorEnabled,
-    twoFactorVerified: row.twoFactorVerified,
-    kind: row.kind,
-  };
+    );
+  for (const row of rows) {
+    result.set(row.tokenHash, {
+      id: row.id,
+      organizationId: row.organizationId,
+      tokenHash: row.tokenHash,
+      idleExpiresAt: row.idleExpiresAt,
+      absoluteExpiresAt: row.absoluteExpiresAt,
+      needsTouch: row.needsTouch,
+      user: { id: row.userId, name: row.userName, email: row.userEmail, role: row.userRole },
+      organization: {
+        id: row.organizationId,
+        name: row.organizationName,
+        timezone: row.organizationTimezone,
+      },
+      twoFactorEnabled: row.twoFactorEnabled,
+      twoFactorVerified: row.twoFactorVerified,
+      kind: row.kind,
+    });
+  }
+  return result;
 }
 
 /** Menggeser batas idle (tidak pernah melewati batas mutlak). Mengembalikan batas idle yang baru. */

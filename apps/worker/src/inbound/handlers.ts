@@ -33,6 +33,7 @@ import {
 import { and, desc, eq, ne, sql } from 'drizzle-orm';
 
 import type { InboundEventContext, InboundEventHandlers } from '../queues/webhooks';
+import { recordBroadcastReply } from './broadcast-replies';
 import { lockContactIdentities, resolveWhatsAppContact } from './contacts';
 
 /**
@@ -275,6 +276,7 @@ export function createInboundHandlers(options: InboundHandlerOptions = {}): Inbo
         profileName: cleanCustomerText(message.sender.profileName),
         username: cleanCustomerText(message.sender.username),
         logger,
+        now: receivedAt,
       });
       await linkEventToContact(context, contact.id);
 
@@ -401,6 +403,23 @@ export function createInboundHandlers(options: InboundHandlerOptions = {}): Inbo
             eq(conversations.id, conversation.id),
           ),
         );
+
+      // Balasan atas broadcast: laporan "dibalas" + tag otomatis kampanye (Fase 4).
+      if (
+        await recordBroadcastReply(tx, {
+          organizationId,
+          contactId: contact.id,
+          channelId,
+          receivedAt,
+        })
+      ) {
+        context.emit({
+          type: 'conversation.detail',
+          organizationId,
+          conversationId: conversation.id,
+          section: 'tags',
+        });
+      }
     },
 
     async status(update, context) {

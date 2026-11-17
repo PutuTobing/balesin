@@ -441,6 +441,11 @@ export interface RemoteFileRequest {
   lookup?: Lookup;
   /** HANYA tes: izinkan 127.0.0.1/::1 + port bebas (server tiruan). */
   allowLoopback?: boolean;
+  /**
+   * Header tambahan (mis. autentikasi konektor REST broadcast). HANYA dikirim ke origin URL awal —
+   * redirect ke origin lain tidak membawanya. `accept`/`user-agent` bawaan bisa diganti.
+   */
+  headers?: Readonly<Record<string, string>>;
 }
 
 export type RemoteFileResult =
@@ -457,6 +462,7 @@ export async function fetchRemoteFile(request: RemoteFileRequest): Promise<Remot
   const deadline = Date.now() + (request.timeoutMs ?? 15_000);
   const options = { allowLoopback: request.allowLoopback ?? false };
   let current = request.url;
+  let originalOrigin: string | null = null;
   for (let hop = 0; hop <= (request.maxRedirects ?? 3); hop += 1) {
     const parsed = parseWebhookUrl(current, request.privateCidrs, options);
     if ('error' in parsed) return { ok: false, error: parsed.error, httpStatus: null };
@@ -484,7 +490,9 @@ export async function fetchRemoteFile(request: RemoteFileRequest): Promise<Remot
       if (verdict) return { ok: false, error: verdict, httpStatus: null };
     }
     const chosen = addresses[0] as LookupAddress;
-    const result = await getOnce(url, host, port, chosen, request.maxBytes, deadline);
+    originalOrigin ??= url.origin;
+    const extraHeaders = url.origin === originalOrigin ? (request.headers ?? {}) : {};
+    const result = await getOnce(url, host, port, chosen, request.maxBytes, deadline, extraHeaders);
     if (result.kind === 'redirect') {
       try {
         current = new URL(result.location, url).href;
@@ -530,6 +538,7 @@ function getOnce(
   chosen: LookupAddress,
   maxBytes: number,
   deadline: number,
+  extraHeaders: Readonly<Record<string, string>> = {},
 ): Promise<HopResult> {
   const send = url.protocol === 'https:' ? httpsRequest : httpRequest;
   return new Promise<HopResult>((resolve) => {
@@ -550,7 +559,7 @@ function getOnce(
         port,
         path: `${url.pathname}${url.search}`,
         method: 'GET',
-        headers: { 'user-agent': 'Balesin-Media/1.0', accept: '*/*' },
+        headers: { 'user-agent': 'Balesin-Media/1.0', accept: '*/*', ...extraHeaders },
         lookup: ((
           _hostname: string,
           lookupOptions: { all?: boolean },

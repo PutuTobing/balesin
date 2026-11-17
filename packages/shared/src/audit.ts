@@ -162,6 +162,30 @@ export const AUDIT_ACTIONS = {
   privateNetworkUpdated: 'settings.private_network.updated',
   /** Pengaturan notifikasi organisasi diubah (`preview` lama & baru). */
   notificationSettingsUpdated: 'settings.notifications.updated',
+  // ── Broadcast (Fase 4) — tanpa nomor/isi pesan; hanya ID, nama kampanye, jumlah ──
+  broadcastCreated: 'broadcast.created',
+  broadcastUpdated: 'broadcast.updated',
+  broadcastDeleted: 'broadcast.deleted',
+  /** Penerima diimpor (`source`, `recipients`, `rejectedRows`). */
+  broadcastRecipientsImported: 'broadcast.recipients_imported',
+  /** Diajukan (`recipients`, `approvalRequired`, `estimate`). */
+  broadcastSubmitted: 'broadcast.submitted',
+  broadcastApproved: 'broadcast.approved',
+  broadcastRejected: 'broadcast.rejected',
+  broadcastPaused: 'broadcast.paused',
+  broadcastResumed: 'broadcast.resumed',
+  broadcastCancelled: 'broadcast.cancelled',
+  /** Laporan per penerima diekspor CSV (`rows`). */
+  broadcastExported: 'broadcast.exported',
+  /** Pengaturan broadcast diubah (`changedFields`, `actorRole`). */
+  broadcastSettingsUpdated: 'settings.broadcast.updated',
+  /** Konektor REST dibuat/diubah/dihapus (`host`, `changedFields`) — URL utuh & header tidak dicatat. */
+  broadcastConnectorCreated: 'broadcast_connector.created',
+  broadcastConnectorUpdated: 'broadcast_connector.updated',
+  broadcastConnectorDeleted: 'broadcast_connector.deleted',
+  /** Alarm Telegram diatur/dihapus (`chatChanged`, `tokenChanged`, `enabled`). */
+  telegramAlarmUpdated: 'settings.alarm_telegram.updated',
+  telegramAlarmDeleted: 'settings.alarm_telegram.deleted',
 } as const;
 
 export type AuditActionKey = keyof typeof AUDIT_ACTIONS;
@@ -230,6 +254,23 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'template.submitted': 'Template pesan diajukan ke Meta',
   'template.deleted': 'Template pesan dihapus',
   'template.synced': 'Template pesan disinkron dari Meta',
+  'broadcast.created': 'Broadcast dibuat (draf)',
+  'broadcast.updated': 'Broadcast diubah',
+  'broadcast.deleted': 'Broadcast dihapus',
+  'broadcast.recipients_imported': 'Penerima broadcast diimpor',
+  'broadcast.submitted': 'Broadcast diajukan',
+  'broadcast.approved': 'Broadcast disetujui',
+  'broadcast.rejected': 'Broadcast ditolak',
+  'broadcast.paused': 'Broadcast dijeda',
+  'broadcast.resumed': 'Broadcast dilanjutkan',
+  'broadcast.cancelled': 'Broadcast dibatalkan',
+  'broadcast.exported': 'Laporan broadcast diekspor',
+  'settings.broadcast.updated': 'Pengaturan broadcast diubah',
+  'broadcast_connector.created': 'Konektor data broadcast dibuat',
+  'broadcast_connector.updated': 'Konektor data broadcast diubah',
+  'broadcast_connector.deleted': 'Konektor data broadcast dihapus',
+  'settings.alarm_telegram.updated': 'Alarm Telegram diatur',
+  'settings.alarm_telegram.deleted': 'Alarm Telegram dihapus',
   'channel.webhook_verify_token_rotated': 'Verify token webhook dibuat ulang',
   'channel.business_profile_updated': 'Profil bisnis WhatsApp diubah',
   'channel.business_profile_update_failed': 'Perubahan profil bisnis ditolak Meta',
@@ -279,6 +320,8 @@ export const AUDIT_TARGET_TYPES = [
   'api_key',
   'webhook',
   'template',
+  'broadcast',
+  'broadcast_connector',
 ] as const;
 export const auditTargetTypeSchema = z.enum(AUDIT_TARGET_TYPES, {
   error: 'Jenis target tidak dikenal.',
@@ -301,6 +344,8 @@ export const AUDIT_TARGET_TYPE_LABELS: Readonly<Record<AuditTargetType, string>>
   api_key: 'API key',
   webhook: 'Webhook keluar',
   template: 'Template pesan',
+  broadcast: 'Broadcast',
+  broadcast_connector: 'Konektor data broadcast',
 };
 
 // ── GET /audit-logs ─────────────────────────────────────────────────────────

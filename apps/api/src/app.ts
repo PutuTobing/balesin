@@ -43,6 +43,9 @@ import { createOutgoingWebhooksService } from './modules/outgoing-webhooks/outgo
 import { apiDocsRoutes } from './modules/public-api/api-docs.routes';
 import { publicApiRoutes, publicOrganizationRate } from './modules/public-api/public-api.routes';
 import { botRoutes } from './modules/bot/bot.routes';
+import { createBroadcastSettingsService } from './modules/broadcasts/broadcast-settings.service';
+import { broadcastsRoutes } from './modules/broadcasts/broadcasts.routes';
+import { createBroadcastsService } from './modules/broadcasts/broadcasts.service';
 import { templatesRoutes } from './modules/templates/templates.routes';
 import { createTemplatesService } from './modules/templates/templates.service';
 import { createBotService } from './modules/bot/bot.service';
@@ -164,6 +167,8 @@ export interface AppDeps {
      * (server tiruan).
      */
     webhookAllowLoopback?: boolean;
+    /** HANYA tes: server Bot API Telegram tiruan (alarm) di loopback. */
+    telegramBaseUrl?: string;
     /** Origin server push TIRUAN yang boleh didaftarkan (tes saja; produksi: layanan push dikenal). */
     pushEndpointOrigins?: readonly string[];
     /** Selang heartbeat/validasi ulang WebSocket inbox dan batas koneksi per pengguna. */
@@ -172,6 +177,9 @@ export interface AppDeps {
       revalidateMs?: number;
       maxConnectionsPerUser?: number;
       sessionRecheckDelaysMs?: readonly number[];
+      coalesceMs?: number;
+      maxEventsPerSecond?: number;
+      statusMergeThreshold?: number;
     };
   };
 }
@@ -604,6 +612,26 @@ export async function buildApp(deps: AppDeps) {
     }),
   });
   await app.register(apiDocsRoutes, { db, apiUrl: config.apiUrl });
+  // Broadcast (Fase 4): kampanye, sumber penerima, pengaturan, konektor REST, alarm Telegram.
+  const broadcastSettings = createBroadcastSettingsService({
+    db,
+    secretBox,
+    twoFactor,
+    accessDenied,
+    ...(deps.overrides?.telegramBaseUrl ? { telegramBaseUrl: deps.overrides.telegramBaseUrl } : {}),
+    ...(deps.overrides?.webhookAllowLoopback ? { allowLoopback: true } : {}),
+  });
+  await app.register(broadcastsRoutes, {
+    limiter,
+    cookieSecure: config.cookieSecure,
+    settings: broadcastSettings,
+    broadcasts: createBroadcastsService({
+      db,
+      settings: broadcastSettings,
+      twoFactor,
+      accessDenied,
+    }),
+  });
   // Notifikasi Web Push (Fase 2 butir 10).
   await app.register(notificationsRoutes, {
     limiter,

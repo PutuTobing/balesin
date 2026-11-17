@@ -12,7 +12,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 import { channelType } from './channels';
-import { createdAtColumn, idColumn, updatedAtColumn } from './columns';
+import { createdAtColumn, idColumn, timestamptz, updatedAtColumn } from './columns';
 import { organizations } from './organizations';
 
 /**
@@ -59,6 +59,17 @@ export const contacts = pgTable(
       .$type<{ key: string; value: string }[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
+    /**
+     * Review kontak R4: kontak ini dibuat untuk pengirim WhatsApp yang nomornya sebelumnya tercatat di
+     * kontak LAIN tanpa identitas WhatsApp (kontak lama tidak dilekatkan otomatis) — tanda "mungkin
+     * duplikat" untuk digabung manual. Tanpa FK (kontak lama boleh dihapus).
+     */
+    possibleDuplicateOfContactId: uuid('possible_duplicate_of_contact_id'),
+    /**
+     * Identitas WhatsApp kontak ini dilepas (nomornya dipindah ke kontak baru, review R4): kontak tetap
+     * ada sebagai catatan CRM tanpa nomor/BSUID.
+     */
+    waIdentityReleasedAt: timestamptz('wa_identity_released_at'),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
@@ -81,7 +92,7 @@ export const contacts = pgTable(
     index('contacts_phone_trgm_idx').using('gin', table.phone.op('gin_trgm_ops')),
     check(
       'contacts_whatsapp_identity_required',
-      sql`${table.channelType} <> 'whatsapp' or ${table.waBsuid} is not null or ${table.phone} is not null`,
+      sql`${table.channelType} <> 'whatsapp' or ${table.waBsuid} is not null or ${table.phone} is not null or ${table.waIdentityReleasedAt} is not null`,
     ),
     check(
       'contacts_phone_e164',
