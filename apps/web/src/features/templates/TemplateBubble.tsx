@@ -9,10 +9,10 @@ import {
   Video,
   type LucideIcon,
 } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { Icon } from '../../components/ui/Icon';
 import { t } from '../../i18n/id';
 import styles from './Templates.module.css';
-import { previewText } from './template-form';
 
 const c = t.templates;
 
@@ -61,10 +61,13 @@ export function TemplateBubble({
       <div className={styles.bubble}>
         {header?.format === 'TEXT' ? (
           <p className={styles.bubbleHeader} dir="auto">
-            {previewText(
-              header.text,
-              headerVariable ? { [headerVariable]: headerValue || (header.example ?? '') } : {},
-            )}
+            <Filled
+              text={header.text}
+              values={headerVariable ? { [headerVariable]: headerValue } : {}}
+              examples={
+                headerVariable && header.example ? { [headerVariable]: header.example } : {}
+              }
+            />
           </p>
         ) : header ? (
           <div className={styles.bubbleMedia}>
@@ -81,7 +84,7 @@ export function TemplateBubble({
           </div>
         ) : (
           <p className={styles.bubbleBody} dir="auto">
-            {previewText(content.body.text, values)}
+            <Filled text={content.body.text} values={values} examples={content.body.examples} />
           </p>
         )}
         {otp && expiry ? (
@@ -113,4 +116,47 @@ export function TemplateBubble({
       ) : null}
     </figure>
   );
+}
+
+const VARIABLE = /\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g;
+
+/**
+ * Teks template dengan variabel terisi. Belum diisi → contoh nilainya (redup, miring) bila ada,
+ * selain itu chip "Nilai 3" / nama variabel — tidak pernah `{{3}}` mentah (review template TM2).
+ */
+function Filled({
+  text,
+  values,
+  examples,
+}: {
+  text: string;
+  values: Readonly<Record<string, string>>;
+  examples: Readonly<Record<string, string>>;
+}) {
+  const parts: ReactNode[] = [];
+  let last = 0;
+  for (const match of text.matchAll(VARIABLE)) {
+    const name = match[1] ?? '';
+    const index = match.index ?? 0;
+    parts.push(text.slice(last, index));
+    const value = values[name]?.trim();
+    const example = examples[name]?.trim();
+    if (value) parts.push(value);
+    else if (example) {
+      parts.push(
+        <span key={index} className={styles.varExample}>
+          {example}
+        </span>,
+      );
+    } else {
+      parts.push(
+        <span key={index} className={styles.varChip}>
+          {/^\d+$/.test(name) ? c.valueChip(name) : name}
+        </span>,
+      );
+    }
+    last = index + match[0].length;
+  }
+  parts.push(text.slice(last));
+  return <>{parts}</>;
 }

@@ -162,9 +162,9 @@ describe('Pengaturan → Template WhatsApp', () => {
     ).toHaveLength(3);
   });
 
-  it('sinkron dari Meta → ringkasan; hapus meminta konfirmasi', async () => {
+  it('sinkron dari Meta → ringkasan; kartu = tautan ke halaman ubah (hapus hanya di sana)', async () => {
     const template = fakeTemplate({ name: 'tagihan_bulanan' });
-    const { api } = await renderApp(
+    await renderApp(
       '/pengaturan/template',
       listRoutes([template], {
         [`POST ${API_ROUTES.templates.sync}`]: () =>
@@ -180,21 +180,15 @@ describe('Pengaturan → Template WhatsApp', () => {
               },
             ],
           }),
-        [`DELETE ${apiPath(API_ROUTES.templates.template, { templateId: template.id })}`]: () =>
-          json({ deleted: true }),
       }),
     );
     fireEvent.click(await screen.findByRole('button', { name: c.sync }));
     expect(await screen.findByText(c.syncDone(2, 1, 0))).toBeVisible();
-
-    fireEvent.click(screen.getByRole('button', { name: c.remove('tagihan_bulanan') }));
-    const dialog = within(
-      await screen.findByRole('dialog', { name: c.removeTitle('tagihan_bulanan') }),
+    expect(screen.getByRole('link', { name: c.open('tagihan_bulanan') })).toHaveAttribute(
+      'href',
+      `/pengaturan/template/${template.id}`,
     );
-    expect(dialog.getByText(c.removeBodyMeta)).toBeVisible();
-    fireEvent.click(dialog.getByRole('button', { name: c.removeConfirm }));
-    expect(await screen.findByText(c.removed('tagihan_bulanan'))).toBeVisible();
-    expect(api.requests.some((request) => request.method === 'DELETE')).toBe(true);
+    expect(screen.queryByRole('button', { name: c.remove('tagihan_bulanan') })).toBeNull();
   });
 
   it('kosong: ajakan preset/buat/sinkron; preset → draf dibuka di editor', async () => {

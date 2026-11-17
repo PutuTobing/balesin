@@ -3,6 +3,8 @@ import { Link } from '@tanstack/react-router';
 import {
   Bell,
   ChevronRight,
+  BellRing,
+  Database,
   Gauge,
   History,
   LayoutTemplate,
@@ -44,6 +46,7 @@ import { TwoFactorBadge } from '../security/TwoFactorBadge';
 import { sendingLimitsQuery } from '../inbox/inbox-queries';
 import { integrationKeys } from '../integrations/integration-queries';
 import { templatesQuery } from '../templates/template-queries';
+import { connectorsQuery, telegramAlarmQuery } from '../broadcast/broadcast-queries';
 import { usePushDevice } from '../notifications/use-push-device';
 import styles from './Settings.module.css';
 
@@ -212,6 +215,8 @@ function OrganizationSettings({
         {showSendingLimits ? <SendingLimitsMenuItem /> : null}
         {showApiKeys ? <ApiKeysMenuItem /> : null}
         {showWebhooks ? <WebhooksMenuItem /> : null}
+        {showWebhooks ? <ConnectorsMenuItem /> : null}
+        {showWebhooks ? <AlarmMenuItem /> : null}
         {showAudit ? <AuditMenuItem /> : null}
       </ul>
     </section>
@@ -334,6 +339,45 @@ function TemplatesMenuItem() {
   );
 }
 
+/** Konektor data broadcast: jumlah konektor. */
+function ConnectorsMenuItem() {
+  const list = useQuery(connectorsQuery);
+  return (
+    <MenuRow
+      to="/pengaturan/konektor-data"
+      icon={Database}
+      label={t.connectors.title}
+      hint={t.connectors.menuHint}
+      status={list.data ? t.connectors.menuCount(list.data.connectors.length) : null}
+      loading={list.isPending}
+    />
+  );
+}
+
+/** Alarm Telegram: aktif / nonaktif / belum diatur. */
+function AlarmMenuItem() {
+  const alarm = useQuery(telegramAlarmQuery);
+  const telegram = alarm.data?.telegram;
+  return (
+    <MenuRow
+      to="/pengaturan/alarm"
+      icon={BellRing}
+      label={t.alarms.title}
+      hint={t.alarms.menuHint}
+      status={
+        telegram
+          ? !telegram.configured
+            ? t.alarms.menuOff
+            : telegram.enabled
+              ? t.alarms.menuOn
+              : t.alarms.menuPaused
+          : null
+      }
+      loading={alarm.isPending}
+    />
+  );
+}
+
 /** API key: jumlah key aktif. */
 function ApiKeysMenuItem() {
   const list = useQuery({
@@ -379,7 +423,12 @@ function MenuRow({
   status,
   loading,
 }: {
-  to: '/pengaturan/api-key' | '/pengaturan/webhook' | '/pengaturan/template';
+  to:
+    | '/pengaturan/api-key'
+    | '/pengaturan/webhook'
+    | '/pengaturan/template'
+    | '/pengaturan/konektor-data'
+    | '/pengaturan/alarm';
   icon: LucideIcon;
   label: string;
   hint: string;

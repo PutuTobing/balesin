@@ -63,6 +63,11 @@ export const FAKE_META = {
       display: '+62 811-0000-1017',
       verifiedName: 'Maju Jaya Template',
     },
+    broadcast: {
+      id: '100000000000018',
+      display: '+62 811-0000-1018',
+      verifiedName: 'Maju Jaya Broadcast',
+    },
   },
   profile: {
     about: 'Internet cepat untuk rumah dan kantor.',

@@ -53,7 +53,7 @@ describe('navigasi kerangka aplikasi', () => {
     fireEvent.click(navLink(label));
 
     expect(await screen.findByRole('heading', { level: 1, name: label })).toBeVisible();
-    expect(screen.getByRole('heading', { level: 2, name: emptyTitle })).toBeVisible();
+    expect(await screen.findByRole('heading', { level: 2, name: emptyTitle })).toBeVisible();
     expect(router.state.location.pathname).toBe(path);
     expect(navLink(label)).toHaveAttribute('aria-current', 'page');
     expect(navLink(t.nav.inbox)).not.toHaveAttribute('aria-current');

@@ -127,17 +127,13 @@ export function NewConversationDialog({
               maxLength={24}
             />
             <div className={styles.tplPick}>
-              <div className={styles.tplHead}>
-                <span className={styles.tplLabel}>{n.templateLabel}</span>
-                {template ? (
-                  <Button variant="ghost" onClick={() => pick(null)}>
-                    {n.changeTemplate}
-                  </Button>
-                ) : null}
-              </div>
+              <span className={styles.tplLabel}>{n.templateLabel}</span>
               {template ? (
                 <>
-                  <span className={styles.tplName}>{template.name}</span>
+                  <div className={styles.tplChosen}>
+                    <span className={styles.tplName}>{template.name}</span>
+                    <Button onClick={() => pick(null)}>{n.changeTemplate}</Button>
+                  </div>
                   <TemplateFillFields
                     template={template}
                     values={values}

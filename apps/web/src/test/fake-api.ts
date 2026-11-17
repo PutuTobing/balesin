@@ -428,6 +428,9 @@ export function installFakeApi(options: FakeApiOptions = {}): FakeApi {
         ? json(options.twoFactorStatus ?? fakeTwoFactorStatus(session.user.role))
         : unauthenticated(),
     [`GET ${API_ROUTES.branding.get}`]: () => json(options.branding ?? defaultBranding),
+    // Broadcast: bawaan belum ada kampanye (tes broadcast mengganti lewat `routes`).
+    [`GET ${API_ROUTES.broadcasts.list}`]: () =>
+      session ? json({ broadcasts: [], nextCursor: null }) : unauthenticated(),
     [`GET ${API_ROUTES.setup.status}`]: () =>
       json(
         options.setupStatus ?? {

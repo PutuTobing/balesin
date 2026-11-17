@@ -6,11 +6,13 @@ import {
   ListChecks,
   Music,
   Paperclip,
+  Plus,
   Reply,
   SendHorizontal,
   Video,
   X,
 } from 'lucide-react';
+import { DropdownMenu } from 'radix-ui';
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { Icon } from '../../components/ui/Icon';
 import { IconButton } from '../../components/ui/IconButton';
@@ -197,6 +199,34 @@ export function Composer({
     send();
   };
 
+  const extras = [
+    {
+      key: 'attach' as const,
+      label: k.attach,
+      icon: Paperclip,
+      disabled: disabled || paused,
+    },
+    {
+      key: 'interactive' as const,
+      label: k.interactive,
+      icon: ListChecks,
+      disabled: disabled || paused || locked || file !== null,
+    },
+    {
+      key: 'template' as const,
+      label: k.template,
+      icon: LayoutTemplate,
+      disabled: disabled || paused || locked,
+    },
+  ];
+
+  /** Aksi tambahan (event handler, bukan saat render). */
+  const runExtra = (key: (typeof extras)[number]['key']) => {
+    if (key === 'attach') fileRef.current?.click();
+    else if (key === 'interactive') setInteractiveOpen(true);
+    else setTemplateOpen(true);
+  };
+
   const kind = file ? guessMediaKind(file) : null;
   const replyBody = replyTo ? messageBody(replyTo) : null;
 
@@ -271,30 +301,73 @@ export function Composer({
           onChange={(event) => pickFile(event.target.files?.[0])}
           data-testid="composer-file"
         />
-        <IconButton
-          label={k.attach}
-          icon={Paperclip}
-          tooltipSide="top"
-          disabled={disabled || paused}
-          aria-describedby={pausedNoticeId}
-          onClick={() => fileRef.current?.click()}
-        />
-        <IconButton
-          label={k.interactive}
-          icon={ListChecks}
-          tooltipSide="top"
-          disabled={disabled || paused || locked || file !== null}
-          aria-describedby={pausedNoticeId}
-          onClick={() => setInteractiveOpen(true)}
-        />
-        <IconButton
-          label={k.template}
-          icon={LayoutTemplate}
-          tooltipSide="top"
-          disabled={disabled || paused || locked}
-          aria-describedby={pausedNoticeId}
-          onClick={() => setTemplateOpen(true)}
-        />
+        {isHp ? (
+          // HP: satu tombol "+" → menu berlabel, supaya kotak tulis tetap lebar (review template TM1).
+          <DropdownMenu.Root modal={false}>
+            <DropdownMenu.Trigger asChild>
+              <button
+                type="button"
+                className={styles.moreTrigger}
+                aria-label={k.more}
+                aria-describedby={pausedNoticeId}
+                disabled={disabled}
+              >
+                <Icon icon={Plus} size={20} />
+              </button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                side="top"
+                align="start"
+                sideOffset={8}
+                collisionPadding={16}
+                className={styles.moreMenu}
+              >
+                {extras.map((extra) => (
+                  <DropdownMenu.Item
+                    key={extra.key}
+                    className={styles.moreItem}
+                    disabled={extra.disabled}
+                    onSelect={() => runExtra(extra.key)}
+                  >
+                    <Icon icon={extra.icon} size={20} />
+                    <span className={styles.moreText}>
+                      <span className={styles.moreLabel}>{k.moreItems[extra.key].label}</span>
+                      <span className={styles.moreHint}>{k.moreItems[extra.key].hint}</span>
+                    </span>
+                  </DropdownMenu.Item>
+                ))}
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
+        ) : (
+          <>
+            <IconButton
+              label={k.attach}
+              icon={Paperclip}
+              tooltipSide="top"
+              disabled={disabled || paused}
+              aria-describedby={pausedNoticeId}
+              onClick={() => fileRef.current?.click()}
+            />
+            <IconButton
+              label={k.interactive}
+              icon={ListChecks}
+              tooltipSide="top"
+              disabled={disabled || paused || locked || file !== null}
+              aria-describedby={pausedNoticeId}
+              onClick={() => setInteractiveOpen(true)}
+            />
+            <IconButton
+              label={k.template}
+              icon={LayoutTemplate}
+              tooltipSide="top"
+              disabled={disabled || paused || locked}
+              aria-describedby={pausedNoticeId}
+              onClick={() => setTemplateOpen(true)}
+            />
+          </>
+        )}
         <textarea
           ref={inputRef}
           value={text}

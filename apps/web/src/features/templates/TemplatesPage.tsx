@@ -8,7 +8,7 @@ import {
 } from '@balesin/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { LayoutTemplate, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
+import { LayoutTemplate, Plus, RefreshCw, Sparkles } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import {
   ChatIllustration,
@@ -16,11 +16,9 @@ import {
   LoadFailedIllustration,
 } from '../../components/illustrations/illustrations';
 import { Button } from '../../components/ui/Button';
-import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { SelectField } from '../../components/ui/Field';
 import { Icon } from '../../components/ui/Icon';
-import { IconButton } from '../../components/ui/IconButton';
 import { Notice } from '../../components/ui/Notice';
 import { Page } from '../../components/ui/Page';
 import { SearchField } from '../../components/ui/SearchField';
@@ -29,6 +27,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
+import { cx } from '../../lib/cx';
 import { formatDateTimeInline } from '../../lib/format';
 import { useCan } from '../auth/session';
 import { inboxChannelsQuery } from '../inbox/inbox-queries';
@@ -58,7 +57,6 @@ export function TemplatesPage() {
   const [category, setCategory] = useState<TemplateCategory | ''>('');
   const [done, setDone] = useState<string | null>(() => takeTemplateFlash()?.message ?? null);
   const [presetsOpen, setPresetsOpen] = useState(false);
-  const [removing, setRemoving] = useState<MessageTemplate | null>(null);
 
   const whatsapp = useMemo(
     () => (channels.data?.channels ?? []).filter((channel) => channel.type === 'whatsapp'),
@@ -70,15 +68,6 @@ export function TemplatesPage() {
     mutationFn: () => endpoints.templates.sync(),
     onMutate: () => setDone(null),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: templateKeys.all }),
-  });
-  const remove = useMutation({
-    mutationFn: (template: MessageTemplate) => endpoints.templates.remove(template.id),
-    onSuccess: (_, template) => {
-      setRemoving(null);
-      setDone(c.removed(template.name));
-      queryClient.removeQueries({ queryKey: templateKeys.detail(template.id) });
-      void queryClient.invalidateQueries({ queryKey: templateKeys.all });
-    },
   });
 
   const items = useMemo(() => {
@@ -160,12 +149,9 @@ export function TemplatesPage() {
             </ul>
           </Notice>
         ) : null}
-        {sync.isError || remove.isError ? (
+        {sync.isError ? (
           <Notice tone="danger" role="alert">
-            {(() => {
-              const error = sync.error ?? remove.error;
-              return isApiError(error) ? error.message : t.api.network;
-            })()}
+            {isApiError(sync.error) ? sync.error.message : t.api.network}
           </Notice>
         ) : null}
 
@@ -271,11 +257,6 @@ export function TemplatesPage() {
                     key={template.id}
                     template={template}
                     channelName={whatsapp.length > 1 ? channelName(template.channelId) : null}
-                    onRemove={() => {
-                      setDone(null);
-                      remove.reset();
-                      setRemoving(template);
-                    }}
                   />
                 ))}
               </ul>
@@ -296,32 +277,20 @@ export function TemplatesPage() {
           });
         }}
       />
-      <ConfirmDialog
-        open={removing !== null}
-        title={c.removeTitle(removing?.name ?? '')}
-        body={removing?.metaTemplateId ? c.removeBodyMeta : c.removeBodyDraft}
-        cancelLabel={c.cancel}
-        confirmLabel={remove.isPending ? c.removing : c.removeConfirm}
-        confirmVariant="danger"
-        onCancel={() => setRemoving(null)}
-        onConfirm={() => {
-          if (removing && !remove.isPending) remove.mutate(removing);
-        }}
-      />
     </Page>
   );
 }
 
+/** Seluruh kartu = tautan ke halaman ubah (hapus hanya di halaman ubah — review template TM-S1). */
 function TemplateRow({
   template,
   channelName,
-  onRemove,
 }: {
   template: MessageTemplate;
   channelName: string | null;
-  onRemove: () => void;
 }) {
   const otp = template.category === 'AUTHENTICATION';
+  const detailsId = `template-${template.id}-rincian`;
   const facts = [
     c.categoryShort[template.category],
     languageLabel(template.language),
@@ -330,37 +299,39 @@ function TemplateRow({
     c.updatedAt(formatDateTimeInline(template.updatedAt)),
   ].filter(Boolean);
   return (
-    <li className={styles.item}>
-      <div className={styles.itemHead}>
-        <Icon icon={LayoutTemplate} size={20} className={styles.itemIcon} />
-        <Link
-          to="/pengaturan/template/$templateId"
-          params={{ templateId: template.id }}
-          className={styles.itemName}
-          aria-label={c.open(template.name)}
-        >
-          {template.name}
-        </Link>
-        <StatusBadge
-          tone={statusTone(template.status)}
-          label={TEMPLATE_STATUS_LABELS[template.status]}
-          className={styles.itemStatus}
-        />
-        <IconButton label={c.remove(template.name)} icon={Trash2} onClick={onRemove} />
-      </div>
-      {otp && !template.content.body.text.trim() ? null : (
-        <p className={styles.itemBody} dir="auto">
-          {otp ? c.otpPreview('{{1}}') : template.content.body.text}
-        </p>
-      )}
-      {template.status === 'REJECTED' && template.rejectedReason ? (
-        <p className={styles.itemDanger}>{rejectionText(template.rejectedReason)}</p>
-      ) : null}
-      <div className={styles.itemMeta}>
-        <span>{facts.join(' · ')}</span>
-        {template.localChanges ? <span className={styles.chip}>{c.localChanges}</span> : null}
-        {template.source === 'meta' ? <span className={styles.chip}>{c.fromMeta}</span> : null}
-      </div>
+    <li>
+      <Link
+        to="/pengaturan/template/$templateId"
+        params={{ templateId: template.id }}
+        className={cx(styles.item, styles.itemLink)}
+        aria-label={c.open(template.name)}
+        aria-describedby={detailsId}
+      >
+        <span className={styles.itemHead}>
+          <Icon icon={LayoutTemplate} size={20} className={styles.itemIcon} />
+          <span className={styles.itemName}>{template.name}</span>
+          <StatusBadge
+            tone={statusTone(template.status)}
+            label={TEMPLATE_STATUS_LABELS[template.status]}
+            className={styles.itemStatus}
+          />
+        </span>
+        <span id={detailsId} className={styles.itemDetails}>
+          {otp && !template.content.body.text.trim() ? null : (
+            <span className={styles.itemBody} dir="auto">
+              {otp ? c.otpPreview('{{1}}') : template.content.body.text}
+            </span>
+          )}
+          {template.status === 'REJECTED' && template.rejectedReason ? (
+            <span className={styles.itemDanger}>{rejectionText(template.rejectedReason)}</span>
+          ) : null}
+          <span className={styles.itemMeta}>
+            <span>{facts.join(' · ')}</span>
+            {template.localChanges ? <span className={styles.chip}>{c.localChanges}</span> : null}
+            {template.source === 'meta' ? <span className={styles.chip}>{c.fromMeta}</span> : null}
+          </span>
+        </span>
+      </Link>
     </li>
   );
 }

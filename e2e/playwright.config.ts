@@ -18,6 +18,8 @@ import { BASE_URL, VIEWPORTS, webServer } from './viewports';
  * masing berjalan sendiri di sela proyek paralel, tidak bersamaan dengannya.
  */
 const sharedEmailSpecs = /(tim-tanpa|tim-dengan|keamanan-dengan)-email\.spec\.ts$/;
+/** Spec yang mengubah keadaan seluruh organisasi (ambang broadcast) dan peka rem darurat. */
+const serialSpecs = /broadcast\.spec\.ts$/;
 const desktop = { ...devices['Desktop Chrome'], viewport: VIEWPORTS.desktop };
 const hp = {
   ...devices['Desktop Chrome'],
@@ -59,18 +61,27 @@ export default defineConfig({
     {
       name: 'desktop-1440',
       dependencies: ['tanpa-email'],
-      testIgnore: sharedEmailSpecs,
+      testIgnore: [sharedEmailSpecs, serialSpecs],
       use: { ...desktop, storageState: OWNER_STATE_PATH },
     },
     {
       name: 'hp-390',
       dependencies: ['tanpa-email'],
-      testIgnore: sharedEmailSpecs,
+      testIgnore: [sharedEmailSpecs, serialSpecs],
       use: { ...hp, storageState: OWNER_STATE_PATH },
     },
     {
-      name: 'dengan-email',
+      // Setelah proyek paralel, satu per satu: broadcast sungguhan (rem darurat `inbox-balas` menjeda
+      // semua kampanye organisasi; ambang persetujuan berlaku organisasi).
+      name: 'berurutan',
       dependencies: ['desktop-1440', 'hp-390'],
+      testMatch: serialSpecs,
+      workers: 1,
+      use: { ...desktop, storageState: OWNER_STATE_PATH },
+    },
+    {
+      name: 'dengan-email',
+      dependencies: ['berurutan'],
       testMatch: /(tim|keamanan)-dengan-email\.spec\.ts$/,
       // Satu per satu: kedua berkas membuat kejadian keamanan baru dan membaca banner Owner yang
       // sama ("N kejadian keamanan baru"); bila paralel, kejadian dari berkas lain memunculkan

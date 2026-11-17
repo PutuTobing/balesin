@@ -95,7 +95,7 @@ export function TemplateSendDialog({
     >
       {template ? (
         <div className={styles.tplStep}>
-          <div className={styles.tplHead}>
+          <div className={styles.tplBack}>
             <Button variant="ghost" onClick={() => pick(null)}>
               <Icon icon={ArrowLeft} size={16} />
               {s.back}

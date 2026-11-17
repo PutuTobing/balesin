@@ -413,14 +413,6 @@
   gap: var(--space-12);
 }
 
-.tplHead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-8);
-}
-
 .tplName {
   min-width: 0;
   overflow: hidden;
@@ -451,4 +443,96 @@
 .tplNote {
   color: var(--ink-2);
   font-size: var(--text-13);
+}
+
+/* ---------- HP: tombol "+" → menu berlabel (lampiran, pesan pilihan, template) ---------- */
+
+.moreTrigger {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--size-touch);
+  height: var(--size-touch);
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+}
+
+.moreTrigger[data-state='open'] {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.moreTrigger:disabled {
+  opacity: 0.5;
+}
+
+.moreMenu {
+  z-index: 40;
+  width: min(22rem, calc(100vw - var(--space-32)));
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+}
+
+.moreItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-height: var(--space-48);
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-input);
+  color: var(--ink);
+  cursor: pointer;
+  user-select: none;
+}
+
+.moreItem[data-highlighted] {
+  outline: none;
+  background: var(--surface-2);
+}
+
+.moreItem[data-disabled] {
+  color: var(--ink-2);
+  cursor: default;
+}
+
+.moreItem > svg {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.moreText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.moreLabel {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.moreHint {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+/* Dialog kirim template: nama template di bawah "← Pilih template lain" (satu kelompok). */
+.tplBack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+/* Percakapan baru: nama template + "Ganti template" sebaris. */
+.tplChosen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8) var(--space-12);
 }

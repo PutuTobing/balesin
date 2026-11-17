@@ -221,6 +221,30 @@ const broadcastRoute = createRoute({
   ),
 });
 
+/** Broadcast → kampanye baru (wizard; draf dibuat di langkah pertama). */
+const broadcastNewRoute = createRoute({
+  getParentRoute,
+  path: 'broadcast/baru',
+  staticData: { page: { title: t.broadcast.newTitle, parent: 'broadcast' } },
+  beforeLoad: ({ context }) => guardNavRoute(context.session, navPermission('/broadcast')),
+  component: lazyRouteComponent(
+    () => import('../features/broadcast/BroadcastCampaignPage'),
+    'BroadcastNewPage',
+  ),
+});
+
+/** Broadcast → satu kampanye: draf = wizard, selainnya = detail (progres, laporan, penerima). */
+const broadcastCampaignRoute = createRoute({
+  getParentRoute,
+  path: 'broadcast/$broadcastId',
+  staticData: { page: { title: t.broadcast.detailTitle, parent: 'broadcast' } },
+  beforeLoad: ({ context }) => guardNavRoute(context.session, navPermission('/broadcast')),
+  component: lazyRouteComponent(
+    () => import('../features/broadcast/BroadcastCampaignPage'),
+    'BroadcastCampaignPage',
+  ),
+});
+
 const ticketsRoute = createRoute({
   getParentRoute,
   path: 'tiket',
@@ -344,6 +368,30 @@ const webhooksRoute = createRoute({
   component: lazyRouteComponent(
     () => import('../features/integrations/WebhooksPage'),
     'WebhooksPage',
+  ),
+});
+
+/** Pengaturan → Konektor data (sumber penerima broadcast): `integrations.manage`. */
+const connectorsRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/konektor-data',
+  staticData: { page: { title: t.connectors.title, parent: 'settings' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'integrations.manage'),
+  component: lazyRouteComponent(
+    () => import('../features/broadcast/ConnectorsPage'),
+    'ConnectorsPage',
+  ),
+});
+
+/** Pengaturan → Alarm Telegram: `integrations.manage`. */
+const alarmsRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/alarm',
+  staticData: { page: { title: t.alarms.title, parent: 'settings' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'integrations.manage'),
+  component: lazyRouteComponent(
+    () => import('../features/broadcast/TelegramAlarmPage'),
+    'TelegramAlarmPage',
   ),
 });
 
@@ -517,6 +565,8 @@ const appChildren = [
   inboxRoute,
   contactsRoute,
   broadcastRoute,
+  broadcastNewRoute,
+  broadcastCampaignRoute,
   ticketsRoute,
   reportsRoute,
   settingsRoute,
@@ -531,6 +581,8 @@ const appChildren = [
   notificationsRoute,
   apiKeysRoute,
   webhooksRoute,
+  connectorsRoute,
+  alarmsRoute,
   channelWizardRoute,
   channelRoute,
   teamRoute,

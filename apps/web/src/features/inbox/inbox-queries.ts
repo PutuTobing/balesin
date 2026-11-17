@@ -399,6 +399,11 @@ export function applyInboxEvent(queryClient: QueryClient, event: InboxStreamEven
   switch (event.type) {
     case 'hello':
       return;
+    case 'resync':
+      // Server membuang event karena terlalu banyak (mis. broadcast besar): muat ulang lewat REST.
+      refreshInbox(queryClient);
+      void queryClient.invalidateQueries({ queryKey: ['broadcasts'] });
+      return;
     case 'conversation.updated': {
       const now = Date.now();
       // Server hanya mengirim event dalam cakupan penerima: percakapan ini terlihat lagi.

@@ -287,7 +287,8 @@ test('percakapan baru ke nomor yang belum pernah chat → chat terbuka, dipegang
   await page.getByRole('button', { name: 'Percakapan baru' }).click();
   const dialog = page.getByRole('dialog', { name: 'Mulai percakapan baru' });
   const sender = dialog.getByLabel('Kirim dari nomor');
-  if ((await sender.count()) > 0) await sender.selectOption(channel?.id ?? '');
+  // Banyak nomor di stack E2E: pilihan nomor selalu tampil (tunggu daftar nomornya dimuat).
+  await sender.selectOption(channel?.id ?? '');
   // Format lokal 08… dinormalkan server ke +62….
   await dialog.getByLabel('Nomor tujuan').fill(`0${fresh.waId.slice(2)}`);
   await dialog.getByRole('button', { name: new RegExp(templateName) }).click();

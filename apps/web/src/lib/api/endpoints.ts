@@ -133,6 +133,28 @@ import {
   type TemplateContent,
   type TemplateSendParametersInput,
   type TemplateStatus,
+  broadcastConnectorListResponseSchema,
+  broadcastConnectorOptionsResponseSchema,
+  broadcastConnectorResponseSchema,
+  broadcastConnectorTestResponseSchema,
+  broadcastEstimateResponseSchema,
+  broadcastImportResponseSchema,
+  broadcastListResponseSchema,
+  broadcastPreviewResponseSchema,
+  broadcastRecipientListResponseSchema,
+  broadcastReportResponseSchema,
+  broadcastResponseSchema,
+  broadcastSettingsResponseSchema,
+  telegramAlarmSettingsResponseSchema,
+  telegramTestResponseSchema,
+  type BroadcastSegmentRequest,
+  type BroadcastStatus,
+  type CreateBroadcastConnectorRequest,
+  type CreateBroadcastRequest,
+  type UpdateBroadcastConnectorRequest,
+  type UpdateBroadcastRequest,
+  type UpdateBroadcastSettingsRequest,
+  type UpdateTelegramAlarmRequest,
 } from '@balesin/shared';
 import { z } from 'zod';
 import { api, type ApiClient } from './client';
@@ -863,6 +885,210 @@ export function createEndpoints(client: ApiClient) {
           method: 'POST',
           body,
           schema: templateResponseSchema,
+        }),
+    },
+    /** Broadcast / kampanye template (docs/KONTRAK-API-BROADCAST.md, `broadcast.send`). */
+    broadcasts: {
+      list: (status: BroadcastStatus | null, cursor: string | null, signal?: AbortSignal) => {
+        const query = new URLSearchParams();
+        if (status) query.set('status', status);
+        if (cursor) query.set('cursor', cursor);
+        const text = query.toString();
+        return client.request(`${API_ROUTES.broadcasts.list}${text ? `?${text}` : ''}`, {
+          schema: broadcastListResponseSchema,
+          signal,
+        });
+      },
+      get: (broadcastId: string, signal?: AbortSignal) =>
+        client.request(apiPath(API_ROUTES.broadcasts.broadcast, { broadcastId }), {
+          schema: broadcastResponseSchema,
+          signal,
+        }),
+      create: (body: CreateBroadcastRequest) =>
+        client.request(API_ROUTES.broadcasts.list, {
+          method: 'POST',
+          body,
+          schema: broadcastResponseSchema,
+        }),
+      update: (broadcastId: string, body: UpdateBroadcastRequest) =>
+        client.request(apiPath(API_ROUTES.broadcasts.broadcast, { broadcastId }), {
+          method: 'PATCH',
+          body,
+          schema: broadcastResponseSchema,
+        }),
+      remove: (broadcastId: string) =>
+        client.request(apiPath(API_ROUTES.broadcasts.broadcast, { broadcastId }), {
+          method: 'DELETE',
+          schema: z.object({ deleted: z.literal(true) }),
+        }),
+      /** Penerima dari CSV/XLSX (multipart `file`); `phoneColumn` = kolom nomor pilihan. */
+      upload: (broadcastId: string, file: File, phoneColumn?: string) => {
+        const form = new FormData();
+        form.append('file', file, file.name);
+        const query = phoneColumn ? `?phoneColumn=${encodeURIComponent(phoneColumn)}` : '';
+        return client.request(`${apiPath(API_ROUTES.broadcasts.upload, { broadcastId })}${query}`, {
+          method: 'POST',
+          body: form,
+          schema: broadcastImportResponseSchema,
+        });
+      },
+      segment: (broadcastId: string, body: BroadcastSegmentRequest) =>
+        client.request(apiPath(API_ROUTES.broadcasts.segment, { broadcastId }), {
+          method: 'POST',
+          body,
+          schema: broadcastImportResponseSchema,
+        }),
+      fromConnector: (broadcastId: string, connectorId: string) =>
+        client.request(apiPath(API_ROUTES.broadcasts.connector, { broadcastId }), {
+          method: 'POST',
+          body: { connectorId },
+          schema: broadcastImportResponseSchema,
+        }),
+      recipients: (
+        broadcastId: string,
+        status: string | null,
+        cursor: string | null,
+        signal?: AbortSignal,
+      ) => {
+        const query = new URLSearchParams();
+        if (status) query.set('status', status);
+        if (cursor) query.set('cursor', cursor);
+        const text = query.toString();
+        return client.request(
+          `${apiPath(API_ROUTES.broadcasts.recipients, { broadcastId })}${text ? `?${text}` : ''}`,
+          { schema: broadcastRecipientListResponseSchema, signal },
+        );
+      },
+      preview: (broadcastId: string, signal?: AbortSignal) =>
+        client.request(apiPath(API_ROUTES.broadcasts.preview, { broadcastId }), {
+          schema: broadcastPreviewResponseSchema,
+          signal,
+        }),
+      estimate: (broadcastId: string, signal?: AbortSignal) =>
+        client.request(apiPath(API_ROUTES.broadcasts.estimate, { broadcastId }), {
+          schema: broadcastEstimateResponseSchema,
+          signal,
+        }),
+      /** Ajukan (wajib konfirmasi identitas) → `scheduled` atau `pending_approval`. */
+      submit: (broadcastId: string, confirmation: IdentityConfirmation) =>
+        client.request(apiPath(API_ROUTES.broadcasts.submit, { broadcastId }), {
+          method: 'POST',
+          body: { confirmation },
+          schema: broadcastResponseSchema,
+        }),
+      approve: (broadcastId: string, confirmation: IdentityConfirmation) =>
+        client.request(apiPath(API_ROUTES.broadcasts.approve, { broadcastId }), {
+          method: 'POST',
+          body: { confirmation },
+          schema: broadcastResponseSchema,
+        }),
+      reject: (broadcastId: string, reason: string) =>
+        client.request(apiPath(API_ROUTES.broadcasts.reject, { broadcastId }), {
+          method: 'POST',
+          body: { reason },
+          schema: broadcastResponseSchema,
+        }),
+      /** Jeda seketika (arah aman, tanpa konfirmasi). */
+      pause: (broadcastId: string) =>
+        client.request(apiPath(API_ROUTES.broadcasts.pause, { broadcastId }), {
+          method: 'POST',
+          body: {},
+          schema: broadcastResponseSchema,
+        }),
+      resume: (broadcastId: string, confirmation: IdentityConfirmation) =>
+        client.request(apiPath(API_ROUTES.broadcasts.resume, { broadcastId }), {
+          method: 'POST',
+          body: { confirmation },
+          schema: broadcastResponseSchema,
+        }),
+      cancel: (broadcastId: string) =>
+        client.request(apiPath(API_ROUTES.broadcasts.cancel, { broadcastId }), {
+          method: 'POST',
+          body: {},
+          schema: broadcastResponseSchema,
+        }),
+      report: (broadcastId: string, signal?: AbortSignal) =>
+        client.request(apiPath(API_ROUTES.broadcasts.report, { broadcastId }), {
+          schema: broadcastReportResponseSchema,
+          signal,
+        }),
+      /** CSV per penerima (`contacts.export`): GET ber-CSRF → Blob, tidak pernah lewat cache. */
+      exportCsv: (broadcastId: string) =>
+        client.download(apiPath(API_ROUTES.broadcasts.exportCsv, { broadcastId }), {
+          accept: 'text/csv',
+        }),
+      connectorOptions: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.broadcasts.connectorOptions, {
+          schema: broadcastConnectorOptionsResponseSchema,
+          signal,
+        }),
+      settings: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.broadcasts.settings, {
+          schema: broadcastSettingsResponseSchema,
+          signal,
+        }),
+      updateSettings: (body: UpdateBroadcastSettingsRequest) =>
+        client.request(API_ROUTES.broadcasts.settings, {
+          method: 'PUT',
+          body,
+          schema: broadcastSettingsResponseSchema,
+        }),
+    },
+    /** Konektor data REST untuk penerima broadcast (`integrations.manage`). */
+    connectors: {
+      list: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.broadcasts.connectors, {
+          schema: broadcastConnectorListResponseSchema,
+          signal,
+        }),
+      create: (body: CreateBroadcastConnectorRequest) =>
+        client.request(API_ROUTES.broadcasts.connectors, {
+          method: 'POST',
+          body,
+          schema: broadcastConnectorResponseSchema,
+        }),
+      update: (connectorId: string, body: UpdateBroadcastConnectorRequest) =>
+        client.request(apiPath(API_ROUTES.broadcasts.connectorItem, { connectorId }), {
+          method: 'PATCH',
+          body,
+          schema: broadcastConnectorResponseSchema,
+        }),
+      remove: (connectorId: string) =>
+        client.request(apiPath(API_ROUTES.broadcasts.connectorItem, { connectorId }), {
+          method: 'DELETE',
+          schema: z.object({ deleted: z.literal(true) }),
+        }),
+      test: (connectorId: string) =>
+        client.request(apiPath(API_ROUTES.broadcasts.connectorTest, { connectorId }), {
+          method: 'POST',
+          body: {},
+          schema: broadcastConnectorTestResponseSchema,
+        }),
+    },
+    /** Alarm Telegram (`integrations.manage`); token tidak pernah dikirim balik. */
+    alarms: {
+      telegram: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.alarms.telegram, {
+          schema: telegramAlarmSettingsResponseSchema,
+          signal,
+        }),
+      updateTelegram: (body: UpdateTelegramAlarmRequest) =>
+        client.request(API_ROUTES.alarms.telegram, {
+          method: 'PUT',
+          body,
+          schema: telegramAlarmSettingsResponseSchema,
+        }),
+      removeTelegram: (confirmation: IdentityConfirmation) =>
+        client.request(API_ROUTES.alarms.telegram, {
+          method: 'DELETE',
+          body: { confirmation },
+          schema: telegramAlarmSettingsResponseSchema,
+        }),
+      testTelegram: () =>
+        client.request(API_ROUTES.alarms.telegramTest, {
+          method: 'POST',
+          body: {},
+          schema: telegramTestResponseSchema,
         }),
     },
     /** Master tag (lihat `inbox.view`; buat `contacts.manage`). */

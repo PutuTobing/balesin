@@ -110,7 +110,10 @@ export function PresetDialog({
                         <p className={styles.presetMeta}>
                           {c.categoryShort[preset.category]} · {preset.description}
                         </p>
-                        {preset.content.body.text ? (
+                        {preset.category === 'AUTHENTICATION' ? (
+                          // Isi OTP dibuat Meta: tampilkan contoh dengan sapaan aplikasi ("kamu").
+                          <p className={styles.presetBody}>{c.otpPreview('123456')}</p>
+                        ) : preset.content.body.text ? (
                           <p className={styles.presetBody}>{preset.content.body.text}</p>
                         ) : null}
                       </div>

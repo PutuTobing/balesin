@@ -104,10 +104,26 @@ ul.list,
   white-space: nowrap;
 }
 
+/* Seluruh kartu dapat diketuk (target besar di HP). */
+.itemLink {
+  color: inherit;
+  text-decoration: none;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.itemDetails {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
 @media (hover: hover) {
-  .itemName:hover {
+  .itemLink:hover {
+    border-color: var(--primary);
+  }
+
+  .itemLink:hover .itemName {
     color: var(--primary);
-    text-decoration: underline;
   }
 }
 
@@ -478,6 +494,22 @@ ul.issues,
 
 .bubbleHeader {
   font-weight: var(--weight-bold);
+}
+
+/* Variabel belum diisi: contoh nilai redup, atau chip tempat isian (bukan `{{n}}` mentah). */
+.varExample {
+  color: var(--ink-2);
+  font-style: italic;
+}
+
+.varChip {
+  padding: 0 var(--space-4);
+  border: 1px dashed var(--warning);
+  border-radius: var(--radius-input);
+  color: var(--warning-ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
 }
 
 .bubbleMedia {

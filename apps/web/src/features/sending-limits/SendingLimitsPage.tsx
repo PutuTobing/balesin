@@ -24,6 +24,7 @@ import { apiFieldErrors, zodFieldErrors, type FieldErrors } from '../../lib/form
 import { useCan } from '../auth/session';
 import { isConfirmationError } from '../identity/confirmation-error';
 import { IdentityDialog } from '../identity/IdentityDialog';
+import { BroadcastSettingsCard } from '../broadcast/BroadcastSettingsCard';
 import { inboxKeys, sendingLimitsQuery } from '../inbox/inbox-queries';
 import { parseLimit } from './parse-limit';
 import styles from './SendingLimits.module.css';
@@ -56,6 +57,7 @@ export function SendingLimitsPage() {
           <>
             <BrakeCard limits={limits.data.limits} />
             <LimitsCard limits={limits.data.limits} />
+            <BroadcastSettingsCard />
           </>
         ) : limits.isPending ? (
           <PageSkeleton />

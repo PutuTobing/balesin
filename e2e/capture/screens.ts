@@ -28,6 +28,7 @@ import { notificationScreens } from './screens-notifikasi';
 import { integrationScreens } from './screens-integrasi';
 import { teamScreens } from './screens-tim';
 import { templateScreens } from './screens-template';
+import { broadcastScreens } from './screens-broadcast';
 
 export interface Screen {
   /** Nama berkas: e2e/screenshots/<name>--<viewport>-<tema>.png */
@@ -994,4 +995,6 @@ export const screens: Screen[] = [
   ...integrationScreens,
   // Fase 4: template WhatsApp (Meta), kirim template di luar sesi, percakapan baru.
   ...templateScreens,
+  // Fase 4: broadcast, konektor data, alarm Telegram, pengaturan broadcast.
+  ...broadcastScreens,
 ];
