@@ -33,7 +33,7 @@ export const webServer = process.env.E2E_BASE_URL
         command: `pnpm --filter @balesin/web dev --port ${E2E_WEB_PORT} --strictPort`,
         cwd: '..',
         url: E2E_BASE_URL,
-        env: { BALESIN_API_PROXY: E2E_API_URL },
+        env: { BALESIN_API_PROXY: E2E_API_URL, BALESIN_DEV_NO_HMR: '1' },
         reuseExistingServer: false,
         timeout: 120_000,
       },

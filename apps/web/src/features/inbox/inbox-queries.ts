@@ -468,6 +468,11 @@ export function applyInboxEvent(queryClient: QueryClient, event: InboxStreamEven
             })),
           },
       );
+      // Gagal: event hanya membawa status — penjelasan (`failure`/`errorCode`) dan tombol "Kirim
+      // ulang" butuh pesan lengkap dari REST.
+      if (event.status === 'failed') {
+        void queryClient.invalidateQueries({ queryKey: inboxKeys.messages(event.conversationId) });
+      }
       scheduleListRefresh(queryClient);
       return;
   }

@@ -328,6 +328,26 @@ export const channelScreens: Screen[] = [
     prepare: (page) => scrollTo(page, 'Diagnosis webhook'),
   },
   {
+    name: 'nomor-bot',
+    path: detailPath(MAIN.id),
+    before: async (page) => {
+      await quietSecurity(page);
+      await channelDetail(page, MAIN, { bot: 'schedule' });
+    },
+    waitFor: 'text=Memegang chat baru',
+    prepare: (page) => scrollTo(page, 'Bot'),
+  },
+  {
+    name: 'nomor-bot-mati',
+    path: detailPath(MAIN.id),
+    before: async (page) => {
+      await quietSecurity(page);
+      await channelDetail(page, MAIN);
+    },
+    waitFor: 'text=Aktifkan bot untuk nomor ini',
+    prepare: (page) => scrollTo(page, 'Bot'),
+  },
+  {
     name: 'nomor-profil',
     path: detailPath(MAIN.id),
     before: async (page) => {

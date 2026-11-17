@@ -1,4 +1,4 @@
-import type { Message } from '@balesin/shared';
+import type { InteractiveMessage, Message } from '@balesin/shared';
 import {
   Bot,
   CircleAlert,
@@ -205,6 +205,9 @@ function MessageRow({
                 {body.text}
               </p>
             ) : null}
+            {message.interactiveMessage ? (
+              <InteractiveChoices message={message.interactiveMessage} />
+            ) : null}
             <p className={styles.meta}>
               {message.starredAt ? (
                 <span className={styles.starred}>
@@ -363,4 +366,42 @@ function failureText(message: Message): string {
 function quoteText(message: Message): string {
   const body = messageBody(message);
   return body.text ?? body.label ?? c.replyTo;
+}
+
+/** Tombol / daftar pilihan pesan interaktif KELUAR — semuanya teks biasa (isi bisa dari bot). */
+function InteractiveChoices({ message }: { message: InteractiveMessage }) {
+  const choices =
+    message.kind === 'button'
+      ? message.buttons.map((button) => ({ id: button.id, title: button.title, description: null }))
+      : message.sections.flatMap((section) =>
+          section.rows.map((row) => ({
+            id: row.id,
+            title: section.title?.trim() ? `${section.title} · ${row.title}` : row.title,
+            description: row.description ?? null,
+          })),
+        );
+  return (
+    <div className={styles.choices}>
+      {message.kind === 'list' ? (
+        <p className={styles.choicesOpen} dir="auto">
+          {t.inbox.content.listOpens(message.buttonText)}
+        </p>
+      ) : null}
+      <ul className={styles.choiceList} aria-label={t.inbox.content.choicesLabel}>
+        {choices.map((choice) => (
+          <li key={choice.id} className={styles.choice} dir="auto">
+            <span>{choice.title}</span>
+            {choice.description ? (
+              <span className={styles.choiceDescription}>{choice.description}</span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      {message.footer?.trim() ? (
+        <p className={styles.choicesFooter} dir="auto">
+          {message.footer}
+        </p>
+      ) : null}
+    </div>
+  );
 }

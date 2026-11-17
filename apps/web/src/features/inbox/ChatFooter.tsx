@@ -225,7 +225,13 @@ function ClaimBar({
   });
   return (
     <div className={styles.handling}>
-      <span>{other ? k.handledBy(other.name) : bot ? k.withBot : k.unassigned}</span>
+      <span className={styles.handlingLong}>
+        {other ? k.handledBy(other.name) : bot ? k.withBot : k.unassigned}
+      </span>
+      {/* Ringkas saat kotak tulis terfokus (keyboard HP terbuka): satu baris saja. */}
+      <span className={styles.handlingShort} aria-hidden="true">
+        {other ? k.handledBy(other.name) : bot ? k.withBotShort : k.unassignedShort}
+      </span>
       <Button variant="secondary" loading={claim.isPending} onClick={() => claim.mutate()}>
         {claim.isPending ? k.claiming : other || bot ? k.takeOver : k.claim}
       </Button>

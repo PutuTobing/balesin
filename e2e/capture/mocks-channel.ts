@@ -182,6 +182,8 @@ export async function channelDetail(
     webhookWarning?: boolean;
     /** Diagnosis webhook 24 jam (bawaan `ok`). */
     health?: 'ok' | 'idle' | 'attention';
+    /** Pengaturan bot channel (bawaan: mati). */
+    bot?: 'off' | 'schedule';
   } = {},
 ): Promise<(next: PhotoChannel) => void> {
   const base = `${API}/settings/channels/${channel.id}`;
@@ -191,6 +193,31 @@ export async function channelDetail(
   );
   await page.route(`${base}/webhook`, (route) =>
     json(route, photoWebhook(channel.id, options.webhookWarning ? HTTPS_WARNING : null)),
+  );
+  await page.route(`${base}/bot`, (route) =>
+    json(route, {
+      settings:
+        options.bot === 'schedule'
+          ? {
+              enabled: true,
+              hours: {
+                mode: 'schedule',
+                windows: [1, 2, 3, 4, 5].map((day) => ({ day, start: '17:00', end: '24:00' })),
+              },
+              timeoutMinutes: 10,
+              timezone: 'Asia/Jakarta',
+              activeNow: true,
+              updatedAt: ago(26),
+            }
+          : {
+              enabled: false,
+              hours: { mode: 'always' },
+              timeoutMinutes: null,
+              timezone: 'Asia/Jakarta',
+              activeNow: false,
+              updatedAt: null,
+            },
+    }),
   );
   await page.route(`${base}/webhook-health`, (route) =>
     json(route, photoHealth(options.health ?? 'ok')),

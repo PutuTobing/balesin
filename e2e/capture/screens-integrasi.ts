@@ -87,6 +87,29 @@ const WEBHOOKS = [
   },
 ];
 
+const MOBICHAT_WEBHOOK = {
+  id: '8c9d0e1f-0000-4000-8000-000000000003',
+  url: 'https://n8n.majujaya.co.id/webhook/ulan-cs',
+  description: 'Workflow ULAN (bot lama)',
+  events: ['message.received'],
+  enabled: true,
+  disabledReason: null,
+  consecutiveFailures: 0,
+  lastDeliveryAt: ago(60_000),
+  secretRotatedAt: ago(5 * 24 * HOUR),
+  previousSecretExpiresAt: null,
+  createdAt: ago(5 * 24 * HOUR),
+  format: 'mobichat',
+  botOnly: true,
+  mobichat: {
+    baseUrl: null,
+    apiKeyLast4: 'Xq7z',
+    apiKeyId: '7b8c9d0e-0000-4000-8000-000000000004',
+    apiKeyName: 'Bot ULAN',
+    apiKeyStatus: 'revoked',
+  },
+};
+
 const DELIVERIES = [
   {
     id: '9d0e1f2a-0000-4000-8000-000000000001',
@@ -263,6 +286,26 @@ export const integrationScreens: Screen[] = [
     prepare: async (page) => {
       await page.getByRole('button', { name: 'Tindakan lain' }).first().click();
       await page.getByRole('menu').waitFor();
+    },
+  }),
+  screen('webhook-mobichat-tambah', '/pengaturan/webhook', 'text=Bot tagihan & lapor gangguan', {
+    prepare: async (page) => {
+      await page.getByRole('button', { name: 'Tambah webhook' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Tambah webhook' });
+      await dialog.getByRole('radio', { name: 'MobiChat' }).click();
+      await dialog.getByLabel('URL penerima').fill('http://192.168.10.5:5678/webhook/ulan');
+      await settle(page);
+    },
+  }),
+  screen('webhook-mobichat', '/pengaturan/webhook', 'text=MobiChat', {
+    webhooks: [MOBICHAT_WEBHOOK, WEBHOOKS[0]],
+  }),
+  screen('webhook-rotasi', '/pengaturan/webhook', 'text=Bot tagihan & lapor gangguan', {
+    prepare: async (page) => {
+      await page.getByRole('button', { name: 'Tindakan lain' }).first().click();
+      await page.getByRole('menuitem', { name: 'Buat rahasia baru' }).click();
+      await page.getByRole('dialog', { name: 'Buat rahasia webhook baru' }).waitFor();
+      await settle(page);
     },
   }),
   screen('webhook-jaringan-privat', '/pengaturan/webhook', 'text=Bot tagihan & lapor gangguan', {

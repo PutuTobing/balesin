@@ -48,6 +48,15 @@
   white-space: nowrap;
 }
 
+/* HP/layar sentuh: tautan di baris sendiri dengan area tekan penuh. */
+@media (max-width: 640px), (pointer: coarse) {
+  .inlineLink {
+    display: flex;
+    align-items: center;
+    min-height: var(--size-touch);
+  }
+}
+
 /* Jumlah di samping judul: angka kecil di pil netral, tidak lebih tinggi dari baris judul. */
 .count {
   display: inline-grid;

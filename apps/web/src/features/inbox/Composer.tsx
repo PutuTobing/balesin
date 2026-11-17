@@ -1,6 +1,15 @@
 import type { Conversation, Message, QuickReply } from '@balesin/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { FileText, Music, Paperclip, Reply, SendHorizontal, Video, X } from 'lucide-react';
+import {
+  FileText,
+  ListChecks,
+  Music,
+  Paperclip,
+  Reply,
+  SendHorizontal,
+  Video,
+  X,
+} from 'lucide-react';
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { Icon } from '../../components/ui/Icon';
 import { IconButton } from '../../components/ui/IconButton';
@@ -11,6 +20,7 @@ import { ACCEPT, checkAttachment, guessMediaKind } from './attachments';
 import { messageBody } from './message-content';
 import { createOutboxItem, sendOutboxItem } from './outbox';
 import { slashQuery, useQuickReplies } from './quick-replies';
+import { InteractiveDialog } from './InteractiveDialog';
 import { QuickReplyPicker } from './QuickReplyPicker';
 import { endpoints } from '../../lib/api/endpoints';
 
@@ -57,6 +67,7 @@ export function Composer({
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [interactiveOpen, setInteractiveOpen] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const hintId = useId();
@@ -265,6 +276,14 @@ export function Composer({
           aria-describedby={pausedNoticeId}
           onClick={() => fileRef.current?.click()}
         />
+        <IconButton
+          label={k.interactive}
+          icon={ListChecks}
+          tooltipSide="top"
+          disabled={disabled || paused || locked || file !== null}
+          aria-describedby={pausedNoticeId}
+          onClick={() => setInteractiveOpen(true)}
+        />
         <textarea
           ref={inputRef}
           value={text}
@@ -314,6 +333,9 @@ export function Composer({
         <p className={styles.counter} data-over={tooLong ? '' : undefined}>
           {k.tooLong(text.length)}
         </p>
+      ) : null}
+      {interactiveOpen ? (
+        <InteractiveDialog conversation={conversation} onClose={() => setInteractiveOpen(false)} />
       ) : null}
     </div>
   );

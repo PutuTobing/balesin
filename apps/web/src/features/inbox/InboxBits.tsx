@@ -53,7 +53,9 @@ export function WindowCountdown({
   return (
     <span className={cx(styles.countdown, className)} data-tone={state.kind} title={title}>
       <Icon icon={expired ? TimerOff : Timer} size={16} className={styles.countdownIcon} />
-      <span aria-hidden="true">{remaining ? remaining.short : w.expiredShort}</span>
+      <span aria-hidden="true" data-part="short">
+        {remaining ? remaining.short : w.expiredShort}
+      </span>
       <span className="sr-only">{long}</span>
     </span>
   );

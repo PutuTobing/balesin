@@ -134,4 +134,5 @@ export const SECURITY_EVENT_FILTERS: Readonly<
   api_key_changed: { targetType: 'api_key' },
   webhook_changed: { targetType: 'webhook' },
   webhook_disabled: { action: 'webhook.auto_disabled' },
+  bot_enabled: { action: 'channel.bot_updated' },
 };

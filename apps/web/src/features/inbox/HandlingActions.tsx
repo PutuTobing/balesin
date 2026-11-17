@@ -1,6 +1,15 @@
 import { USER_ROLE_LABELS, type Conversation, type InboxAgent } from '@balesin/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, EllipsisVertical, RotateCcw, Undo2, UserRoundCog } from 'lucide-react';
+import {
+  Bot,
+  CheckCircle2,
+  EllipsisVertical,
+  Hand,
+  RotateCcw,
+  Undo2,
+  UserRoundCog,
+  UsersRound,
+} from 'lucide-react';
 import { DropdownMenu, RadioGroup } from 'radix-ui';
 import { useState } from 'react';
 import { Button } from '../../components/ui/Button';
@@ -16,7 +25,7 @@ import { agentsQuery, forgetConversation, inboxKeys, storeConversation } from '.
 
 const h = t.inbox.handling;
 
-type Action = 'assign' | 'unassign' | 'resolve' | 'reopen';
+type Action = 'assign' | 'unassign' | 'resolve' | 'reopen' | 'claim' | 'botOff' | 'botOn';
 
 /**
  * Penanganan percakapan (butir 7) di kepala chat: tandai selesai / buka lagi (tombol terlihat di
@@ -51,6 +60,12 @@ export function HandlingActions({
           return endpoints.inbox.resolve(id);
         case 'reopen':
           return endpoints.inbox.reopen(id);
+        case 'claim':
+          return endpoints.inbox.claim(id);
+        case 'botOff':
+          return endpoints.inbox.bot(id, false);
+        case 'botOn':
+          return endpoints.inbox.bot(id, true);
       }
     },
     onMutate: () => onError(null),
@@ -76,6 +91,7 @@ export function HandlingActions({
 
   if (!canReply) return null;
   const resolved = conversation.status === 'resolved';
+  const withBot = conversation.status === 'bot';
   const mine = conversation.assignee?.id === session?.user.id;
   const canUnassign = !resolved && conversation.assignee !== null && (canAssign || mine);
   const busy = mutation.isPending ? mutation.variables.action : null;
@@ -83,7 +99,13 @@ export function HandlingActions({
 
   return (
     <>
-      {isDesktop ? (
+      {isDesktop && withBot ? (
+        // Dipegang bot: serahkan ke antrian tim (ambil alih ada di menu dan di dasar ruang chat).
+        <Button onClick={() => run('botOff')} loading={busy === 'botOff'}>
+          {busy === 'botOff' ? null : <Icon icon={UsersRound} size={16} />}
+          {busy === 'botOff' ? h.working : h.botHandoff}
+        </Button>
+      ) : isDesktop ? (
         resolved ? (
           <Button onClick={() => run('reopen')} loading={busy === 'reopen'}>
             {busy === 'reopen' ? null : <Icon icon={RotateCcw} size={16} />}
@@ -116,7 +138,23 @@ export function HandlingActions({
             collisionPadding={8}
             className={styles.menu}
           >
-            {!isDesktop ? (
+            {withBot ? (
+              <>
+                {canAssign ? (
+                  <DropdownMenu.Item className={styles.item} onSelect={() => run('claim')}>
+                    <Icon icon={Hand} size={16} />
+                    {h.botTakeOver}
+                  </DropdownMenu.Item>
+                ) : null}
+                {!isDesktop ? (
+                  <DropdownMenu.Item className={styles.item} onSelect={() => run('botOff')}>
+                    <Icon icon={UsersRound} size={16} />
+                    {h.botHandoff}
+                  </DropdownMenu.Item>
+                ) : null}
+              </>
+            ) : null}
+            {!isDesktop || withBot ? (
               <DropdownMenu.Item
                 className={styles.item}
                 onSelect={() => run(resolved ? 'reopen' : 'resolve')}
@@ -137,7 +175,14 @@ export function HandlingActions({
                 {h.unassign}
               </DropdownMenu.Item>
             ) : null}
-            {isDesktop && !canAssign && !canUnassign ? (
+            {!withBot && !resolved ? (
+              // Bot channel mati / chat sudah selesai → server menjawab 409 dengan penjelasannya.
+              <DropdownMenu.Item className={styles.item} onSelect={() => run('botOn')}>
+                <Icon icon={Bot} size={16} />
+                {h.botResume}
+              </DropdownMenu.Item>
+            ) : null}
+            {isDesktop && resolved ? (
               <DropdownMenu.Item className={styles.item} disabled>
                 {h.nothing}
               </DropdownMenu.Item>

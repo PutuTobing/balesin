@@ -191,6 +191,9 @@ describe('review keamanan — Webhook', () => {
     await screen.findByText(webhook.url);
     fireEvent.keyDown(screen.getByRole('button', { name: w.actions }), { key: 'Enter' });
     fireEvent.click(await screen.findByRole('menuitem', { name: w.rotate }));
+    // Langkah pilihan (cabut rahasia lama sekarang?) sebelum konfirmasi identitas.
+    const options = within(await screen.findByRole('dialog', { name: w.rotateOptionsTitle }));
+    fireEvent.click(options.getByRole('button', { name: w.next }));
     await confirmIdentity(w.confirmRotateTitle, w.rotate);
     const secretDialog = within(await screen.findByRole('dialog', { name: w.secretTitle }));
     expect(secretDialog.getByText(WEBHOOK_SECRET)).toBeVisible();

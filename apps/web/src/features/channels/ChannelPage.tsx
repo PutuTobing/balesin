@@ -39,6 +39,8 @@ import { NumberFacts } from './NumberFacts';
 import { SectionNav } from './SectionNav';
 import './route-state';
 import { TestPanel } from './TestPanel';
+import { BotCard } from './BotCard';
+import { useCan } from '../auth/session';
 import { WebhookHealthCard } from './WebhookHealthCard';
 import { WebhookPanel } from './WebhookPanel';
 
@@ -93,6 +95,7 @@ export function ChannelPage() {
 }
 
 function ChannelScreen({ channel }: { channel: WhatsAppChannel }) {
+  const canBot = useCan('integrations.manage');
   // Form ganti kredensial dibuka dari kartunya sendiri ATAU dari kotak "Tes terakhir gagal".
   const [editing, setEditing] = useState<ChannelCredentialField | null>(null);
   return (
@@ -101,6 +104,7 @@ function ChannelScreen({ channel }: { channel: WhatsAppChannel }) {
         <SummaryCard channel={channel} onFixCredentials={setEditing} />
         <WebhookHealthCard channelId={channel.id} onFixAppSecret={() => setEditing('appSecret')} />
         <WebhookCard channelId={channel.id} />
+        {canBot ? <BotCard channelId={channel.id} /> : null}
         <BusinessProfileCard channel={channel} />
         <RenameCard channel={channel} />
         <CredentialsCard channel={channel} editing={editing} onEdit={setEditing} />

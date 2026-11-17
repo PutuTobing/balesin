@@ -5,7 +5,9 @@ import { Ellipsis, History, Pencil, Plus, Send, Webhook } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
 import { useRef, useState, type FormEvent } from 'react';
 import { Button } from '../../components/ui/Button';
+import { Checkbox } from '../../components/ui/Checkbox';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { Dialog, DialogActions } from '../../components/ui/Dialog';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { TextAreaField } from '../../components/ui/Field';
 import { Icon } from '../../components/ui/Icon';
@@ -175,7 +177,7 @@ function WebhookRow({
   onChanged: (notice: string) => void;
 }) {
   const [busy, setBusy] = useState<'test' | 'toggle' | 'remove' | null>(null);
-  const [asking, setAsking] = useState<'rotate' | 'remove' | null>(null);
+  const [asking, setAsking] = useState<'rotateOptions' | 'rotate' | 'remove' | null>(null);
   const [message, setMessage] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const menuRef = useRef<HTMLButtonElement>(null);
 
@@ -200,15 +202,22 @@ function WebhookRow({
 
   const facts = [
     copy.events(webhook.events.length),
+    webhook.botOnly ? copy.botOnlyFact : null,
     webhook.lastDeliveryAt
       ? copy.lastDelivery(formatDateTimeInline(webhook.lastDeliveryAt))
       : copy.neverDelivered,
     copy.secretRotated(formatDateTimeInline(webhook.secretRotatedAt)),
-  ];
+  ].filter((item): item is string => item !== null);
+  const keyInfo = webhook.mobichat ?? null;
 
+  const [revokePrevious, setRevokePrevious] = useState(false);
   const rotate = async (confirmation: IdentityConfirmation) => {
     try {
-      const response = await endpoints.webhooks.rotateSecret(webhook.id, confirmation);
+      const response = await endpoints.webhooks.rotateSecret(
+        webhook.id,
+        confirmation,
+        revokePrevious,
+      );
       setAsking(null);
       onSecret(response.secret);
       onChanged(copy.saved);
@@ -224,7 +233,8 @@ function WebhookRow({
       <div className={styles.itemHead}>
         <Icon icon={Webhook} size={20} className={styles.itemIcon} />
         <div className={styles.itemTitleBox}>
-          <code className={styles.url} dir="ltr">
+          {/* Maks. 2 baris; alamat lengkap di `title` (dan di form Ubah). */}
+          <code className={styles.url} dir="ltr" title={webhook.url}>
             {webhook.url}
           </code>
           {webhook.description ? (
@@ -233,8 +243,20 @@ function WebhookRow({
             </p>
           ) : null}
         </div>
-        <StatusBadge tone={status.tone} label={status.label} />
+        <StatusBadge tone={status.tone} label={status.label} className={styles.itemStatus} />
       </div>
+      {keyInfo ? (
+        <div className={styles.mobichatInfo}>
+          <span className={styles.badge}>{copy.mobichatBadge}</span>
+          <span className={styles.meta}>
+            {copy.mobichatKey(keyInfo.apiKeyLast4, copy.keyStatus[keyInfo.apiKeyStatus])}
+            {keyInfo.apiKeyName ? ` (${keyInfo.apiKeyName})` : ''}
+          </span>
+        </div>
+      ) : null}
+      {keyInfo && keyInfo.apiKeyStatus !== 'active' ? (
+        <Notice tone="danger">{copy.mobichatKeyInactive}</Notice>
+      ) : null}
       {webhook.disabledReason === 'auto_failures' && !webhook.enabled ? (
         <Notice tone="danger">{copy.autoDisabled(webhook.consecutiveFailures)}</Notice>
       ) : webhook.consecutiveFailures > 0 ? (
@@ -305,7 +327,13 @@ function WebhookRow({
               >
                 {webhook.enabled ? copy.disable : copy.enable}
               </DropdownMenu.Item>
-              <DropdownMenu.Item className={styles.menuItem} onSelect={() => setAsking('rotate')}>
+              <DropdownMenu.Item
+                className={styles.menuItem}
+                onSelect={() => {
+                  setRevokePrevious(false);
+                  setAsking('rotateOptions');
+                }}
+              >
                 {copy.rotate}
               </DropdownMenu.Item>
               <DropdownMenu.Item
@@ -335,6 +363,28 @@ function WebhookRow({
           });
         }}
       />
+      <Dialog
+        open={asking === 'rotateOptions'}
+        title={copy.rotateOptionsTitle}
+        description={copy.rotateOptionsBody}
+        onRequestClose={() => setAsking(null)}
+      >
+        <Checkbox
+          checked={revokePrevious}
+          onChange={(event) => setRevokePrevious(event.target.checked)}
+        >
+          <span className={styles.optionText}>
+            <span>{copy.revokePrevious}</span>
+            <span className={styles.optionHint}>{copy.revokePreviousHint}</span>
+          </span>
+        </Checkbox>
+        <DialogActions>
+          <Button onClick={() => setAsking(null)}>{copy.cancel}</Button>
+          <Button variant="primary" onClick={() => setAsking('rotate')}>
+            {copy.next}
+          </Button>
+        </DialogActions>
+      </Dialog>
       <IdentityDialog
         open={asking === 'rotate'}
         title={copy.confirmRotateTitle}

@@ -417,6 +417,29 @@ describe('event real-time → cache', () => {
     expect(messages[0]?.status).toBe('read');
   });
 
+  it('message.status failed: pesan diambil ulang (penjelasan gagal + Kirim ulang dari REST)', () => {
+    const { client, conversation, outbound } = seed();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    applyInboxEvent(client, {
+      type: 'message.status',
+      conversationId: conversation.id,
+      messageId: outbound.id,
+      status: 'read',
+    });
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: inboxKeys.messages(conversation.id) });
+    applyInboxEvent(client, {
+      type: 'message.status',
+      conversationId: conversation.id,
+      messageId: outbound.id,
+      status: 'failed',
+    });
+    const messages = flattenMessages(
+      client.getQueryData<InfiniteData<MessageListResponse>>(inboxKeys.messages(conversation.id)),
+    );
+    expect(messages[0]?.status).toBe('failed');
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: inboxKeys.messages(conversation.id) });
+  });
+
   it('conversation.detail mengambil ulang hanya bagian yang berubah + log', () => {
     vi.useFakeTimers();
     const { client, conversation } = seed();

@@ -11,7 +11,9 @@ import { t } from '../../i18n/id';
 import { apiError, fakeSession, json, type FakeHandler } from '../../test/fake-api';
 import { TEST_CODE, TEST_PASSWORD, confirmIdentity } from '../../test/identity';
 import { renderApp } from '../../test/render-app';
+import { expectSecretNowhere, secretSpies } from '../../test/secret-nowhere';
 import { expiryFrom, impliedScopes } from './api-key-form';
+import { deliveryErrorText } from './delivery-errors';
 
 const k = t.apiKeys;
 const w = t.webhooks;
@@ -87,7 +89,8 @@ function webhookRoutes(extra: Record<string, FakeHandler> = {}): Record<string, 
     [`GET ${API_ROUTES.outgoingWebhooks.list}`]: () => json({ webhooks: [webhook] }),
     [`POST ${API_ROUTES.outgoingWebhooks.list}`]: ({ body }) =>
       json(
-        { webhook: { ...webhook, ...(body as object) }, secret: WEBHOOK_SECRET },
+        // Seperti server: key MobiChat tidak pernah dikembalikan (hanya 4 karakter terakhirnya).
+        { webhook: { ...webhook, url: (body as { url: string }).url }, secret: WEBHOOK_SECRET },
         { status: 201 },
       ),
     [`PATCH ${apiPath(API_ROUTES.outgoingWebhooks.webhook, { webhookId: id })}`]: ({ body }) =>
@@ -133,6 +136,17 @@ describe('isian API key', () => {
   });
 });
 
+describe('galat pengiriman webhook', () => {
+  it('kode galat → kalimat Indonesia (kode baru tampil apa adanya)', () => {
+    expect(deliveryErrorText('timeout')).toBe('waktu habis (10 detik)');
+    expect(deliveryErrorText('http_404')).toBe('HTTP 404 (alamat tidak ditemukan)');
+    expect(deliveryErrorText('http_418')).toBe('HTTP 418 (ditolak penerima)');
+    expect(deliveryErrorText('http_599')).toBe('HTTP 599 (galat di server penerima)');
+    expect(deliveryErrorText('mobichat_key_inactive')).toBe('API key webhook dicabut/kedaluwarsa');
+    expect(deliveryErrorText('kode_baru')).toBe('kode_baru');
+  });
+});
+
 describe('Pengaturan → API key', () => {
   it('daftar + peringatan cakupan; buat dengan konfirmasi → kunci tampil sekali', async () => {
     const { api } = await renderApp('/pengaturan/api-key', { routes: apiKeyRoutes() });
@@ -170,6 +184,25 @@ describe('Pengaturan → API key', () => {
     });
     fireEvent.click(secret.getByRole('button', { name: k.done }));
     await waitFor(() => expect(screen.queryByText(SECRET)).toBeNull());
+  });
+
+  it('key dicabut dilipat di bawah key aktif; izin di kartu memakai label pendek', async () => {
+    const revoked = {
+      ...apiKey,
+      id: '6f1c2a90-4444-4c4c-9a9a-000000000003',
+      name: 'Bot lama',
+      status: 'revoked' as const,
+      revokedAt: '2026-11-12T03:00:00.000Z',
+    };
+    await renderApp('/pengaturan/api-key', {
+      routes: apiKeyRoutes({
+        [`GET ${API_ROUTES.apiKeys.list}`]: () => json({ apiKeys: [apiKey, revoked] }),
+      }),
+    });
+    expect(await screen.findByText('n8n produksi')).toBeVisible();
+    expect(screen.getByText(k.inactiveTitle(1))).toBeVisible();
+    expect(screen.getByText('Bot lama')).not.toBeVisible();
+    expect(screen.getAllByText('Kirim pesan')[0]).toBeVisible();
   });
 
   it('cabut tanpa konfirmasi identitas, dengan dialog jelas', async () => {
@@ -240,6 +273,7 @@ describe('Pengaturan → Webhook', () => {
     expect(requestsTo(api, 'PATCH', path)[0]?.body).toEqual({
       events: webhook.events,
       description: 'CRM',
+      botOnly: false,
     });
 
     fireEvent.click(screen.getByRole('button', { name: w.edit }));
@@ -327,5 +361,109 @@ describe('Pengaturan → Webhook', () => {
       requestsTo(api, 'PUT', API_ROUTES.outgoingWebhooks.privateNetwork)[0]?.body,
     ).toMatchObject({ cidrs: ['8.8.8.0/24'] });
     act(() => undefined);
+  });
+});
+
+describe('Webhook format MobiChat', () => {
+  const KEY = `blsn_live_fedcba9876543210_${'K'.repeat(43)}`;
+
+  it('buat: kejadian dikunci "Pesan masuk", peringatan http://, key utuh hanya dikirim sekali', async () => {
+    const watch = secretSpies();
+    const view = await renderApp('/pengaturan/webhook', { routes: webhookRoutes() });
+    fireEvent.click(await screen.findByRole('button', { name: w.create }));
+    const dialog = within(await screen.findByRole('dialog', { name: w.formTitleCreate }));
+    fireEvent.click(dialog.getByRole('radio', { name: w.formats.mobichat }));
+    expect(dialog.getByText(w.mobichatEventsLocked)).toBeVisible();
+    expect(dialog.queryByRole('checkbox', { name: /Percakapan selesai/ })).toBeNull();
+    fireEvent.change(dialog.getByLabelText(w.urlLabel), {
+      target: { value: 'http://192.168.10.5:5678/webhook/ulan' },
+    });
+    expect(dialog.getByText(w.httpWarningTitle)).toBeVisible();
+    fireEvent.change(dialog.getByLabelText(new RegExp(`^${w.mobichatKeyLabel}`)), {
+      target: { value: KEY },
+    });
+    fireEvent.click(dialog.getByRole('checkbox', { name: new RegExp(w.botOnly) }));
+    fireEvent.click(dialog.getByRole('button', { name: w.save }));
+    await confirmIdentity(w.confirmCreateTitle, w.save);
+    await screen.findByRole('dialog', { name: w.secretTitle });
+    expect(
+      view.api.requests.find(
+        (r) => r.method === 'POST' && r.path === API_ROUTES.outgoingWebhooks.list,
+      )?.body,
+    ).toMatchObject({
+      url: 'http://192.168.10.5:5678/webhook/ulan',
+      format: 'mobichat',
+      events: ['message.received'],
+      botOnly: true,
+      mobichat: { apiKey: KEY, baseUrl: null },
+    });
+    expectSecretNowhere(view, KEY, watch);
+  });
+
+  it('kartu: ••••abcd + status key; key dicabut → peringatan; ganti key wajib konfirmasi', async () => {
+    const mobichatHook = {
+      ...webhook,
+      format: 'mobichat' as const,
+      events: ['message.received' as const],
+      botOnly: true,
+      mobichat: {
+        baseUrl: null,
+        apiKeyLast4: 'abcd',
+        apiKeyId: '6f1c2a90-4444-4c4c-9a9a-000000000009',
+        apiKeyName: 'Bot ULAN',
+        apiKeyStatus: 'revoked' as const,
+      },
+    };
+    const watch = secretSpies();
+    const view = await renderApp('/pengaturan/webhook', {
+      routes: webhookRoutes({
+        [`GET ${API_ROUTES.outgoingWebhooks.list}`]: () => json({ webhooks: [mobichatHook] }),
+      }),
+    });
+    expect(
+      await screen.findByText(new RegExp(w.mobichatKey('abcd', w.keyStatus.revoked))),
+    ).toBeVisible();
+    expect(screen.getByText(w.mobichatKeyInactive)).toBeVisible();
+    expect(screen.getByText(new RegExp(w.botOnlyFact))).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: w.edit }));
+    const dialog = within(await screen.findByRole('dialog', { name: w.formTitleEdit }));
+    fireEvent.change(
+      dialog.getByLabelText(new RegExp(`^${w.mobichatKeyReplace.replace(/[()]/g, '.')}`)),
+      {
+        target: { value: KEY },
+      },
+    );
+    fireEvent.click(dialog.getByRole('button', { name: w.save }));
+    await confirmIdentity(w.confirmMobichatTitle, w.save);
+    const path = apiPath(API_ROUTES.outgoingWebhooks.webhook, { webhookId: webhook.id });
+    await waitFor(() =>
+      expect(
+        view.api.requests.find((r) => r.method === 'PATCH' && r.path === path)?.body,
+      ).toMatchObject({
+        mobichat: { apiKey: KEY },
+        confirmation: { password: TEST_PASSWORD, code: TEST_CODE },
+      }),
+    );
+    expectSecretNowhere(view, KEY, watch);
+  });
+
+  it('rotasi: opsi "Cabut rahasia lama sekarang" dikirim sebagai revokePrevious', async () => {
+    const view = await renderApp('/pengaturan/webhook', { routes: webhookRoutes() });
+    await screen.findByText(webhook.url);
+    fireEvent.keyDown(screen.getByRole('button', { name: w.actions }), { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('menuitem', { name: w.rotate }));
+    const options = within(await screen.findByRole('dialog', { name: w.rotateOptionsTitle }));
+    fireEvent.click(
+      options.getByRole('checkbox', { name: new RegExp(w.revokePrevious.replace(/[()]/g, '.')) }),
+    );
+    fireEvent.click(options.getByRole('button', { name: w.next }));
+    await confirmIdentity(w.confirmRotateTitle, w.rotate);
+    const path = apiPath(API_ROUTES.outgoingWebhooks.rotateSecret, { webhookId: webhook.id });
+    await waitFor(() =>
+      expect(view.api.requests.find((r) => r.path === path)?.body).toMatchObject({
+        revokePrevious: true,
+      }),
+    );
   });
 });

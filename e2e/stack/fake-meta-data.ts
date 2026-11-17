@@ -53,6 +53,11 @@ export const FAKE_META = {
       display: '+62 811-0000-1015',
       verifiedName: 'Maju Jaya Inbox Detail',
     },
+    inboxBot: {
+      id: '100000000000016',
+      display: '+62 811-0000-1016',
+      verifiedName: 'Maju Jaya Bot',
+    },
   },
   profile: {
     about: 'Internet cepat untuk rumah dan kantor.',

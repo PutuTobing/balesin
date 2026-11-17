@@ -35,6 +35,10 @@ export default defineConfig({
   // Tidak diulang otomatis: alur awal tidak bisa diulang tanpa mereset database, dan tes
   // lain memakai hasilnya. Tes yang gagal harus diperbaiki, bukan dicoba ulang.
   retries: 0,
+  // Stack sungguhan (argon2 saat masuk, worker, WebSocket) di 10 worker paralel: di mesin pengembang
+  // yang sibuk satu langkah bisa > 5 dtk. Batas tunggu asersi bukan asersi — menunggu lebih lama
+  // tidak melemahkan apa yang diperiksa.
+  expect: { timeout: 10_000 },
   reporter: process.env.CI
     ? [['github'], ['html', { open: 'never', outputFolder: 'playwright-report' }]]
     : [['list']],
@@ -68,6 +72,10 @@ export default defineConfig({
       name: 'dengan-email',
       dependencies: ['desktop-1440', 'hp-390'],
       testMatch: /(tim|keamanan)-dengan-email\.spec\.ts$/,
+      // Satu per satu: kedua berkas membuat kejadian keamanan baru dan membaca banner Owner yang
+      // sama ("N kejadian keamanan baru"); bila paralel, kejadian dari berkas lain memunculkan
+      // banner lagi tepat setelah tes lain menandainya sudah dilihat.
+      workers: 1,
       use: { ...desktop, storageState: OWNER_STATE_PATH },
     },
   ],

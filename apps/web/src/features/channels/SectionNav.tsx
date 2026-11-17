@@ -11,6 +11,7 @@ const SECTIONS = [
   { id: 'ringkasan', label: copy.summary },
   { id: 'diagnosis', label: copy.diagnosis },
   { id: 'webhook', label: t.channels.webhook.title },
+  { id: 'bot', label: copy.bot },
   { id: 'profil-bisnis', label: t.channels.profile.title },
   { id: 'nama', label: t.channels.rename.title },
   { id: 'kredensial', label: t.channels.credentials.title },

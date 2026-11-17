@@ -82,18 +82,13 @@ export function ApiKeysPage() {
                 }
               />
             ) : (
-              <ul className={styles.list}>
-                {list.data.apiKeys.map((apiKey) => (
-                  <ApiKeyRow
-                    key={apiKey.id}
-                    apiKey={apiKey}
-                    onRevoked={(revoked) => {
-                      setNotice(copy.revoked(revoked.name));
-                      void queryClient.invalidateQueries({ queryKey: integrationKeys.apiKeys });
-                    }}
-                  />
-                ))}
-              </ul>
+              <KeyGroups
+                apiKeys={list.data.apiKeys}
+                onRevoked={(revoked) => {
+                  setNotice(copy.revoked(revoked.name));
+                  void queryClient.invalidateQueries({ queryKey: integrationKeys.apiKeys });
+                }}
+              />
             )
           ) : list.isPending ? (
             <ListSkeleton />
@@ -148,6 +143,48 @@ export function ApiKeysPage() {
   );
 }
 
+/** Key aktif di atas; yang dicabut/kedaluwarsa dilipat supaya key aktif menonjol. */
+function KeyGroups({
+  apiKeys,
+  onRevoked,
+}: {
+  apiKeys: ApiKey[];
+  onRevoked: (apiKey: ApiKey) => void;
+}) {
+  const active = apiKeys.filter((apiKey) => apiKey.status === 'active');
+  const inactive = apiKeys.filter((apiKey) => apiKey.status !== 'active');
+  // Dikendalikan state (bukan atribut `open` langsung): render ulang setelah daftar dimuat ulang
+  // tidak boleh menutup lipatan yang baru dibuka pengguna.
+  const [open, setOpen] = useState(active.length === 0);
+  return (
+    <>
+      {active.length > 0 ? (
+        <ul className={styles.list}>
+          {active.map((apiKey) => (
+            <ApiKeyRow key={apiKey.id} apiKey={apiKey} onRevoked={onRevoked} />
+          ))}
+        </ul>
+      ) : null}
+      {inactive.length > 0 ? (
+        <details
+          className={styles.inactive}
+          open={open}
+          onToggle={(event) => setOpen(event.currentTarget.open)}
+        >
+          <summary className={styles.inactiveSummary}>
+            {copy.inactiveTitle(inactive.length)}
+          </summary>
+          <ul className={styles.list}>
+            {inactive.map((apiKey) => (
+              <ApiKeyRow key={apiKey.id} apiKey={apiKey} onRevoked={onRevoked} />
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </>
+  );
+}
+
 function ApiKeyRow({ apiKey, onRevoked }: { apiKey: ApiKey; onRevoked: (apiKey: ApiKey) => void }) {
   const [confirming, setConfirming] = useState(false);
   const [failure, setFailure] = useState<unknown>(null);
@@ -195,12 +232,16 @@ function ApiKeyRow({ apiKey, onRevoked }: { apiKey: ApiKey; onRevoked: (apiKey: 
           </p>
           <code className={styles.prefix}>{apiKey.displayPrefix}…</code>
         </div>
-        <StatusBadge tone={STATUS_TONE[apiKey.status]} label={copy.status[apiKey.status]} />
+        <StatusBadge
+          tone={STATUS_TONE[apiKey.status]}
+          label={copy.status[apiKey.status]}
+          className={styles.itemStatus}
+        />
       </div>
       <ul className={styles.chips} aria-label={copy.scopesLabel}>
         {apiKey.scopes.map((scope) => (
-          <li key={scope} className={styles.chip}>
-            {API_KEY_SCOPE_LABELS[scope]}
+          <li key={scope} className={styles.chip} title={API_KEY_SCOPE_LABELS[scope]}>
+            {copy.scopeShort[scope] ?? API_KEY_SCOPE_LABELS[scope]}
           </li>
         ))}
       </ul>

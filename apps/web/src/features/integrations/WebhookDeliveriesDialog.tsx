@@ -10,6 +10,7 @@ import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
 import { formatDateTime, formatDateTimeInline } from '../../lib/format';
+import { deliveryErrorText } from './delivery-errors';
 import { integrationKeys } from './integration-queries';
 import styles from './Integrations.module.css';
 
@@ -111,10 +112,13 @@ function DeliveryRow({
 }) {
   const [busy, setBusy] = useState(false);
   const facts = [
-    delivery.httpStatus !== null ? copy.httpStatus(delivery.httpStatus) : null,
+    // HTTP + artinya sudah ada di kalimat galat bila galatnya `http_…`.
+    delivery.httpStatus !== null && !delivery.error?.startsWith('http_')
+      ? copy.httpStatus(delivery.httpStatus)
+      : null,
     delivery.durationMs !== null ? copy.duration(delivery.durationMs) : null,
     copy.attempts(delivery.attempts),
-    delivery.error ? copy.errorCode(delivery.error) : null,
+    delivery.error ? copy.errorCode(deliveryErrorText(delivery.error)) : null,
     delivery.status === 'pending' && delivery.nextAttemptAt
       ? copy.nextAttempt(formatDateTimeInline(delivery.nextAttemptAt))
       : null,
@@ -132,6 +136,7 @@ function DeliveryRow({
       {delivery.responseSnippet ? (
         <details className={styles.snippet}>
           <summary>{copy.response}</summary>
+          <p className={styles.hint}>{copy.responseLabel}</p>
           {/* Isi dari server penerima (tidak tepercaya): tampil sebagai teks saja. */}
           <pre className={styles.snippetBody}>{delivery.responseSnippet}</pre>
         </details>

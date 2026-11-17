@@ -1,35 +1,27 @@
-import { readFileSync } from 'node:fs';
 import { request, type BrowserContext, type Page } from '@playwright/test';
-import { OWNER_STATE_PATH } from '../stack/env';
-import { expect, isHp, mainNav, owner, submitLogin, test } from './fixtures';
+import { expect, isHp, mainNav, submitLogin, test } from './fixtures';
+import { completeSecondOwnerCode, createSecondOwner, type SecondOwner } from './owner-kedua';
 import { releaseLoginIpBudget } from './pengguna';
-import { completeTwoFactor } from './two-factor';
 
 /**
  * Sesi di tengah pemakaian, di HP dan desktop: sesi dicabut server, token CSRF tidak berlaku,
  * tombol Back/Forward setelah keluar, dan hitung mundur saat terkunci.
  *
- * Setiap tes masuk sendiri (sesi terpisah) supaya mencabut sesi tidak mengganggu tes lain yang
- * memakai sesi Owner bersama. Cookie "perangkat dikenal" dari alur awal ikut dipasang: akun Owner
- * sengaja dikunci untuk perangkat baru dari IP ini oleh `alur-awal`, perangkat dikenal tidak.
- * Owner memakai 2FA: langkah kedua diisi `completeTwoFactor` (kode TOTP yang belum terpakai, atau
- * kode cadangan bila langkah waktu berikutnya belum tiba — tes paralel berbagi satu akun).
+ * Setiap tes memakai Owner KEDUA miliknya sendiri (`owner-kedua.ts`): mencabut sesinya tidak
+ * mengganggu tes lain, dan langkah 2FA memakai rahasia TOTP-nya sendiri — tidak mengantre kode
+ * Owner utama yang dipakai bergantian oleh tes paralel (sumber timeout di run penuh).
  */
 test.use({ storageState: { cookies: [], origins: [] } });
-// Kode TOTP bisa menunggu langkah 30 detik berikutnya bila tes lain baru saja memakainya.
+// Masuk ulang dengan TOTP Owner kedua menunggu langkah 30 detik berikutnya.
 test.describe.configure({ timeout: 120_000 });
 
 const ME = '/api/v1/auth/me';
 
-async function signInFresh(context: BrowserContext, page: Page, path: string) {
-  const state = JSON.parse(readFileSync(OWNER_STATE_PATH, 'utf8')) as {
-    cookies: Parameters<BrowserContext['addCookies']>[0];
-  };
-  await context.addCookies(state.cookies.filter((cookie) => cookie.name.endsWith('_device')));
+async function signInFresh(page: Page, owner: SecondOwner, path: string) {
   await page.goto(path);
   await expect(page).toHaveURL(/\/masuk\?redirect=/);
   await submitLogin(page, owner.email, owner.password);
-  await completeTwoFactor(page);
+  await completeSecondOwnerCode(page, owner);
   await expect(page.getByRole('heading', { level: 1, name: 'Pengaturan' })).toBeVisible();
 }
 
@@ -59,7 +51,8 @@ test('sesi dicabut di tengah pemakaian → halaman masuk dengan pesan, tanpa lay
   expectHttpError('/api/v1/settings/email/detect-host', 401);
   // Pratinjau template di halaman yang sama ikut dimuat (dan ikut ditolak) setelah sesi dicabut.
   expectHttpError('/api/v1/settings/email/templates/invitation/preview', 401);
-  await signInFresh(context, page, '/pengaturan');
+  const owner = await createSecondOwner('sesi');
+  await signInFresh(page, owner, '/pengaturan');
   // Catat setiap judul halaman yang sempat tampil, untuk menangkap kedipan layar error.
   await page.evaluate(() => {
     const seen: string[] = [];
@@ -88,19 +81,19 @@ test('sesi dicabut di tengah pemakaian → halaman masuk dengan pesan, tanpa lay
 
   // Masuk lagi (dua langkah) → kembali ke tujuan semula.
   await submitLogin(page, owner.email, owner.password);
-  await completeTwoFactor(page);
+  await completeSecondOwnerCode(page, owner);
   await expect(page).toHaveURL(/\/pengaturan\/email$/);
   await expect(page.getByRole('heading', { level: 1, name: 'Email pengirim' })).toBeVisible();
 });
 
 test('token CSRF ditolak → diambil ulang dari /auth/me dan permintaan diulang sekali', async ({
   page,
-  context,
   expectHttpError,
 }) => {
   expectHttpError(ME, 401);
   expectHttpError('/api/v1/auth/logout', 403);
-  await signInFresh(context, page, '/pengaturan');
+  const owner = await createSecondOwner('csrf');
+  await signInFresh(page, owner, '/pengaturan');
 
   // Token di memori dianggap hilang/kedaluwarsa: kirim pertama tanpa header CSRF.
   let attempts = 0;

@@ -19,6 +19,10 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Stack E2E/foto layar: tanpa HMR. Berkas yang disunting selagi tes berjalan (mis. paket
+    // `shared` oleh sesi lain) tidak boleh memuat ulang halaman di tengah tes — itu membuang isian
+    // formulir dan dialog yang sedang dibuka, dan gagalnya tampak acak.
+    ...(process.env.BALESIN_DEV_NO_HMR === '1' ? { hmr: false } : {}),
     proxy: {
       // API dan WebSocket inbox dilayani apps/api. E2E memakai API tersendiri (e2e/stack).
       '/api': {

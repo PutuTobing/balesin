@@ -68,10 +68,31 @@ ul.list,
   background: var(--surface);
 }
 
-/* Key dicabut/kedaluwarsa: tetap terbaca, sedikit diredam lewat warna teks sekunder. */
+/* Key dicabut/kedaluwarsa: tetap terbaca, diredam (latar sekunder, judul teks sekunder). */
+.item[data-status='revoked'],
+.item[data-status='expired'] {
+  background: var(--surface-2);
+}
+
 .item[data-status='revoked'] .itemTitle,
 .item[data-status='expired'] .itemTitle {
   color: var(--ink-2);
+}
+
+.inactive {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.inactiveSummary {
+  display: flex;
+  align-items: center;
+  min-height: var(--size-touch);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
 }
 
 .itemHead {
@@ -116,9 +137,15 @@ ul.list,
 }
 
 .url {
+  display: -webkit-box;
+  overflow: hidden;
   color: var(--ink);
   font-size: var(--text-13);
   font-weight: var(--weight-semibold);
+  word-break: break-all;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .prefix {
@@ -180,6 +207,7 @@ ul.chips,
 }
 
 .menuTrigger {
+  min-width: var(--size-touch);
   padding: 0 var(--space-12);
 }
 
@@ -390,6 +418,16 @@ ol.deliveries,
   .card {
     padding: var(--space-16);
   }
+
+  /* Status di baris sendiri di atas: URL/judul memakai lebar penuh kartu (kritikus W1). */
+  .itemHead {
+    flex-wrap: wrap;
+  }
+
+  .itemStatus {
+    flex-basis: 100%;
+    order: -1;
+  }
 }
 
 @media (max-width: 640px), (pointer: coarse) {
@@ -403,4 +441,60 @@ ol.deliveries,
     display: flex;
     align-items: center;
   }
+}
+
+/* ---------- Pilihan segmen (format webhook) ---------- */
+
+.segments {
+  display: inline-flex;
+  align-self: flex-start;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+}
+
+.segment {
+  min-width: 8rem;
+  height: calc(var(--size-control) - 2px);
+  padding: 0 var(--space-16);
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.segment + .segment {
+  border-left: 1px solid var(--line);
+}
+
+.segment[aria-checked='true'] {
+  background: var(--primary-soft);
+  color: var(--ink);
+}
+
+.segment:focus-visible {
+  outline-offset: -3px;
+}
+
+.badge {
+  align-self: flex-start;
+  padding: var(--space-4) var(--space-8);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  color: var(--ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .segment {
+    height: var(--size-touch);
+  }
+}
+
+.mobichatInfo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
 }

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
-import { apiError, sessionAs } from './mocks';
+import { apiError, json, sessionAs } from './mocks';
 import type { WebSocketRoute } from '@playwright/test';
 import {
   PHOTO_CHAT,
@@ -32,6 +32,31 @@ async function openLastMessageMenu(page: Page): Promise<void> {
       .click();
   }
   await page.getByRole('menu').waitFor();
+}
+
+/** Pesan contoh untuk foto pesan interaktif (bentuk = skema `Message`). */
+function interactiveMessage(n: number, init: Record<string, unknown>) {
+  return {
+    id: `e1a2b3c4-0000-4000-8000-0000000009${String(n).padStart(2, '0')}`,
+    number: 900 + n,
+    rawType: null,
+    media: null,
+    location: null,
+    interactive: null,
+    interactiveMessage: null,
+    reaction: null,
+    replyTo: null,
+    referral: null,
+    forwarded: false,
+    sharedContactsCount: 0,
+    status: null,
+    errorCode: null,
+    failure: null,
+    senderUserId: null,
+    mediaAvailable: false,
+    createdAt: new Date(Date.now() - n * 60_000).toISOString(),
+    ...init,
+  };
 }
 
 async function settle(page: Page): Promise<void> {
@@ -566,6 +591,125 @@ export const inboxScreens: Screen[] = [
     await openDetailTab(page, 'Log');
     await detailPanel(page).getByText('Survei lokasi').waitFor();
   }),
+  // Kepala chat di HP 360 (kritikus H1): nomor tanpa nama + sesi habis tidak terpotong.
+  {
+    name: 'inbox-chat-sesi-habis-360',
+    path: `/inbox?chat=${EXPIRED.id}`,
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page);
+      if ((page.viewportSize()?.width ?? 1440) <= 640) {
+        await page.setViewportSize({ width: 360, height: 780 });
+      }
+    },
+    waitFor: '[aria-label="Ruang chat"] [data-tone="expired"]',
+    prepare: settle,
+  },
+  // Kotak tulis terfokus (keyboard HP): strip "Ambil chat" ringkas satu baris (kritikus H-S1).
+  {
+    name: 'inbox-chat-ketik',
+    path: CHAT,
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page);
+    },
+    waitFor: 'text=Info dari grup RT',
+    prepare: async (page) => {
+      await page.getByRole('textbox', { name: 'Tulis balasan' }).focus();
+    },
+  },
+  // ── Fase 3: bot & pesan interaktif ──
+  {
+    name: 'inbox-chat-bot',
+    path: `/inbox?chat=${PHOTO_CONVERSATIONS[4]!.id}`,
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page);
+    },
+    waitFor: '[aria-label="Ruang chat"] >> text=Kopi Senja Way Halim',
+    prepare: settle,
+  },
+  {
+    name: 'inbox-chat-interaktif',
+    path: CHAT,
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page);
+    },
+    waitFor: 'text=Info dari grup RT',
+    prepare: async (page) => {
+      await page.getByRole('button', { name: 'Kirim tombol atau daftar pilihan' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Pesan dengan pilihan' });
+      await dialog.getByLabel('Isi pesan', { exact: true }).fill('Mau dibantu soal apa kak?');
+      await dialog.getByLabel('Tombol 1', { exact: true }).fill('Cek tagihan');
+      await dialog.getByLabel('Tombol 2', { exact: true }).fill('Lapor gangguan');
+      await settle(page);
+    },
+  },
+  {
+    name: 'inbox-chat-interaktif-daftar',
+    path: CHAT,
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page);
+    },
+    waitFor: 'text=Info dari grup RT',
+    prepare: async (page) => {
+      await page.getByRole('button', { name: 'Kirim tombol atau daftar pilihan' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Pesan dengan pilihan' });
+      await dialog.getByRole('radio', { name: 'Daftar pilihan' }).click();
+      await dialog.getByLabel('Isi pesan', { exact: true }).fill('Pilih paket internet:');
+      await dialog.getByLabel('Teks tombol pembuka daftar').fill('Lihat paket');
+      await dialog.getByLabel('Pilihan 1', { exact: true }).fill('Rumahan 20 Mbps');
+      await dialog.getByLabel('Pilihan 2', { exact: true }).fill('Rumahan 50 Mbps');
+      await settle(page);
+    },
+  },
+  {
+    name: 'inbox-chat-pilihan',
+    path: `/inbox?chat=${PHOTO_CONVERSATIONS[4]!.id}`,
+    before: async (page) => {
+      await quietSecurity(page);
+      await inboxMocks(page, {
+        messages: (route) =>
+          json(route, {
+            messages: [
+              interactiveMessage(2, {
+                direction: 'inbound',
+                senderKind: 'customer',
+                type: 'interactive',
+                text: null,
+                interactive: {
+                  kind: 'button_reply',
+                  id: 'tombol-2',
+                  title: 'Lapor gangguan',
+                  description: null,
+                },
+              }),
+              interactiveMessage(1, {
+                direction: 'outbound',
+                senderKind: 'bot',
+                type: 'interactive',
+                text: 'Halo kak! Mau dibantu soal apa?',
+                status: 'read',
+                interactiveMessage: {
+                  kind: 'button',
+                  body: 'Halo kak! Mau dibantu soal apa?',
+                  footer: 'Bot CS Maju Jaya',
+                  buttons: [
+                    { id: 'tombol-1', title: 'Cek tagihan' },
+                    { id: 'tombol-2', title: 'Lapor gangguan' },
+                  ],
+                },
+              }),
+            ],
+            nextCursor: null,
+          }),
+      });
+    },
+    waitFor: '[aria-label="Pilihan yang dikirim"]',
+    prepare: settle,
+  },
   // Sesi habis + nomor tanpa nama, panel detail kontak bernama tim.
   {
     name: 'inbox-chat-sesi-habis',

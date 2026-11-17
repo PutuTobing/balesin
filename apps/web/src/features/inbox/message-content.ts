@@ -65,6 +65,8 @@ function typeLabel(type: MessageType): string | null {
       return c.system;
     case 'unsupported':
       return c.unsupported;
+    case 'template':
+      return c.template;
   }
 }
 
@@ -142,6 +144,16 @@ export function messageBody(message: Message): MessageBody {
     case 'contacts':
       return { icon, label: c.contacts(message.sharedContactsCount), detail: null, text };
     case 'interactive': {
+      // Keluar (tombol/daftar dari agen/bot): isi pesan = body; pilihannya dirender terpisah.
+      const outgoing = message.interactiveMessage;
+      if (outgoing) {
+        return {
+          icon,
+          label: outgoing.kind === 'list' ? c.outList : c.outButtons,
+          detail: outgoing.header?.trim() ? outgoing.header : null,
+          text,
+        };
+      }
       const reply = message.interactive;
       const label =
         reply?.kind === 'list_reply'

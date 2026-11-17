@@ -74,7 +74,20 @@ export function Dialog({
   );
 }
 
-/** Baris tombol dialog (kanan di desktop, bertumpuk penuh di HP). */
-export function DialogActions({ children }: { children: ReactNode }) {
-  return <div className={styles.actions}>{children}</div>;
+/**
+ * Baris tombol dialog (kanan di desktop, bertumpuk penuh di HP). `sticky`: untuk form panjang —
+ * tombol menempel di dasar dialog, isi di atasnya yang bergulir.
+ */
+export function DialogActions({
+  children,
+  sticky = false,
+}: {
+  children: ReactNode;
+  sticky?: boolean;
+}) {
+  return (
+    <div className={sticky ? `${styles.actions} ${styles.actionsSticky}` : styles.actions}>
+      {children}
+    </div>
+  );
 }

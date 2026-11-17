@@ -228,7 +228,8 @@ function ChatHeader({
     if (focusTitle) titleRef.current?.focus({ preventScroll: true });
   }, [focusTitle]);
   return (
-    <header className={styles.header}>
+    // Nama = nomor (tanpa handle terpisah): nomor tidak boleh terpotong (lihat Chat.module.css).
+    <header className={styles.header} data-number-name={identity.handle === null ? '' : undefined}>
       {onBack ? <IconButton label={t.inbox.chat.back} icon={ArrowLeft} onClick={onBack} /> : null}
       <div className={styles.identity}>
         <ContactAvatar name={identity.name} size="sm" className={styles.headerAvatar} />
@@ -251,7 +252,12 @@ function ChatHeader({
           />
         ) : null}
       </div>
-      <WindowCountdown expiresAt={conversation.windowExpiresAt} now={now} showEnd />
+      <WindowCountdown
+        expiresAt={conversation.windowExpiresAt}
+        now={now}
+        showEnd
+        className={styles.headerCountdown}
+      />
       {actions}
       {detailToggle}
     </header>

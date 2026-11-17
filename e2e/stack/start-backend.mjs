@@ -68,8 +68,13 @@ async function resetMediaDir() {
   const dir = process.env.MEDIA_DIR;
   if (!dir) return;
   const resolved = path.resolve(dir);
-  if (path.basename(resolved) !== 'balesin-e2e-media' || !resolved.startsWith(os.tmpdir())) {
-    throw new Error('MEDIA_DIR E2E harus folder balesin-e2e-media di direktori sementara sistem.');
+  if (
+    !/^balesin-e2e-media-\d+$/.test(path.basename(resolved)) ||
+    !resolved.startsWith(os.tmpdir())
+  ) {
+    throw new Error(
+      'MEDIA_DIR E2E harus folder balesin-e2e-media-<port API> di direktori sementara sistem.',
+    );
   }
   await rm(resolved, { recursive: true, force: true });
   log('folder media E2E dikosongkan');

@@ -92,7 +92,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-12) var(--space-16);
-  padding-left: var(--space-32);
 }
 
 .timeField {
@@ -123,10 +122,6 @@
 @media (max-width: 640px) {
   .card {
     padding: var(--space-16);
-  }
-
-  .quiet {
-    padding-left: 0;
   }
 
   .timeField {

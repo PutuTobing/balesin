@@ -79,6 +79,8 @@ import {
   verifySetupTokenResponseSchema,
   verifyTwoFactorResponseSchema,
   vapidPublicKeyResponseSchema,
+  channelBotSettingsResponseSchema,
+  type ChannelBotSettings,
   apiKeyListResponseSchema,
   apiKeyResponseSchema,
   createApiKeyResponseSchema,
@@ -512,6 +514,18 @@ export function createEndpoints(client: ApiClient) {
           signal,
           csrf: true,
         }),
+      /** Saklar bot channel, jam kerja bot, batas waktu (`integrations.manage`, tanpa konfirmasi). */
+      bot: (channelId: string, signal?: AbortSignal) =>
+        client.request(apiPath(API_ROUTES.channels.bot, { channelId }), {
+          schema: channelBotSettingsResponseSchema,
+          signal,
+        }),
+      updateBot: (channelId: string, body: ChannelBotSettings) =>
+        client.request(apiPath(API_ROUTES.channels.bot, { channelId }), {
+          method: 'PUT',
+          body,
+          schema: channelBotSettingsResponseSchema,
+        }),
       updateBusinessProfile: (channelId: string, body: UpdateBusinessProfileRequest) =>
         client.request(apiPath(API_ROUTES.channels.businessProfile, { channelId }), {
           method: 'PUT',
@@ -692,6 +706,13 @@ export function createEndpoints(client: ApiClient) {
           method: 'POST',
           schema: conversationActionResponseSchema,
         }),
+      /** Saklar bot per percakapan: `false` = serahkan ke tim, `true` = kembalikan ke bot. */
+      bot: (conversationId: string, active: boolean) =>
+        client.request(apiPath(API_ROUTES.inbox.bot, { conversationId }), {
+          method: 'POST',
+          body: { active },
+          schema: conversationActionResponseSchema,
+        }),
       /** Ambil chat dari antrian / ambil alih dari bot (`inbox.assign`). */
       claim: (conversationId: string) =>
         client.request(apiPath(API_ROUTES.inbox.claim, { conversationId }), {
@@ -800,10 +821,14 @@ export function createEndpoints(client: ApiClient) {
           method: 'DELETE',
           schema: z.object({ deleted: z.literal(true) }),
         }),
-      rotateSecret: (webhookId: string, confirmation: IdentityConfirmation) =>
+      rotateSecret: (
+        webhookId: string,
+        confirmation: IdentityConfirmation,
+        revokePrevious = false,
+      ) =>
         client.request(apiPath(API_ROUTES.outgoingWebhooks.rotateSecret, { webhookId }), {
           method: 'POST',
-          body: { confirmation },
+          body: { confirmation, ...(revokePrevious ? { revokePrevious: true } : {}) },
           schema: outgoingWebhookSecretResponseSchema,
         }),
       test: (webhookId: string) =>

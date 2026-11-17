@@ -579,7 +579,8 @@
 
   .viewOption {
     flex: 1;
-    height: calc(var(--size-touch) - 2px);
+    /* Target sentuh penuh 44px (bingkai segmen jadi 46px). */
+    height: var(--size-touch);
   }
 
   .previewIframe,

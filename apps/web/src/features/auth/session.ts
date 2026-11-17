@@ -45,6 +45,9 @@ export function useLogout() {
   const router = useRouter();
   return useMutation({
     mutationFn: async () => {
+      // Permintaan data yang masih berjalan dibatalkan dulu: setelah sesi dicabut jawabannya
+      // hanya akan 401 (mis. halaman yang baru dibuka tepat sebelum keluar).
+      await queryClient.cancelQueries();
       // Lepas notifikasi perangkat ini selagi sesi masih berlaku (DELETE butuh sesi + CSRF).
       // Dibatasi 3 detik: keluar tidak boleh tertahan oleh layanan push yang lambat.
       await Promise.race([

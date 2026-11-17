@@ -19,15 +19,15 @@ import {
   userId,
   type ExtraUser,
 } from './pengguna';
-import { withOwnerCode } from './two-factor';
+import { createSecondOwner, signInSecondOwner } from './owner-kedua';
 
 /**
  * Manajemen pengguna, sesi aktif, dan audit log (Fase 1 butir 6) melawan API sungguhan, di HP (390)
  * dan desktop (1440). Setiap tes membuat penggunanya sendiri (`pengguna.ts`), jadi aman paralel.
  *
- * Kode TOTP Owner dipakai bersama tes lain lewat `withOwnerCode` (sekali pakai per langkah waktu),
- * jadi hanya SATU aksi memakai identitas Owner (ubah peran). Aksi lain dilakukan Admin milik tes ini
- * sendiri dengan kode cadangannya (tanpa menunggu langkah 30 detik berikutnya).
+ * Tidak ada yang memakai kode TOTP Owner utama (antrean bersama tes paralel): ubah peran dilakukan
+ * Owner KEDUA milik tes (`owner-kedua.ts`), aksi lain oleh Admin milik tes ini sendiri dengan kode
+ * cadangannya (tanpa menunggu langkah 30 detik berikutnya).
  */
 test.describe.configure({ timeout: 180_000 });
 
@@ -84,11 +84,15 @@ async function openMember(page: Page, email: string, name: string): Promise<void
 }
 
 test('Owner mengubah peran CS menjadi Supervisor (konfirmasi identitas); sesi lama CS berakhir', async ({
-  page,
+  page: projectPage,
   browser,
 }) => {
-  const cs = await createUser('cs', label(page));
-  const csBrowser = await signIn(browser, isHp(page), cs);
+  const cs = await createUser('cs', label(projectPage));
+  const csBrowser = await signIn(browser, isHp(projectPage), cs);
+  // Owner KEDUA milik tes ini: konfirmasi identitas tanpa antre kode TOTP Owner utama.
+  const owner = await createSecondOwner(`peran-${label(projectPage)}`);
+  const ownerBrowser = await signInSecondOwner(browser, owner, { hp: isHp(projectPage) });
+  const page = ownerBrowser.page;
 
   await openApp(page, '/pengaturan/tim');
   await expectNoHorizontalScroll(page);
@@ -110,17 +114,19 @@ test('Owner mengubah peran CS menjadi Supervisor (konfirmasi identitas); sesi la
   const dialog = page.getByRole('dialog', { name: 'Ubah peran menjadi Supervisor?' });
   await expect(dialog).toContainText('wajib verifikasi dua langkah');
   await dialog.getByLabel('Password', { exact: true }).fill(owner.password);
-  await withOwnerCode(async ({ code }) => {
-    await dialog.getByLabel('Kode verifikasi').fill(code);
-    await dialog.getByRole('button', { name: 'Ubah peran', exact: true }).click();
-    await expect(dialog).toBeHidden();
-  });
+  await dialog.getByLabel('Kode verifikasi').fill(owner.backupCodes.shift() ?? '');
+  await dialog.getByRole('button', { name: 'Ubah peran', exact: true }).click();
+  await expect(dialog).toBeHidden();
   await expect(page.getByRole('status').filter({ hasText: 'sekarang Supervisor' })).toBeVisible();
   await expect(page.getByText('1 sesinya dikeluarkan')).toBeVisible();
   await expect(page.getByText('Belum daftar 2FA').first()).toBeVisible();
 
-  // Browser CS: permintaan berikutnya ditolak 401 → halaman masuk.
+  // Browser CS: permintaan berikutnya ditolak 401 → halaman masuk. Inbox CS yang masih terbuka
+  // bisa sudah memuat ulang daftar/hitungan (fokus, sambung ulang WebSocket) sebelum dimuat ulang:
+  // 401 di sana juga hasil yang benar dari sesi yang dicabut.
   csBrowser.allow(ME, 401);
+  csBrowser.allow('/api/v1/conversations', 401);
+  csBrowser.allow('/api/v1/conversations/counts', 401);
   await csBrowser.page.reload();
   await expect(csBrowser.page).toHaveURL(/\/masuk/);
   csBrowser.expectClean();
@@ -130,6 +136,8 @@ test('Owner mengubah peran CS menjadi Supervisor (konfirmasi identitas); sesi la
   await expect(
     page.getByRole('list', { name: 'Riwayat aktivitas' }).getByText('Peran pengguna diubah'),
   ).toBeVisible();
+  ownerBrowser.expectClean();
+  await ownerBrowser.close();
 });
 
 test('Admin: tidak bisa mengelola Owner/Admin; atur ulang 2FA Teknisi, nonaktif/aktifkan, buka lagi pendaftaran 2FA, audit + CSV', async ({

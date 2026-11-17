@@ -27,8 +27,11 @@ export const E2E_SETUP_TOKEN = '6oQXFl6twGPArbJ9AQBAo1326SDiDalQaJzLXbAic34';
 export const E2E_MASTER_KEY = Buffer.alloc(32, 7).toString('base64');
 export const E2E_SESSION_SECRET = 'E2eSesiTes_9fK2xQ7mL4pR8vW1zN6bH3yT5uJ0';
 
-/** Folder media E2E (di luar repo), dipakai bersama api & worker. */
-export const E2E_MEDIA_DIR = join(tmpdir(), 'balesin-e2e-media');
+/**
+ * Folder media E2E (di luar repo), dipakai bersama api & worker. Per stack (port API) supaya
+ * stack E2E lain yang berjalan paralel (QA/kritikus di worktree lain) tidak saling mengosongkan.
+ */
+export const E2E_MEDIA_DIR = join(tmpdir(), `balesin-e2e-media-${String(E2E_API_PORT)}`);
 
 export const MAILPIT_API_URL = process.env.MAILPIT_API_URL ?? 'http://localhost:8025';
 

@@ -187,7 +187,7 @@ export function ApiKeyCreateDialog({
               {isApiError(failure) ? failure.message : t.api.network}
             </Notice>
           ) : null}
-          <DialogActions>
+          <DialogActions sticky>
             <Button onClick={onClose}>{copy.cancel}</Button>
             <Button type="submit" variant="primary">
               {copy.next}
