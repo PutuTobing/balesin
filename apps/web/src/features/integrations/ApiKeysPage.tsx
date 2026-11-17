@@ -1,6 +1,6 @@
 import { API_DOCS_ROUTES, API_KEY_SCOPE_LABELS, type ApiKey } from '@balesin/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, KeyRound, Plus } from 'lucide-react';
+import { ChevronRight, ExternalLink, KeyRound, Plus } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Checkbox } from '../../components/ui/Checkbox';
@@ -172,6 +172,7 @@ function KeyGroups({
           onToggle={(event) => setOpen(event.currentTarget.open)}
         >
           <summary className={styles.inactiveSummary}>
+            <Icon icon={ChevronRight} size={16} className={styles.inactiveChevron} />
             {copy.inactiveTitle(inactive.length)}
           </summary>
           <ul className={styles.list}>

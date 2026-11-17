@@ -1,0 +1,185 @@
+/* Pemilih template disetujui + isian variabel (dialog kirim template & percakapan baru). */
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+ul.list,
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.skeleton {
+  width: 100%;
+  height: calc(var(--space-48) * 2);
+  border-radius: var(--radius-input);
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  width: 100%;
+  min-height: var(--size-touch);
+  padding: var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  color: var(--ink);
+  text-align: start;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .option:hover:not(:disabled) {
+    border-color: var(--primary);
+    background: var(--surface-2);
+  }
+}
+
+.option:disabled {
+  cursor: not-allowed;
+}
+
+.option:disabled .optionName {
+  color: var(--ink-2);
+}
+
+.optionText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.optionName {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.optionMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.optionBody {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.chevron {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-8);
+  padding: var(--space-16);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+  font-size: var(--text-14);
+}
+
+.emptyIcon {
+  color: var(--ink-2);
+}
+
+.link {
+  color: var(--primary);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.note {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+}
+
+.fill {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.short {
+  max-width: 16rem;
+}
+
+.mediaField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.label {
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.mediaRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8) var(--space-12);
+  min-width: 0;
+}
+
+.fileName {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-13);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.error {
+  color: var(--danger-ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+/* Latar seperti ruang chat; gelembung keluar di kanan. */
+.stage {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--space-16) var(--space-12);
+  border-radius: var(--radius-input);
+  background: var(--bg);
+}

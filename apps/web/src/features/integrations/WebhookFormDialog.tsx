@@ -38,8 +38,10 @@ const isHttp = (value: string) => /^http:\/\//i.test(value.trim());
  * Tambah / ubah webhook. Membuat, mengganti URL, dan mengganti API key/alamat MobiChat = jalur data
  * pelanggan ke luar → konfirmasi identitas; keterangan, kejadian, `botOnly` tanpa konfirmasi.
  *
- * API key MobiChat dibaca dari isian TAK TERKENDALI (`SecretField` + ref) hanya saat dikirim — tidak
- * pernah di state React, cache Query, storage, atau atribut DOM — lalu isiannya dikosongkan.
+ * API key MobiChat dibaca dari isian TAK TERKENDALI (`SecretField` + ref) saat disimpan — tidak
+ * pernah di cache Query, storage, atau atribut DOM. Bila perlu konfirmasi identitas, isi permintaan
+ * (termasuk key) disimpan sebentar di state `confirming` selama dialog konfirmasi terbuka, lalu
+ * dibuang saat dialog ditutup atau setelah terkirim; isian key dikosongkan setelah terkirim.
  */
 export function WebhookFormDialog({
   webhook,
@@ -221,7 +223,7 @@ export function WebhookFormDialog({
           )}
           <TextField
             label={copy.urlLabel}
-            hint={copy.urlHint}
+            hint={isHttp(url) ? copy.urlHintHttp : copy.urlHint}
             value={url}
             onChange={(event) => setUrl(event.target.value)}
             error={errors.url}

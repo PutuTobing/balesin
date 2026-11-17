@@ -285,6 +285,44 @@ const quickRepliesRoute = createRoute({
   ),
 });
 
+/**
+ * Pengaturan → Template WhatsApp (template Meta): `templates.manage` (Owner, Admin, Supervisor).
+ * Daftar dan editor memuat datanya sendiri (kerangka, gagal + coba lagi, tidak ditemukan).
+ */
+const templatesRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/template',
+  staticData: { page: { title: t.templates.title, parent: 'settings' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'templates.manage'),
+  component: lazyRouteComponent(
+    () => import('../features/templates/TemplatesPage'),
+    'TemplatesPage',
+  ),
+});
+
+/** Template baru. Rute statis ini menang atas `$templateId`. */
+const templateNewRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/template/baru',
+  staticData: { page: { title: t.templates.newTitle, parent: 'templates' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'templates.manage'),
+  component: lazyRouteComponent(
+    () => import('../features/templates/TemplateEditorPage'),
+    'TemplateNewPage',
+  ),
+});
+
+const templateEditRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/template/$templateId',
+  staticData: { page: { title: t.templates.editTitle, parent: 'templates' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'templates.manage'),
+  component: lazyRouteComponent(
+    () => import('../features/templates/TemplateEditorPage'),
+    'TemplateEditPage',
+  ),
+});
+
 /** Pengaturan → API key: `api_keys.manage` (Owner, Admin). */
 const apiKeysRoute = createRoute({
   getParentRoute,
@@ -485,6 +523,9 @@ const appChildren = [
   emailSettingsRoute,
   channelsRoute,
   quickRepliesRoute,
+  templatesRoute,
+  templateNewRoute,
+  templateEditRoute,
   oldQuickRepliesRoute,
   sendingLimitsRoute,
   notificationsRoute,

@@ -1,17 +1,20 @@
 import { Link } from '@tanstack/react-router';
 import type { Conversation, Message } from '@balesin/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { LayoutTemplate } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
+import { Icon } from '../../components/ui/Icon';
 import { FormErrorNotice } from '../../components/ui/FormErrorNotice';
 import { Notice } from '../../components/ui/Notice';
 import { t } from '../../i18n/id';
 import { media, useMediaQuery } from '../../lib/media';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { endpoints } from '../../lib/api/endpoints';
 import { formatClock } from '../../lib/format';
 import type { Lock } from '../../lib/use-lock';
 import { useCan, useSession } from '../auth/session';
 import { Composer } from './Composer';
+import { TemplateSendDialog } from './TemplateSendDialog';
 import styles from './Composer.module.css';
 import { forgetConversation, inboxKeys, storeConversation } from './inbox-queries';
 import { useSendingPaused } from './use-sending-paused';
@@ -56,6 +59,7 @@ export function ChatFooter({
   const isHp = useMediaQuery(media.hp);
   const canManageLimits = useCan('sending.limits.manage');
   const window = windowState(conversation.windowExpiresAt, now);
+  const [templateOpen, setTemplateOpen] = useState(false);
   const windowOpen = window.kind === 'open' || window.kind === 'expiring';
 
   const notices = (
@@ -110,16 +114,30 @@ export function ChatFooter({
     );
   }
   if (!windowOpen) {
+    // Di luar sesi 24 jam hanya template Meta yang disetujui yang bisa dikirim: composer diganti
+    // penjelasan + satu aksi nyata "Kirim template".
     const none = window.kind === 'none';
     return (
       <>
         {hasNotices ? <div className={styles.notices}>{notices}</div> : null}
-        <div className={styles.closed} role="status">
-          <div className={styles.closedText}>
+        <div className={styles.closed}>
+          <div className={styles.closedText} role="status">
             <p className={styles.closedTitle}>{none ? k.windowNoneTitle : k.windowClosedTitle}</p>
             <p className={styles.closedBody}>{none ? k.windowNoneBody : k.windowClosedBody}</p>
           </div>
+          <Button
+            variant="primary"
+            disabled={paused || lock.locked}
+            aria-describedby={paused ? PAUSED_NOTICE_ID : undefined}
+            onClick={() => setTemplateOpen(true)}
+          >
+            <Icon icon={LayoutTemplate} size={16} />
+            {k.sendTemplate}
+          </Button>
         </div>
+        {templateOpen ? (
+          <TemplateSendDialog conversation={conversation} onClose={() => setTemplateOpen(false)} />
+        ) : null}
       </>
     );
   }

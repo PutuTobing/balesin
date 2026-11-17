@@ -124,6 +124,15 @@ import {
   type SetupTestEmailConnectionRequest,
   type TwoFactorReauthRequest,
   type VerifyTwoFactorRequest,
+  syncTemplatesResponseSchema,
+  templateListResponseSchema,
+  templatePresetListResponseSchema,
+  templateResponseSchema,
+  type CreateTemplateRequest,
+  type TemplateCategory,
+  type TemplateContent,
+  type TemplateSendParametersInput,
+  type TemplateStatus,
 } from '@balesin/shared';
 import { z } from 'zod';
 import { api, type ApiClient } from './client';
@@ -706,6 +715,22 @@ export function createEndpoints(client: ApiClient) {
           method: 'POST',
           schema: conversationActionResponseSchema,
         }),
+      /**
+       * Mulai percakapan ke nomor (bisa baru) dengan template DISETUJUI (`inbox.initiate`). 202 baru,
+       * 200 bila `clientMessageId` sama sudah pernah dikirim (percakapan sama).
+       */
+      start: (body: {
+        channelId: string;
+        phone: string;
+        clientMessageId: string;
+        templateId: string;
+        parameters: TemplateSendParametersInput;
+      }) =>
+        client.request(API_ROUTES.inbox.start, {
+          method: 'POST',
+          body,
+          schema: messageResponseSchema.extend({ conversationId: z.uuid() }),
+        }),
       /** Saklar bot per percakapan: `false` = serahkan ke tim, `true` = kembalikan ke bot. */
       bot: (conversationId: string, active: boolean) =>
         client.request(apiPath(API_ROUTES.inbox.bot, { conversationId }), {
@@ -759,6 +784,85 @@ export function createEndpoints(client: ApiClient) {
         client.request(apiPath(API_ROUTES.quickReplies.quickReply, { quickReplyId }), {
           method: 'DELETE',
           schema: z.object({ deleted: z.literal(true) }),
+        }),
+    },
+    /**
+     * Template pesan Meta (docs/KONTRAK-API-TEMPLATE.md). Daftar/detail = `inbox.reply`; kelola
+     * (buat, ubah, ajukan, hapus, sinkron, preset) = `templates.manage`.
+     */
+    templates: {
+      list: (
+        filter: {
+          channelId?: string;
+          status?: TemplateStatus;
+          category?: TemplateCategory;
+        } = {},
+        signal?: AbortSignal,
+      ) => {
+        const query = new URLSearchParams();
+        if (filter.channelId) query.set('channelId', filter.channelId);
+        if (filter.status) query.set('status', filter.status);
+        if (filter.category) query.set('category', filter.category);
+        const text = query.toString();
+        return client.request(`${API_ROUTES.templates.list}${text ? `?${text}` : ''}`, {
+          schema: templateListResponseSchema,
+          signal,
+        });
+      },
+      get: (templateId: string, signal?: AbortSignal) =>
+        client.request(apiPath(API_ROUTES.templates.template, { templateId }), {
+          schema: templateResponseSchema,
+          signal,
+        }),
+      create: (body: CreateTemplateRequest) =>
+        client.request(API_ROUTES.templates.list, {
+          method: 'POST',
+          body,
+          schema: templateResponseSchema,
+        }),
+      update: (
+        templateId: string,
+        body: {
+          name?: string;
+          language?: string;
+          category?: TemplateCategory;
+          content?: TemplateContent;
+        },
+      ) =>
+        client.request(apiPath(API_ROUTES.templates.template, { templateId }), {
+          method: 'PATCH',
+          body,
+          schema: templateResponseSchema,
+        }),
+      /** Ajukan ke Meta (baru) atau ajukan perubahan (sudah di Meta). */
+      submit: (templateId: string) =>
+        client.request(apiPath(API_ROUTES.templates.submit, { templateId }), {
+          method: 'POST',
+          schema: templateResponseSchema,
+        }),
+      remove: (templateId: string) =>
+        client.request(apiPath(API_ROUTES.templates.template, { templateId }), {
+          method: 'DELETE',
+          schema: z.object({ deleted: z.literal(true) }),
+        }),
+      /** Sinkron dari Meta; tanpa `channelId` = semua nomor WhatsApp aktif. */
+      sync: (channelId?: string) =>
+        client.request(API_ROUTES.templates.sync, {
+          method: 'POST',
+          body: channelId ? { channelId } : {},
+          schema: syncTemplatesResponseSchema,
+        }),
+      presets: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.templates.presets, {
+          schema: templatePresetListResponseSchema,
+          signal,
+        }),
+      /** Draf dari preset industri (`source: preset`), bisa diubah sebelum diajukan. */
+      fromPreset: (presetId: string, body: { channelId: string; name?: string }) =>
+        client.request(apiPath(API_ROUTES.templates.fromPreset, { presetId }), {
+          method: 'POST',
+          body,
+          schema: templateResponseSchema,
         }),
     },
     /** Master tag (lihat `inbox.view`; buat `contacts.manage`). */

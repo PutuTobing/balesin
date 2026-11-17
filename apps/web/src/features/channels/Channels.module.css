@@ -1008,34 +1008,81 @@ button.stepButton:hover {
   outline-offset: -3px;
 }
 
+/* Jadwal: judul kolom sekali, lalu satu baris per hari (centang · mulai – selesai). */
+.botSchedule {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.botScheduleHead,
+.botDay {
+  display: grid;
+  grid-template-columns: minmax(7rem, 9rem) minmax(0, 8rem) auto minmax(0, 8rem);
+  justify-content: start;
+  align-items: center;
+  column-gap: var(--space-8);
+}
+
+.botScheduleHead {
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
 ul.botDays,
 .botDays {
   display: flex;
   flex-direction: column;
-  gap: var(--space-8);
 }
 
 .botDay {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--space-8) var(--space-16);
-  padding-bottom: var(--space-8);
+  min-height: var(--size-touch);
+  padding: var(--space-4) 0;
   border-bottom: 1px solid var(--line);
 }
 
-.botDay > :first-child {
-  flex: 0 0 8rem;
-}
-
-.botTimes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-8) var(--space-12);
+/* Centang hari tanpa bingkai kotak (baris tabel, bukan pilihan berdiri sendiri). */
+.botDay .botDayCheck,
+.botDay .botDayCheck:has(input:checked) {
+  padding: var(--space-4) 0;
+  border-color: transparent;
+  background: transparent;
 }
 
 .botTime {
-  width: 8rem;
+  width: 100%;
+  min-width: 0;
+  height: var(--size-control);
+  padding: 0 var(--space-8);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--text-14);
+  font-variant-numeric: tabular-nums;
+}
+
+.botTime:focus-visible {
+  border-color: var(--primary);
+}
+
+.botDash {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+}
+
+.botOff {
+  grid-column: 2 / -1;
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.botCopy {
+  align-self: flex-start;
+  margin-top: var(--space-4);
 }
 
 .botTimeout {
@@ -1049,19 +1096,17 @@ ul.botDays,
 }
 
 @media (max-width: 640px), (pointer: coarse) {
-  .botMode {
+  .botMode,
+  .botTime {
     height: var(--size-touch);
   }
 }
 
 @media (max-width: 640px) {
-  .botDay > :first-child {
-    flex-basis: 100%;
-  }
-
-  .botTime {
-    flex: 1 1 7rem;
-    width: auto;
+  .botScheduleHead,
+  .botDay {
+    grid-template-columns: 6.5rem minmax(0, 1fr) auto minmax(0, 1fr);
+    justify-content: stretch;
   }
 
   .botTimeout {

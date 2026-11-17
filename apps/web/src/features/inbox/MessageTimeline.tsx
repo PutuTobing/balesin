@@ -2,6 +2,7 @@ import type { InteractiveMessage, Message } from '@balesin/shared';
 import {
   Bot,
   CircleAlert,
+  CornerDownRight,
   Forward,
   Info,
   Megaphone,
@@ -249,7 +250,10 @@ function MessageRow({
                 <Icon icon={CircleAlert} size={16} />
                 <span>{failureText(message)}</span>
               </p>
-              {message.failure?.retryable && actions.canRetry ? (
+              {message.template?.category === 'AUTHENTICATION' ? (
+                // Kode OTP tidak disimpan (review template S1): kirim ulang ditolak server (409).
+                <p className={styles.failedHint}>{t.inbox.compose.otpNoResend}</p>
+              ) : message.failure?.retryable && actions.canRetry ? (
                 <Button
                   size="md"
                   variant="ghost"
@@ -389,11 +393,15 @@ function InteractiveChoices({ message }: { message: InteractiveMessage }) {
       ) : null}
       <ul className={styles.choiceList} aria-label={t.inbox.content.choicesLabel}>
         {choices.map((choice) => (
+          // Pilihan untuk PELANGGAN (bukan tombol bagi agen): garis putus + panah balas.
           <li key={choice.id} className={styles.choice} dir="auto">
-            <span>{choice.title}</span>
-            {choice.description ? (
-              <span className={styles.choiceDescription}>{choice.description}</span>
-            ) : null}
+            <Icon icon={CornerDownRight} size={16} className={styles.choiceIcon} />
+            <span className={styles.choiceText}>
+              <span>{choice.title}</span>
+              {choice.description ? (
+                <span className={styles.choiceDescription}>{choice.description}</span>
+              ) : null}
+            </span>
           </li>
         ))}
       </ul>

@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Gauge,
   History,
+  LayoutTemplate,
   KeyRound,
   Webhook,
   type LucideIcon,
@@ -42,6 +43,7 @@ import {
 import { TwoFactorBadge } from '../security/TwoFactorBadge';
 import { sendingLimitsQuery } from '../inbox/inbox-queries';
 import { integrationKeys } from '../integrations/integration-queries';
+import { templatesQuery } from '../templates/template-queries';
 import { usePushDevice } from '../notifications/use-push-device';
 import styles from './Settings.module.css';
 
@@ -68,6 +70,7 @@ export function SettingsPage() {
   const canSendingLimits = useCan('sending.limits.manage');
   const canApiKeys = useCan('api_keys.manage');
   const canWebhooks = useCan('integrations.manage');
+  const canTemplates = useCan('templates.manage');
 
   return (
     <Page>
@@ -77,6 +80,7 @@ export function SettingsPage() {
         canEmail ||
         canAudit ||
         canQuickReplies ||
+        canTemplates ||
         canSendingLimits ||
         canApiKeys ||
         canWebhooks ? (
@@ -86,6 +90,7 @@ export function SettingsPage() {
             showEmail={canEmail}
             showAudit={canAudit}
             showQuickReplies={canQuickReplies}
+            showTemplates={canTemplates}
             showSendingLimits={canSendingLimits}
             showApiKeys={canApiKeys}
             showWebhooks={canWebhooks}
@@ -172,6 +177,7 @@ function OrganizationSettings({
   showEmail,
   showAudit,
   showQuickReplies,
+  showTemplates,
   showSendingLimits,
   showApiKeys,
   showWebhooks,
@@ -183,6 +189,7 @@ function OrganizationSettings({
   showEmail: boolean;
   showAudit: boolean;
   showQuickReplies: boolean;
+  showTemplates: boolean;
   showSendingLimits: boolean;
   showApiKeys: boolean;
   showWebhooks: boolean;
@@ -200,6 +207,7 @@ function OrganizationSettings({
         {showChannels ? <ChannelsMenuItem /> : null}
         {showTeam ? <TeamMenuItem canInvite={canInvite} canManage={canManageTeam} /> : null}
         {showEmail ? <EmailMenuItem /> : null}
+        {showTemplates ? <TemplatesMenuItem /> : null}
         {showQuickReplies ? <QuickRepliesMenuItem /> : null}
         {showSendingLimits ? <SendingLimitsMenuItem /> : null}
         {showApiKeys ? <ApiKeysMenuItem /> : null}
@@ -303,6 +311,29 @@ function QuickRepliesMenuItem() {
   );
 }
 
+/** Template WhatsApp (Meta): jumlah disetujui dari seluruhnya. */
+function TemplatesMenuItem() {
+  const list = useQuery(templatesQuery);
+  const all = list.data?.templates;
+  return (
+    <MenuRow
+      to="/pengaturan/template"
+      icon={LayoutTemplate}
+      label={t.templates.title}
+      hint={t.templates.menuHint}
+      status={
+        all
+          ? t.templates.menuCount(
+              all.filter((template) => template.status === 'APPROVED').length,
+              all.length,
+            )
+          : null
+      }
+      loading={list.isPending}
+    />
+  );
+}
+
 /** API key: jumlah key aktif. */
 function ApiKeysMenuItem() {
   const list = useQuery({
@@ -348,7 +379,7 @@ function MenuRow({
   status,
   loading,
 }: {
-  to: '/pengaturan/api-key' | '/pengaturan/webhook';
+  to: '/pengaturan/api-key' | '/pengaturan/webhook' | '/pengaturan/template';
   icon: LucideIcon;
   label: string;
   hint: string;

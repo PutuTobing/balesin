@@ -27,6 +27,7 @@ import { inboxScreens } from './screens-inbox';
 import { notificationScreens } from './screens-notifikasi';
 import { integrationScreens } from './screens-integrasi';
 import { teamScreens } from './screens-tim';
+import { templateScreens } from './screens-template';
 
 export interface Screen {
   /** Nama berkas: e2e/screenshots/<name>--<viewport>-<tema>.png */
@@ -991,4 +992,6 @@ export const screens: Screen[] = [
   ...inboxScreens,
   ...notificationScreens,
   ...integrationScreens,
+  // Fase 4: template WhatsApp (Meta), kirim template di luar sesi, percakapan baru.
+  ...templateScreens,
 ];

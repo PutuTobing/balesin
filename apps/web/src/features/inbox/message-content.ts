@@ -5,6 +5,7 @@ import {
   FileText,
   Image as ImageIcon,
   Info,
+  LayoutTemplate,
   MapPin,
   Mic,
   MousePointerClick,
@@ -34,6 +35,7 @@ const typeIcons: Partial<Record<MessageType, LucideIcon>> = {
   interactive: MousePointerClick,
   reaction: SmilePlus,
   system: Info,
+  template: LayoutTemplate,
   unsupported: TriangleAlert,
 };
 
@@ -168,6 +170,14 @@ export function messageBody(message: Message): MessageBody {
         text: text ?? reply?.title ?? null,
       };
     }
+    case 'template':
+      // Template Meta: nama template sebagai label; isi = body yang sudah diisi (OTP tersamar).
+      return {
+        icon: LayoutTemplate,
+        label: message.template ? c.templateNamed(message.template.name) : c.template,
+        detail: null,
+        text,
+      };
     case 'system':
       return { icon, label: text ? null : c.system, detail: null, text };
     case 'unsupported':

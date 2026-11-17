@@ -14,6 +14,7 @@ import { Icon } from '../../components/ui/Icon';
 import { IconButton } from '../../components/ui/IconButton';
 import { Notice } from '../../components/ui/Notice';
 import { t } from '../../i18n/id';
+import { cx } from '../../lib/cx';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
 import { zodFieldErrors, type FieldErrors } from '../../lib/form';
@@ -40,6 +41,14 @@ const emptyRow = (): Row => ({ key: nextKey(), title: '', description: '' });
 
 /** Penghitung karakter sebagai petunjuk isian ("12/20"). */
 const count = (value: string, max: number) => k.ivCount(value.length, max);
+/**
+ * Penghitung karakter: tampil saat isian difokus atau sudah ≥ 80% batas (supaya dialog tidak ramai
+ * angka). Disembunyikan lewat CSS, jadi tetap dikaitkan ke isiannya untuk pembaca layar.
+ */
+const counted = (value: string, max: number) => ({
+  hint: count(value, max),
+  className: cx(styles.ivCounted, value.length >= max * 0.8 && styles.ivNear),
+});
 const optional = (value: string) => (value.trim() ? value : undefined);
 
 /**
@@ -168,7 +177,7 @@ export function InteractiveDialog({
         </div>
         <TextField
           label={k.ivHeader}
-          hint={count(header, L.header)}
+          {...counted(header, L.header)}
           value={header}
           onChange={(event) => setHeader(event.target.value)}
           error={errors.header}
@@ -177,7 +186,7 @@ export function InteractiveDialog({
         />
         <TextAreaField
           label={k.ivBody}
-          hint={count(body, L.body)}
+          {...counted(body, L.body)}
           value={body}
           onChange={(event) => setBody(event.target.value)}
           error={errors.body}
@@ -194,7 +203,7 @@ export function InteractiveDialog({
               <div key={button.key} className={styles.ivRow}>
                 <TextField
                   label={k.ivButton(position + 1)}
-                  hint={count(button.title, L.buttonTitle)}
+                  {...counted(button.title, L.buttonTitle)}
                   value={button.title}
                   onChange={(event) =>
                     setButtons((current) =>
@@ -233,7 +242,7 @@ export function InteractiveDialog({
           <>
             <TextField
               label={k.ivListButton}
-              hint={count(listButton, L.listButton)}
+              {...counted(listButton, L.listButton)}
               placeholder={k.ivListButtonPlaceholder}
               value={listButton}
               onChange={(event) => setListButton(event.target.value)}
@@ -248,11 +257,12 @@ export function InteractiveDialog({
                 <div className={styles.ivRow}>
                   <TextField
                     label={k.ivSectionTitle}
-                    hint={
-                      sections.length > 1
-                        ? `${k.ivSectionTitleHint} ${count(section.title, L.sectionTitle)}`
-                        : count(section.title, L.sectionTitle)
-                    }
+                    {...(sections.length > 1
+                      ? {
+                          // Wajib bila lebih dari satu bagian: petunjuknya selalu tampil.
+                          hint: `${k.ivSectionTitleHint} ${count(section.title, L.sectionTitle)}`,
+                        }
+                      : counted(section.title, L.sectionTitle))}
                     value={section.title}
                     onChange={(event) =>
                       updateSection(section.key, (current) => ({
@@ -278,7 +288,7 @@ export function InteractiveDialog({
                   <div key={row.key} className={styles.ivListRow}>
                     <TextField
                       label={k.ivRow(rowIndex + 1)}
-                      hint={count(row.title, L.rowTitle)}
+                      {...counted(row.title, L.rowTitle)}
                       value={row.title}
                       onChange={(event) =>
                         updateSection(section.key, (current) => ({
@@ -296,7 +306,7 @@ export function InteractiveDialog({
                     />
                     <TextField
                       label={k.ivRowDescription}
-                      hint={count(row.description, L.rowDescription)}
+                      {...counted(row.description, L.rowDescription)}
                       value={row.description}
                       onChange={(event) =>
                         updateSection(section.key, (current) => ({
@@ -360,7 +370,7 @@ export function InteractiveDialog({
         )}
         <TextField
           label={k.ivFooter}
-          hint={count(footer, L.footer)}
+          {...counted(footer, L.footer)}
           value={footer}
           onChange={(event) => setFooter(event.target.value)}
           error={errors.footer}

@@ -2,6 +2,7 @@ import type { Conversation, Message, QuickReply } from '@balesin/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   FileText,
+  LayoutTemplate,
   ListChecks,
   Music,
   Paperclip,
@@ -21,6 +22,7 @@ import { messageBody } from './message-content';
 import { createOutboxItem, sendOutboxItem } from './outbox';
 import { slashQuery, useQuickReplies } from './quick-replies';
 import { InteractiveDialog } from './InteractiveDialog';
+import { TemplateSendDialog } from './TemplateSendDialog';
 import { QuickReplyPicker } from './QuickReplyPicker';
 import { endpoints } from '../../lib/api/endpoints';
 
@@ -68,6 +70,7 @@ export function Composer({
   const [preview, setPreview] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [interactiveOpen, setInteractiveOpen] = useState(false);
+  const [templateOpen, setTemplateOpen] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const hintId = useId();
@@ -284,6 +287,14 @@ export function Composer({
           aria-describedby={pausedNoticeId}
           onClick={() => setInteractiveOpen(true)}
         />
+        <IconButton
+          label={k.template}
+          icon={LayoutTemplate}
+          tooltipSide="top"
+          disabled={disabled || paused || locked}
+          aria-describedby={pausedNoticeId}
+          onClick={() => setTemplateOpen(true)}
+        />
         <textarea
           ref={inputRef}
           value={text}
@@ -336,6 +347,9 @@ export function Composer({
       ) : null}
       {interactiveOpen ? (
         <InteractiveDialog conversation={conversation} onClose={() => setInteractiveOpen(false)} />
+      ) : null}
+      {templateOpen ? (
+        <TemplateSendDialog conversation={conversation} onClose={() => setTemplateOpen(false)} />
       ) : null}
     </div>
   );

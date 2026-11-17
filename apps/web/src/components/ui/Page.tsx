@@ -15,6 +15,7 @@ const parents: Record<PageParent, { to: NonNullable<LinkProps['to']>; label: str
   security: { to: '/pengaturan/keamanan', label: t.security.title },
   team: { to: '/pengaturan/tim', label: t.team.title },
   channels: { to: '/pengaturan/channel', label: t.channels.title },
+  templates: { to: '/pengaturan/template', label: t.templates.title },
 };
 
 interface PageHeaderProps {

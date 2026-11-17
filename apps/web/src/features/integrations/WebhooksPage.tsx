@@ -372,9 +372,10 @@ function WebhookRow({
         <Checkbox
           checked={revokePrevious}
           onChange={(event) => setRevokePrevious(event.target.checked)}
+          className={styles.revokeRow}
         >
           <span className={styles.optionText}>
-            <span>{copy.revokePrevious}</span>
+            <span className={styles.revokeLabel}>{copy.revokePrevious}</span>
             <span className={styles.optionHint}>{copy.revokePreviousHint}</span>
           </span>
         </Checkbox>

@@ -234,12 +234,13 @@ describe('composer', () => {
     );
   });
 
-  it('di luar jendela 24 jam: composer diganti penjelasan, tanpa tombol nonaktif / janji fitur', async () => {
+  it('di luar jendela 24 jam: composer diganti penjelasan + aksi nyata "Kirim template"', async () => {
     await openChat(closed.id);
     expect(chat().queryByRole('textbox', { name: k.label })).toBeNull();
     expect(chat().getByText(k.windowClosedTitle)).toBeVisible();
     expect(chat().getByText(k.windowClosedBody)).toBeVisible();
-    expect(chat().queryByRole('button', { name: /template/i })).toBeNull();
+    // Satu-satunya pesan yang boleh di luar sesi: template Meta yang disetujui.
+    expect(chat().getByRole('button', { name: k.sendTemplate })).toBeEnabled();
     // Pesan di luar jendela tidak bisa dibalas/diberi reaksi.
     expect(chat().queryByRole('button', { name: /Aksi untuk pesan/ })).toBeNull();
   });

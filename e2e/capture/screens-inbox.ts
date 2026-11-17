@@ -674,7 +674,9 @@ export const inboxScreens: Screen[] = [
         messages: (route) =>
           json(route, {
             messages: [
+              // Balasan pelanggan SETELAH pesan bot (nomor & waktu urut).
               interactiveMessage(2, {
+                createdAt: new Date(Date.now() - 60_000).toISOString(),
                 direction: 'inbound',
                 senderKind: 'customer',
                 type: 'interactive',
@@ -687,6 +689,7 @@ export const inboxScreens: Screen[] = [
                 },
               }),
               interactiveMessage(1, {
+                createdAt: new Date(Date.now() - 2 * 60_000).toISOString(),
                 direction: 'outbound',
                 senderKind: 'bot',
                 type: 'interactive',

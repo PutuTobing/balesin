@@ -175,8 +175,9 @@ export function HandlingActions({
                 {h.unassign}
               </DropdownMenu.Item>
             ) : null}
-            {!withBot && !resolved ? (
-              // Bot channel mati / chat sudah selesai → server menjawab 409 dengan penjelasannya.
+            {!withBot && !resolved && (canAssign || mine) ? (
+              // Hanya pemegang chat atau yang boleh menugaskan (chat orang lain tidak dioper ke bot
+              // diam-diam). Bot channel mati → server menjawab 409 dengan penjelasannya.
               <DropdownMenu.Item className={styles.item} onSelect={() => run('botOn')}>
                 <Icon icon={Bot} size={16} />
                 {h.botResume}

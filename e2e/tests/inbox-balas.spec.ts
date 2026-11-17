@@ -1,6 +1,7 @@
 import {
   interactiveReplyNotification,
   statusNotification,
+  templateStatusNotification,
   textMessageNotification,
 } from '../../apps/api/src/testing/fake-meta-webhooks';
 import { FAKE_META } from '../stack/fake-meta-data';
@@ -179,9 +180,7 @@ test('tandai selesai lalu buka lagi', async ({ page }) => {
   await expect(chat.getByRole('textbox', { name: 'Tulis balasan' })).toBeVisible();
 });
 
-test('di luar jendela 24 jam: composer diganti penjelasan (tanpa tombol nonaktif)', async ({
-  page,
-}) => {
+test('di luar jendela 24 jam: composer diganti penjelasan + "Kirim template"', async ({ page }) => {
   await e2eSql(
     `update conversations set window_expires_at = now() - interval '1 hour' where id = $1`,
     [conversationId],
@@ -190,7 +189,122 @@ test('di luar jendela 24 jam: composer diganti penjelasan (tanpa tombol nonaktif
   const chat = page.getByRole('region', { name: 'Ruang chat' });
   await expect(chat.getByText('Sesi 24 jam sudah habis')).toBeVisible();
   await expect(chat.getByRole('textbox', { name: 'Tulis balasan' })).toHaveCount(0);
-  await expect(chat.getByRole('button', { name: /template/i })).toHaveCount(0);
+  // Fitur template sudah ada: aksi nyata (bukan tombol nonaktif / janji fitur).
+  await expect(chat.getByRole('button', { name: 'Kirim template', exact: true })).toBeEnabled();
+});
+
+let templateName = '';
+const TEMPLATE_TEXT = 'Halo Yanti, tagihan bulan Desember sudah terbit.';
+
+/**
+ * Template disetujui lewat jalur sungguhan: buat + ajukan (API, Meta tiruan → PENDING) → webhook
+ * `message_template_status_update` APPROVED bertanda tangan → worker menandai disetujui.
+ */
+async function approvedTemplate(): Promise<string> {
+  const { api, csrf } = await ownerApi();
+  try {
+    const rows = await e2eSql<{ id: string }>(`select id from channels where name = $1`, [
+      setup.channelName,
+    ]);
+    const name = `tagihan_e2e_${Date.now().toString(36)}`;
+    const created = await api.post('/api/v1/templates', {
+      headers: { 'x-csrf-token': csrf },
+      data: {
+        channelId: rows[0]?.id,
+        name,
+        language: 'id',
+        category: 'UTILITY',
+        content: {
+          parameterFormat: 'positional',
+          header: null,
+          body: {
+            text: 'Halo {{1}}, tagihan bulan {{2}} sudah terbit.',
+            examples: { '1': 'Budi', '2': 'November' },
+          },
+          footer: null,
+          buttons: [],
+          authentication: null,
+        },
+      },
+    });
+    expect(created.ok(), await created.text()).toBe(true);
+    const { template } = (await created.json()) as { template: { id: string } };
+    const submitted = await api.post(`/api/v1/templates/${template.id}/submit`, {
+      headers: { 'x-csrf-token': csrf },
+    });
+    expect(submitted.ok(), await submitted.text()).toBe(true);
+    const meta = ((await submitted.json()) as { template: { metaTemplateId: string } }).template
+      .metaTemplateId;
+    await deliver(
+      setup,
+      templateStatusNotification({ wabaId: FAKE_META.wabaId, id: meta, name, language: 'id' }),
+    );
+    await expect
+      .poll(
+        async () =>
+          (
+            await e2eSql<{ status: string }>(`select status from message_templates where id = $1`, [
+              template.id,
+            ])
+          )[0]?.status,
+      )
+      .toBe('APPROVED');
+    return name;
+  } finally {
+    await api.dispose();
+  }
+}
+
+test('di luar sesi 24 jam: "Kirim template" → isi variabel → terkirim (wamid)', async ({
+  page,
+}) => {
+  templateName = await approvedTemplate();
+  await openApp(page, `/inbox?chat=${conversationId}`);
+  const chat = page.getByRole('region', { name: 'Ruang chat' });
+  await chat.getByRole('button', { name: 'Kirim template', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Kirim template WhatsApp' });
+  await dialog.getByRole('button', { name: new RegExp(templateName) }).click();
+  await dialog.getByLabel('Nilai {{1}}', { exact: true }).fill('Yanti');
+  await dialog.getByLabel('Nilai {{2}}', { exact: true }).fill('Desember');
+  await expect(
+    dialog.getByRole('figure', { name: 'Pratinjau pesan template' }).getByText(TEMPLATE_TEXT),
+  ).toBeVisible();
+  await dialog.getByRole('button', { name: 'Kirim template', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(chat.getByText(TEMPLATE_TEXT)).toBeVisible();
+  await expect(chat.getByText(`Template ${templateName}`)).toBeVisible();
+  await expect.poll(() => wamidOf(TEMPLATE_TEXT)).not.toBeNull();
+});
+
+test('percakapan baru ke nomor yang belum pernah chat → chat terbuka, dipegang pemula', async ({
+  page,
+}) => {
+  const fresh = randomCustomer('Pelanggan Baru');
+  const [channel] = await e2eSql<{ id: string }>(`select id from channels where name = $1`, [
+    setup.channelName,
+  ]);
+  await openApp(page, '/inbox');
+  await page.getByRole('button', { name: 'Percakapan baru' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Mulai percakapan baru' });
+  const sender = dialog.getByLabel('Kirim dari nomor');
+  if ((await sender.count()) > 0) await sender.selectOption(channel?.id ?? '');
+  // Format lokal 08… dinormalkan server ke +62….
+  await dialog.getByLabel('Nomor tujuan').fill(`0${fresh.waId.slice(2)}`);
+  await dialog.getByRole('button', { name: new RegExp(templateName) }).click();
+  await dialog.getByLabel('Nilai {{1}}', { exact: true }).fill('Kak');
+  await dialog.getByLabel('Nilai {{2}}', { exact: true }).fill('Januari');
+  await dialog.getByRole('button', { name: 'Kirim dan buka chat' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page).toHaveURL(/chat=[0-9a-f-]{36}/);
+  const chat = page.getByRole('region', { name: 'Ruang chat' });
+  await expect(chat.getByText('Halo Kak, tagihan bulan Januari sudah terbit.')).toBeVisible();
+  const [row] = await e2eSql<{ status: string; assignee_id: string | null }>(
+    `select c.status, c.assignee_user_id as assignee_id from conversations c join contacts k on k.id = c.contact_id
+     where k.phone = $1`,
+    [`+${fresh.waId}`],
+  );
+  expect(row?.status).toBe('served');
+  expect(row?.assignee_id).toBeTruthy();
 });
 
 /**

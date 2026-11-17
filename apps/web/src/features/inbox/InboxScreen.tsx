@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ArrowLeft, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { ArrowLeft, PanelRightClose, PanelRightOpen, SquarePen } from 'lucide-react';
 import {
   useEffect,
   useMemo,
@@ -36,11 +36,13 @@ import {
   agentsQuery,
   countsQuery,
   inboxChannelsQuery,
+  inboxKeys,
   reviveConversation,
   tagsQuery,
 } from './inbox-queries';
 import type { InboxTab } from './inbox-search';
 import { InboxFilterMenu } from './InboxFilterMenu';
+import { NewConversationDialog } from './NewConversationDialog';
 import { useDetailPanel } from './use-detail-panel';
 import { fallbackRefetchInterval } from './use-inbox-stream';
 import type { StreamStatus } from './inbox-stream';
@@ -131,6 +133,8 @@ export function InboxScreen({
   const channels = useQuery({ ...inboxChannelsQuery, enabled: !loading }).data?.channels ?? [];
   // Daftar agen (`GET /inbox/agents`, izin `inbox.assign` di server): Owner/Admin/Supervisor/CS.
   const canAssign = useCan('inbox.assign');
+  const canInitiate = useCan('inbox.initiate');
+  const [startOpen, setStartOpen] = useState(false);
   const agentList = useQuery({ ...agentsQuery, enabled: !loading && canAssign }).data?.agents;
   const isTechnician = session?.user.role === 'teknisi';
   const agents = useMemo<AgentOption[] | null>(() => {
@@ -243,7 +247,16 @@ export function InboxScreen({
         onFiltersChange={setFilters}
         chips={chips}
         filterControl={
-          <InboxFilterMenu filters={filters} onChange={setFilters} options={filterOptions} />
+          <span className={styles.listTools}>
+            {canInitiate ? (
+              <IconButton
+                label={t.inbox.newConversation.open}
+                icon={SquarePen}
+                onClick={() => setStartOpen(true)}
+              />
+            ) : null}
+            <InboxFilterMenu filters={filters} onChange={setFilters} options={filterOptions} />
+          </span>
         }
         params={params}
         counts={loading ? undefined : counts}
@@ -252,6 +265,18 @@ export function InboxScreen({
         onOpen={openFromList}
         refetchInterval={refetchInterval}
       />
+
+      {startOpen ? (
+        <NewConversationDialog
+          onClose={() => setStartOpen(false)}
+          onStarted={(conversationId) => {
+            setStartOpen(false);
+            void queryClient.invalidateQueries({ queryKey: inboxKeys.conversationLists });
+            void queryClient.invalidateQueries({ queryKey: inboxKeys.countsAll });
+            openFromList(conversationId);
+          }}
+        />
+      ) : null}
 
       <section className={styles.chat} aria-label={t.inbox.chat.label}>
         {chatOpen ? (

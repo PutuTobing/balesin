@@ -88,11 +88,21 @@ ul.list,
 .inactiveSummary {
   display: flex;
   align-items: center;
+  gap: var(--space-8);
   min-height: var(--size-touch);
   color: var(--ink-2);
   font-size: var(--text-13);
   font-weight: var(--weight-semibold);
   cursor: pointer;
+}
+
+.inactiveChevron {
+  flex: none;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.inactive[open] .inactiveChevron {
+  transform: rotate(90deg);
 }
 
 .itemHead {
@@ -293,6 +303,12 @@ ul.chips,
 .optionHint {
   color: var(--ink-2);
   font-size: var(--text-12);
+}
+
+/* Mencabut rahasia lama memutus penerima yang belum diperbarui: dicentang = warna bahaya. */
+.revokeRow:has(input:checked) .revokeLabel {
+  color: var(--danger-ink);
+  font-weight: var(--weight-semibold);
 }
 
 .fieldError {

@@ -1,10 +1,12 @@
 import { BOT_DAY_LABELS, channelBotSettingsSchema, type ChannelBotSettings } from '@balesin/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { CopyCheck } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Checkbox } from '../../components/ui/Checkbox';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { TextField } from '../../components/ui/Field';
+import { Icon } from '../../components/ui/Icon';
 import { Notice } from '../../components/ui/Notice';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { StatusBadge } from '../../components/ui/StatusBadge';
@@ -108,6 +110,20 @@ function BotForm({
     setSaved(false);
   };
 
+  const activeDays = form.days.filter((item) => item.on);
+  const firstActive = activeDays[0];
+  /** Jam hari aktif pertama disalin ke semua hari aktif lain. */
+  const copyFirstHours = () => {
+    if (!firstActive) return;
+    setForm((current) => ({
+      ...current,
+      days: current.days.map((item) =>
+        item.on ? { ...item, start: firstActive.start, end: firstActive.end } : item,
+      ),
+    }));
+    setSaved(false);
+  };
+
   const save = async (body: ChannelBotSettings) => {
     setSaving(true);
     setFailure(null);
@@ -180,41 +196,62 @@ function BotForm({
             {form.mode === 'schedule' ? (
               <>
                 <p className={styles.hint}>{copy.timezone(timezone)}</p>
-                <ul className={styles.botDays}>
-                  {WEEK.map((day) => {
-                    const item = form.days.find((entry) => entry.day === day)!;
-                    const label = BOT_DAY_LABELS[day] ?? '';
-                    return (
-                      <li key={day} className={styles.botDay}>
-                        <Checkbox
-                          checked={item.on}
-                          onChange={(event) => changeDay(day, { on: event.target.checked })}
-                          aria-label={copy.dayOn(label)}
-                        >
-                          {label}
-                        </Checkbox>
-                        {item.on ? (
-                          <div className={styles.botTimes}>
-                            <TextField
-                              label={copy.start}
-                              type="time"
-                              value={item.start}
-                              onChange={(event) => changeDay(day, { start: event.target.value })}
-                              className={styles.botTime}
-                            />
-                            <TextField
-                              label={copy.end}
-                              type="time"
-                              value={item.end}
-                              onChange={(event) => changeDay(day, { end: event.target.value })}
-                              className={styles.botTime}
-                            />
-                          </div>
-                        ) : null}
-                      </li>
-                    );
-                  })}
-                </ul>
+                <div className={styles.botSchedule}>
+                  {/* Judul kolom sekali saja; tiap isian jam punya label sendiri untuk pembaca layar. */}
+                  <div className={styles.botScheduleHead} aria-hidden="true">
+                    <span>{copy.day}</span>
+                    <span>{copy.start}</span>
+                    <span />
+                    <span>{copy.end}</span>
+                  </div>
+                  <ul className={styles.botDays}>
+                    {WEEK.map((day) => {
+                      const item = form.days.find((entry) => entry.day === day)!;
+                      const label = BOT_DAY_LABELS[day] ?? '';
+                      return (
+                        <li key={day} className={styles.botDay}>
+                          <Checkbox
+                            checked={item.on}
+                            onChange={(event) => changeDay(day, { on: event.target.checked })}
+                            aria-label={copy.dayOn(label)}
+                            className={styles.botDayCheck}
+                          >
+                            {label}
+                          </Checkbox>
+                          {item.on ? (
+                            <>
+                              <input
+                                type="time"
+                                value={item.start}
+                                onChange={(event) => changeDay(day, { start: event.target.value })}
+                                aria-label={copy.startOf(label)}
+                                className={styles.botTime}
+                              />
+                              <span className={styles.botDash} aria-hidden="true">
+                                –
+                              </span>
+                              <input
+                                type="time"
+                                value={item.end}
+                                onChange={(event) => changeDay(day, { end: event.target.value })}
+                                aria-label={copy.endOf(label)}
+                                className={styles.botTime}
+                              />
+                            </>
+                          ) : (
+                            <span className={styles.botOff}>{copy.dayOff}</span>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {activeDays.length >= 2 ? (
+                    <Button variant="ghost" className={styles.botCopy} onClick={copyFirstHours}>
+                      <Icon icon={CopyCheck} size={16} />
+                      {copy.copyHours}
+                    </Button>
+                  ) : null}
+                </div>
               </>
             ) : null}
             {hoursError ? (

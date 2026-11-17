@@ -121,7 +121,7 @@ test('Webhook MobiChat: key ditempel utuh → kartu ••••akhir, key tidak
     hookForm.getByText('Mode MobiChat hanya mengirim pesan masuk dari pelanggan.'),
   ).toBeVisible();
   await hookForm.getByLabel('URL penerima').fill(url);
-  await hookForm.getByLabel(/^API key untuk workflow/).fill(key);
+  await hookForm.getByLabel(/^API key untuk alur n8n/).fill(key);
   await hookForm.getByRole('button', { name: 'Simpan' }).click();
   await confirmAsSecondOwner(page, owner, 'Tambah webhook baru?', 'Simpan');
   await page
@@ -139,7 +139,7 @@ test('Webhook MobiChat: key ditempel utuh → kartu ••••akhir, key tidak
   await page.getByRole('menuitem', { name: 'Buat rahasia baru' }).click();
   const options = page.getByRole('dialog', { name: 'Buat rahasia webhook baru' });
   await options.getByRole('checkbox', { name: /Cabut rahasia lama sekarang/ }).check();
-  await options.getByRole('button', { name: 'Lanjut' }).click();
+  await options.getByRole('button', { name: 'Buat rahasia baru' }).click();
   await confirmAsSecondOwner(page, owner, 'Buat rahasia webhook baru?', 'Buat rahasia baru');
   await page
     .getByRole('dialog', { name: 'Salin rahasia webhook sekarang' })

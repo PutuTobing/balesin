@@ -90,6 +90,31 @@ describe('kartu Bot di halaman nomor', () => {
     expect(await card.findByText(b.statusOn)).toBeVisible();
   });
 
+  it('jadwal ringkas: jam per hari berlabel "Mulai Senin"; "Samakan jam" menyalin ke hari aktif', async () => {
+    const { api } = await renderApp(path, { routes: routes({}) });
+    const card = within(
+      (await screen.findByRole('heading', { level: 2, name: b.title })).closest('section')!,
+    );
+    fireEvent.click(card.getByRole('checkbox', { name: b.enable }));
+    fireEvent.click(card.getByRole('radio', { name: b.schedule }));
+    // Label "Mulai/Selesai" tidak diulang per hari; tiap isian tetap berlabel untuk pembaca layar.
+    fireEvent.change(card.getByLabelText(b.startOf('Senin')), { target: { value: '09:00' } });
+    fireEvent.change(card.getByLabelText(b.endOf('Senin')), { target: { value: '21:00' } });
+    // Sabtu tidak aktif: tanpa isian jam.
+    expect(card.queryByLabelText(b.startOf('Sabtu'))).toBeNull();
+    fireEvent.click(card.getByRole('button', { name: b.copyHours }));
+    expect(card.getByLabelText(b.startOf('Jumat'))).toHaveValue('09:00');
+    fireEvent.click(card.getByRole('button', { name: b.save }));
+    expect(await card.findByText(b.saved)).toBeVisible();
+    const body = requestsTo(api, 'PUT', API_ROUTES.channels.bot)[0]?.body as {
+      hours: { windows: { day: number; start: string; end: string }[] };
+    };
+    expect(body.hours.windows).toHaveLength(5);
+    for (const window of body.hours.windows) {
+      expect(window).toMatchObject({ start: '09:00', end: '21:00' });
+    }
+  });
+
   it('batas waktu di luar 1–1.440 ditolak di klien', async () => {
     const { api } = await renderApp(path, { routes: routes({}) });
     const card = within(

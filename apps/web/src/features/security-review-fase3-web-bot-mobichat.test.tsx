@@ -87,7 +87,9 @@ describe('review keamanan — API key MobiChat di formulir webhook', () => {
     const view = await renderApp('/pengaturan/webhook', {
       routes: routes({
         [`POST ${API_ROUTES.outgoingWebhooks.list}`]: () =>
-          apiError(400, 'VALIDATION_ERROR', 'API key tidak valid untuk organisasi ini.', { details: [{ field: 'mobichat.apiKey', message: 'API key tidak valid.' }] }),
+          apiError(400, 'VALIDATION_ERROR', 'API key tidak valid untuk organisasi ini.', {
+            details: [{ field: 'mobichat.apiKey', message: 'API key tidak valid.' }],
+          }),
       }),
     });
     await fillMobichatKey();
