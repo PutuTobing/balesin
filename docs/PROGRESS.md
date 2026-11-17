@@ -1,7 +1,7 @@
 # Progress
 
 **Fase aktif:** 3 — Bot & API untuk n8n (berjalan bersama Fase 4 — Template & Broadcast)
-**Terakhir diperbarui:** 2026-11-20 (Fase 2 selesai; Fase 3 hampir selesai; Fase 4 berjalan)
+**Terakhir diperbarui:** 2026-11-21 (Fase 4 backend + UI template; Fase 5 backend menunggu commit gabungan)
 
 ## Selesai
 
@@ -59,13 +59,28 @@
   & percakapan, jam kerja bot, batas waktu wajib, handoff), **pesan interaktif** — backend & web
   security AMAN; kritikus web tinggal B1–B3 (jadwal bot, dialog daftar, teks formulir MobiChat).
 
-## Sedang dikerjakan
-- **Frontend**: UI template Meta (Pengaturan → Template, pemilih template di composer, "Percakapan
-  baru") + revisi kritikus B1–B3 Fase 3.
-- **Backend**: Fase 4 broadcast (impor CSV/XLSX/segmen/konektor REST, estimasi biaya, persetujuan,
-  jadwal, throttle, anti-dobel, rem otomatis, alarm Telegram, laporan) + penyapu kode OTP.
-- Fase 4 butir 1 & 7 backend selesai: **template Meta** (sinkron/ajukan/preset ISP/kirim template/
-  mulai percakapan; `docs/KONTRAK-API-TEMPLATE.md`), security AMAN putaran 2.
+### Fase 4 — Template & Broadcast (backend + UI template sudah di-commit)
+- **Template Meta** backend (4bcef4c, e0f2091) + UI (f185b2a): Pengaturan → Template, kirim template,
+  "Percakapan baru". Security backend AMAN; review UI (security + kritikus) BELUM.
+- **Broadcast** backend (f0fad04 + 6474d8e + 2ac0d72): security AMAN putaran 2
+  (`docs/security-reviews/2026-11-20-fase4-broadcast.md`). UI broadcast BELUM.
+
+## Sedang dikerjakan (dihentikan 21 Nov, BELUM di-commit — commit keduanya BERSAMA)
+- **Backend Fase 5 CRM/tiket/departemen** — SELESAI menurut agen (969 tes api lulus): atribut kustom,
+  impor/ekspor/gabung kontak, tiket multi-board + akses Teknisi via tiket, departemen; migrasi
+  `0026_fase5_crm_tiket_departemen`, kontrak `docs/KONTRAK-API-CRM-TIKET.md` (tambahkan ke Peta
+  dokumen saat commit).
+- **Backend dashboard laporan + CSAT** — dihentikan di tengah ("wire into app.ts dan RBAC matrix"):
+  modul `reports/`, CSAT, migrasi `0027_laporan_csat`, maintenance, `core/queues.ts`, kontrak
+  `docs/KONTRAK-API-LAPORAN.md`.
+- Berkas keduanya bercampur (`app.ts`, `audit.ts`, `api-routes.ts`, `shared/index.ts`, `_journal.json`
+  memuat 0026+0027) → selesaikan laporan/CSAT dulu, lalu `pnpm -r typecheck` + `pnpm lint` + api penuh
+  + tes migrasi, commit gabungan, lalu security review keduanya.
+- Review yang dihentikan & perlu diulang: kritikus (bot/MobiChat putaran 2 + template web,
+  `docs/design-reviews/2026-11-21-fase4-template.md`), security UI template
+  (`docs/security-reviews/2026-11-21-fase4-template-web.md`).
+- Berikutnya: UI broadcast, UI Fase 5 (Kontak, Tiket Kanban, Departemen, Laporan), jam kerja +
+  alokasi round-robin (Fase 5 butir terakhir), E2E penuh saat mesin senggang.
 - Terblokir: Fase 3 mode tangkap `/compat/<vendor>/*` + Qiscus (BUTUH-TOBING #10).
 
 ## Catatan untuk sesi berikutnya
