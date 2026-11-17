@@ -6,14 +6,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import {
-  channels,
-  contacts,
-  messageTemplates,
-  messages,
-  newId,
-  organizations,
-} from '@balesin/db';
+import { channels, contacts, messageTemplates, messages, newId, organizations } from '@balesin/db';
 import { insertOrganization, insertUser } from '@balesin/db/testing';
 import { API_ROUTES, apiPath, createApiKeyResponseSchema, type ApiKeyScope } from '@balesin/shared';
 import { eq } from 'drizzle-orm';
@@ -240,57 +233,51 @@ describe('review keamanan — siapa boleh mengirim template ke nomor baru', () =
 });
 
 describe('review keamanan — temuan', () => {
-  it.fails(
-    'S1: kode OTP tidak tersimpan sebagai teks yang bisa dibaca agen (teks pesan / API inbox)',
-    async () => {
-      const key = await createKey(['messages:initiate']);
-      const templateId = await template({
-        category: 'AUTHENTICATION',
-        content: AUTH_CONTENT as never,
-      });
-      const response = await api(key.secret, API_ROUTES.publicApi.templateMessage, {
-        channelId,
-        phone: '+6281300000041',
-        templateId,
-        parameters: { body: { '1': OTP } },
-      });
-      expect(response.statusCode, response.body).toBe(202);
-      const { conversationId } = response.json<{ conversationId: string }>();
-      const [row] = await harness.db.select().from(messages).limit(1);
-      expect(row?.text ?? '').not.toContain(OTP);
-      const agentView = await call(
-        harness.app,
-        'GET',
-        apiPath(API_ROUTES.inbox.messages, { conversationId }),
-        undefined,
-        { cookie: owner.cookie },
-      );
-      expect(agentView.statusCode).toBe(200);
-      expect(agentView.body).not.toContain(OTP);
-    },
-  );
+  it('S1: kode OTP tidak tersimpan sebagai teks yang bisa dibaca agen (teks pesan / API inbox)', async () => {
+    const key = await createKey(['messages:initiate']);
+    const templateId = await template({
+      category: 'AUTHENTICATION',
+      content: AUTH_CONTENT as never,
+    });
+    const response = await api(key.secret, API_ROUTES.publicApi.templateMessage, {
+      channelId,
+      phone: '+6281300000041',
+      templateId,
+      parameters: { body: { '1': OTP } },
+    });
+    expect(response.statusCode, response.body).toBe(202);
+    const { conversationId } = response.json<{ conversationId: string }>();
+    const [row] = await harness.db.select().from(messages).limit(1);
+    expect(row?.text ?? '').not.toContain(OTP);
+    const agentView = await call(
+      harness.app,
+      'GET',
+      apiPath(API_ROUTES.inbox.messages, { conversationId }),
+      undefined,
+      { cookie: owner.cookie },
+    );
+    expect(agentView.statusCode).toBe(200);
+    expect(agentView.body).not.toContain(OTP);
+  });
 
-  it.fails(
-    'R1: key yang tertahan (batas harian habis / rem darurat) tidak membuat kontak/percakapan sampah',
-    async () => {
-      const key = await createKey(['messages:initiate'], 1);
-      const templateId = await template();
-      const send = (phone: string) =>
-        api(key.secret, API_ROUTES.publicApi.templateMessage, {
-          channelId,
-          phone,
-          templateId,
-          parameters: { body: { '1': 'Budi' } },
-        });
-      expect((await send('+6281300000051')).statusCode).toBe(202);
-      expect((await send('+6281300000052')).statusCode).toBe(429);
-      await harness.db
-        .update(organizations)
-        .set({ sendingPausedAt: new Date() })
-        .where(eq(organizations.id, organizationId));
-      expect((await send('+6281300000053')).statusCode).toBeGreaterThanOrEqual(423);
-      expect(await contactByPhone('+6281300000052')).toHaveLength(0);
-      expect(await contactByPhone('+6281300000053')).toHaveLength(0);
-    },
-  );
+  it('R1: key yang tertahan (batas harian habis / rem darurat) tidak membuat kontak/percakapan sampah', async () => {
+    const key = await createKey(['messages:initiate'], 1);
+    const templateId = await template();
+    const send = (phone: string) =>
+      api(key.secret, API_ROUTES.publicApi.templateMessage, {
+        channelId,
+        phone,
+        templateId,
+        parameters: { body: { '1': 'Budi' } },
+      });
+    expect((await send('+6281300000051')).statusCode).toBe(202);
+    expect((await send('+6281300000052')).statusCode).toBe(429);
+    await harness.db
+      .update(organizations)
+      .set({ sendingPausedAt: new Date() })
+      .where(eq(organizations.id, organizationId));
+    expect((await send('+6281300000053')).statusCode).toBeGreaterThanOrEqual(423);
+    expect(await contactByPhone('+6281300000052')).toHaveLength(0);
+    expect(await contactByPhone('+6281300000053')).toHaveLength(0);
+  });
 });

@@ -93,6 +93,12 @@ export interface MessageExtras {
     bodyVariables: string[];
     values: Record<string, string>;
     buttons: { index: number; type: 'URL' | 'COPY_CODE'; value: string }[];
+    /**
+     * Nilai rahasia (kode OTP template AUTHENTICATION, review template S1): `values`/`buttons`
+     * dikosongkan worker SEGERA setelah percobaan kirim selesai (berhasil/gagal final); teks pesan
+     * disamarkan sejak awal. Pesan seperti ini tidak bisa dikirim ulang (minta kode baru).
+     */
+    sensitive?: boolean;
   };
   forwarded?: boolean;
   frequentlyForwarded?: boolean;

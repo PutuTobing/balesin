@@ -119,3 +119,22 @@ Mode kompatibel aplikasi billing (`API-MOBICHAT-MAPPING.md` §4, vendor Qiscus) 
 jatuh tempo, pembayaran diterima, layanan diisolir, aktif kembali, gangguan jaringan, gangguan pulih, tiket
 perbaikan dibuat, jadwal teknisi, pelanggan baru, penawaran upgrade (MARKETING), kode verifikasi
 (AUTHENTICATION). Semua lolos `validateTemplate` (dites). Klinik & sekolah menyusul.
+
+## Keamanan (review template 2026-11-20)
+
+- **Kode OTP (AUTHENTICATION, S1)**: `messages.text` selalu `Kode verifikasi: ••••••` — kode tidak pernah
+  masuk riwayat, pencarian, pratinjau, ekspor kontak, webhook keluar, MobiChat, atau API baca. Nilainya
+  hanya di `extras.template` (`sensitive: true`) sampai worker selesai mencoba kirim (berhasil / gagal
+  final / dilewati), lalu dikosongkan; hanya ulangan otomatis (Meta belum memproses) yang menyimpannya.
+  Pesan OTP tidak bisa "Kirim ulang" (409, kirim kode baru).
+- **Pemeriksaan sebelum membuat apa pun (R1)**: mulai percakapan / API v1 memeriksa idempotensi → template
+  & nilai variabel → rem darurat + batas harian (pengguna/key/organisasi) SEBELUM kontak/percakapan dibuat.
+  Jatah `mulai-percakapan` dipotong hanya untuk permintaan baru yang lolos (Info 5).
+- Nilai variabel: tanpa karakter kontrol (`\p{Cc}`: baris baru, CR, tab, …), U+2028/U+2029, atau > 4 spasi
+  berturut-turut (Info 4).
+- Nomor lokal `0…` memakai kode negara bawaan `62` (`DEFAULT_COUNTRY_CALLING_CODE`); TITIK KAIT pengaturan
+  organisasi untuk white-label (Info 3, butuh migrasi — menyusul).
+- Percakapan baru dari API key berstatus `resolved` (tidak terlihat di antrian, Info 2): pemantauannya lewat
+  batas harian per key (audit `sending.limit_reached` target `api_key` + banner keamanan) dan aktivitas key
+  (`lastUsedAt`); laporan aktivitas per key menyusul bersama laporan.
+

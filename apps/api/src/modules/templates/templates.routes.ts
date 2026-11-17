@@ -277,12 +277,6 @@ export const templatesRoutes: FastifyPluginCallbackZod<TemplatesRoutesOptions> =
       }
       await enforceRateLimit(limiter, SEND_USER_RULE, auth.user.id, limitMessage);
       await enforceRateLimit(limiter, SEND_ORGANIZATION_RULE, auth.organizationId, limitMessage);
-      await enforceRateLimit(
-        limiter,
-        INITIATE_USER_RULE,
-        auth.user.id,
-        (wait) => `Batas harian memulai percakapan baru tercapai. Coba lagi dalam ${wait}.`,
-      );
       const { message, created, conversationId } = await outbound.startWithTemplate(
         { kind: 'user', grant },
         {
@@ -295,6 +289,15 @@ export const templatesRoutes: FastifyPluginCallbackZod<TemplatesRoutesOptions> =
         clientInfo(request),
         async (organizationId, normalized) =>
           (await options.contacts.createFromApi(organizationId, { phone: normalized })).id,
+        // Jatah harian dipotong hanya untuk permintaan BARU yang lolos pemeriksaan (bukan ulangan
+        // idempoten — review template Info 5).
+        () =>
+          enforceRateLimit(
+            limiter,
+            INITIATE_USER_RULE,
+            auth.user.id,
+            (wait) => `Batas harian memulai percakapan baru tercapai. Coba lagi dalam ${wait}.`,
+          ).then(() => undefined),
       );
       void reply.code(created ? 202 : 200);
       return { message: toMessage(message), conversationId };

@@ -403,6 +403,29 @@ async function replayEarlyStatuses(
   return current;
 }
 
+/** Kosongkan nilai rahasia template (kode OTP) di `extras.template` (review template S1). */
+export async function wipeSensitiveTemplate(
+  db: Database,
+  message: Pick<typeof messages.$inferSelect, 'id' | 'organizationId' | 'type' | 'extras'>,
+): Promise<void> {
+  const spec = message.extras.template;
+  if (message.type !== 'template' || !spec?.sensitive) return;
+  await db
+    .update(messages)
+    .set({
+      extras: {
+        ...message.extras,
+        template: {
+          ...spec,
+          values: {},
+          headerText: null,
+          buttons: spec.buttons.map((button) => ({ ...button, value: '' })),
+        },
+      },
+    })
+    .where(and(eq(messages.organizationId, message.organizationId), eq(messages.id, message.id)));
+}
+
 export async function processSendMessageJob(
   job: MessageJob,
   deps: MessageJobDeps,
@@ -429,154 +452,166 @@ export async function processSendMessageJob(
     )
     .limit(1);
   if (!message) return { status: 'skipped', reason: 'not_found' };
-  if (message.status !== 'pending' || message.wamid !== null) {
-    return { status: 'skipped', reason: 'not_pending' };
-  }
-  const events: InboxBusEventInput[] = [
-    { type: 'message.status', organizationId, conversationId: message.conversationId, messageId },
-    { type: 'conversation.updated', organizationId, conversationId: message.conversationId },
-  ];
-
-  const check = await prepare(db, message, deps, now);
-  if ('failure' in check) {
-    if (await markFailed(db, message, check.failure, null, now)) await publisher.publish(events);
-    logger.info({ messageId, reason: check.failure }, 'Pesan keluar tidak dikirim (pemeriksaan)');
-    return { status: 'failed', reason: check.failure, errorCode: null };
-  }
-
-  const { prepared } = check;
-
-  // Klaim atomik SEBELUM memanggil Meta (review ruang chat R3). Klaim yang sudah ada tanpa wamid =
-  // percobaan sebelumnya berhenti di tengah (proses mati / job tersendat) — Meta mungkin sudah
-  // menerima, jadi TIDAK dikirim lagi: `delivery_unknown`, pengguna yang memutuskan.
-  const [claimed] = await db
-    .update(messages)
-    .set({ sendClaimedAt: now })
-    .where(
-      and(
-        eq(messages.organizationId, organizationId),
-        eq(messages.id, messageId),
-        eq(messages.status, 'pending'),
-        isNull(messages.wamid),
-        isNull(messages.sendClaimedAt),
-      ),
-    )
-    .returning({ id: messages.id });
-  if (!claimed) {
-    // R5: klaim yang masih baru = percobaan lain SEDANG memanggil Meta (job ganda/stalled). Jangan
-    // ganggu — biarkan ia menyimpan wamid. Klaim yang macet ditandai pemeriksa berkala
-    // (`markStaleSendClaims`) atau oleh job berikutnya setelah `SEND_CLAIM_STALE_MS`.
-    const [current] = await db
-      .select({ claimedAt: messages.sendClaimedAt })
-      .from(messages)
-      .where(and(eq(messages.organizationId, organizationId), eq(messages.id, messageId)));
-    if (current?.claimedAt && now.getTime() - current.claimedAt.getTime() < SEND_CLAIM_STALE_MS) {
-      logger.info({ messageId }, 'Pesan keluar sedang dikirim percobaan lain — job ini dilewati');
+  // Review template S1: nilai rahasia (kode OTP) dikosongkan begitu percobaan kirim selesai —
+  // berhasil, gagal final, atau dilewati. Hanya ulangan otomatis (Meta belum memproses) yang
+  // menyimpannya untuk percobaan berikutnya.
+  let retrying = false;
+  try {
+    if (message.status !== 'pending' || message.wamid !== null) {
       return { status: 'skipped', reason: 'not_pending' };
     }
-    if (await markFailed(db, message, 'delivery_unknown', null, new Date())) {
-      await publisher.publish(events);
-    }
-    logger.warn(
-      { messageId },
-      'Pesan keluar sudah diklaim percobaan lain tanpa hasil — tidak dikirim ulang',
-    );
-    return { status: 'failed', reason: 'delivery_unknown', errorCode: null };
-  }
-  let wamid: string;
-  try {
-    ({ wamid } = await sendWhatsAppMessage(
-      deps.meta,
-      prepared.credentials,
-      prepared.phoneNumberId,
-      {
-        to: prepared.to,
-        content: prepared.content,
-        replyToWamid: prepared.replyToWamid,
-      },
-    ));
-  } catch (error) {
-    if (!isMetaApiError(error)) throw error;
-    const maxAttempts = job.opts?.attempts ?? 1;
-    const lastAttempt = (job.attemptsMade ?? 0) + 1 >= maxAttempts;
-    if (
-      (error.kind === 'rate_limited' || error.kind === 'temporarily_unavailable') &&
-      !lastAttempt
-    ) {
-      // Meta belum memproses: aman diulang (BullMQ, jeda eksponensial). Pesan baru: kode saja.
-      logger.warn({ messageId, kind: error.kind, metaCode: error.metaCode }, 'Kirim pesan diulang');
-      // Meta jelas belum memproses → klaim dilepas supaya percobaan berikutnya boleh mengirim.
-      await db
-        .update(messages)
-        .set({ sendClaimedAt: null })
-        .where(and(eq(messages.organizationId, organizationId), eq(messages.id, messageId)));
-      throw new Error(`Kirim pesan ditunda (${error.kind})`, { cause: error });
-    }
-    const reason: OutboundFailureReason =
-      error.kind === 'network_error' ? 'delivery_unknown' : 'meta_rejected';
-    if (await markFailed(db, message, reason, error.metaCode, new Date())) {
-      await publisher.publish(events);
-    }
-    logger.warn(
-      { messageId, reason, kind: error.kind, metaCode: error.metaCode },
-      'Kirim pesan gagal',
-    );
-    return { status: 'failed', reason, errorCode: error.metaCode };
-  }
+    const events: InboxBusEventInput[] = [
+      { type: 'message.status', organizationId, conversationId: message.conversationId, messageId },
+      { type: 'conversation.updated', organizationId, conversationId: message.conversationId },
+    ];
 
-  await db.transaction(async (tx) => {
-    const saved = await tx
+    const check = await prepare(db, message, deps, now);
+    if ('failure' in check) {
+      if (await markFailed(db, message, check.failure, null, now)) await publisher.publish(events);
+      logger.info({ messageId, reason: check.failure }, 'Pesan keluar tidak dikirim (pemeriksaan)');
+      return { status: 'failed', reason: check.failure, errorCode: null };
+    }
+
+    const { prepared } = check;
+
+    // Klaim atomik SEBELUM memanggil Meta (review ruang chat R3). Klaim yang sudah ada tanpa wamid =
+    // percobaan sebelumnya berhenti di tengah (proses mati / job tersendat) — Meta mungkin sudah
+    // menerima, jadi TIDAK dikirim lagi: `delivery_unknown`, pengguna yang memutuskan.
+    const [claimed] = await db
       .update(messages)
-      .set({ wamid, errorCode: null, failureReason: null })
+      .set({ sendClaimedAt: now })
       .where(
         and(
           eq(messages.organizationId, organizationId),
           eq(messages.id, messageId),
           eq(messages.status, 'pending'),
+          isNull(messages.wamid),
+          isNull(messages.sendClaimedAt),
         ),
       )
       .returning({ id: messages.id });
-    // R5: pesan sudah ditandai `delivery_unknown` (klaim dianggap macet) padahal Meta MENERIMA →
-    // pulihkan: wamid disimpan, status dibetulkan menjadi `sent` supaya status webhook tertaut.
-    const recovered =
-      saved.length > 0
-        ? []
-        : await tx
-            .update(messages)
-            .set({
-              wamid,
-              status: 'sent',
-              errorCode: null,
-              failureReason: null,
-              statusUpdatedAt: new Date(),
-            })
-            .where(
-              and(
-                eq(messages.organizationId, organizationId),
-                eq(messages.id, messageId),
-                eq(messages.status, 'failed'),
-                eq(messages.failureReason, 'delivery_unknown'),
-                isNull(messages.wamid),
-              ),
-            )
-            .returning({ id: messages.id });
-    if (recovered.length > 0) {
-      logger.warn({ messageId }, 'Pesan "mungkin terkirim" ternyata diterima Meta — dipulihkan');
+    if (!claimed) {
+      // R5: klaim yang masih baru = percobaan lain SEDANG memanggil Meta (job ganda/stalled). Jangan
+      // ganggu — biarkan ia menyimpan wamid. Klaim yang macet ditandai pemeriksa berkala
+      // (`markStaleSendClaims`) atau oleh job berikutnya setelah `SEND_CLAIM_STALE_MS`.
+      const [current] = await db
+        .select({ claimedAt: messages.sendClaimedAt })
+        .from(messages)
+        .where(and(eq(messages.organizationId, organizationId), eq(messages.id, messageId)));
+      if (current?.claimedAt && now.getTime() - current.claimedAt.getTime() < SEND_CLAIM_STALE_MS) {
+        logger.info({ messageId }, 'Pesan keluar sedang dikirim percobaan lain — job ini dilewati');
+        return { status: 'skipped', reason: 'not_pending' };
+      }
+      if (await markFailed(db, message, 'delivery_unknown', null, new Date())) {
+        await publisher.publish(events);
+      }
+      logger.warn(
+        { messageId },
+        'Pesan keluar sudah diklaim percobaan lain tanpa hasil — tidak dikirim ulang',
+      );
+      return { status: 'failed', reason: 'delivery_unknown', errorCode: null };
     }
-    if (saved.length > 0 || recovered.length > 0) {
-      await replayEarlyStatuses(tx, message, wamid);
-      await recordOutgoingEvent(tx, {
-        organizationId,
-        type: 'message.sent',
-        conversationId: message.conversationId,
-        messageId,
-        contactId: message.contactId,
-      });
+    let wamid: string;
+    try {
+      ({ wamid } = await sendWhatsAppMessage(
+        deps.meta,
+        prepared.credentials,
+        prepared.phoneNumberId,
+        {
+          to: prepared.to,
+          content: prepared.content,
+          replyToWamid: prepared.replyToWamid,
+        },
+      ));
+    } catch (error) {
+      if (!isMetaApiError(error)) throw error;
+      const maxAttempts = job.opts?.attempts ?? 1;
+      const lastAttempt = (job.attemptsMade ?? 0) + 1 >= maxAttempts;
+      if (
+        (error.kind === 'rate_limited' || error.kind === 'temporarily_unavailable') &&
+        !lastAttempt
+      ) {
+        // Meta belum memproses: aman diulang (BullMQ, jeda eksponensial). Pesan baru: kode saja.
+        logger.warn(
+          { messageId, kind: error.kind, metaCode: error.metaCode },
+          'Kirim pesan diulang',
+        );
+        // Meta jelas belum memproses → klaim dilepas supaya percobaan berikutnya boleh mengirim.
+        await db
+          .update(messages)
+          .set({ sendClaimedAt: null })
+          .where(and(eq(messages.organizationId, organizationId), eq(messages.id, messageId)));
+        retrying = true;
+        throw new Error(`Kirim pesan ditunda (${error.kind})`, { cause: error });
+      }
+      const reason: OutboundFailureReason =
+        error.kind === 'network_error' ? 'delivery_unknown' : 'meta_rejected';
+      if (await markFailed(db, message, reason, error.metaCode, new Date())) {
+        await publisher.publish(events);
+      }
+      logger.warn(
+        { messageId, reason, kind: error.kind, metaCode: error.metaCode },
+        'Kirim pesan gagal',
+      );
+      return { status: 'failed', reason, errorCode: error.metaCode };
     }
-  });
-  await publisher.publish(events);
-  logger.info({ messageId }, 'Pesan keluar diterima Meta');
-  return { status: 'sent', wamid };
+
+    await db.transaction(async (tx) => {
+      const saved = await tx
+        .update(messages)
+        .set({ wamid, errorCode: null, failureReason: null })
+        .where(
+          and(
+            eq(messages.organizationId, organizationId),
+            eq(messages.id, messageId),
+            eq(messages.status, 'pending'),
+          ),
+        )
+        .returning({ id: messages.id });
+      // R5: pesan sudah ditandai `delivery_unknown` (klaim dianggap macet) padahal Meta MENERIMA →
+      // pulihkan: wamid disimpan, status dibetulkan menjadi `sent` supaya status webhook tertaut.
+      const recovered =
+        saved.length > 0
+          ? []
+          : await tx
+              .update(messages)
+              .set({
+                wamid,
+                status: 'sent',
+                errorCode: null,
+                failureReason: null,
+                statusUpdatedAt: new Date(),
+              })
+              .where(
+                and(
+                  eq(messages.organizationId, organizationId),
+                  eq(messages.id, messageId),
+                  eq(messages.status, 'failed'),
+                  eq(messages.failureReason, 'delivery_unknown'),
+                  isNull(messages.wamid),
+                ),
+              )
+              .returning({ id: messages.id });
+      if (recovered.length > 0) {
+        logger.warn({ messageId }, 'Pesan "mungkin terkirim" ternyata diterima Meta — dipulihkan');
+      }
+      if (saved.length > 0 || recovered.length > 0) {
+        await replayEarlyStatuses(tx, message, wamid);
+        await recordOutgoingEvent(tx, {
+          organizationId,
+          type: 'message.sent',
+          conversationId: message.conversationId,
+          messageId,
+          contactId: message.contactId,
+        });
+      }
+    });
+    await publisher.publish(events);
+    logger.info({ messageId }, 'Pesan keluar diterima Meta');
+    return { status: 'sent', wamid };
+  } finally {
+    if (!retrying) await wipeSensitiveTemplate(db, message);
+  }
 }
 
 export function createMessageWorker(options: QueueConnectionOptions, deps: MessageJobDeps): Worker {

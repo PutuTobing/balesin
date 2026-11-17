@@ -27,10 +27,12 @@ const invalid = (field: string, message: string) =>
 function checkValue(field: string, value: string | undefined): string {
   const text = value?.trim() ?? '';
   if (text === '') throw invalid(field, 'Nilai variabel template wajib diisi.');
-  if (/[\n\t]/.test(text) || / {5,}/.test(text)) {
+  // Aturan Meta + review template Info 4: tanpa karakter kontrol (baris baru, CR, tab, …), pemisah
+  // baris/paragraf Unicode, dan > 4 spasi berturut-turut.
+  if (/[\p{Cc}\u2028\u2029]/u.test(text) || / {5,}/.test(text)) {
     throw invalid(
       field,
-      'Nilai variabel tidak boleh memuat baris baru, tab, atau lebih dari 4 spasi berturut-turut.',
+      'Nilai variabel tidak boleh memuat baris baru, tab, karakter kontrol, atau lebih dari 4 spasi berturut-turut.',
     );
   }
   return text;
@@ -97,7 +99,10 @@ export async function resolveTemplateSend(
       bodyVariables: ['1'],
       values,
       buttons,
-      preview: `Kode verifikasi: ${code}`,
+      // Review template S1: kode OTP TIDAK PERNAH masuk teks pesan (riwayat, pencarian, ekspor,
+      // webhook, MobiChat). Nilainya hanya di `extras.template` sampai worker selesai mengirim.
+      preview: 'Kode verifikasi: ••••••',
+      sensitive: true,
     };
   }
 

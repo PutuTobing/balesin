@@ -237,6 +237,11 @@ export interface OutboundService {
     },
     client: ClientInfo,
     ensureContact: (organizationId: string, phone: string) => Promise<string>,
+    /**
+     * Dipanggil SETELAH pemeriksaan (idempotensi, template, rem darurat, batas harian) dan SEBELUM
+     * kontak/percakapan dibuat — mis. jatah `mulai-percakapan` per pengguna (review template Info 5).
+     */
+    beforeCreate?: () => Promise<void>,
   ): Promise<{ message: MessageRowView; created: boolean; conversationId: string }>;
   /** Hapus salinan lokal yang kedaluwarsa (pembersih berkala). */
   purgeExpiredMedia(limit?: number): Promise<number>;
@@ -920,7 +925,7 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
     sendAsApiKey: (key, conversationId, input, client) =>
       sendAs(apiKeySender(key), conversationId, input, client),
 
-    async startWithTemplate(who, input, client, ensureContact) {
+    async startWithTemplate(who, input, client, ensureContact, beforeCreate) {
       const sender = who.kind === 'user' ? userSender(who.grant) : apiKeySender(who.key);
       const organizationId = sender.grant.organizationId;
       const existing = await byIdempotencyKey(sender, input.clientMessageId);
@@ -937,6 +942,23 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
           message: 'Template hanya untuk channel WhatsApp.',
         });
       }
+      // Review template R1: template & nilai variabel sah, rem darurat, batas harian (pengguna/key/
+      // organisasi) diperiksa SEBELUM kontak/percakapan dibuat — key yang tertahan tidak bisa
+      // menimbun kontak & percakapan sampah.
+      await resolveTemplateSend(db, {
+        organizationId,
+        channelWabaId: channel.waBusinessAccountId ?? '',
+        templateId: input.templateId,
+        parameters: input.parameters,
+      });
+      await sendingLimits.assertCanSend({
+        organizationId,
+        userId: sender.userId,
+        ...(sender.apiKey ? { apiKey: sender.apiKey } : {}),
+        conversationId: null,
+        client,
+      });
+      await beforeCreate?.();
       const contactId = await ensureContact(organizationId, input.phone);
       const at = now();
       const findConversationFor = async (includeResolved: boolean) => {
@@ -1021,6 +1043,12 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
 
     async retry(grant, messageId, client) {
       const message = await scopedMessage(grant, messageId);
+      if (message.type === 'template' && message.extras.template?.sensitive) {
+        throw new AppError('CONFLICT', {
+          message:
+            'Kode verifikasi tidak disimpan, jadi pesan ini tidak bisa dikirim ulang. Kirim kode baru.',
+        });
+      }
       const reason = outboundFailureReasonSchema.safeParse(message.failureReason);
       if (
         message.direction !== 'outbound' ||

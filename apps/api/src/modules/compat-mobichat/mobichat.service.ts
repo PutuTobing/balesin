@@ -122,10 +122,19 @@ export function interactiveFromMobichat(item: MobichatOutgoingMessage) {
 /** `+6281…` → `6281…` (format nomor MobiChat). */
 export const digitsOf = (phone: string | null) => (phone ? phone.replace(/\D/g, '') : null);
 
+/**
+ * Kode negara bawaan untuk nomor lokal berawalan `0` (review template Info 3). TITIK KAIT: pengaturan
+ * organisasi (white-label) — butuh migrasi; ditunda karena modul broadcast sedang menambah migrasi.
+ */
+export const DEFAULT_COUNTRY_CALLING_CODE = '62';
+
 /** Nomor WhatsApp gaya MobiChat (`62…`, `0…`, `+62…`, spasi/tanda hubung) → E.164 atau `null`. */
-export function normalizeWhatsappNumber(value: string): string | null {
+export function normalizeWhatsappNumber(
+  value: string,
+  defaultCountryCode: string = DEFAULT_COUNTRY_CALLING_CODE,
+): string | null {
   let digits = value.replace(/\D/g, '');
-  if (digits.startsWith('0')) digits = `62${digits.slice(1)}`;
+  if (digits.startsWith('0')) digits = `${defaultCountryCode}${digits.slice(1)}`;
   return /^[1-9]\d{6,14}$/.test(digits) ? `+${digits}` : null;
 }
 

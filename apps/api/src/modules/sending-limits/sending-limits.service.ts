@@ -86,7 +86,11 @@ export interface SendingLimitsService {
     userId: string | null;
     /** Pesan lewat API publik: batas harian PER KEY menggantikan batas per pengguna (Fase 3). */
     apiKey?: { id: string; dailySendLimit: number };
-    conversationId: string;
+    /**
+     * Percakapan tujuan. `null` = pemeriksaan AWAL sebelum percakapan ada (mulai percakapan, review
+     * template R1): rem darurat + batas harian saja, batas per percakapan tidak dihitung.
+     */
+    conversationId: string | null;
     client: ClientInfo;
   }): Promise<void>;
 }
@@ -425,6 +429,7 @@ export function createSendingLimitsService(deps: SendingLimitsServiceDeps): Send
           client,
         );
       }
+      if (conversationId === null) return;
       await enforceRateLimit(
         limiter,
         { name: 'kirim-percakapan', limit: org.perConversation, windowSeconds: 60 },

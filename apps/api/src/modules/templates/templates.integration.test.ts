@@ -654,4 +654,66 @@ describe('kirim template', () => {
         .where(and(eq(messages.conversationId, conversationId), eq(messages.type, 'template'))),
     ).toHaveLength(1);
   });
+
+  it('OTP (AUTHENTICATION): teks disamarkan, kode dibuang setelah dikirim, tidak bisa dikirim ulang', async () => {
+    const created = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.templates.list,
+      {
+        channelId,
+        name: 'kode_masuk',
+        category: 'AUTHENTICATION',
+        content: {
+          body: { text: '' },
+          authentication: { addSecurityRecommendation: true, codeExpirationMinutes: 5 },
+        },
+      },
+      as(owner),
+    );
+    const draft = templateResponseSchema.parse(created.json()).template;
+    const submitted = templateResponseSchema.parse((await submit(draft.id)).json()).template;
+    await receive(
+      templateStatusNotification({
+        wabaId: WABA,
+        event: 'APPROVED',
+        id: submitted.metaTemplateId!,
+        name: 'kode_masuk',
+      }),
+    );
+    const started = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.inbox.start,
+      {
+        channelId,
+        phone: '081234560001',
+        clientMessageId: randomUUID(),
+        templateId: draft.id,
+        parameters: { body: { '1': '735219' } },
+      },
+      as(owner),
+    );
+    expect(started.statusCode, started.body).toBe(202);
+    expect(started.body).not.toContain('735219');
+    await drainSends();
+    // Meta menerima kodenya (body + tombol salin kode)…
+    expect(JSON.stringify(fake.sentMessages.at(-1)?.body)).toContain('735219');
+    // …tetapi database tidak menyimpannya lagi.
+    const [stored] = await harness.db.select().from(messages).where(eq(messages.type, 'template'));
+    expect(stored?.text).toBe('Kode verifikasi: ••••••');
+    expect(JSON.stringify(stored)).not.toContain('735219');
+    await harness.db
+      .update(messages)
+      .set({ status: 'failed', failureReason: 'meta_rejected' })
+      .where(eq(messages.id, stored!.id));
+    const retry = await call(
+      harness.app,
+      'POST',
+      apiPath(API_ROUTES.inbox.retry, { messageId: stored!.id }),
+      undefined,
+      as(owner),
+    );
+    expect(retry.statusCode).toBe(409);
+  });
 });
