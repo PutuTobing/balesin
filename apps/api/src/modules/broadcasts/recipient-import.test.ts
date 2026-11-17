@@ -3,6 +3,7 @@ import { deflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 
 import { jsonItemsToTable } from './connector-source';
+import { ImportBusyError, parseRecipientsIsolated, parseTableIsolated } from './import-runner';
 import { csvCell } from './broadcasts.service';
 import {
   ImportError,
@@ -203,5 +204,39 @@ describe('konektor & CSV keluar', () => {
     expect(csvCell('@a')).toBe("'@a");
     expect(csvCell('biasa')).toBe('biasa');
     expect(csvCell(null)).toBe('');
+  });
+});
+
+describe('parsing terisolasi (review T1)', () => {
+  it('XLSX patologis (tag tidak tertutup) ditolak cepat, baik langsung maupun di thread', async () => {
+    const pathological = xlsx('<row>'.repeat(200_000));
+    const started = performance.now();
+    expect(() => parseSpreadsheet(pathological)).toThrow(/rusak/);
+    expect(performance.now() - started).toBeLessThan(1_000);
+    await expect(parseTableIsolated('uji-1', pathological)).rejects.toThrow(/rusak/);
+  });
+
+  it('thread: penerima dari CSV; event loop tetap berjalan; batas waktu & antrean penuh ditolak', async () => {
+    const rows = Array.from(
+      { length: 20_000 },
+      (_, index) => `Pelanggan ${String(index)},0812${String(10_000_000 + index)}`,
+    );
+    const csv = Buffer.from(['nama,nomor', ...rows].join(String.fromCharCode(10)));
+    let ticks = 0;
+    const timer = setInterval(() => {
+      ticks += 1;
+    }, 5);
+    const parsed = await parseRecipientsIsolated('uji-2', csv, undefined);
+    clearInterval(timer);
+    expect(parsed.phoneColumn).toBe('nomor');
+    expect(parsed.result.recipients).toHaveLength(20_000);
+    expect(ticks).toBeGreaterThan(0);
+
+    await expect(
+      parseRecipientsIsolated('uji-3', csv, undefined, { timeoutMs: 1 }),
+    ).rejects.toThrow(/batas waktu/);
+    const first = parseTableIsolated('uji-4', csv);
+    await expect(parseTableIsolated('uji-4', csv)).rejects.toBeInstanceOf(ImportBusyError);
+    await first;
   });
 });

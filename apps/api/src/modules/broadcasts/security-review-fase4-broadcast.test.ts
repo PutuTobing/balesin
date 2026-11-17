@@ -86,20 +86,17 @@ describe('review keamanan — impor XLSX', () => {
     expect(() => parseSpreadsheet(xls)).toThrow(/\.xls/);
   });
 
-  it.fails(
-    'T1: tag pembuka tanpa penutup (<row>/<si> berulang) tidak memblokir proses (waktu ~linear)',
-    () => {
-      // 80.000 `<row>` = 400 KB terbuka (berkas ±1 KB). Budget 40 MB = 100× lebih banyak → jam-an.
-      const rows = zip({ 'xl/worksheets/sheet1.xml': '<row>'.repeat(80_000) });
-      const shared = zip({
-        'xl/worksheets/sheet1.xml': '<row r="1"><c r="A1"><v>1</v></c></row>',
-        'xl/sharedStrings.xml': '<si>'.repeat(80_000),
-      });
-      expect(rows.length).toBeLessThan(5_000);
-      expect(timed(() => parseXlsx(rows, 20_000))).toBeLessThan(500);
-      expect(timed(() => parseXlsx(shared, 20_000))).toBeLessThan(500);
-    },
-  );
+  it('T1: tag pembuka tanpa penutup (<row>/<si> berulang) tidak memblokir proses (waktu ~linear)', () => {
+    // 80.000 `<row>` = 400 KB terbuka (berkas ±1 KB). Budget 40 MB = 100× lebih banyak → jam-an.
+    const rows = zip({ 'xl/worksheets/sheet1.xml': '<row>'.repeat(80_000) });
+    const shared = zip({
+      'xl/worksheets/sheet1.xml': '<row r="1"><c r="A1"><v>1</v></c></row>',
+      'xl/sharedStrings.xml': '<si>'.repeat(80_000),
+    });
+    expect(rows.length).toBeLessThan(5_000);
+    expect(timed(() => parseXlsx(rows, 20_000))).toBeLessThan(500);
+    expect(timed(() => parseXlsx(shared, 20_000))).toBeLessThan(500);
+  });
 });
 
 describe('review keamanan — CSV', () => {

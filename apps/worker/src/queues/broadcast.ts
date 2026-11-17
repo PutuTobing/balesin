@@ -950,6 +950,31 @@ export async function broadcastGuard(deps: BroadcastJobDeps): Promise<Record<str
       .returning({ id: organizations.id });
     if (updated.length === 0) continue;
     braked += 1;
+    // Sumber terbesar (ID pengguna/API key saja) supaya Owner cepat tahu akun/key mana yang dicabut
+    // sebelum melanjutkan (review broadcast Info 1).
+    const sources = await db
+      .select({
+        userId: messages.senderUserId,
+        apiKeyId: messages.apiKeyId,
+        total: sql<number>`count(*)::int`,
+      })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.organizationId, burst.organizationId),
+          eq(messages.direction, 'outbound'),
+          isNull(messages.broadcastId),
+          sql`${messages.createdAt} > ${new Date(now.getTime() - 60_000)}`,
+        ),
+      )
+      .groupBy(messages.senderUserId, messages.apiKeyId)
+      .orderBy(sql`count(*) desc`)
+      .limit(5);
+    const topSources = sources.map((source) => ({
+      ...(source.userId ? { userId: source.userId } : {}),
+      ...(source.apiKeyId ? { apiKeyId: source.apiKeyId } : {}),
+      count: Number(source.total),
+    }));
     const [audit] = await db
       .insert(auditLogs)
       .values({
@@ -958,13 +983,13 @@ export async function broadcastGuard(deps: BroadcastJobDeps): Promise<Record<str
         action: 'sending.paused',
         targetType: 'organization',
         targetId: burst.organizationId,
-        metadata: { reason, automatic: true, perMinute },
+        metadata: { reason, automatic: true, perMinute, topSources },
       })
       .returning({ id: auditLogs.id });
     await recordAlarm(db, {
       organizationId: burst.organizationId,
       kind: 'auto_brake',
-      details: { reason, perMinute },
+      details: { reason, perMinute, sources: topSources.length },
     });
     logger.warn(
       { organizationId: burst.organizationId, perMinute },

@@ -1,11 +1,13 @@
 import { AppError, cleanFileName } from '@balesin/core';
 import {
+  auditLogs,
   broadcastCampaigns,
   broadcastRecipients,
   channels,
   contactTags,
   contacts,
   loadBroadcastSettings,
+  lockAdvisoryKeys,
   messageTemplates,
   messages,
   organizations,
@@ -60,12 +62,10 @@ import type { AuthContext } from '../auth/session.service';
 import { requireIdentityConfirmation } from '../two-factor/require-confirmation';
 import type { TwoFactorContext, TwoFactorService } from '../two-factor/two-factor.service';
 import type { BroadcastSettingsService } from './broadcast-settings.service';
+import { ImportBusyError, parseRecipientsIsolated } from './import-runner';
 import {
   ImportError,
   buildRecipients,
-  detectPhoneColumn,
-  parseSpreadsheet,
-  toTable,
   type ImportResult,
   type ParsedTable,
 } from './recipient-import';
@@ -726,22 +726,20 @@ export function createBroadcastsService(deps: BroadcastsServiceDeps) {
       client: ClientInfo,
     ) {
       await campaignRow(db, auth.organizationId, id).then(requireDraft);
-      let table: ParsedTable;
-      let result: ImportResult;
-      let column: string;
+      // Parsing di `worker_threads` (batas waktu + memori, review T1): event loop api tidak terblokir.
+      let parsed: Awaited<ReturnType<typeof parseRecipientsIsolated>>;
       try {
-        table = toTable(parseSpreadsheet(file.buffer));
-        const detected = phoneColumn ?? detectPhoneColumn(table);
-        if (!detected || !table.columns.includes(detected)) {
-          throw new ImportError(
-            'Kolom nomor tidak ditemukan. Beri judul kolom "nomor" atau pilih kolom nomor saat mengunggah.',
-          );
-        }
-        column = detected;
-        result = buildRecipients(table, column);
+        parsed = await parseRecipientsIsolated(auth.user.id, file.buffer, phoneColumn);
       } catch (error) {
+        if (error instanceof ImportBusyError) {
+          throw new AppError('RATE_LIMITED', {
+            message: 'Impor lain sedang diproses. Tunggu sebentar lalu coba lagi.',
+            retryAfterSeconds: 5,
+          });
+        }
         importFailure(error);
       }
+      const { table, phoneColumn: column, result } = parsed;
       return replaceRecipients(
         auth,
         id,
@@ -1014,7 +1012,32 @@ export function createBroadcastsService(deps: BroadcastsServiceDeps) {
         }
         const settings = await loadBroadcastSettings(tx, auth.organizationId);
         const estimate = await estimateFor(tx, row, template.category, settings);
-        const approvalRequired = remaining > settings.approvalThreshold;
+        // Review S1: ambang berlaku untuk JUMLAH penerima tanpa persetujuan per organisasi dalam 24 jam
+        // bergulir (memecah kampanye tidak menghindari persetujuan). Diserialkan per organisasi.
+        await lockAdvisoryKeys(tx, [`broadcast-submit:${auth.organizationId}`]);
+        const [prior] = await tx
+          .select({
+            mine: sql<number>`coalesce(sum((${auditLogs.metadata} ->> 'recipients')::int) filter (where ${auditLogs.actorUserId} = ${auth.user.id}), 0)::int`,
+            organization: sql<number>`coalesce(sum((${auditLogs.metadata} ->> 'recipients')::int), 0)::int`,
+          })
+          .from(auditLogs)
+          .where(
+            and(
+              eq(auditLogs.organizationId, auth.organizationId),
+              eq(auditLogs.action, AUDIT_ACTIONS.broadcastSubmitted),
+              gt(auditLogs.createdAt, new Date(now().getTime() - 24 * 60 * 60 * 1000)),
+              sql`(${auditLogs.metadata} ->> 'approvalRequired') = 'false'`,
+              sql`(${auditLogs.metadata} ->> 'recipients') ~ '^[0-9]{1,9}$'`,
+            ),
+          );
+        const unapprovedBefore = Number(prior?.organization ?? 0);
+        const approvalReason =
+          remaining > settings.approvalThreshold
+            ? 'threshold'
+            : unapprovedBefore + remaining > settings.approvalThreshold
+              ? 'cumulative'
+              : null;
+        const approvalRequired = approvalReason !== null;
         const at = now();
         const [updated] = await tx
           .update(broadcastCampaigns)
@@ -1036,6 +1059,11 @@ export function createBroadcastsService(deps: BroadcastsServiceDeps) {
           recipients: remaining,
           skipped: pending.length - remaining,
           approvalRequired,
+          approvalReason,
+          unapprovedLast24Hours: {
+            submitter: Number(prior?.mine ?? 0),
+            organization: unapprovedBefore,
+          },
           estimateTotal: estimate.total,
           currency: estimate.currency,
         });

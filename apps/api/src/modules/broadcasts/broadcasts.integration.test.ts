@@ -476,7 +476,9 @@ describe('impor → pemetaan → pratinjau → estimasi → kirim', () => {
       estimate: { recipients: 2, total: 726 },
     });
 
-    const done = await runUntilDone(draft.id);
+    // Jam dibekukan: jeda throttle tidak bergantung kecepatan mesin tes.
+    const frozen = new Date();
+    const done = await runUntilDone(draft.id, workerDeps({ now: () => frozen }));
     expect(done.status).toBe('completed');
     expect(fake.sentMessages).toHaveLength(2);
     expect(fake.sentMessages[0]?.body).toMatchObject({
@@ -498,8 +500,7 @@ describe('impor → pemetaan → pratinjau → estimasi → kirim', () => {
     });
     // Throttle 2 pesan/detik → jeda ±500 ms di antara pesan.
     expect(sleeps.length).toBeGreaterThan(0);
-    expect(Math.max(...sleeps)).toBeLessThanOrEqual(500);
-    expect(Math.max(...sleeps)).toBeGreaterThan(300);
+    expect(Math.max(...sleeps)).toBe(500);
 
     const sent = await harness.db.select().from(messages).where(eq(messages.broadcastId, draft.id));
     expect(sent).toHaveLength(2);
@@ -708,7 +709,9 @@ describe('jadwal, jeda, lanjut, batal', () => {
 
     // Jeda ditarik saat worker menunggu jeda throttle setelah pesan pertama.
     let pausedOnce = false;
+    const frozen = new Date();
     const deps = workerDeps({
+      now: () => frozen,
       sleep: async () => {
         if (pausedOnce) return;
         pausedOnce = true;
@@ -985,6 +988,22 @@ describe('segmen & konektor REST', () => {
       as(admin),
     );
     expect(ssrf.statusCode).toBe(400);
+    // Rahasia di query URL ditolak (URL tampil apa adanya) — review Info 4.
+    const secretInUrl = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.broadcasts.connectors,
+      {
+        name: 'Billing',
+        url: `${helperUrl}/tagihan?status=jatuh_tempo&api_key=rahasia`,
+        auth: null,
+        phoneField: 'hp',
+        confirmation: await confirmationOf(admin),
+      },
+      as(admin),
+    );
+    expect(secretInUrl.statusCode).toBe(400);
+    expect(errorEnvelopeSchema.parse(secretInUrl.json()).error.message).toContain('api_key');
     const noConfirm = await call(
       harness.app,
       'POST',

@@ -196,44 +196,38 @@ describe('review keamanan — siapa boleh mengirim broadcast', () => {
     expect(byOwnself.statusCode).toBe(403);
   });
 
-  it.fails(
-    'S1: memecah kampanye di bawah ambang (3 × 50 penerima / 24 jam oleh satu pengguna) tetap butuh persetujuan',
-    async () => {
-      const first = await submitCampaign(supervisor, 'Bagian 1', csvOf(50, 0));
-      const second = await submitCampaign(supervisor, 'Bagian 2', csvOf(50, 100));
-      const third = await submitCampaign(supervisor, 'Bagian 3', csvOf(50, 200));
-      expect(first.status).toBe('scheduled');
-      // Total 150 penerima tanpa satu pun persetujuan: kampanye ke-2/ke-3 harus menunggu persetujuan.
-      expect([second.status, third.status]).toContain('pending_approval');
-    },
-  );
+  it('S1: memecah kampanye di bawah ambang (3 × 50 penerima / 24 jam oleh satu pengguna) tetap butuh persetujuan', async () => {
+    const first = await submitCampaign(supervisor, 'Bagian 1', csvOf(50, 0));
+    const second = await submitCampaign(supervisor, 'Bagian 2', csvOf(50, 100));
+    const third = await submitCampaign(supervisor, 'Bagian 3', csvOf(50, 200));
+    expect(first.status).toBe('scheduled');
+    // Total 150 penerima tanpa satu pun persetujuan: kampanye ke-2/ke-3 harus menunggu persetujuan.
+    expect([second.status, third.status]).toContain('pending_approval');
+  });
 });
 
 describe('review keamanan — UU PDP', () => {
-  it.fails(
-    'R1: hapus kontak juga menghapus baris penerima broadcast yang belum diproses (nomor + data kolom)',
-    async () => {
-      const phone = '+6281299887766';
-      const [contact] = await harness.db
-        .insert(contacts)
-        .values({ organizationId, channelType: 'whatsapp', phone, profileName: 'Akan dihapus' })
-        .returning();
-      const campaign = await create(owner, 'Pengingat');
-      const imported = await upload(owner, campaign.id, `nama,nomor\nAkan dihapus,${phone}`);
-      expect(imported.statusCode, imported.body).toBe(200);
-      const removed = await call(
-        harness.app,
-        'DELETE',
-        apiPath(API_ROUTES.inbox.contact, { contactId: contact!.id }),
-        { confirmation: await confirmationFor() },
-        as(owner),
-      );
-      expect(removed.statusCode, removed.body).toBe(200);
-      const left = await harness.db
-        .select()
-        .from(broadcastRecipients)
-        .where(eq(broadcastRecipients.phone, phone));
-      expect(left).toHaveLength(0);
-    },
-  );
+  it('R1: hapus kontak juga menghapus baris penerima broadcast yang belum diproses (nomor + data kolom)', async () => {
+    const phone = '+6281299887766';
+    const [contact] = await harness.db
+      .insert(contacts)
+      .values({ organizationId, channelType: 'whatsapp', phone, profileName: 'Akan dihapus' })
+      .returning();
+    const campaign = await create(owner, 'Pengingat');
+    const imported = await upload(owner, campaign.id, `nama,nomor\nAkan dihapus,${phone}`);
+    expect(imported.statusCode, imported.body).toBe(200);
+    const removed = await call(
+      harness.app,
+      'DELETE',
+      apiPath(API_ROUTES.inbox.contact, { contactId: contact!.id }),
+      { confirmation: await confirmationFor() },
+      as(owner),
+    );
+    expect(removed.statusCode, removed.body).toBe(200);
+    const left = await harness.db
+      .select()
+      .from(broadcastRecipients)
+      .where(eq(broadcastRecipients.phone, phone));
+    expect(left).toHaveLength(0);
+  });
 });

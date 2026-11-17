@@ -9,7 +9,12 @@ import { defineConfig } from 'tsup';
  *   (packages/core/scripts/check-bundle-deps.mjs).
  */
 export default defineConfig({
-  entry: ['src/index.ts'],
+  // `import-thread` = titik masuk `worker_threads` parsing berkas impor (review broadcast T1); dimuat
+  // `import-runner.ts` dari `dist/import-thread.js` di samping `dist/index.js`.
+  entry: {
+    index: 'src/index.ts',
+    'import-thread': 'src/modules/broadcasts/import-thread.ts',
+  },
   format: 'esm',
   platform: 'node',
   target: 'node22',

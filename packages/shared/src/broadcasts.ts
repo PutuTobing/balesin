@@ -848,6 +848,55 @@ export const updateBroadcastConnectorRequestSchema = z.object({
 });
 export type UpdateBroadcastConnectorRequest = z.input<typeof updateBroadcastConnectorRequestSchema>;
 
+/**
+ * Nama parameter query URL konektor yang tampak RAHASIA (review broadcast Info 4): URL disimpan & tampil
+ * apa adanya, jadi rahasia wajib di header autentikasi. Dipakai api (tolak) dan web (peringatan).
+ */
+const SECRET_WORDS = new Set([
+  'token',
+  'accesstoken',
+  'key',
+  'apikey',
+  'secret',
+  'clientsecret',
+  'password',
+  'passwd',
+  'pass',
+  'pwd',
+  'signature',
+  'sig',
+  'auth',
+  'authorization',
+  'credential',
+  'credentials',
+]);
+
+function safeDecode(text: string): string {
+  try {
+    return decodeURIComponent(text.replace(/\+/g, ' '));
+  } catch {
+    return text;
+  }
+}
+
+/** Nama parameter query yang tampak rahasia di URL ini (kosong = aman). Tanpa `URL` (paket web). */
+export function connectorUrlSecretParams(url: string): string[] {
+  const queryStart = url.indexOf('?');
+  if (queryStart < 0) return [];
+  const hash = url.indexOf('#', queryStart);
+  const query = url.slice(queryStart + 1, hash < 0 ? undefined : hash);
+  const names: string[] = [];
+  for (const pair of query.split('&')) {
+    const equals = pair.indexOf('=');
+    const name = safeDecode(equals < 0 ? pair : pair.slice(0, equals)).trim();
+    if (name === '' || names.includes(name)) continue;
+    const lower = name.toLowerCase();
+    const last = lower.split(/[_.-]/).pop() ?? '';
+    if (SECRET_WORDS.has(lower.replace(/[_.-]/g, '')) || SECRET_WORDS.has(last)) names.push(name);
+  }
+  return names;
+}
+
 export const BROADCAST_CONNECTOR_TEST_CODES = [
   'ok',
   'invalid_url',

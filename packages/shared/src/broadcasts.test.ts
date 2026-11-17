@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_BROADCAST_RATES,
   alarmText,
+  connectorUrlSecretParams,
   broadcastRateFor,
   broadcastRequiredVariables,
   normalizeBroadcastPhone,
@@ -139,5 +140,21 @@ describe('tarif & alarm', () => {
     expect(updateBroadcastSettingsRequestSchema.safeParse(DEFAULT_BROADCAST_SETTINGS).success).toBe(
       true,
     );
+  });
+});
+
+describe('URL konektor', () => {
+  it('parameter query yang tampak rahasia terdeteksi', () => {
+    expect(
+      connectorUrlSecretParams('https://billing.contoh.id/api?status=1&token=x&api_key=y&page=2'),
+    ).toEqual(['token', 'api_key']);
+    expect(connectorUrlSecretParams('https://billing.contoh.id/api?user_secret=1&Key=2')).toEqual([
+      'user_secret',
+      'Key',
+    ]);
+    expect(connectorUrlSecretParams('https://billing.contoh.id/api?status=1&keyword=a')).toEqual(
+      [],
+    );
+    expect(connectorUrlSecretParams('bukan url')).toEqual([]);
   });
 });

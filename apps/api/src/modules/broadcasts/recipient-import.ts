@@ -183,6 +183,70 @@ function readEntry(buffer: Buffer, entry: ZipEntry, budget: { left: number }): s
   return output.toString('utf8');
 }
 
+// ── Pemindai XML LINEAR (review broadcast T1) ───────────────────────────────
+//
+// Tanpa regex `[\s\S]*?` atas isi berkas: tag pembuka tanpa penutup membuat regex seperti itu memindai
+// sampai akhir teks UNTUK SETIAP tag (O(n²), berkas 40 KB bisa membekukan proses berjam-jam). Pemindai
+// di bawah hanya maju dengan `indexOf` (setiap posisi teks dibaca paling banyak beberapa kali) dan
+// MENOLAK berkas bila sebuah tag tidak tertutup.
+
+const BROKEN_XML =
+  'Berkas Excel rusak (struktur XML tidak lengkap). Simpan ulang dari Excel lalu coba lagi.';
+
+function isTagBoundary(code: number): boolean {
+  // `>`, `/`, spasi, tab, baris baru — supaya `<c` tidak cocok dengan `<col`, `<row` dengan `<rowBreaks`.
+  return code === 62 || code === 47 || code === 32 || code === 9 || code === 10 || code === 13;
+}
+
+/** Setiap elemen `<name …>…</name>` / `<name …/>` di `xml`, berurutan. Elemen sejenis tidak bersarang. */
+function* xmlElements(xml: string, name: string): Generator<{ attributes: string; inner: string }> {
+  const open = `<${name}`;
+  const close = `</${name}>`;
+  let position = 0;
+  for (;;) {
+    const at = xml.indexOf(open, position);
+    if (at < 0) return;
+    if (!isTagBoundary(xml.charCodeAt(at + open.length))) {
+      position = at + open.length;
+      continue;
+    }
+    const tagEnd = xml.indexOf('>', at + open.length);
+    if (tagEnd < 0) throw new ImportError(BROKEN_XML);
+    const selfClosing = xml.charCodeAt(tagEnd - 1) === 47;
+    const attributes = xml.slice(at + open.length, selfClosing ? tagEnd - 1 : tagEnd);
+    if (selfClosing) {
+      yield { attributes, inner: '' };
+      position = tagEnd + 1;
+      continue;
+    }
+    const closeAt = xml.indexOf(close, tagEnd + 1);
+    if (closeAt < 0) throw new ImportError(BROKEN_XML);
+    yield { attributes, inner: xml.slice(tagEnd + 1, closeAt) };
+    position = closeAt + close.length;
+  }
+}
+
+/** Nilai atribut `name="…"` (linear; tanpa kutip penutup = tidak ada). */
+function attributeValue(attributes: string, name: string): string | undefined {
+  const key = `${name}="`;
+  let position = 0;
+  for (;;) {
+    const at = attributes.indexOf(key, position);
+    if (at < 0) return undefined;
+    const before = at === 0 ? 32 : attributes.charCodeAt(at - 1);
+    if (before === 32 || before === 9 || before === 10 || before === 13) {
+      const end = attributes.indexOf('"', at + key.length);
+      return end < 0 ? undefined : attributes.slice(at + key.length, end);
+    }
+    position = at + key.length;
+  }
+}
+
+function firstElementText(xml: string, name: string): string | undefined {
+  for (const element of xmlElements(xml, name)) return element.inner;
+  return undefined;
+}
+
 const ENTITY = /&(lt|gt|amp|quot|apos|#\d{1,7}|#x[0-9a-fA-F]{1,6});/g;
 function decodeXml(text: string): string {
   return text.replace(ENTITY, (_whole, name: string) => {
@@ -207,16 +271,20 @@ function decodeXml(text: string): string {
   });
 }
 
+/** Teks semua `<t>` di dalam `<si>`/`<is>` (rich text = beberapa run). */
 function textRuns(xml: string): string {
   let text = '';
-  for (const match of xml.matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)) text += match[1] ?? '';
+  for (const run of xmlElements(xml, 't')) text += run.inner;
   return decodeXml(text);
 }
 
 function columnIndex(reference: string): number {
-  const letters = /^([A-Z]{1,3})/.exec(reference)?.[1] ?? '';
   let index = 0;
-  for (const letter of letters) index = index * 26 + (letter.charCodeAt(0) - 64);
+  for (const letter of reference) {
+    const code = letter.charCodeAt(0);
+    if (code < 65 || code > 90) break;
+    index = index * 26 + (code - 64);
+  }
   return index - 1;
 }
 
@@ -233,17 +301,18 @@ function firstSheetPath(entries: Map<string, ZipEntry>, buffer: Buffer, budget: 
   const workbook = entries.get('xl/workbook.xml');
   const rels = entries.get('xl/_rels/workbook.xml.rels');
   if (workbook && rels) {
-    const sheet = /<sheet\b[^>]*\br:id="([^"]+)"/.exec(readEntry(buffer, workbook, budget))?.[1];
-    if (sheet) {
-      const relsXml = readEntry(buffer, rels, budget);
-      for (const match of relsXml.matchAll(/<Relationship\b[^>]*>/g)) {
-        const tag = match[0];
-        if (new RegExp(`\\bId="${sheet.replace(/[^A-Za-z0-9]/g, '')}"`).test(tag)) {
-          const target = /\bTarget="([^"]+)"/.exec(tag)?.[1];
-          if (target) {
-            const path = target.startsWith('/') ? target.slice(1) : `xl/${target}`;
-            if (entries.has(path)) return path;
-          }
+    let sheetId: string | undefined;
+    for (const sheet of xmlElements(readEntry(buffer, workbook, budget), 'sheet')) {
+      sheetId = attributeValue(sheet.attributes, 'r:id');
+      break;
+    }
+    if (sheetId) {
+      for (const relation of xmlElements(readEntry(buffer, rels, budget), 'Relationship')) {
+        if (attributeValue(relation.attributes, 'Id') !== sheetId) continue;
+        const target = attributeValue(relation.attributes, 'Target');
+        if (target) {
+          const path = target.startsWith('/') ? target.slice(1) : `xl/${target}`;
+          if (entries.has(path)) return path;
         }
       }
     }
@@ -260,28 +329,27 @@ export function parseXlsx(buffer: Buffer, maxRows: number): string[][] {
   const shared: string[] = [];
   const sharedEntry = entries.get('xl/sharedStrings.xml');
   if (sharedEntry) {
-    for (const match of readEntry(buffer, sharedEntry, budget).matchAll(/<si>([\s\S]*?)<\/si>/g)) {
-      shared.push(textRuns(match[1] ?? ''));
+    for (const item of xmlElements(readEntry(buffer, sharedEntry, budget), 'si')) {
+      shared.push(textRuns(item.inner));
     }
   }
   const sheet = readEntry(buffer, sheetEntry, budget);
   const rows: string[][] = [];
-  for (const rowMatch of sheet.matchAll(/<row\b[^>]*?(?:\/>|>([\s\S]*?)<\/row>)/g)) {
+  for (const row of xmlElements(sheet, 'row')) {
     const values: string[] = [];
-    for (const cell of (rowMatch[1] ?? '').matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
-      const attributes = cell[1] ?? '';
-      const inner = cell[2] ?? '';
-      const reference = /\br="([A-Z]{1,3}\d+)"/.exec(attributes)?.[1];
-      const type = /\bt="([a-zA-Z]+)"/.exec(attributes)?.[1] ?? 'n';
-      const raw = /<v>([\s\S]*?)<\/v>/.exec(inner)?.[1];
+    for (const cell of xmlElements(row.inner, 'c')) {
+      const reference = attributeValue(cell.attributes, 'r');
+      const type = attributeValue(cell.attributes, 't') ?? 'n';
+      const raw = firstElementText(cell.inner, 'v');
       let value: string;
       if (type === 's') value = shared[Number(raw)] ?? '';
-      else if (type === 'inlineStr') value = textRuns(inner);
+      else if (type === 'inlineStr') value = textRuns(cell.inner);
       else if (type === 'str') value = decodeXml(raw ?? '');
       else if (type === 'b') value = raw === '1' ? 'TRUE' : raw === '0' ? 'FALSE' : '';
       else if (type === 'e') value = '';
       else value = raw === undefined ? '' : numberText(decodeXml(raw));
-      const index = reference ? columnIndex(reference) : values.length;
+      const index =
+        reference && /^[A-Z]{1,3}\d{1,7}$/.test(reference) ? columnIndex(reference) : values.length;
       if (index < 0 || index > 200) continue;
       while (values.length < index) values.push('');
       values[index] = value;

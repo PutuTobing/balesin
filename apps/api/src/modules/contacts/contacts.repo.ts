@@ -89,6 +89,24 @@ export async function deleteContactData(
     .limit(1);
   if (!contact) return undefined;
 
+  // Penerima broadcast orang ini (nomor + data kolom), SEMUA status — juga baris impor yang belum
+  // tertaut kontak (cocok nomor), supaya kampanye berjalan tidak membuat kontak ini lagi (review
+  // broadcast R1). Dikunci SEBELUM kunci identitas: urutan sama dengan worker broadcast (baris penerima
+  // → identitas), jadi bebas deadlock.
+  await tx
+    .delete(broadcastRecipients)
+    .where(
+      and(
+        eq(broadcastRecipients.organizationId, organizationId),
+        contact.phone
+          ? or(
+              eq(broadcastRecipients.contactId, contactId),
+              eq(broadcastRecipients.phone, contact.phone),
+            )
+          : eq(broadcastRecipients.contactId, contactId),
+      ),
+    );
+
   const now = new Date();
   const identityMatch = payloadMatchesIdentity(contact.waBsuid, contact.phone);
   const purgedEvents = await tx
@@ -204,15 +222,6 @@ export async function deleteContactData(
       and(
         eq(conversationNotes.organizationId, organizationId),
         inArray(conversationNotes.conversationId, conversationsOfContact),
-      ),
-    );
-  // Penerima broadcast kontak ini (nomor + data kolom): ikut dihapus (laporan kampanye berkurang).
-  await tx
-    .delete(broadcastRecipients)
-    .where(
-      and(
-        eq(broadcastRecipients.organizationId, organizationId),
-        eq(broadcastRecipients.contactId, contactId),
       ),
     );
   await tx

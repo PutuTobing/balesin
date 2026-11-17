@@ -35,6 +35,9 @@ Migrasi 0025.
 | `GET/PUT/DELETE /api/v1/settings/alarms/telegram` | `integrations.manage` | PUT & DELETE = `confirmation` |
 | `POST /api/v1/settings/alarms/telegram/test` | `integrations.manage` | 6/menit/organisasi |
 
+**Ambang persetujuan** dihitung KUMULATIF: total penerima tanpa persetujuan per organisasi dalam 24 jam
+bergulir + kampanye ini > ambang → `pending_approval` (memecah kampanye tidak menghindari persetujuan).
+
 Tulis = CSRF (hook auth), 60/menit/pengguna; impor 30/jam/pengguna. Audit (`targetType: broadcast`,
 hanya ID/nama kampanye/jumlah — TANPA nomor/isi): `broadcast.created/updated/deleted/
 recipients_imported/submitted/approved/rejected/paused/resumed/cancelled/exported`,
@@ -55,6 +58,8 @@ recipients_imported/submitted/approved/rejected/paused/resumed/cancelled/exporte
   `.xls` lama ditolak. Batas: 5 MB, 20.000 penerima, 30 kolom, isian 500 karakter, isi XLSX terbuka
   ≤ 40 MB (zip bomb). Kolom nomor: dari judul (`nomor`, `no hp`, `wa`, `phone`, …) atau ≥ 60% isinya
   nomor; bisa dipilih lewat `phoneColumn`.
+  Parsing berjalan di `worker_threads` (10 dtk, heap 256 MB, maks. 2 per proses — penuh → 429); XML
+  dipindai linear, tag tanpa penutup → 400 "Berkas Excel rusak".
 - **Normalisasi nomor (Indonesia dulu)**: `0…`/`8…` (nol hilang di Excel)/`62…` → `+62…`; 8–13 digit
   setelah 62; negara lain hanya bila ditulis `+`/`00`; format ilmiah Excel (`6,28E+12`) ditolak
   tersendiri.
@@ -67,7 +72,9 @@ recipients_imported/submitted/approved/rejected/paused/resumed/cancelled/exporte
   tampil), jawaban JSON array objek di `itemsPath` (`data.items`, kosong = akar), `phoneField` = kolom
   nomor. Aturan SSRF webhook keluar (IP privat hanya lewat allowlist Pengaturan → Integrasi, https untuk
   publik, port 80/443/5678/8080/8443, DNS sekali), TANPA redirect, 20 dtk, ≤ 5 MB. Kode tes:
-  `BROADCAST_CONNECTOR_TEST_CODES`. Simpan rahasia di header, bukan di query URL.
+  `BROADCAST_CONNECTOR_TEST_CODES`. URL dengan parameter query yang tampak rahasia (`token`, `key`, `api_key`,
+  `secret`, `password`, `signature`, `auth`, …) ditolak 400 — simpan rahasia di header (helper web:
+  `connectorUrlSecretParams`). Hapus kontak menghapus baris penerima bernomor sama di semua kampanye.
 
 ## Pemetaan & pratinjau
 
