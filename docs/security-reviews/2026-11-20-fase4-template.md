@@ -108,3 +108,32 @@ S1 (OTP) dan R1 (kontak sampah).
 | `packages/core`: `vitest run src/meta` | 121 lulus |
 | `tsc --noEmit` (api, worker) + ESLint berkas tes baru | bersih |
 | `pnpm audit` | 2 moderate dev-only, tidak ada yang baru |
+
+---
+
+## Putaran 2 — verifikasi perbaikan (commit `e0f2091`)
+
+| Butir | Bukti | Status |
+|---|---|---|
+| S1 kode OTP | `apps/api/src/modules/templates/template-send.ts`: teks = `Kode verifikasi: ••••••`, `extras.template.sensitive = true`; respons inbox hanya `{ templateId, name, language, category }` (`inbox-view.ts:195-209`), webhook keluar memakai `text` tersamar. Worker `apps/worker/src/queues/messages.ts:407-428,458,613` `wipeSensitiveTemplate` di `finally`: nilai (`values`, `headerText`, nilai tombol) dikosongkan setelah percobaan selesai — berhasil, gagal final, atau dilewati — kecuali ulangan otomatis yang masih berjalan. Kirim ulang pesan OTP → 409 (`outbound.service.ts`). Tes penjaga S1 diubah `it.fails` → `it` dengan asersi IDENTIK (teks DB & `GET …/messages` agen tidak memuat kode) dan lulus | **Tertutup** |
+| R1 kontak sampah | `outbound.service.ts` `startWithTemplate`: `resolveTemplateSend` + `assertCanSend` (rem darurat, batas harian pengguna/key/organisasi; `conversationId: null` = tanpa batas per percakapan) SEBELUM `ensureContact`/percakapan. Tes penjaga R1 `it.fails` → `it`, asersi IDENTIK (429 + 423, nomor ke-2/ke-3 tidak menjadi kontak) dan lulus | **Tertutup** |
+| Info 2 spam key tak terlihat | Tidak ada perubahan kode di commit ini; sudah tercakup sebelumnya: kejadian keamanan `sending_limit_reached` dihitung dari SEMUA audit `sending.limit_reached` termasuk target `api_key` (`apps/api/src/modules/audit/audit.service.ts:93`) → banner, dan email Owner atas nama pembuat key (review API publik R2) | **Tertutup** (sudah ada) |
+| Info 4 karakter kontrol | `template-send.ts`: `[\p{Cc}  ]` ditolak | **Tertutup** |
+| Info 5 kuota sebelum idempotensi | `templates.routes.ts`: jatah `mulai-percakapan` dipotong lewat `beforeCreate` — hanya permintaan BARU yang lolos pemeriksaan | **Tertutup** |
+| Info 3 kode negara | `mobichat.service.ts` `normalizeWhatsappNumber(value, defaultCountryCode = '62')` — parameter; pengaturan per organisasi ditunda (butuh migrasi) | **Sebagian** (tetap Info) |
+
+**Penilaian "enkripsi tambahan tidak perlu"**: dapat diterima. Kode OTP hanya ada di `extras.template` selama
+pesan diproses worker (normalnya detik), tidak pernah keluar lewat API/webhook/ekspor, dan sudah dibuang
+setelahnya. Sisa risiko (Info baru):
+
+1. **Nilai OTP bisa tertinggal bila job tidak pernah selesai di kode kita** — job hilang (Redis
+   dikosongkan), gagal karena "stalled" berulang (proses worker mati di tengah), atau enqueue gagal. Tidak
+   ada penyapu. Saran: job maintenance yang mengosongkan `extras.template` `sensitive` lebih tua dari mis.
+   1 jam (atau yang statusnya bukan `pending`). Juga cadangan DB yang diambil tepat di jendela itu memuat
+   kode yang sudah kedaluwarsa ≤ 90 menit — dapat diterima.
+2. **Pohon kerja**: perubahan backend yang belum di-commit (`apps/api/src/modules/realtime/inbox-stream.ts`
+   dkk.) membuat `tsc` apps/api gagal (`deliverBatch` hilang). Bukan dari commit ini.
+
+Hasil: `apps/api` `vitest run src/modules/templates src/modules/public-api src/modules/messages
+src/modules/compat-mobichat` 68 lulus (9 berkas, tanpa `it.fails` tersisa); `apps/worker` `vitest run
+src/queues` 91 lulus; `tsc` worker bersih. Putusan tetap **AMAN**.
