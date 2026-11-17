@@ -112,3 +112,40 @@ dialog Kirim template, Mulai percakapan baru)
 Worktree dihapus (folder + `git worktree prune`; `git worktree list` hanya repo utama), port 3191/5191 kosong,
 `balesin_kd_e2e` di-drop, Redis db 11 `DBSIZE` 0. Berkas repo: laporan ini + 15 screenshot; bagian "Putaran 2" laporan
 bot/interaktif/MobiChat (+7 `p2-*.png`). Tidak ada kode produk yang diubah, tidak ada commit.
+
+---
+
+# Putaran 2
+
+- **Tanggal:** 2026-11-18 · **Penilai:** `kritikus-desain` · **Putaran:** 2
+- **Kode yang dinilai:** `83a4e87` ("feat(broadcast): UI broadcast …; revisi template TM1–TM3"). Worktree terisolasi
+  (API 3191 / web 5191, `balesin_kd_e2e` migrasi sampai `0027`, Redis db 11), 3 worker. Foto + audit layar template dan
+  composer × 4, ditambah 360 × 780 dan satu layar penilaian `composer-plus` (menu "+" terbuka).
+- **Screenshot:** berkas berawalan `p2-`.
+
+## Putusan putaran 2: REVISI (satu regresi dari TM2)
+
+| Butir | Hasil | Status |
+|---|---|---|
+| **TM1** composer HP | Satu tombol "+" 44 × 44 ("Tambah lampiran atau pesan khusus") membuka lembar berisi **Lampiran** · **Pesan dengan pilihan** · **Template WhatsApp**, masing-masing dengan keterangan satu baris. Kotak tulis terukur **262 px** di 390 dan **232 px** di 360 (syarat ≥ 240 / ≥ 210). Desktop tetap tiga ikon, kotak 468 px | Lolos |
+| **TM2** chip nilai | Nilai kosong kini chip "Nilai 3" bergaris putus `--warning`, nilai contoh tampil miring redup — **tetapi chip dan contoh dirender sebagai blok**, sehingga kalimat pecah per baris (lihat R1) | **Regresi** |
+| **TM3** kartu tautan | Seluruh kartu template bisa diketuk; tidak ada lagi target < 44 px di `template-daftar` 390 | Lolos |
+| S1 hapus di daftar | Ikon hapus tidak lagi di setiap kartu daftar | Lolos |
+| S3 "Ganti template" | Tombol sekunder sebaris dengan nama template | Lolos |
+| S4 dialog Kirim template | Nama template di bawah "← Pilih template lain" | Lolos |
+| S2 preset OTP "Anda" | Tidak difoto di putaran ini | Belum diperiksa |
+
+### Wajib
+
+**R1. Chip/contoh variabel sebaris dengan kalimat** — komponen pratinjau template (dipakai `template-baru`, dialog Kirim
+template, Mulai percakapan baru)
+
+- Terukur di foto:
+  - `inbox-percakapan-baru` 1440: "Halo Bu Rina, teknisi kami / *Agus* / akan datang pada / *Selasa, 08.00–10.00* / Mohon …" —
+    lima baris dan spasi di awal baris.
+  - `template-baru`: "… pukul / [Nilai 3] (selebar gelembung) / ." — titik penutup jatuh ke baris sendiri.
+- Penyebab yang mungkin: elemen pengganti memakai `display: block`/`flex` atau `<div>`. Pakai `<span>` dengan
+  `display: inline` (chip: `inline-flex`, `vertical-align: baseline`, `padding: 0 4px`, `white-space: nowrap`) dan
+  pertahankan spasi asli di sekitarnya.
+- Kriteria lolos: kalimat pratinjau mengalir seperti teks biasa; chip dan contoh berada di baris yang sama dengan kata di
+  sekitarnya; tanda baca tidak pernah terpisah dari kata sebelumnya.
