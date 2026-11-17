@@ -3,7 +3,13 @@ import { deflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 
 import { jsonItemsToTable } from './connector-source';
-import { ImportBusyError, parseRecipientsIsolated, parseTableIsolated } from './import-runner';
+import {
+  ImportBusyError,
+  importThreadEnv,
+  importThreadEnvKeys,
+  parseRecipientsIsolated,
+  parseTableIsolated,
+} from './import-runner';
 import { csvCell } from './broadcasts.service';
 import {
   ImportError,
@@ -238,5 +244,36 @@ describe('parsing terisolasi (review T1)', () => {
     const first = parseTableIsolated('uji-4', csv);
     await expect(parseTableIsolated('uji-4', csv)).rejects.toBeInstanceOf(ImportBusyError);
     await first;
+  });
+});
+
+describe('lingkungan thread impor (review putaran 2)', () => {
+  it('hanya variabel yang dibutuhkan; rahasia seperti BALESIN_MASTER_KEY tidak terlihat thread', async () => {
+    expect(
+      importThreadEnv({
+        NODE_ENV: 'test',
+        TEMP: 'C:/tmp',
+        BALESIN_MASTER_KEY: 'rahasia',
+        DATABASE_URL: 'postgres://x',
+        SESSION_SECRET: 'y',
+      }),
+    ).toEqual({ NODE_ENV: 'test', TEMP: 'C:/tmp' });
+    const previous = process.env.BALESIN_MASTER_KEY;
+    process.env.BALESIN_MASTER_KEY = 'kunci-uji-tidak-boleh-terbaca';
+    process.env.DATABASE_URL_PROBE = 'postgres://tidak-boleh-terbaca';
+    try {
+      const keys = await importThreadEnvKeys('uji-env');
+      expect(keys).not.toContain('BALESIN_MASTER_KEY');
+      expect(keys).not.toContain('DATABASE_URL_PROBE');
+      expect(
+        keys.every((key) =>
+          ['NODE_ENV', 'TEMP', 'TMP', 'TMPDIR', 'SystemRoot', 'windir'].includes(key),
+        ),
+      ).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env.BALESIN_MASTER_KEY;
+      else process.env.BALESIN_MASTER_KEY = previous;
+      delete process.env.DATABASE_URL_PROBE;
+    }
   });
 });

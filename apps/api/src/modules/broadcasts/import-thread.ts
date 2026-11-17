@@ -16,6 +16,15 @@ import type { ImportThreadRequest, ImportThreadResponse } from './import-runner'
  * induknya (thread yang melewati batas dihentikan). Pesan galat hanya teks Indonesia `ImportError`.
  */
 function run(request: ImportThreadRequest): ImportThreadResponse {
+  if (request.mode === 'env-keys') {
+    // Diagnosis untuk tes: hanya NAMA variabel (bukan nilai) — memastikan rahasia tidak terlihat.
+    return {
+      ok: true,
+      table: { columns: Object.keys(process.env).sort(), rows: [] },
+      phoneColumn: null,
+      result: null,
+    };
+  }
   try {
     const buffer = Buffer.from(
       request.buffer.buffer,

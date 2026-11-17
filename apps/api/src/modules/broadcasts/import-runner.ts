@@ -19,7 +19,8 @@ import { ImportError, type ImportResult, type ParsedTable } from './recipient-im
  */
 
 export interface ImportThreadRequest {
-  mode: 'table' | 'recipients';
+  /** `env-keys` = diagnosis: NAMA variabel lingkungan yang terlihat thread (tanpa nilai; untuk tes). */
+  mode: 'table' | 'recipients' | 'env-keys';
   buffer: Uint8Array;
   phoneColumn?: string;
 }
@@ -72,10 +73,28 @@ interface PooledThread {
 /** Thread hangat yang siap dipakai ulang (maks. sebanyak batas gerbang). */
 const idle: PooledThread[] = [];
 
+/**
+ * Variabel lingkungan yang BOLEH dilihat thread impor (review broadcast putaran 2 Info): bawaan
+ * `worker_threads` menyalin SELURUH `process.env` (termasuk `BALESIN_MASTER_KEY`, URL database). Thread
+ * hanya butuh `NODE_ENV` dan lokasi folder sementara (cache loader `tsx` di dev/tes memakai
+ * `os.tmpdir()` — tanpa `TEMP`/`TMP`/`TMPDIR` folder `undefined/temp` dibuat di direktori kerja).
+ */
+const THREAD_ENV_KEYS = ['NODE_ENV', 'TEMP', 'TMP', 'TMPDIR', 'SystemRoot', 'windir'] as const;
+
+export function importThreadEnv(source: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const key of THREAD_ENV_KEYS) {
+    const value = source[key];
+    if (typeof value === 'string' && value !== '') env[key] = value;
+  }
+  return env;
+}
+
 function spawn(heapMb: number): Promise<PooledThread> {
   const { url, execArgv } = threadUrl();
   const worker = new Worker(url, {
     execArgv,
+    env: importThreadEnv(),
     stdout: true,
     stderr: true,
     resourceLimits: {
@@ -210,4 +229,9 @@ export async function parseRecipientsIsolated(
   );
   if (!response.phoneColumn || !response.result) throw new ImportError('Berkas tidak bisa dibaca.');
   return { table: response.table, phoneColumn: response.phoneColumn, result: response.result };
+}
+
+/** NAMA variabel lingkungan yang terlihat di thread impor (tanpa nilai) — penjaga tes review. */
+export async function importThreadEnvKeys(key: string): Promise<string[]> {
+  return (await isolated(key, { mode: 'env-keys', buffer: new Uint8Array(0) }, {})).table.columns;
 }
