@@ -114,3 +114,30 @@ Worktree dihapus (folder + `git worktree prune`; `git worktree list` hanya repo 
 `balesin_kd_e2e` di-drop, Redis db 11 `DBSIZE` 0. Berkas repo: laporan ini + 13 screenshot; bagian "Putaran 2" di
 laporan HP penuh (+2 `p2-*.png`) dan API key & Webhook (+5 `p2-*.png`). Tidak ada kode produk yang diubah, tidak ada
 commit.
+
+---
+
+# Putaran 2
+
+- **Tanggal:** 2026-11-18 · **Penilai:** `kritikus-desain` · **Putaran:** 2
+- **Kode yang dinilai:** `f185b2a` ("feat(template): UI template Meta, kirim template & percakapan baru; revisi bot B1–B3").
+  Worktree terisolasi (API 3191 / web 5191, `balesin_kd_e2e` migrasi sampai `0025`, Redis db 11), 3 worker. Foto + audit
+  (kontras, target sentuh, teks terpotong) `nomor-bot(-mati)`, `inbox-chat-interaktif-daftar`, `inbox-chat-pilihan`,
+  `webhook-mobichat-tambah`, `webhook-rotasi`, `api-key` × 4.
+- **Screenshot:** berkas berawalan `p2-`.
+
+## Putusan putaran 2: LOLOS
+
+| Butir | Hasil | Status |
+|---|---|---|
+| **B1** jadwal bot | Judul kolom "Hari · Mulai · Selesai" sekali; satu baris per hari (☑ hari, jam – jam) di 1440 dan 390; hari mati bertuliskan "Bot tidak aktif"; aksi "Samakan jam ke semua hari aktif". Di 390 tujuh hari ±53 px per baris | Lolos |
+| **B2** daftar pilihan desktop | Pilihan dan Keterangan ditumpuk lebar penuh; "Rumahan 20 Mbps" / "Rumahan 50 Mbps" utuh | Lolos |
+| **B3** teks MobiChat | "Isi kiriman sama dengan webhook MobiChat (ditambah …), untuk alur n8n lama"; "API key untuk alur n8n"; teks bantu URL http: "http:// hanya boleh untuk alamat di daftar jaringan privat di bawah." | Lolos |
+| B-S1 tombol pesan bot | Garis putus + ikon balas, tidak lagi tampak seperti tombol yang bisa diklik agen | Lolos |
+| B-S2 urutan mock | Pesan bot 03.20 lalu balasan pelanggan 03.21 | Lolos |
+| B-S3 penghitung | Hanya tampil di isian yang terfokus ("15/24") | Lolos |
+| B-S4 rotasi | Tombol "Buat rahasia baru" | Lolos |
+| Chevron lipatan API key | "› Dicabut & kedaluwarsa (1)" | Lolos |
+
+Tidak ada teks < 4,5:1, tidak ada scroll horizontal, tidak ada target < 44 px (kecuali "Tampilkan password" 44 × 42, sudah
+diterima). Semua layar laporan ini ≥ 4 di 390 & 1440, terang & gelap; tidak ada pelanggaran §3.

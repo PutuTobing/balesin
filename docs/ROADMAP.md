@@ -43,9 +43,9 @@ Orkestrator mengerjakan dari atas ke bawah. Tandai `[x]` saat Definition of Done
 - [x] Mapping MobiChat untuk bot (`API-MOBICHAT-MAPPING.md` §1–3)
 - [x] Mapping pengiriman template dari aplikasi billing (§4)
 - [ ] Endpoint mode tangkap `/compat/<vendor>/*` + adaptor vendor Qiscus untuk aplikasi billing (butuh BUTUH-TOBING #10)
-- [ ] Lapisan kompatibel MobiChat (`/api/public/*` prioritas, `/api/bot/reply*` kedua) + field `mobichat_base_url`/`mobichat_api_key` di webhook + tes kontrak
-- [ ] Pesan interaktif (tombol/daftar) dari agen dan bot + penerusan balasan tombol ke bot
-- [ ] Bot eksternal: kirim event, handoff, saklar bot
+- [x] Lapisan kompatibel MobiChat (`/api/public/*` prioritas, `/api/bot/reply*` kedua) + field `mobichat_base_url`/`mobichat_api_key` di webhook + tes kontrak
+- [x] Pesan interaktif (tombol/daftar) dari agen dan bot + penerusan balasan tombol ke bot
+- [x] Bot eksternal: kirim event, handoff, saklar bot
 - [x] API native v1 + API key bertingkat scope + OpenAPI `/api/docs`
 - [x] Webhook keluar bertanda tangan + allowlist IP privat + riwayat & kirim ulang
 
