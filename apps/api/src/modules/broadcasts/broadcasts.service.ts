@@ -46,6 +46,7 @@ import {
   type BroadcastSourceKind,
   type BroadcastStatus,
   type BroadcastWaitReason,
+  type MessageDeliveryStatus,
   type CreateBroadcastRequest,
   type IdentityConfirmation,
   type TemplateCategory,
@@ -95,6 +96,12 @@ const conflict = (message: string) => new AppError('CONFLICT', { message });
 const BLOCKED_QUALITY = new Set(['RED']);
 const BLOCKED_NUMBER_STATUS = new Set(['FLAGGED', 'RESTRICTED', 'BANNED', 'DISCONNECTED']);
 const CHUNK = 500;
+/**
+ * Status pesan untuk laporan broadcast: pesan yang SUDAH DITERIMA Meta (punya wamid) tetapi status
+ * webhook `sent` belum datang dihitung `sent` (sebelumnya terhitung "sedang dikirim" sampai webhook
+ * tiba — server Meta tiruan tidak pernah mengirim webhook status, dan Meta sungguhan bisa terlambat).
+ */
+const MESSAGE_STATUS = sql<MessageDeliveryStatus | null>`case when ${messages.status} = 'pending' and ${messages.wamid} is not null then 'sent'::message_delivery_status else ${messages.status} end`;
 
 function iso(value: Date | null): string | null {
   return value ? value.toISOString() : null;
@@ -1321,7 +1328,7 @@ export function createBroadcastsService(deps: BroadcastsServiceDeps) {
           phone: broadcastRecipients.phone,
           status: broadcastRecipients.status,
           skipReason: broadcastRecipients.skipReason,
-          messageStatus: messages.status,
+          messageStatus: MESSAGE_STATUS,
           failureReason: messages.failureReason,
           errorCode: messages.errorCode,
           conversationId: broadcastRecipients.conversationId,
@@ -1351,7 +1358,7 @@ export function createBroadcastsService(deps: BroadcastsServiceDeps) {
                     status === 'delivered' ||
                     status === 'read' ||
                     status === 'failed'
-                  ? eq(messages.status, status)
+                  ? sql`${MESSAGE_STATUS} = ${status}`
                   : undefined,
           ),
         )
@@ -1398,7 +1405,7 @@ export function createBroadcastsService(deps: BroadcastsServiceDeps) {
         .select({
           status: broadcastRecipients.status,
           skipReason: broadcastRecipients.skipReason,
-          messageStatus: messages.status,
+          messageStatus: MESSAGE_STATUS,
           failureReason: messages.failureReason,
           errorCode: messages.errorCode,
           replied: sql<boolean>`${broadcastRecipients.repliedAt} is not null`,
@@ -1421,7 +1428,7 @@ export function createBroadcastsService(deps: BroadcastsServiceDeps) {
         .groupBy(
           broadcastRecipients.status,
           broadcastRecipients.skipReason,
-          messages.status,
+          MESSAGE_STATUS,
           messages.failureReason,
           messages.errorCode,
           sql`${broadcastRecipients.repliedAt} is not null`,
@@ -1538,7 +1545,7 @@ export function createBroadcastsService(deps: BroadcastsServiceDeps) {
           phone: broadcastRecipients.phone,
           status: broadcastRecipients.status,
           skipReason: broadcastRecipients.skipReason,
-          messageStatus: messages.status,
+          messageStatus: MESSAGE_STATUS,
           failureReason: messages.failureReason,
           errorCode: messages.errorCode,
           processedAt: broadcastRecipients.processedAt,

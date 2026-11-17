@@ -18,7 +18,7 @@ import {
   WEBHOOK_JOBS,
   type SecurityNoticeAdminEmailPayload,
 } from '@balesin/core';
-import { createLogCapture } from '@balesin/core/testing';
+import { connectTestRedis, createLogCapture } from '@balesin/core/testing';
 import {
   alarmEvents,
   auditLogs,
@@ -67,6 +67,7 @@ import {
 } from '../../../../worker/src/queues/broadcast';
 import { wipeStaleSensitiveTemplates } from '../../../../worker/src/queues/maintenance';
 import { processWebhookJob } from '../../../../worker/src/queues/webhooks';
+import { startWorkers } from '../../../../worker/src/runtime';
 import { createPasswordHasher } from '../auth/password-hasher';
 import {
   FAKE_WEBHOOK_DEFAULTS,
@@ -1245,5 +1246,56 @@ describe('review kontak R4 & jaring pengaman OTP', () => {
     expect(JSON.stringify(wiped?.extras)).not.toContain('482913');
     expect(wiped?.extras.template?.buttons[0]?.value).toBe('');
     expect(await wipeStaleSensitiveTemplates(harness.db)).toBe(0);
+  });
+});
+
+describe('worker sungguhan (BullMQ)', () => {
+  it('kampanye lewat runtime worker: pesan sampai ke Meta (wamid), status maju, lalu selesai', async () => {
+    const { closeRedis } = await import('@balesin/core');
+    const queueRedis = await connectTestRedis('queue', logs.logger, 'balesin-tes-broadcast');
+    const prefix = `balesin-tes-bc-${String(Date.now())}`;
+    const runtime = startWorkers({ connection: queueRedis, prefix }, logs.logger, {
+      email: {
+        appUrl: 'http://localhost:5173',
+        db: harness.db,
+        secretBox: null,
+        fallback: null,
+        allowedPorts: [],
+      },
+      webhooks: { db: harness.db },
+      broadcast: { db: harness.db, meta: metaClient(), secretBox: box, publisher: publisher() },
+    });
+    try {
+      const { id } = await submitted(supervisor, CSV);
+      await expect
+        .poll(async () => (await campaignRow(id)).status, { timeout: 20_000, interval: 250 })
+        .toBe('completed');
+      const sent = await harness.db.select().from(messages).where(eq(messages.broadcastId, id));
+      expect(sent).toHaveLength(2);
+      expect(sent.map((message) => message.wamid !== null)).toEqual([true, true]);
+      expect(fake.sentMessages).toHaveLength(2);
+      // Diterima Meta (wamid) tanpa webhook status pun dihitung "Terkirim" di laporan.
+      const early = broadcastReportResponseSchema.parse(
+        (
+          await call(
+            harness.app,
+            'GET',
+            apiPath(API_ROUTES.broadcasts.report, { broadcastId: id }),
+            undefined,
+            as(supervisor),
+          )
+        ).json(),
+      ).report;
+      expect(early).toMatchObject({ sent: 2, sending: 0, failed: 0 });
+      await receive(statusNotification({ wamid: sent[0]?.wamid ?? '', status: 'delivered' }));
+      const [after] = await harness.db
+        .select()
+        .from(messages)
+        .where(eq(messages.id, sent[0]?.id ?? ''));
+      expect(after?.status).toBe('delivered');
+    } finally {
+      await runtime.close();
+      await closeRedis(queueRedis);
+    }
   });
 });
