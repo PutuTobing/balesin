@@ -32,6 +32,7 @@ import {
   signWebhookBody,
   statusNotification,
   templateStatusNotification,
+  whatsAppNotification,
   textMessageNotification,
   unixTimestamp,
   unsupportedMessageNotification,
@@ -425,15 +426,33 @@ describe('POST: routing per nomor (bukan sekadar :channelId)', () => {
     expect(harness.logs.text()).toContain('bukan milik channel ini');
   });
 
-  it('field tingkat WABA lain (status template) → disimpan "skipped" tanpa job', async () => {
+  it('field tingkat WABA: status template → diantrekan (Fase 4); field lain → "skipped" tanpa job', async () => {
     expect((await post(channelId, templateStatusNotification())).statusCode).toBe(200);
-    const [event] = await eventsOf(channelId);
-    expect(event).toMatchObject({
+    const [template] = await eventsOf(channelId);
+    expect(template).toMatchObject({
       kind: 'other',
       field: 'message_template_status_update',
-      status: 'skipped',
+      status: 'pending',
+      payload: {
+        template: {
+          metaTemplateId: '1234567890',
+          name: 'tagihan_bulanan',
+          language: 'id',
+          event: 'APPROVED',
+        },
+      },
     });
-    expect(event?.processedAt).toBeInstanceOf(Date);
+    expect(harness.webhookJobs).toHaveLength(1);
+    harness.webhookJobs.length = 0;
+    const account = whatsAppNotification(
+      { event: 'VERIFIED_ACCOUNT', phone_number: '6281100001111' },
+      { field: 'account_update' },
+    );
+    expect((await post(channelId, account)).statusCode).toBe(200);
+    const other = (await eventsOf(channelId)).find((event) => event.field === 'account_update');
+    expect(other).toMatchObject({ kind: 'other', status: 'skipped' });
+    expect(other?.processedAt).toBeInstanceOf(Date);
+    expect(other?.payload).not.toHaveProperty('template');
     expect(harness.webhookJobs).toEqual([]);
   });
 

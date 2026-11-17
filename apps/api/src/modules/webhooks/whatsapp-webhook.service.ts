@@ -258,7 +258,8 @@ export function createWhatsAppWebhookService(deps: WhatsAppWebhookDeps): WhatsAp
           summary.disabled += 1;
           continue;
         }
-        const skipped = item.kind === 'other';
+        // Field selain `messages` belum punya pemroses, KECUALI pembaruan template (Fase 4).
+        const skipped = item.kind === 'other' && item.payload.template === undefined;
         rows.push({
           organizationId: target.organizationId,
           channelId: target.id,

@@ -445,11 +445,16 @@ konfirmasi identitas — bisa dibalik kapan saja):
 ```
 
 - `day` 0 = Minggu … 6 = Sabtu, `HH:MM` 00:00–24:00, mulai < selesai (lewat tengah malam = dua
-  jendela), maks. 21 jendela; zona waktu = zona organisasi. `timeoutMinutes` 1–1.440 atau `null`.
+  jendela), maks. 21 jendela; zona waktu = zona organisasi. `timeoutMinutes` 1–1.440 (`null` saat aktif → 15).
 - Jawaban `{ settings: { …, timezone, activeNow, updatedAt } }` — `activeNow` = percakapan baru SAAT
   INI masuk ke bot.
-- Berlaku untuk percakapan BARU: worker memberi status `bot` bila bot aktif + dalam jam kerja bot
-  (`botAwareInitialStatus`), selain itu `unserved`. Isi jam rusak → `unserved` (aman: ke tim).
+- Berlaku untuk percakapan BARU: worker memberi status `bot` bila bot aktif + dalam jam kerja bot +
+  **ada penerima aktif** (endpoint webhook aktif yang melanggan `message.received`; format MobiChat:
+  key-nya masih aktif) (`botAwareInitialStatus`), selain itu `unserved`. Isi jam rusak → `unserved`.
+- Review bot R1 (tidak ada pelanggan terjebak di bot): bot aktif SELALU punya batas waktu —
+  `timeoutMinutes: null` saat `enabled` diisi 15 (constraint DB); **mematikan bot channel menyerahkan
+  semua percakapan `bot` channel itu ke antrian** (kejadian `handoff` oleh pengguna, webhook, push);
+  menyalakan bot oleh SELAIN Owner = kejadian keamanan `bot_enabled` (warning, banner).
 
 **Selama `bot`**: pesan pelanggan masuk ke tab "Bot", TIDAK memicu push ke manusia; bot menerima
 `message.received` lewat webhook keluar (opsi endpoint `botOnly`: hanya selama bot memegang).
@@ -489,6 +494,13 @@ penanganan (`{ conversation }`). Tab Log: `handoff` "Menyerahkan dari bot ke tim
   `{ kind, id, title, description }` dan diteruskan ke bot (webhook native `data.message.interactive`
   `{ type, id, title, description }`; format MobiChat `interactive_reply` + `reply_id`,
   `message_text` = judul pilihan).
+
+## Template (Fase 4)
+
+`type: "template"` di `POST /conversations/:id/messages` = satu-satunya pesan yang boleh di luar jendela
+24 jam; mulai percakapan ke nomor baru = `POST /conversations/start` (`inbox.initiate`). `Message.type`
+bisa `template` dengan `Message.template { templateId, name, language, category }`. Rincian:
+docs/KONTRAK-API-TEMPLATE.md.
 
 ## Titik kait berikutnya
 

@@ -129,6 +129,8 @@ beforeEach(async () => {
     waVerifyTokenEncrypted: 'x',
     waVerifyTokenRotatedAt: new Date(),
     botEnabled: true,
+    // Review bot R1: bot aktif wajib punya batas waktu (constraint `channels_bot_enabled_has_timeout`).
+    botTimeoutMinutes: 15,
   });
 });
 afterAll(async () => {
@@ -172,21 +174,18 @@ describe('review keamanan — pengaturan bot channel', () => {
     }
   });
 
-  it.fails(
-    'R1: mematikan bot channel menyerahkan percakapan yang sedang dipegang bot ke antrian (tidak terjebak)',
-    async () => {
-      const parked = await conversation('bot');
-      const response = await call(
-        harness.app,
-        'PUT',
-        botUrl(channelId),
-        { enabled: false, hours: { mode: 'always' }, timeoutMinutes: null },
-        { cookie: owner.cookie, csrf: owner.csrf },
-      );
-      expect(response.statusCode).toBe(200);
-      expect((await statusOf(parked.id))?.status).toBe('unserved');
-    },
-  );
+  it('R1: mematikan bot channel menyerahkan percakapan yang sedang dipegang bot ke antrian (tidak terjebak)', async () => {
+    const parked = await conversation('bot');
+    const response = await call(
+      harness.app,
+      'PUT',
+      botUrl(channelId),
+      { enabled: false, hours: { mode: 'always' }, timeoutMinutes: null },
+      { cookie: owner.cookie, csrf: owner.csrf },
+    );
+    expect(response.statusCode).toBe(200);
+    expect((await statusOf(parked.id))?.status).toBe('unserved');
+  });
 });
 
 describe('review keamanan — handoff & saklar per percakapan', () => {

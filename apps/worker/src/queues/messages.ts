@@ -8,6 +8,7 @@ import {
   isStatusAdvance,
   normalizeStatusUpdate,
   openWhatsAppCredentials,
+  templateSendComponents,
   sendMessageJobPayloadSchema,
   sendWhatsAppMessage,
   type InboxBusEventInput,
@@ -188,8 +189,11 @@ async function prepare(
     }
   }
 
-  // Jendela 24 jam (jam server). Template (di luar jendela) = fase berikutnya.
-  if (!conversation.windowExpiresAt || conversation.windowExpiresAt.getTime() <= now.getTime()) {
+  // Jendela 24 jam (jam server). Template Meta yang disetujui boleh di luar jendela (Fase 4).
+  if (
+    message.type !== 'template' &&
+    (!conversation.windowExpiresAt || conversation.windowExpiresAt.getTime() <= now.getTime())
+  ) {
     return { failure: 'window_closed' };
   }
 
@@ -223,6 +227,45 @@ async function prepare(
       const wamid = await targetWamid(tx, message, message.reactionToMessageId);
       if (!wamid) return { failure: 'meta_rejected' };
       content = { type: 'reaction', targetWamid: wamid, emoji: message.reactionEmoji ?? '' };
+      break;
+    }
+    case 'template': {
+      // Dibangun ulang dari nilai yang sudah divalidasi api (`extras.template`).
+      const spec = message.extras.template;
+      if (message.direction !== 'outbound' || !spec) return { failure: 'meta_rejected' };
+      let headerMetaMediaId: string | null = null;
+      if (spec.headerMediaFileId) {
+        const [file] = await tx
+          .select()
+          .from(mediaFiles)
+          .where(and(eq(mediaFiles.organizationId, org), eq(mediaFiles.id, spec.headerMediaFileId)))
+          .limit(1);
+        if (
+          !file ||
+          file.deletedAt !== null ||
+          !file.metaMediaRef ||
+          file.channelId !== message.channelId ||
+          file.expiresAt.getTime() <= now.getTime()
+        ) {
+          return { failure: 'media_unavailable' };
+        }
+        headerMetaMediaId = file.metaMediaRef;
+      }
+      content = {
+        type: 'template',
+        name: spec.name,
+        language: spec.language,
+        components: templateSendComponents({
+          named: spec.named,
+          headerFormat: spec.headerFormat,
+          headerVariable: spec.headerVariable,
+          headerText: spec.headerText,
+          headerMetaMediaId,
+          bodyVariables: spec.bodyVariables,
+          values: spec.values,
+          buttons: spec.buttons,
+        }),
+      };
       break;
     }
     case 'interactive': {

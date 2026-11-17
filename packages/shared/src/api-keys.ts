@@ -28,6 +28,7 @@ export const API_KEY_SCOPES = [
   'conversations:write',
   'messages:read',
   'messages:send',
+  'messages:initiate',
   'contacts:read',
   'contacts:write',
 ] as const;
@@ -40,6 +41,8 @@ export const API_KEY_SCOPE_LABELS: Readonly<Record<ApiKeyScope, string>> = {
     'Tangani percakapan: lepas bot ke antrian, tugaskan agen, tandai selesai, tulis catatan tim',
   'messages:read': 'Baca pesan & statusnya',
   'messages:send': 'Kirim pesan di percakapan yang sudah ada (termasuk unggah media)',
+  'messages:initiate':
+    'Kirim template ke nomor (bisa memulai percakapan baru) — dipakai aplikasi billing/notifikasi',
   'contacts:read': 'Baca & cari kontak',
   'contacts:write': 'Buat & ubah kontak, pasang/lepas tag',
 };
@@ -50,6 +53,7 @@ export const API_KEY_SCOPE_IMPLIES: Readonly<Record<ApiKeyScope, readonly ApiKey
   'conversations:write': ['conversations:read'],
   'messages:read': ['conversations:read'],
   'messages:send': ['messages:read', 'conversations:read'],
+  'messages:initiate': [],
   'contacts:read': [],
   'contacts:write': ['contacts:read'],
 };

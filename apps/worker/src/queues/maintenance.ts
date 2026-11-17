@@ -8,8 +8,14 @@ import {
   WEBHOOK_PAYLOAD_RETENTION_INTERVAL_MS,
   maintenanceJobPayloadSchema,
   type InboxBusEventInput,
+  isMetaApiError,
+  listMessageTemplates,
+  metaTemplateToSynced,
+  openWhatsAppCredentials,
   type InboxEventPublisher,
   type Logger,
+  type MetaGraphClient,
+  type SecretBox,
 } from '@balesin/core';
 import {
   channels,
@@ -17,6 +23,7 @@ import {
   conversations,
   messages,
   recordOutgoingEvent,
+  upsertSyncedTemplates,
   type Database,
 } from '@balesin/db';
 import { Queue, UnrecoverableError, Worker } from 'bullmq';
@@ -28,6 +35,8 @@ import type { QueueConnectionOptions } from './system';
 /** Pemeriksa batas waktu bot: tiap menit, maks. 200 percakapan per putaran. */
 export const BOT_TIMEOUTS_INTERVAL_MS = 60_000;
 const BOT_TIMEOUTS_BATCH = 200;
+/** Sinkron template berkala (pelengkap webhook status template & sinkron manual). */
+export const TEMPLATE_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 /**
  * Antrian `maintenance`: pekerjaan berkala worker (BullMQ Job Scheduler, payload kosong).
@@ -184,6 +193,59 @@ export interface MaintenanceJobDeps {
   publisher?: InboxEventPublisher;
   /** Push "kembali ke antrian" saat bot kehabisan waktu. */
   notifications?: Pick<NotificationProducer, 'enqueue'>;
+  /** Sinkron template berkala (klien Graph terpusat + kotak rahasia untuk kredensial channel). */
+  meta?: MetaGraphClient;
+  secretBox?: SecretBox | null;
+}
+
+/**
+ * Sinkron template berkala (Fase 4): setiap channel WhatsApp aktif → `GET /{waba}/message_templates`
+ * → `upsertSyncedTemplates`. Kegagalan per channel hanya dicatat (kode), channel lain tetap jalan.
+ */
+export async function syncAllTemplates(
+  deps: Pick<MaintenanceJobDeps, 'db' | 'logger' | 'meta' | 'secretBox'>,
+  now: Date,
+): Promise<{ channels: number; failed: number }> {
+  const { db, meta, secretBox } = deps;
+  if (!meta || !secretBox) return { channels: 0, failed: 0 };
+  const live = await db
+    .select()
+    .from(channels)
+    .where(
+      and(
+        eq(channels.type, 'whatsapp'),
+        eq(channels.enabled, true),
+        isNull(channels.deletedAt),
+        sql`${channels.waBusinessAccountId} is not null`,
+      ),
+    );
+  let failed = 0;
+  for (const channel of live) {
+    try {
+      const credentials = openWhatsAppCredentials(secretBox, channel);
+      const wabaId = channel.waBusinessAccountId ?? '';
+      const { templates } = await listMessageTemplates(meta, credentials, wabaId);
+      await db.transaction((tx) =>
+        upsertSyncedTemplates(tx, {
+          organizationId: channel.organizationId,
+          channelId: channel.id,
+          wabaId,
+          templates: templates.map(metaTemplateToSynced),
+          now,
+        }),
+      );
+    } catch (err) {
+      failed += 1;
+      deps.logger.warn(
+        {
+          channelId: channel.id,
+          ...(isMetaApiError(err) ? { metaKind: err.kind, metaCode: err.metaCode } : {}),
+        },
+        'Sinkron template berkala gagal untuk satu channel',
+      );
+    }
+  }
+  return { channels: live.length, failed };
 }
 
 /**
@@ -341,6 +403,11 @@ export async function processMaintenanceJob(
       }
       return { stale };
     }
+    case MAINTENANCE_JOBS.templateSync: {
+      const result = await syncAllTemplates(deps, deps.now?.() ?? new Date());
+      if (result.channels > 0) deps.logger.info(result, 'Sinkron template berkala selesai');
+      return result;
+    }
     case MAINTENANCE_JOBS.botTimeouts: {
       const moved = await handoffTimedOutBots(deps.db, {
         now: deps.now?.(),
@@ -366,6 +433,15 @@ export function createMaintenanceQueue(options: QueueConnectionOptions): Queue {
 
 /** Mendaftarkan jadwal berkala (idempoten: memanggil ulang hanya memperbarui jadwal yang sama). */
 export async function scheduleMaintenanceJobs(queue: Queue): Promise<void> {
+  await queue.upsertJobScheduler(
+    MAINTENANCE_JOBS.templateSync,
+    { every: TEMPLATE_SYNC_INTERVAL_MS },
+    {
+      name: MAINTENANCE_JOBS.templateSync,
+      data: {},
+      opts: { attempts: 1, removeOnComplete: { count: 20 }, removeOnFail: { count: 20 } },
+    },
+  );
   await queue.upsertJobScheduler(
     MAINTENANCE_JOBS.botTimeouts,
     { every: BOT_TIMEOUTS_INTERVAL_MS },

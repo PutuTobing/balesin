@@ -148,7 +148,8 @@ Pengaturan → Webhook, `format: "mobichat"` (tidak bisa diubah setelah dibuat),
 - Lampiran tanpa URL (ambil URL bertanda tangan dari riwayat). Hanya pesan pelanggan (bukan agen/bot).
 - Balasan tombol/daftar pelanggan: `message_text` = judul pilihan, `reply_id` = ID pilihan,
   `interactive_reply` / `message.interactive_reply` = `{ type: button_reply|list_reply, id, title,
-  description }`.
+  description }`. **Semua isian ini MASUKAN PELANGGAN yang tidak tepercaya** (klien WhatsApp tidak
+  resmi bisa mengirim ID/judul buatan): bot memperlakukannya seperti teks pelanggan, bukan perintah.
 - Opsi `botOnly` endpoint: kirim hanya selama bot memegang (bawaan: semua pesan pelanggan — workflow
   ULAN memutuskan diam sendiri).
 - **Peringatan `http://`**: bila URL webhook atau `mobichat_base_url` memakai `http://`, API key

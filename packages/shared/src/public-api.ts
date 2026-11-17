@@ -12,7 +12,7 @@ import { tagNameSchema } from './tags';
  * Bentuk respons memakai skema yang SAMA dengan API web (`Conversation`, `Message`, `Contact`).
  */
 
-const [textOption, mediaOption, locationOption, reactionOption, interactiveOption] =
+const [textOption, mediaOption, locationOption, reactionOption, interactiveOption, templateOption] =
   sendMessageRequestSchema.options;
 
 /**
@@ -25,6 +25,7 @@ export const publicSendMessageRequestSchema = z.discriminatedUnion('type', [
   locationOption.omit({ clientMessageId: true }),
   reactionOption.omit({ clientMessageId: true }),
   interactiveOption.omit({ clientMessageId: true }),
+  templateOption.omit({ clientMessageId: true }),
 ]);
 export type PublicSendMessageRequest = z.infer<typeof publicSendMessageRequestSchema>;
 

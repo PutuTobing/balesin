@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { MESSAGE_MEDIA_KINDS, type MessageMediaKind } from './inbox';
 import { interactiveMessageSchema } from './interactive';
+import { templateSendParametersSchema } from './templates';
 
 /**
  * Ruang chat — kirim pesan, unggah & unduh media (Fase 2 butir 6, docs/KONTRAK-API-INBOX.md
@@ -124,6 +125,16 @@ export const sendMessageRequestSchema = z.discriminatedUnion('type', [
     clientMessageId,
     interactive: interactiveMessageSchema,
     replyToMessageId: replyTo,
+  }),
+  /**
+   * Template Meta yang DISETUJUI (Fase 4) — satu-satunya jenis yang boleh di luar jendela 24 jam.
+   * Template harus milik WABA channel percakapan ini.
+   */
+  z.object({
+    type: z.literal('template'),
+    clientMessageId,
+    templateId: z.uuid({ error: 'Pilih template.' }),
+    parameters: templateSendParametersSchema.default({ body: {}, buttons: {} }),
   }),
 ]);
 export type SendMessageRequest = z.infer<typeof sendMessageRequestSchema>;

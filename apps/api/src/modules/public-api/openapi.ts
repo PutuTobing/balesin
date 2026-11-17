@@ -14,6 +14,7 @@ import {
   publicContactTagsRequestSchema,
   publicCreateContactRequestSchema,
   publicSendMessageRequestSchema,
+  publicTemplateMessageRequestSchema,
   updateContactRequestSchema,
   uploadMediaResponseSchema,
   type ApiKeyScope,
@@ -69,6 +70,26 @@ const OPERATIONS: readonly Operation[] = [
     scope: 'conversations:read',
     summary: 'Satu percakapan',
     responses: { 200: { description: 'Percakapan', schema: conversationResponseSchema } },
+  },
+  {
+    method: 'post',
+    path: routes.templateMessage,
+    scope: 'messages:initiate',
+    summary: 'Kirim template ke nomor (boleh memulai percakapan)',
+    description:
+      'Untuk aplikasi billing/notifikasi. Template DISETUJUI dipilih lewat templateId, atau name + language (bawaan id) di channel itu. Boleh di luar jendela 24 jam. Percakapan baru dari API berstatus selesai (tidak menambah antrian); balasan pelanggan membuka sesi baru. Header Idempotency-Key disarankan.',
+    body: publicTemplateMessageRequestSchema,
+    idempotency: true,
+    responses: {
+      202: {
+        description: 'Diterima, diantre',
+        schema: messageResponseSchema.extend({ conversationId: z.uuid() }),
+      },
+      200: {
+        description: 'Idempotency-Key yang sama sudah dikirim',
+        schema: messageResponseSchema.extend({ conversationId: z.uuid() }),
+      },
+    },
   },
   {
     method: 'post',

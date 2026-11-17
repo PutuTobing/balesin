@@ -14,9 +14,11 @@ import {
   type NormalizedInboundMessage,
   type NormalizedStatusUpdate,
   type NormalizedWebhookFailure,
+  type StoredOtherEvent,
   type WebhookEventJobResult,
 } from '@balesin/core';
 import {
+  applyTemplateUpdate,
   channels,
   webhookEvents,
   type Database,
@@ -146,9 +148,26 @@ async function dispatch(
     case 'error':
       await handlers.error(normalizeWebhookFailure(event.payload), context);
       return true;
-    default:
-      // Field lain (status template, pembaruan akun) belum punya pemroses.
-      return false;
+    default: {
+      // Pembaruan template (status / kualitas / kategori, Fase 4) — field lain belum punya pemroses.
+      const stored = event.payload as Partial<StoredOtherEvent>;
+      if (event.kind !== 'other' || !stored.template || !stored.wabaId) return false;
+      const changed = await applyTemplateUpdate(context.tx, {
+        organizationId: context.organizationId,
+        wabaId: stored.wabaId,
+        metaTemplateId: stored.template.metaTemplateId,
+        event: stored.template.event,
+        reason: stored.template.reason,
+        quality: stored.template.quality,
+        category: stored.template.category,
+        now: context.receivedAt,
+      });
+      context.logger.info(
+        { eventId: context.eventId, changed },
+        'Pembaruan status template dari Meta diterapkan',
+      );
+      return true;
+    }
   }
 }
 

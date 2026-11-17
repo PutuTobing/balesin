@@ -95,6 +95,7 @@ const SECURITY_EVENT_CONDITIONS: Readonly<Record<SecurityEventKind, SQL>> = {
   webhook_changed: sql`(${auditLogs.action} in (${AUDIT_ACTIONS.outgoingWebhookCreated}, ${AUDIT_ACTIONS.outgoingWebhookSecretRotated}, ${AUDIT_ACTIONS.privateNetworkUpdated}) or (${auditLogs.action} = ${AUDIT_ACTIONS.outgoingWebhookUpdated} and ${auditLogs.metadata} ? 'host'))`,
   webhook_disabled: sql`${auditLogs.action} = ${AUDIT_ACTIONS.outgoingWebhookAutoDisabled}`,
   api_key_changed: sql`${auditLogs.action} in (${AUDIT_ACTIONS.apiKeyCreated}, ${AUDIT_ACTIONS.apiKeyRevoked})`,
+  bot_enabled: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.channelBotUpdated} and ${auditLogs.metadata} ->> 'enabled' = 'true' and ${auditLogs.metadata} ->> 'previousEnabled' = 'false' and ${auditLogs.metadata} ->> 'actorRole' <> 'owner')`,
   quick_reply_risky: sql`(${auditLogs.action} in (${AUDIT_ACTIONS.quickReplyCreated}, ${AUDIT_ACTIONS.quickReplyUpdated}) and ${auditLogs.metadata} ->> 'risky' = 'true')`,
   // Juga dilanjutkan setelah rem darurat (perubahan rem pengiriman oleh siapa pun tercatat).
   sending_limits_changed: sql`${auditLogs.action} in (${AUDIT_ACTIONS.sendingLimitsUpdated}, ${AUDIT_ACTIONS.sendingResumed})`,
@@ -214,6 +215,12 @@ function kindOf(row: AuditRow): SecurityEventKind | undefined {
     case AUDIT_ACTIONS.apiKeyCreated:
     case AUDIT_ACTIONS.apiKeyRevoked:
       return 'api_key_changed';
+    case AUDIT_ACTIONS.channelBotUpdated:
+      return row.metadata.enabled === true &&
+        row.metadata.previousEnabled === false &&
+        row.metadata.actorRole !== 'owner'
+        ? 'bot_enabled'
+        : undefined;
     case AUDIT_ACTIONS.quickReplyCreated:
     case AUDIT_ACTIONS.quickReplyUpdated:
       return row.metadata.risky === true ? 'quick_reply_risky' : undefined;
@@ -246,6 +253,7 @@ const DETAIL_KEYS: Readonly<Record<SecurityEventKind, readonly string[]>> = {
   api_key_changed: ['change', 'name', 'displayPrefix', 'scopes', 'actorRole'],
   webhook_changed: ['change', 'host', 'previousHost', 'events', 'cidrs', 'actorRole'],
   webhook_disabled: ['host', 'failures'],
+  bot_enabled: ['hoursMode', 'timeoutMinutes', 'actorRole'],
   sending_limits_changed: [
     'change',
     'dailyPerUser',

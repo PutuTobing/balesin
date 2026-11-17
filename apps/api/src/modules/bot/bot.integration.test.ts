@@ -155,6 +155,22 @@ const tick = () =>
     timeoutMs: 2_000,
   });
 
+/** Penerima bot aktif (endpoint melanggan pesan masuk) — tanpa ini percakapan langsung ke tim (R1). */
+async function addBotReceiver(path = '/penerima') {
+  const response = await call(
+    harness.app,
+    'POST',
+    API_ROUTES.outgoingWebhooks.list,
+    {
+      url: `${receiverOrigin}${path}`,
+      events: ['message.received'],
+      confirmation: await confirmationFor(),
+    },
+    { cookie: owner.cookie, csrf: owner.csrf },
+  );
+  expect(response.statusCode, response.body).toBe(201);
+}
+
 function putBot(settings: ChannelBotSettings, signed: SignedIn = owner) {
   return call(harness.app, 'PUT', apiPath(API_ROUTES.channels.bot, { channelId }), settings, {
     cookie: signed.cookie,
@@ -319,7 +335,14 @@ describe('Pengaturan → Channel → Bot', () => {
     expect((await onlyConversation()).status).toBe('unserved');
     await harness.db.update(conversations).set({ status: 'resolved', resolvedAt: new Date() });
 
-    // Bot 24 jam → percakapan baru ke bot + penanda menunggu bot.
+    // Bot 24 jam TANPA penerima aktif → tetap ke tim (review R1: tidak diparkir di bot mati).
+    await putBot({ enabled: true, hours: { mode: 'always' }, timeoutMinutes: 10 });
+    await receive(textMessageNotification({ body: 'Halo tanpa bot' }));
+    expect((await onlyConversation()).status).toBe('unserved');
+    await harness.db.update(conversations).set({ status: 'resolved', resolvedAt: new Date() });
+
+    // Ada penerima aktif → percakapan baru ke bot + penanda menunggu bot.
+    await addBotReceiver();
     const always = await putBot({ enabled: true, hours: { mode: 'always' }, timeoutMinutes: 10 });
     expect(channelBotSettingsResponseSchema.parse(always.json()).settings).toMatchObject({
       enabled: true,
@@ -337,8 +360,8 @@ describe('Pengaturan → Channel → Bot', () => {
       .select()
       .from(auditLogs)
       .where(eq(auditLogs.action, 'channel.bot_updated'));
-    expect(audits).toHaveLength(2);
-    expect(audits[1]?.metadata).toMatchObject({
+    expect(audits).toHaveLength(3);
+    expect(audits[2]?.metadata).toMatchObject({
       enabled: true,
       hoursMode: 'always',
       timeoutMinutes: 10,
@@ -488,6 +511,7 @@ describe('alur bot → handoff → agen', () => {
   });
 
   it('batas waktu bot: pesan pelanggan tak dibalas N menit → antrian (sistem) + push', async () => {
+    await addBotReceiver();
     await putBot({ enabled: true, hours: { mode: 'always' }, timeoutMinutes: 5 });
     await receive(textMessageNotification({ body: 'Halo' }));
     const conversation = await onlyConversation();
@@ -517,13 +541,29 @@ describe('alur bot → handoff → agen', () => {
     expect(notified).toEqual([
       expect.objectContaining({ kind: 'queued', conversationId: conversation.id }),
     ]);
-    // Tanpa batas waktu → tidak pernah dipindah.
-    await putBot({ enabled: true, hours: { mode: 'always' }, timeoutMinutes: null });
+    // Bot aktif tanpa batas waktu tidak mungkin (review R1): `null` → bawaan 15 menit.
+    const defaulted = await putBot({
+      enabled: true,
+      hours: { mode: 'always' },
+      timeoutMinutes: null,
+    });
+    expect(channelBotSettingsResponseSchema.parse(defaulted.json()).settings.timeoutMinutes).toBe(
+      15,
+    );
+    // Bot dimatikan → percakapan yang dipegang bot diserahkan ke antrian (handoff oleh pengguna).
     await harness.db.update(conversations).set({ status: 'resolved', resolvedAt: new Date() });
     await receive(textMessageNotification({ body: 'Halo lagi' }));
-    expect(
-      await handoffTimedOutBots(harness.db, { now: new Date(Date.now() + 48 * 3600_000) }),
-    ).toBe(0);
+    const parked = await onlyConversation();
+    expect(parked.status).toBe('bot');
+    harness.notificationJobs.length = 0;
+    await putBot({ enabled: false, hours: { mode: 'always' }, timeoutMinutes: null });
+    expect(await onlyConversation()).toMatchObject({ status: 'unserved', botAwaitingSince: null });
+    expect(await eventsOf(parked.id)).toEqual([
+      expect.objectContaining({ kind: 'handoff', actorUserId: owner.session.user.id }),
+    ]);
+    expect(harness.notificationJobs).toEqual([
+      expect.objectContaining({ kind: 'queued', conversationId: parked.id }),
+    ]);
   });
 });
 

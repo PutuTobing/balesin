@@ -169,6 +169,13 @@
       "when": 1794869398093,
       "tag": "0023_bot_eksternal",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794873604521,
+      "tag": "0024_template_meta",
+      "breakpoints": true
     }
   ]
 }

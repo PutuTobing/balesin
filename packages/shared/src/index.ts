@@ -36,6 +36,8 @@ export * from './sending-limits';
 export * from './setup';
 export * from './tags';
 export * from './team';
+export * from './template-presets';
+export * from './templates';
 export * from './two-factor';
 export * from './webhooks';
 export * from './zod-locale';

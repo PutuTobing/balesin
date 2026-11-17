@@ -192,6 +192,8 @@ export const MAINTENANCE_JOBS = {
    * `channels.bot_timeout_minutes` → antrian tim (`handoff` oleh sistem), tiap menit.
    */
   botTimeouts: 'bot-timeouts',
+  /** Sinkron template Meta semua channel WhatsApp aktif (Fase 4), tiap 6 jam. */
+  templateSync: 'template-sync',
 } as const;
 export type MaintenanceJobName = (typeof MAINTENANCE_JOBS)[keyof typeof MAINTENANCE_JOBS];
 

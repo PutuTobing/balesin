@@ -172,6 +172,59 @@ export interface StoredErrorEvent {
 export interface StoredOtherEvent {
   wabaId: string;
   valueSha256: string;
+  /**
+   * Field template (`message_template_status_update`, `message_template_quality_update`,
+   * `template_category_update`, Fase 4): HANYA isian template (bukan data pelanggan) untuk pemroses.
+   */
+  template?: StoredTemplateUpdate;
+}
+
+export interface StoredTemplateUpdate {
+  metaTemplateId: string;
+  name: string | null;
+  language: string | null;
+  /** Status baru (`APPROVED`, `REJECTED`, `PAUSED`, …) — field status. */
+  event: string | null;
+  reason: string | null;
+  /** Skor kualitas baru — field kualitas. */
+  quality: string | null;
+  /** Kategori baru — field kategori. */
+  category: string | null;
+}
+
+/** Field langganan tingkat WABA yang memperbarui template. */
+export const TEMPLATE_UPDATE_FIELDS = [
+  'message_template_status_update',
+  'message_template_quality_update',
+  'template_category_update',
+] as const;
+
+const templateUpdateValueSchema = z
+  .object({
+    event: z.string().max(32).optional(),
+    message_template_id: z.union([z.string().max(64), z.number().int()]),
+    message_template_name: z.string().max(512).optional(),
+    message_template_language: z.string().max(16).optional(),
+    reason: z.string().max(200).nullable().optional(),
+    new_quality_score: z.string().max(16).optional(),
+    new_category: z.string().max(32).optional(),
+  })
+  .loose();
+
+function templateUpdateOf(field: string, value: unknown): StoredTemplateUpdate | undefined {
+  if (!(TEMPLATE_UPDATE_FIELDS as readonly string[]).includes(field)) return undefined;
+  const parsed = templateUpdateValueSchema.safeParse(value);
+  if (!parsed.success) return undefined;
+  const data = parsed.data;
+  return {
+    metaTemplateId: String(data.message_template_id),
+    name: data.message_template_name ?? null,
+    language: data.message_template_language ?? null,
+    event: field === 'message_template_status_update' ? (data.event ?? null) : null,
+    reason: data.reason ?? null,
+    quality: data.new_quality_score ?? null,
+    category: data.new_category ?? null,
+  };
 }
 
 interface ItemBase {
@@ -306,7 +359,10 @@ export function splitWhatsAppWebhook(body: unknown): WhatsAppWebhookSplit {
           externalId: null,
           occurredAt: null,
           dedupKey: `o:${field}:${digest(value)}`,
-          payload: { wabaId, valueSha256: fullDigest(value) },
+          payload: (() => {
+            const template = templateUpdateOf(field, value);
+            return { wabaId, valueSha256: fullDigest(value), ...(template ? { template } : {}) };
+          })(),
         });
         continue;
       }

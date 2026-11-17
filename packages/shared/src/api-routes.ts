@@ -180,6 +180,8 @@ export const API_ROUTES = {
     counts: `${API_PREFIX}/conversations/counts`,
     /** POST — tandai sudah dibaca (CSRF). */
     read: `${API_PREFIX}/conversations/:conversationId/read`,
+    /** POST — mulai percakapan ke nomor (bisa baru) dengan template (`inbox.initiate`). */
+    start: `${API_PREFIX}/conversations/start`,
     /** POST `{ active }` — saklar bot per percakapan: matikan (ambil alih/serahkan ke tim) / nyalakan lagi. */
     bot: `${API_PREFIX}/conversations/:conversationId/bot`,
     /** POST — ambil dari antrian terbuka (CSRF, `inbox.assign`). */
@@ -261,6 +263,8 @@ export const API_ROUTES = {
     messages: `${API_PREFIX}/public/conversations/:conversationId/messages`,
     upload: `${API_PREFIX}/public/conversations/:conversationId/media`,
     message: `${API_PREFIX}/public/messages/:messageId`,
+    /** POST — kirim template ke nomor (`messages:initiate`). */
+    templateMessage: `${API_PREFIX}/public/messages/template`,
     /** POST — bot menyerahkan percakapan ke tim (`conversations:write`). */
     handoff: `${API_PREFIX}/public/conversations/:conversationId/handoff`,
     contacts: `${API_PREFIX}/public/contacts`,
@@ -268,6 +272,18 @@ export const API_ROUTES = {
     contactTags: `${API_PREFIX}/public/contacts/:contactId/tags`,
   },
 
+  /**
+   * Template Meta (Fase 4, docs/KONTRAK-API-TEMPLATE.md). Daftar/detail = `inbox.reply` (agen memilih
+   * template); kelola (buat, ubah, ajukan, hapus, sinkron, preset) = `templates.manage`.
+   */
+  templates: {
+    list: `${API_PREFIX}/templates`,
+    template: `${API_PREFIX}/templates/:templateId`,
+    submit: `${API_PREFIX}/templates/:templateId/submit`,
+    sync: `${API_PREFIX}/templates/sync`,
+    presets: `${API_PREFIX}/templates/presets`,
+    fromPreset: `${API_PREFIX}/templates/presets/:presetId`,
+  },
   /** Notifikasi Web Push (butir 10, docs/KONTRAK-API-NOTIFIKASI.md). */
   notifications: {
     /** GET — kunci publik VAPID (sesi). */

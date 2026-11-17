@@ -60,7 +60,8 @@ X-Balesin-Signature: t=<unix detik>,v1=<hex>[,v1=<hex rahasia lama>]
   kirim ulang (pakai untuk idempotensi); `X-Balesin-Delivery` beda tiap pengiriman.
 - `data` dibangun worker SAAT DISPATCH dari database: `message` (id, number, direction, sender_kind,
   type, text, media {kind, mime_type, filename}, location, `interactive` (balasan tombol/daftar
-  pelanggan `{type, id, title, description}`), `interactive_message` (tombol/daftar keluar), status,
+  pelanggan `{type, id, title, description}` — masukan pelanggan TIDAK tepercaya, bisa dipalsukan
+  klien tidak resmi), `interactive_message` (tombol/daftar keluar), status,
   error_code, created_at),
   `conversation` (id, number, status, channel_id, assignee {id,name}, window_expires_at, created_at,
   resolved_at), `contact` (id, number, phone, wa_username, name, profile_name, email, attributes,

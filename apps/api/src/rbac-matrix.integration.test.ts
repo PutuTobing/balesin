@@ -155,6 +155,17 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'POST /api/v1/conversations/:conversationId/resolve': 'inbox.reply',
   'POST /api/v1/conversations/:conversationId/reopen': 'inbox.reply',
   'POST /api/v1/conversations/:conversationId/bot': 'inbox.reply',
+  'POST /api/v1/conversations/start': 'inbox.initiate',
+  // template Meta (Fase 4): lihat = inbox.reply (agen memilih template); kelola = templates.manage
+  'GET /api/v1/templates': 'inbox.reply',
+  'POST /api/v1/templates': 'templates.manage',
+  'GET /api/v1/templates/presets': 'templates.manage',
+  'POST /api/v1/templates/presets/:presetId': 'templates.manage',
+  'POST /api/v1/templates/sync': 'templates.manage',
+  'GET /api/v1/templates/:templateId': 'inbox.reply',
+  'PATCH /api/v1/templates/:templateId': 'templates.manage',
+  'DELETE /api/v1/templates/:templateId': 'templates.manage',
+  'POST /api/v1/templates/:templateId/submit': 'templates.manage',
   'GET /api/v1/conversations/:conversationId/events': 'inbox.view',
   'GET /api/v1/inbox/agents': 'inbox.assign',
   // WebSocket inbox: sesi + inbox.view (Origin & batas koneksi dicek sebelum upgrade)
@@ -227,6 +238,7 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'POST /api/v1/public/conversations/:conversationId/messages': 'apikey:messages:send',
   'POST /api/v1/public/conversations/:conversationId/media': 'apikey:messages:send',
   'POST /api/v1/public/conversations/:conversationId/handoff': 'apikey:conversations:write',
+  'POST /api/v1/public/messages/template': 'apikey:messages:initiate',
   'GET /api/v1/public/messages/:messageId': 'apikey:messages:read',
   'GET /api/v1/public/contacts': 'apikey:contacts:read',
   'POST /api/v1/public/contacts': 'apikey:contacts:write',
@@ -373,6 +385,8 @@ const SAMPLE_PARAMS: Readonly<Record<string, string>> = {
   webhookId: '00000000-0000-4000-8000-0000000000a6',
   deliveryId: '00000000-0000-4000-8000-0000000000a7',
   messageNumber: '1',
+  templateId: '00000000-0000-4000-8000-0000000000a8',
+  presetId: 'isp_tagihan_jatuh_tempo',
 };
 
 function concreteUrl(pattern: string): string {

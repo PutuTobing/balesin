@@ -171,6 +171,7 @@ export function toMessage(row: MessageRowView): Message {
       row.direction === 'outbound'
         ? parsed(interactiveMessageSchema, extras.interactiveMessage)
         : null,
+    template: templateOf(row.type, extras.template),
     reaction:
       row.type === 'reaction'
         ? { emoji: row.reactionEmoji, messageId: row.reactionToMessageId }
@@ -189,6 +190,22 @@ export function toMessage(row: MessageRowView): Message {
     starredAt: row.starredAt?.toISOString() ?? null,
     createdAt: row.occurredAt.toISOString(),
   };
+}
+
+const storedTemplateSchema = z.object({
+  templateId: z.string().nullable().catch(null),
+  name: z.string(),
+  language: z.string(),
+  category: z.string(),
+});
+
+/** Template yang dikirim (tanpa nilai variabel — isinya sudah ada di `text`). */
+function templateOf(type: string, value: unknown): Message['template'] {
+  if (type !== 'template') return null;
+  const result = storedTemplateSchema.safeParse(value);
+  if (!result.success) return null;
+  const id = z.uuid().safeParse(result.data.templateId);
+  return { ...result.data, templateId: id.success ? id.data : null };
 }
 
 /** Pesan keluar `failed` → alasan + penjelasan Indonesia + boleh dikirim ulang. */

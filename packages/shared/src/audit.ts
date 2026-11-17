@@ -96,6 +96,12 @@ export const AUDIT_ACTIONS = {
   channelTested: 'channel.tested',
   /** Saklar bot channel / jam kerja bot / batas waktu bot diubah (Fase 3). */
   channelBotUpdated: 'channel.bot_updated',
+  /** Template Meta (Fase 4). */
+  templateCreated: 'template.created',
+  templateUpdated: 'template.updated',
+  templateSubmitted: 'template.submitted',
+  templateDeleted: 'template.deleted',
+  templatesSynced: 'template.synced',
   channelVerifyTokenRotated: 'channel.webhook_verify_token_rotated',
   /**
    * Profil bisnis diubah: `changedFields`, nilai lama (`previous`, `null` bila tidak terbaca) dan baru
@@ -219,6 +225,11 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'channel.deleted': 'Channel dihapus',
   'channel.tested': 'Koneksi channel dites',
   'channel.bot_updated': 'Pengaturan bot channel diubah',
+  'template.created': 'Template pesan dibuat (draf)',
+  'template.updated': 'Template pesan diubah',
+  'template.submitted': 'Template pesan diajukan ke Meta',
+  'template.deleted': 'Template pesan dihapus',
+  'template.synced': 'Template pesan disinkron dari Meta',
   'channel.webhook_verify_token_rotated': 'Verify token webhook dibuat ulang',
   'channel.business_profile_updated': 'Profil bisnis WhatsApp diubah',
   'channel.business_profile_update_failed': 'Perubahan profil bisnis ditolak Meta',
@@ -267,6 +278,7 @@ export const AUDIT_TARGET_TYPES = [
   'contact',
   'api_key',
   'webhook',
+  'template',
 ] as const;
 export const auditTargetTypeSchema = z.enum(AUDIT_TARGET_TYPES, {
   error: 'Jenis target tidak dikenal.',
@@ -288,6 +300,7 @@ export const AUDIT_TARGET_TYPE_LABELS: Readonly<Record<AuditTargetType, string>>
   contact: 'Kontak',
   api_key: 'API key',
   webhook: 'Webhook keluar',
+  template: 'Template pesan',
 };
 
 // ── GET /audit-logs ─────────────────────────────────────────────────────────
@@ -445,6 +458,8 @@ export const SECURITY_EVENT_KINDS = [
   'api_key_changed',
   'webhook_changed',
   'webhook_disabled',
+  /** Bot channel dinyalakan oleh SELAIN Owner (review bot R1: percakapan baru dialihkan ke bot). */
+  'bot_enabled',
 ] as const;
 export const securityEventKindSchema = z.enum(SECURITY_EVENT_KINDS);
 export type SecurityEventKind = z.infer<typeof securityEventKindSchema>;
@@ -474,6 +489,7 @@ export const SECURITY_EVENT_SEVERITY: Readonly<Record<SecurityEventKind, 'warnin
   quick_reply_risky: 'warning',
   api_key_changed: 'warning',
   webhook_changed: 'warning',
+  bot_enabled: 'warning',
   webhook_disabled: 'warning',
 };
 
@@ -497,6 +513,7 @@ export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> 
   quick_reply_risky: 'Balasan cepat diberi tautan/angka baru',
   api_key_changed: 'API key dibuat atau dicabut',
   webhook_changed: 'Webhook keluar / allowlist IP privat diubah',
+  bot_enabled: 'Bot channel dinyalakan oleh selain Owner',
   webhook_disabled: 'Webhook keluar dinonaktifkan karena gagal beruntun',
 };
 

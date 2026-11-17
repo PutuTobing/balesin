@@ -8,4 +8,5 @@ export * from './webhook-payload';
 export * from './contact-identity';
 export * from './media-sniff';
 export * from './messaging';
+export * from './templates';
 export * from './env';

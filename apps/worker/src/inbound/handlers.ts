@@ -10,10 +10,12 @@ import {
   type NormalizedInboundMessage,
 } from '@balesin/core';
 import {
+  apiKeys,
   channels,
   conversations,
   messages,
   organizations,
+  webhookEndpoints,
   webhookEvents,
   type ConversationRow,
   type DbExecutor,
@@ -85,7 +87,29 @@ export async function botAwareInitialStatus(
   if (!row?.enabled) return 'unserved';
   const hours = botHoursSchema.safeParse(row.hours);
   if (!hours.success) return 'unserved';
-  return isWithinBotHours(hours.data, row.timezone, context.receivedAt) ? 'bot' : 'unserved';
+  if (!isWithinBotHours(hours.data, row.timezone, context.receivedAt)) return 'unserved';
+  // Review bot R1: tanpa penerima yang benar-benar aktif (endpoint aktif yang melanggan pesan masuk;
+  // format MobiChat: key-nya masih aktif) pelanggan langsung ke tim, bukan diparkir di bot.
+  const [receiver] = await context.tx
+    .select({ id: webhookEndpoints.id })
+    .from(webhookEndpoints)
+    .leftJoin(
+      apiKeys,
+      and(
+        eq(apiKeys.organizationId, webhookEndpoints.organizationId),
+        eq(apiKeys.id, webhookEndpoints.mobichatApiKeyId),
+      ),
+    )
+    .where(
+      and(
+        eq(webhookEndpoints.organizationId, context.organizationId),
+        eq(webhookEndpoints.enabled, true),
+        sql`'message.received' = any(${webhookEndpoints.events})`,
+        sql`(${webhookEndpoints.format} <> 'mobichat' or (${apiKeys.revokedAt} is null and ${apiKeys.id} is not null and (${apiKeys.expiresAt} is null or ${apiKeys.expiresAt} > ${context.receivedAt})))`,
+      ),
+    )
+    .limit(1);
+  return receiver ? 'bot' : 'unserved';
 }
 
 /** Jenis pesan Meta → jenis Balesin. */

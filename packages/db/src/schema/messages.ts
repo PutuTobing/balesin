@@ -76,6 +76,24 @@ export interface MessageExtras {
   sharedContacts?: number;
   /** Pesan interaktif KELUAR (tombol/daftar) — dibangun ulang worker jadi payload Meta. */
   interactiveMessage?: InteractiveMessage;
+  /**
+   * Template KELUAR (Fase 4): nama + bahasa + kategori saat dikirim, nilai variabel yang SUDAH
+   * divalidasi, ID media judul (unggahan). Worker membangun `template.components` dari sini.
+   */
+  template?: {
+    templateId: string;
+    name: string;
+    language: string;
+    category: string;
+    named: boolean;
+    headerFormat: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | null;
+    headerVariable: string | null;
+    headerText: string | null;
+    headerMediaFileId: string | null;
+    bodyVariables: string[];
+    values: Record<string, string>;
+    buttons: { index: number; type: 'URL' | 'COPY_CODE'; value: string }[];
+  };
   forwarded?: boolean;
   frequentlyForwarded?: boolean;
 }
@@ -149,6 +167,12 @@ export const messages = pgTable(
     /** Pesan ditandai (bintang) — dipakai bersama tim, satu tanda per pesan (butir 8). */
     starredAt: timestamptz('starred_at'),
     starredByUserId: uuid('starred_by_user_id'),
+    /**
+     * Template yang dikirim (Fase 4) + kategorinya SAAT dikirim (dasar laporan biaya per kategori;
+     * tanpa FK: template boleh dihapus, riwayat pesan tetap).
+     */
+    templateId: uuid('template_id'),
+    templateCategory: text('template_category'),
     /** Pesan keluar yang dikirim lewat API publik (API key; `sender_user_id` kosong). */
     apiKeyId: uuid('api_key_id'),
     /** Salinan lokal media (unggahan untuk pesan keluar / cache unduhan pesan masuk). */

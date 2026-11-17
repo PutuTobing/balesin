@@ -54,6 +54,20 @@ export interface FakeMedia {
   mimeType: string;
 }
 
+/** Template di server tiruan (per WABA). */
+export interface FakeTemplate {
+  id: string;
+  wabaId: string;
+  name: string;
+  language: string;
+  category: string;
+  status: string;
+  components: Record<string, unknown>[];
+  rejected_reason?: string;
+  quality_score?: { score: string };
+  parameter_format?: string;
+}
+
 /** Pesan yang dikirim Balesin lewat `POST /{phone-number-id}/messages`. */
 export interface FakeSentMessage {
   phoneNumberId: string;
@@ -72,6 +86,8 @@ export interface FakeMeta {
   tokens: Map<string, { appSecret: string; expired?: boolean; noPermission?: boolean }>;
   phoneNumbers: Map<string, FakePhoneNumber>;
   wabas: Set<string>;
+  /** ID template → template (list/create/edit/delete `message_templates`). */
+  templates: Map<string, FakeTemplate>;
   /** Jawaban gagal berikutnya untuk path (tanpa versi) ini, berurutan; habis = normal lagi. */
   failNext(path: string, ...failures: FakeFailure[]): void;
   reset(): void;
@@ -141,7 +157,10 @@ export async function startFakeMeta(): Promise<FakeMeta> {
   const failures = new Map<string, FakeFailure[]>();
   const sentMessages: FakeSentMessage[] = [];
   const media = new Map<string, FakeMedia>();
+  const templates = new Map<string, FakeTemplate>();
   let sequence = 0;
+  const knownWaba = (id: string) =>
+    wabas.has(id) || [...phoneNumbers.values()].some((number) => number.wabaId === id);
 
   const server = createServer((request, response) => {
     void (async () => {
@@ -224,6 +243,77 @@ export async function startFakeMeta(): Promise<FakeMeta> {
         );
 
       const [first = '', second] = segments;
+      // ── Template pesan (Fase 4) ──
+      if (second === 'message_templates' && knownWaba(first)) {
+        if (request.method === 'GET') {
+          const all = [...templates.values()].filter((template) => template.wabaId === first);
+          const limit = Number(url.searchParams.get('limit') ?? '100');
+          const start = Number(url.searchParams.get('after') ?? '0');
+          const page = all.slice(start, start + limit).map(({ wabaId: _waba, ...rest }) => rest);
+          const nextStart = start + limit;
+          return send(response, 200, {
+            data: page,
+            paging:
+              nextStart < all.length
+                ? { cursors: { after: String(nextStart) }, next: 'https://graph.facebook.com/next' }
+                : { cursors: {} },
+          });
+        }
+        if (request.method === 'POST') {
+          const payload = (body ?? {}) as Record<string, unknown>;
+          const text = (value: unknown, fallback = '') =>
+            typeof value === 'string' ? value : fallback;
+          const name = text(payload.name);
+          const language = text(payload.language);
+          if (
+            [...templates.values()].some(
+              (template) =>
+                template.wabaId === first &&
+                template.name === name &&
+                template.language === language,
+            )
+          ) {
+            return send(
+              response,
+              400,
+              metaErrorBody(100, 'Invalid parameter', { error_subcode: 2388024 }),
+            );
+          }
+          sequence += 1;
+          const id = String(7_700_000_000 + sequence);
+          templates.set(id, {
+            id,
+            wabaId: first,
+            name,
+            language,
+            category: text(payload.category, 'UTILITY'),
+            status: 'PENDING',
+            components: (payload.components as Record<string, unknown>[] | undefined) ?? [],
+            ...(typeof payload.parameter_format === 'string'
+              ? { parameter_format: payload.parameter_format }
+              : {}),
+          });
+          return send(response, 200, { id, status: 'PENDING', category: payload.category });
+        }
+        if (request.method === 'DELETE') {
+          const id = url.searchParams.get('hsm_id') ?? '';
+          const found = templates.get(id);
+          if (!found || found.wabaId !== first) return missing(id);
+          templates.delete(id);
+          return send(response, 200, { success: true });
+        }
+      }
+      if (segments.length === 1 && request.method === 'POST' && templates.has(first)) {
+        const template = templates.get(first);
+        const payload = (body ?? {}) as Record<string, unknown>;
+        if (template) {
+          template.components =
+            (payload.components as Record<string, unknown>[] | undefined) ?? template.components;
+          if (typeof payload.category === 'string') template.category = payload.category;
+          template.status = 'PENDING';
+        }
+        return send(response, 200, { success: true });
+      }
       if (segments.length === 1 && request.method === 'GET' && media.has(first)) {
         const file = media.get(first);
         return send(response, 200, {
@@ -307,6 +397,7 @@ export async function startFakeMeta(): Promise<FakeMeta> {
     tokens,
     phoneNumbers,
     wabas,
+    templates,
     failNext(path, ...next) {
       failures.set(path, [...(failures.get(path) ?? []), ...next]);
     },
@@ -315,6 +406,7 @@ export async function startFakeMeta(): Promise<FakeMeta> {
       tokens.clear();
       phoneNumbers.clear();
       wabas.clear();
+      templates.clear();
       failures.clear();
       sentMessages.length = 0;
       media.clear();

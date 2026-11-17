@@ -94,6 +94,9 @@ const BULK_ACTION_KINDS: ReadonlySet<ConversationRecordKind> = new Set([
   'assigned',
   'resolved',
   'unassigned',
+  // Review bot Info 1: "memarkir" banyak percakapan ke bot juga menghilangkannya dari antrian.
+  'bot_resumed',
+  'handoff',
 ]);
 
 export interface AssignmentContext {

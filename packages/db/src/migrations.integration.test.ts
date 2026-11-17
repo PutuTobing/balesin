@@ -50,6 +50,7 @@ describe('migrasi dari nol', () => {
       'email_settings_change_notices',
       'installation',
       'media_files',
+      'message_templates',
       'messages',
       'notification_preferences',
       'organization_logos',
@@ -106,11 +107,14 @@ describe('migrasi dari nol', () => {
     expect(columnsOf('audit_logs')).not.toContain('updated_at');
   });
 
-  // `external_id` = wamid pesan dari Meta (`webhook_events`).
+  // `external_id` = wamid pesan dari Meta (`webhook_events`); `waba_id`/`meta_template_id` = ID Meta
+  // template (`message_templates`).
   const EXTERNAL_ID_COLUMNS = new Set([
     'wa_phone_number_id',
     'wa_business_account_id',
     'external_id',
+    'waba_id',
+    'meta_template_id',
   ]);
 
   it('semua kolom waktu bertipe timestamptz dan semua id bertipe uuid', async () => {

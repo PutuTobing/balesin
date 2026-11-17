@@ -101,6 +101,11 @@ export const channels = pgTable(
       'channels_bot_timeout_range',
       sql`${table.botTimeoutMinutes} is null or ${table.botTimeoutMinutes} between 1 and 1440`,
     ),
+    // Review bot R1: bot aktif selalu punya batas waktu (pelanggan tidak terjebak di bot).
+    check(
+      'channels_bot_enabled_has_timeout',
+      sql`not ${table.botEnabled} or ${table.botTimeoutMinutes} is not null`,
+    ),
     // Sasaran FK komposit (organization_id, id) untuk tabel percakapan/pesan nanti.
     unique('channels_organization_id_id_unique').on(table.organizationId, table.id),
     // Satu nomor hanya boleh menjadi satu channel hidup per organisasi.

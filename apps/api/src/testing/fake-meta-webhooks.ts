@@ -343,15 +343,24 @@ export function errorNotification(options: FakeWebhookTarget = {}): Json {
   );
 }
 
-/** Field tingkat WABA selain `messages` (status template disetujui). */
-export function templateStatusNotification(options: { wabaId?: string } = {}): Json {
+/** Field tingkat WABA selain `messages`: perubahan status template (bawaan: disetujui). */
+export function templateStatusNotification(
+  options: {
+    wabaId?: string;
+    event?: string;
+    id?: string | number;
+    name?: string;
+    language?: string;
+    reason?: string;
+  } = {},
+): Json {
   return whatsAppNotification(
     {
-      event: 'APPROVED',
-      message_template_id: 1234567890,
-      message_template_name: 'tagihan_bulanan',
-      message_template_language: 'id',
-      reason: 'NONE',
+      event: options.event ?? 'APPROVED',
+      message_template_id: options.id ?? 1234567890,
+      message_template_name: options.name ?? 'tagihan_bulanan',
+      message_template_language: options.language ?? 'id',
+      reason: options.reason ?? 'NONE',
     },
     { wabaId: options.wabaId, field: 'message_template_status_update' },
   );

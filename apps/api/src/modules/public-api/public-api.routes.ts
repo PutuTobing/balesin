@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import multipart from '@fastify/multipart';
 import { AppError } from '@balesin/core';
-import { contacts, messages, type Database } from '@balesin/db';
+import { contacts, messageTemplates, messages, type Database } from '@balesin/db';
 import {
   API_ROUTES,
   INBOX_PAGE_DEFAULT,
@@ -22,6 +22,7 @@ import {
   publicContactSearchQuerySchema,
   publicContactTagsRequestSchema,
   publicCreateContactRequestSchema,
+  publicTemplateMessageRequestSchema,
   publicSendMessageRequestSchema,
   updateContactRequestSchema,
   uploadMediaResponseSchema,
@@ -38,6 +39,7 @@ import { requireApiKey, type ApiKeyPrincipal } from '../api-keys/api-key-auth';
 import type { PermissionGrant } from '../auth/permission-grant';
 import type { ContactsService } from '../contacts/contacts.service';
 import type { AssignmentService } from '../inbox/assignment.service';
+import { normalizeWhatsappNumber } from '../compat-mobichat/mobichat.service';
 import {
   contactTagsOf,
   conversationExtras,
@@ -227,6 +229,76 @@ export const publicApiRoutes: FastifyPluginAsyncZod<PublicApiRoutesOptions> = as
           extras.tags.get(row.contact.id) ?? [],
         ),
       };
+    },
+  );
+
+  /**
+   * Kirim template ke nomor (Fase 4, `messages:initiate`): aplikasi billing/notifikasi. Template =
+   * `templateId`, atau `name` + `language` (bawaan `id`) yang DISETUJUI di channel itu. Idempotensi
+   * lewat `Idempotency-Key`; batas harian per key, rem darurat, batas organisasi berlaku.
+   */
+  app.post(
+    routes.templateMessage,
+    {
+      config: { access: requireApiKeyScope('messages:initiate') },
+      schema: {
+        headers: idempotencyKeyHeaderSchema,
+        body: publicTemplateMessageRequestSchema,
+        response: {
+          200: messageResponseSchema.extend({ conversationId: z.uuid() }),
+          202: messageResponseSchema.extend({ conversationId: z.uuid() }),
+          ...errors,
+        },
+      },
+    },
+    async (request, reply) => {
+      const key = requireApiKey(request);
+      const phone = normalizeWhatsappNumber(request.body.phone);
+      if (!phone) {
+        throw new AppError('VALIDATION_ERROR', {
+          message: 'Nomor tujuan tidak valid. Contoh: 6281234567890.',
+        });
+      }
+      await organizationRate(key.organizationId);
+      let templateId = request.body.templateId;
+      if (!templateId) {
+        const [found] = await db
+          .select({ id: messageTemplates.id })
+          .from(messageTemplates)
+          .where(
+            and(
+              eq(messageTemplates.organizationId, key.organizationId),
+              eq(messageTemplates.channelId, request.body.channelId),
+              eq(messageTemplates.name, request.body.name ?? ''),
+              eq(messageTemplates.language, request.body.language ?? 'id'),
+            ),
+          )
+          .limit(1);
+        if (!found) throw new AppError('NOT_FOUND', { message: 'Template tidak ditemukan.' });
+        templateId = found.id;
+      }
+      const { message, created, conversationId } = await outbound.startWithTemplate(
+        {
+          kind: 'apiKey',
+          key: {
+            organizationId: key.organizationId,
+            apiKeyId: key.id,
+            dailySendLimit: key.dailySendLimit,
+          },
+        },
+        {
+          channelId: request.body.channelId,
+          phone,
+          clientMessageId: clientMessageIdFor(key.id, request.headers['idempotency-key']),
+          templateId,
+          parameters: request.body.parameters,
+        },
+        clientInfo(request),
+        async (organizationId, normalized) =>
+          (await contactsService.createFromApi(organizationId, { phone: normalized })).id,
+      );
+      void reply.code(created ? 202 : 200);
+      return { message: toMessage(message), conversationId };
     },
   );
 

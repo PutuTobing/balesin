@@ -29,6 +29,7 @@ import {
   mediaFiles,
   messages,
   organizations,
+  recordOutgoingEvent,
   type Channel,
   type Database,
   type MediaFileRow,
@@ -45,6 +46,7 @@ import {
   type MessageMediaKind,
   type OutboundMediaKind,
   type SendMessageRequest,
+  type TemplateSendParameters,
   type UploadedMedia,
 } from '@balesin/shared';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
@@ -59,6 +61,7 @@ import {
   type MessageRowView,
 } from '../inbox/inbox.repo';
 import type { SendingLimitsService } from '../sending-limits/sending-limits.service';
+import { resolveTemplateSend } from '../templates/template-send';
 import { createConcurrencyGate } from './concurrency';
 import { MediaTooLargeError, type MediaStore, type StoredFile } from './media-store';
 
@@ -216,6 +219,25 @@ export interface OutboundService {
     /** Dibatalkan saat klien memutus (unduhan dihentikan bila semua peminta sudah pergi). */
     signal?: AbortSignal,
   ): Promise<{ file: MediaFileRow; stream: NodeJS.ReadableStream; sizeBytes: number }>;
+  /**
+   * Mulai percakapan ke nomor (bisa kontak baru) dengan template (Fase 4): agen `inbox.initiate` →
+   * percakapan baru `served` dipegang agen itu; API key `messages:initiate` → pakai percakapan terbuka /
+   * terakhir kontak itu, atau buat percakapan `resolved` (pesan sistem — tidak menambah antrian; balasan
+   * pelanggan membuka sesi baru). Semua aturan kirim template berlaku.
+   */
+  startWithTemplate(
+    sender: { kind: 'user'; grant: PermissionGrant } | { kind: 'apiKey'; key: ApiKeySender },
+    input: {
+      channelId: string;
+      /** E.164. */
+      phone: string;
+      clientMessageId: string;
+      templateId: string;
+      parameters: TemplateSendParameters;
+    },
+    client: ClientInfo,
+    ensureContact: (organizationId: string, phone: string) => Promise<string>,
+  ): Promise<{ message: MessageRowView; created: boolean; conversationId: string }>;
   /** Hapus salinan lokal yang kedaluwarsa (pembersih berkala). */
   purgeExpiredMedia(limit?: number): Promise<number>;
   /** Hapus berkas media TERTENTU sekarang juga (hapus kontak, UU PDP). */
@@ -564,9 +586,12 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
 
     const conversation = await scopedConversation(grant, conversationId);
     const at = now();
-    await liveChannel(grant.organizationId, conversation.channel.id);
-    if (!conversation.windowExpiresAt || conversation.windowExpiresAt.getTime() <= at.getTime()) {
-      // TITIK KAIT template (fase berikutnya): di luar jendela hanya template yang boleh.
+    const channel = await liveChannel(grant.organizationId, conversation.channel.id);
+    // Di luar jendela 24 jam hanya template Meta yang disetujui yang boleh (Fase 4).
+    if (
+      input.type !== 'template' &&
+      (!conversation.windowExpiresAt || conversation.windowExpiresAt.getTime() <= at.getTime())
+    ) {
       throw new AppError('WINDOW_CLOSED');
     }
     // Rem pengiriman: rem darurat, batas harian pengguna/organisasi, batas per percakapan.
@@ -619,6 +644,49 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
         values.type = 'text';
         values.text = input.text;
         break;
+      case 'template': {
+        const resolved = await resolveTemplateSend(db, {
+          organizationId: grant.organizationId,
+          channelWabaId: channel.waBusinessAccountId ?? '',
+          templateId: input.templateId,
+          parameters: input.parameters,
+        });
+        if (resolved.headerMediaFileId) {
+          // Berkas judul = unggahan pengirim yang SAMA di channel yang sama (aturan unggah media).
+          const [file] = await db
+            .select()
+            .from(mediaFiles)
+            .where(
+              and(
+                eq(mediaFiles.organizationId, grant.organizationId),
+                eq(mediaFiles.id, resolved.headerMediaFileId),
+                eq(mediaFiles.source, 'upload'),
+                sender.apiKey
+                  ? eq(mediaFiles.uploadedByApiKeyId, sender.apiKey.id)
+                  : eq(mediaFiles.uploadedByUserId, sender.userId ?? ''),
+                eq(mediaFiles.channelId, channelId),
+                isNull(mediaFiles.deletedAt),
+              ),
+            )
+            .limit(1);
+          if (!file || !file.metaMediaRef || file.expiresAt.getTime() <= at.getTime()) {
+            throw notFound(MEDIA_NOT_FOUND);
+          }
+          if (file.kind.toUpperCase() !== resolved.headerFormat) {
+            throw new AppError('VALIDATION_ERROR', {
+              message: `Berkas judul harus ${resolved.headerFormat === 'IMAGE' ? 'gambar' : resolved.headerFormat === 'VIDEO' ? 'video' : 'dokumen'} sesuai template.`,
+            });
+          }
+          values.mediaFileId = file.id;
+        }
+        const { preview, ...template } = resolved;
+        values.type = 'template';
+        values.text = preview;
+        values.extras = { template };
+        values.templateId = template.templateId;
+        values.templateCategory = template.category;
+        break;
+      }
       case 'interactive':
         // Tombol/daftar (sudah divalidasi batas Meta oleh skema). Isi utama = teks pratinjau.
         values.type = 'interactive';
@@ -851,6 +919,102 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
       sendAs(userSender(grant), conversationId, input, client),
     sendAsApiKey: (key, conversationId, input, client) =>
       sendAs(apiKeySender(key), conversationId, input, client),
+
+    async startWithTemplate(who, input, client, ensureContact) {
+      const sender = who.kind === 'user' ? userSender(who.grant) : apiKeySender(who.key);
+      const organizationId = sender.grant.organizationId;
+      const existing = await byIdempotencyKey(sender, input.clientMessageId);
+      if (existing) {
+        return {
+          message: await view(existing),
+          created: false,
+          conversationId: existing.conversationId,
+        };
+      }
+      const channel = await liveChannel(organizationId, input.channelId);
+      if (channel.type !== 'whatsapp') {
+        throw new AppError('VALIDATION_ERROR', {
+          message: 'Template hanya untuk channel WhatsApp.',
+        });
+      }
+      const contactId = await ensureContact(organizationId, input.phone);
+      const at = now();
+      const findConversationFor = async (includeResolved: boolean) => {
+        const [row] = await db
+          .select({ id: conversations.id })
+          .from(conversations)
+          .where(
+            and(
+              eq(conversations.organizationId, organizationId),
+              eq(conversations.contactId, contactId),
+              eq(conversations.channelId, channel.id),
+              includeResolved ? undefined : sql`${conversations.status} <> 'resolved'`,
+            ),
+          )
+          .orderBy(sql`${conversations.createdAt} desc`)
+          .limit(1);
+        return row?.id;
+      };
+      let conversationId =
+        (await findConversationFor(false)) ??
+        (sender.apiKey ? await findConversationFor(true) : undefined);
+      if (!conversationId) {
+        try {
+          conversationId = await db.transaction(async (tx) => {
+            const [created] = await tx
+              .insert(conversations)
+              .values({
+                organizationId,
+                contactId,
+                channelId: channel.id,
+                ...(sender.apiKey
+                  ? { status: 'resolved' as const, resolvedAt: at }
+                  : {
+                      status: 'served' as const,
+                      assigneeUserId: sender.userId,
+                      firstAssignedAt: at,
+                    }),
+                lastMessageAt: at,
+              })
+              .returning({ id: conversations.id });
+            if (!created) throw new Error('INSERT percakapan tidak mengembalikan baris');
+            await recordOutgoingEvent(tx, {
+              organizationId,
+              type: 'conversation.created',
+              conversationId: created.id,
+              contactId,
+              actorUserId: sender.userId,
+            });
+            return created.id;
+          });
+        } catch (error) {
+          // Pesan masuk bersamaan baru saja membuka percakapan → pakai yang itu.
+          if (
+            !isPgError(
+              error,
+              PG_ERROR_CODES.uniqueViolation,
+              'conversations_open_contact_channel_unique',
+            )
+          ) {
+            throw error;
+          }
+          conversationId = await findConversationFor(false);
+          if (!conversationId) throw error;
+        }
+      }
+      const result = await sendAs(
+        sender,
+        conversationId,
+        {
+          type: 'template',
+          clientMessageId: input.clientMessageId,
+          templateId: input.templateId,
+          parameters: input.parameters,
+        },
+        client,
+      );
+      return { ...result, conversationId };
+    },
     upload: (grant, conversationId, file) => uploadAs(userSender(grant), conversationId, file),
     uploadAsApiKey: (key, conversationId, file) =>
       uploadAs(apiKeySender(key), conversationId, file),
@@ -870,8 +1034,8 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
       const conversation = await scopedConversation(grant, message.conversationId);
       await liveChannel(grant.organizationId, message.channelId);
       if (
-        !conversation.windowExpiresAt ||
-        conversation.windowExpiresAt.getTime() <= now().getTime()
+        message.type !== 'template' &&
+        (!conversation.windowExpiresAt || conversation.windowExpiresAt.getTime() <= now().getTime())
       ) {
         throw new AppError('WINDOW_CLOSED');
       }

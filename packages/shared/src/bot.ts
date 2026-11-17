@@ -18,6 +18,11 @@ import { isoDateTimeSchema } from './fields';
 /** Hari: 0 = Minggu … 6 = Sabtu (sama dengan `Date.getDay()`). */
 export const BOT_DAY_LABELS = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 export const BOT_TIMEOUT_MINUTES = { min: 1, max: 1440 } as const;
+/**
+ * Batas waktu bawaan saat bot dinyalakan tanpa nilai (review bot R1): bot aktif TIDAK PERNAH tanpa
+ * batas waktu — pelanggan tidak boleh "terjebak" di bot yang mati.
+ */
+export const BOT_TIMEOUT_DEFAULT_MINUTES = 15;
 export const BOT_HOURS_WINDOWS_MAX = 21;
 
 const timeSchema = z
@@ -55,7 +60,10 @@ export type BotHours = z.infer<typeof botHoursSchema>;
 export const channelBotSettingsSchema = z.object({
   enabled: z.boolean(),
   hours: botHoursSchema,
-  /** Menit tanpa balasan bot sebelum percakapan otomatis masuk antrian; `null` = tanpa batas. */
+  /**
+   * Menit tanpa balasan bot sebelum percakapan otomatis masuk antrian. Saat `enabled`, `null` diisi
+   * server dengan `BOT_TIMEOUT_DEFAULT_MINUTES` (bot aktif selalu punya batas waktu).
+   */
   timeoutMinutes: z
     .number()
     .int()

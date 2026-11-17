@@ -245,10 +245,11 @@ describe('startWorkers + jadwal pemeliharaan (Redis sungguhan)', () => {
             MAINTENANCE_JOBS.webhookPayloadRetention,
             MAINTENANCE_JOBS.staleSendClaims,
             MAINTENANCE_JOBS.botTimeouts,
+            MAINTENANCE_JOBS.templateSync,
           ]),
         );
       await scheduleMaintenanceJobs(queue);
-      expect(await queue.getJobSchedulersCount()).toBe(3);
+      expect(await queue.getJobSchedulersCount()).toBe(4);
       await runtime.close();
       await queue.obliterate({ force: true });
       await queue.close();

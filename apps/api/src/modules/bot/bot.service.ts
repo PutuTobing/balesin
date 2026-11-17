@@ -1,6 +1,14 @@
-import { AppError } from '@balesin/core';
-import { channels, organizations, type Database } from '@balesin/db';
+import { AppError, type InboxEventPublisher } from '@balesin/core';
 import {
+  channels,
+  conversationEvents,
+  conversations,
+  organizations,
+  recordOutgoingEvent,
+  type Database,
+} from '@balesin/db';
+import {
+  BOT_TIMEOUT_DEFAULT_MINUTES,
   botHoursSchema,
   isWithinBotHours,
   type BotHours,
@@ -11,6 +19,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import type { z } from 'zod';
 
 import type { ClientInfo } from '../../http/client-info';
+import type { NotificationEnqueuer } from '../../queues/notification-queue';
 import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
 import { assertActorStillAuthorized } from '../auth/actor-check';
 import type { AuthContext } from '../auth/session.service';
@@ -36,7 +45,12 @@ export interface BotService {
   ): Promise<BotSettingsView>;
 }
 
-export function createBotService(deps: { db: Database; now?: () => Date }): BotService {
+export function createBotService(deps: {
+  db: Database;
+  publisher?: InboxEventPublisher;
+  notifications?: NotificationEnqueuer;
+  now?: () => Date;
+}): BotService {
   const { db } = deps;
   const now = deps.now ?? (() => new Date());
 
@@ -76,8 +90,16 @@ export function createBotService(deps: { db: Database; now?: () => Date }): BotS
   return {
     channelSettings: load,
 
-    async updateChannelSettings(auth, channelId, input, client) {
-      await db.transaction(async (tx) => {
+    async updateChannelSettings(auth, channelId, raw, client) {
+      // Review bot R1: bot aktif selalu punya batas waktu (bawaan 15 menit).
+      const input: ChannelBotSettings = {
+        ...raw,
+        timeoutMinutes:
+          raw.enabled && raw.timeoutMinutes === null
+            ? BOT_TIMEOUT_DEFAULT_MINUTES
+            : raw.timeoutMinutes,
+      };
+      const released = await db.transaction(async (tx) => {
         const { role } = await assertActorStillAuthorized(tx, auth, 'integrations.manage');
         const [current] = await tx
           .select({ enabled: channels.botEnabled, timeout: channels.botTimeoutMinutes })
@@ -116,7 +138,54 @@ export function createBotService(deps: { db: Database; now?: () => Date }): BotS
           },
           client,
         });
+        if (input.enabled) return [];
+        // Review bot R1: bot dimatikan → percakapan yang sedang dipegang bot diserahkan ke antrian
+        // tim (kejadian `handoff` oleh pengguna ini + webhook + push) — tidak ada yang terjebak.
+        const moved = await tx
+          .update(conversations)
+          .set({ status: 'unserved', assigneeUserId: null, botAwaitingSince: null })
+          .where(
+            and(
+              eq(conversations.organizationId, auth.organizationId),
+              eq(conversations.channelId, channelId),
+              eq(conversations.status, 'bot'),
+            ),
+          )
+          .returning({ id: conversations.id, contactId: conversations.contactId });
+        for (const row of moved) {
+          await tx.insert(conversationEvents).values({
+            organizationId: auth.organizationId,
+            conversationId: row.id,
+            kind: 'handoff',
+            actorUserId: auth.user.id,
+          });
+          await recordOutgoingEvent(tx, {
+            organizationId: auth.organizationId,
+            type: 'conversation.handoff',
+            conversationId: row.id,
+            contactId: row.contactId,
+            actorUserId: auth.user.id,
+          });
+        }
+        return moved;
       });
+      if (released.length > 0) {
+        await deps.publisher?.publish(
+          released.map((row) => ({
+            type: 'conversation.updated' as const,
+            organizationId: auth.organizationId,
+            conversationId: row.id,
+          })),
+        );
+        for (const row of released) {
+          await deps.notifications?.enqueue({
+            organizationId: auth.organizationId,
+            kind: 'queued',
+            conversationId: row.id,
+            actorUserId: auth.user.id,
+          });
+        }
+      }
       return load(auth.organizationId, channelId);
     },
   };

@@ -31,7 +31,14 @@ export type OutboundContent =
       address: string | null;
     }
   | { type: 'reaction'; targetWamid: string; emoji: string }
-  | { type: 'interactive'; interactive: InteractiveMessage };
+  | { type: 'interactive'; interactive: InteractiveMessage }
+  | {
+      type: 'template';
+      name: string;
+      language: string;
+      /** `components` pengiriman (parameter header/body/tombol) — dibangun `templateSendComponents`. */
+      components: Record<string, unknown>[];
+    };
 
 export interface OutboundEnvelope {
   /** Nomor tujuan tanpa `+` (wa_id). */
@@ -75,6 +82,16 @@ export function buildOutboundPayload(envelope: OutboundEnvelope): Record<string,
       };
     case 'interactive':
       return { ...base, type: 'interactive', interactive: interactivePayload(content.interactive) };
+    case 'template':
+      return {
+        ...base,
+        type: 'template',
+        template: {
+          name: content.name,
+          language: { code: content.language },
+          ...(content.components.length > 0 ? { components: content.components } : {}),
+        },
+      };
     case 'media': {
       const media: Record<string, unknown> = { id: content.metaMediaId };
       // Audio tidak mendukung keterangan; nama berkas hanya untuk dokumen.
@@ -119,6 +136,56 @@ export function interactivePayload(message: InteractiveMessage): Record<string, 
       })),
     },
   };
+}
+
+/**
+ * Parameter pengiriman template (`template.components`): header (teks / media dari ID Meta), body
+ * (urut variabel; bernama → `parameter_name`), tombol URL/salin kode per indeks.
+ */
+export function templateSendComponents(input: {
+  named: boolean;
+  headerFormat: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | null;
+  headerVariable: string | null;
+  headerText: string | null;
+  headerMetaMediaId: string | null;
+  bodyVariables: readonly string[];
+  values: Readonly<Record<string, string>>;
+  buttons: readonly { index: number; type: 'URL' | 'COPY_CODE'; value: string }[];
+}): Record<string, unknown>[] {
+  const text = (name: string, value: string) => ({
+    type: 'text',
+    text: value,
+    ...(input.named ? { parameter_name: name } : {}),
+  });
+  const components: Record<string, unknown>[] = [];
+  if (input.headerFormat === 'TEXT' && input.headerVariable && input.headerText !== null) {
+    components.push({ type: 'header', parameters: [text(input.headerVariable, input.headerText)] });
+  } else if (input.headerFormat && input.headerFormat !== 'TEXT' && input.headerMetaMediaId) {
+    const kind = input.headerFormat.toLowerCase();
+    components.push({
+      type: 'header',
+      parameters: [{ type: kind, [kind]: { id: input.headerMetaMediaId } }],
+    });
+  }
+  if (input.bodyVariables.length > 0) {
+    components.push({
+      type: 'body',
+      parameters: input.bodyVariables.map((name) => text(name, input.values[name] ?? '')),
+    });
+  }
+  for (const button of input.buttons) {
+    components.push({
+      type: 'button',
+      sub_type: button.type === 'URL' ? 'url' : 'copy_code',
+      index: String(button.index),
+      parameters: [
+        button.type === 'URL'
+          ? { type: 'text', text: button.value }
+          : { type: 'coupon_code', coupon_code: button.value },
+      ],
+    });
+  }
+  return components;
 }
 
 const sendResponseSchema = z.object({

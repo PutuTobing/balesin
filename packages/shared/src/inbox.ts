@@ -136,6 +136,8 @@ export const MESSAGE_TYPES = [
   'reaction',
   'system',
   'unsupported',
+  /** Template Meta yang dikirim Balesin (Fase 4). */
+  'template',
 ] as const;
 export const messageTypeSchema = z.enum(MESSAGE_TYPES);
 export type MessageType = z.infer<typeof messageTypeSchema>;
@@ -711,6 +713,19 @@ export const messageSchema = z.object({
    * untuk pesan lain); opsional di skema supaya data tiruan web lama tetap sah.
    */
   interactiveMessage: interactiveMessageSchema.nullable().optional(),
+  /**
+   * Template yang dikirim (pesan keluar `type: template`): `text` pesan = isi body yang sudah diisi.
+   * Server selalu mengisi (`null` untuk pesan lain); opsional di skema untuk data tiruan web lama.
+   */
+  template: z
+    .object({
+      templateId: z.uuid().nullable(),
+      name: z.string(),
+      language: z.string(),
+      category: z.string(),
+    })
+    .nullable()
+    .optional(),
   /** Reaksi: emoji (`null` = reaksi dihapus) + pesan sasarannya bila ditemukan. */
   reaction: z.object({ emoji: z.string().nullable(), messageId: z.uuid().nullable() }).nullable(),
   /** Balas-kutip: pesan yang dikutip bila ditemukan di Balesin. */
