@@ -36,8 +36,8 @@ Orkestrator mengerjakan dari atas ke bawah. Tandai `[x]` saat Definition of Done
 - [x] Panel detail: info, tag, catatan, media, log
 - [x] Quick reply `/`
 - [x] Notifikasi + PWA installable
-- [ ] Tampilan HP penuh (navigasi bawah, layar bertumpuk)
-- [ ] E2E: pesan masuk (simulasi webhook) → tampil → dibalas → status
+- [x] Tampilan HP penuh (navigasi bawah, layar bertumpuk)
+- [x] E2E: pesan masuk (simulasi webhook) → tampil → dibalas → status
 
 ## Fase 3 — Bot & API untuk n8n
 - [x] Mapping MobiChat untuk bot (`API-MOBICHAT-MAPPING.md` §1–3)
@@ -46,8 +46,8 @@ Orkestrator mengerjakan dari atas ke bawah. Tandai `[x]` saat Definition of Done
 - [ ] Lapisan kompatibel MobiChat (`/api/public/*` prioritas, `/api/bot/reply*` kedua) + field `mobichat_base_url`/`mobichat_api_key` di webhook + tes kontrak
 - [ ] Pesan interaktif (tombol/daftar) dari agen dan bot + penerusan balasan tombol ke bot
 - [ ] Bot eksternal: kirim event, handoff, saklar bot
-- [ ] API native v1 + API key bertingkat scope + OpenAPI `/api/docs`
-- [ ] Webhook keluar bertanda tangan + allowlist IP privat + riwayat & kirim ulang
+- [x] API native v1 + API key bertingkat scope + OpenAPI `/api/docs`
+- [x] Webhook keluar bertanda tangan + allowlist IP privat + riwayat & kirim ulang
 
 ## Fase 4 — Template & Broadcast
 - [ ] Sinkron & ajukan template Meta

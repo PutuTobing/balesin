@@ -96,3 +96,29 @@ bersama bila dipakai)
 
 Lihat `2026-11-19-fase2-hp-penuh.md` (satu worktree untuk ketiga laporan; sudah dihapus, port 3191/5191 kosong,
 `balesin_kd_e2e` di-drop, Redis db 11 `DBSIZE` 0). Tidak ada kode produk yang diubah, tidak ada commit.
+
+---
+
+# Putaran 2
+
+- **Tanggal:** 2026-11-17 · **Penilai:** `kritikus-desain` · **Putaran:** 2
+- **Kode yang dinilai:** `4162349`. Worktree terisolasi (3191/5191, `balesin_kd_e2e` migrasi sampai `0024`, Redis db 11).
+  Foto + audit `api-key`, `api-key-buat`, `api-key-rahasia`, `webhook`, `webhook-tambah`, `webhook-riwayat`, `webhook-menu`
+  × 4.
+- **Screenshot:** berkas berawalan `p2-`.
+
+## Putusan putaran 2: LOLOS
+
+| Butir | Hasil | Status |
+|---|---|---|
+| **W1** URL webhook HP | Status di baris sendiri di atas URL; URL terukur **2 baris** di 390 (dan 1–2 di 1440) | Lolos |
+| **W2** istilah | "Kirim kejadian tes", "Lihat respons penerima", "Galat: waktu habis (10 detik)", "HTTP 404 (alamat tidak ditemukan)" | Lolos |
+| **W3** kaki dialog | "Buat key"/"Batal" dan "Simpan"/"Batal" menempel di dasar dialog, terlihat tanpa menggulir (390: y 706–802; 1440: y 822–858 dari 900) | Lolos |
+| A-S1 pil izin pendek | "Kirim pesan", "Ubah kontak", "Baca percakapan", "Baca kontak" | Lolos |
+| A-S2 key dicabut | Dikelompokkan di "Dicabut & kedaluwarsa (1)" yang terlipat | Lolos (lihat saran) |
+| A-S3 "⋯" | 44 px | Lolos |
+
+Tidak ada teks < 4,5:1, tidak ada target < 44 px (kecuali "Tampilkan password", sudah diterima).
+
+Saran: judul lipatan "Dicabut & kedaluwarsa (1)" belum punya tanda bisa dibuka — tambahkan ikon `chevron-down`/`-up` 16 px
+di kirinya.

@@ -74,3 +74,23 @@ rapi. Tidak ada tombol palsu. Saran kecil: Broadcast/Tiket/Laporan tanpa aksi ap
 
 Worktree saya dihapus (folder + `git worktree prune`), port 3191/5191 kosong, `balesin_kd_e2e` di-drop, Redis db 11
 `DBSIZE` 0. Worktree `wt-qa` milik QA dibiarkan. Tidak ada kode produk yang diubah, tidak ada commit.
+
+---
+
+# Putaran 2
+
+- **Tanggal:** 2026-11-17 · **Penilai:** `kritikus-desain` · **Putaran:** 2
+- **Kode yang dinilai:** `4162349`. Worktree terisolasi (3191/5191, `balesin_kd_e2e` migrasi sampai `0024`, Redis db 11).
+  Foto + audit (kontras, target sentuh, teks terpotong) untuk `inbox-chat-sesi-habis(-360)`, `inbox-chat-ketik`,
+  `tim-tanpa-email`, `email-pengirim-pratinjau` × 4.
+- **Screenshot:** berkas berawalan `p2-`.
+
+## Putusan putaran 2: LOLOS
+
+| Butir | Hasil | Status |
+|---|---|---|
+| **H1** nomor utuh di 360 | Kontak tanpa nama + sesi habis: "+62 898-7654-3210" utuh; pil sesi menjadi ikon jam dicoret (dengan label pembaca layar) di lebar sempit | Lolos |
+| H-S1 strip saat mengetik | `inbox-chat-ketik`: strip ringkas satu baris "Belum ditangani · [Ambil chat]" | Lolos |
+| Target sentuh | "Atur email pengirim", segmen Email/Teks polos, "⋯" webhook tidak lagi < 44 px. Sisa: "Tampilkan password" 44 × 42 (sudah diterima) | Lolos |
+
+Tidak ada teks < 4,5:1, tidak ada scroll horizontal.

@@ -1,7 +1,7 @@
 # Progress
 
-**Fase aktif:** 2 — WhatsApp & Inbox inti
-**Terakhir diperbarui:** 2026-11-17 (butir 6–7 backend selesai; composer web & butir 8–9 backend dihentikan sementara)
+**Fase aktif:** 3 — Bot & API untuk n8n (berjalan bersama Fase 4 — Template & Broadcast)
+**Terakhir diperbarui:** 2026-11-20 (Fase 2 selesai; Fase 3 hampir selesai; Fase 4 berjalan)
 
 ## Selesai
 
@@ -33,48 +33,40 @@
   semua review per butir lolos (`docs/security-reviews/2026-11-1*`, `docs/design-reviews/2026-11-1*`).
 - Tes: Vitest (shared 97, core 445, db 86, web 467, worker 61, api 638) + **224 E2E** lulus.
 
-### Fase 2 (sebagian)
-- Butir 1–2 **backend**: channel WhatsApp Cloud API (kredensial terenkripsi, klien Graph v26.0
-  dengan `appsecret_proof`, tes koneksi, profil bisnis, pemberitahuan Owner), review security AMAN.
-  Kontrak: `docs/KONTRAK-API-CHANNEL.md`.
-- Butir 1–2 **web**: Pengaturan → Channel, wizard 9 langkah, halaman nomor (navigasi bagian ≥1024px),
-  profil bisnis, ganti kredensial, nonaktif/hapus; E2E dengan server Meta tiruan. Kritikus **LOLOS**
-  putaran 4 (`docs/design-reviews/2026-11-16-fase2-channel.md`); security web **AMAN**
-  (`docs/security-reviews/2026-11-16-fase2-channel-web.md`, R1/R2 sudah ditutup).
-- Butir 3 **webhook masuk** (4642360 + pengerasan 2609aa2): security **AMAN** putaran 2
-  (`docs/security-reviews/2026-11-16-fase2-webhook.md`).
-- Butir 4 **kontak & percakapan otomatis + jendela 24 jam** (b03de89, bff5abd; migrasi 0012–0013):
-  kontak BSUID/E.164, percakapan = satu sesi, pesan + status maju, retensi payload, API baca inbox.
-  Security **AMAN** putaran 2 (`docs/security-reviews/2026-11-16-fase2-kontak-percakapan.md`).
-  Kontrak: `docs/KONTRAK-API-INBOX.md`.
+### Fase 2 — WhatsApp & Inbox inti (20 Nov 2026)
+- **Channel WhatsApp Cloud API**: wizard 9 langkah (`docs/SETUP-META.md`), kredensial terenkripsi,
+  klien Graph v26.0 + `appsecret_proof`, tes koneksi, halaman nomor (kualitas, status, batas, profil
+  bisnis, diagnosis webhook). Kontrak: `docs/KONTRAK-API-CHANNEL.md`.
+- **Webhook masuk** (tanda tangan raw body, idempotensi, worker), **kontak & percakapan otomatis**
+  (BSUID/E.164, satu sesi, jendela 24 jam dari `receivedAt`, retensi payload), hapus & ekspor kontak.
+- **Inbox real-time** (WebSocket Origin wajib, disaring per RBAC; tab + hitungan, cari trigram,
+  saringan, hitung mundur 24 jam), **ruang chat** (teks/media/lokasi/reaksi/kutip, unggah magic bytes,
+  unduh media aman, kirim ulang, error Meta → Indonesia), **ambil/alihkan/selesai/buka lagi**,
+  **panel detail** (tag kontak, catatan sesi, bintang, berkas, log), **balasan cepat `/`**,
+  **batas kirim harian + rem darurat**, **notifikasi Web Push + PWA**, **tampilan HP penuh**.
+  Kontrak: `docs/KONTRAK-API-INBOX.md`, `docs/KONTRAK-API-NOTIFIKASI.md`.
+- Review: semua layar kritikus **LOLOS** (`docs/design-reviews/2026-11-16..19-*`), semua butir
+  security **AMAN** (`docs/security-reviews/2026-11-16..20-*`). QA penutupan: Vitest 2.459 lulus,
+  E2E 263 lulus (2 run penuh berturut-turut hijau), screenshot 1.144.
 
-- Butir 5 **inbox real-time**: backend (72b4fd2, 320ae51; security AMAN putaran 2,
-  `docs/security-reviews/2026-11-16-fase2-inbox-realtime.md`) + web (1c767ec: daftar, tab, cari,
-  saring, hitung mundur 24 jam, ruang chat baca-saja, panel detail, klien WS; security web AMAN,
-  `docs/security-reviews/2026-11-17-fase2-inbox-web.md`). Revisi putaran 1 d5ecc74; kritikus putaran
-  2 tinggal **R1 urutan baris meta** (nomor · agen/status · channel).
-- Butir 6 **ruang chat backend** (908e3da) + pengerasan (6d609c5): kirim teks/media/lokasi/reaksi/
-  kutip lewat worker, jendela 24 jam di server, error Meta → Indonesia + kirim ulang, media dialirkan ke
-  disk, Office bermakro ditolak, klaim kirim atomik, migrasi 0014/0016. Security AMAN putaran 2
-  (`docs/security-reviews/2026-11-17-fase2-ruang-chat.md`); sisa **R5** (klaim baru saat job diulang).
-- Butir 7 **penanganan percakapan backend** (6d609c5, migrasi 0015): claim/assign/unassign/resolve/
-  reopen, `conversation_events`, `GET /inbox/agents`; **batas kirim harian + rem darurat** (API
-  `/settings/sending-limits`). Security AMAN (`docs/security-reviews/2026-11-17-fase2-penanganan-percakapan.md`).
+### Fase 3 — Bot & API untuk n8n (sebagian, 20 Nov 2026)
+- **API publik v1** + API key bertingkat scope + OpenAPI `/api/docs` (`docs/KONTRAK-API-PUBLIK.md`),
+  **webhook keluar** bertanda tangan (outbox, SSRF ketat + allowlist IP privat, riwayat & kirim
+  ulang; `docs/KONTRAK-WEBHOOK-KELUAR.md`), layar Pengaturan → API key & Webhook — security AMAN,
+  kritikus LOLOS.
+- **Lapisan kompatibel MobiChat** (`/api/public/*`, `/api/bot/*`, webhook format MobiChat; tes kontrak
+  memutar ulang node n8n ULAN; `docs/KONTRAK-API-MOBICHAT.md`), **bot eksternal** (saklar per channel
+  & percakapan, jam kerja bot, batas waktu wajib, handoff), **pesan interaktif** — backend & web
+  security AMAN; kritikus web tinggal B1–B3 (jadwal bot, dialog daftar, teks formulir MobiChat).
 
-## Sedang dikerjakan (dihentikan 17 Nov, belum di-commit)
-- **Frontend butir 6 web — composer** (teks, kutip, reaksi, lampiran, media via fetch+CSRF → Blob,
-  kirim ulang, jendela 24 jam/`WINDOW_CLOSED`, rem darurat 423, 429) + **R1 kritikus inbox** + saran
-  P2-S1/S2/S3. Berhenti di "MessageTimeline rewrite". Lanjutkan → root checks + e2e + screenshots →
-  commit → kritikus (putaran 3 inbox + composer) → security web.
-- **Backend butir 8–9** (tag, kontak, catatan sesi, pesan ditandai, daftar media, log; quick reply `/`)
-  + sisipan security: R5 ruang chat (`it.fails`), R1 butir 7 alarm aksi massal, Info 1 daftar agen,
-  OLE `embeddings/*.bin`. Berhenti di "update inbox.repo, inbox-view, inbox.routes". Lanjutkan →
-  laporkan → commit → security.
-- Berikutnya: UI butir 7 (ambil/alihkan/selesai), Pengaturan → Batas kirim + banner rem darurat,
-  UI butir 8–9, butir 10 notifikasi + PWA, 11 tampilan HP penuh, 12 E2E ujung ke ujung.
-- Saran desain Channel terbuka (tidak menahan): S3 tautan channel di banner webhook, S10 ilustrasi
-  per langkah wizard (BUTUH-TOBING #5), S11 nasib riwayat chat saat channel dihapus (putuskan di
-  butir ruang chat), P4-S1 ruang kosong di bawah kartu terakhir.
+## Sedang dikerjakan
+- **Frontend**: UI template Meta (Pengaturan → Template, pemilih template di composer, "Percakapan
+  baru") + revisi kritikus B1–B3 Fase 3.
+- **Backend**: Fase 4 broadcast (impor CSV/XLSX/segmen/konektor REST, estimasi biaya, persetujuan,
+  jadwal, throttle, anti-dobel, rem otomatis, alarm Telegram, laporan) + penyapu kode OTP.
+- Fase 4 butir 1 & 7 backend selesai: **template Meta** (sinkron/ajukan/preset ISP/kirim template/
+  mulai percakapan; `docs/KONTRAK-API-TEMPLATE.md`), security AMAN putaran 2.
+- Terblokir: Fase 3 mode tangkap `/compat/<vendor>/*` + Qiscus (BUTUH-TOBING #10).
 
 ## Catatan untuk sesi berikutnya
 
