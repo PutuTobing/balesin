@@ -103,3 +103,22 @@ Tidak ada temuan Kritis/Tinggi. 1 Rendah (pelanggan bisa "terjebak" di bot) + In
 | `packages/shared`: `vitest run` | 114 lulus, 1 gagal (Info 5, pohon kerja) |
 | `tsc --noEmit` (api, worker) + ESLint berkas tes baru | bersih |
 | `pnpm audit` | 2 moderate dev-only, tidak ada yang baru |
+
+---
+
+## Putaran 2 — verifikasi perbaikan (commit `4bcef4c`)
+
+| Butir | Bukti | Status |
+|---|---|---|
+| R1 (1) bot dimatikan | `apps/api/src/modules/bot/bot.service.ts` `updateChannelSettings`: `enabled:false` → semua percakapan `bot` channel itu → `unserved` dalam transaksi yang sama, kejadian `handoff` oleh pengguna, webhook `conversation.handoff`, push antrian setelah commit. Tes penjaga R1 diubah `it.fails` → `it` (asersi SAMA: PUT `enabled:false` → `status 'unserved'`) dan lulus | **Tertutup** |
+| R1 (2) batas waktu wajib | `enabled` + `timeoutMinutes:null` → server mengisi `BOT_TIMEOUT_DEFAULT_MINUTES` (15); constraint DB `channels_bot_enabled_has_timeout` + migrasi 0024 mengisi channel lama | **Tertutup** |
+| R1 (3) penerima aktif | `apps/worker/src/inbound/handlers.ts` `botAwareInitialStatus`: `bot` hanya bila ada endpoint aktif yang melanggan `message.received` (MobiChat: key belum dicabut/kedaluwarsa), selain itu `unserved` | **Tertutup** |
+| R1 (4) kejadian keamanan | `packages/shared/src/audit.ts` `bot_enabled` (warning) bila bot dinyalakan selain Owner | **Tertutup** |
+| Info 1 parkir massal | `assignment.service.ts`: `bot_resumed` & `handoff` masuk pengawas aksi massal | **Tertutup** |
+| Info 2 balasan tak tepercaya | kontrak menyebut `reply_id`/judul = masukan pelanggan | **Tertutup** |
+
+Perubahan fixture tes penjaga (`botTimeoutMinutes: 15` pada channel `botEnabled: true`) DIWAJIBKAN oleh
+constraint baru dan tidak melemahkan asersi apa pun: tes R1 tetap mengirim `timeoutMinutes: null` saat
+mematikan bot dan memeriksa status `unserved`; tes batas waktu tetap menyetel 5 menit secara eksplisit dan
+memeriksa hanya percakapan yang lewat batas yang dipindah. `vitest run src/modules/bot` lulus semua, tanpa
+`it.fails` tersisa. Putusan tetap **AMAN**.
