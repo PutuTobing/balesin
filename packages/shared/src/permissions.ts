@@ -25,14 +25,15 @@ import { USER_ROLES, type UserRole } from './roles';
 /**
  * Cakupan sebuah izin untuk satu peran:
  *  - `all`      — semua data organisasi.
+ *  - `department` — TIDAK PERNAH dipakai di matriks peran. Cakupan `all` yang DISEMPITKAN per pengguna
+ *                 ("akses hanya departemen sendiri", PRD §3.6, Fase 5): data departemen pengguna itu,
+ *                 ditambah data yang ia pegang langsung atau terkait tiket yang ia pegang. Hanya
+ *                 untuk izin di `DEPARTMENT_SCOPED_PERMISSIONS` (lihat `effectivePermissionScope`).
  *  - `assigned` — hanya data yang di-assign ke pengguna itu, ATAU yang terkait tiket yang di-assign
  *                 kepadanya (percakapan/kontak untuk Teknisi, SECURITY.md §2).
  *  - `own`      — hanya data milik pengguna itu sendiri (tiket yang ia pegang, laporan kinerjanya).
- *
- * Nanti "akses departemen sendiri" (PRD §3.6, Fase 5) menyempitkan cakupan `all` per pengguna;
- * tambahkan nilai baru di sini, jangan membuat izin baru.
  */
-export const PERMISSION_SCOPES = ['all', 'assigned', 'own'] as const;
+export const PERMISSION_SCOPES = ['all', 'department', 'assigned', 'own'] as const;
 export const permissionScopeSchema = z.enum(PERMISSION_SCOPES);
 export type PermissionScope = z.infer<typeof permissionScopeSchema>;
 
@@ -145,7 +146,35 @@ export const SCOPED_PERMISSIONS = [
 ] as const satisfies readonly Permission[];
 export type ScopedPermission = (typeof SCOPED_PERMISSIONS)[number];
 
-type Grant = PermissionScope | null;
+/**
+ * Izin yang cakupan `all`-nya DISEMPITKAN menjadi `department` untuk pengguna bertanda "akses hanya
+ * departemen sendiri" (PRD §3.6 — percakapan & tiket; DECISIONS 2026-11-21). Kontak (CRM) sengaja
+ * tidak: data pelanggan dipakai lintas departemen, dan Teknisi tetap dibatasi `assigned`.
+ */
+export const DEPARTMENT_SCOPED_PERMISSIONS = [
+  'inbox.view',
+  'inbox.reply',
+  'inbox.assign',
+  'tickets.manage',
+] as const satisfies readonly Permission[];
+export type DepartmentScopedPermission = (typeof DEPARTMENT_SCOPED_PERMISSIONS)[number];
+
+/**
+ * Peran yang tanda departemennya berlaku (Supervisor & CS). Owner/Admin SELALU penuh walau tandanya
+ * tertinggal (mis. setelah naik peran); Teknisi sudah `assigned`/`own`.
+ */
+export const DEPARTMENT_RESTRICTABLE_ROLE_LIST = [
+  'supervisor',
+  'cs',
+] as const satisfies readonly UserRole[];
+
+export function isDepartmentScopedPermission(
+  permission: Permission,
+): permission is DepartmentScopedPermission {
+  return (DEPARTMENT_SCOPED_PERMISSIONS as readonly string[]).includes(permission);
+}
+
+type Grant = Exclude<PermissionScope, 'department'> | null;
 type Row = readonly [owner: Grant, admin: Grant, supervisor: Grant, cs: Grant, teknisi: Grant];
 
 const Y = 'all';
@@ -227,6 +256,28 @@ export function permissionScope(role: UserRole, permission: Permission): Permiss
     : null;
 }
 
+/**
+ * Cakupan SEBENARNYA untuk satu pengguna: cakupan peran, disempitkan menjadi `department` bila
+ * pengguna itu bertanda "akses hanya departemen sendiri" dan izinnya ada di
+ * `DEPARTMENT_SCOPED_PERMISSIONS`. Cakupan yang sudah sempit (`assigned`/`own`) tidak berubah.
+ */
+export function effectivePermissionScope(
+  role: UserRole,
+  permission: Permission,
+  access: { departmentRestricted: boolean },
+): PermissionScope | null {
+  const scope = permissionScope(role, permission);
+  if (
+    scope === 'all' &&
+    access.departmentRestricted &&
+    isDepartmentScopedPermission(permission) &&
+    (DEPARTMENT_RESTRICTABLE_ROLE_LIST as readonly string[]).includes(role)
+  ) {
+    return 'department';
+  }
+  return scope;
+}
+
 /** Peran ini boleh melakukan aksi ini (pada cakupan apa pun). */
 export function hasPermission(role: UserRole, permission: Permission): boolean {
   return permissionScope(role, permission) !== null;
@@ -265,6 +316,8 @@ export interface ScopeTarget {
    * perbaikan seorang Teknisi). Hanya dihitung untuk cakupan `assigned`.
    */
   linkedTicketHolderUserIds?: readonly string[];
+  /** Departemen data ini (percakapan; tiket = departemen board-nya). Hanya untuk `department`. */
+  departmentId?: string | null;
 }
 
 /**
@@ -276,10 +329,20 @@ export function isWithinScope(
   scope: PermissionScope,
   userId: string,
   target: ScopeTarget,
+  /** Departemen pengguna (hanya dipakai cakupan `department`). */
+  userDepartmentIds: readonly string[] = [],
 ): boolean {
   switch (scope) {
     case 'all':
       return true;
+    case 'department':
+      return (
+        target.holderUserIds.includes(userId) ||
+        (target.linkedTicketHolderUserIds ?? []).includes(userId) ||
+        (target.departmentId !== undefined &&
+          target.departmentId !== null &&
+          userDepartmentIds.includes(target.departmentId))
+      );
     case 'assigned':
       return (
         target.holderUserIds.includes(userId) ||
@@ -325,6 +388,7 @@ export const PERMISSION_LABELS: Readonly<Record<Permission, string>> = {
 /** Arti cakupan terbatas untuk ditampilkan di samping nama izin. */
 export const PERMISSION_SCOPE_LABELS: Readonly<Record<PermissionScope, string>> = {
   all: 'Semua',
+  department: 'Hanya departemen sendiri (dan yang dipegangnya)',
   assigned: 'Hanya yang di-assign atau terkait tiketnya',
   own: 'Hanya milik sendiri',
 };

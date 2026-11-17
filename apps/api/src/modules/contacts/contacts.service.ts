@@ -29,6 +29,7 @@ import {
   type IdentityConfirmation,
   type PublicCreateContactRequest,
   type UpdateContactRequest,
+  validateAttributeValues,
 } from '@balesin/shared';
 import { and, asc, desc, eq, isNotNull, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -39,6 +40,7 @@ import { assertActorStillAuthorized } from '../auth/actor-check';
 import type { AuthContext } from '../auth/session.service';
 import { requireIdentityConfirmation } from '../two-factor/require-confirmation';
 import type { TwoFactorContext, TwoFactorService } from '../two-factor/two-factor.service';
+import { attributeRules, attributeValidationError } from '../attributes/attributes.service';
 import { deleteContactData } from './contacts.repo';
 
 /**
@@ -171,6 +173,17 @@ export function createContactsService(deps: {
     const changed = await db.transaction(async (tx) => {
       await check?.(tx);
       const current = await lockContact(tx, organizationId, contactId);
+      if (input.attributes !== undefined) {
+        // Fase 5: nilai atribut berdefinisi divalidasi & dibakukan. "Wajib" hanya ditegakkan untuk
+        // simpan dari aplikasi (sesi); bot/API tidak tahu definisi organisasi.
+        const checked = validateAttributeValues(
+          await attributeRules(tx, organizationId, { entity: 'contact' }),
+          input.attributes,
+          { enforceRequired: actorUserId !== null },
+        );
+        if (!checked.ok) throw attributeValidationError(checked.issues);
+        input = { ...input, attributes: checked.values };
+      }
       const patch: Partial<typeof contacts.$inferInsert> = {};
       const fields: ContactEditableField[] = [];
       if (input.name !== undefined && input.name !== current.name) {
@@ -343,6 +356,16 @@ export function createContactsService(deps: {
             ),
           );
         if (existing) return { id: existing.id, created: false };
+        let attributes = input.attributes ?? [];
+        if (attributes.length > 0) {
+          const checked = validateAttributeValues(
+            await attributeRules(tx, organizationId, { entity: 'contact' }),
+            attributes,
+            { enforceRequired: false },
+          );
+          if (!checked.ok) throw attributeValidationError(checked.issues);
+          attributes = checked.values;
+        }
         const [row] = await tx
           .insert(contacts)
           .values({
@@ -351,7 +374,7 @@ export function createContactsService(deps: {
             phone: input.phone,
             name: input.name ?? null,
             email: input.email ?? null,
-            attributes: input.attributes ?? [],
+            attributes,
           })
           .returning({ id: contacts.id });
         if (!row) throw new Error('Kontak tidak tersimpan');

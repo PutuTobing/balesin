@@ -45,6 +45,8 @@ export const CONVERSATION_STATUS_LABELS: Readonly<Record<ConversationStatus, str
  *  - `handoff`     — bot menyerahkan ke manusia (bot minta, agen mematikan bot, atau bot tidak
  *                    membalas sampai batas waktu) → antrian "Belum dilayani";
  *  - `bot_resumed` — percakapan dikembalikan ke bot.
+ *  - `department_changed` — percakapan dipindah ke departemen lain / dilepas dari departemen
+ *                    (Fase 5; `department` = departemen BARU saat kejadian, `null` = tanpa).
  */
 export const CONVERSATION_EVENT_KINDS = [
   'claimed',
@@ -57,6 +59,7 @@ export const CONVERSATION_EVENT_KINDS = [
   'note_deleted',
   'handoff',
   'bot_resumed',
+  'department_changed',
 ] as const;
 /** Jenis yang disimpan di `conversation_events` (enum database). */
 export type ConversationRecordKind = (typeof CONVERSATION_EVENT_KINDS)[number];
@@ -70,6 +73,8 @@ export type ConversationRecordKind = (typeof CONVERSATION_EVENT_KINDS)[number];
  *    sebelumnya hanya punya nomor (review kontak R4: tim diberi tanda);
  *  - `possible_duplicate` — kontak baru dibuat untuk pengirim yang nomornya pernah tercatat di kontak
  *    lama tanpa identitas WhatsApp (kontak lama tidak dilekatkan otomatis; gabung manual).
+ *  - `merged` — kontak lain digabung ke kontak ini (Fase 5; riwayatnya pindah ke sini);
+ *  - `imported` — kontak dibuat/diperbarui lewat impor massal (Fase 5; `fields` = isian berubah).
  */
 export const CONTACT_EVENT_KINDS = [
   'tag_added',
@@ -77,6 +82,8 @@ export const CONTACT_EVENT_KINDS = [
   'contact_updated',
   'whatsapp_identity_attached',
   'possible_duplicate',
+  'merged',
+  'imported',
 ] as const;
 export type ContactEventKind = (typeof CONTACT_EVENT_KINDS)[number];
 
@@ -98,11 +105,14 @@ export const CONVERSATION_EVENT_LABELS: Readonly<Record<ConversationEventKind, s
   note_deleted: 'Menghapus catatan',
   handoff: 'Menyerahkan dari bot ke tim',
   bot_resumed: 'Mengembalikan ke bot',
+  department_changed: 'Memindahkan ke departemen',
   tag_added: 'Memasang tag',
   tag_removed: 'Melepas tag',
   contact_updated: 'Mengubah data kontak',
   whatsapp_identity_attached: 'Identitas WhatsApp dilekatkan ke kontak ini',
   possible_duplicate: 'Mungkin duplikat kontak lain (nomor pernah tercatat)',
+  merged: 'Kontak lain digabung ke kontak ini',
+  imported: 'Diperbarui lewat impor kontak',
 };
 
 /** Isian kontak yang bisa diubah tim (dicatat di `contact_events.fields`, tanpa nilainya). */
@@ -233,6 +243,10 @@ const conversationFilterFields = {
   channelId: z.uuid({ error: 'Channel tidak valid.' }).optional(),
   /** Hanya percakapan yang KONTAKNYA memakai tag ini (butir 8). */
   tagId: z.uuid({ error: 'Tag tidak valid.' }).optional(),
+  /** Departemen (Fase 5): UUID departemen atau `none` (belum masuk departemen mana pun). */
+  departmentId: z
+    .union([z.uuid(), z.literal('none')], { error: 'Departemen tidak valid.' })
+    .optional(),
   assignee: z
     .union([z.uuid(), z.literal('me'), z.literal('unassigned')], {
       error: 'Agen tidak valid.',
@@ -384,6 +398,11 @@ export const contactSchema = contactSummarySchema.extend({
   email: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
   attributes: z.array(z.object({ key: z.string(), value: z.string() })).optional(),
+  /**
+   * Fase 5: kontak ini mungkin duplikat kontak lain (nomor pernah tercatat di kontak itu, review R4)
+   * — tawarkan "Gabung". Selalu diisi server; opsional hanya untuk data tiruan lama.
+   */
+  possibleDuplicateOfContactId: z.uuid().nullable().optional(),
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,
 });
@@ -557,6 +576,11 @@ export const conversationSchema = z.object({
   firstAssignedAt: isoDateTimeSchema.nullable(),
   /** Laporan: pesan keluar pertama oleh agen. */
   firstResponseAt: isoDateTimeSchema.nullable(),
+  /**
+   * Departemen percakapan (Fase 5), `null` = belum ada. Selalu diisi server; opsional hanya untuk
+   * data tiruan lama.
+   */
+  department: z.object({ id: z.uuid(), name: z.string() }).nullable().optional(),
 });
 export type Conversation = z.infer<typeof conversationSchema>;
 
@@ -593,6 +617,8 @@ export const conversationEventSchema = z.object({
    */
   tag: z.object({ name: z.string(), color: tagColorSchema }).nullable().optional(),
   fields: z.array(z.enum(CONTACT_EDITABLE_FIELDS)).nullable().optional(),
+  /** `department_changed`: departemen baru (nama saat ini), `null` = dilepas dari departemen. */
+  department: z.object({ id: z.uuid(), name: z.string() }).nullable().optional(),
   createdAt: isoDateTimeSchema,
 });
 export type ConversationEvent = z.infer<typeof conversationEventSchema>;

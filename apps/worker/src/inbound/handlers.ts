@@ -35,6 +35,7 @@ import { and, desc, eq, ne, sql } from 'drizzle-orm';
 import type { InboundEventContext, InboundEventHandlers } from '../queues/webhooks';
 import { recordBroadcastReply } from './broadcast-replies';
 import { lockContactIdentities, resolveWhatsAppContact } from './contacts';
+import { matchCsatAnswer, recordCsatComment } from './csat-replies';
 
 /**
  * Pemroses kejadian webhook → kontak, percakapan, pesan (Fase 2 butir 4, docs/KONTRAK-API-INBOX.md).
@@ -282,7 +283,20 @@ export function createInboundHandlers(options: InboundHandlerOptions = {}): Inbo
 
       const type = messageTypeOf(message.type);
       const counts = countsAsCustomerMessage(type);
-      let conversation = await openConversation(tx, organizationId, contact.id, channelId);
+      // Jawaban survei CSAT (Fase 5): ditempel ke percakapan survei yang sudah selesai, tanpa
+      // membukanya lagi / menambah antrian / meneruskan ke bot.
+      const csatConversation =
+        type === 'interactive'
+          ? await matchCsatAnswer(tx, {
+              organizationId,
+              contactId: contact.id,
+              channelId,
+              replyId: message.reply?.id,
+              receivedAt,
+            })
+          : null;
+      let conversation =
+        csatConversation ?? (await openConversation(tx, organizationId, contact.id, channelId));
       if (!conversation && !counts) {
         conversation = await latestConversation(tx, organizationId, contact.id, channelId);
         if (!conversation) {
@@ -294,6 +308,11 @@ export function createInboundHandlers(options: InboundHandlerOptions = {}): Inbo
         }
       }
       if (!conversation) {
+        // Fase 5: percakapan baru langsung masuk departemen bawaan channel (bila diatur).
+        const [routing] = await tx
+          .select({ departmentId: channels.defaultDepartmentId })
+          .from(channels)
+          .where(and(eq(channels.organizationId, organizationId), eq(channels.id, channelId)));
         const [created] = await tx
           .insert(conversations)
           .values({
@@ -302,6 +321,7 @@ export function createInboundHandlers(options: InboundHandlerOptions = {}): Inbo
             channelId,
             status: await initialStatus(context),
             lastMessageAt: receivedAt,
+            departmentId: routing?.departmentId ?? null,
           })
           .returning();
         if (!created) throw new Error('INSERT percakapan tidak mengembalikan baris');
@@ -366,19 +386,43 @@ export function createInboundHandlers(options: InboundHandlerOptions = {}): Inbo
         .returning({ id: messages.id });
       const [created] = inserted;
       if (!created) return;
-      await recordOutgoingEvent(tx, {
-        organizationId,
-        type: 'message.received',
-        conversationId: conversation.id,
-        messageId: created.id,
-        contactId: contact.id,
-      });
+      if (!csatConversation) {
+        await recordOutgoingEvent(tx, {
+          organizationId,
+          type: 'message.received',
+          conversationId: conversation.id,
+          messageId: created.id,
+          contactId: contact.id,
+        });
+      }
       context.emit({
         type: 'message.created',
         organizationId,
         conversationId: conversation.id,
         messageId: created.id,
       });
+      if (csatConversation) {
+        // Pesan pelanggan membuka jendela 24 jam (ucapan terima kasih CSAT), status tetap `resolved`.
+        await tx
+          .update(conversations)
+          .set({
+            lastInboundAt: sql`greatest(${conversations.lastInboundAt}, ${receivedAt})`,
+            windowExpiresAt: sql`greatest(${conversations.lastInboundAt}, ${receivedAt}) + ${WINDOW_INTERVAL}`,
+            lastMessageAt: sql`greatest(${conversations.lastMessageAt}, ${receivedAt})`,
+          })
+          .where(
+            and(
+              eq(conversations.organizationId, organizationId),
+              eq(conversations.id, conversation.id),
+            ),
+          );
+        context.emit({
+          type: 'conversation.updated',
+          organizationId,
+          conversationId: conversation.id,
+        });
+        return;
+      }
       if (!counts) return;
       context.emit({
         type: 'conversation.updated',
@@ -418,6 +462,16 @@ export function createInboundHandlers(options: InboundHandlerOptions = {}): Inbo
           organizationId,
           conversationId: conversation.id,
           section: 'tags',
+        });
+      }
+      // Komentar CSAT: pesan teks pertama ≤ 30 menit setelah menilai (pesan tetap diproses biasa).
+      if (type === 'text') {
+        await recordCsatComment(tx, {
+          organizationId,
+          contactId: contact.id,
+          channelId,
+          text: message.text,
+          receivedAt,
         });
       }
     },

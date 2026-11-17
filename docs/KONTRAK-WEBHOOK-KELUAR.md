@@ -31,8 +31,9 @@ Kejadian keamanan: `webhook_changed` (dibuat, URL diubah, rahasia dirotasi, allo
 `conversation.created`, `conversation.assigned` (diambil/ditugaskan), `conversation.unassigned`,
 `conversation.resolved`, `conversation.reopened`, `contact.created`, `contact.updated` (termasuk tag).
 `conversation.handoff` — bot berhenti memegang (bot meminta handoff, agen mematikan bot / mengambil
-alih, batas waktu bot); `data.actor` kosong bila oleh key/sistem. Menyusul: `broadcast.completed`,
-`ticket.created`.
+alih, batas waktu bot); `data.actor` kosong bila oleh key/sistem. `ticket.created` /
+`ticket.updated` (Fase 5) — `data.ticket` + kontak/percakapan tautannya, lihat
+`docs/KONTRAK-API-CRM-TIKET.md`. Menyusul: `broadcast.completed`.
 
 Opsi endpoint **`botOnly`** (buat/ubah, tanpa konfirmasi): `message.received` hanya dikirim bila
 percakapan berstatus `bot` SAAT DISPATCH — untuk penerima yang berperan bot (seperti bot eksternal

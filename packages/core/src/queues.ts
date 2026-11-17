@@ -235,6 +235,8 @@ export const MAINTENANCE_JOBS = {
    * `SENSITIVE_TEMPLATE_MAX_AGE_MS` dikosongkan walau job kirimnya tidak pernah selesai. Tiap 10 menit.
    */
   sensitiveTemplateWipe: 'sensitive-template-wipe',
+  /** CSAT otomatis (Fase 5): buat/kirim survei, terima kasih, kedaluwarsa — tiap 15 detik. */
+  csatDispatch: 'csat-dispatch',
 } as const;
 export type MaintenanceJobName = (typeof MAINTENANCE_JOBS)[keyof typeof MAINTENANCE_JOBS];
 
@@ -252,6 +254,8 @@ export const SEND_CLAIM_STALE_MS = 2 * 60 * 1000;
 /** Umur maksimal nilai template sensitif (kode OTP) di `messages.extras.template`. */
 export const SENSITIVE_TEMPLATE_MAX_AGE_MS = 60 * 60 * 1000;
 export const SENSITIVE_TEMPLATE_WIPE_INTERVAL_MS = 10 * 60 * 1000;
+/** Selang job CSAT. */
+export const CSAT_DISPATCH_INTERVAL_MS = 15_000;
 /** Selang pemeriksa klaim kirim macet. */
 export const STALE_SEND_CLAIMS_INTERVAL_MS = 60 * 1000;
 

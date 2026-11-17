@@ -16,6 +16,7 @@ import {
 import { channels } from './channels';
 import { createdAtColumn, idColumn, timestamptz, updatedAtColumn } from './columns';
 import { contacts } from './contacts';
+import { departments } from './departments';
 import { organizations } from './organizations';
 import { users } from './users';
 
@@ -63,6 +64,11 @@ export const conversations = pgTable(
      * bot (`channels.bot_timeout_minutes`).
      */
     botAwaitingSince: timestamptz('bot_awaiting_since'),
+    /**
+     * Departemen (Fase 5). Dasar cakupan "akses hanya departemen sendiri"; diisi dari departemen
+     * bawaan channel saat percakapan dibuat, atau dipindah lewat `inbox.assign`.
+     */
+    departmentId: uuid('department_id'),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
@@ -84,6 +90,15 @@ export const conversations = pgTable(
       columns: [table.organizationId, table.assigneeUserId],
       foreignColumns: [users.organizationId, users.id],
     }).onDelete('restrict'),
+    foreignKey({
+      name: 'conversations_organization_id_department_id_fk',
+      columns: [table.organizationId, table.departmentId],
+      foreignColumns: [departments.organizationId, departments.id],
+    }).onDelete('restrict'),
+    index('conversations_organization_id_department_id_idx').on(
+      table.organizationId,
+      table.departmentId,
+    ),
     uniqueIndex('conversations_open_contact_channel_unique')
       .on(table.organizationId, table.contactId, table.channelId)
       .where(sql`${table.status} <> 'resolved'`),

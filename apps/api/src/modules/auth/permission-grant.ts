@@ -1,5 +1,7 @@
 import { AppError } from '@balesin/core';
+import { departmentMembers, users } from '@balesin/db';
 import {
+  isDepartmentScopedPermission,
   isWithinScope,
   permissionScope,
   type Permission,
@@ -89,6 +91,31 @@ export interface ScopeColumns {
    * Hanya dipakai cakupan `assigned`. Tanpa ini, `assigned` = pemegang langsung saja.
    */
   linkedTicketHolder?: (userId: string) => SQL;
+  /**
+   * Departemen data (percakapan: kolomnya; tiket: departemen board-nya) — dipakai cakupan
+   * `department` ("akses hanya departemen sendiri", Fase 5). Tanpa ini, pengguna bertanda departemen
+   * hanya melihat data yang ia pegang/terkait tiketnya.
+   */
+  department?: Column | SQL;
+}
+
+/** Pengguna bertanda "akses hanya departemen sendiri" (dibaca segar; API key → tidak pernah). */
+function departmentRestricted(grant: PermissionGrant): SQL {
+  // Hanya Supervisor/CS (`DEPARTMENT_RESTRICTABLE_ROLE_LIST`): Owner/Admin selalu penuh walau tandanya
+  // tertinggal setelah naik peran.
+  return sql`exists (select 1 from ${users} where ${users.organizationId} = ${grant.organizationId} and ${users.id} = ${grant.userId} and ${users.departmentRestricted} and ${users.role} in ('supervisor', 'cs'))`;
+}
+
+/** Cakupan `department`: dipegang langsung, terkait tiket yang dipegang, atau departemen sendiri. */
+function departmentNarrowed(grant: PermissionGrant, columns: ScopeColumns, held: SQL): SQL {
+  const conditions: SQL[] = [held];
+  if (columns.linkedTicketHolder) conditions.push(columns.linkedTicketHolder(grant.userId));
+  if (columns.department) {
+    conditions.push(
+      sql`${columns.department} in (select ${departmentMembers.departmentId} from ${departmentMembers} where ${departmentMembers.organizationId} = ${grant.organizationId} and ${departmentMembers.userId} = ${grant.userId})`,
+    );
+  }
+  return or(...conditions) as SQL;
 }
 
 /**
@@ -97,14 +124,24 @@ export interface ScopeColumns {
  *
  *   and(eq(table.organizationId, grant.organizationId), scopeCondition(grant, { holder: table.assigneeUserId }))
  *
- * `switch` lengkap: nilai cakupan baru (mis. departemen, Fase 5) gagal saat kompilasi di sini.
+ * `switch` lengkap: nilai cakupan baru gagal saat kompilasi di sini. Izin di
+ * `DEPARTMENT_SCOPED_PERMISSIONS` dengan cakupan `all` mendapat syarat tambahan "bukan pengguna
+ * bertanda departemen, ATAU data departemennya/miliknya" (Fase 5).
  */
 export function scopeCondition(grant: PermissionGrant, columns: ScopeColumns): SQL {
   const held = (userId: string): SQL =>
     typeof columns.holder === 'function' ? columns.holder(userId) : eq(columns.holder, userId);
   switch (grant.scope) {
     case 'all':
-      return sql`true`;
+      // Fase 5: cakupan `all` izin percakapan/tiket DISEMPITKAN untuk pengguna bertanda departemen.
+      // Tanda dibaca dari database di query yang sama (tanpa cache sesi → pencabutan langsung berlaku).
+      if (!isDepartmentScopedPermission(grant.permission)) return sql`true`;
+      return or(
+        sql`not ${departmentRestricted(grant)}`,
+        departmentNarrowed(grant, columns, held(grant.userId)),
+      ) as SQL;
+    case 'department':
+      return departmentNarrowed(grant, columns, held(grant.userId));
     case 'assigned': {
       const direct = held(grant.userId);
       return columns.linkedTicketHolder

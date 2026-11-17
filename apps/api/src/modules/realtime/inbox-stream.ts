@@ -6,10 +6,19 @@ import {
   type Logger,
   type Redis,
 } from '@balesin/core';
-import { conversations, messages, organizations, type Database } from '@balesin/db';
+import {
+  conversations,
+  departmentAccessOf,
+  messages,
+  openTicketHoldersOf,
+  organizations,
+  type Database,
+  type DepartmentAccess,
+} from '@balesin/db';
 import {
   INBOX_STREAM_CLOSE_CODES,
   INBOX_STREAM_HEARTBEAT_SECONDS,
+  effectivePermissionScope,
   isWithinScope,
   permissionScope,
   type InboxStreamEvent,
@@ -127,6 +136,9 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
   interface Payload {
     /** `undefined` = event tingkat organisasi (semua pemegang `inbox.view`). */
     assigneeUserId: string | null | undefined;
+    /** Fase 5: departemen percakapan + pemegang tiket terbuka yang menaut kontaknya. */
+    departmentId?: string | null;
+    ticketHolderUserIds?: readonly string[];
     message: InboxStreamEvent;
   }
 
@@ -160,6 +172,8 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
             id: conversations.id,
             status: conversations.status,
             assigneeUserId: conversations.assigneeUserId,
+            contactId: conversations.contactId,
+            departmentId: conversations.departmentId,
             unreadCount: conversations.unreadCount,
             lastMessageAt: conversations.lastMessageAt,
             windowExpiresAt: conversations.windowExpiresAt,
@@ -173,6 +187,12 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
           )
       : [];
     const byConversation = new Map(conversationRows.map((row) => [row.id, row]));
+    // Fase 5: Teknisi pemegang tiket terbuka yang menaut kontak ikut menerima event percakapannya.
+    const ticketHolders = await openTicketHoldersOf(
+      db,
+      organizationId,
+      conversationRows.map((row) => row.contactId),
+    );
     const messageRows = messageIds.length
       ? await db
           .select({
@@ -270,20 +290,44 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
     const result: { event: InboxBusEvent; payload: Payload }[] = [];
     for (const event of events) {
       const payload = payloadOf(event);
-      if (payload) result.push({ event, payload });
+      if (!payload) continue;
+      const conversation =
+        event.conversationId === undefined ? undefined : byConversation.get(event.conversationId);
+      if (conversation && event.type !== 'conversation.deleted') {
+        payload.departmentId = conversation.departmentId;
+        payload.ticketHolderUserIds = ticketHolders.get(conversation.contactId) ?? [];
+      }
+      result.push({ event, payload });
     }
     return result;
   }
 
-  function sendToGroup(group: Set<StreamClient>, event: InboxBusEvent, payload: Payload): number {
+  function sendToGroup(
+    group: Set<StreamClient>,
+    event: InboxBusEvent,
+    payload: Payload,
+    access: ReadonlyMap<string, DepartmentAccess>,
+  ): number {
     let delivered = 0;
     for (const client of group) {
-      const scope = permissionScope(client.role, 'inbox.view');
+      const clientAccess = access.get(client.userId);
+      const scope = effectivePermissionScope(client.role, 'inbox.view', {
+        departmentRestricted: clientAccess?.restricted ?? false,
+      });
       const holders = payload.assigneeUserId ? [payload.assigneeUserId] : [];
       const visible =
         scope !== null &&
         (payload.assigneeUserId === undefined ||
-          isWithinScope(scope, client.userId, { holderUserIds: holders }));
+          isWithinScope(
+            scope,
+            client.userId,
+            {
+              holderUserIds: holders,
+              linkedTicketHolderUserIds: payload.ticketHolderUserIds ?? [],
+              departmentId: payload.departmentId ?? null,
+            },
+            clientAccess?.departmentIds ?? [],
+          ));
       if (visible) {
         if (send(client, payload.message)) delivered += 1;
         continue;
@@ -378,8 +422,17 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
     } else {
       state.count += unique.length;
     }
-    for (const { event, payload } of await payloadsFor(organizationId, unique)) {
-      delivered += sendToGroup(group, event, payload);
+    const payloads = await payloadsFor(organizationId, unique);
+    // Fase 5: tanda & departemen pengguna dibaca SEGAR per batch (satu query untuk semua socket).
+    const access = payloads.length
+      ? await departmentAccessOf(
+          db,
+          organizationId,
+          [...group].map((client) => client.userId),
+        )
+      : new Map<string, DepartmentAccess>();
+    for (const { event, payload } of payloads) {
+      delivered += sendToGroup(group, event, payload, access);
     }
     return delivered;
   }

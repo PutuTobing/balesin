@@ -17,6 +17,7 @@ import {
   conversations,
   messages,
   notificationPreferences,
+  departmentAccessOf,
   organizations,
   pushSubscriptions,
   pushVapidKeys,
@@ -27,9 +28,9 @@ import {
 import {
   NOTIFICATION_PREVIEW_MAX,
   NOTIFICATION_THROTTLE_SECONDS,
+  effectivePermissionScope,
   hasPermission,
   isWithinScope,
-  permissionScope,
   rolesWithPermission,
   type PushNotificationPayload,
 } from '@balesin/shared';
@@ -88,6 +89,8 @@ type PreferenceKey = 'queue' | 'assignedMessage' | 'assignedToMe';
 interface Audience {
   conversationId: string | null;
   holderUserId: string | null;
+  /** Fase 5: departemen percakapan (penerima bertanda departemen hanya departemennya). */
+  departmentId: string | null;
   candidates: string[];
   preference: PreferenceKey | null;
   title: string;
@@ -203,15 +206,29 @@ export async function processNotificationJob(
           ),
         )
     : [];
+  const access = await departmentAccessOf(
+    db,
+    payload.organizationId,
+    people.map((person) => person.id),
+  );
   const allowed = people.filter((person) => {
     const role = person.role;
-    const scope = permissionScope(role, 'inbox.view');
+    const personAccess = access.get(person.id);
+    const scope = effectivePermissionScope(role, 'inbox.view', {
+      departmentRestricted: personAccess?.restricted ?? false,
+    });
     if (scope === null) return false;
     if (audience.needsAssign && !hasPermission(role, 'inbox.assign')) return false;
     if (audience.conversationId === null) return true;
-    return isWithinScope(scope, person.id, {
-      holderUserIds: audience.holderUserId ? [audience.holderUserId] : [],
-    });
+    return isWithinScope(
+      scope,
+      person.id,
+      {
+        holderUserIds: audience.holderUserId ? [audience.holderUserId] : [],
+        departmentId: audience.departmentId,
+      },
+      personAccess?.departmentIds ?? [],
+    );
   });
   if (allowed.length === 0) return { status: 'skipped', reason: 'no_audience' };
 
@@ -380,6 +397,7 @@ async function audienceOf(
     return {
       conversationId: null,
       holderUserId: null,
+      departmentId: null,
       candidates: [payload.userId],
       preference: null,
       title: 'Notifikasi aktif',
@@ -393,6 +411,7 @@ async function audienceOf(
       id: conversations.id,
       status: conversations.status,
       assigneeUserId: conversations.assigneeUserId,
+      departmentId: conversations.departmentId,
       contactName: contacts.name,
       contactProfileName: contacts.profileName,
     })
@@ -419,7 +438,11 @@ async function audienceOf(
       : conversation.contactProfileName
         ? `~${truncate(conversation.contactProfileName, NAME_MAX)}`
         : null;
-  const base = { conversationId: conversation.id, holderUserId: conversation.assigneeUserId };
+  const base = {
+    conversationId: conversation.id,
+    holderUserId: conversation.assigneeUserId,
+    departmentId: conversation.departmentId,
+  };
 
   if (payload.kind === 'message') {
     if (!payload.messageId) return null;

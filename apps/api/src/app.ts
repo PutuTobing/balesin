@@ -45,6 +45,8 @@ import { publicApiRoutes, publicOrganizationRate } from './modules/public-api/pu
 import { botRoutes } from './modules/bot/bot.routes';
 import { createBroadcastSettingsService } from './modules/broadcasts/broadcast-settings.service';
 import { broadcastsRoutes } from './modules/broadcasts/broadcasts.routes';
+import { reportsRoutes } from './modules/reports/reports.routes';
+import { createReportsService } from './modules/reports/reports.service';
 import { createBroadcastsService } from './modules/broadcasts/broadcasts.service';
 import { templatesRoutes } from './modules/templates/templates.routes';
 import { createTemplatesService } from './modules/templates/templates.service';
@@ -90,6 +92,15 @@ import { notificationsRoutes } from './modules/notifications/notifications.route
 import { panelRoutes } from './modules/inbox/panel.routes';
 import { createContactsService } from './modules/contacts/contacts.service';
 import { contactsRoutes } from './modules/contacts/contacts.routes';
+import { crmRoutes } from './modules/contacts/crm.routes';
+import { departmentsRoutes } from './modules/departments/departments.routes';
+import { createDepartmentsService } from './modules/departments/departments.service';
+import { publicTicketsRoutes } from './modules/public-api/public-tickets.routes';
+import { ticketsRoutes } from './modules/tickets/tickets.routes';
+import { createTicketsService } from './modules/tickets/tickets.service';
+import { createCrmService } from './modules/contacts/crm.service';
+import { createAttributesService } from './modules/attributes/attributes.service';
+import { parseTableIsolated } from './modules/broadcasts/import-runner';
 import { createTagsService } from './modules/tags/tags.service';
 import { tagsRoutes } from './modules/tags/tags.routes';
 import { createQuickRepliesService } from './modules/quick-replies/quick-replies.service';
@@ -621,6 +632,11 @@ export async function buildApp(deps: AppDeps) {
     ...(deps.overrides?.telegramBaseUrl ? { telegramBaseUrl: deps.overrides.telegramBaseUrl } : {}),
     ...(deps.overrides?.webhookAllowLoopback ? { allowLoopback: true } : {}),
   });
+  // Laporan kinerja, biaya pesan Meta, ekspor CSV, pengaturan CSAT (Fase 5).
+  await app.register(reportsRoutes, {
+    limiter,
+    reports: createReportsService({ db, accessDenied }),
+  });
   await app.register(broadcastsRoutes, {
     limiter,
     cookieSecure: config.cookieSecure,
@@ -648,6 +664,25 @@ export async function buildApp(deps: AppDeps) {
     limiter,
     cookieSecure: config.cookieSecure,
     contacts: contactsService,
+  });
+  // CRM, tiket, departemen (Fase 5).
+  const attributes = createAttributesService({ db });
+  await app.register(crmRoutes, {
+    db,
+    limiter,
+    cookieSecure: config.cookieSecure,
+    attributes,
+    crm: createCrmService({ db, publisher: inboxEvents, twoFactor, logger: deps.logger }),
+    parseTable: (key, buffer) => parseTableIsolated(key, buffer),
+  });
+  const tickets = createTicketsService({ db, publisher: inboxEvents, accessDenied });
+  await app.register(ticketsRoutes, { db, tickets, attributes, limiter });
+  await app.register(publicTicketsRoutes, { db, tickets });
+  await app.register(departmentsRoutes, {
+    db,
+    limiter,
+    cookieSecure: config.cookieSecure,
+    departments: createDepartmentsService({ db, publisher: inboxEvents, twoFactor }),
   });
   await app.register(tagsRoutes, {
     limiter,

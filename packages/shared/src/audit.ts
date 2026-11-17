@@ -186,6 +186,35 @@ export const AUDIT_ACTIONS = {
   /** Alarm Telegram diatur/dihapus (`chatChanged`, `tokenChanged`, `enabled`). */
   telegramAlarmUpdated: 'settings.alarm_telegram.updated',
   telegramAlarmDeleted: 'settings.alarm_telegram.deleted',
+  // ── Laporan & CSAT (Fase 5) ──
+  /** Laporan diekspor CSV (`kind`, `rows`, rentang/bulan, `scope`). */
+  reportExported: 'report.exported',
+  /** Pengaturan CSAT diubah (`changedFields`, `enabled`). */
+  csatSettingsUpdated: 'settings.csat.updated',
+  // ── Fase 5: CRM, tiket, departemen ─────────────────────────────────────────
+  /** Ekspor kontak massal (`rows`, `filtered`) — data pribadi, UU PDP. */
+  contactBulkExported: 'contact.bulk_exported',
+  /** Impor kontak massal (`created`, `updated`, `skipped`, `sourceRows`) — tanpa isi berkas. */
+  contactImported: 'contact.imported',
+  /** Dua kontak digabung (`sourceContactId`, jumlah yang dipindah) — tanpa nama/nomor. */
+  contactMerged: 'contact.merged',
+  /** Definisi atribut kustom kontak dibuat/diubah/dihapus (`key`, `changedFields`). */
+  attributeDefinitionCreated: 'attribute_definition.created',
+  attributeDefinitionUpdated: 'attribute_definition.updated',
+  attributeDefinitionDeleted: 'attribute_definition.deleted',
+  /** Board tiket dibuat/diubah/diarsipkan (`name`, `changedFields`). */
+  ticketBoardCreated: 'ticket_board.created',
+  ticketBoardUpdated: 'ticket_board.updated',
+  /** Kolom/atribut board diubah (`operation`, `boardId`). */
+  ticketBoardConfigured: 'ticket_board.configured',
+  /** Tiket dihapus (`number`, `boardId`) — tanpa judul/isi. */
+  ticketDeleted: 'ticket.deleted',
+  /** Departemen dibuat/diubah/dihapus (`name`, `changedFields`). */
+  departmentCreated: 'department.created',
+  departmentUpdated: 'department.updated',
+  departmentDeleted: 'department.deleted',
+  /** Departemen & tanda "akses departemen sendiri" seorang pengguna diubah (`loosened`). */
+  departmentAccessUpdated: 'department.access_updated',
 } as const;
 
 export type AuditActionKey = keyof typeof AUDIT_ACTIONS;
@@ -271,6 +300,22 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'broadcast_connector.deleted': 'Konektor data broadcast dihapus',
   'settings.alarm_telegram.updated': 'Alarm Telegram diatur',
   'settings.alarm_telegram.deleted': 'Alarm Telegram dihapus',
+  'report.exported': 'Laporan diekspor',
+  'settings.csat.updated': 'Pengaturan survei kepuasan (CSAT) diubah',
+  'contact.bulk_exported': 'Kontak diekspor massal',
+  'contact.imported': 'Kontak diimpor massal',
+  'contact.merged': 'Kontak duplikat digabung',
+  'attribute_definition.created': 'Atribut kustom dibuat',
+  'attribute_definition.updated': 'Atribut kustom diubah',
+  'attribute_definition.deleted': 'Atribut kustom dihapus',
+  'ticket_board.created': 'Board tiket dibuat',
+  'ticket_board.updated': 'Board tiket diubah',
+  'ticket_board.configured': 'Kolom/atribut board tiket diubah',
+  'ticket.deleted': 'Tiket dihapus',
+  'department.created': 'Departemen dibuat',
+  'department.updated': 'Departemen diubah',
+  'department.deleted': 'Departemen dihapus',
+  'department.access_updated': 'Akses departemen pengguna diubah',
   'channel.webhook_verify_token_rotated': 'Verify token webhook dibuat ulang',
   'channel.business_profile_updated': 'Profil bisnis WhatsApp diubah',
   'channel.business_profile_update_failed': 'Perubahan profil bisnis ditolak Meta',
@@ -322,6 +367,10 @@ export const AUDIT_TARGET_TYPES = [
   'template',
   'broadcast',
   'broadcast_connector',
+  'attribute_definition',
+  'ticket_board',
+  'ticket',
+  'department',
 ] as const;
 export const auditTargetTypeSchema = z.enum(AUDIT_TARGET_TYPES, {
   error: 'Jenis target tidak dikenal.',
@@ -346,6 +395,10 @@ export const AUDIT_TARGET_TYPE_LABELS: Readonly<Record<AuditTargetType, string>>
   template: 'Template pesan',
   broadcast: 'Broadcast',
   broadcast_connector: 'Konektor data broadcast',
+  attribute_definition: 'Atribut kustom',
+  ticket_board: 'Board tiket',
+  ticket: 'Tiket',
+  department: 'Departemen',
 };
 
 // ── GET /audit-logs ─────────────────────────────────────────────────────────

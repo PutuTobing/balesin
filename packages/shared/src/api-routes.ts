@@ -226,6 +226,73 @@ export const API_ROUTES = {
     star: `${API_PREFIX}/messages/:messageId/star`,
     /** GET — status rem darurat pengiriman `{ paused }` untuk banner (`inbox.view`). */
     sendingStatus: `${API_PREFIX}/inbox/sending-status`,
+    /** POST — pindahkan percakapan ke departemen / lepas (`inbox.assign`, CSRF). */
+    department: `${API_PREFIX}/conversations/:conversationId/department`,
+  },
+  /**
+   * CRM Fase 5 (docs/KONTRAK-API-CRM-TIKET.md). Daftar = `contacts.view` (bercakupan); impor/ekspor
+   * massal = `contacts.export`; gabung = `contacts.manage`; definisi atribut: lihat `contacts.view`,
+   * kelola `settings.workspace.manage`.
+   */
+  crm: {
+    /** GET — daftar & cari kontak (kursor). */
+    contacts: `${API_PREFIX}/contacts`,
+    /** POST — ekspor CSV massal (+ konfirmasi identitas). */
+    exportContacts: `${API_PREFIX}/contacts/export`,
+    /** POST multipart — impor CSV/XLSX (`mapping` + `file`). */
+    importContacts: `${API_PREFIX}/contacts/import`,
+    /** POST — gabung kontak lain ke kontak ini (+ konfirmasi identitas). */
+    merge: `${API_PREFIX}/contacts/:contactId/merge`,
+    /** GET — definisi atribut kontak; POST — buat. */
+    attributes: `${API_PREFIX}/contact-attributes`,
+    /** PATCH — ubah; DELETE — hapus definisi (nilai tetap tersimpan sebagai atribut bebas). */
+    attribute: `${API_PREFIX}/contact-attributes/:attributeId`,
+  },
+  /**
+   * Tiket Fase 5. Lihat/ubah tiket = `tickets.manage` (bercakupan); board/kolom/atribut =
+   * `tickets.configure`.
+   */
+  tickets: {
+    /** GET — daftar; POST — buat. */
+    list: `${API_PREFIX}/tickets`,
+    /** GET — detail; PATCH — ubah; DELETE — hapus (`tickets.configure`). */
+    ticket: `${API_PREFIX}/tickets/:ticketId`,
+    /** POST — pindah kolom / urutan Kanban. */
+    move: `${API_PREFIX}/tickets/:ticketId/move`,
+    /** GET — komentar; POST — tambah. */
+    comments: `${API_PREFIX}/tickets/:ticketId/comments`,
+    /** DELETE — hapus komentar (penulis / `tickets.configure`). */
+    comment: `${API_PREFIX}/tickets/:ticketId/comments/:commentId`,
+    /** GET — riwayat. */
+    events: `${API_PREFIX}/tickets/:ticketId/events`,
+    /** GET — daftar board (`tickets.manage`); POST — buat (`tickets.configure`). */
+    boards: `${API_PREFIX}/ticket-boards`,
+    /** PATCH — ubah/arsipkan board (`tickets.configure`). */
+    board: `${API_PREFIX}/ticket-boards/:boardId`,
+    /** GET — tampilan Kanban (`tickets.manage`). */
+    kanban: `${API_PREFIX}/ticket-boards/:boardId/kanban`,
+    /** POST — tambah kolom. */
+    columns: `${API_PREFIX}/ticket-boards/:boardId/columns`,
+    /** PATCH — ubah kolom; DELETE — hapus (tiket dipindah). */
+    column: `${API_PREFIX}/ticket-boards/:boardId/columns/:columnId`,
+    /** POST — tambah definisi atribut board. */
+    attributes: `${API_PREFIX}/ticket-boards/:boardId/attributes`,
+    /** PATCH/DELETE — definisi atribut board. */
+    attribute: `${API_PREFIX}/ticket-boards/:boardId/attributes/:attributeId`,
+  },
+  /**
+   * Departemen Fase 5. Daftar nama = `inbox.view`; kelola & akses pengguna =
+   * `settings.workspace.manage`.
+   */
+  departments: {
+    /** GET — nama departemen. */
+    list: `${API_PREFIX}/departments`,
+    /** GET — lengkap (anggota, channel bawaan); POST — buat. */
+    settings: `${API_PREFIX}/settings/departments`,
+    /** PATCH — ubah; DELETE — hapus. */
+    department: `${API_PREFIX}/settings/departments/:departmentId`,
+    /** GET/PUT — departemen & tanda "akses departemen sendiri" seorang pengguna. */
+    access: `${API_PREFIX}/settings/department-access/:userId`,
   },
   /** Pengaturan → API key (`api_keys.manage`, Fase 3; docs/KONTRAK-API-PUBLIK.md). */
   apiKeys: {
@@ -270,6 +337,14 @@ export const API_ROUTES = {
     contacts: `${API_PREFIX}/public/contacts`,
     contact: `${API_PREFIX}/public/contacts/:contactId`,
     contactTags: `${API_PREFIX}/public/contacts/:contactId/tags`,
+    /** GET — board + kolom (`tickets:read`). */
+    ticketBoards: `${API_PREFIX}/public/ticket-boards`,
+    /** GET — cari (`tickets:read`); POST — buat (`tickets:write`). */
+    tickets: `${API_PREFIX}/public/tickets`,
+    /** GET (`tickets:read`) / PATCH (`tickets:write`). */
+    ticket: `${API_PREFIX}/public/tickets/:ticketId`,
+    /** POST — komentar (`tickets:write`). */
+    ticketComments: `${API_PREFIX}/public/tickets/:ticketId/comments`,
   },
 
   /**

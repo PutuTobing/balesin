@@ -1,6 +1,6 @@
 import { USER_ROLES } from '@balesin/shared';
 import { sql } from 'drizzle-orm';
-import { bigint, check, pgEnum, pgTable, text, unique, uuid } from 'drizzle-orm/pg-core';
+import { bigint, boolean, check, pgEnum, pgTable, text, unique, uuid } from 'drizzle-orm/pg-core';
 
 import { createdAtColumn, idColumn, timestamptz, updatedAtColumn } from './columns';
 import { organizations } from './organizations';
@@ -69,6 +69,12 @@ export const users = pgTable(
      * `NULL` = tanpa batas — sengaja untuk Owner hasil wizard setup (lihat docs/DECISIONS.md).
      */
     twoFactorEnrollmentDueAt: timestamptz('two_factor_enrollment_due_at'),
+    /**
+     * Fase 5: "akses hanya departemen sendiri" — cakupan `all` izin percakapan & tiket disempitkan ke
+     * departemen pengguna ini (`DEPARTMENT_SCOPED_PERMISSIONS`). Dibaca SEGAR dari database di setiap
+     * query bercakupan (tidak disimpan di sesi). Hanya Supervisor/CS (dijaga modul departemen).
+     */
+    departmentRestricted: boolean('department_restricted').notNull().default(false),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },

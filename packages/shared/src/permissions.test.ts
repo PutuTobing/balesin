@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { meResponseSchema } from './auth';
 import { INVITE_PERMISSIONS } from './invitations';
 import {
+  DEPARTMENT_SCOPED_PERMISSIONS,
+  effectivePermissionScope,
   hasPermission,
   isWithinScope,
   PERMISSION_LABELS,
@@ -89,7 +91,7 @@ describe('matriks izin', () => {
   });
 
   it('wewenang tidak pernah bertambah ke peran yang lebih rendah (Owner ⊇ Admin ⊇ Supervisor ⊇ CS)', () => {
-    const rank: Record<PermissionScope, number> = { own: 1, assigned: 2, all: 3 };
+    const rank: Record<PermissionScope, number> = { own: 1, assigned: 2, department: 3, all: 4 };
     const ladder: UserRole[] = ['owner', 'admin', 'supervisor', 'cs'];
     for (const permission of PERMISSIONS) {
       for (let i = 1; i < ladder.length; i += 1) {
@@ -170,13 +172,61 @@ describe('matriks izin', () => {
 
   it('setiap izin dan cakupan punya label bahasa Indonesia', () => {
     for (const permission of PERMISSIONS) expect(PERMISSION_LABELS[permission]).toBeTruthy();
-    expect(Object.keys(PERMISSION_SCOPE_LABELS).sort()).toEqual(['all', 'assigned', 'own']);
+    expect(Object.keys(PERMISSION_SCOPE_LABELS).sort()).toEqual([
+      'all',
+      'assigned',
+      'department',
+      'own',
+    ]);
   });
 });
 
 describe('isWithinScope', () => {
   const me = '00000000-0000-4000-8000-000000000001';
   const other = '00000000-0000-4000-8000-000000000002';
+  const dept = '00000000-0000-4000-8000-0000000000d1';
+  const otherDept = '00000000-0000-4000-8000-0000000000d2';
+
+  it('department: departemen sendiri, dipegang langsung, atau lewat tiket — selain itu tidak', () => {
+    expect(isWithinScope('department', me, { holderUserIds: [], departmentId: dept }, [dept])).toBe(
+      true,
+    );
+    expect(
+      isWithinScope('department', me, { holderUserIds: [], departmentId: otherDept }, [dept]),
+    ).toBe(false);
+    expect(isWithinScope('department', me, { holderUserIds: [], departmentId: null }, [dept])).toBe(
+      false,
+    );
+    expect(isWithinScope('department', me, { holderUserIds: [me], departmentId: null }, [])).toBe(
+      true,
+    );
+    expect(
+      isWithinScope('department', me, { holderUserIds: [other], linkedTicketHolderUserIds: [me] }),
+    ).toBe(true);
+    expect(isWithinScope('department', me, { holderUserIds: [other] })).toBe(false);
+  });
+
+  it('effectivePermissionScope: hanya `all` pada izin departemen yang disempitkan', () => {
+    const restricted = { departmentRestricted: true };
+    const free = { departmentRestricted: false };
+    expect(effectivePermissionScope('cs', 'inbox.view', restricted)).toBe('department');
+    expect(effectivePermissionScope('cs', 'inbox.view', free)).toBe('all');
+    expect(effectivePermissionScope('cs', 'tickets.manage', restricted)).toBe('department');
+    expect(effectivePermissionScope('supervisor', 'inbox.assign', restricted)).toBe('department');
+    // Kontak & izin tanpa cakupan tidak disempitkan; Teknisi tetap `assigned`/`own`.
+    expect(effectivePermissionScope('cs', 'contacts.view', restricted)).toBe('all');
+    expect(effectivePermissionScope('admin', 'channels.manage', restricted)).toBe('all');
+    // Owner/Admin selalu penuh walau tandanya tertinggal (mis. setelah naik peran).
+    expect(effectivePermissionScope('admin', 'inbox.view', restricted)).toBe('all');
+    expect(effectivePermissionScope('owner', 'tickets.manage', restricted)).toBe('all');
+    expect(effectivePermissionScope('teknisi', 'inbox.view', restricted)).toBe('assigned');
+    expect(effectivePermissionScope('teknisi', 'tickets.manage', restricted)).toBe('own');
+    expect(effectivePermissionScope('cs', 'broadcast.send', restricted)).toBeNull();
+    for (const permission of DEPARTMENT_SCOPED_PERMISSIONS) {
+      // Semua izin yang disempitkan adalah izin berdata: Owner memegangnya dengan cakupan `all`.
+      expect(permissionScope('owner', permission)).toBe('all');
+    }
+  });
 
   it('all: selalu boleh', () => {
     expect(isWithinScope('all', me, { holderUserIds: [] })).toBe(true);

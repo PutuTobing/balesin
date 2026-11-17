@@ -38,6 +38,8 @@ export const outgoingEvents = pgTable(
     conversationId: uuid('conversation_id'),
     messageId: uuid('message_id'),
     contactId: uuid('contact_id'),
+    /** Fase 5: tiket (`ticket.*`). */
+    ticketId: uuid('ticket_id'),
     /** Pelaku pengguna (bila ada) — untuk `data.actor`. */
     actorUserId: uuid('actor_user_id'),
     createdAt: createdAtColumn(),

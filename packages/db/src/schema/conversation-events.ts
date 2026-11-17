@@ -34,6 +34,8 @@ export const conversationEvents = pgTable(
     apiKeyId: uuid('api_key_id'),
     assigneeUserId: uuid('assignee_user_id'),
     previousAssigneeUserId: uuid('previous_assignee_user_id'),
+    /** `department_changed`: departemen baru (`null` = dilepas). Tanpa FK — departemen bisa dihapus. */
+    departmentId: uuid('department_id'),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },

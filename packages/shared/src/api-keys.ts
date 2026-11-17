@@ -31,6 +31,8 @@ export const API_KEY_SCOPES = [
   'messages:initiate',
   'contacts:read',
   'contacts:write',
+  'tickets:read',
+  'tickets:write',
 ] as const;
 export const apiKeyScopeSchema = z.enum(API_KEY_SCOPES, { error: 'Scope API key tidak dikenal.' });
 export type ApiKeyScope = z.infer<typeof apiKeyScopeSchema>;
@@ -45,6 +47,8 @@ export const API_KEY_SCOPE_LABELS: Readonly<Record<ApiKeyScope, string>> = {
     'Kirim template ke nomor (bisa memulai percakapan baru) — dipakai aplikasi billing/notifikasi',
   'contacts:read': 'Baca & cari kontak',
   'contacts:write': 'Buat & ubah kontak, pasang/lepas tag',
+  'tickets:read': 'Baca & cari tiket serta board',
+  'tickets:write': 'Buat & ubah tiket, pindah kolom (status), tulis komentar',
 };
 
 /** Scope yang ikut didapat karena memegang scope lain (tingkatan). */
@@ -56,6 +60,8 @@ export const API_KEY_SCOPE_IMPLIES: Readonly<Record<ApiKeyScope, readonly ApiKey
   'messages:initiate': [],
   'contacts:read': [],
   'contacts:write': ['contacts:read'],
+  'tickets:read': [],
+  'tickets:write': ['tickets:read'],
 };
 
 /** Key dengan `granted` boleh memakai `needed` (langsung atau lewat tingkatan). */

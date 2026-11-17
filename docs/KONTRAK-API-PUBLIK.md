@@ -48,8 +48,10 @@ semua key (harus dibuat ulang). Log menyensor `blsn_live_…` dan header `Author
 | `contacts:read`      | Cari & lihat kontak                                                           | —                                     |
 | `contacts:write`     | Buat & ubah kontak, pasang/lepas tag                                          | `contacts:read`                       |
 
-`messages:initiate` (Fase 4, tidak mencakup scope lain): kirim template ke nomor (boleh memulai percakapan). Menyusul bersama fiturnya: `broadcasts:write`, `tickets:write`,
-`reports:read`, `webhooks:manage`. Sesuai SECURITY §5, key tanpa `messages:initiate` tidak bisa
+`messages:initiate` (Fase 4, tidak mencakup scope lain): kirim template ke nomor (boleh memulai percakapan).
+`tickets:read` / `tickets:write` (Fase 5; `write` mencakup `read`): API tiket untuk bot —
+`docs/KONTRAK-API-CRM-TIKET.md`. Menyusul bersama fiturnya: `broadcasts:write`, `reports:read`,
+`webhooks:manage`. Sesuai SECURITY §5, key tanpa `messages:initiate` tidak bisa
 memulai percakapan ke nomor baru.
 
 ## Endpoint

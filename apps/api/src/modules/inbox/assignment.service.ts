@@ -6,6 +6,7 @@ import {
   contactEvents,
   conversationEvents,
   conversations,
+  departments,
   isPgError,
   recordOutgoingEvent,
   users,
@@ -666,12 +667,15 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
           assigneeName: assignee.name,
           previousId: previous.id,
           previousName: previous.name,
+          departmentId: conversationEvents.departmentId,
+          departmentName: departments.name,
         })
         .from(conversationEvents)
         .leftJoin(actor, sameOrg(actor, conversationEvents.actorUserId))
         .leftJoin(actorKey, sameOrg(actorKey, conversationEvents.apiKeyId))
         .leftJoin(assignee, sameOrg(assignee, conversationEvents.assigneeUserId))
         .leftJoin(previous, sameOrg(previous, conversationEvents.previousAssigneeUserId))
+        .leftJoin(departments, sameOrg(departments, conversationEvents.departmentId))
         .where(
           and(
             eq(conversationEvents.organizationId, grant.organizationId),
@@ -724,6 +728,9 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
           previousAssignee: ref(row.previousId, row.previousName),
           tag: null,
           fields: null,
+          // Fase 5: departemen baru (`null` = dilepas / departemen sudah dihapus).
+          department:
+            row.kind === 'department_changed' ? ref(row.departmentId, row.departmentName) : null,
           createdAt: row.createdAt.toISOString(),
           at: row.createdAt.getTime(),
         })),

@@ -25,10 +25,41 @@ const grant = (scope: PermissionGrant['scope']): PermissionGrant => ({
 });
 
 describe('scopeCondition (filter daftar bercakupan)', () => {
-  it('all: kondisi `true` (tetap digabung dengan organization_id oleh repo)', () => {
-    const query = render(scopeCondition(grant('all'), { holder: conversations.assigneeUserId }));
+  it('all pada izin tanpa penyempitan departemen: kondisi `true`', () => {
+    const query = render(
+      scopeCondition(
+        { ...grant('all'), permission: 'contacts.view' },
+        { holder: conversations.assigneeUserId },
+      ),
+    );
     expect(query.sql).toBe('true');
     expect(query.params).toEqual([]);
+  });
+
+  it('all pada izin percakapan/tiket (Fase 5): bebas KECUALI pengguna Supervisor/CS bertanda departemen', () => {
+    const query = render(
+      scopeCondition(grant('all'), {
+        holder: conversations.assigneeUserId,
+        department: sql`contoh_percakapan.department_id`,
+      }),
+    );
+    expect(query.sql).toBe(
+      `(not exists (select 1 from "users" where "users"."organization_id" = $1 and "users"."id" = $2 and "users"."department_restricted" and "users"."role" in ('supervisor', 'cs')) or ("contoh_percakapan"."assignee_user_id" = $3 or contoh_percakapan.department_id in (select "department_members"."department_id" from "department_members" where "department_members"."organization_id" = $4 and "department_members"."user_id" = $5)))`,
+    );
+    expect(query.params).toEqual([ORG, USER, USER, ORG, USER]);
+  });
+
+  it('department: pemegang langsung, tiket tertaut, atau departemen pengguna — tanpa jalan keluar', () => {
+    const query = render(
+      scopeCondition(grant('department'), {
+        holder: conversations.assigneeUserId,
+        linkedTicketHolder: (userId) =>
+          sql`exists (select 1 from contoh_tiket where a = ${userId})`,
+      }),
+    );
+    expect(query.sql).toBe(
+      '("contoh_percakapan"."assignee_user_id" = $1 or exists (select 1 from contoh_tiket where a = $2))',
+    );
   });
 
   it('assigned tanpa tiket: hanya pemegang langsung = pengguna itu', () => {
@@ -79,7 +110,7 @@ describe('scopeCondition (filter daftar bercakupan)', () => {
   });
 
   it('cakupan asing (lolos dari tipe) ditolak, tidak pernah menjadi "tanpa filter"', () => {
-    const unknown = { ...grant('all'), scope: 'department' } as unknown as PermissionGrant;
+    const unknown = { ...grant('all'), scope: 'regional' } as unknown as PermissionGrant;
     expect(() => scopeCondition(unknown, { holder: conversations.assigneeUserId })).toThrow(
       'Cakupan izin tidak dikenal',
     );

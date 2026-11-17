@@ -118,6 +118,8 @@ Tugas BELUM selesai sampai semua ini benar:
 | `docs/KONTRAK-API-MOBICHAT.md` | Kontrak lapisan kompatibel MobiChat (`/api/public/*`, `/api/bot/*`, webhook format MobiChat) |
 | `docs/KONTRAK-API-TEMPLATE.md` | Kontrak template Meta (sinkron, ajukan, preset, kirim template, mulai percakapan) |
 | `docs/KONTRAK-API-BROADCAST.md` | Kontrak broadcast (impor penerima, persetujuan, jadwal, throttle, rem otomatis, laporan, alarm Telegram) |
+| `docs/KONTRAK-API-CRM-TIKET.md` | Kontrak CRM (atribut, impor/ekspor, gabung kontak), tiket multi-board, departemen |
+| `docs/KONTRAK-API-LAPORAN.md` | Kontrak laporan kinerja, biaya pesan Meta, ekspor CSV, CSAT |
 | `docs/SETUP-META.md` | Teks wizard koneksi WhatsApp (dipakai di UI) |
 | `docs/BRANDING-PROMPTS.md` | Prompt gambar Kak Sky & logo |
 | `docs/KONTEKS-SKYTECH.md` | Konteks operasional Sky Tech |

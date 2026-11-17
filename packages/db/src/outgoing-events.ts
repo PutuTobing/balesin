@@ -18,14 +18,16 @@ export async function recordOutgoingEvent(
     conversationId?: string | null;
     messageId?: string | null;
     contactId?: string | null;
+    ticketId?: string | null;
     actorUserId?: string | null;
   },
 ): Promise<void> {
   await db.execute(sql`
     insert into ${outgoingEvents}
-      (id, organization_id, type, conversation_id, message_id, contact_id, actor_user_id)
+      (id, organization_id, type, conversation_id, message_id, contact_id, ticket_id, actor_user_id)
     select ${newId()}, ${event.organizationId}, ${event.type}, ${event.conversationId ?? null},
-      ${event.messageId ?? null}, ${event.contactId ?? null}, ${event.actorUserId ?? null}
+      ${event.messageId ?? null}, ${event.contactId ?? null}, ${event.ticketId ?? null},
+      ${event.actorUserId ?? null}
     where exists (
       select 1 from ${webhookEndpoints}
       where ${webhookEndpoints.organizationId} = ${event.organizationId}

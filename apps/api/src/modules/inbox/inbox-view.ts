@@ -64,6 +64,7 @@ export function toContact(row: ContactRow, tags: TagRef[]): Contact {
     email: row.email,
     notes: row.notes,
     attributes,
+    possibleDuplicateOfContactId: row.possibleDuplicateOfContactId,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -108,6 +109,7 @@ export function toConversation(
     resolvedAt: row.resolvedAt?.toISOString() ?? null,
     firstAssignedAt: row.firstAssignedAt?.toISOString() ?? null,
     firstResponseAt: row.firstResponseAt?.toISOString() ?? null,
+    department: row.department,
   };
 }
 

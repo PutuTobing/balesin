@@ -25,6 +25,9 @@ import {
   organizations,
   outgoingEvents,
   tags,
+  ticketBoards,
+  ticketColumns,
+  tickets,
   users,
   webhookDeliveries,
   webhookEndpoints,
@@ -199,6 +202,50 @@ async function messageData(db: DbExecutor, organizationId: string, messageId: st
   };
 }
 
+/** Tiket (Fase 5) — tanpa komentar/riwayat; kontak & percakapan tautannya ikut di `data`. */
+async function ticketData(db: DbExecutor, organizationId: string, ticketId: string | null) {
+  if (!ticketId) return null;
+  const [row] = await db
+    .select({
+      ticket: tickets,
+      boardName: ticketBoards.name,
+      columnName: ticketColumns.name,
+      columnIsDone: ticketColumns.isDone,
+    })
+    .from(tickets)
+    .innerJoin(
+      ticketBoards,
+      and(
+        eq(ticketBoards.organizationId, tickets.organizationId),
+        eq(ticketBoards.id, tickets.boardId),
+      ),
+    )
+    .innerJoin(
+      ticketColumns,
+      and(eq(ticketColumns.boardId, tickets.boardId), eq(ticketColumns.id, tickets.columnId)),
+    )
+    .where(and(eq(tickets.organizationId, organizationId), eq(tickets.id, ticketId)));
+  if (!row) return null;
+  const ticket = row.ticket;
+  return {
+    id: ticket.id,
+    number: ticket.number,
+    board: { id: ticket.boardId, name: row.boardName },
+    column: { id: ticket.columnId, name: row.columnName, is_done: row.columnIsDone },
+    title: ticket.title,
+    description: ticket.description,
+    priority: ticket.priority,
+    assignee: await userRef(db, organizationId, ticket.assigneeUserId),
+    due_at: ticket.dueAt?.toISOString() ?? null,
+    closed_at: ticket.closedAt?.toISOString() ?? null,
+    contact_id: ticket.contactId,
+    conversation_id: ticket.conversationId,
+    attributes: Array.isArray(ticket.attributes) ? ticket.attributes : [],
+    created_at: ticket.createdAt.toISOString(),
+    updated_at: ticket.updatedAt.toISOString(),
+  };
+}
+
 /**
  * Body `{ id, event, created_at, data }` (API-N8N §3), dibangun SAAT DISPATCH (keadaan terbaru).
  * `null` = subjeknya sudah tidak ada (mis. kontak dihapus) → tidak dikirim.
@@ -209,6 +256,19 @@ export async function buildEventBody(
 ): Promise<Record<string, unknown> | null> {
   const org = event.organizationId;
   const data: Record<string, unknown> = {};
+  if (event.type.startsWith('ticket.')) {
+    const ticket = await ticketData(db, org, event.ticketId);
+    if (!ticket) return null;
+    data.ticket = ticket;
+    if (ticket.conversation_id) {
+      const conversation = await conversationData(db, org, ticket.conversation_id);
+      if (conversation) data.conversation = conversation;
+    }
+    const contact = await contactData(db, org, ticket.contact_id);
+    if (contact) data.contact = contact;
+    if (event.actorUserId) data.actor = await userRef(db, org, event.actorUserId);
+    return { id: event.id, event: event.type, created_at: event.createdAt.toISOString(), data };
+  }
   if (event.type.startsWith('message.')) {
     const message = await messageData(db, org, event.messageId);
     if (!message) return null;

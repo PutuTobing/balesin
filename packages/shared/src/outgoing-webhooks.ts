@@ -23,6 +23,8 @@ export const OUTGOING_WEBHOOK_EVENTS = [
   'conversation.handoff',
   'contact.created',
   'contact.updated',
+  'ticket.created',
+  'ticket.updated',
 ] as const;
 export const outgoingWebhookEventSchema = z.enum(OUTGOING_WEBHOOK_EVENTS, {
   error: 'Jenis event webhook tidak dikenal.',
@@ -44,6 +46,8 @@ export const OUTGOING_WEBHOOK_EVENT_LABELS: Readonly<Record<OutgoingWebhookEvent
   'conversation.handoff': 'Bot menyerahkan percakapan ke tim',
   'contact.created': 'Kontak baru',
   'contact.updated': 'Kontak diubah (termasuk tag)',
+  'ticket.created': 'Tiket baru',
+  'ticket.updated': 'Tiket diubah (isian, kolom/status, penanggung jawab, komentar)',
 };
 
 /** Port tujuan yang diizinkan (HTTPS 443/8443, HTTP 80/8080, n8n 5678). */

@@ -58,6 +58,14 @@ export const ACCESS_RULES = {
   broadcastResumeBrake: 'broadcast.resume.brake',
   /** Melonggarkan pengaturan pelindung broadcast (ambang naik, rem otomatis longgar) selain Owner. */
   broadcastSettingsLoosen: 'broadcast.settings.loosen',
+  /** Laporan tingkat organisasi (biaya Meta, ringkasan, bot, tag, ekspor) dengan cakupan `own`. */
+  reportsOrganization: 'reports.organization',
+  /** Teknisi (`own`) mengubah penanggung jawab/tautan tiket atau membuat tiket untuk orang lain. */
+  ticketOwnRestrictedFields: 'ticket.own.restricted_fields',
+  /** Tiket dibuat/dipindah ke luar cakupan pelaku (board departemen lain, bukan pegangannya). */
+  ticketOutsideScope: 'ticket.outside_scope',
+  /** Menghapus komentar tiket orang lain tanpa `tickets.configure`. */
+  ticketCommentDeleteOthers: 'ticket.comment.delete_others',
 } as const;
 export type AccessRule = (typeof ACCESS_RULES)[keyof typeof ACCESS_RULES];
 

@@ -200,6 +200,12 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'PUT /api/v1/settings/alarms/telegram': 'integrations.manage',
   'DELETE /api/v1/settings/alarms/telegram': 'integrations.manage',
   'POST /api/v1/settings/alarms/telegram/test': 'integrations.manage',
+  // laporan (Fase 5): reports.view (cakupan all/own diuji reports.integration); CSAT = workspace
+  'GET /api/v1/reports/performance': 'reports.view',
+  'GET /api/v1/reports/costs': 'reports.view',
+  'GET /api/v1/reports/export': 'reports.view',
+  'GET /api/v1/settings/csat': 'settings.workspace.manage',
+  'PUT /api/v1/settings/csat': 'settings.workspace.manage',
   'GET /api/v1/conversations/:conversationId/events': 'inbox.view',
   'GET /api/v1/inbox/agents': 'inbox.assign',
   // WebSocket inbox: sesi + inbox.view (Origin & batas koneksi dicek sebelum upgrade)
@@ -220,6 +226,45 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'PATCH /api/v1/contacts/:contactId': 'contacts.manage',
   'POST /api/v1/contacts/:contactId/tags': 'contacts.manage',
   'DELETE /api/v1/contacts/:contactId/tags/:tagId': 'contacts.manage',
+  // CRM Fase 5: daftar (bercakupan), impor/ekspor massal, gabung, definisi atribut
+  'GET /api/v1/contacts': 'contacts.view',
+  'POST /api/v1/contacts/export': 'contacts.export',
+  'POST /api/v1/contacts/import': 'contacts.export',
+  'POST /api/v1/contacts/:contactId/merge': 'contacts.manage',
+  'GET /api/v1/contact-attributes': 'contacts.view',
+  'POST /api/v1/contact-attributes': 'settings.workspace.manage',
+  'PATCH /api/v1/contact-attributes/:attributeId': 'settings.workspace.manage',
+  'DELETE /api/v1/contact-attributes/:attributeId': 'settings.workspace.manage',
+  // Tiket Fase 5: lihat/ubah = tickets.manage (bercakupan), board/kolom/atribut/hapus = configure
+  'GET /api/v1/tickets': 'tickets.manage',
+  'POST /api/v1/tickets': 'tickets.manage',
+  'GET /api/v1/tickets/:ticketId': 'tickets.manage',
+  'PATCH /api/v1/tickets/:ticketId': 'tickets.manage',
+  'DELETE /api/v1/tickets/:ticketId': 'tickets.configure',
+  'POST /api/v1/tickets/:ticketId/move': 'tickets.manage',
+  'GET /api/v1/tickets/:ticketId/comments': 'tickets.manage',
+  'POST /api/v1/tickets/:ticketId/comments': 'tickets.manage',
+  'DELETE /api/v1/tickets/:ticketId/comments/:commentId': 'tickets.manage',
+  'GET /api/v1/tickets/:ticketId/events': 'tickets.manage',
+  'GET /api/v1/ticket-boards': 'tickets.manage',
+  'POST /api/v1/ticket-boards': 'tickets.configure',
+  'PATCH /api/v1/ticket-boards/:boardId': 'tickets.configure',
+  'GET /api/v1/ticket-boards/:boardId/kanban': 'tickets.manage',
+  'POST /api/v1/ticket-boards/:boardId/columns': 'tickets.configure',
+  'PATCH /api/v1/ticket-boards/:boardId/columns/:columnId': 'tickets.configure',
+  'DELETE /api/v1/ticket-boards/:boardId/columns/:columnId': 'tickets.configure',
+  'POST /api/v1/ticket-boards/:boardId/attributes': 'tickets.configure',
+  'PATCH /api/v1/ticket-boards/:boardId/attributes/:attributeId': 'tickets.configure',
+  'DELETE /api/v1/ticket-boards/:boardId/attributes/:attributeId': 'tickets.configure',
+  // Departemen Fase 5: nama = inbox.view; kelola & akses = settings.workspace.manage
+  'GET /api/v1/departments': 'inbox.view',
+  'GET /api/v1/settings/departments': 'settings.workspace.manage',
+  'POST /api/v1/settings/departments': 'settings.workspace.manage',
+  'PATCH /api/v1/settings/departments/:departmentId': 'settings.workspace.manage',
+  'DELETE /api/v1/settings/departments/:departmentId': 'settings.workspace.manage',
+  'GET /api/v1/settings/department-access/:userId': 'settings.workspace.manage',
+  'PUT /api/v1/settings/department-access/:userId': 'settings.workspace.manage',
+  'POST /api/v1/conversations/:conversationId/department': 'inbox.assign',
   'GET /api/v1/tags': 'inbox.view',
   'POST /api/v1/tags': 'contacts.manage',
   'PATCH /api/v1/tags/:tagId': 'settings.workspace.manage',
@@ -280,6 +325,13 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'PATCH /api/v1/public/contacts/:contactId': 'apikey:contacts:write',
   'POST /api/v1/public/contacts/:contactId/tags': 'apikey:contacts:write',
   'DELETE /api/v1/public/contacts/:contactId/tags': 'apikey:contacts:write',
+  // API tiket untuk bot (Fase 5)
+  'GET /api/v1/public/ticket-boards': 'apikey:tickets:read',
+  'GET /api/v1/public/tickets': 'apikey:tickets:read',
+  'POST /api/v1/public/tickets': 'apikey:tickets:write',
+  'GET /api/v1/public/tickets/:ticketId': 'apikey:tickets:read',
+  'PATCH /api/v1/public/tickets/:ticketId': 'apikey:tickets:write',
+  'POST /api/v1/public/tickets/:ticketId/comments': 'apikey:tickets:write',
   // kompatibel MobiChat: HANYA header X-API-Key + scope (sesi web apa pun → 401)
   'GET /api/public/messages': 'mobichat:messages:read',
   'POST /api/public/messages': 'mobichat:messages:send',
@@ -423,6 +475,12 @@ const SAMPLE_PARAMS: Readonly<Record<string, string>> = {
   presetId: 'isp_tagihan_jatuh_tempo',
   broadcastId: '00000000-0000-4000-8000-0000000000a9',
   connectorId: '00000000-0000-4000-8000-0000000000b1',
+  attributeId: '00000000-0000-4000-8000-0000000000b2',
+  ticketId: '00000000-0000-4000-8000-0000000000b3',
+  commentId: '00000000-0000-4000-8000-0000000000b4',
+  boardId: '00000000-0000-4000-8000-0000000000b5',
+  columnId: '00000000-0000-4000-8000-0000000000b6',
+  departmentId: '00000000-0000-4000-8000-0000000000b7',
 };
 
 function concreteUrl(pattern: string): string {
@@ -580,68 +638,73 @@ describe('peran × endpoint: hasil sungguhan cocok dengan matriks', () => {
     'teknisi',
   ] as const;
 
-  it.each(PRINCIPAL_NAMES)('%s', async (name) => {
-    const principal = principals.get(name);
-    if (!principal) throw new Error(`pemanggil ${name} belum disiapkan`);
-    // Pelengkap 405 dulu, lalu rute modul; logout paling akhir (mengakhiri sesi).
-    const ordered = [...declarations].sort((a, b) => {
-      const rank = (route: RouteDeclaration) =>
-        key(route) === LOGOUT ? 2 : route.methodNotAllowed ? 0 : 1;
-      return rank(a) - rank(b);
-    });
+  it.each(PRINCIPAL_NAMES)(
+    '%s',
+    async (name) => {
+      const principal = principals.get(name);
+      if (!principal) throw new Error(`pemanggil ${name} belum disiapkan`);
+      // Pelengkap 405 dulu, lalu rute modul; logout paling akhir (mengakhiri sesi).
+      const ordered = [...declarations].sort((a, b) => {
+        const rank = (route: RouteDeclaration) =>
+          key(route) === LOGOUT ? 2 : route.methodNotAllowed ? 0 : 1;
+        return rank(a) - rank(b);
+      });
 
-    const mismatches: string[] = [];
-    const deniedPermissions = new Set<Permission>();
-    for (const route of ordered) {
-      const expectation = expectationFor(route);
-      const expected = expectedOutcome(expectation, principal);
-      const mutating = !['GET', 'HEAD'].includes(route.method);
-      const response = await call(
-        harness.app,
-        route.method as Parameters<typeof call>[1],
-        concreteUrl(route.url),
-        mutating ? [] : undefined,
-        principal.kind === 'anonymous' ? {} : { cookie: principal.cookie, csrf: principal.csrf },
-      );
-      const observed = observedOutcome(response);
-      if (!matches(expected, observed)) {
-        mismatches.push(
-          `${key(route)}: harap ${expected}, dapat ${observed} (${response.statusCode})`,
+      const mismatches: string[] = [];
+      const deniedPermissions = new Set<Permission>();
+      for (const route of ordered) {
+        const expectation = expectationFor(route);
+        const expected = expectedOutcome(expectation, principal);
+        const mutating = !['GET', 'HEAD'].includes(route.method);
+        const response = await call(
+          harness.app,
+          route.method as Parameters<typeof call>[1],
+          concreteUrl(route.url),
+          mutating ? [] : undefined,
+          principal.kind === 'anonymous' ? {} : { cookie: principal.cookie, csrf: principal.csrf },
         );
-      }
-      // Pelengkap yang lolos lapisan auth selalu 405 + Allow.
-      if (route.methodNotAllowed && expected === 'allowed') {
-        if (response.statusCode !== 405 || !response.headers.allow) {
+        const observed = observedOutcome(response);
+        if (!matches(expected, observed)) {
           mismatches.push(
-            `${key(route)}: pelengkap harus 405 + Allow, dapat ${response.statusCode}`,
+            `${key(route)}: harap ${expected}, dapat ${observed} (${response.statusCode})`,
           );
         }
+        // Pelengkap yang lolos lapisan auth selalu 405 + Allow.
+        if (route.methodNotAllowed && expected === 'allowed') {
+          if (response.statusCode !== 405 || !response.headers.allow) {
+            mismatches.push(
+              `${key(route)}: pelengkap harus 405 + Allow, dapat ${response.statusCode}`,
+            );
+          }
+        }
+        if (
+          expected === 'forbidden' &&
+          expectation !== 'public' &&
+          !isApiKeyExpectation(expectation)
+        ) {
+          deniedPermissions.add(expectation as Permission);
+        }
       }
-      if (
-        expected === 'forbidden' &&
-        expectation !== 'public' &&
-        !isApiKeyExpectation(expectation)
-      ) {
-        deniedPermissions.add(expectation as Permission);
-      }
-    }
-    expect(mismatches).toEqual([]);
+      expect(mismatches).toEqual([]);
 
-    // R8: setiap izin yang ditolak meninggalkan TEPAT satu entri audit (pembatas per izin).
-    if (principal.kind === 'full') {
-      const rows = await harness.db
-        .select()
-        .from(auditLogs)
-        .where(
-          and(
-            eq(auditLogs.action, 'auth.access.denied'),
-            eq(auditLogs.actorUserId, principal.userId),
-          ),
-        );
-      const audited = rows.map((row) => row.metadata.permission as string).sort();
-      expect(audited).toEqual([...deniedPermissions].sort());
-    }
-  });
+      // R8: setiap izin yang ditolak meninggalkan TEPAT satu entri audit (pembatas per izin).
+      if (principal.kind === 'full') {
+        const rows = await harness.db
+          .select()
+          .from(auditLogs)
+          .where(
+            and(
+              eq(auditLogs.action, 'auth.access.denied'),
+              eq(auditLogs.actorUserId, principal.userId),
+            ),
+          );
+        const audited = rows.map((row) => row.metadata.permission as string).sort();
+        expect(audited).toEqual([...deniedPermissions].sort());
+      }
+      // Ratusan rute × satu pemanggil berurutan (bertambah tiap fase): batas waktu sendiri.
+    },
+    90_000,
+  );
 
   it('pemanggil yang diuji mewakili kelima peran', async () => {
     const roles = [...principals.values()]

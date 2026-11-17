@@ -3,8 +3,10 @@ import {
   contactTags,
   contacts,
   conversations,
+  departments,
   messages,
   tags,
+  tickets,
   users,
   type ContactRow,
   type DbExecutor,
@@ -80,12 +82,31 @@ function contactHeldBy(userId: string): SQL {
   return sql`exists (select 1 from ${conversations} where ${conversations.organizationId} = ${contacts.organizationId} and ${conversations.contactId} = ${contacts.id} and ${conversations.assigneeUserId} = ${userId})`;
 }
 
+/**
+ * "Terkait tiketnya" (PRD §4, Fase 5): ada tiket TERBUKA yang dipegang pengguna dan menaut kontak
+ * ini. Tiket yang menaut percakapan selalu menaut kontaknya, jadi semua percakapan kontak itu ikut.
+ */
+export function openTicketLinksContact(userId: string, contactId: SQL | typeof contacts.id): SQL {
+  return sql`exists (select 1 from ${tickets} where ${tickets.organizationId} = ${contacts.organizationId} and ${tickets.assigneeUserId} = ${userId} and ${tickets.closedAt} is null and ${tickets.contactId} = ${contactId})`;
+}
+
+function conversationLinkedByTicket(userId: string): SQL {
+  return sql`exists (select 1 from ${tickets} where ${tickets.organizationId} = ${conversations.organizationId} and ${tickets.assigneeUserId} = ${userId} and ${tickets.closedAt} is null and ${tickets.contactId} = ${conversations.contactId})`;
+}
+
 export function conversationScope(grant: PermissionGrant): SQL {
-  return scopeCondition(grant, { holder: conversations.assigneeUserId });
+  return scopeCondition(grant, {
+    holder: conversations.assigneeUserId,
+    linkedTicketHolder: conversationLinkedByTicket,
+    department: conversations.departmentId,
+  });
 }
 
 export function contactScope(grant: PermissionGrant): SQL {
-  return scopeCondition(grant, { holder: contactHeldBy });
+  return scopeCondition(grant, {
+    holder: contactHeldBy,
+    linkedTicketHolder: (userId) => openTicketLinksContact(userId, contacts.id),
+  });
 }
 
 /** Kondisi pencarian nama/nomor kontak. */
@@ -124,6 +145,7 @@ export interface ConversationRowView {
   channel: { id: string; name: string; type: ChannelType };
   contact: Pick<ContactRow, 'id' | 'number' | 'name' | 'profileName' | 'phone' | 'waUsername'>;
   assignee: { id: string; name: string } | null;
+  department: { id: string; name: string } | null;
 }
 
 function selectConversations(db: DbExecutor) {
@@ -152,6 +174,8 @@ function selectConversations(db: DbExecutor) {
       contactWaUsername: contacts.waUsername,
       assigneeId: users.id,
       assigneeName: users.name,
+      departmentId: departments.id,
+      departmentName: departments.name,
     })
     .from(conversations)
     .innerJoin(
@@ -173,6 +197,13 @@ function selectConversations(db: DbExecutor) {
       and(
         eq(users.organizationId, conversations.organizationId),
         eq(users.id, conversations.assigneeUserId),
+      ),
+    )
+    .leftJoin(
+      departments,
+      and(
+        eq(departments.organizationId, conversations.organizationId),
+        eq(departments.id, conversations.departmentId),
       ),
     );
 }
@@ -207,6 +238,10 @@ function toConversationRowView(row: SelectedConversation): ConversationRowView {
     assignee:
       row.assigneeId !== null && row.assigneeName !== null
         ? { id: row.assigneeId, name: row.assigneeName }
+        : null,
+    department:
+      row.departmentId !== null && row.departmentName !== null
+        ? { id: row.departmentId, name: row.departmentName }
         : null,
   };
 }
@@ -251,6 +286,11 @@ export function conversationFilterCondition(
     eq(conversations.organizationId, grant.organizationId),
     conversationScope(grant),
     filter.channelId === undefined ? undefined : eq(conversations.channelId, filter.channelId),
+    filter.departmentId === undefined
+      ? undefined
+      : filter.departmentId === 'none'
+        ? isNull(conversations.departmentId)
+        : eq(conversations.departmentId, filter.departmentId),
     assignee,
     window,
     filter.unread === undefined

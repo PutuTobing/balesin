@@ -2,6 +2,7 @@ import { contactIdentityLockKeys } from '@balesin/core';
 import {
   contactEvents,
   broadcastRecipients,
+  csatSurveys,
   contactTags,
   contacts,
   conversationEvents,
@@ -11,6 +12,7 @@ import {
   mediaFiles,
   messages,
   outgoingEvents,
+  tickets,
   webhookDeliveries,
   webhookEvents,
   type DbExecutor,
@@ -105,6 +107,13 @@ export async function deleteContactData(
             )
           : eq(broadcastRecipients.contactId, contactId),
       ),
+    );
+
+  // Survei CSAT kontak ini (skor + komentar pelanggan) ikut dihapus (UU PDP).
+  await tx
+    .delete(csatSurveys)
+    .where(
+      and(eq(csatSurveys.organizationId, organizationId), eq(csatSurveys.contactId, contactId)),
     );
 
   const now = new Date();
@@ -252,6 +261,12 @@ export async function deleteContactData(
       ),
     ),
   );
+  // Fase 5: tiket tetap ada (data internal tim) tetapi tautannya ke kontak/percakapan dilepas.
+  // Tiket yang menaut percakapan selalu menaut kontaknya (CHECK), jadi satu syarat cukup.
+  await tx
+    .update(tickets)
+    .set({ contactId: null, conversationId: null })
+    .where(and(eq(tickets.organizationId, organizationId), eq(tickets.contactId, contactId)));
   const deletedConversations = await tx
     .delete(conversations)
     .where(

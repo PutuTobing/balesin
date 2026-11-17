@@ -25,8 +25,10 @@ import {
   channels,
   contacts,
   conversations,
+  departmentAccessOf,
   mediaFiles,
   messages,
+  openTicketHoldersOf,
   organizations,
   recordOutgoingEvent,
   users,
@@ -37,9 +39,9 @@ import {
 } from '@balesin/db';
 import {
   apiKeyHasScope,
+  effectivePermissionScope,
   interactiveMessageSchema,
   isWithinScope,
-  permissionScope,
   type OutboundFailureReason,
 } from '@balesin/shared';
 import { UnrecoverableError, Worker } from 'bullmq';
@@ -162,9 +164,35 @@ async function prepare(
         and(eq(users.organizationId, org), eq(users.id, actorUserId), isNull(users.disabledAt)),
       )
       .limit(1);
-    const scope = sender ? permissionScope(sender.role, 'inbox.reply') : null;
+    // Fase 5: tanda "akses departemen sendiri" + tiket terbuka yang menaut kontak (dibaca segar).
+    const access = sender
+      ? (await departmentAccessOf(tx, org, [actorUserId])).get(actorUserId)
+      : undefined;
+    const scope = sender
+      ? effectivePermissionScope(sender.role, 'inbox.reply', {
+          departmentRestricted: access?.restricted ?? false,
+        })
+      : null;
     const holders = conversation.assigneeUserId ? [conversation.assigneeUserId] : [];
-    if (!scope || !isWithinScope(scope, actorUserId, { holderUserIds: holders })) {
+    const ticketHolders =
+      scope === 'assigned' || scope === 'department'
+        ? ((await openTicketHoldersOf(tx, org, [conversation.contactId])).get(
+            conversation.contactId,
+          ) ?? [])
+        : [];
+    if (
+      !scope ||
+      !isWithinScope(
+        scope,
+        actorUserId,
+        {
+          holderUserIds: holders,
+          linkedTicketHolderUserIds: ticketHolders,
+          departmentId: conversation.departmentId,
+        },
+        access?.departmentIds ?? [],
+      )
+    ) {
       return { failure: 'sender_not_allowed' };
     }
   } else if (message.apiKeyId) {

@@ -16,6 +16,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 import { createdAtColumn, idColumn, timestamptz, updatedAtColumn } from './columns';
+import { departments } from './departments';
 import { organizations } from './organizations';
 import { users } from './users';
 
@@ -93,6 +94,11 @@ export const channels = pgTable(
     botHours: jsonb('bot_hours').$type<BotHours>().notNull().default({ mode: 'always' }),
     botTimeoutMinutes: integer('bot_timeout_minutes'),
     botSettingsUpdatedAt: timestamptz('bot_settings_updated_at'),
+    /**
+     * Fase 5: percakapan BARU dari pelanggan di channel ini langsung masuk departemen ini
+     * (diatur dari Pengaturan → Departemen). Kosong = tanpa departemen.
+     */
+    defaultDepartmentId: uuid('default_department_id'),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
@@ -113,6 +119,11 @@ export const channels = pgTable(
       .on(table.organizationId, table.waPhoneNumberId)
       .where(sql`${table.deletedAt} is null and ${table.type} = 'whatsapp'`),
     index('channels_organization_id_created_at_idx').on(table.organizationId, table.createdAt),
+    foreignKey({
+      name: 'channels_organization_id_default_department_id_fk',
+      columns: [table.organizationId, table.defaultDepartmentId],
+      foreignColumns: [departments.organizationId, departments.id],
+    }).onDelete('restrict'),
     foreignKey({
       name: 'channels_organization_id_created_by_user_id_fk',
       columns: [table.organizationId, table.createdByUserId],
