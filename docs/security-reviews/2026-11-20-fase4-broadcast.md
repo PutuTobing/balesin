@@ -127,3 +127,44 @@ diproses), beberapa Info. Selebihnya desain rem pengiriman kuat.
 | `packages/shared`: `vitest run` | 140 lulus |
 | `tsc --noEmit` (api, worker) + ESLint berkas tes baru | bersih |
 | `pnpm audit` | 2 moderate dev-only, tidak ada yang baru |
+
+---
+
+## Putaran 2 — verifikasi perbaikan (commit `6474d8e`)
+
+| Butir | Bukti | Status |
+|---|---|---|
+| T1 regex kuadratik | `recipient-import.ts`: pemindai XML linear (`indexOf`) menggantikan regex `[\s\S]*?`; parsing dipindah ke `worker_threads` (`import-runner.ts`, `import-thread.ts`): batas parsing 10 dtk sejak thread siap, heap 256 MB (`resourceLimits`), thread gagal/kelewat batas di-`terminate` dan tidak dipakai ulang, gerbang maks. 2 per proses & 1 per pengguna → 429 `RATE_LIMITED` (tidak mengantre); `tsup` menghasilkan `dist/import-thread.js` di samping `dist/index.js`. Tes penjaga T1 `it.fails` → `it` dengan asersi IDENTIK (80.000 `<row>`/`<si>` < 500 ms memanggil `parseXlsx` langsung) dan lulus | **Tertutup** |
+| S1 memecah kampanye | `broadcasts.service.ts` submit: kunci advisory per organisasi + jumlah `recipients` audit `broadcast.submitted` tanpa persetujuan 24 jam bergulir (organisasi) + kampanye baru > ambang → `pending_approval` (`approvalReason: cumulative`). Tes penjaga S1 `it.fails` → `it`, asersi IDENTIK, lulus | **Tertutup** |
+| R1 hapus kontak | `contacts.repo.ts`: baris penerima organisasi dengan `contact_id` ATAU `phone` = nomor kontak dihapus (semua status), dikunci sebelum kunci identitas (urutan sama dengan worker). Tes penjaga R1 `it.fails` → `it`, asersi IDENTIK, lulus | **Tertutup** |
+| Info 1 rem otomatis dipicu sengaja | `broadcast.ts` `broadcastGuard`: audit memuat `topSources` (≤ 5 ID pengguna/API key terbesar) | **Sebagian** (rem per sumber ditunda; tetap Info) |
+| Info 3 retensi nomor | ditunda (butuh migrasi) | **Terbuka** (Info) |
+| Info 4 rahasia di query URL konektor | `packages/shared/src/broadcasts.ts`: parameter bernama rahasia (`token`, `key`, `secret`, `password`, `sig`, `auth`, …, didekode) ditolak api, diperingatkan web | **Tertutup** |
+
+### Pemeriksaan tambahan pemroses impor terisolasi
+
+Tes baru `apps/api/src/modules/broadcasts/security-review-fase4-import-thread.test.ts` (3 `it`, lulus):
+
+- **kelewat batas waktu** → `ImportError` Indonesia, thread dihentikan; impor berikutnya tetap jalan
+  (pool tidak "keracunan");
+- **gerbang**: impor kedua dari pengguna yang sama dan impor ketiga di proses yang sama DITOLAK SEKETIKA
+  (`ImportBusyError` → 429), bukan mengantre; setelah selesai slot kembali;
+- **event loop api tetap responsif** selama thread memproses berkas 19.000 baris (jeda timer < 1 dtk).
+
+Penilaian DoS antrean thread: dua akun `broadcast.send` bisa memegang kedua slot paling lama 10 dtk per
+unggahan; dibatasi 30 impor/jam/pengguna → hanya fitur IMPOR (broadcast & kontak Fase 5) yang bisa
+tertunda sesaat, bukan API. Dapat diterima (Info).
+
+**Info baru — thread mewarisi seluruh `process.env`.** `new Worker(...)` tanpa opsi `env` memberi thread
+salinan semua variabel lingkungan (diverifikasi: thread membaca variabel induk), termasuk
+`BALESIN_MASTER_KEY`/URL database. Thread hanya menjalankan pemindai JS murni (tanpa `eval`, tanpa I/O),
+jadi tidak ada jalur kebocoran nyata; saran prinsip hak minimum: `env: {}` (atau hanya `NODE_ENV`) pada
+`new Worker`.
+
+**Catatan uji**: menjalankan seluruh `src/modules/broadcasts src/modules/contacts` bersamaan, tes
+"alarm Telegram" sempat timeout 30 dtk (beban muat thread `tsx` di dev) dan `crm.integration` gagal
+(pekerjaan Fase 5 yang belum di-commit di pohon kerja). Diulang tersendiri: `broadcasts.integration` +
+penjaga integrasi = 19/19 lulus; penjaga unit + thread = 9/9 lulus. `tsc` apps/api pada pohon kerja: 0
+galat.
+
+Putusan Putaran 2: **AMAN** (tidak ada Tinggi/Kritis tersisa).
