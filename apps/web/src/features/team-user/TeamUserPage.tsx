@@ -33,6 +33,7 @@ import {
 } from '../../lib/api/queries';
 import { formatDate, formatDateTime, formatDateTimeInline, formatTime } from '../../lib/format';
 import { useCan, useSession } from '../auth/session';
+import { DepartmentAccessCard } from '../departments/DepartmentAccessCard';
 import { IdentityDialog } from '../identity/IdentityDialog';
 import { SessionList, SessionListSkeleton } from '../sessions/SessionList';
 import { memberBadges, viewOnlyReason } from '../team/member-status';
@@ -102,6 +103,7 @@ function TeamUserScreen({ user }: { user: TeamUser }) {
   const queryClient = useQueryClient();
   const session = useSession();
   const canAudit = useCan('audit.view');
+  const canDepartments = useCan('settings.workspace.manage');
   const [action, setAction] = useState<PendingAction | null>(null);
   const [result, setResult] = useState<{ lines: string[]; warning: boolean } | null>(null);
   const resultRef = useRef<HTMLDivElement>(null);
@@ -263,6 +265,14 @@ function TeamUserScreen({ user }: { user: TeamUser }) {
           {/* Akun nonaktif: "Aktifkan lagi" ada di kotak "Akun nonaktif" (satu aksi, satu tempat). */}
           {user.status !== 'disabled' ? <AccessCard onRequest={request} /> : null}
         </>
+      ) : null}
+      {canDepartments && user.status !== 'disabled' ? (
+        <DepartmentAccessCard
+          user={user}
+          cardClassName={styles.card ?? ''}
+          headClassName={styles.cardHead ?? ''}
+          titleClassName={styles.cardTitle ?? ''}
+        />
       ) : null}
       {canAudit ? <ActivityCard user={user} /> : null}
       <IdentityDialog

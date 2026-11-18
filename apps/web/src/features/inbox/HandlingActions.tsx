@@ -2,6 +2,7 @@ import { USER_ROLE_LABELS, type Conversation, type InboxAgent } from '@balesin/s
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Bot,
+  Building2,
   CheckCircle2,
   EllipsisVertical,
   Hand,
@@ -20,6 +21,8 @@ import { t } from '../../i18n/id';
 import { endpoints } from '../../lib/api/endpoints';
 import { media, useMediaQuery } from '../../lib/media';
 import { useCan, useSession } from '../auth/session';
+import { DepartmentDialog } from '../departments/DepartmentDialog';
+import { departmentsQuery } from '../departments/department-queries';
 import styles from './HandlingActions.module.css';
 import { agentsQuery, forgetConversation, inboxKeys, storeConversation } from './inbox-queries';
 
@@ -47,6 +50,9 @@ export function HandlingActions({
   const canReply = useCan('inbox.reply');
   const canAssign = useCan('inbox.assign');
   const [assignOpen, setAssignOpen] = useState(false);
+  const [departmentOpen, setDepartmentOpen] = useState(false);
+  const departments = useQuery({ ...departmentsQuery, enabled: canAssign }).data?.departments;
+  const canMoveDepartment = canAssign && (departments?.length ?? 0) > 0;
 
   const mutation = useMutation({
     mutationFn: ({ action, userId }: { action: Action; userId?: string }) => {
@@ -169,6 +175,12 @@ export function HandlingActions({
                 {conversation.assignee ? h.reassign : h.assign}
               </DropdownMenu.Item>
             ) : null}
+            {canMoveDepartment ? (
+              <DropdownMenu.Item className={styles.item} onSelect={() => setDepartmentOpen(true)}>
+                <Icon icon={Building2} size={16} />
+                {t.departments.move}
+              </DropdownMenu.Item>
+            ) : null}
             {canUnassign ? (
               <DropdownMenu.Item className={styles.item} onSelect={() => run('unassign')}>
                 <Icon icon={Undo2} size={16} />
@@ -191,6 +203,15 @@ export function HandlingActions({
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
+      {canMoveDepartment && departmentOpen ? (
+        <DepartmentDialog
+          conversation={conversation}
+          onCancel={() => setDepartmentOpen(false)}
+          onError={onError}
+          onClosed={onClosed}
+          onDone={() => setDepartmentOpen(false)}
+        />
+      ) : null}
       {canAssign ? (
         <AssignDialog
           open={assignOpen}

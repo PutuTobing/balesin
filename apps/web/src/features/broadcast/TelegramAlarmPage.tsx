@@ -157,7 +157,7 @@ function TelegramCard({ settings }: { settings: TelegramAlarmSettings }) {
     <section className={styles.card} aria-labelledby="alarm-telegram">
       <div className={styles.cardHeadRow}>
         <h2 id="alarm-telegram" className={styles.cardTitle}>
-          {a.title}
+          {a.cardTitle}
         </h2>
         {settings.configured ? (
           <StatusBadge

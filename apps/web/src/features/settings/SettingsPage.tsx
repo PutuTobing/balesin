@@ -2,7 +2,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import {
   Bell,
+  Building2,
   ChevronRight,
+  ListTree,
+  SmilePlus,
   BellRing,
   Database,
   Gauge,
@@ -48,6 +51,9 @@ import { integrationKeys } from '../integrations/integration-queries';
 import { templatesQuery } from '../templates/template-queries';
 import { connectorsQuery, telegramAlarmQuery } from '../broadcast/broadcast-queries';
 import { usePushDevice } from '../notifications/use-push-device';
+import { contactAttributesQuery } from '../contacts/contact-queries';
+import { departmentsQuery } from '../departments/department-queries';
+import { csatSettingsQuery } from '../reports/csat-queries';
 import styles from './Settings.module.css';
 
 const APPEARANCE_HEADING_ID = 'pengaturan-tampilan';
@@ -74,6 +80,7 @@ export function SettingsPage() {
   const canApiKeys = useCan('api_keys.manage');
   const canWebhooks = useCan('integrations.manage');
   const canTemplates = useCan('templates.manage');
+  const canWorkspace = useCan('settings.workspace.manage');
 
   return (
     <Page>
@@ -86,7 +93,8 @@ export function SettingsPage() {
         canTemplates ||
         canSendingLimits ||
         canApiKeys ||
-        canWebhooks ? (
+        canWebhooks ||
+        canWorkspace ? (
           <OrganizationSettings
             showChannels={canChannels}
             showTeam={canTeam}
@@ -97,6 +105,7 @@ export function SettingsPage() {
             showSendingLimits={canSendingLimits}
             showApiKeys={canApiKeys}
             showWebhooks={canWebhooks}
+            showWorkspace={canWorkspace}
             canInvite={canInvite}
             canManageTeam={canManageTeam}
           />
@@ -184,6 +193,7 @@ function OrganizationSettings({
   showSendingLimits,
   showApiKeys,
   showWebhooks,
+  showWorkspace,
   canInvite,
   canManageTeam,
 }: {
@@ -196,6 +206,7 @@ function OrganizationSettings({
   showSendingLimits: boolean;
   showApiKeys: boolean;
   showWebhooks: boolean;
+  showWorkspace: boolean;
   canInvite: boolean;
   canManageTeam: boolean;
 }) {
@@ -209,9 +220,12 @@ function OrganizationSettings({
       <ul className={styles.menu}>
         {showChannels ? <ChannelsMenuItem /> : null}
         {showTeam ? <TeamMenuItem canInvite={canInvite} canManage={canManageTeam} /> : null}
+        {showWorkspace ? <DepartmentsMenuItem /> : null}
         {showEmail ? <EmailMenuItem /> : null}
         {showTemplates ? <TemplatesMenuItem /> : null}
         {showQuickReplies ? <QuickRepliesMenuItem /> : null}
+        {showWorkspace ? <AttributesMenuItem /> : null}
+        {showWorkspace ? <CsatMenuItem /> : null}
         {showSendingLimits ? <SendingLimitsMenuItem /> : null}
         {showApiKeys ? <ApiKeysMenuItem /> : null}
         {showWebhooks ? <WebhooksMenuItem /> : null}
@@ -339,6 +353,52 @@ function TemplatesMenuItem() {
   );
 }
 
+/** Departemen: jumlah departemen. */
+function DepartmentsMenuItem() {
+  const list = useQuery(departmentsQuery);
+  return (
+    <MenuRow
+      to="/pengaturan/departemen"
+      icon={Building2}
+      label={t.departments.title}
+      hint={t.departments.menuHint}
+      status={list.data ? t.departments.menuCount(list.data.departments.length) : null}
+      loading={list.isPending}
+    />
+  );
+}
+
+/** Atribut kontak: jumlah definisi. */
+function AttributesMenuItem() {
+  const list = useQuery(contactAttributesQuery);
+  return (
+    <MenuRow
+      to="/pengaturan/atribut-kontak"
+      icon={ListTree}
+      label={t.attributes.title}
+      hint={t.attributes.menuHint}
+      status={list.data ? t.attributes.menuCount(list.data.length) : null}
+      loading={list.isPending}
+    />
+  );
+}
+
+/** CSAT otomatis: aktif / mati. */
+function CsatMenuItem() {
+  const settings = useQuery(csatSettingsQuery);
+  const csat = settings.data?.csat;
+  return (
+    <MenuRow
+      to="/pengaturan/csat"
+      icon={SmilePlus}
+      label={t.csat.title}
+      hint={t.csat.menuHint}
+      status={csat ? (csat.enabled ? t.csat.menuOn : t.csat.menuOff) : null}
+      loading={settings.isPending}
+    />
+  );
+}
+
 /** Konektor data broadcast: jumlah konektor. */
 function ConnectorsMenuItem() {
   const list = useQuery(connectorsQuery);
@@ -428,7 +488,10 @@ function MenuRow({
     | '/pengaturan/webhook'
     | '/pengaturan/template'
     | '/pengaturan/konektor-data'
-    | '/pengaturan/alarm';
+    | '/pengaturan/alarm'
+    | '/pengaturan/atribut-kontak'
+    | '/pengaturan/departemen'
+    | '/pengaturan/csat';
   icon: LucideIcon;
   label: string;
   hint: string;

@@ -9,6 +9,7 @@ import { ContactEditDialog } from './ContactEditDialog';
 import { ContactPrivacy } from './ContactPrivacy';
 import { FilesTab, LogTab, NotesTab } from './PanelTabs';
 import { ContactTags } from './TagPicker';
+import { LinkedTickets } from '../tickets/LinkedTickets';
 import { Skeleton, SkeletonRegion } from '../../components/ui/Skeleton';
 import { t } from '../../i18n/id';
 import { formatDateTime } from '../../lib/format';
@@ -83,6 +84,7 @@ export function ContactPanel({
 
 function InfoTab({ conversationId, onClosed }: { conversationId: string; onClosed?: () => void }) {
   const canManage = useCan('contacts.manage');
+  const canTickets = useCan('tickets.manage');
   const [editing, setEditing] = useState(false);
   const queryClient = useQueryClient();
   const now = useMinuteClock();
@@ -139,6 +141,9 @@ function InfoTab({ conversationId, onClosed }: { conversationId: string; onClose
           <Fact term={d.status}>{t.inbox.item.status[conversation.status]}</Fact>
           <Fact term={d.assignee}>{conversation.assignee?.name ?? t.inbox.item.unassigned}</Fact>
           <Fact term={d.channel}>{conversation.channel.name}</Fact>
+          {conversation.department ? (
+            <Fact term={d.department}>{conversation.department.name}</Fact>
+          ) : null}
           {conversation.windowExpiresAt ? (
             <Fact term={d.window}>
               <WindowCountdown expiresAt={conversation.windowExpiresAt} now={now} showEnd />
@@ -201,6 +206,18 @@ function InfoTab({ conversationId, onClosed }: { conversationId: string; onClose
           </dl>
         )}
       </section>
+      {canTickets ? (
+        <section className={styles.section} aria-labelledby="detail-tiket">
+          <h3 id="detail-tiket" className={styles.sectionTitle}>
+            {t.tickets.linkedTitle}
+          </h3>
+          <LinkedTickets
+            conversationId={conversationId}
+            contactId={conversation.contact.id}
+            contactName={name}
+          />
+        </section>
+      ) : null}
       {contact ? (
         <ContactPrivacy contact={contact} conversationId={conversationId} onDeleted={onClosed} />
       ) : null}

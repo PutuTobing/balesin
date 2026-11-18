@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ArrowLeft, PanelRightClose, PanelRightOpen, SquarePen } from 'lucide-react';
+import { departmentsQuery } from '../departments/department-queries';
 import {
   useEffect,
   useMemo,
@@ -145,7 +146,8 @@ export function InboxScreen({
       .map((agent) => ({ id: agent.id, name: agent.name }));
   }, [isTechnician, agentList, session?.user.id]);
   const tags = useQuery({ ...tagsQuery, enabled: !loading }).data?.tags;
-  const filterOptions = { channels, agents, tags };
+  const departments = useQuery({ ...departmentsQuery, enabled: !loading }).data?.departments;
+  const filterOptions = { channels, agents, tags, departments };
   const chips = filterChips(filters, filterOptions, session?.user.id);
   const inboxEmpty =
     counts !== undefined && counts.counts.all === 0 && !hasFilters(filters) && !term.query;

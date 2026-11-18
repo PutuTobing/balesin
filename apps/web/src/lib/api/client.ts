@@ -94,6 +94,14 @@ export interface ApiClientOptions {
   fetch?: typeof fetch;
 }
 
+/** Opsi unduhan berkas. `POST` + `body` untuk ekspor yang butuh konfirmasi identitas di body. */
+export interface DownloadOptions {
+  signal?: AbortSignal;
+  accept?: string;
+  method?: 'GET' | 'POST';
+  body?: unknown;
+}
+
 /** Hasil unduhan berkas (mis. ekspor CSV): isi + header jawaban. */
 export interface BlobResult {
   blob: Blob;
@@ -107,7 +115,7 @@ export interface ApiClient {
    * mewajibkannya walau GET). Error tetap amplop JSON biasa dan diperlakukan sama dengan
    * `request` (401/403/429). Tanpa token di URL: sesi lewat cookie.
    */
-  download(path: string, options?: { signal?: AbortSignal; accept?: string }): Promise<BlobResult>;
+  download(path: string, options?: DownloadOptions): Promise<BlobResult>;
   setCsrfToken(token: string | null): void;
   getCsrfToken(): string | null;
   /** Dipanggil saat API menjawab 401 `UNAUTHENTICATED` (sesi habis/dicabut). */
@@ -235,17 +243,14 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
   async function download(
     path: string,
-    {
-      signal,
-      accept = 'text/csv, application/json',
-    }: { signal?: AbortSignal; accept?: string } = {},
+    { signal, accept = 'text/csv, application/json', method = 'GET', body }: DownloadOptions = {},
   ) {
-    let response = await send(path, 'GET', undefined, signal, accept, true);
+    let response = await send(path, method, body, signal, accept, true);
     if (!response.ok) {
       let error = await toError(response);
       // Token CSRF basi: ambil yang baru dari /auth/me, ulangi sekali (sama dengan `request`).
       if (error.code === 'CSRF_INVALID' && (await refreshCsrf())) {
-        response = await send(path, 'GET', undefined, signal, accept, true);
+        response = await send(path, method, body, signal, accept, true);
         if (!response.ok) error = await toError(response);
       }
       if (!response.ok) throw handleFailure(error);

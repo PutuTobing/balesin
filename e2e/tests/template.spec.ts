@@ -86,9 +86,11 @@ test('preset → draf terbuka di editor → hapus dengan konfirmasi', async ({ p
   await page.getByRole('button', { name: 'Pakai preset' }).click();
   const dialog = page.getByRole('dialog', { name: 'Pilih preset template' });
   const channel = dialog.getByLabel('Buat untuk nomor');
-  // Banyak nomor di stack E2E: pilihan nomor selalu tampil (tunggu daftar nomornya dimuat).
-  await channel.selectOption(channelId);
-  await dialog.getByRole('button', { name: 'Pakai preset Pembayaran diterima' }).click();
+  const use = dialog.getByRole('button', { name: 'Pakai preset Pembayaran diterima' });
+  // Isi dialog sudah dimuat → pilihan nomor tampil bila ada lebih dari satu nomor.
+  await expect(use).toBeVisible();
+  if ((await channel.count()) > 0) await channel.selectOption(channelId);
+  await use.click();
   await expect(page).toHaveURL(/\/pengaturan\/template\/[0-9a-f-]{36}$/);
   await expect(page.getByText(/dibuat dari preset/)).toBeVisible();
   await expect(page.getByText('Draf', { exact: true })).toBeVisible();

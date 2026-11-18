@@ -158,6 +158,7 @@ import {
 } from '@balesin/shared';
 import { z } from 'zod';
 import { api, type ApiClient } from './client';
+import { createCrmEndpoints } from './endpoints-crm';
 
 /** Saringan & kursor daftar percakapan → query string (lihat `features/inbox/inbox-filters.ts`). */
 export type QueryString = string;
@@ -178,6 +179,7 @@ export function auditQueryString(query: AuditLogListQuery | AuditLogFilter): str
  */
 export function createEndpoints(client: ApiClient) {
   return {
+    ...createCrmEndpoints(client),
     setup: {
       status: (signal?: AbortSignal) =>
         client.request(API_ROUTES.setup.status, { schema: setupStatusResponseSchema, signal }),

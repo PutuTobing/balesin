@@ -29,6 +29,7 @@ import { integrationScreens } from './screens-integrasi';
 import { teamScreens } from './screens-tim';
 import { templateScreens } from './screens-template';
 import { broadcastScreens } from './screens-broadcast';
+import { crmScreens } from './screens-crm';
 
 export interface Screen {
   /** Nama berkas: e2e/screenshots/<name>--<viewport>-<tema>.png */
@@ -997,4 +998,5 @@ export const screens: Screen[] = [
   ...templateScreens,
   // Fase 4: broadcast, konektor data, alarm Telegram, pengaturan broadcast.
   ...broadcastScreens,
+  ...crmScreens,
 ];

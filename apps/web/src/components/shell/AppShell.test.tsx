@@ -45,7 +45,7 @@ describe('navigasi kerangka aplikasi', () => {
   it.each([
     { label: t.nav.contacts, path: '/kontak', emptyTitle: t.contacts.emptyTitle },
     { label: t.nav.broadcast, path: '/broadcast', emptyTitle: t.broadcast.emptyTitle },
-    { label: t.nav.tickets, path: '/tiket', emptyTitle: t.tickets.emptyTitle },
+    { label: t.nav.tickets, path: '/tiket', emptyTitle: t.tickets.noBoardsTitle },
     { label: t.nav.reports, path: '/laporan', emptyTitle: t.reports.emptyTitle },
   ])('pindah ke $label dan menandainya aktif', async ({ label, path, emptyTitle }) => {
     const { router } = await renderApp('/inbox');

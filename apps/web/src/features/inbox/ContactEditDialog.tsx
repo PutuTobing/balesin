@@ -1,5 +1,5 @@
 import { updateContactRequestSchema, type Contact } from '@balesin/shared';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Button } from '../../components/ui/Button';
@@ -12,6 +12,13 @@ import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
 import { apiFieldErrors, zodFieldErrors, type FieldErrors } from '../../lib/form';
+import { AttributeFields } from '../contacts/AttributeFields';
+import {
+  collectAttributes,
+  splitAttributes,
+  type AttributeValues,
+} from '../contacts/attribute-values';
+import { contactAttributesQuery, refreshContactLists } from '../contacts/contact-queries';
 import styles from './ContactPanel.module.css';
 import { storeContact } from './inbox-queries';
 
@@ -27,7 +34,9 @@ interface AttributeRow {
 
 /**
  * Ubah kontak (`contacts.manage`): nama dari tim (kosong = kembali ke nama profil WhatsApp), email,
- * catatan kontak, dan atribut kunci/nilai. Atribut dikirim sebagai daftar LENGKAP (mengganti).
+ * catatan kontak, atribut BERDEFINISI (Pengaturan → Atribut kontak: jenis + wajib, divalidasi
+ * `validateAttributeValues` seperti server), dan atribut bebas kunci/nilai. Atribut dikirim sebagai
+ * daftar LENGKAP (mengganti).
  */
 export function ContactEditDialog({
   contact,
@@ -41,17 +50,21 @@ export function ContactEditDialog({
   onSaved: () => void;
 }) {
   const queryClient = useQueryClient();
+  const definitionsQuery = useQuery(contactAttributesQuery);
+  const definitions = definitionsQuery.data ?? [];
   const [name, setName] = useState(contact.name ?? '');
   const [email, setEmail] = useState(contact.email ?? '');
   const [notes, setNotes] = useState(contact.notes ?? '');
-  const [rows, setRows] = useState<AttributeRow[]>(() =>
-    (contact.attributes ?? []).map((item, index) => ({
-      key: index,
-      name: item.key,
-      value: item.value,
-    })),
-  );
-  const [nextKey, setNextKey] = useState(rows.length);
+  const split = splitAttributes(definitions, contact.attributes ?? []);
+  const [defined, setDefined] = useState<AttributeValues | null>(null);
+  const [rows, setRows] = useState<AttributeRow[] | null>(null);
+  // Definisi dimuat setelah dialog terbuka: isian awal dibagi begitu definisinya ada.
+  const definedValues = defined ?? split.defined;
+  const freeRows =
+    rows ?? split.free.map((item, index) => ({ key: index, name: item.key, value: item.value }));
+  const setFreeRows = (update: (current: AttributeRow[]) => AttributeRow[]) =>
+    setRows(update(freeRows));
+  const [nextKey, setNextKey] = useState((contact.attributes ?? []).length);
   const [errors, setErrors] = useState<FieldErrors>({});
 
   const save = useMutation({
@@ -59,6 +72,7 @@ export function ContactEditDialog({
       endpoints.inbox.updateContact(contact.id, body),
     onSuccess: ({ contact: updated }) => {
       storeContact(queryClient, updated);
+      refreshContactLists(queryClient);
       onSaved();
     },
     onError: (error) => {
@@ -68,13 +82,19 @@ export function ContactEditDialog({
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    const free = freeRows
+      .filter((row) => row.name.trim() || row.value.trim())
+      .map((row) => ({ key: row.name, value: row.value }));
+    const attributes = collectAttributes(definitions, definedValues, free);
+    if (!attributes.ok) {
+      setErrors(attributes.errors);
+      return;
+    }
     const parsed = updateContactRequestSchema.safeParse({
       name: name.trim() ? name : null,
       email: email.trim() ? email : null,
       notes: notes.trim() ? notes : null,
-      attributes: rows
-        .filter((row) => row.name.trim() || row.value.trim())
-        .map((row) => ({ key: row.name, value: row.value })),
+      attributes: attributes.values,
     });
     if (!parsed.success) {
       setErrors(zodFieldErrors(parsed.error));
@@ -125,15 +145,28 @@ export function ContactEditDialog({
           maxLength={2000}
           dir="auto"
         />
+        {definitions.length > 0 ? (
+          <fieldset className={styles.attributes}>
+            <legend className={styles.legend}>{p.attributes}</legend>
+            <AttributeFields
+              definitions={definitions}
+              values={definedValues}
+              onChange={(key, value) => setDefined({ ...definedValues, [key]: value })}
+              errors={errors}
+            />
+          </fieldset>
+        ) : null}
         <fieldset className={styles.attributes}>
-          <legend className={styles.legend}>{p.attributes}</legend>
-          {rows.map((row, index) => (
+          <legend className={styles.legend}>
+            {definitions.length > 0 ? t.attributes.otherAttributes : p.attributes}
+          </legend>
+          {freeRows.map((row, index) => (
             <div key={row.key} className={styles.attributeRow}>
               <TextField
                 label={p.attributeKey}
                 value={row.name}
                 onChange={(event) =>
-                  setRows((current) =>
+                  setFreeRows((current) =>
                     current.map((item) =>
                       item.key === row.key ? { ...item, name: event.target.value } : item,
                     ),
@@ -146,7 +179,7 @@ export function ContactEditDialog({
                 label={p.attributeValue}
                 value={row.value}
                 onChange={(event) =>
-                  setRows((current) =>
+                  setFreeRows((current) =>
                     current.map((item) =>
                       item.key === row.key ? { ...item, value: event.target.value } : item,
                     ),
@@ -158,17 +191,19 @@ export function ContactEditDialog({
               <IconButton
                 label={p.removeAttribute(row.name)}
                 icon={Trash2}
-                onClick={() => setRows((current) => current.filter((item) => item.key !== row.key))}
+                onClick={() =>
+                  setFreeRows((current) => current.filter((item) => item.key !== row.key))
+                }
                 className={styles.attributeRemove}
               />
             </div>
           ))}
           {errors.attributes ? <p className={styles.fieldError}>{errors.attributes}</p> : null}
-          {rows.length < 30 ? (
+          {freeRows.length + definitions.length < 30 ? (
             <Button
               variant="ghost"
               onClick={() => {
-                setRows((current) => [...current, { key: nextKey, name: '', value: '' }]);
+                setFreeRows((current) => [...current, { key: nextKey, name: '', value: '' }]);
                 setNextKey((value) => value + 1);
               }}
             >

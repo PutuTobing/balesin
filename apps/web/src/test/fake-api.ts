@@ -37,6 +37,7 @@ import {
   type ConversationNote,
   type ConversationEvent,
 } from '@balesin/shared';
+import { REPORT_ROUTES, permissionScope, type ReportPerformance } from '@balesin/shared';
 import { vi } from 'vitest';
 import { fakeInboxRoutes } from './fake-inbox';
 
@@ -51,6 +52,8 @@ export interface FakeRequest {
   body: unknown;
   /** Parameter query (mis. saringan audit log). */
   query: URLSearchParams;
+  /** Body mentah (mis. `FormData` unggahan multipart). */
+  raw?: unknown;
 }
 
 export type FakeHandler = (request: FakeRequest) => Response | Promise<Response>;
@@ -431,6 +434,19 @@ export function installFakeApi(options: FakeApiOptions = {}): FakeApi {
     // Broadcast: bawaan belum ada kampanye (tes broadcast mengganti lewat `routes`).
     [`GET ${API_ROUTES.broadcasts.list}`]: () =>
       session ? json({ broadcasts: [], nextCursor: null }) : unauthenticated(),
+    // Fase 5 (bawaan kosong; tes fitur mengganti lewat `routes`).
+    [`GET ${API_ROUTES.crm.contacts}`]: fullSessionOnly(() =>
+      json({ contacts: [], nextCursor: null }),
+    ),
+    [`GET ${API_ROUTES.crm.attributes}`]: fullSessionOnly(() => json({ attributes: [] })),
+    [`GET ${API_ROUTES.tickets.boards}`]: fullSessionOnly(() => json({ boards: [] })),
+    [`GET ${API_ROUTES.tickets.list}`]: fullSessionOnly(() =>
+      json({ tickets: [], nextCursor: null }),
+    ),
+    [`GET ${API_ROUTES.departments.list}`]: fullSessionOnly(() => json({ departments: [] })),
+    [`GET ${REPORT_ROUTES.performance}`]: fullSessionOnly((request) =>
+      json({ report: emptyReport(request, session?.user.role ?? 'cs') }),
+    ),
     [`GET ${API_ROUTES.setup.status}`]: () =>
       json(
         options.setupStatus ?? {
@@ -500,7 +516,14 @@ export function installFakeApi(options: FakeApiOptions = {}): FakeApi {
         ]),
       );
       const body = typeof init.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined;
-      const request = { method, path: url.pathname, headers, body, query: url.searchParams };
+      const request = {
+        method,
+        path: url.pathname,
+        headers,
+        body,
+        query: url.searchParams,
+        raw: init.body,
+      };
       requests.push(request);
       const handler = routes.get(`${method} ${url.pathname}`);
       if (!handler) {
@@ -517,6 +540,44 @@ export function installFakeApi(options: FakeApiOptions = {}): FakeApi {
     },
     setSession(next) {
       session = next;
+    },
+  };
+}
+
+/** Laporan kinerja kosong (cakupan sesuai peran) untuk rentang yang diminta. */
+export function emptyReport(request: FakeRequest, role: UserRole): ReportPerformance {
+  const own = permissionScope(role, 'reports.view') === 'own';
+  const empty = { count: 0, averageSeconds: null, medianSeconds: null, p90Seconds: null };
+  return {
+    range: {
+      from: request.query.get('from') ?? '2026-11-12',
+      to: request.query.get('to') ?? '2026-11-18',
+      timezone: 'Asia/Jakarta',
+    },
+    scope: own ? 'own' : 'all',
+    summary: own
+      ? null
+      : {
+          conversations: 0,
+          customerInitiated: 0,
+          resolved: 0,
+          resolvedByBotOnly: 0,
+          handledByHuman: 0,
+          handoffs: 0,
+          firstResponse: empty,
+          wait: empty,
+          resolution: empty,
+        },
+    trends: own ? null : { daily: [], hourly: [] },
+    agents: [],
+    bots: own ? null : [],
+    tags: own ? null : [],
+    csat: {
+      sent: 0,
+      responses: 0,
+      average: null,
+      distribution: { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 },
+      responseRate: null,
     },
   };
 }

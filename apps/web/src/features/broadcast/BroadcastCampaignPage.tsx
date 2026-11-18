@@ -121,9 +121,12 @@ function DetailSkeleton() {
 function BroadcastDetail({ campaign }: { campaign: BroadcastCampaign }) {
   const zone = useSession()?.organization.timezone ?? 'Asia/Jakarta';
   const live = isLive(campaign.status);
+  // Sebelum berjalan belum ada hasil: tampilkan rencana saja (review broadcast BC1).
+  const started = !['draft', 'pending_approval', 'scheduled'].includes(campaign.status);
   const report = useQuery({
     queryKey: broadcastKeys.report(campaign.id),
     queryFn: ({ signal }) => endpoints.broadcasts.report(campaign.id, signal),
+    enabled: started,
     // Juga setelah selesai selama masih ada pesan yang menunggu jawaban Meta.
     refetchInterval: (query) =>
       live || campaign.status === 'paused' || (query.state.data?.report.sending ?? 0) > 0
@@ -154,12 +157,12 @@ function BroadcastDetail({ campaign }: { campaign: BroadcastCampaign }) {
     ],
   ];
   return (
-    <Page>
+    <Page title={campaign.name}>
       <div className={styles.detail}>
         <section className={styles.card} aria-labelledby="kampanye-judul">
           <div className={styles.detailHead}>
-            <h2 id="kampanye-judul" className={styles.detailName}>
-              {campaign.name}
+            <h2 id="kampanye-judul" className={styles.cardTitle}>
+              {b.factsLabel}
             </h2>
             <StatusBadge
               tone={statusTone(campaign.status)}
@@ -178,7 +181,9 @@ function BroadcastDetail({ campaign }: { campaign: BroadcastCampaign }) {
           </dl>
         </section>
 
-        {report.data ? (
+        {!started ? (
+          <PlanCard campaign={campaign} zone={zone} />
+        ) : report.data ? (
           <ReportCard report={report.data.report} live={live} />
         ) : report.isError ? (
           <Notice tone="danger" role="alert">
@@ -463,20 +468,55 @@ function CampaignActions({ campaign }: { campaign: BroadcastCampaign }) {
   );
 }
 
+/** Kampanye yang belum berjalan: rencana (penerima, perkiraan biaya, jadwal), tanpa angka hasil. */
+function PlanCard({ campaign, zone }: { campaign: BroadcastCampaign; zone: string }) {
+  const recipients = campaign.counts.pending || campaign.counts.recipients;
+  return (
+    <section className={styles.card} aria-labelledby="kampanye-rencana">
+      <h2 id="kampanye-rencana" className={styles.cardTitle}>
+        {b.planTitle}
+      </h2>
+      <dl className={styles.facts}>
+        <div className={styles.factRow}>
+          <dt>{b.planRecipients}</dt>
+          <dd>{b.recipients(recipients)}</dd>
+        </div>
+        <div className={styles.factRow}>
+          <dt>{b.planEstimate}</dt>
+          <dd>
+            {campaign.estimate
+              ? b.money(campaign.estimate.currency, campaign.estimate.total)
+              : b.planNoEstimate}
+          </dd>
+        </div>
+        <div className={styles.factRow}>
+          <dt>{b.facts.schedule}</dt>
+          <dd>
+            {campaign.scheduledAt ? formatInZone(campaign.scheduledAt, zone) : b.scheduleImmediate}
+          </dd>
+        </div>
+      </dl>
+      <p className={styles.hint}>{b.planHint}</p>
+    </section>
+  );
+}
+
 function ReportCard({ report, live }: { report: BroadcastReport; live: boolean }) {
   const progress = progressOf(report);
+  // Corong kumulatif (review broadcast BC2): setiap tahap mencakup tahap sesudahnya. "Diterima" =
+  // dasar biaya (`cost.billable` = diterima + dibaca).
   const tiles: [keyof typeof b.stats, number][] = [
-    ['sent', report.sent],
-    ['delivered', report.delivered],
+    ['sent', report.sent + report.delivered + report.read],
+    ['delivered', report.delivered + report.read],
     ['read', report.read],
     ['replied', report.replied],
     ['failed', report.failed],
     ['skipped', report.skipped],
     ['pending', report.pending],
   ];
+  if (report.sending > 0) tiles.splice(6, 0, ['sending', report.sending]);
   // Hanya bila ada: tile kosong yang menyendiri tidak menambah informasi.
   if (report.cancelled > 0) tiles.push(['cancelled', report.cancelled]);
-  if (report.sending > 0) tiles.splice(6, 0, ['sending', report.sending]);
   const skipped = (
     Object.entries(report.skippedByReason) as [BroadcastSkipReason, number][]
   ).filter(([, count]) => count > 0);
@@ -508,6 +548,7 @@ function ReportCard({ report, live }: { report: BroadcastReport; live: boolean }
           </div>
         ))}
       </dl>
+      <p className={styles.hint}>{b.funnelHint}</p>
       <div className={styles.cost}>
         <h3 className={styles.groupLabel}>{b.costTitle}</h3>
         <p>

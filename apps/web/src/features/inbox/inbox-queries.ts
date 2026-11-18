@@ -403,6 +403,10 @@ export function applyInboxEvent(queryClient: QueryClient, event: InboxStreamEven
       // Server membuang event karena terlalu banyak (mis. broadcast besar): muat ulang lewat REST.
       refreshInbox(queryClient);
       void queryClient.invalidateQueries({ queryKey: ['broadcasts'] });
+      // Akses departemen/tiket bisa berubah (event bus `access.changed`): data bercakupan dimuat ulang.
+      void queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      void queryClient.invalidateQueries({ queryKey: ['crm'] });
+      void queryClient.invalidateQueries({ queryKey: ['departments'] });
       return;
     case 'conversation.updated': {
       const now = Date.now();

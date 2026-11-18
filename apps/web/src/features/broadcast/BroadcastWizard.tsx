@@ -76,7 +76,8 @@ export function BroadcastWizard({ campaign }: { campaign: BroadcastCampaign | nu
     return campaign.counts.recipients > 0;
   };
   return (
-    <Page>
+    // Judul tetap "Kampanye baru" sampai diajukan (review broadcast BC-S4).
+    <Page title={b.newTitle}>
       <div className={styles.wizard}>
         <ol className={styles.steps} aria-label={b.stepsLabel}>
           {STEPS.map((item, position) => {
@@ -290,8 +291,14 @@ function StepBasics({
 
 // ── 2. Penerima ─────────────────────────────────────────────────────────────
 
+/**
+ * Hasil pemeriksaan berkas: SATU daftar per penyebab (review broadcast BC3) — jumlah baris,
+ * penyebabnya, lalu maksimal 3 nomor baris contoh + "dan n lainnya".
+ */
 function ImportReport({ report }: { report: BroadcastImportReport }) {
-  const shown = report.issues.slice(0, 8);
+  const causes = (Object.entries(report.issueCounts) as [BroadcastImportIssue, number][]).filter(
+    ([, count]) => count > 0,
+  );
   return (
     <section className={styles.report} aria-label={b.reportTitle}>
       <p className={styles.reportSummary}>
@@ -301,24 +308,26 @@ function ImportReport({ report }: { report: BroadcastImportReport }) {
       {report.rejectedRows > 0 ? (
         <>
           <p className={styles.hint}>{b.rejectedRows(report.rejectedRows)}</p>
-          <ul className={styles.issues}>
-            {shown.map((issue) => (
-              <li key={`${issue.row}-${issue.issue}`}>
-                {b.issueRow(issue.row, BROADCAST_IMPORT_ISSUE_LABELS[issue.issue])}
-              </li>
-            ))}
-          </ul>
-          {report.rejectedRows > shown.length ? (
-            <p className={styles.hint}>{b.moreIssues(report.rejectedRows - shown.length)}</p>
-          ) : null}
-          <ul className={styles.issueCounts}>
-            {(Object.entries(report.issueCounts) as [BroadcastImportIssue, number][])
-              .filter(([, count]) => count > 0)
-              .map(([issue, count]) => (
-                <li key={issue}>
-                  {BROADCAST_IMPORT_ISSUE_LABELS[issue]}: {count.toLocaleString('id-ID')}
+          <ul className={styles.causes}>
+            {causes.map(([issue, count]) => {
+              const rows = report.issues
+                .filter((item) => item.issue === issue)
+                .map((item) => item.row);
+              const shown = rows.slice(0, 3);
+              return (
+                <li key={issue} className={styles.cause}>
+                  <span className={styles.causeCount}>{b.issueCount(count)}</span>
+                  <span className={styles.causeText}>
+                    <span>{BROADCAST_IMPORT_ISSUE_LABELS[issue]}</span>
+                    {shown.length > 0 ? (
+                      <span className={styles.causeRows}>
+                        {b.issueRows(shown.join(', '), count - shown.length)}
+                      </span>
+                    ) : null}
+                  </span>
                 </li>
-              ))}
+              );
+            })}
           </ul>
         </>
       ) : null}
@@ -393,7 +402,11 @@ function StepRecipients({
           {b.currentSource(campaign.source.label, campaign.counts.recipients)}
         </p>
       ) : null}
-      <div className={styles.segments} role="radiogroup" aria-label={b.sourceTitle}>
+      <div
+        className={cx(styles.segments, styles.segmentsStack)}
+        role="radiogroup"
+        aria-label={b.sourceTitle}
+      >
         {(['upload', 'segment', 'connector'] as const).map((value) => (
           <button
             key={value}
@@ -930,7 +943,7 @@ function StepSend({ campaign, onBack }: { campaign: BroadcastCampaign; onBack: (
               className={styles.tiny}
             />
             <SelectField
-              label={b.dedupeTitle}
+              label={b.dedupeScopeLabel}
               value={dedupeScope}
               onChange={(event) => setDedupeScope(event.target.value as 'template' | 'any')}
               options={[

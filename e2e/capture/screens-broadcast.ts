@@ -142,6 +142,14 @@ const RUNNING = campaign(1, {
 const PENDING = campaign(2, {
   name: 'Promo upgrade 50 Mbps',
   status: 'pending_approval',
+  template: {
+    id: TEMPLATE_ID,
+    name: 'promo_upgrade_desember',
+    language: 'id',
+    category: 'MARKETING',
+    status: 'APPROVED',
+  },
+  source: { kind: 'segment', label: 'Tag: Langganan 20 Mbps', importedAt: ago(40 * 60_000) },
   estimate: { ...ESTIMATE, total: 740_064 },
   approval: {
     required: true,
@@ -154,6 +162,14 @@ const PENDING = campaign(2, {
 });
 const PAUSED = campaign(3, {
   name: 'Info gangguan Way Halim',
+  template: {
+    id: TEMPLATE_ID,
+    name: 'gangguan_jaringan',
+    language: 'id',
+    category: 'UTILITY',
+    status: 'APPROVED',
+  },
+  source: { kind: 'connector', label: 'Billing: pelanggan area Way Halim', importedAt: ago(HOUR) },
   status: 'paused',
   pause: { reason: 'failure_spike', at: ago(8 * 60_000), by: null, requiresAdmin: true },
   counts: {
@@ -168,6 +184,13 @@ const PAUSED = campaign(3, {
 });
 const SCHEDULED = campaign(4, {
   name: 'Jadwal pemeliharaan Sabtu',
+  template: {
+    id: TEMPLATE_ID,
+    name: 'jadwal_pemeliharaan',
+    language: 'id',
+    category: 'UTILITY',
+    status: 'APPROVED',
+  },
   status: 'scheduled',
   scheduledAt: inFuture(20 * HOUR),
   counts: {
@@ -434,8 +457,8 @@ export const broadcastScreens: Screen[] = [
     waitFor: 'text=Sumber penerima',
     prepare: async (page) => {
       await page.getByTestId('broadcast-file').setInputFiles({
-        name: 'pelanggan-menunggak.csv',
-        mimeType: 'text/csv',
+        name: 'pelanggan-menunggak.xlsx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         buffer: Buffer.from('nomor,nama\n', 'utf8'),
       });
       await page.getByText(/penerima siap/).waitFor();

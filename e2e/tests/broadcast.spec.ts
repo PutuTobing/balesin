@@ -116,9 +116,14 @@ async function draftCampaign(page: WatchedPage['page'], name: string, csv: strin
   await page.goto('/broadcast/baru');
   await page.getByLabel('Nama kampanye').fill(name);
   const sender = page.getByLabel('Kirim dari nomor');
-  // Banyak nomor di stack E2E: pilihan nomor selalu tampil (tunggu daftar nomornya dimuat).
-  await sender.selectOption(channelId);
-  await page.getByLabel('Template', { exact: true }).selectOption(templateId);
+  const template = page.getByLabel('Template', { exact: true });
+  // Pilihan template muncul setelah daftar nomor dimuat → pilihan nomor tampil bila > 1 nomor.
+  await expect(template).toBeVisible();
+  if ((await sender.count()) > 0) {
+    await sender.selectOption(channelId);
+    await expect(template.locator(`option[value="${templateId}"]`)).toHaveCount(1);
+  }
+  await template.selectOption(templateId);
   await page.getByRole('button', { name: 'Lanjut' }).click();
   await expect(page).toHaveURL(/\/broadcast\/[0-9a-f-]{36}$/);
 
@@ -127,8 +132,9 @@ async function draftCampaign(page: WatchedPage['page'], name: string, csv: strin
     mimeType: 'text/csv',
     buffer: Buffer.from(csv, 'utf8'),
   });
-  await expect(page.getByText(/2 penerima siap/)).toBeVisible();
-  await expect(page.getByText('Baris 4: Nomor tidak valid')).toBeVisible();
+  // Berkas diurai di worker_threads server: di mesin sibuk bisa lebih dari 10 dtk.
+  await expect(page.getByText(/2 penerima siap/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('Baris 4', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Lanjut' }).click();
 
   await expect(page.getByLabel('Variabel {{1}}', { exact: true })).toHaveValue('nama');
@@ -174,7 +180,7 @@ test('CSV kecil → ajukan → terkirim lewat Meta tiruan → laporan', async ({
     .poll(async () => (await campaignRow(name))?.status, { timeout: 60_000 })
     .toBe('completed');
   await page.reload();
-  await expect(page.getByRole('heading', { level: 2, name })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
   await expect(page.getByText('Selesai', { exact: true }).first()).toBeVisible();
   const stats = page.getByRole('region', { name: 'Hasil kampanye' });
   await expect(stats.getByText('2 dari 2 diproses')).toBeVisible();

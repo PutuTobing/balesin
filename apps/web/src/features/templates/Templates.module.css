@@ -503,6 +503,8 @@ ul.issues,
 }
 
 .varChip {
+  display: inline-flex;
+  vertical-align: baseline;
   padding: 0 var(--space-4);
   border: 1px dashed var(--warning);
   border-radius: var(--radius-input);
@@ -529,6 +531,11 @@ ul.issues,
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  white-space: pre-wrap;
+}
+
+/* Isi template = teks mengalir biasa: variabel/chip tetap sebaris dengan kata di sekitarnya. */
+.bubbleText {
   white-space: pre-wrap;
 }
 

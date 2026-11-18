@@ -83,7 +83,7 @@ export function TemplateBubble({
             ) : null}
           </div>
         ) : (
-          <p className={styles.bubbleBody} dir="auto">
+          <p className={styles.bubbleText} dir="auto">
             <Filled text={content.body.text} values={values} examples={content.body.examples} />
           </p>
         )}

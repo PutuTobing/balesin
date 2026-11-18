@@ -26,7 +26,8 @@ export function ContactPrivacy({
   onDeleted,
 }: {
   contact: Contact;
-  conversationId: string;
+  /** Chat yang sedang terbuka (panel detail inbox); kosong di halaman Kontak. */
+  conversationId?: string;
   onDeleted?: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -59,8 +60,11 @@ export function ContactPrivacy({
     await endpoints.inbox.deleteContact(contact.id, confirmation);
     setDeleting(false);
     queryClient.removeQueries({ queryKey: inboxKeys.contact(contact.id) });
-    forgetConversation(queryClient, conversationId);
+    if (conversationId) forgetConversation(queryClient, conversationId);
+    // Chat kontak ini ikut terhapus: daftar chat & kontak dimuat ulang.
+    void queryClient.invalidateQueries({ queryKey: inboxKeys.conversationLists });
     void queryClient.invalidateQueries({ queryKey: inboxKeys.countsAll });
+    void queryClient.invalidateQueries({ queryKey: ['crm', 'contacts'] });
     onDeleted?.();
   };
 

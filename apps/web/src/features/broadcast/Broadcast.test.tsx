@@ -210,7 +210,9 @@ describe('wizard kampanye', () => {
     });
     fireEvent.change(screen.getByTestId('broadcast-file'), { target: { files: [file] } });
     expect(await screen.findByText(b.reportSummary(3, 4))).toBeVisible();
-    expect(screen.getByText(b.issueRow(4, 'Nomor tidak valid'))).toBeVisible();
+    // Satu daftar per penyebab: jumlah, penyebab, lalu contoh nomor baris.
+    expect(screen.getByText('Nomor tidak valid')).toBeVisible();
+    expect(screen.getByText(b.issueRows('4', 0))).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: b.next }));
 
     // Langkah isi: {{1}} ditebak dari kolom "nama"; {{2}} dipilih "bulan" → simpan otomatis → pratinjau.
@@ -252,7 +254,7 @@ describe('wizard kampanye', () => {
     );
     // Diajukan → halaman detail (terjadwal).
     expect(
-      await screen.findByRole('heading', { level: 2, name: 'Tagihan Desember' }),
+      await screen.findByRole('heading', { level: 1, name: 'Tagihan Desember' }),
     ).toBeVisible();
     expect(screen.getAllByText(b.scheduledTitle).length).toBeGreaterThan(0);
   });

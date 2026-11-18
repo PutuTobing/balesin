@@ -17,6 +17,8 @@ const parents: Record<PageParent, { to: NonNullable<LinkProps['to']>; label: str
   channels: { to: '/pengaturan/channel', label: t.channels.title },
   templates: { to: '/pengaturan/template', label: t.templates.title },
   broadcast: { to: '/broadcast', label: t.nav.broadcast },
+  contacts: { to: '/kontak', label: t.nav.contacts },
+  tickets: { to: '/tiket', label: t.nav.tickets },
 };
 
 interface PageHeaderProps {
@@ -59,6 +61,8 @@ export function PageHeader({ title, parent, actions }: PageHeaderProps) {
 interface PageProps {
   /** Aksi halaman di kanan header. */
   actions?: ReactNode;
+  /** Judul yang baru diketahui setelah data dimuat (mis. nama kampanye); bawaan dari rute. */
+  title?: string;
   children: ReactNode;
 }
 
@@ -66,14 +70,14 @@ interface PageProps {
  * Kerangka halaman satu kolom: header berjudul + isi yang bisa digulir. Judul dan layar
  * induk diambil dari `staticData.page` rutenya (app/router.ts).
  */
-export function Page({ actions, children }: PageProps) {
+export function Page({ actions, title, children }: PageProps) {
   const meta = usePageMeta();
-  usePageTitle(meta?.title ?? '');
+  usePageTitle(title ?? meta?.title ?? '');
   if (!meta) throw new Error('<Page> membutuhkan `staticData.page` pada rutenya.');
 
   return (
     <div className={styles.page}>
-      <PageHeader title={meta.title} parent={meta.parent} actions={actions} />
+      <PageHeader title={title ?? meta.title} parent={meta.parent} actions={actions} />
       <div className={styles.body}>{children}</div>
     </div>
   );

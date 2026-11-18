@@ -22,6 +22,7 @@ import { Skeleton, SkeletonRegion } from '../../components/ui/Skeleton';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
+import { cx } from '../../lib/cx';
 import { formatDateTimeInline } from '../../lib/format';
 import { useSession } from '../auth/session';
 import { campaignProgress, formatInZone, statusTone } from './broadcast-logic';
@@ -129,6 +130,7 @@ export function BroadcastPage() {
 function CampaignRow({ campaign }: { campaign: BroadcastCampaign }) {
   const zone = useSession()?.organization.timezone ?? 'Asia/Jakarta';
   const progress = campaignProgress(campaign);
+  const detailsId = `kampanye-${campaign.id}-rincian`;
   const showProgress = campaign.status !== 'draft' && campaign.status !== 'pending_approval';
   const facts = [
     campaign.template ? campaign.template.name : b.noTemplate,
@@ -142,46 +144,52 @@ function CampaignRow({ campaign }: { campaign: BroadcastCampaign }) {
         ? b.createdBy(campaign.createdBy.name, formatDateTimeInline(campaign.createdAt))
         : b.createdAt(formatDateTimeInline(campaign.createdAt));
   return (
-    <li className={styles.item}>
-      <div className={styles.itemHead}>
-        <Icon icon={Megaphone} size={20} className={styles.itemIcon} />
-        <Link
-          to="/broadcast/$broadcastId"
-          params={{ broadcastId: campaign.id }}
-          className={styles.itemName}
-          aria-label={b.open(campaign.name)}
-        >
-          {campaign.name}
-        </Link>
-        <StatusBadge
-          tone={statusTone(campaign.status)}
-          label={BROADCAST_STATUS_LABELS[campaign.status]}
-          className={styles.itemStatus}
-        />
-      </div>
-      <p className={styles.itemFacts}>{facts.join(' · ')}</p>
-      {showProgress && progress.total > 0 ? (
-        <div className={styles.progressRow}>
-          <div
-            className={styles.meter}
-            role="meter"
-            aria-label={b.progressLabel}
-            aria-valuemin={0}
-            aria-valuemax={progress.total}
-            aria-valuenow={progress.done}
-            data-tone={campaign.status === 'paused' ? 'warning' : 'normal'}
-          >
-            <span className={styles.meterFill} style={{ width: `${progress.ratio * 100}%` }} />
-          </div>
-          <span className={styles.progressText}>{b.processed(progress.done, progress.total)}</span>
-        </div>
-      ) : null}
-      <p className={styles.itemMeta}>
-        {when}
-        {campaign.estimate
-          ? ` · ${b.estimateShort(b.money(campaign.estimate.currency, campaign.estimate.total))}`
-          : null}
-      </p>
+    <li>
+      {/* Seluruh kartu = tautan (target besar di HP, review broadcast BC4). */}
+      <Link
+        to="/broadcast/$broadcastId"
+        params={{ broadcastId: campaign.id }}
+        className={cx(styles.item, styles.itemLink)}
+        aria-label={b.open(campaign.name)}
+        aria-describedby={detailsId}
+      >
+        <span className={styles.itemHead}>
+          <Icon icon={Megaphone} size={20} className={styles.itemIcon} />
+          <span className={styles.itemName}>{campaign.name}</span>
+          <StatusBadge
+            tone={statusTone(campaign.status)}
+            label={BROADCAST_STATUS_LABELS[campaign.status]}
+            className={styles.itemStatus}
+          />
+        </span>
+        <span id={detailsId} className={styles.itemDetails}>
+          <span className={styles.itemFacts}>{facts.join(' · ')}</span>
+          {showProgress && progress.total > 0 ? (
+            <span className={styles.progressRow}>
+              <span
+                className={styles.meter}
+                role="meter"
+                aria-label={b.progressLabel}
+                aria-valuemin={0}
+                aria-valuemax={progress.total}
+                aria-valuenow={progress.done}
+                data-tone={campaign.status === 'paused' ? 'warning' : 'normal'}
+              >
+                <span className={styles.meterFill} style={{ width: `${progress.ratio * 100}%` }} />
+              </span>
+              <span className={styles.progressText}>
+                {b.processed(progress.done, progress.total)}
+              </span>
+            </span>
+          ) : null}
+          <span className={styles.itemMeta}>
+            {when}
+            {campaign.estimate
+              ? ` · ${b.estimateShort(b.money(campaign.estimate.currency, campaign.estimate.total))}`
+              : null}
+          </span>
+        </span>
+      </Link>
     </li>
   );
 }

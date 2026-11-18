@@ -2,7 +2,15 @@ import { useMatch } from '@tanstack/react-router';
 
 /** Layar induk di HP (layar bertumpuk): menentukan tujuan tombol kembali. */
 export type PageParent =
-  'more' | 'settings' | 'security' | 'team' | 'channels' | 'templates' | 'broadcast';
+  | 'more'
+  | 'settings'
+  | 'security'
+  | 'team'
+  | 'channels'
+  | 'templates'
+  | 'broadcast'
+  | 'contacts'
+  | 'tickets';
 
 /**
  * Keterangan halaman yang sudah diketahui dari rute, sebelum isinya dimuat. Ditulis satu

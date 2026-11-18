@@ -144,10 +144,26 @@ ul.list,
   white-space: nowrap;
 }
 
+/* Kartu kampanye = satu tautan. */
+.itemLink {
+  color: inherit;
+  text-decoration: none;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.itemDetails {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
 @media (hover: hover) {
-  .itemName:hover {
+  .itemLink:hover {
+    border-color: var(--primary);
+  }
+
+  .itemLink:hover .itemName {
     color: var(--primary);
-    text-decoration: underline;
   }
 }
 
@@ -190,6 +206,7 @@ ul.list,
 }
 
 .meter {
+  display: block;
   flex: 1;
   overflow: hidden;
   height: var(--space-8);
@@ -458,10 +475,6 @@ ol.steps,
   font-weight: var(--weight-semibold);
 }
 
-ul.issues,
-.issues,
-ul.issueCounts,
-.issueCounts,
 ul.estimateList,
 .estimateList {
   display: flex;
@@ -470,6 +483,38 @@ ul.estimateList,
   padding-left: var(--space-16);
   font-size: var(--text-13);
   list-style: disc;
+}
+
+ul.causes,
+.causes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.cause {
+  display: flex;
+  gap: var(--space-12);
+  font-size: var(--text-13);
+}
+
+.causeCount {
+  flex: none;
+  min-width: 4.5rem;
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.causeText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.causeRows {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
 }
 
 .slots {
@@ -760,17 +805,30 @@ ul.recipients,
 
   ol.steps,
   .steps {
-    grid-template-columns: repeat(4, minmax(0, auto));
-    justify-content: space-between;
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  /* HP: hanya nomor langkah; nama langkah aktif tampil di "Langkah n dari 4". */
-  .stepLabel {
+  /* HP: hanya langkah aktif ("3 · Isi pesan"), tanpa bulatan kecil yang bisa diketuk (review BC4);
+     pindah langkah lewat Kembali / Lanjut. */
+  .steps li:has(> .step:not([data-state='current'])) {
     display: none;
   }
 
-  .step[data-state='current'] .stepLabel {
-    display: inline;
+  /* Sumber penerima: tiga pilihan ditumpuk penuh (tidak pecah dua baris). */
+  .segmentsStack {
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;
+  }
+
+  .segmentsStack .segment {
+    width: 100%;
+    text-align: start;
+  }
+
+  .segmentsStack .segment + .segment {
+    border-top: 1px solid var(--line);
+    border-left: 0;
   }
 
   .tiles {

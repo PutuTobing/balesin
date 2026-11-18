@@ -17,6 +17,8 @@ export interface InboxFilters {
   assignee?: string;
   window?: ConversationWindowFilter;
   unread?: boolean;
+  /** UUID departemen, atau `none` (tanpa departemen). */
+  departmentId?: string;
 }
 
 /** Parameter yang dikirim ke `GET /conversations` dan `/conversations/counts`. */
@@ -69,6 +71,7 @@ export function activeFilterCount(filters: InboxFilters): number {
     filters.assignee,
     filters.window,
     filters.unread || undefined,
+    filters.departmentId,
   ].filter((value) => value !== undefined).length;
 }
 
@@ -85,6 +88,7 @@ export function conversationQueryString(
     ['status', params.status],
     ['channelId', params.channelId],
     ['tagId', params.tagId],
+    ['departmentId', params.departmentId],
     ['assignee', params.assignee],
     ['window', params.window],
     ['unread', params.unread ? 'true' : undefined],
@@ -105,6 +109,7 @@ export function compactParams(params: ConversationParams): ConversationParams {
   if (params.status) result.status = params.status;
   if (params.channelId) result.channelId = params.channelId;
   if (params.tagId) result.tagId = params.tagId;
+  if (params.departmentId) result.departmentId = params.departmentId;
   if (params.assignee) result.assignee = params.assignee;
   if (params.window) result.window = params.window;
   if (params.unread) result.unread = true;
@@ -123,6 +128,8 @@ export interface FilterOptions {
   agents: AgentOption[] | null;
   /** Master tag (saringan tag); kosong = bagian tag tidak tampil. */
   tags?: TagRef[];
+  /** Departemen organisasi; kosong = bagian departemen tidak tampil. */
+  departments?: { id: string; name: string }[];
 }
 
 const f = t.inbox.filters;
@@ -162,6 +169,17 @@ export function filterChips(filters: InboxFilters, options: FilterOptions, selfI
       label: f.chipChannel(
         options.channels.find((channel) => channel.id === filters.channelId)?.name ??
           f.unknownChannel,
+      ),
+    });
+  }
+  if (filters.departmentId) {
+    chips.push({
+      key: 'departmentId',
+      label: f.chipDepartment(
+        filters.departmentId === 'none'
+          ? t.departments.filterNone
+          : (options.departments?.find((item) => item.id === filters.departmentId)?.name ??
+              f.unknownDepartment),
       ),
     });
   }

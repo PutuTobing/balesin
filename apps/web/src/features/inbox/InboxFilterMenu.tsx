@@ -119,6 +119,29 @@ export function InboxFilterMenu({
             </Section>
           ) : null}
 
+          {options.departments && options.departments.length > 0 ? (
+            <Section title={t.departments.filterLabel}>
+              <DropdownMenu.RadioGroup
+                value={filters.departmentId ?? ANY}
+                onValueChange={(value) =>
+                  onChange({ ...filters, departmentId: value || undefined })
+                }
+              >
+                <Radio value={ANY} onSelect={keepOpen}>
+                  {t.departments.filterAll}
+                </Radio>
+                {options.departments.map((department) => (
+                  <Radio key={department.id} value={department.id} onSelect={keepOpen}>
+                    {department.name}
+                  </Radio>
+                ))}
+                <Radio value="none" onSelect={keepOpen}>
+                  {t.departments.filterNone}
+                </Radio>
+              </DropdownMenu.RadioGroup>
+            </Section>
+          ) : null}
+
           {showChannels ? (
             <Section title={f.channel}>
               <DropdownMenu.RadioGroup

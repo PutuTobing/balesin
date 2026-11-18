@@ -26,6 +26,8 @@ import { EmailSettingsSkeleton } from '../features/email-settings/EmailSettingsS
 import { InboxPage } from '../features/inbox/InboxPage';
 import { InboxSkeleton } from '../features/inbox/InboxSkeleton';
 import { parseInboxSearch } from '../features/inbox/inbox-search';
+import { parseContactSearch } from '../features/contacts/contact-search';
+import { parseTicketSearch } from '../features/tickets/ticket-search';
 import { SecuritySkeleton } from '../features/security/SecuritySkeleton';
 import { SetupSkeleton } from '../features/setup/SetupSkeleton';
 import { SetupStatusError } from '../features/setup/SetupStatusError';
@@ -206,8 +208,33 @@ const contactsRoute = createRoute({
   getParentRoute,
   path: 'kontak',
   staticData: { page: { title: t.nav.contacts } },
+  validateSearch: parseContactSearch,
   beforeLoad: ({ context }) => guardNavRoute(context.session, navPermission('/kontak')),
   component: lazyRouteComponent(() => import('../features/contacts/ContactsPage'), 'ContactsPage'),
+});
+
+/** Kontak → impor CSV/XLSX (`contacts.export`). Rute statis ini menang atas `$contactId`. */
+const contactImportRoute = createRoute({
+  getParentRoute,
+  path: 'kontak/impor',
+  staticData: { page: { title: t.contacts.importTitle, parent: 'contacts' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'contacts.export'),
+  component: lazyRouteComponent(
+    () => import('../features/contacts/ContactImportPage'),
+    'ContactImportPage',
+  ),
+});
+
+/** Kontak → detail (data, atribut, tag, tiket, gabung duplikat, data pribadi). */
+const contactRoute = createRoute({
+  getParentRoute,
+  path: 'kontak/$contactId',
+  staticData: { page: { title: t.contacts.detailTitle, parent: 'contacts' } },
+  beforeLoad: ({ context }) => guardNavRoute(context.session, navPermission('/kontak')),
+  component: lazyRouteComponent(
+    () => import('../features/contacts/ContactDetailPage'),
+    'ContactDetailPage',
+  ),
 });
 
 const broadcastRoute = createRoute({
@@ -249,8 +276,33 @@ const ticketsRoute = createRoute({
   getParentRoute,
   path: 'tiket',
   staticData: { page: { title: t.nav.tickets, parent: 'more' } },
+  validateSearch: parseTicketSearch,
   beforeLoad: ({ context }) => guardNavRoute(context.session, navPermission('/tiket')),
   component: lazyRouteComponent(() => import('../features/tickets/TicketsPage'), 'TicketsPage'),
+});
+
+/** Tiket → detail (rincian, komentar, riwayat). */
+const ticketRoute = createRoute({
+  getParentRoute,
+  path: 'tiket/$ticketId',
+  staticData: { page: { title: t.tickets.detailTitle, parent: 'tickets' } },
+  beforeLoad: ({ context }) => guardNavRoute(context.session, navPermission('/tiket')),
+  component: lazyRouteComponent(
+    () => import('../features/tickets/TicketDetailPage'),
+    'TicketDetailPage',
+  ),
+});
+
+/** Tiket → atur board (info, kolom, atribut): `tickets.configure` (Owner, Admin, Supervisor). */
+const ticketBoardRoute = createRoute({
+  getParentRoute,
+  path: 'tiket/board/$boardId',
+  staticData: { page: { title: t.tickets.settingsTitle, parent: 'tickets' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'tickets.configure'),
+  component: lazyRouteComponent(
+    () => import('../features/tickets/BoardSettingsPage'),
+    'BoardSettingsPage',
+  ),
 });
 
 const reportsRoute = createRoute({
@@ -404,6 +456,42 @@ const notificationsRoute = createRoute({
   component: lazyRouteComponent(
     () => import('../features/notifications/NotificationsPage'),
     'NotificationsPage',
+  ),
+});
+
+/** Pengaturan → Atribut kontak: kelola = `settings.workspace.manage` (Owner, Admin). */
+const contactAttributesRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/atribut-kontak',
+  staticData: { page: { title: t.attributes.title, parent: 'settings' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'settings.workspace.manage'),
+  component: lazyRouteComponent(
+    () => import('../features/contacts/AttributeDefinitionsPage'),
+    'AttributeDefinitionsPage',
+  ),
+});
+
+/** Pengaturan → Departemen: `settings.workspace.manage` (Owner, Admin). */
+const departmentsRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/departemen',
+  staticData: { page: { title: t.departments.title, parent: 'settings' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'settings.workspace.manage'),
+  component: lazyRouteComponent(
+    () => import('../features/departments/DepartmentsPage'),
+    'DepartmentsPage',
+  ),
+});
+
+/** Pengaturan → CSAT otomatis: `settings.workspace.manage` (Owner, Admin). */
+const csatSettingsRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/csat',
+  staticData: { page: { title: t.csat.title, parent: 'settings' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'settings.workspace.manage'),
+  component: lazyRouteComponent(
+    () => import('../features/reports/CsatSettingsPage'),
+    'CsatSettingsPage',
   ),
 });
 
@@ -564,10 +652,17 @@ const appChildren = [
   indexRoute,
   inboxRoute,
   contactsRoute,
+  contactImportRoute,
+  contactRoute,
+  contactAttributesRoute,
+  departmentsRoute,
+  csatSettingsRoute,
   broadcastRoute,
   broadcastNewRoute,
   broadcastCampaignRoute,
   ticketsRoute,
+  ticketRoute,
+  ticketBoardRoute,
   reportsRoute,
   settingsRoute,
   emailSettingsRoute,
