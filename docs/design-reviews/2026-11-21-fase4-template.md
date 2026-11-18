@@ -149,3 +149,39 @@ template, Mulai percakapan baru)
   pertahankan spasi asli di sekitarnya.
 - Kriteria lolos: kalimat pratinjau mengalir seperti teks biasa; chip dan contoh berada di baris yang sama dengan kata di
   sekitarnya; tanda baca tidak pernah terpisah dari kata sebelumnya.
+
+---
+
+# Putaran 3
+
+- **Tanggal:** 2026-11-18 · **Penilai:** `kritikus-desain` · **Putaran:** 3
+- **Kode yang dinilai:** HEAD `2a09122` (revisi template ada di `3a18705`). Worktree terisolasi (API 3191 / web 5191,
+  `balesin_kd_e2e` migrasi sampai `0030`, Redis db 11), 3 worker. `inbox-percakapan-baru`, `inbox-kirim-template`,
+  `inbox-pilih-template`, `template-baru`, `template-preset` × 390/1440 × terang/gelap + 360, ditambah audit kontras,
+  target sentuh, dan teks terpotong.
+- **Screenshot:** berkas berawalan `p3-`.
+
+## Putusan putaran 3: LOLOS
+
+| Butir | Hasil | Status |
+|---|---|---|
+| **R1** chip/contoh sebaris | `inbox-percakapan-baru` 1440: "Halo Bu Rina, teknisi kami *Agus* akan datang pada *Selasa, 08.00–10.00*. Mohon pastikan ada yang di rumah." — tiga baris yang mengalir, tanpa spasi di awal baris. `template-baru`: "… pukul [Nilai 3]." — chip pindah ke baris berikut sebagai satu kata, titik menempel pada chip. `inbox-kirim-template` 390/1440: contoh miring sebaris dengan kata di sekitarnya | Lolos |
+| **S2** preset OTP | Preset "Kode verifikasi": "123456 adalah kode verifikasi kamu." | Lolos |
+
+Tidak ada teks < 4,5:1, tidak ada scroll horizontal, tidak ada target < 44 px selain isian 42 px dalam bingkai 44 (sudah
+diterima).
+
+| Layar | Ukuran · tema | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `template-baru` | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| `inbox-kirim-template` | 390 · 1440 T/G | 5 | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 5 | 5 |
+| `inbox-percakapan-baru` | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| `inbox-pilih-template`, `template-preset` | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 4 | 5 |
+
+### Saran (tidak menahan)
+
+- **T3-S1. Spasi setelah contoh miring.** `inbox-kirim-template` 1440 gelap: "sebesar *Rp150.000*jatuh tempo" — spasi
+  ada di teks, tetapi ujung huruf miring "0" memakan jarak sehingga terbaca menempel. Di `Templates.module.css` beri
+  `.varExample { padding-inline-end: 0.12em; }`.
+- **T3-S2.** Daftar preset dan kartu daftar template masih menampilkan `{{1}}` mentah. Itu wajar untuk definisi template
+  (bukan pratinjau pesan), jadi tidak menahan. Bila ingin seragam, pakai chip yang sama dengan pratinjau.

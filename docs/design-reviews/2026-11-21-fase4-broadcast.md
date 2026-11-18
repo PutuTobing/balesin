@@ -124,3 +124,58 @@ Audit: tidak ada teks < 4,5:1, tidak ada scroll horizontal.
 Worktree dihapus (folder + `git worktree prune`; `git worktree list` hanya repo utama), port 3191/5191 kosong,
 `balesin_kd_e2e` di-drop, Redis db 11 `DBSIZE` 0. Berkas repo: laporan ini + 19 screenshot; bagian "Putaran 2" laporan
 template (+5 `p2-*.png`). Tidak ada kode produk yang diubah, tidak ada commit.
+
+---
+
+# Putaran 2
+
+- **Tanggal:** 2026-11-18 · **Penilai:** `kritikus-desain` · **Putaran:** 2
+- **Kode yang dinilai:** HEAD `2a09122` (revisi broadcast ada di `3a18705`). Worktree terisolasi (API 3191 / web 5191,
+  `balesin_kd_e2e` migrasi sampai `0030`, Redis db 11), 3 worker. Ke-14 layar `broadcast-*`, `konektor-*`,
+  `alarm-telegram*`, `pengaturan-broadcast` × 390/1440 × terang/gelap, ditambah audit 360/390/1440 (kontras, target
+  sentuh sampai 4 tinggi layar ke bawah, teks terpotong, scroll horizontal).
+- **Screenshot:** berkas berawalan `p2-`.
+
+## Putusan putaran 2: REVISI (satu butir kecil)
+
+| Butir | Hasil | Status |
+|---|---|---|
+| **BC1** rencana sebelum berjalan | `broadcast-persetujuan`: kartu "Rencana kampanye" (1.248 penerima · Perkiraan biaya Rp 740.064 · Segera) + "Hasil pengiriman tampil di sini begitu kampanye mulai berjalan." Tidak ada bilah kemajuan, petak, atau "biaya … terkirim" | Lolos |
+| **BC2** corong kumulatif | `broadcast-berjalan`: Terkirim **797** → Diterima **701** → Dibaca **299** → Dibalas **87**, lalu Gagal 19 · Dilewati 6 · Sedang dikirim 14 · Belum dikirim 412 (jumlah = 1.248; diproses 836 = 797 + 19 + 6 + 14). Keterangan "Angka bertingkat: …". Biaya "Rp 254.463 untuk **701** pesan yang diterima pelanggan" cocok dengan petak Diterima | Lolos |
+| **BC3** satu daftar per penyebab | `broadcast-penerima`: "4 baris tidak dipakai (tidak dikirimi):" lalu satu baris per penyebab ("1 baris · Nomor tidak valid · Baris 18"). Tidak ada lagi "…ulang.: 1". Kalimat sumber diganti "Memilih sumber baru akan mengganti daftar penerima sekarang." | Lolos |
+| **BC4** target HP | Langkah wizard HP hanya langkah aktif ("2 Penerima") + "Langkah 2 dari 4", tanpa bulatan yang bisa diketuk. Kartu daftar kampanye bisa diketuk seluruhnya | Lolos untuk yang disebut |
+| S1 segmen sumber | Ditumpuk vertikal penuh di 390 | Lolos |
+| S2 penyebab bernilai 0 | "3 penerima akan dilewati saat diajukan: 3 datanya kosong." | Lolos |
+| S3 dijeda | "Dijeda otomatis hari ini, 10.35. Demi keamanan, hanya Owner atau Admin …" | Lolos |
+| S4 judul wizard | "Kampanye baru" di semua langkah | Lolos |
+| S5 anti-dobel | Label kedua "Berlaku untuk" | Lolos |
+| S6 alarm Telegram | Judul kartu "Bot & chat tujuan" | Lolos |
+| S7 data contoh | Template per kampanye beragam (`promo_upgrade_desember`, `gangguan_jaringan`); sumber `.xlsx` sama di ringkasan dan berkas terpilih | Lolos |
+
+Tidak ada teks < 4,5:1, tidak ada scroll horizontal.
+
+### Wajib
+
+**BC5. Tautan "Buka chat" di daftar penerima** — `BroadcastCampaignPage.tsx` (daftar penerima),
+`Broadcast.module.css` `.recipientLink`
+
+- Terukur: **62 × 19 px** di `broadcast-berjalan`, `-dijeda`, `-persetujuan` · 390 dan 360, sekali per baris penerima.
+  Butir ini terlewat di putaran 1 karena letaknya di bawah layar pertama.
+- Perbaikan: di `@media (max-width: 640px), (pointer: coarse)` beri `.recipientLink { display: inline-flex;
+  align-items: center; min-height: var(--size-touch); }`, atau jadikan seluruh baris penerima tautan ke chat (pola TM3)
+  bila ada `conversationId`.
+- Kriteria lolos: audit 390/360 tidak menemukan target < 44 px di `broadcast-*`.
+
+### Saran (tidak menahan)
+
+- **BC-S8 (`qa-tester`).** Mock `broadcast-persetujuan` memakai daftar `RECIPIENTS` yang sama dengan kampanye berjalan,
+  sehingga kampanye yang **belum disetujui** menampilkan penerima berstatus "Dibaca · Dibalas hari ini, 10.39" dan
+  "Diterima". Beri kampanye yang belum mulai penerima berstatus "Belum dikirim". Di UI, saringan "Tampilkan" boleh
+  disembunyikan selama status Draf, Menunggu persetujuan, atau Terjadwal.
+- **BC-S9.** `broadcast-persetujuan` 390: status "Menunggu persetujuan" muncul dua kali berturut-turut (lencana kepala
+  kartu dan judul kotak peringatan). Judul kotak cukup "Perlu persetujuan Owner atau Admin".
+- **BC-S10.** `broadcast-penerima`: nama berkas di samping "Pilih berkas" turun ±6 px dari garis tengah tombol; samakan
+  `align-items: center`.
+- **BC-S11.** Petak corong dan petak status memakai gaya yang sama. Pemisah tipis atau ikon panah kecil antar-petak
+  corong akan membuat sifat "bertingkat" terlihat tanpa harus membaca keterangan. Keterangan juga belum menyebut Dibalas
+  ("… Dibaca mencakup yang sudah dibalas").

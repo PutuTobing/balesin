@@ -50,13 +50,13 @@ Orkestrator mengerjakan dari atas ke bawah. Tandai `[x]` saat Definition of Done
 - [x] Webhook keluar bertanda tangan + allowlist IP privat + riwayat & kirim ulang
 
 ## Fase 4 — Template & Broadcast
-- [ ] Sinkron & ajukan template Meta
+- [x] Sinkron & ajukan template Meta
 - [ ] Broadcast: sumber CSV/Excel/segmen/konektor REST, pemetaan variabel, pratinjau
 - [ ] Estimasi biaya, persetujuan > ambang, jadwal, throttle, jeda/batal
 - [ ] Anti-dobel, rem darurat, alarm Telegram
 - [ ] Laporan kampanye
 - [ ] Tag percakapan otomatis untuk penerima broadcast
-- [ ] Preset template industri (ISP dahulu) sebagai draf siap ajukan
+- [x] Preset template industri (ISP dahulu) sebagai draf siap ajukan
 
 ## Fase 5 — CRM, tiket, laporan
 - [ ] Kontak: atribut kustom, impor/ekspor, gabung duplikat
