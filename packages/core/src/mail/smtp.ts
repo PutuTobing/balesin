@@ -46,6 +46,22 @@ export interface MailContent {
   html?: string;
   /** Hanya isi dari memori (Buffer) — akses berkas dan URL dimatikan di transport. */
   inlineImages?: MailInlineImage[];
+  /**
+   * Fase 6 (channel Email) — header utas. `messageId` dibuat pemanggil (tanpa `<>`), `inReplyTo` +
+   * `references` = rantai `Message-ID` yang dibalas. Nilai SUDAH divalidasi pemanggil.
+   */
+  thread?: { messageId: string; inReplyTo: string | null; references: readonly string[] };
+  /** Fase 6: `Auto-Submitted: auto-replied` untuk balasan bot/otomatis (cegah loop balas-otomatis). */
+  autoSubmitted?: boolean;
+  /** Fase 6: lampiran (Buffer dari media store). */
+  attachments?: MailAttachment[];
+}
+
+/** Lampiran email keluar channel Email. */
+export interface MailAttachment {
+  filename: string;
+  contentType: string;
+  content: Buffer;
 }
 
 export interface SmtpTimeouts {
@@ -341,13 +357,31 @@ export function sendSmtpMail(
       subject: mail.subject,
       text: mail.text,
       html: mail.html,
-      attachments: mail.inlineImages?.map((image) => ({
-        cid: image.cid,
-        filename: image.filename,
-        contentType: image.contentType,
-        content: image.content,
-        contentDisposition: 'inline' as const,
-      })),
+      attachments: [
+        ...(mail.inlineImages ?? []).map((image) => ({
+          cid: image.cid,
+          filename: image.filename,
+          contentType: image.contentType,
+          content: image.content,
+          contentDisposition: 'inline' as const,
+        })),
+        ...(mail.attachments ?? []).map((file) => ({
+          filename: file.filename,
+          contentType: file.contentType,
+          content: file.content,
+          contentDisposition: 'attachment' as const,
+        })),
+      ],
+      ...(mail.thread
+        ? {
+            messageId: `<${mail.thread.messageId}>`,
+            ...(mail.thread.inReplyTo ? { inReplyTo: `<${mail.thread.inReplyTo}>` } : {}),
+            ...(mail.thread.references.length > 0
+              ? { references: mail.thread.references.map((id) => `<${id}>`) }
+              : {}),
+          }
+        : {}),
+      ...(mail.autoSubmitted ? { headers: { 'Auto-Submitted': 'auto-replied' } } : {}),
     });
     const rejected = asRecord(info).rejected;
     if (Array.isArray(rejected) && rejected.length > 0) {

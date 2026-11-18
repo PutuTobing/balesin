@@ -24,8 +24,9 @@ import { users } from './users';
 export const channelType = pgEnum('channel_type', CHANNEL_TYPES);
 
 /**
- * Channel inbox per organisasi (PRD §3.2, ARCHITECTURE.md §3). Baru WhatsApp Cloud API yang
- * diisi; jenis lain menambah kolomnya sendiri (berawalan jenisnya) saat dibangun.
+ * Channel inbox per organisasi (PRD §3.2, ARCHITECTURE.md §3). Tiap jenis channel punya kolomnya
+ * sendiri berawalan jenisnya: `wa_*` WhatsApp Cloud API, `tg_*` Telegram Bot, `email_*` Email
+ * (IMAP + SMTP), `meta_*` Messenger/Instagram (Fase 6, docs/KONTRAK-API-CHANNEL-LAIN.md).
  *
  * Rahasia (SECURITY.md §3) hanya disimpan sebagai hasil `SecretBox.encrypt` (AES-256-GCM) dengan
  * konteks organisasi + `channels.<kolom>` + ID channel ini (`subjectId`): teks sandi yang disalin
@@ -70,6 +71,60 @@ export const channels = pgTable(
     waVerifyTokenRotatedAt: timestamptz('wa_verify_token_rotated_at'),
     /** Data nomor dari tes BERHASIL terakhir (divalidasi `whatsAppNumberSummarySchema` saat dibaca). */
     waNumberSummary: jsonb('wa_number_summary').$type<WhatsAppNumberSummary>(),
+
+    // ── Telegram Bot (Fase 6) ─────────────────────────────────────────────
+    /** ID bot (angka sebelum `:` di token, dibenarkan `getMe`). */
+    tgBotId: text('tg_bot_id'),
+    /** `@username` bot tanpa `@` (dari `getMe`; tampilan saja). */
+    tgBotUsername: text('tg_bot_username'),
+    /** Token bot — konteks `channels.tg_bot_token`. TERPISAH dari token alarm Telegram. */
+    tgBotTokenEncrypted: text('tg_bot_token_encrypted'),
+    tgBotTokenTail: text('tg_bot_token_tail'),
+    /** `secret_token` webhook (acak, dibuat server) — konteks `channels.tg_webhook_secret`. */
+    tgWebhookSecretEncrypted: text('tg_webhook_secret_encrypted'),
+    /** Terakhir `setWebhook` berhasil (secret di atas sudah dipakai Telegram). */
+    tgWebhookRegisteredAt: timestamptz('tg_webhook_registered_at'),
+
+    // ── Email IMAP + SMTP (Fase 6) ────────────────────────────────────────
+    /** Alamat kotak masuk channel (huruf kecil). Juga alamat "From" balasan (SMTP terpisah). */
+    emailAddress: text('email_address'),
+    emailFromName: text('email_from_name'),
+    emailImapHost: text('email_imap_host'),
+    emailImapPort: integer('email_imap_port'),
+    /** `ssl` | `starttls` (TLS wajib). */
+    emailImapSecurity: text('email_imap_security'),
+    emailImapUsername: text('email_imap_username'),
+    /** Konteks `channels.email_imap_password`. */
+    emailImapPasswordEncrypted: text('email_imap_password_encrypted'),
+    emailImapPasswordTail: text('email_imap_password_tail'),
+    emailImapFolder: text('email_imap_folder'),
+    emailPollIntervalMinutes: integer('email_poll_interval_minutes'),
+    emailMarkAsRead: boolean('email_mark_as_read'),
+    /** `system` = pakai Pengaturan → Email pengirim; `custom` = akun SMTP di bawah. */
+    emailSmtpMode: text('email_smtp_mode'),
+    emailSmtpHost: text('email_smtp_host'),
+    emailSmtpPort: integer('email_smtp_port'),
+    /** `ssl` | `starttls` | `none` (`none` ditolak api di production). */
+    emailSmtpSecurity: text('email_smtp_security'),
+    emailSmtpUsername: text('email_smtp_username'),
+    /** Konteks `channels.email_smtp_password`. */
+    emailSmtpPasswordEncrypted: text('email_smtp_password_encrypted'),
+    emailSmtpPasswordTail: text('email_smtp_password_tail'),
+
+    // ── Messenger & Instagram DM (Fase 6, nonaktif bawaan — butuh App Review Meta) ──
+    /** ID Halaman Facebook (Messenger; Instagram: Halaman yang terhubung). */
+    metaPageId: text('meta_page_id'),
+    /** ID akun Instagram profesional (Instagram saja). */
+    metaIgAccountId: text('meta_ig_account_id'),
+    /** Page Access Token — konteks `channels.meta_page_token`. */
+    metaPageTokenEncrypted: text('meta_page_token_encrypted'),
+    metaPageTokenTail: text('meta_page_token_tail'),
+    /** App Secret aplikasi Meta — konteks `channels.meta_app_secret`. */
+    metaAppSecretEncrypted: text('meta_app_secret_encrypted'),
+    metaAppSecretTail: text('meta_app_secret_tail'),
+    /** Verify token webhook — konteks `channels.meta_webhook_verify_token`. */
+    metaVerifyTokenEncrypted: text('meta_verify_token_encrypted'),
+    metaVerifyTokenRotatedAt: timestamptz('meta_verify_token_rotated_at'),
 
     // ── Hasil tes koneksi terakhir ────────────────────────────────────────
     lastTestOk: boolean('last_test_ok'),
@@ -144,10 +199,40 @@ export const channels = pgTable(
       'channels_whatsapp_live_complete',
       sql`${table.type} <> 'whatsapp' or ${table.deletedAt} is not null or (${table.waPhoneNumberId} is not null and ${table.waBusinessAccountId} is not null and ${table.waAccessTokenEncrypted} is not null and ${table.waAppSecretEncrypted} is not null and ${table.waVerifyTokenEncrypted} is not null and ${table.waVerifyTokenRotatedAt} is not null)`,
     ),
-    // Channel terhapus tidak menyimpan rahasia apa pun.
+    // Channel terhapus tidak menyimpan rahasia apa pun (semua jenis channel).
     check(
       'channels_deleted_without_secrets',
-      sql`${table.deletedAt} is null or (${table.waAccessTokenEncrypted} is null and ${table.waAppSecretEncrypted} is null and ${table.waVerifyTokenEncrypted} is null)`,
+      sql`${table.deletedAt} is null or (${table.waAccessTokenEncrypted} is null and ${table.waAppSecretEncrypted} is null and ${table.waVerifyTokenEncrypted} is null and ${table.tgBotTokenEncrypted} is null and ${table.tgWebhookSecretEncrypted} is null and ${table.emailImapPasswordEncrypted} is null and ${table.emailSmtpPasswordEncrypted} is null and ${table.metaPageTokenEncrypted} is null and ${table.metaAppSecretEncrypted} is null and ${table.metaVerifyTokenEncrypted} is null)`,
+    ),
+    // ── Fase 6: kelengkapan & format per jenis channel ──
+    uniqueIndex('channels_organization_id_tg_bot_id_live_unique')
+      .on(table.organizationId, table.tgBotId)
+      .where(sql`${table.deletedAt} is null and ${table.type} = 'telegram'`),
+    uniqueIndex('channels_organization_id_email_address_live_unique')
+      .on(table.organizationId, table.emailAddress)
+      .where(sql`${table.deletedAt} is null and ${table.type} = 'email'`),
+    uniqueIndex('channels_organization_id_meta_page_id_live_unique')
+      .on(table.organizationId, table.type, table.metaPageId)
+      .where(sql`${table.deletedAt} is null and ${table.type} in ('messenger', 'instagram')`),
+    // Pemeriksa kotak masuk email (tiap menit): channel email yang hidup & aktif.
+    index('channels_email_live_idx')
+      .on(table.id)
+      .where(sql`${table.type} = 'email' and ${table.deletedAt} is null and ${table.enabled}`),
+    check(
+      'channels_telegram_live_complete',
+      sql`${table.type} <> 'telegram' or ${table.deletedAt} is not null or (${table.tgBotId} is not null and ${table.tgBotTokenEncrypted} is not null and ${table.tgWebhookSecretEncrypted} is not null)`,
+    ),
+    check(
+      'channels_email_live_complete',
+      sql`${table.type} <> 'email' or ${table.deletedAt} is not null or (${table.emailAddress} is not null and ${table.emailFromName} is not null and ${table.emailImapHost} is not null and ${table.emailImapPort} is not null and ${table.emailImapSecurity} is not null and ${table.emailImapUsername} is not null and ${table.emailImapPasswordEncrypted} is not null and ${table.emailImapFolder} is not null and ${table.emailPollIntervalMinutes} is not null and ${table.emailMarkAsRead} is not null and ${table.emailSmtpMode} is not null and (${table.emailSmtpMode} = 'system' or (${table.emailSmtpHost} is not null and ${table.emailSmtpPort} is not null and ${table.emailSmtpSecurity} is not null and ${table.emailSmtpUsername} is not null and ${table.emailSmtpPasswordEncrypted} is not null)))`,
+    ),
+    check(
+      'channels_meta_social_live_complete',
+      sql`${table.type} not in ('messenger', 'instagram') or ${table.deletedAt} is not null or (${table.metaPageId} is not null and ${table.metaPageTokenEncrypted} is not null and ${table.metaAppSecretEncrypted} is not null and ${table.metaVerifyTokenEncrypted} is not null and ${table.metaVerifyTokenRotatedAt} is not null and (${table.type} <> 'instagram' or ${table.metaIgAccountId} is not null))`,
+    ),
+    check(
+      'channels_fase6_formats',
+      sql`(${table.tgBotId} is null or ${table.tgBotId} ~ '^[0-9]{5,16}$') and (${table.tgBotUsername} is null or ${table.tgBotUsername} ~ '^[A-Za-z0-9_]{1,64}$') and (${table.metaPageId} is null or ${table.metaPageId} ~ '^[0-9]{5,32}$') and (${table.metaIgAccountId} is null or ${table.metaIgAccountId} ~ '^[0-9]{5,32}$') and (${table.emailAddress} is null or char_length(${table.emailAddress}) between 3 and 254) and (${table.emailFromName} is null or char_length(${table.emailFromName}) between 1 and 100) and (${table.emailImapHost} is null or char_length(${table.emailImapHost}) between 1 and 253) and (${table.emailSmtpHost} is null or char_length(${table.emailSmtpHost}) between 1 and 253) and (${table.emailImapUsername} is null or char_length(${table.emailImapUsername}) between 1 and 255) and (${table.emailSmtpUsername} is null or char_length(${table.emailSmtpUsername}) between 1 and 255) and (${table.emailImapFolder} is null or char_length(${table.emailImapFolder}) between 1 and 200) and (${table.emailImapPort} is null or ${table.emailImapPort} between 1 and 65535) and (${table.emailSmtpPort} is null or ${table.emailSmtpPort} between 1 and 65535) and (${table.emailPollIntervalMinutes} is null or ${table.emailPollIntervalMinutes} between 1 and 60) and (${table.emailImapSecurity} is null or ${table.emailImapSecurity} in ('ssl', 'starttls')) and (${table.emailSmtpSecurity} is null or ${table.emailSmtpSecurity} in ('ssl', 'starttls', 'none')) and (${table.emailSmtpMode} is null or ${table.emailSmtpMode} in ('system', 'custom'))`,
     ),
     check(
       'channels_last_test_complete',

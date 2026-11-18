@@ -2,6 +2,9 @@ import { createLogger, type LogLevel, type Logger } from './logger';
 import { closeRedis, createRedis, pingRedis, type Redis, type RedisRole } from './redis';
 import { withTimeout } from './timeout';
 
+export * from './channels/testing/fake-imap';
+export * from './channels/testing/test-cert';
+
 /**
  * Alat bantu tes: logger sungguhan (dengan seluruh redaksi) yang menulis ke memori.
  * Dipakai tes api/worker untuk memastikan tidak ada rahasia yang ikut ter-log.

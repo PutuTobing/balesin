@@ -8,7 +8,7 @@ import {
   type PermissionScope,
   type ScopeTarget,
 } from '@balesin/shared';
-import { eq, or, sql, type Column, type SQL } from 'drizzle-orm';
+import { and, eq, or, sql, type Column, type SQL } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 
 import { clientInfo } from '../../http/client-info';
@@ -109,12 +109,21 @@ function departmentRestricted(grant: PermissionGrant): SQL {
 /** Cakupan `department`: dipegang langsung, terkait tiket yang dipegang, atau departemen sendiri. */
 function departmentNarrowed(grant: PermissionGrant, columns: ScopeColumns, held: SQL): SQL {
   const conditions: SQL[] = [held];
-  if (columns.linkedTicketHolder) conditions.push(columns.linkedTicketHolder(grant.userId));
-  if (columns.department) {
+  const ownDepartment = columns.department
+    ? sql`${columns.department} in (select ${departmentMembers.departmentId} from ${departmentMembers} where ${departmentMembers.organizationId} = ${grant.organizationId} and ${departmentMembers.userId} = ${grant.userId})`
+    : undefined;
+  if (columns.linkedTicketHolder) {
+    // Review Fase 5 S1: "terkait tiket" TIDAK menembus batas departemen — kontak tidak dibatasi
+    // departemen, jadi tiket milik sendiri yang menaut kontak mana pun hanya membuka percakapan
+    // departemennya sendiri (atau tanpa departemen).
+    const linked = columns.linkedTicketHolder(grant.userId);
     conditions.push(
-      sql`${columns.department} in (select ${departmentMembers.departmentId} from ${departmentMembers} where ${departmentMembers.organizationId} = ${grant.organizationId} and ${departmentMembers.userId} = ${grant.userId})`,
+      columns.department && ownDepartment
+        ? (and(linked, or(sql`${columns.department} is null`, ownDepartment)) as SQL)
+        : linked,
     );
   }
+  if (ownDepartment) conditions.push(ownDepartment);
   return or(...conditions) as SQL;
 }
 

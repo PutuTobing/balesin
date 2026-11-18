@@ -8,6 +8,7 @@ import {
   type DbExecutor,
   type NewWebhookEvent,
 } from '@balesin/db';
+import type { ChannelType } from '@balesin/shared';
 import { and, count, eq, gte, inArray, isNull, like } from 'drizzle-orm';
 
 /**
@@ -20,15 +21,20 @@ import { and, count, eq, gte, inArray, isNull, like } from 'drizzle-orm';
  * tangan App Secret channel tersebut.
  */
 
-/** Channel WhatsApp untuk ID ini, termasuk yang sudah dihapus (dibedakan pemanggil). */
+/**
+ * Channel berjenis `type` (bawaan WhatsApp) untuk ID ini, termasuk yang sudah dihapus (dibedakan
+ * pemanggil). Fase 6: Telegram/Messenger/Instagram memakai penerima & jenisnya sendiri — ID channel
+ * jenis lain di URL WhatsApp (atau sebaliknya) = tidak dikenal.
+ */
 export async function findChannelForWebhook(
   db: DbExecutor,
   channelId: string,
+  type: ChannelType = 'whatsapp',
 ): Promise<Channel | undefined> {
   const [row] = await db
     .select()
     .from(channels)
-    .where(and(eq(channels.id, channelId), eq(channels.type, 'whatsapp')))
+    .where(and(eq(channels.id, channelId), eq(channels.type, type)))
     .limit(1);
   return row;
 }

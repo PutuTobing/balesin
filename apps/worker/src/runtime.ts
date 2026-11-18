@@ -1,5 +1,13 @@
-import type { Logger } from '@balesin/core';
-import type { Queue, Worker } from 'bullmq';
+import {
+  QUEUE_NAMES,
+  QUEUE_PREFIX,
+  WEBHOOK_JOBS,
+  WEBHOOK_JOB_OPTIONS,
+  webhookEventJobId,
+  webhookEventJobPayloadSchema,
+  type Logger,
+} from '@balesin/core';
+import { Queue as BullQueue, type Queue, type Worker } from 'bullmq';
 
 import {
   createBroadcastQueue,
@@ -25,6 +33,13 @@ import {
   type WebhooksOutDeps,
 } from './queues/webhooks-out';
 import { createWebhookWorker, type WebhookJobDeps } from './queues/webhooks';
+import {
+  createChannelsQueue,
+  createChannelsWorker,
+  pollEnqueuer,
+  scheduleChannelJobs,
+  type ChannelMailboxDeps,
+} from './queues/channel-mailboxes';
 
 export interface WorkerRuntime {
   workers: Worker[];
@@ -51,6 +66,8 @@ export interface WorkerServices {
   webhooksOut?: Omit<WebhooksOutDeps, 'logger'>;
   /** Antrian `broadcast` (kampanye, rem otomatis, alarm Telegram). Opsional untuk tes. */
   broadcast?: Omit<BroadcastJobDeps, 'logger' | 'enqueueRun'>;
+  /** Fase 6 — antrian `channels` (ambil kotak masuk email). Opsional untuk tes. */
+  channels?: Omit<ChannelMailboxDeps, 'logger' | 'enqueuePoll' | 'enqueueEvents'>;
 }
 
 const ERROR_LOG_INTERVAL_MS = 30_000;
@@ -78,6 +95,40 @@ export function startWorkers(
   let maintenanceQueue: Queue | undefined;
   let webhooksOutQueue: Queue | undefined;
   let broadcastQueue: Queue | undefined;
+  let channelsQueue: Queue | undefined;
+  let webhookProducer: Queue | undefined;
+  if (services.channels) {
+    const queue = createChannelsQueue(options);
+    channelsQueue = queue;
+    // Kejadian email masuk diantrekan ke antrian `webhooks` (pemroses yang sama dengan channel lain).
+    const producer = new BullQueue(QUEUE_NAMES.webhooks, {
+      connection: options.connection,
+      prefix: options.prefix ?? QUEUE_PREFIX,
+      defaultJobOptions: WEBHOOK_JOB_OPTIONS,
+    });
+    webhookProducer = producer;
+    producer.on('error', () => undefined);
+    workers.push(
+      createChannelsWorker(options, {
+        ...services.channels,
+        logger,
+        enqueuePoll: pollEnqueuer(queue),
+        enqueueEvents: async (events) => {
+          await producer.addBulk(
+            events.map((event) => ({
+              name: WEBHOOK_JOBS.whatsappEvent,
+              data: webhookEventJobPayloadSchema.parse(event),
+              opts: { jobId: webhookEventJobId(event.eventId) },
+            })),
+          );
+        },
+      }),
+    );
+    scheduleChannelJobs(queue).catch((err: unknown) => {
+      logger.error({ err }, 'Jadwal kotak masuk email gagal didaftarkan');
+    });
+    queue.on('error', () => undefined);
+  }
   if (services.broadcast) {
     const queue = createBroadcastQueue(options);
     broadcastQueue = queue;
@@ -159,6 +210,11 @@ export function startWorkers(
       if (broadcastQueue) {
         if (force) await broadcastQueue.disconnect();
         else await broadcastQueue.close();
+      }
+      for (const queue of [channelsQueue, webhookProducer]) {
+        if (!queue) continue;
+        if (force) await queue.disconnect();
+        else await queue.close();
       }
     },
   };

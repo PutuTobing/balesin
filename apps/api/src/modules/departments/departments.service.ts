@@ -112,6 +112,7 @@ export function createDepartmentsService(deps: {
         defaultChannelIds: routed
           .filter((channel) => channel.departmentId === row.id)
           .map((channel) => channel.id),
+        teamHours: row.teamHours ?? null,
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),
       };
@@ -283,6 +284,13 @@ export function createDepartmentsService(deps: {
             patch.description = input.description;
             changed.push('description');
           }
+          if (
+            input.teamHours !== undefined &&
+            JSON.stringify(input.teamHours) !== JSON.stringify(current.teamHours)
+          ) {
+            patch.teamHours = input.teamHours;
+            changed.push('teamHours');
+          }
           if (Object.keys(patch).length > 0) {
             await tx
               .update(departments)
@@ -316,7 +324,7 @@ export function createDepartmentsService(deps: {
 
     /** Hapus: percakapan/board/channel dilepas dari departemen ini, keanggotaan ikut terhapus. */
     async remove(auth: AuthContext, departmentId: string, client: TwoFactorContext['client']) {
-      await db.transaction(async (tx) => {
+      const members = await db.transaction(async (tx) => {
         await assertActorStillAuthorized(tx, auth, 'settings.workspace.manage');
         const org = auth.organizationId;
         const [current] = await tx
@@ -325,6 +333,17 @@ export function createDepartmentsService(deps: {
           .where(and(eq(departments.organizationId, org), eq(departments.id, departmentId)))
           .for('update');
         if (!current) throw new AppError('NOT_FOUND', { message: DEPARTMENT_NOT_FOUND });
+        const memberIds = (
+          await tx
+            .select({ userId: departmentMembers.userId })
+            .from(departmentMembers)
+            .where(
+              and(
+                eq(departmentMembers.organizationId, org),
+                eq(departmentMembers.departmentId, departmentId),
+              ),
+            )
+        ).map((row) => row.userId);
         const released = await tx
           .update(conversations)
           .set({ departmentId: null })
@@ -359,7 +378,16 @@ export function createDepartmentsService(deps: {
           metadata: { name: current.name, conversations: released.length },
           client,
         });
+        return memberIds;
       });
+      // Anggota bertanda kehilangan akses ke percakapan departemen ini → muat ulang (Info 2).
+      await publisher.publish(
+        members.map((userId) => ({
+          type: 'access.changed' as const,
+          organizationId: auth.organizationId,
+          userId,
+        })),
+      );
     },
 
     access: accessOf,
@@ -462,6 +490,8 @@ export function createDepartmentsService(deps: {
           client: context.client,
         });
       });
+      // Socket pengguna itu memuat ulang daftar (data di luar akses barunya hilang dari layar).
+      await publisher.publish([{ type: 'access.changed', organizationId: org, userId }]);
       return accessOf(org, userId);
     },
 
@@ -493,7 +523,7 @@ export function createDepartmentsService(deps: {
           )
           .for('update');
         if (!current) throw new AppError('NOT_FOUND', { message: CONVERSATION_NOT_FOUND });
-        if (current.departmentId === departmentId) return false;
+        if (current.departmentId === departmentId) return null;
         if (departmentId !== null) {
           const [department] = await tx
             .select({ id: departments.id })
@@ -527,11 +557,17 @@ export function createDepartmentsService(deps: {
           actorUserId: auth.user.id,
           departmentId,
         });
-        return true;
+        return { previous: current.departmentId };
       });
       if (changed) {
+        // Pengguna bertanda departemen lama yang kehilangan akses menerima `conversation.removed`.
         await publisher.publish([
-          { type: 'conversation.updated', organizationId: auth.organizationId, conversationId },
+          {
+            type: 'conversation.updated',
+            organizationId: auth.organizationId,
+            conversationId,
+            ...(changed.previous ? { previousDepartmentId: changed.previous } : {}),
+          },
         ]);
       }
     },

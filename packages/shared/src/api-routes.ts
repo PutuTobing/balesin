@@ -158,6 +158,27 @@ export const API_ROUTES = {
     bot: `${API_PREFIX}/settings/channels/:channelId/bot`,
   },
   /**
+   * Channel selain WhatsApp — Telegram, Email, Messenger, Instagram (Fase 6,
+   * docs/KONTRAK-API-CHANNEL-LAIN.md). Semua `channels.manage`.
+   */
+  channelConnections: {
+    /** GET — daftar channel non-WhatsApp + info jenis channel; POST — buat channel. */
+    list: `${API_PREFIX}/settings/channel-connections`,
+    /** GET — satu channel; PATCH — ubah; DELETE — hapus (+ konfirmasi ulang identitas). */
+    channel: `${API_PREFIX}/settings/channel-connections/:channelId`,
+    /** POST — nonaktifkan. */
+    disable: `${API_PREFIX}/settings/channel-connections/:channelId/disable`,
+    /** POST — aktifkan kembali (Messenger/Instagram: wajib tes koneksi berhasil). */
+    enable: `${API_PREFIX}/settings/channel-connections/:channelId/enable`,
+    /** POST — tes koneksi (Telegram getMe + webhook; Email IMAP + SMTP; Meta Halaman/akun IG). */
+    test: `${API_PREFIX}/settings/channel-connections/:channelId/test`,
+    /**
+     * GET — URL webhook + verify token (Messenger/Instagram). POST — Telegram: pasang ulang webhook
+     * (secret baru); Messenger/Instagram: buat ulang verify token.
+     */
+    webhook: `${API_PREFIX}/settings/channel-connections/:channelId/webhook`,
+  },
+  /**
    * Rem pengiriman (docs/KONTRAK-API-INBOX.md "Batas kirim & rem darurat"). GET/PUT =
    * `sending.limits.manage`; tarik rem = `sending.limits.manage`; lanjutkan = `sending.resume`.
    */
@@ -210,6 +231,8 @@ export const API_ROUTES = {
     retry: `${API_PREFIX}/messages/:messageId/retry`,
     /** GET — unduh media pesan (CSRF: memakai jatah + menulis cache). */
     media: `${API_PREFIX}/messages/:messageId/media`,
+    /** GET — HTML email tersanitasi (pesan channel Email; `inbox.view` + cakupan). */
+    emailHtml: `${API_PREFIX}/messages/:messageId/email-html`,
     /** GET — satu kontak (`contacts.view`); PATCH — ubah nama/email/catatan/atribut (`contacts.manage`). */
     contact: `${API_PREFIX}/contacts/:contactId`,
     /** GET — ekspor data satu kontak (JSON, `contacts.export`). DELETE kontak = `contact` (`contacts.delete`). */
@@ -226,6 +249,8 @@ export const API_ROUTES = {
     star: `${API_PREFIX}/messages/:messageId/star`,
     /** GET — status rem darurat pengiriman `{ paused }` untuk banner (`inbox.view`). */
     sendingStatus: `${API_PREFIX}/inbox/sending-status`,
+    /** GET/PUT — saklar ketersediaan agen sendiri untuk alokasi otomatis (`inbox.reply`). */
+    availability: `${API_PREFIX}/inbox/availability`,
     /** POST — pindahkan percakapan ke departemen / lepas (`inbox.assign`, CSRF). */
     department: `${API_PREFIX}/conversations/:conversationId/department`,
   },
@@ -284,6 +309,18 @@ export const API_ROUTES = {
    * Departemen Fase 5. Daftar nama = `inbox.view`; kelola & akses pengguna =
    * `settings.workspace.manage`.
    */
+  /**
+   * Pengaturan kerja tim (Fase 5): jam kerja tim + hari libur, pesan otomatis, alokasi agen
+   * (`settings.workspace.manage`).
+   */
+  workspace: {
+    /** GET/PUT — jam kerja, hari libur, pesan otomatis, mode alokasi & kapasitas. */
+    settings: `${API_PREFIX}/settings/workspace`,
+    /** GET — agen untuk alokasi otomatis (tersedia, dikecualikan, beban). */
+    agents: `${API_PREFIX}/settings/workspace/agents`,
+    /** PATCH — `{ available?, excluded? }` seorang agen. */
+    agent: `${API_PREFIX}/settings/workspace/agents/:userId`,
+  },
   departments: {
     /** GET — nama departemen. */
     list: `${API_PREFIX}/departments`,
@@ -455,6 +492,12 @@ export const API_ROUTES = {
 export const WEBHOOK_ROUTES = {
   /** GET — jabat tangan verifikasi Meta; POST — notifikasi (pesan masuk, status, error). */
   whatsapp: '/webhooks/whatsapp/:channelId',
+  /** POST — update Bot API Telegram; keaslian dari header `X-Telegram-Bot-Api-Secret-Token`. */
+  telegram: '/webhooks/telegram/:channelId',
+  /** GET — jabat tangan Meta; POST — notifikasi Messenger (tanda tangan App Secret). */
+  messenger: '/webhooks/messenger/:channelId',
+  /** GET — jabat tangan Meta; POST — notifikasi Instagram DM (tanda tangan App Secret). */
+  instagram: '/webhooks/instagram/:channelId',
 } as const;
 
 /**

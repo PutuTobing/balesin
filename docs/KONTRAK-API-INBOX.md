@@ -518,3 +518,44 @@ docs/KONTRAK-API-TEMPLATE.md.
 - Unduh media (butir ruang chat): `Content-Disposition` dengan `filename*` RFC 5987 dari nama yang
   sudah dibersihkan, `Content-Type` hasil deteksi isi, nama di storage = ID buatan server.
 - Impor kontak / kirim ke nomor (Fase 4): selesaikan review kontak R4 lebih dulu (DECISIONS).
+
+## Jam kerja, pesan otomatis, alokasi (Fase 5)
+
+Skema: `packages/shared/src/workspace.ts`. Alamat: `API_ROUTES.workspace`, `API_ROUTES.inbox.availability`.
+Migrasi `0028`. Dijalankan worker lewat job pemeliharaan **`workspace-dispatch`** (tiap 10 detik).
+
+| Endpoint | Izin | Keterangan |
+|---|---|---|
+| `GET /api/v1/settings/workspace` | `settings.workspace.manage` | `{ settings: { timezone, teamHours, holidays, withinTeamHoursNow, allocation: { mode, maxOpenPerAgent }, autoMessages: { greeting, away, assigned: { enabled, text } }, updatedAt } }` |
+| `PUT /api/v1/settings/workspace` | `settings.workspace.manage` | Sebagian: `teamHours` (format jam kerja bot: `always` / `schedule` + `windows [{ day 0–6, start, end }]`, zona organisasi), `holidays` (≤ 60 `{ date YYYY-MM-DD, name }`, tidak kembar), `allocation { mode: manual·round_robin, maxOpenPerAgent: 1–200 \| null }`, `autoMessages.{greeting,away,assigned} { enabled, text ≤ 1.000 }`, `confirmation`. Variabel: `{nama}` (semua), `{agen}` (hanya `assigned`) — lainnya 400. **Mengaktifkan pesan otomatis atau mengubah teksnya wajib `confirmation`** (password + kode 2FA; review jam kerja S1) — mematikan & isian lain tidak. Audit `settings.workspace.updated` `{ changedFields, actorRole, autoMessageTexts: { <jenis>: { previous, next } } }` (teks pengaturan, maks. 1.000); teks baru memuat tautan/angka panjang (≥ 8 digit) baru → `risky` + kejadian keamanan **`auto_message_risky`** (`warning`, oleh siapa pun termasuk Owner) |
+| `GET /api/v1/settings/workspace/agents` | `settings.workspace.manage` | `{ agents: [{ userId, name, role, available, excluded, openConversations, lastAssignedAt }] }` — peran alokasi saja (Owner/Admin/Supervisor/CS aktif; Teknisi tidak) |
+| `PATCH /api/v1/settings/workspace/agents/:userId` | `settings.workspace.manage` | `{ available?, excluded? }` → `{ agent }`; Teknisi/nonaktif → 404. Audit `settings.workspace.agent_updated` |
+| `GET`/`PUT /api/v1/inbox/availability` | `inbox.reply` | Saklar milik agen sendiri `{ available }` → `{ availability: { available, excluded, mode } }`. Peran non-alokasi (Teknisi) → 409. Tidak diaudit (saklar harian) |
+| `PATCH /api/v1/settings/departments/:id` | `settings.workspace.manage` | + `teamHours` (jam kerja khusus departemen, `null` = ikut organisasi) |
+
+**Jam kerja tim** terpisah dari jam kerja bot (`channels.bot_hours`). Hari libur (tanggal lokal zona
+organisasi) = di luar jam kerja. Percakapan berdepartemen memakai jam departemennya bila diatur.
+
+**Alokasi** — `manual` (bawaan: agen mengambil sendiri dari antrian) atau `round_robin`: tiap putaran,
+percakapan `unserved` tanpa agen (tertua dulu, maks. 50/organisasi) yang berada DALAM jam kerja
+ditugaskan ke agen yang paling lama tidak mendapat penugasan otomatis dan memenuhi semua syarat: aktif,
+peran alokasi (cakupan `inbox.reply` penuh), 2FA aktif bila perannya wajib 2FA, `available`, tidak
+`excluded` (bawaan: Owner/Admin dikecualikan), `served` terbuka < `maxOpenPerAgent`, anggota departemen
+percakapan (percakapan tanpa departemen: bukan pengguna bertanda "akses departemen sendiri"). Tidak ada
+yang memenuhi → tetap di antrian. **Atomik**: percakapan dan baris agen dikunci `FOR UPDATE SKIP LOCKED`,
+kapasitas dihitung di transaksi yang sama. Hasil: status `served`, kejadian `assigned` dengan pelaku
+**sistem** (`actor: null`), webhook `conversation.assigned`, real-time `conversation.updated`, push
+"ditugaskan" ke agen. Percakapan bot tidak pernah diambil (hanya `unserved`).
+
+**Pesan otomatis** (`sender_kind: system`, jalur kirim biasa → rem darurat & klaim kirim berlaku),
+**sekali per sesi** (`conversation_auto_messages`, unik per slot `welcome`/`assigned`):
+- `greeting` / `away` — percakapan BARU (≤ 10 menit) yang pesan pertamanya dari pelanggan, belum pernah
+  ditangani bot (`handoff`/`bot_resumed`), status `unserved`/`served`: dalam jam kerja saat percakapan
+  dibuat → sapaan, di luar → pesan di luar jam kerja. Tidak untuk percakapan broadcast/API/agen
+  (pesan pertama keluar).
+- `{nama}` = nama dari tim → nama profil WhatsApp, **tautan dibuang** (nama profil = teks bebas pelanggan;
+  review jam kerja Info 3), maks. 60 karakter, kosong → "Kak".
+- `assigned` — kejadian `claimed`/`assigned` ≤ 15 menit (termasuk round-robin) pada percakapan yang
+  dimulai pelanggan dan masih dipegang agen itu; `{agen}` = nama agen.
+- Hanya dalam jendela 24 jam. Rem darurat aktif / jenis dimatikan → dicatat `skip_reason`
+  (`sending_paused`, `disabled`, `window_closed`), tidak dikirim, tidak dicoba ulang.

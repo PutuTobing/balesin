@@ -1,3 +1,4 @@
+import { AppError } from '@balesin/core';
 import {
   REPORT_ROUTES,
   csatSettingsResponseSchema,
@@ -15,6 +16,7 @@ import { clientInfo } from '../../http/client-info';
 import { enforceRateLimit, type RateLimitRule, type RateLimiter } from '../../http/rate-limit';
 import { requirePermission } from '../../http/route-access';
 import { requireAuth } from '../auth/auth.hook';
+import { createConcurrencyGate } from '../messages/concurrency';
 import { permissionGrant } from '../auth/permission-grant';
 import type { ReportsService } from './reports.service';
 
@@ -43,12 +45,41 @@ const errors = {
 const limitMessage = (wait: string) =>
   `Terlalu banyak permintaan laporan. Coba lagi dalam ${wait}.`;
 
+/**
+ * Review Fase 5 Info 5: laporan yang BERJALAN bersamaan dibatasi per organisasi (2) dan per proses
+ * api (6) — tiap query bisa memegang koneksi pool hingga batas waktu 8 dtk. Penuh → 429 segera.
+ */
+export const REPORT_CONCURRENCY = { perOrganization: 2, global: 6 } as const;
+
+async function gated<T>(
+  gate: ReturnType<typeof createConcurrencyGate>,
+  organizationId: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  const release = gate.tryAcquire(organizationId);
+  if (!release) {
+    throw new AppError('RATE_LIMITED', {
+      message: 'Laporan lain sedang diproses untuk organisasi ini. Coba lagi beberapa detik lagi.',
+      retryAfterSeconds: 5,
+    });
+  }
+  try {
+    return await run();
+  } finally {
+    release();
+  }
+}
+
 export const reportsRoutes: FastifyPluginCallbackZod<ReportsRoutesOptions> = (
   app,
   options,
   done,
 ) => {
   const { reports, limiter } = options;
+  const gate = createConcurrencyGate({
+    global: REPORT_CONCURRENCY.global,
+    perUser: REPORT_CONCURRENCY.perOrganization,
+  });
 
   app.get(
     REPORT_ROUTES.performance,
@@ -63,11 +94,8 @@ export const reportsRoutes: FastifyPluginCallbackZod<ReportsRoutesOptions> = (
       const grant = await permissionGrant(request, 'reports.view');
       await enforceRateLimit(limiter, READ_RULE, grant.userId, limitMessage);
       return {
-        report: await reports.performance(
-          grant.organizationId,
-          grant.userId,
-          grant.scope,
-          request.query,
+        report: await gated(gate, grant.organizationId, () =>
+          reports.performance(grant.organizationId, grant.userId, grant.scope, request.query),
         ),
       };
     },
@@ -86,11 +114,8 @@ export const reportsRoutes: FastifyPluginCallbackZod<ReportsRoutesOptions> = (
       const grant = await permissionGrant(request, 'reports.view');
       await enforceRateLimit(limiter, READ_RULE, grant.userId, limitMessage);
       return {
-        costs: await reports.costs(
-          requireAuth(request),
-          grant.scope,
-          request.query,
-          clientInfo(request),
+        costs: await gated(gate, grant.organizationId, () =>
+          reports.costs(requireAuth(request), grant.scope, request.query, clientInfo(request)),
         ),
       };
     },
@@ -106,11 +131,8 @@ export const reportsRoutes: FastifyPluginCallbackZod<ReportsRoutesOptions> = (
     async (request, reply) => {
       const grant = await permissionGrant(request, 'reports.view');
       await enforceRateLimit(limiter, EXPORT_RULE, grant.userId, limitMessage);
-      const { csv, rows, filename } = await reports.exportCsv(
-        requireAuth(request),
-        grant.scope,
-        request.query,
-        clientInfo(request),
+      const { csv, rows, filename } = await gated(gate, grant.organizationId, () =>
+        reports.exportCsv(requireAuth(request), grant.scope, request.query, clientInfo(request)),
       );
       void reply.headers({
         'content-disposition': `attachment; filename="${filename.replace(/[^A-Za-z0-9._-]/g, '_')}"`,

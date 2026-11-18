@@ -1,6 +1,7 @@
 import {
   allowedSmtpPorts,
   baseEnvShape,
+  envDefault,
   envParse,
   envRequired,
   isProductionLike,
@@ -14,6 +15,8 @@ import {
   type Secret,
   type SmtpFallbackConfig,
 } from '@balesin/core';
+import { isAbsolute, resolve } from 'node:path';
+
 import { z } from 'zod';
 
 /** Konfigurasi worker, dibaca sekali saat start dari variabel lingkungan (.env). */
@@ -38,6 +41,13 @@ export interface WorkerConfig {
   metaGraphVersion: string;
   /** HANYA development/test: server Meta tiruan di loopback. `null` = graph.facebook.com. */
   metaGraphBaseUrl: string | null;
+  /**
+   * Fase 6: folder media BERSAMA api (`MEDIA_DIR`) — lampiran email masuk disimpan worker dan dibaca
+   * api. Path relatif di luar production diselesaikan terhadap folder `apps/api` (default dev api =
+   * `./media` di sana), supaya dua proses `pnpm dev` memakai folder yang sama. Production: wajib path
+   * absolut (volume yang sama dengan api).
+   */
+  mediaDir: string;
 }
 
 /**
@@ -57,6 +67,12 @@ export function loadConfig(source: EnvSource): WorkerConfig {
       ),
       ...smtpFallbackEnvShape(),
       ...metaGraphEnvShape(production),
+      MEDIA_DIR: production
+        ? envRequired(
+            (raw) => (isAbsolute(raw) ? raw : undefined),
+            'harus berupa path folder absolut yang sama dengan MEDIA_DIR api (volume media bersama)',
+          )
+        : envDefault(envParse.text, './media', 'harus berupa path folder'),
     }),
     source,
   );
@@ -73,5 +89,8 @@ export function loadConfig(source: EnvSource): WorkerConfig {
     smtpAllowedPorts: allowedSmtpPorts(isProduction),
     metaGraphVersion: env.META_GRAPH_VERSION,
     metaGraphBaseUrl: env.META_GRAPH_BASE_URL ?? null,
+    mediaDir: isAbsolute(env.MEDIA_DIR)
+      ? env.MEDIA_DIR
+      : resolve(import.meta.dirname, '..', '..', 'api', env.MEDIA_DIR),
   };
 }

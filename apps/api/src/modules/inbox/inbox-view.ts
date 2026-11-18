@@ -3,6 +3,7 @@ import type { ContactRow } from '@balesin/db';
 import {
   MAX_SEND_ATTEMPTS,
   MESSAGE_MEDIA_KINDS,
+  channelHasCustomerWindow,
   interactiveMessageSchema,
   isRetryableFailure,
   outboundFailureMessage,
@@ -26,27 +27,40 @@ import type { ConversationRowView, LastMessageRow, MessageRowView } from './inbo
 
 const PREVIEW_MAX = 200;
 
-type ContactNames = Pick<ContactRow, 'number' | 'name' | 'profileName' | 'phone' | 'waUsername'>;
+type ContactNames = Pick<ContactRow, 'number' | 'name' | 'profileName' | 'phone' | 'waUsername'> &
+  Partial<Pick<ContactRow, 'channelType' | 'channelHandle'>>;
 
-/** Nama tampilan: nama dari tim → nama profil WhatsApp → nomor → @username → "Kontak #n". */
+/**
+ * Nama tampilan: nama dari tim → nama profil (WhatsApp/channel lain) → nomor → @username WhatsApp →
+ * pengenal channel lain (@username Telegram/Instagram, alamat email) → "Kontak #n".
+ */
 export function contactDisplayName(contact: ContactNames): string {
   return (
     contact.name ??
     contact.profileName ??
     contact.phone ??
     (contact.waUsername ? `@${contact.waUsername}` : null) ??
+    contact.channelHandle ??
     `Kontak #${String(contact.number)}`
   );
 }
 
 export function toContactSummary(contact: ContactNames & { id: string }): ContactSummary {
+  const otherChannel = contact.channelType !== undefined && contact.channelType !== 'whatsapp';
   return {
     id: contact.id,
     number: contact.number,
     displayName: contactDisplayName(contact),
-    nameSource: contact.name ? 'team' : contact.profileName ? 'whatsapp' : 'none',
+    nameSource: contact.name
+      ? 'team'
+      : contact.profileName
+        ? otherChannel
+          ? 'channel'
+          : 'whatsapp'
+        : 'none',
     phone: contact.phone,
     waUsername: contact.waUsername,
+    channelHandle: contact.channelHandle ?? null,
   };
 }
 
@@ -92,6 +106,7 @@ export function toConversation(
   now: Date,
   tags: TagRef[] = [],
 ): Conversation {
+  const windowApplies = channelHasCustomerWindow(row.channel.type);
   return {
     id: row.id,
     number: row.number,
@@ -102,8 +117,12 @@ export function toConversation(
     unreadCount: row.unreadCount,
     lastMessageAt: row.lastMessageAt.toISOString(),
     lastInboundAt: row.lastInboundAt?.toISOString() ?? null,
-    windowExpiresAt: row.windowExpiresAt?.toISOString() ?? null,
-    windowOpen: row.windowExpiresAt !== null && row.windowExpiresAt.getTime() > now.getTime(),
+    windowExpiresAt: windowApplies ? (row.windowExpiresAt?.toISOString() ?? null) : null,
+    // Fase 6: channel tanpa jendela 24 jam (Telegram, Email) selalu boleh membalas.
+    windowOpen:
+      !windowApplies ||
+      (row.windowExpiresAt !== null && row.windowExpiresAt.getTime() > now.getTime()),
+    windowApplies,
     lastMessage: lastMessage ? toMessagePreview(lastMessage) : null,
     createdAt: row.createdAt.toISOString(),
     resolvedAt: row.resolvedAt?.toISOString() ?? null,
@@ -174,6 +193,7 @@ export function toMessage(row: MessageRowView): Message {
         ? parsed(interactiveMessageSchema, extras.interactiveMessage)
         : null,
     template: templateOf(row.type, extras.template),
+    email: emailOf(extras.email),
     reaction:
       row.type === 'reaction'
         ? { emoji: row.reactionEmoji, messageId: row.reactionToMessageId }
@@ -192,6 +212,18 @@ export function toMessage(row: MessageRowView): Message {
     starredAt: row.starredAt?.toISOString() ?? null,
     createdAt: row.occurredAt.toISOString(),
   };
+}
+
+const storedEmailSchema = z.object({
+  subject: nullableText,
+  hasHtml: z.boolean().catch(false),
+  authWarning: z.boolean().catch(false),
+  skippedAttachments: z.number().int().nonnegative().catch(0),
+});
+
+/** Fase 6 — info email (tanpa header utas mentah). */
+function emailOf(value: unknown): Message['email'] {
+  return parsed(storedEmailSchema, value);
 }
 
 const storedTemplateSchema = z.object({

@@ -326,14 +326,21 @@ export const contactSummarySchema = z.object({
   displayName: z.string(),
   /**
    * Asal `displayName`: `team` (diedit tim), `whatsapp` (nama profil kiriman pelanggan — tidak
-   * tepercaya, tampilkan penanda "dari WhatsApp" + nomor/username di sampingnya), `none` (nomor,
-   * @username, atau "Kontak #n").
+   * tepercaya, tampilkan penanda "dari WhatsApp" + nomor/username di sampingnya), `channel` (nama
+   * profil dari channel lain — Telegram/Email/Messenger/Instagram, sama tidak tepercayanya; tampilkan
+   * `channelHandle` di sampingnya), `none` (nomor, @username, alamat email, atau "Kontak #n").
    */
-  nameSource: z.enum(['team', 'whatsapp', 'none']),
+  nameSource: z.enum(['team', 'whatsapp', 'channel', 'none']),
   /** Nomor E.164 (`+62…`), `null` bila pelanggan memakai username tanpa nomor. */
   phone: z.string().nullable(),
   /** Username WhatsApp (tanpa `@`), bila ada. */
   waUsername: z.string().nullable(),
+  /**
+   * Fase 6: pengenal kontak di channel selain WhatsApp untuk ditampilkan — `@username` Telegram /
+   * Instagram atau alamat email; `null` bila tidak ada (Messenger, WhatsApp). Server selalu
+   * mengisi; opsional hanya untuk data tiruan lama.
+   */
+  channelHandle: z.string().nullable().optional(),
   /**
    * Tag kontak (urut nama). Server SELALU mengisinya; opsional di skema hanya supaya data tiruan
    * lama tetap sah — dijadikan wajib setelah web menyesuaikan.
@@ -567,8 +574,16 @@ export const conversationSchema = z.object({
   lastInboundAt: isoDateTimeSchema.nullable(),
   /** Akhir jendela 24 jam; `null` = belum pernah ada pesan masuk. */
   windowExpiresAt: isoDateTimeSchema.nullable(),
-  /** Jendela 24 jam masih terbuka saat respons dibuat (di luarnya hanya template). */
+  /**
+   * Pesan biasa boleh dikirim saat respons dibuat. Channel tanpa jendela 24 jam (Telegram, Email)
+   * selalu `true`. Di WhatsApp di luar jendela hanya template.
+   */
   windowOpen: z.boolean(),
+  /**
+   * Fase 6: aturan jendela 24 jam berlaku di channel ini (WhatsApp, Messenger, Instagram). `false`
+   * = sembunyikan hitung mundur. Server selalu mengisi; opsional hanya untuk data tiruan lama.
+   */
+  windowApplies: z.boolean().optional(),
   lastMessage: messagePreviewSchema.nullable(),
   createdAt: isoDateTimeSchema,
   resolvedAt: isoDateTimeSchema.nullable(),
@@ -761,6 +776,22 @@ export const messageSchema = z.object({
       name: z.string(),
       language: z.string(),
       category: z.string(),
+    })
+    .nullable()
+    .optional(),
+  /**
+   * Fase 6 — pesan channel Email: subjek + ada/tidaknya versi HTML tersanitasi (ambil lewat
+   * `GET /messages/:id/email-html`, tampilkan di iframe sandbox). `authWarning` = server email
+   * penerima melaporkan pengirim GAGAL verifikasi SPF/DKIM/DMARC (alamat pengirim bisa palsu).
+   * Server selalu mengisi (`null` untuk pesan lain); opsional untuk data tiruan lama.
+   */
+  email: z
+    .object({
+      subject: z.string().nullable(),
+      hasHtml: z.boolean(),
+      authWarning: z.boolean(),
+      /** Lampiran yang dilewati (terlalu besar / terlalu banyak / jenis berbahaya). */
+      skippedAttachments: z.number().int().nonnegative(),
     })
     .nullable()
     .optional(),

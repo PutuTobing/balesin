@@ -90,8 +90,13 @@ export function openTicketLinksContact(userId: string, contactId: SQL | typeof c
   return sql`exists (select 1 from ${tickets} where ${tickets.organizationId} = ${contacts.organizationId} and ${tickets.assigneeUserId} = ${userId} and ${tickets.closedAt} is null and ${tickets.contactId} = ${contactId})`;
 }
 
+/**
+ * Percakapan kontak tiket: yang ditautkan eksplisit, yang masih terbuka, atau yang dibuat setelah
+ * tiket — riwayat lama yang sudah selesai TIDAK terbuka lewat tiket (review Fase 5 Info 1: tiket dari
+ * API key/rekan yang ditugaskan ke Teknisi tidak membuka seluruh riwayat pelanggan).
+ */
 function conversationLinkedByTicket(userId: string): SQL {
-  return sql`exists (select 1 from ${tickets} where ${tickets.organizationId} = ${conversations.organizationId} and ${tickets.assigneeUserId} = ${userId} and ${tickets.closedAt} is null and ${tickets.contactId} = ${conversations.contactId})`;
+  return sql`exists (select 1 from ${tickets} where ${tickets.organizationId} = ${conversations.organizationId} and ${tickets.assigneeUserId} = ${userId} and ${tickets.closedAt} is null and ${tickets.contactId} = ${conversations.contactId} and (${tickets.conversationId} = ${conversations.id} or ${conversations.status} <> 'resolved' or ${conversations.createdAt} >= ${tickets.createdAt}))`;
 }
 
 export function conversationScope(grant: PermissionGrant): SQL {
@@ -116,6 +121,8 @@ export function searchCondition(q: string): SQL {
     ilike(contacts.name, pattern),
     ilike(contacts.profileName, pattern),
     ilike(contacts.waUsername, pattern),
+    // Fase 6: @username Telegram/Instagram, alamat email.
+    ilike(contacts.channelHandle, pattern),
   ];
   const digits = q.replace(/[^0-9]/g, '');
   // Nomor: potongan digit (≥ 3) dicocokkan ke E.164 tanpa memedulikan `+`, spasi, atau tanda hubung;
@@ -143,7 +150,17 @@ export interface ConversationRowView {
   firstAssignedAt: Date | null;
   firstResponseAt: Date | null;
   channel: { id: string; name: string; type: ChannelType };
-  contact: Pick<ContactRow, 'id' | 'number' | 'name' | 'profileName' | 'phone' | 'waUsername'>;
+  contact: Pick<
+    ContactRow,
+    | 'id'
+    | 'number'
+    | 'name'
+    | 'profileName'
+    | 'phone'
+    | 'waUsername'
+    | 'channelType'
+    | 'channelHandle'
+  >;
   assignee: { id: string; name: string } | null;
   department: { id: string; name: string } | null;
 }
@@ -172,6 +189,8 @@ function selectConversations(db: DbExecutor) {
       contactProfileName: contacts.profileName,
       contactPhone: contacts.phone,
       contactWaUsername: contacts.waUsername,
+      contactChannelType: contacts.channelType,
+      contactChannelHandle: contacts.channelHandle,
       assigneeId: users.id,
       assigneeName: users.name,
       departmentId: departments.id,
@@ -234,6 +253,8 @@ function toConversationRowView(row: SelectedConversation): ConversationRowView {
       profileName: row.contactProfileName,
       phone: row.contactPhone,
       waUsername: row.contactWaUsername,
+      channelType: row.contactChannelType,
+      channelHandle: row.contactChannelHandle,
     },
     assignee:
       row.assigneeId !== null && row.assigneeName !== null

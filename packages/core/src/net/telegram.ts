@@ -22,7 +22,7 @@ export interface TelegramSendInput {
   timeoutMs?: number;
 }
 
-function safeBaseUrl(baseUrl: string | undefined): string {
+export function telegramSafeBaseUrl(baseUrl: string | undefined): string {
   if (!baseUrl) return TELEGRAM_API_BASE_URL;
   const url = new URL(baseUrl);
   const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
@@ -41,7 +41,7 @@ export async function sendTelegramMessage(input: TelegramSendInput): Promise<Tel
   }
   let response: Response;
   try {
-    response = await fetch(`${safeBaseUrl(input.baseUrl)}/bot${input.token}/sendMessage`, {
+    response = await fetch(`${telegramSafeBaseUrl(input.baseUrl)}/bot${input.token}/sendMessage`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({

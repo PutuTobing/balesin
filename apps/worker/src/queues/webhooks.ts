@@ -7,7 +7,9 @@ import {
   normalizeStatusUpdate,
   normalizeWebhookFailure,
   webhookEventJobPayloadSchema,
+  channelInboundEventSchema,
   NOOP_INBOX_EVENT_PUBLISHER,
+  type ChannelInboundEvent,
   type InboxBusEventInput,
   type InboxEventPublisher,
   type Logger,
@@ -28,6 +30,9 @@ import {
 import { UnrecoverableError, Worker } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
 
+import type { ChannelType } from '@balesin/shared';
+
+import { handleChannelMessage, handleChannelStatus } from '../inbound/channel-inbound';
 import { createInboundHandlers } from '../inbound/handlers';
 import type { NotificationProducer } from './notifications';
 import type { QueueConnectionOptions } from './system';
@@ -86,7 +91,26 @@ export interface InboundEventHandlers {
   status(status: NormalizedStatusUpdate, context: InboundEventContext): Promise<void>;
   /** Error tingkat sistem/aplikasi/akun dari Meta. */
   error(failure: NormalizedWebhookFailure, context: InboundEventContext): Promise<void>;
+  /**
+   * Fase 6: kejadian channel selain WhatsApp (Telegram/Email/Messenger/Instagram) dalam bentuk netral.
+   * Bawaan (tidak diisi): `handleChannelMessage` / `handleChannelStatus`.
+   */
+  channel?(
+    event: ChannelInboundEvent,
+    channelType: Exclude<ChannelType, 'whatsapp'>,
+    context: InboundEventContext,
+  ): Promise<void>;
 }
+
+/** Pemroses bawaan kejadian channel selain WhatsApp (Fase 6). */
+export const defaultChannelEventHandler: NonNullable<InboundEventHandlers['channel']> = (
+  event,
+  channelType,
+  context,
+) =>
+  event.kind === 'message'
+    ? handleChannelMessage(event, channelType, context)
+    : handleChannelStatus(event, channelType, context);
 
 /** Pemroses kosong (untuk tes yang hanya menguji alur antrean/penandaan). */
 export const PENDING_INBOUND_HANDLERS: InboundEventHandlers = {
@@ -138,6 +162,13 @@ async function dispatch(
   handlers: InboundEventHandlers,
   context: InboundEventContext,
 ): Promise<boolean> {
+  if (event.source !== 'whatsapp') {
+    // Fase 6: payload netral yang sudah divalidasi penerima — dibaca ulang dengan skema yang sama.
+    const parsed = channelInboundEventSchema.safeParse(event.payload);
+    if (!parsed.success) throw new WebhookPayloadError('Payload kejadian channel tidak valid');
+    await (handlers.channel ?? defaultChannelEventHandler)(parsed.data, event.source, context);
+    return true;
+  }
   switch (event.kind) {
     case 'message':
       await handlers.message(normalizeInboundMessage(event.payload), context);

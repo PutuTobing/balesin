@@ -204,6 +204,15 @@ describe('isWithinScope', () => {
       isWithinScope('department', me, { holderUserIds: [other], linkedTicketHolderUserIds: [me] }),
     ).toBe(true);
     expect(isWithinScope('department', me, { holderUserIds: [other] })).toBe(false);
+    // S1: tiket yang ia pegang tidak membuka percakapan departemen LAIN.
+    expect(
+      isWithinScope(
+        'department',
+        me,
+        { holderUserIds: [other], linkedTicketHolderUserIds: [me], departmentId: otherDept },
+        [dept],
+      ),
+    ).toBe(false);
   });
 
   it('effectivePermissionScope: hanya `all` pada izin departemen yang disempitkan', () => {

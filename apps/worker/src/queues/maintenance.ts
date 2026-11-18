@@ -7,6 +7,7 @@ import {
   SENSITIVE_TEMPLATE_MAX_AGE_MS,
   SENSITIVE_TEMPLATE_WIPE_INTERVAL_MS,
   CSAT_DISPATCH_INTERVAL_MS,
+  WORKSPACE_DISPATCH_INTERVAL_MS,
   STALE_SEND_CLAIMS_INTERVAL_MS,
   WEBHOOK_PAYLOAD_RETENTION_INTERVAL_MS,
   maintenanceJobPayloadSchema,
@@ -33,6 +34,7 @@ import { Queue, UnrecoverableError, Worker } from 'bullmq';
 import { and, eq, isNull, lt, sql } from 'drizzle-orm';
 
 import { dispatchCsat } from './csat';
+import { dispatchWorkspace } from './workspace';
 import type { NotificationProducer } from './notifications';
 import type { QueueConnectionOptions } from './system';
 
@@ -460,6 +462,21 @@ export async function processMaintenanceJob(
         deps.logger.info(result, 'CSAT dikirim');
       return result;
     }
+    case MAINTENANCE_JOBS.workspaceDispatch: {
+      const result = await dispatchWorkspace({
+        db: deps.db,
+        logger: deps.logger,
+        ...(deps.meta ? { meta: deps.meta } : {}),
+        secretBox: deps.secretBox ?? null,
+        ...(deps.publisher ? { publisher: deps.publisher } : {}),
+        ...(deps.notifications ? { notifications: deps.notifications } : {}),
+        ...(deps.now ? { now: deps.now } : {}),
+      });
+      if ((result.assigned ?? 0) > 0 || (result.sent ?? 0) > 0) {
+        deps.logger.info(result, 'Alokasi otomatis / pesan otomatis');
+      }
+      return result;
+    }
     case MAINTENANCE_JOBS.sensitiveTemplateWipe: {
       const wiped = await wipeStaleSensitiveTemplates(deps.db, { now: deps.now?.() });
       if (wiped > 0) deps.logger.info({ wiped }, 'Nilai template sensitif lama dikosongkan');
@@ -509,6 +526,15 @@ export async function scheduleMaintenanceJobs(queue: Queue): Promise<void> {
     { every: CSAT_DISPATCH_INTERVAL_MS },
     {
       name: MAINTENANCE_JOBS.csatDispatch,
+      data: {},
+      opts: { attempts: 1, removeOnComplete: { count: 20 }, removeOnFail: { count: 50 } },
+    },
+  );
+  await queue.upsertJobScheduler(
+    MAINTENANCE_JOBS.workspaceDispatch,
+    { every: WORKSPACE_DISPATCH_INTERVAL_MS },
+    {
+      name: MAINTENANCE_JOBS.workspaceDispatch,
       data: {},
       opts: { attempts: 1, removeOnComplete: { count: 20 }, removeOnFail: { count: 50 } },
     },

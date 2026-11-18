@@ -43,34 +43,49 @@ export async function departmentAccessOf(
 }
 
 /**
- * Penanggung jawab tiket TERBUKA yang menaut kontak-kontak ini (cakupan "terkait tiketnya"):
- * kontak → daftar ID pengguna. Percakapan ikut kontaknya (tiket yang menaut percakapan selalu
- * menaut kontaknya juga).
+ * Penanggung jawab tiket TERBUKA yang memberi akses "terkait tiketnya" ke percakapan-percakapan ini:
+ * percakapan → daftar ID pengguna. Aturan (sama dengan SQL `conversationLinkedByTicket` di api):
+ * tiket menaut KONTAK percakapan itu DAN (tiket menaut percakapan itu secara eksplisit, ATAU
+ * percakapannya masih terbuka, ATAU percakapannya dibuat setelah tiket) — riwayat lama yang sudah
+ * selesai tidak terbuka lewat tiket (review Fase 5 Info 1).
  */
 export async function openTicketHoldersOf(
   db: DbExecutor,
   organizationId: string,
-  contactIds: readonly string[],
+  conversations: readonly { id: string; contactId: string; status: string; createdAt: Date }[],
 ): Promise<Map<string, string[]>> {
   const result = new Map<string, string[]>();
-  const unique = [...new Set(contactIds)];
-  if (unique.length === 0) return result;
+  const contactIds = [...new Set(conversations.map((row) => row.contactId))];
+  if (contactIds.length === 0) return result;
   const rows = await db
-    .selectDistinct({ contactId: tickets.contactId, userId: tickets.assigneeUserId })
+    .select({
+      contactId: tickets.contactId,
+      conversationId: tickets.conversationId,
+      userId: tickets.assigneeUserId,
+      createdAt: tickets.createdAt,
+    })
     .from(tickets)
     .where(
       and(
         eq(tickets.organizationId, organizationId),
-        inArray(tickets.contactId, unique),
+        inArray(tickets.contactId, contactIds),
         isNull(tickets.closedAt),
         sql`${tickets.assigneeUserId} is not null`,
       ),
     );
-  for (const row of rows) {
-    if (!row.contactId || !row.userId) continue;
-    const list = result.get(row.contactId) ?? [];
-    list.push(row.userId);
-    result.set(row.contactId, list);
+  for (const conversation of conversations) {
+    const holders = new Set<string>();
+    for (const ticket of rows) {
+      if (ticket.contactId !== conversation.contactId || !ticket.userId) continue;
+      if (
+        ticket.conversationId === conversation.id ||
+        conversation.status !== 'resolved' ||
+        conversation.createdAt.getTime() >= ticket.createdAt.getTime()
+      ) {
+        holders.add(ticket.userId);
+      }
+    }
+    if (holders.size > 0) result.set(conversation.id, [...holders]);
   }
   return result;
 }

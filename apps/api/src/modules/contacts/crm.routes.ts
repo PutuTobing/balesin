@@ -248,7 +248,7 @@ export const crmRoutes: FastifyPluginAsyncZod<CrmRoutesOptions> = async (app, op
         }
         throw error;
       }
-      return crm.importTable(auth, table, mapping.data, clientInfo(request));
+      return crm.importTable(auth, table, mapping.data, contextOf(request));
     },
   );
 
@@ -257,7 +257,8 @@ export const crmRoutes: FastifyPluginAsyncZod<CrmRoutesOptions> = async (app, op
   app.post(
     routes.merge,
     {
-      config: { access: requirePermission('contacts.manage') },
+      // Review Fase 5 Info 4: gabung = permanen (sumber terhapus) → setara hapus kontak (Owner/Admin).
+      config: { access: requirePermission('contacts.delete') },
       schema: {
         params: contactIdParamsSchema,
         body: mergeContactRequestSchema,

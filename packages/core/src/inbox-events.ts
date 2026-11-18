@@ -32,6 +32,11 @@ export const INBOX_BUS_EVENT_TYPES = [
    * `conversation.removed` (ID saja) ke semua socket organisasi yang memegang `inbox.view`.
    */
   'conversation.deleted',
+  /**
+   * Akses seorang pengguna berubah (departemen/tanda "akses departemen sendiri", Fase 5) — wajib
+   * `userId`, TANPA `conversationId`: hub mengirim `resync` ke socket pengguna itu (muat ulang REST).
+   */
+  'access.changed',
 ] as const;
 export type InboxBusEventType = (typeof INBOX_BUS_EVENT_TYPES)[number];
 
@@ -50,6 +55,13 @@ export const inboxBusEventSchema = z.strictObject({
    * `conversation.removed` kepadanya bila ia tidak lagi boleh melihat percakapan itu.
    */
   previousAssigneeUserId: z.uuid().optional(),
+  /**
+   * `conversation.updated` karena pindah departemen (Fase 5): departemen sebelumnya. Pengguna bertanda
+   * departemen itu yang kini tidak lagi boleh melihatnya menerima `conversation.removed`.
+   */
+  previousDepartmentId: z.uuid().optional(),
+  /** Wajib untuk `access.changed`. */
+  userId: z.uuid().optional(),
 });
 export type InboxBusEvent = z.infer<typeof inboxBusEventSchema>;
 export type InboxBusEventInput = Omit<InboxBusEvent, 'v'>;
@@ -64,7 +76,7 @@ export function dedupeInboxEvents(events: readonly InboxBusEventInput[]): InboxB
   const seen = new Set<string>();
   const unique: InboxBusEventInput[] = [];
   for (const event of events) {
-    const key = `${event.type}|${event.organizationId}|${event.conversationId ?? ''}|${event.messageId ?? ''}|${event.previousAssigneeUserId ?? ''}|${event.section ?? ''}`;
+    const key = `${event.type}|${event.organizationId}|${event.conversationId ?? ''}|${event.messageId ?? ''}|${event.previousAssigneeUserId ?? ''}|${event.section ?? ''}|${event.previousDepartmentId ?? ''}|${event.userId ?? ''}`;
     if (seen.has(key)) continue;
     seen.add(key);
     unique.push(event);
@@ -139,6 +151,8 @@ function isComplete(event: InboxBusEvent): boolean {
     case 'message.created':
     case 'message.status':
       return event.conversationId !== undefined && event.messageId !== undefined;
+    case 'access.changed':
+      return event.userId !== undefined && event.conversationId === undefined;
   }
 }
 

@@ -45,7 +45,6 @@ import {
 } from '@balesin/shared';
 import { and, asc, desc, eq, inArray, isNotNull, ne, or, sql, type SQL } from 'drizzle-orm';
 
-import type { ClientInfo } from '../../http/client-info';
 import { attributeRules, listAttributeDefinitions } from '../attributes/attributes.service';
 import { csvRow } from '../audit/audit-view';
 import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
@@ -160,7 +159,7 @@ export interface CrmService {
     auth: AuthContext,
     table: ImportTable,
     mapping: ContactImportMapping,
-    client: ClientInfo,
+    context: TwoFactorContext,
   ): Promise<ContactImportResult>;
 }
 
@@ -301,7 +300,7 @@ export function createCrmService(deps: {
       );
       const org = auth.organizationId;
       const moved = await db.transaction(async (tx) => {
-        const { role } = await assertActorStillAuthorized(tx, auth, 'contacts.manage');
+        const { role } = await assertActorStillAuthorized(tx, auth, 'contacts.delete');
         // Identitas kedua kontak dikunci dengan kunci yang SAMA dengan worker pesan masuk (urut =
         // bebas deadlock), lalu barisnya (urut ID).
         const peek = await tx
@@ -310,6 +309,7 @@ export function createCrmService(deps: {
             channelType: contacts.channelType,
             bsuid: contacts.waBsuid,
             phone: contacts.phone,
+            externalUserId: contacts.externalUserId,
           })
           .from(contacts)
           .where(and(eq(contacts.organizationId, org), inArray(contacts.id, [targetId, sourceId])));
@@ -317,7 +317,11 @@ export function createCrmService(deps: {
         const keys = [
           ...new Set(
             peek.flatMap((row) =>
-              contactIdentityLockKeys(org, row.channelType, { bsuid: row.bsuid, phone: row.phone }),
+              contactIdentityLockKeys(org, row.channelType, {
+                bsuid: row.bsuid,
+                phone: row.phone,
+                externalUserId: row.externalUserId,
+              }),
             ),
           ),
         ].sort();
@@ -335,6 +339,14 @@ export function createCrmService(deps: {
         const conflict = (message: string) => new AppError('CONFLICT', { message });
         if (target.channelType !== source.channelType) {
           throw conflict('Kontak dari jenis channel berbeda tidak bisa digabung.');
+        }
+        // Fase 6: dua akun berbeda di channel lain (ID Telegram/email/PSID) juga tidak digabung.
+        if (
+          target.externalUserId &&
+          source.externalUserId &&
+          target.externalUserId !== source.externalUserId
+        ) {
+          throw conflict('Kedua kontak adalah akun berbeda di channel ini — tidak bisa digabung.');
         }
         if (
           (target.waBsuid && source.waBsuid && target.waBsuid !== source.waBsuid) ||
@@ -543,8 +555,20 @@ export function createCrmService(deps: {
     },
 
     // ── Impor massal ───────────────────────────────────────────────────────
-    async importTable(auth, table, mapping, client) {
+    async importTable(auth, table, mapping, context) {
       const org = auth.organizationId;
+      const { client } = context;
+      if (!mapping.dryRun && mapping.mode === 'upsert') {
+        // Menimpa data ribuan kontak sekaligus = aksi sensitif (review Fase 5 Info 3).
+        await requireIdentityConfirmation(
+          twoFactor,
+          auth,
+          mapping.confirmation,
+          'contact.import',
+          context,
+          'Masukkan password (dan kode verifikasi) untuk mengimpor dan memperbarui kontak.',
+        );
+      }
       const indexOf = (column: string | null, field: string): number | null => {
         if (column === null) return null;
         const index = table.columns.indexOf(column);

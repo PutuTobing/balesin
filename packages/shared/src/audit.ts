@@ -215,6 +215,10 @@ export const AUDIT_ACTIONS = {
   departmentDeleted: 'department.deleted',
   /** Departemen & tanda "akses departemen sendiri" seorang pengguna diubah (`loosened`). */
   departmentAccessUpdated: 'department.access_updated',
+  /** Jam kerja/hari libur/pesan otomatis/alokasi diubah (`changedFields`). */
+  workspaceSettingsUpdated: 'settings.workspace.updated',
+  /** Ketersediaan/pengecualian agen dari alokasi otomatis diubah (`available`, `excluded`, `self`). */
+  allocationAgentUpdated: 'settings.workspace.agent_updated',
 } as const;
 
 export type AuditActionKey = keyof typeof AUDIT_ACTIONS;
@@ -316,6 +320,8 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'department.updated': 'Departemen diubah',
   'department.deleted': 'Departemen dihapus',
   'department.access_updated': 'Akses departemen pengguna diubah',
+  'settings.workspace.updated': 'Jam kerja, pesan otomatis, atau alokasi diubah',
+  'settings.workspace.agent_updated': 'Ketersediaan agen untuk alokasi otomatis diubah',
   'channel.webhook_verify_token_rotated': 'Verify token webhook dibuat ulang',
   'channel.business_profile_updated': 'Profil bisnis WhatsApp diubah',
   'channel.business_profile_update_failed': 'Perubahan profil bisnis ditolak Meta',
@@ -558,6 +564,11 @@ export const SECURITY_EVENT_KINDS = [
   'webhook_disabled',
   /** Bot channel dinyalakan oleh SELAIN Owner (review bot R1: percakapan baru dialihkan ke bot). */
   'bot_enabled',
+  /**
+   * Teks pesan otomatis (sapaan/di luar jam kerja/ditangani agen — dikirim ke SEMUA pelanggan baru)
+   * diberi tautan/angka panjang baru (review jam kerja S1).
+   */
+  'auto_message_risky',
 ] as const;
 export const securityEventKindSchema = z.enum(SECURITY_EVENT_KINDS);
 export type SecurityEventKind = z.infer<typeof securityEventKindSchema>;
@@ -589,6 +600,7 @@ export const SECURITY_EVENT_SEVERITY: Readonly<Record<SecurityEventKind, 'warnin
   webhook_changed: 'warning',
   bot_enabled: 'warning',
   webhook_disabled: 'warning',
+  auto_message_risky: 'warning',
 };
 
 export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> = {
@@ -613,6 +625,7 @@ export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> 
   webhook_changed: 'Webhook keluar / allowlist IP privat diubah',
   bot_enabled: 'Bot channel dinyalakan oleh selain Owner',
   webhook_disabled: 'Webhook keluar dinonaktifkan karena gagal beruntun',
+  auto_message_risky: 'Pesan otomatis diberi tautan/angka baru',
 };
 
 export const securityEventSchema = z.object({

@@ -11,7 +11,7 @@ metode tulis (hook auth); galat `{ error: { code, message, details? } }`. Migras
 |---|---|---|
 | Daftar & cari kontak | `contacts.view` | Bercakupan: Teknisi = kontak percakapannya / tiket terbukanya |
 | Impor & ekspor kontak massal | `contacts.export` | Owner/Admin/Supervisor. Ekspor = konfirmasi identitas |
-| Gabung kontak duplikat | `contacts.manage` | Konfirmasi identitas (tidak bisa dibatalkan) |
+| Gabung kontak duplikat | `contacts.delete` | Owner/Admin + konfirmasi identitas (permanen, setara hapus kontak; review Fase 5 Info 4) |
 | Definisi atribut kontak | lihat `contacts.view`, kelola `settings.workspace.manage` | |
 | Lihat/ubah tiket | `tickets.manage` | Teknisi `own` (miliknya); pengguna bertanda departemen = `department` |
 | Board/kolom/atribut tiket, hapus tiket | `tickets.configure` | Owner/Admin/Supervisor |
@@ -73,12 +73,14 @@ digabung per kunci) | 'create_only' (yang ada dilewati), dryRun?: boolean (perik
 → `{ dryRun, sourceRows, created, updated, unchanged, skipped, issueCounts, issues: [{ row, issue,
 key? }] (maks. 200) }`. Isu: `phone_missing`, `phone_invalid`, `phone_scientific`, `duplicate`,
 `value_too_long`, `name_invalid`, `email_invalid`, `attribute_invalid` (+`key`), `attributes_limit`,
-`tags_limit`, `tag_invalid`, `exists`. Nomor dinormalkan seperti broadcast (Indonesia `08…` → `+628…`).
+`tags_limit`, `tag_invalid`, `exists`. Impor SUNGGUHAN mode `upsert` (menimpa data massal) wajib
+`mapping.confirmation` (password + kode 2FA; review Fase 5 Info 3) — `dryRun` & `create_only` tidak.
+Nomor dinormalkan seperti broadcast (Indonesia `08…` → `+628…`).
 Diproses per 200 baris (kunci identitas sama dengan worker pesan masuk). Riwayat kontak
 `imported` (`fields`). Audit SEKALI `contact.imported` `{ sourceRows, created, updated, unchanged,
 skipped, mode }`. **Tidak** memicu webhook `contact.*` per kontak (cegah banjir event). 10 impor/jam.
 
-### Gabung duplikat — `POST /api/v1/contacts/:contactId/merge`
+### Gabung duplikat — `POST /api/v1/contacts/:contactId/merge` (`contacts.delete`: Owner/Admin)
 
 Body `{ sourceContactId, confirmation }` — `:contactId` DIPERTAHANKAN, sumber digabung lalu dihapus.
 → `{ contact, moved: { conversations, messages, tags, tickets } }`.
@@ -133,8 +135,10 @@ attributes, position, closedAt, createdBy {kind: user|api_key, id, name}|null, c
   `ticket.own.restricted_fields`, diaudit). Boleh ubah isi/prioritas/tenggat/atribut, komentar, pindah
   kolom di board yang sama.
 - **"Terkait tiketnya" (PRD §4)**: Teknisi yang memegang tiket TERBUKA yang menaut sebuah kontak boleh
-  melihat & membalas SEMUA percakapan kontak itu (cakupan `assigned` `inbox.view`/`inbox.reply`/
-  `contacts.view`). Akses berakhir saat tiket selesai (kolom `isDone`), dialihkan, atau tautannya dilepas.
+  melihat & membalas percakapan kontak itu yang **ditautkan eksplisit, masih terbuka, atau dibuat setelah
+  tiket** — riwayat selesai yang lebih lama tidak terbuka lewat tiket (review Fase 5 Info 1; kontaknya
+  tetap terlihat). Cakupan `assigned` `inbox.view`/`inbox.reply`/`contacts.view`. Untuk pengguna bertanda
+  departemen, akses lewat tiket hanya ke percakapan departemennya atau tanpa departemen (review S1). Akses berakhir saat tiket selesai (kolom `isDone`), dialihkan, atau tautannya dilepas.
   Hub real-time ikut menyaring (pemegang tiket terbuka menerima event percakapan kontak itu); perubahan
   akses lewat tiket memicu `conversation.updated` (maks. 20 percakapan terbuka kontak itu).
 - **Pengguna bertanda departemen**: hanya tiket di board departemennya + tiket yang ia pegang; membuat
@@ -185,6 +189,9 @@ bila API key). Dibangun saat dispatch; tiket yang sudah dihapus tidak dikirim. O
   departemennya + yang ia pegang. Percakapan **tanpa departemen tidak terlihat** — atur departemen
   bawaan channel. Kontak (CRM) tidak disempitkan. Tanda dibaca **segar** di setiap query (tanpa cache
   sesi; berlaku seketika). Owner/Admin tidak pernah disempitkan walau tandanya tertinggal.
+- **Real-time**: percakapan dipindah keluar departemen → pengguna bertanda departemen lama yang kehilangan
+  akses menerima `conversation.removed`; akses departemen seseorang diubah / departemennya dihapus →
+  socket pengguna itu menerima `resync` (event bus `access.changed`, review Info 2).
 - **Melonggarkan** (mencabut tanda, atau menambah departemen pada pengguna bertanda) = konfirmasi
   identitas. Menyempitkan tanpa konfirmasi. Audit `department.access_updated` `{ restricted,
   departments, loosened }`.

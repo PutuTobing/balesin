@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { botHoursSchema } from './bot';
 import { hasControlCharacters, isoDateTimeSchema } from './fields';
 import { identityConfirmationSchema } from './identity';
 import { userRoleSchema } from './roles';
@@ -62,6 +63,8 @@ export const departmentDetailSchema = departmentSummarySchema.extend({
   ),
   /** Channel yang percakapan barunya otomatis masuk departemen ini. */
   defaultChannelIds: z.array(z.uuid()),
+  /** Jam kerja khusus departemen (alokasi & pesan otomatis); `null` = ikut jam kerja organisasi. */
+  teamHours: botHoursSchema.nullable(),
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,
 });
@@ -88,6 +91,8 @@ export const updateDepartmentRequestSchema = z
     description: departmentDescriptionSchema.nullable().optional(),
     /** MENGGANTI daftar channel bawaan departemen ini. */
     defaultChannelIds: z.array(z.uuid()).max(50).optional(),
+    /** Jam kerja khusus departemen; `null` = ikut organisasi. */
+    teamHours: botHoursSchema.nullable().optional(),
   })
   .refine((value) => Object.values(value).some((item) => item !== undefined), {
     error: 'Tidak ada yang diubah.',

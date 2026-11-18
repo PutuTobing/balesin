@@ -1,7 +1,7 @@
 import { AppError } from '@balesin/core';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Channel, Database } from '@balesin/db';
-import { AUDIT_ACTIONS } from '@balesin/shared';
+import { AUDIT_ACTIONS, type ChannelType } from '@balesin/shared';
 
 import { ipRateLimitKey, type ClientInfo } from '../../http/client-info';
 import { rateLimited, type RateLimitRule, type RateLimiter } from '../../http/rate-limit';
@@ -151,7 +151,13 @@ export interface WebhookGuard {
    * Sebelum body dibaca: batas laju per IP, ID channel, channel ada & tidak terhapus, sumber ini
    * belum terlalu sering ditolak untuk channel ini DENGAN METODE INI. Melempar 404/429/503.
    */
-  admit(rawChannelId: string, client: ClientInfo, method: WebhookMethod): Promise<Channel>;
+  admit(
+    rawChannelId: string,
+    client: ClientInfo,
+    method: WebhookMethod,
+    /** Fase 6: jenis channel penerima (bawaan WhatsApp). */
+    type?: ChannelType,
+  ): Promise<Channel>;
   /** Mencatat penolakan (ember + kejadian keamanan). Tidak pernah melempar. */
   recordRejection(
     channel: Channel,
@@ -175,14 +181,16 @@ export function createWebhookGuard(deps: { db: Database; limiter: RateLimiter })
   }
 
   return {
-    async admit(rawChannelId, client, method) {
+    async admit(rawChannelId, client, method, type = 'whatsapp') {
       const ipKey = ipRateLimitKey(client);
       await enforce(WEBHOOK_IP_RULE, ipKey, true);
 
       const channel = UUID_PATTERN.test(rawChannelId)
-        ? await findChannelForWebhook(db, rawChannelId.toLowerCase()).catch((error: unknown) => {
-            throw webhookUnavailable(error);
-          })
+        ? await findChannelForWebhook(db, rawChannelId.toLowerCase(), type).catch(
+            (error: unknown) => {
+              throw webhookUnavailable(error);
+            },
+          )
         : undefined;
       if (!channel) {
         // Hanya ID yang memang tak dikenal yang dihitung DAN ditahan (S1 butir 2).

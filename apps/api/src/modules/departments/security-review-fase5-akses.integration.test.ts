@@ -2,7 +2,7 @@
  * Tes penjaga review keamanan Fase 5 — cakupan departemen & "terkait tiket"
  * (docs/security-reviews/2026-11-21-fase5-backend.md).
  *
- * `it` = regresi. `it.fails` = temuan terbuka (perilaku yang DIHARAPKAN; gagal sekarang).
+ * `it` = regresi (S1 diperbaiki: "terkait tiket" tidak menembus batas departemen).
  */
 import {
   API_ROUTES,
@@ -87,42 +87,39 @@ describe('review keamanan — batas departemen', () => {
     expect(detail.statusCode).toBe(404);
   });
 
-  it.fails(
-    'S1: CS bertanda tidak bisa membuka percakapan departemen lain dengan membuat tiket miliknya yang menaut kontak itu',
-    async () => {
-      const sales = await department('Penjualan');
-      const billing = await department('Tagihan');
-      const cs = await agent(world, 'cs', 'Sinta CS');
-      await restrict(cs, [sales.id]);
-      const salesBoard = await board('Keluhan Penjualan', sales.id);
-      const { contact, conversation } = await seedConversation(world, {
-        departmentId: billing.id,
-        status: 'resolved',
-      });
-      expect(await visible(cs)).not.toContain(conversation.id);
+  it('S1 (diperbaiki): CS bertanda tidak bisa membuka percakapan departemen lain dengan membuat tiket miliknya yang menaut kontak itu', async () => {
+    const sales = await department('Penjualan');
+    const billing = await department('Tagihan');
+    const cs = await agent(world, 'cs', 'Sinta CS');
+    await restrict(cs, [sales.id]);
+    const salesBoard = await board('Keluhan Penjualan', sales.id);
+    const { contact, conversation } = await seedConversation(world, {
+      departmentId: billing.id,
+      status: 'resolved',
+    });
+    expect(await visible(cs)).not.toContain(conversation.id);
 
-      // Kontak tidak dibatasi departemen (CRM lintas departemen) → CS bisa menautkannya ke tiket
-      // di board departemennya sendiri, dipegang dirinya sendiri.
-      await send(world, cs, 'POST', API_ROUTES.tickets.list, {
-        boardId: salesBoard.id,
-        title: 'Cek riwayat',
-        assigneeUserId: cs.userId,
-        contactId: contact.id,
-      });
-      const detail = await send(
-        world,
-        cs,
-        'GET',
-        apiPath(API_ROUTES.inbox.conversation, { conversationId: conversation.id }),
-      );
-      expect(detail.statusCode).toBe(404);
-      const history = await send(
-        world,
-        cs,
-        'GET',
-        apiPath(API_ROUTES.inbox.messages, { conversationId: conversation.id }),
-      );
-      expect(history.statusCode).toBe(404);
-    },
-  );
+    // Kontak tidak dibatasi departemen (CRM lintas departemen) → CS bisa menautkannya ke tiket
+    // di board departemennya sendiri, dipegang dirinya sendiri.
+    await send(world, cs, 'POST', API_ROUTES.tickets.list, {
+      boardId: salesBoard.id,
+      title: 'Cek riwayat',
+      assigneeUserId: cs.userId,
+      contactId: contact.id,
+    });
+    const detail = await send(
+      world,
+      cs,
+      'GET',
+      apiPath(API_ROUTES.inbox.conversation, { conversationId: conversation.id }),
+    );
+    expect(detail.statusCode).toBe(404);
+    const history = await send(
+      world,
+      cs,
+      'GET',
+      apiPath(API_ROUTES.inbox.messages, { conversationId: conversation.id }),
+    );
+    expect(history.statusCode).toBe(404);
+  });
 });

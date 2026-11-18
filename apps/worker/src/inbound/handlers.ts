@@ -54,7 +54,9 @@ import { matchCsatAnswer, recordCsatComment } from './csat-replies';
  */
 
 /** Interval SQL jendela 24 jam (konstanta, bukan input). */
-const WINDOW_INTERVAL = sql.raw(`interval '${String(CUSTOMER_SERVICE_WINDOW_MS / 1000)} seconds'`);
+export const WINDOW_INTERVAL = sql.raw(
+  `interval '${String(CUSTOMER_SERVICE_WINDOW_MS / 1000)} seconds'`,
+);
 
 export interface InboundHandlerOptions {
   /**
@@ -171,7 +173,7 @@ function extrasOf(message: NormalizedInboundMessage): MessageExtras {
  * (review kontak R1: balas-kutip/reaksi tidak boleh menaut pesan pelanggan lain — tanpa kecocokan,
  * hanya wamid sasarannya yang disimpan).
  */
-async function messageIdByWamid(
+export async function messageIdByWamid(
   tx: DbExecutor,
   organizationId: string,
   channelId: string,
@@ -195,7 +197,7 @@ async function messageIdByWamid(
 }
 
 /** Percakapan terbuka kontak × channel (terkunci), atau `undefined`. */
-async function openConversation(
+export async function openConversation(
   tx: DbExecutor,
   organizationId: string,
   contactId: string,
@@ -218,7 +220,7 @@ async function openConversation(
 }
 
 /** Percakapan terbaru kontak × channel (apa pun statusnya, terkunci), atau `undefined`. */
-async function latestConversation(
+export async function latestConversation(
   tx: DbExecutor,
   organizationId: string,
   contactId: string,
@@ -240,7 +242,10 @@ async function latestConversation(
   return row;
 }
 
-async function linkEventToContact(context: InboundEventContext, contactId: string): Promise<void> {
+export async function linkEventToContact(
+  context: InboundEventContext,
+  contactId: string,
+): Promise<void> {
   await context.tx
     .update(webhookEvents)
     .set({ contactId })
@@ -250,6 +255,44 @@ async function linkEventToContact(context: InboundEventContext, contactId: strin
         eq(webhookEvents.id, context.eventId),
       ),
     );
+}
+
+/**
+ * Percakapan BARU dari pesan pelanggan (semua jenis channel — Fase 6 memakai fungsi yang sama):
+ * departemen bawaan channel (Fase 5), status awal (bot/antrian), kejadian `conversation.created`.
+ */
+export async function createInboundConversation(
+  context: InboundEventContext,
+  contactId: string,
+  initialStatus: (
+    context: InboundEventContext,
+  ) => ConversationStatus | Promise<ConversationStatus> = botAwareInitialStatus,
+): Promise<ConversationRow> {
+  const { tx, organizationId, channelId, receivedAt } = context;
+  // Fase 5: percakapan baru langsung masuk departemen bawaan channel (bila diatur).
+  const [routing] = await tx
+    .select({ departmentId: channels.defaultDepartmentId })
+    .from(channels)
+    .where(and(eq(channels.organizationId, organizationId), eq(channels.id, channelId)));
+  const [created] = await tx
+    .insert(conversations)
+    .values({
+      organizationId,
+      contactId,
+      channelId,
+      status: await initialStatus(context),
+      lastMessageAt: receivedAt,
+      departmentId: routing?.departmentId ?? null,
+    })
+    .returning();
+  if (!created) throw new Error('INSERT percakapan tidak mengembalikan baris');
+  await recordOutgoingEvent(tx, {
+    organizationId,
+    type: 'conversation.created',
+    conversationId: created.id,
+    contactId,
+  });
+  return created;
 }
 
 export function createInboundHandlers(options: InboundHandlerOptions = {}): InboundEventHandlers {
@@ -308,30 +351,7 @@ export function createInboundHandlers(options: InboundHandlerOptions = {}): Inbo
         }
       }
       if (!conversation) {
-        // Fase 5: percakapan baru langsung masuk departemen bawaan channel (bila diatur).
-        const [routing] = await tx
-          .select({ departmentId: channels.defaultDepartmentId })
-          .from(channels)
-          .where(and(eq(channels.organizationId, organizationId), eq(channels.id, channelId)));
-        const [created] = await tx
-          .insert(conversations)
-          .values({
-            organizationId,
-            contactId: contact.id,
-            channelId,
-            status: await initialStatus(context),
-            lastMessageAt: receivedAt,
-            departmentId: routing?.departmentId ?? null,
-          })
-          .returning();
-        if (!created) throw new Error('INSERT percakapan tidak mengembalikan baris');
-        conversation = created;
-        await recordOutgoingEvent(tx, {
-          organizationId,
-          type: 'conversation.created',
-          conversationId: created.id,
-          contactId: contact.id,
-        });
+        conversation = await createInboundConversation(context, contact.id, initialStatus);
       }
 
       const row: NewMessageRow = {

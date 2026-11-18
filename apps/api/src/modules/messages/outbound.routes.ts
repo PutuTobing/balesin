@@ -4,6 +4,7 @@ import {
   API_ROUTES,
   MAX_UPLOAD_BYTES,
   conversationIdParamsSchema,
+  emailHtmlResponseSchema,
   errorEnvelopeSchema,
   messageIdParamsSchema,
   messageResponseSchema,
@@ -220,6 +221,24 @@ export const outboundRoutes: FastifyPluginAsyncZod<OutboundRoutesOptions> = asyn
         'cross-origin-resource-policy': 'same-origin',
       });
       return reply.send(stream);
+    },
+  );
+
+  // Fase 6: HTML email tersanitasi (web menampilkannya di `<iframe sandbox>`).
+  app.get(
+    API_ROUTES.inbox.emailHtml,
+    {
+      config: { access: VIEW },
+      schema: {
+        params: messageIdParamsSchema,
+        response: { 200: emailHtmlResponseSchema, ...errors },
+      },
+    },
+    async (request, reply) => {
+      const grant = await permissionGrant(request, 'inbox.view');
+      const id = requireUuid(request.params.messageId, 'Pesan tidak ditemukan.');
+      void reply.header('cache-control', 'private, no-store');
+      return outbound.emailHtml(grant, id);
     },
   );
 };

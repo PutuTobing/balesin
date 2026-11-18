@@ -182,6 +182,10 @@ export const OUTBOUND_FAILURE_REASONS = [
   'sending_paused',
   /** Pesan broadcast tidak dikirim karena kampanyenya dijeda/dibatalkan (dikirim lagi saat dilanjutkan). */
   'broadcast_stopped',
+  /** Fase 6: layanan channel non-Meta (Telegram / server SMTP) menolak pesan. */
+  'channel_rejected',
+  /** Fase 6: pelanggan memblokir bot Telegram (atau akunnya dihapus). */
+  'recipient_blocked',
 ] as const;
 export const outboundFailureReasonSchema = z.enum(OUTBOUND_FAILURE_REASONS);
 export type OutboundFailureReason = z.infer<typeof outboundFailureReasonSchema>;
@@ -207,6 +211,10 @@ const REASON_MESSAGES: Readonly<Record<OutboundFailureReason, string>> = {
     'Antrean pengiriman sedang bermasalah sehingga pesan belum dikirim. Kirim ulang beberapa saat lagi.',
   credentials_unavailable:
     'Kredensial channel tidak bisa dibuka di server. Hubungi admin untuk memeriksa kunci enkripsi (BALESIN_MASTER_KEY).',
+  channel_rejected:
+    'Layanan channel (Telegram atau server email) menolak pesan ini. Periksa isinya dan pengaturan channel, lalu kirim ulang.',
+  recipient_blocked:
+    'Pelanggan memblokir bot Telegram ini atau akunnya sudah tidak ada, jadi pesan tidak bisa diantar.',
 };
 
 /**
@@ -253,6 +261,7 @@ const RETRYABLE_REASONS = new Set<OutboundFailureReason>([
   'credentials_unavailable',
   'queue_unavailable',
   'sending_paused',
+  'channel_rejected',
 ]);
 const UNRETRYABLE_META_CODES = new Set([131021, 131051]);
 

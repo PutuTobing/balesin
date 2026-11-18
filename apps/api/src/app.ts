@@ -4,6 +4,7 @@ import websocket from '@fastify/websocket';
 import {
   createInboxEventPublisher,
   createMetaGraphClient,
+  createTelegramBotClient,
   createSessionRevocationPublisher,
   createSecretBox,
   deriveKey,
@@ -11,6 +12,7 @@ import {
   randomToken,
   Secret,
   type HostLookup,
+  type ImapTimeouts,
   type Logger,
   type MetaGraphClientOptions,
   type Redis,
@@ -18,7 +20,7 @@ import {
 } from '@balesin/core';
 import { userSessions, type Database } from '@balesin/db';
 import { and, eq } from 'drizzle-orm';
-import { configureZodLocale } from '@balesin/shared';
+import { IMAP_ALLOWED_PORTS, configureZodLocale } from '@balesin/shared';
 import Fastify, { LogController, type FastifyBaseLogger } from 'fastify';
 import {
   serializerCompiler,
@@ -83,6 +85,8 @@ import { createPasswordResetService } from './modules/password-reset/password-re
 import { auditRoutes } from './modules/audit/audit.routes';
 import { channelsRoutes } from './modules/channels/channels.routes';
 import { createChannelsService } from './modules/channels/channels.service';
+import { connectionsRoutes } from './modules/channel-connections/connections.routes';
+import { createConnectionsService } from './modules/channel-connections/connections.service';
 import { createAuditService } from './modules/audit/audit.service';
 import { assignmentRoutes } from './modules/inbox/assignment.routes';
 import { createAssignmentService } from './modules/inbox/assignment.service';
@@ -94,6 +98,8 @@ import { createContactsService } from './modules/contacts/contacts.service';
 import { contactsRoutes } from './modules/contacts/contacts.routes';
 import { crmRoutes } from './modules/contacts/crm.routes';
 import { departmentsRoutes } from './modules/departments/departments.routes';
+import { workspaceRoutes } from './modules/workspace/workspace.routes';
+import { createWorkspaceService } from './modules/workspace/workspace.service';
 import { createDepartmentsService } from './modules/departments/departments.service';
 import { publicTicketsRoutes } from './modules/public-api/public-tickets.routes';
 import { ticketsRoutes } from './modules/tickets/tickets.routes';
@@ -122,6 +128,8 @@ import { createTeamService } from './modules/team/team.service';
 import { createSetupService } from './modules/setup/setup.service';
 import { createWebhookGuard } from './modules/webhooks/webhook-guard';
 import { whatsAppWebhookRoutes } from './modules/webhooks/whatsapp-webhook.routes';
+import { channelWebhookRoutes } from './modules/webhooks/channel-webhooks.routes';
+import { createChannelWebhooksService } from './modules/webhooks/channel-webhooks.service';
 import { createWhatsAppWebhookService } from './modules/webhooks/whatsapp-webhook.service';
 import type { EmailNotifier } from './queues/email-queue';
 import type { OutboundMessageEnqueuer } from './queues/message-queue';
@@ -178,8 +186,13 @@ export interface AppDeps {
      * (server tiruan).
      */
     webhookAllowLoopback?: boolean;
-    /** HANYA tes: server Bot API Telegram tiruan (alarm) di loopback. */
+    /** HANYA tes: server Bot API Telegram tiruan (alarm + channel Telegram) di loopback. */
     telegramBaseUrl?: string;
+    /**
+     * HANYA tes (channel Email, Fase 6): port IMAP server tiruan, CA sertifikat buatan sendiri, dan
+     * batas waktu pendek. Produksi: port 993/143, CA sistem.
+     */
+    imap?: { allowedPorts?: readonly number[]; testCa?: string; timeouts?: Partial<ImapTimeouts> };
     /** Origin server push TIRUAN yang boleh didaftarkan (tes saja; produksi: layanan push dikenal). */
     pushEndpointOrigins?: readonly string[];
     /** Selang heartbeat/validasi ulang WebSocket inbox dan batas koneksi per pengguna. */
@@ -420,6 +433,34 @@ export async function buildApp(deps: AppDeps) {
     notifier: deps.notifier,
     apiUrl: config.apiUrl,
   });
+  // Channel selain WhatsApp (Fase 6): Telegram, Email, Messenger, Instagram.
+  const telegramBot = createTelegramBotClient(
+    deps.overrides?.telegramBaseUrl ? { baseUrl: deps.overrides.telegramBaseUrl } : {},
+  );
+  const imapPolicy = {
+    allowedPorts: deps.overrides?.imap?.allowedPorts ?? [...IMAP_ALLOWED_PORTS],
+    lookup: deps.overrides?.mailLookup,
+    ...(deps.overrides?.imap?.testCa ? { testCa: deps.overrides.imap.testCa } : {}),
+    ...(deps.overrides?.imap?.timeouts ? { timeouts: deps.overrides.imap.timeouts } : {}),
+  };
+  const connections = createConnectionsService({
+    db,
+    secretBox,
+    meta,
+    telegram: telegramBot,
+    twoFactor,
+    notifier: deps.notifier,
+    apiUrl: config.apiUrl,
+    isProduction: config.isProduction,
+    imapPolicy,
+    smtp: {
+      allowedPorts: config.smtpAllowedPorts,
+      plaintextLogin: plaintextLoginPolicy(config.isProduction),
+      lookup: deps.overrides?.mailLookup,
+      timeouts: deps.overrides?.smtpTimeouts,
+      fallback: config.smtpFallback,
+    },
+  });
 
   // Real-time inbox: penerbit (api → Redis) + hub WebSocket (Redis → socket yang berhak).
   const inboxEvents = createInboxEventPublisher(deps.redis, {
@@ -456,6 +497,7 @@ export async function buildApp(deps: AppDeps) {
     queue: deps.messageQueue,
     publisher: inboxEvents,
     logger: deps.logger,
+    telegram: telegramBot,
   });
   // Pembersih salinan media kedaluwarsa (retensi organisasi), tiap jam. Idempoten bila api
   // berjalan lebih dari satu proses.
@@ -476,6 +518,12 @@ export async function buildApp(deps: AppDeps) {
 
   const webhookGuard = createWebhookGuard({ db, limiter });
   const whatsAppWebhooks = createWhatsAppWebhookService({
+    db,
+    secretBox,
+    guard: webhookGuard,
+    queue: deps.webhookQueue,
+  });
+  const channelWebhooks = createChannelWebhooksService({
     db,
     secretBox,
     guard: webhookGuard,
@@ -545,6 +593,11 @@ export async function buildApp(deps: AppDeps) {
   await app.register(channelsRoutes, {
     db,
     channels,
+    limiter,
+    cookieSecure: config.cookieSecure,
+  });
+  await app.register(connectionsRoutes, {
+    connections,
     limiter,
     cookieSecure: config.cookieSecure,
   });
@@ -678,6 +731,11 @@ export async function buildApp(deps: AppDeps) {
   const tickets = createTicketsService({ db, publisher: inboxEvents, accessDenied });
   await app.register(ticketsRoutes, { db, tickets, attributes, limiter });
   await app.register(publicTicketsRoutes, { db, tickets });
+  await app.register(workspaceRoutes, {
+    limiter,
+    cookieSecure: config.cookieSecure,
+    workspace: createWorkspaceService({ db, twoFactor }),
+  });
   await app.register(departmentsRoutes, {
     db,
     limiter,
@@ -699,6 +757,8 @@ export async function buildApp(deps: AppDeps) {
   });
   // Publik: penerima webhook Meta (keaslian dari tanda tangan App Secret, bukan sesi).
   await app.register(whatsAppWebhookRoutes, { guard: webhookGuard, webhooks: whatsAppWebhooks });
+  // Publik (Fase 6): Telegram (secret token), Messenger/Instagram (tanda tangan App Secret).
+  await app.register(channelWebhookRoutes, { guard: webhookGuard, webhooks: channelWebhooks });
 
   // Harus setelah SEMUA rute modul didaftarkan (lihat http/method-not-allowed.ts).
   registerMethodNotAllowedRoutes();

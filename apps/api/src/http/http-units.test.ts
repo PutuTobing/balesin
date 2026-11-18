@@ -328,6 +328,10 @@ describe('deklarasi akses rute (bawaan tolak)', () => {
       '/api/v1/setup/verify-token',
       '/health',
       '/ready',
+      // Penerima webhook Fase 6: Telegram (secret token), Messenger/Instagram (tanda tangan App Secret).
+      '/webhooks/instagram/:channelId',
+      '/webhooks/messenger/:channelId',
+      '/webhooks/telegram/:channelId',
       // Penerima webhook Meta (Fase 2): keaslian dari verify token / tanda tangan App Secret.
       '/webhooks/whatsapp/:channelId',
     ]);

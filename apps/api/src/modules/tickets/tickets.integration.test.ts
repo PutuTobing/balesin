@@ -414,3 +414,45 @@ describe('API tiket untuk bot', () => {
     expect(new Set(outbox.map((row) => row.ticketId))).toEqual(new Set([ticket.id]));
   });
 });
+
+describe('review Fase 5 Info 1: tiket tidak membuka riwayat lama', () => {
+  it('Teknisi lewat tiket: percakapan terbuka & yang ditautkan eksplisit ya, riwayat selesai yang lebih lama tidak', async () => {
+    const teknisi = await agent(world, 'teknisi', 'Arya Teknisi');
+    const board = await createBoard(world.owner);
+    const old = await seedConversation(world, { status: 'resolved' });
+    const writer = await createApiKey(world, ['tickets:write']);
+    // Bot membuat tiket untuk Teknisi dengan menaut KONTAK saja.
+    const created = await api(world, writer, 'POST', API_ROUTES.publicApi.tickets, {
+      boardId: board.id,
+      title: 'Perbaikan dari bot',
+      contactId: old.contact.id,
+      assigneeUserId: teknisi.userId,
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const oldUrl = apiPath(API_ROUTES.inbox.conversation, {
+      conversationId: old.conversation.id,
+    });
+    expect((await send(world, teknisi, 'GET', oldUrl)).statusCode).toBe(404);
+    expect(
+      (
+        await send(
+          world,
+          teknisi,
+          'GET',
+          apiPath(API_ROUTES.inbox.messages, { conversationId: old.conversation.id }),
+        )
+      ).statusCode,
+    ).toBe(404);
+    // Ditautkan eksplisit oleh rekan → terbuka.
+    const ticket = ticketResponseSchema.parse(created.json()).ticket;
+    const relinked = await send(
+      world,
+      world.owner,
+      'PATCH',
+      apiPath(API_ROUTES.tickets.ticket, { ticketId: ticket.id }),
+      { conversationId: old.conversation.id },
+    );
+    expect(relinked.statusCode, relinked.body).toBe(200);
+    expect((await send(world, teknisi, 'GET', oldUrl)).statusCode).toBe(200);
+  });
+});

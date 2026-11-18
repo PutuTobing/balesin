@@ -1,8 +1,10 @@
+import type { BotHours } from '@balesin/shared';
 import { sql } from 'drizzle-orm';
 import {
   check,
   foreignKey,
   index,
+  jsonb,
   pgTable,
   primaryKey,
   text,
@@ -29,6 +31,8 @@ export const departments = pgTable(
       .references(() => organizations.id, { onDelete: 'restrict' }),
     name: text('name').notNull(),
     description: text('description'),
+    /** Jam kerja khusus departemen (format `BotHours`); kosong = ikut jam kerja organisasi. */
+    teamHours: jsonb('team_hours').$type<BotHours>(),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },

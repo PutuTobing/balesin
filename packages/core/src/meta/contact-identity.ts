@@ -100,10 +100,14 @@ export function cleanFileName(value: string | null | undefined): string | null {
 export function contactIdentityLockKeys(
   organizationId: string,
   channelType: string,
-  identity: { bsuid: string | null; phone: string | null },
+  identity: { bsuid: string | null; phone: string | null; externalUserId?: string | null },
 ): string[] {
   const keys: string[] = [];
   if (identity.bsuid) keys.push(`contact:${organizationId}:${channelType}:bsuid:${identity.bsuid}`);
   if (identity.phone) keys.push(`contact:${organizationId}:${channelType}:phone:${identity.phone}`);
+  // Fase 6: identitas channel lain (ID Telegram, alamat email, PSID/IGSID).
+  if (identity.externalUserId) {
+    keys.push(`contact:${organizationId}:${channelType}:ext:${identity.externalUserId}`);
+  }
   return keys.sort();
 }

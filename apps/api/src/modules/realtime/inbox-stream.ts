@@ -174,6 +174,7 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
             assigneeUserId: conversations.assigneeUserId,
             contactId: conversations.contactId,
             departmentId: conversations.departmentId,
+            createdAt: conversations.createdAt,
             unreadCount: conversations.unreadCount,
             lastMessageAt: conversations.lastMessageAt,
             windowExpiresAt: conversations.windowExpiresAt,
@@ -188,11 +189,7 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
       : [];
     const byConversation = new Map(conversationRows.map((row) => [row.id, row]));
     // Fase 5: Teknisi pemegang tiket terbuka yang menaut kontak ikut menerima event percakapannya.
-    const ticketHolders = await openTicketHoldersOf(
-      db,
-      organizationId,
-      conversationRows.map((row) => row.contactId),
-    );
+    const ticketHolders = await openTicketHoldersOf(db, organizationId, conversationRows);
     const messageRows = messageIds.length
       ? await db
           .select({
@@ -295,7 +292,7 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
         event.conversationId === undefined ? undefined : byConversation.get(event.conversationId);
       if (conversation && event.type !== 'conversation.deleted') {
         payload.departmentId = conversation.departmentId;
-        payload.ticketHolderUserIds = ticketHolders.get(conversation.contactId) ?? [];
+        payload.ticketHolderUserIds = ticketHolders.get(conversation.id) ?? [];
       }
       result.push({ event, payload });
     }
@@ -332,6 +329,18 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
         if (send(client, payload.message)) delivered += 1;
         continue;
       }
+      // Fase 5: percakapan pindah departemen → pengguna bertanda departemen LAMA yang kini tidak
+      // lagi boleh melihatnya menerima ID saja (review Fase 5 Info 2).
+      if (
+        event.type === 'conversation.updated' &&
+        event.conversationId !== undefined &&
+        event.previousDepartmentId !== undefined &&
+        clientAccess?.restricted === true &&
+        clientAccess.departmentIds.includes(event.previousDepartmentId)
+      ) {
+        send(client, { type: 'conversation.removed', conversationId: event.conversationId });
+        continue;
+      }
       // Agen sebelumnya yang kehilangan akses (mis. Teknisi yang percakapannya dialihkan): hanya
       // ID, supaya web menutup panel dan membuang cache-nya.
       if (
@@ -355,7 +364,7 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
   function eventKey(event: InboxBusEvent): string {
-    return `${event.type}|${event.conversationId ?? ''}|${event.messageId ?? ''}|${event.previousAssigneeUserId ?? ''}|${event.section ?? ''}`;
+    return `${event.type}|${event.conversationId ?? ''}|${event.messageId ?? ''}|${event.previousAssigneeUserId ?? ''}|${event.section ?? ''}|${event.previousDepartmentId ?? ''}|${event.userId ?? ''}`;
   }
 
   async function deliverOrganization(
@@ -421,6 +430,16 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
       );
     } else {
       state.count += unique.length;
+    }
+    // Fase 5: akses pengguna berubah (departemen) → `resync` ke socket pengguna itu saja.
+    const accessChanged = new Set(
+      unique.filter((event) => event.type === 'access.changed').map((event) => event.userId),
+    );
+    if (accessChanged.size > 0) {
+      for (const client of group) {
+        if (accessChanged.has(client.userId) && send(client, { type: 'resync' })) delivered += 1;
+      }
+      unique = unique.filter((event) => event.type !== 'access.changed');
     }
     const payloads = await payloadsFor(organizationId, unique);
     // Fase 5: tanda & departemen pengguna dibaca SEGAR per batch (satu query untuk semua socket).

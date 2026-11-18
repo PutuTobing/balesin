@@ -48,6 +48,17 @@ export const contacts = pgTable(
     waBsuid: text('wa_bsuid'),
     phone: text('phone'),
     waUsername: text('wa_username'),
+    /**
+     * Fase 6 — identitas kontak di channel selain WhatsApp (unik per organisasi × jenis channel):
+     * Telegram = ID pengguna (angka), Email = alamat email (huruf kecil), Messenger = PSID,
+     * Instagram = IGSID. Kunci pencocokan pesan masuk & tujuan balasan.
+     */
+    externalUserId: text('external_user_id'),
+    /**
+     * Fase 6 — pengenal untuk DITAMPILKAN di channel selain WhatsApp: `@username` Telegram/Instagram
+     * atau alamat email. Kiriman pelanggan (tidak tepercaya, karakter tak terlihat dibuang).
+     */
+    channelHandle: text('channel_handle'),
     profileName: text('profile_name'),
     name: text('name'),
     /** Diisi tim (butir 8). */
@@ -83,6 +94,19 @@ export const contacts = pgTable(
     uniqueIndex('contacts_organization_id_channel_type_phone_unique')
       .on(table.organizationId, table.channelType, table.phone)
       .where(sql`${table.phone} is not null`),
+    uniqueIndex('contacts_organization_id_channel_type_external_user_id_unique')
+      .on(table.organizationId, table.channelType, table.externalUserId)
+      .where(sql`${table.externalUserId} is not null`),
+    index('contacts_channel_handle_trgm_idx').using('gin', table.channelHandle.op('gin_trgm_ops')),
+    // Kontak channel selain WhatsApp selalu punya identitas channel-nya (kecuali dilepas).
+    check(
+      'contacts_external_identity_required',
+      sql`${table.channelType} = 'whatsapp' or ${table.externalUserId} is not null or ${table.waIdentityReleasedAt} is not null`,
+    ),
+    check(
+      'contacts_external_identity_format',
+      sql`(${table.externalUserId} is null or (char_length(${table.externalUserId}) between 1 and 320 and ${table.externalUserId} !~ '[[:cntrl:][:space:]]')) and (${table.channelHandle} is null or char_length(${table.channelHandle}) between 1 and 320)`,
+    ),
     index('contacts_organization_id_created_at_idx').on(table.organizationId, table.createdAt),
     // Pencarian inbox `ILIKE '%…%'` (review kontak R3): indeks trigram (ekstensi `pg_trgm`, dibuat
     // migrasi 0013) — dipakai untuk ILIKE/LIKE tanpa `lower()`.

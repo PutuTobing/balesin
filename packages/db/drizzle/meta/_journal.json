@@ -197,6 +197,20 @@
       "when": 1794937609184,
       "tag": "0027_laporan_csat",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794948726767,
+      "tag": "0028_jam_kerja_pesan_otomatis_alokasi",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794949520309,
+      "tag": "0029_channel_telegram_email_meta",
+      "breakpoints": true
     }
   ]
 }

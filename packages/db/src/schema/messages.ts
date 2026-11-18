@@ -38,10 +38,15 @@ export const messageSenderKind = pgEnum('message_sender_kind', MESSAGE_SENDER_KI
 export const messageType = pgEnum('message_type', MESSAGE_TYPES);
 export const messageDeliveryStatus = pgEnum('message_delivery_status', MESSAGE_DELIVERY_STATUSES);
 
-/** Metadata media dari webhook. HANYA ID media Meta — berkasnya diunduh di butir ruang chat. */
+/**
+ * Metadata media dari webhook. HANYA rujukan media di platform — berkasnya diunduh saat diminta.
+ * `metaMediaId` (nama historis) = rujukan per channel: WhatsApp = ID media Meta; Telegram =
+ * `file_id`; Messenger/Instagram = URL lampiran CDN Meta (host di-allowlist saat diunduh); Email =
+ * `email:<id berkas>` (lampiran sudah disimpan saat diambil dari IMAP, lihat `media_file_id`).
+ */
 export interface MessageMedia {
   kind: MessageMediaKind;
-  /** ID media Meta (diunduh lewat Graph API, host tetap — jangan pernah mengikuti URL payload). */
+  /** Rujukan media di platform (lihat di atas) — jangan pernah mengikuti URL payload tanpa allowlist. */
   metaMediaId: string;
   /** Dari pelanggan — tidak tepercaya (validasi dengan sniffing saat diunduh). */
   mimeType: string | null;
@@ -103,13 +108,31 @@ export interface MessageExtras {
   };
   forwarded?: boolean;
   frequentlyForwarded?: boolean;
+  /**
+   * Fase 6 — email (masuk & keluar). `subject` subjek email; `references` = rantai `Message-ID`
+   * utas (maks. 20, untuk header balasan); `inReplyTo` = `Message-ID` yang dibalas; `authWarning` =
+   * `Authentication-Results` server penerima melaporkan SPF/DKIM/DMARC gagal; `skippedAttachments` =
+   * lampiran yang tidak disimpan. HTML tersanitasi ada di `message_email_bodies`.
+   */
+  email?: {
+    subject: string | null;
+    inReplyTo: string | null;
+    references: string[];
+    authWarning: boolean;
+    skippedAttachments: number;
+    hasHtml: boolean;
+  };
+  /** Fase 6 — Telegram: ID `callback_query` (tombol inline) yang sudah dijawab. */
+  telegramCallback?: { data: string | null };
 }
 
 /**
  * Pesan masuk & keluar (PRD §3.3).
  *
  * - `wamid` unik per channel (indeks unik biasa: banyak `NULL` boleh — pesan keluar sebelum diterima
- *   Meta). Pesan masuk disimpan idempoten lewat wamid.
+ *   Meta). Pesan masuk disimpan idempoten lewat wamid. Fase 6: kolom ini = ID pesan EKSTERNAL per
+ *   channel (nama historis): WhatsApp wamid, Telegram `<chat_id>:<message_id>`, Email `Message-ID`
+ *   (tanpa `<>`; > 256 karakter → `sha256:<hex>`), Messenger/Instagram `mid`.
  * - `occurred_at` = urutan tampilan: pesan masuk memakai cap waktu Meta yang DIJEPIT ke ≤ waktu
  *   diterima server (cap waktu payload tidak dipakai untuk jendela 24 jam / SLA — R4).
  * - Status hanya untuk pesan keluar dan hanya maju (`isStatusAdvance`); pesan masuk `status = null`.

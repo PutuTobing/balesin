@@ -199,12 +199,12 @@ describe('conversations', () => {
         await pgErrorOf(
           db.insert(conversations).values(
             conversation(base.organizationId, other.id, base.channelId, {
-              lastInboundAt: new Date(),
+              windowExpiresAt: new Date(),
             }),
           ),
         )
       ).constraint,
-    ).toBe('conversations_window_matches_inbound');
+    ).toBe('conversations_window_requires_inbound');
   });
 
   it('kontak, channel, dan agen harus dari organisasi yang sama (FK komposit)', async () => {
@@ -303,6 +303,7 @@ describe('pencarian kontak (review kontak R3)', () => {
       sql`select indexname, indexdef from pg_indexes where tablename = 'contacts' and indexname like '%trgm%' order by indexname`,
     );
     expect(indexes.rows.map((row) => row.indexname)).toEqual([
+      'contacts_channel_handle_trgm_idx',
       'contacts_name_trgm_idx',
       'contacts_phone_trgm_idx',
       'contacts_profile_name_trgm_idx',

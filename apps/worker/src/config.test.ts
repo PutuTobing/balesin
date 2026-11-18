@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 
 import { loadConfig } from './config';
 
+/** Production wajib MEDIA_DIR absolut (volume media bersama api, Fase 6). */
+const PRODUCTION_MEDIA = { MEDIA_DIR: '/data/media' };
+
 const developmentEnv: EnvSource = {
   NODE_ENV: 'development',
   LOG_LEVEL: 'debug',
@@ -52,6 +55,7 @@ describe('loadConfig (worker)', () => {
   it('port penangkap email lokal (1025) hanya diizinkan di luar production', () => {
     const production = loadConfig({
       ...developmentEnv,
+      ...PRODUCTION_MEDIA,
       NODE_ENV: 'production',
       BALESIN_MASTER_KEY: Buffer.alloc(32, 1).toString('base64'),
     });
@@ -80,6 +84,7 @@ describe('loadConfig (worker)', () => {
     expect(
       problemsOf({
         ...developmentEnv,
+        ...PRODUCTION_MEDIA,
         NODE_ENV: 'production',
         BALESIN_MASTER_KEY: Buffer.alloc(32, 1).toString('base64'),
         APP_URL: 'http://balesin.contoh.co.id',
@@ -90,7 +95,12 @@ describe('loadConfig (worker)', () => {
   it('mewajibkan master key di production dan menolak env yang salah tanpa mencetak nilainya', () => {
     const error = (() => {
       try {
-        loadConfig({ ...developmentEnv, NODE_ENV: 'production', REDIS_URL: 'http://sandi-nyasar' });
+        loadConfig({
+          ...developmentEnv,
+          ...PRODUCTION_MEDIA,
+          NODE_ENV: 'production',
+          REDIS_URL: 'http://sandi-nyasar',
+        });
       } catch (caught) {
         return caught;
       }
@@ -104,5 +114,25 @@ describe('loadConfig (worker)', () => {
       'REDIS_URL',
     ]);
     expect(message).not.toContain('sandi-nyasar');
+  });
+
+  it('MEDIA_DIR (Fase 6): dev relatif → folder media api; production wajib path absolut', () => {
+    expect(loadConfig(developmentEnv).mediaDir.replace(/\\/g, '/')).toMatch(/apps\/api\/media$/);
+    expect(
+      loadConfig({
+        ...developmentEnv,
+        ...PRODUCTION_MEDIA,
+        NODE_ENV: 'production',
+        BALESIN_MASTER_KEY: Buffer.alloc(32, 1).toString('base64'),
+      }).mediaDir,
+    ).toBe('/data/media');
+    expect(() =>
+      loadConfig({
+        ...developmentEnv,
+        NODE_ENV: 'production',
+        BALESIN_MASTER_KEY: Buffer.alloc(32, 1).toString('base64'),
+        MEDIA_DIR: './media',
+      }),
+    ).toThrow(EnvValidationError);
   });
 });

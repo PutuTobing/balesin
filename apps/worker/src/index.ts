@@ -2,7 +2,9 @@ import {
   closeRedis,
   createInboxEventPublisher,
   createLogger,
+  createMediaStore,
   createMetaGraphClient,
+  createTelegramBotClient,
   createRedis,
   createSecretBox,
   createShutdown,
@@ -13,6 +15,7 @@ import {
   scrubSecretsInText,
 } from '@balesin/core';
 import { closeDb, createDb } from '@balesin/db';
+import { IMAP_ALLOWED_PORTS } from '@balesin/shared';
 
 import { loadConfig, type WorkerConfig } from './config';
 import { createNotificationProducer, redisThrottle } from './queues/notifications';
@@ -51,6 +54,9 @@ function main(config: WorkerConfig): void {
     logger,
   });
   const notificationProducer = createNotificationProducer({ connection: redis }, logger);
+  // Fase 6: klien Bot API Telegram (host tetap) + media store bersama api (lampiran email).
+  const telegram = createTelegramBotClient();
+  const mediaStore = createMediaStore(config.mediaDir);
   const ownerNotifier = createOwnerNotifier({ connection: redis });
   const runtime = startWorkers({ connection: redis }, logger, {
     email: {
@@ -63,7 +69,28 @@ function main(config: WorkerConfig): void {
     },
     webhooks: { db, publisher, notifications: notificationProducer },
     maintenance: { db, publisher, notifications: notificationProducer, meta, secretBox },
-    messages: { db, meta, secretBox, publisher },
+    messages: {
+      db,
+      meta,
+      secretBox,
+      publisher,
+      channels: {
+        telegram,
+        store: mediaStore,
+        smtp: {
+          allowedPorts: config.smtpAllowedPorts,
+          plaintextLogin: plaintextLoginPolicy(config.isProduction),
+          fallback: config.smtpFallback,
+        },
+      },
+    },
+    // Fase 6: kotak masuk channel Email (IMAP, TLS wajib).
+    channels: {
+      db,
+      secretBox,
+      store: mediaStore,
+      imapPolicy: { allowedPorts: [...IMAP_ALLOWED_PORTS] },
+    },
     notifications: { db, secretBox, appUrl: config.appUrl, throttle: redisThrottle(redis) },
     webhooksOut: { db, secretBox, appUrl: config.appUrl, notifyOwner: ownerNotifier.notify },
     broadcast: { db, meta, secretBox, publisher, notifyOwner: ownerNotifier.notify },

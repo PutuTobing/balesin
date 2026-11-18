@@ -32,6 +32,11 @@ export const ERROR_CODES = [
    * bisnis). `message` menjelaskan penyebab + langkah perbaikan (`META_ERROR_MESSAGES`).
    */
   'META_REQUEST_FAILED',
+  /**
+   * Fase 6: layanan channel selain Meta (Bot API Telegram, server IMAP/SMTP) menolak/gagal menjawab
+   * permintaan yang diteruskan server. `message` menjelaskan penyebab + langkah perbaikan.
+   */
+  'CHANNEL_REQUEST_FAILED',
   'SERVICE_UNAVAILABLE',
   /**
    * Pesan biasa ditolak karena jendela layanan 24 jam WhatsApp sudah lewat (hanya template yang
@@ -65,6 +70,7 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
   RATE_LIMITED: 429,
   INTERNAL_ERROR: 500,
   META_REQUEST_FAILED: 502,
+  CHANNEL_REQUEST_FAILED: 502,
   SERVICE_UNAVAILABLE: 503,
   WINDOW_CLOSED: 409,
   SENDING_PAUSED: 423,
@@ -100,6 +106,8 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   RATE_LIMITED: 'Terlalu banyak permintaan. Coba lagi beberapa saat lagi.',
   INTERNAL_ERROR: 'Terjadi kesalahan di server. Coba lagi beberapa saat lagi.',
   META_REQUEST_FAILED: 'Permintaan ke Meta gagal. Coba lagi beberapa saat lagi.',
+  CHANNEL_REQUEST_FAILED:
+    'Permintaan ke layanan channel (Telegram atau server email) gagal. Coba lagi beberapa saat lagi.',
   SERVICE_UNAVAILABLE: 'Layanan sedang tidak tersedia. Coba lagi beberapa saat lagi.',
   SENDING_PAUSED:
     'Pengiriman pesan sedang dihentikan sementara oleh Owner/Admin (rem darurat). Hubungi mereka untuk melanjutkan.',

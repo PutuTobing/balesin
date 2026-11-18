@@ -252,21 +252,31 @@ describe('gabung kontak duplikat', () => {
     expect(
       (await send(world, teknisi, 'POST', url, { sourceContactId: fresh.contact.id })).statusCode,
     ).toBe(403);
-    expect(
-      (await send(world, cs, 'POST', url, { sourceContactId: fresh.contact.id })).statusCode,
-    ).toBe(400);
+    // Review Fase 5 Info 4: gabung = permanen → hanya pemegang `contacts.delete` (Owner/Admin).
     expect(
       (
         await send(world, cs, 'POST', url, {
-          sourceContactId: old!.id,
+          sourceContactId: fresh.contact.id,
           confirmation: await confirmationOf(cs),
+        })
+      ).statusCode,
+    ).toBe(403);
+    const admin = await agent(world, 'admin', 'Andi Admin');
+    expect(
+      (await send(world, admin, 'POST', url, { sourceContactId: fresh.contact.id })).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await send(world, admin, 'POST', url, {
+          sourceContactId: old!.id,
+          confirmation: await confirmationOf(admin),
         })
       ).statusCode,
     ).toBe(400);
 
-    const merged = await send(world, cs, 'POST', url, {
+    const merged = await send(world, admin, 'POST', url, {
       sourceContactId: fresh.contact.id,
-      confirmation: await confirmationOf(cs),
+      confirmation: await confirmationOf(admin),
     });
     expect(merged.statusCode, merged.body).toBe(200);
     const body = mergeContactResponseSchema.parse(merged.json());
@@ -460,7 +470,15 @@ describe('impor kontak massal (CSV lewat parser terisolasi)', () => {
     });
     expect(await harness.db.select().from(contacts)).toHaveLength(1);
 
-    const committed = await upload(world.owner, { ...mapping, dryRun: false }, csv);
+    // Review Fase 5 Info 3: impor sungguhan mode upsert (menimpa massal) wajib konfirmasi identitas.
+    const unconfirmed = await upload(world.owner, { ...mapping, dryRun: false }, csv);
+    expect(unconfirmed.statusCode).toBe(400);
+    expect(unconfirmed.body).toContain('confirmation.password');
+    const committed = await upload(
+      world.owner,
+      { ...mapping, dryRun: false, confirmation: await confirmationFor() },
+      csv,
+    );
     expect(committed.statusCode, committed.body).toBe(200);
     const result = contactImportResultSchema.parse(committed.json());
     expect(result).toMatchObject({ created: 1, updated: 1, skipped: 4, sourceRows: 6 });

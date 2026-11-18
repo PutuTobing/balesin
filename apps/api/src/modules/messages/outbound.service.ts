@@ -11,7 +11,13 @@ import {
   officeZipAllowed,
   zipEntryNames,
   type DetectedMedia,
+  createTelegramBotClient,
   isMetaApiError,
+  isMetaSocialCdnUrl,
+  isTelegramApiError,
+  openChannelConnectionSecret,
+  TELEGRAM_MAX_DOWNLOAD_BYTES,
+  type TelegramBotClient,
   openWhatsAppCredentials,
   readWhatsAppMediaUrl,
   uploadWhatsAppMedia,
@@ -27,6 +33,7 @@ import {
   conversations,
   isPgError,
   mediaFiles,
+  messageEmailBodies,
   messages,
   organizations,
   recordOutgoingEvent,
@@ -36,6 +43,9 @@ import {
   type MessageRow,
 } from '@balesin/db';
 import {
+  CHANNEL_CAPABILITIES,
+  channelHasCustomerWindow,
+  channelSupportsOutbound,
   MAX_INBOUND_MEDIA_BYTES,
   MAX_SEND_ATTEMPTS,
   MAX_UPLOAD_BYTES,
@@ -91,6 +101,10 @@ export interface OutboundServiceDeps {
   queue: OutboundMessageEnqueuer;
   publisher: InboxEventPublisher;
   logger: Logger;
+  /** Fase 6: klien Bot API Telegram (unduh media masuk). Bawaan: api.telegram.org. */
+  telegram?: TelegramBotClient;
+  /** Fase 6: `fetch` untuk lampiran CDN Meta (Messenger/Instagram) — titik ganti tes. */
+  fetchCdn?: typeof fetch;
   now?: () => Date;
 }
 
@@ -182,6 +196,8 @@ type UploadInput = {
 };
 
 export interface OutboundService {
+  /** Fase 6: HTML email tersanitasi milik pesan dalam cakupan (`inbox.view`). 404 bila tidak ada. */
+  emailHtml(grant: PermissionGrant, messageId: string): Promise<{ html: string }>;
   /** Kirim lewat API publik (`messages:send`). Jendela 24 jam, rem & batas kirim tetap berlaku. */
   sendAsApiKey(
     key: ApiKeySender,
@@ -251,6 +267,8 @@ export interface OutboundService {
 
 export function createOutboundService(deps: OutboundServiceDeps): OutboundService {
   const { db, store, meta, secretBox, queue, publisher, logger, sendingLimits } = deps;
+  const telegram = deps.telegram ?? createTelegramBotClient();
+  const fetchCdn = deps.fetchCdn ?? fetch;
   // Batas pekerjaan media BERJALAN (review ruang chat S1): per proses + per pengguna.
   const uploadGate = createConcurrencyGate(deps.mediaConcurrency ?? { global: 4, perUser: 2 });
   const downloadGate = createConcurrencyGate(deps.mediaConcurrency ?? { global: 4, perUser: 2 });
@@ -269,13 +287,47 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
       .from(channels)
       .where(and(eq(channels.organizationId, organizationId), eq(channels.id, channelId)))
       .limit(1);
-    if (!channel || !channel.enabled || channel.deletedAt !== null || !channel.waPhoneNumberId) {
+    if (
+      !channel ||
+      !channel.enabled ||
+      channel.deletedAt !== null ||
+      (channel.type === 'whatsapp' && !channel.waPhoneNumberId)
+    ) {
       throw new AppError('CONFLICT', {
         message:
-          'Nomor WhatsApp pengirim sedang dinonaktifkan atau sudah dihapus. Aktifkan lagi di Pengaturan → Channel.',
+          channel?.type === 'whatsapp' || !channel
+            ? 'Nomor WhatsApp pengirim sedang dinonaktifkan atau sudah dihapus. Aktifkan lagi di Pengaturan → Channel.'
+            : 'Channel pengirim sedang dinonaktifkan atau sudah dihapus. Aktifkan lagi di Pengaturan → Channel.',
       });
     }
     return channel;
+  }
+
+  /** Jendela 24 jam (hanya channel yang memakainya) — selain template. */
+  function assertWindowOpen(
+    channel: Channel,
+    conversation: { windowExpiresAt: Date | null },
+    type: string,
+    at: Date,
+  ) {
+    if (!channelHasCustomerWindow(channel.type) || type === 'template') return;
+    if (!conversation.windowExpiresAt || conversation.windowExpiresAt.getTime() <= at.getTime()) {
+      throw new AppError('WINDOW_CLOSED');
+    }
+  }
+
+  /** Fase 6: jenis pesan ini tidak berlaku di channel ini (mis. reaksi di Email). */
+  function unsupportedForChannel(channel: Channel): AppError {
+    const label = {
+      whatsapp: 'WhatsApp',
+      telegram: 'Telegram',
+      email: 'Email',
+      messenger: 'Messenger',
+      instagram: 'Instagram',
+    }[channel.type];
+    return new AppError('VALIDATION_ERROR', {
+      message: `Jenis pesan ini tidak didukung di channel ${label}.`,
+    });
   }
 
   function credentialsOf(channel: Channel) {
@@ -340,8 +392,7 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
     if (!row) throw notFound(MESSAGE_NOT_FOUND);
     if (!row.wamid) {
       throw new AppError('CONFLICT', {
-        message:
-          'Pesan itu belum terkirim ke WhatsApp, jadi belum bisa dibalas atau diberi reaksi.',
+        message: 'Pesan itu belum terkirim, jadi belum bisa dibalas atau diberi reaksi.',
       });
     }
     return { id: row.id, wamid: row.wamid };
@@ -487,36 +538,45 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
     // tokennya; salinan yang sudah di-cache tetap bisa dibaca (review ruang chat Info 6).
     if (!channel || channel.deletedAt !== null || !channel.enabled)
       throw notFound(MEDIA_UNAVAILABLE);
-    const credentials = credentialsOf(channel);
+    // Fase 6: Email = lampiran sudah disimpan saat diambil (tidak bisa diunduh ulang).
+    if (channel.type === 'email') throw notFound(MEDIA_UNAVAILABLE);
+    const credentials = channel.type === 'whatsapp' ? credentialsOf(channel) : null;
     const writer = await store.writer('inbound', MAX_INBOUND_MEDIA_BYTES);
     let stored: StoredFile | null = null;
     try {
       const combined = AbortSignal.any([signal, AbortSignal.timeout(90_000)]);
       let head = Buffer.alloc(0);
-      try {
-        const info = await readWhatsAppMediaUrl(meta, credentials, media.metaMediaId, {
-          signal: combined,
-        });
-        if (info.fileSize !== null && info.fileSize > MAX_INBOUND_MEDIA_BYTES) {
-          throw notFound('Media terlalu besar untuk diunduh lewat Balesin.');
+      const sink = async (chunk: Uint8Array) => {
+        if (head.length < HEAD_BYTES) head = Buffer.concat([head, chunk]);
+        await writer.write(chunk);
+      };
+      if (channel.type === 'telegram') {
+        await downloadTelegram(channel, media.metaMediaId, sink, combined);
+      } else if (channel.type === 'messenger' || channel.type === 'instagram') {
+        await downloadMetaCdn(media.metaMediaId, sink, combined);
+      } else
+        try {
+          if (!credentials) throw notFound(MEDIA_UNAVAILABLE);
+          const info = await readWhatsAppMediaUrl(meta, credentials, media.metaMediaId, {
+            signal: combined,
+          });
+          if (info.fileSize !== null && info.fileSize > MAX_INBOUND_MEDIA_BYTES) {
+            throw notFound('Media terlalu besar untuk diunduh lewat Balesin.');
+          }
+          await meta.download(credentials, {
+            operation: 'media.download',
+            url: info.url,
+            maxBytes: MAX_INBOUND_MEDIA_BYTES,
+            signal: combined,
+            sink,
+          });
+        } catch (error) {
+          if (isMetaApiError(error)) {
+            if (error.kind === 'not_found') throw notFound(MEDIA_UNAVAILABLE);
+            throw metaFailure(error);
+          }
+          throw error;
         }
-        await meta.download(credentials, {
-          operation: 'media.download',
-          url: info.url,
-          maxBytes: MAX_INBOUND_MEDIA_BYTES,
-          signal: combined,
-          sink: async (chunk) => {
-            if (head.length < HEAD_BYTES) head = Buffer.concat([head, chunk]);
-            await writer.write(chunk);
-          },
-        });
-      } catch (error) {
-        if (isMetaApiError(error)) {
-          if (error.kind === 'not_found') throw notFound(MEDIA_UNAVAILABLE);
-          throw metaFailure(error);
-        }
-        throw error;
-      }
       stored = await writer.finish();
       const filename = cleanFileName(media.filename);
       let detected = detectMedia(head, filename, { verifyContainer: false });
@@ -546,7 +606,7 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
             sha256: stored?.sha256 ?? PURGED_SHA256,
             filename,
             storageKey: stored?.storageKey ?? null,
-            metaMediaRef: media.metaMediaId,
+            metaMediaRef: media.metaMediaId.length <= 256 ? media.metaMediaId : null,
             expiresAt: new Date(now().getTime() + days * DAY_MS),
           })
           .returning({ id: mediaFiles.id });
@@ -571,6 +631,79 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
     }
   }
 
+  /** Fase 6 — unduh `file_id` Telegram (host tetap api.telegram.org, maks. 20 MB). */
+  async function downloadTelegram(
+    channel: Channel,
+    fileId: string,
+    sink: (chunk: Uint8Array) => Promise<void>,
+    signal: AbortSignal,
+  ): Promise<void> {
+    if (!secretBox || !channel.tgBotTokenEncrypted) throw notFound(MEDIA_UNAVAILABLE);
+    let token;
+    try {
+      token = openChannelConnectionSecret(
+        secretBox,
+        channel,
+        'telegramBotToken',
+        channel.tgBotTokenEncrypted,
+      );
+    } catch {
+      throw new AppError('SERVICE_UNAVAILABLE', {
+        message: 'Kredensial channel tidak bisa dibuka di server. Hubungi admin.',
+      });
+    }
+    try {
+      await telegram.downloadFile(token, {
+        fileId,
+        maxBytes: TELEGRAM_MAX_DOWNLOAD_BYTES,
+        sink,
+        signal,
+      });
+    } catch (error) {
+      if (error instanceof MediaTooLargeError) throw error;
+      if (!isTelegramApiError(error)) throw error;
+      if (error.kind === 'too_large') {
+        throw notFound('Media terlalu besar untuk diunduh lewat Bot API Telegram (maks. 20 MB).');
+      }
+      if (error.kind === 'bad_request') throw notFound(MEDIA_UNAVAILABLE);
+      throw new AppError('CHANNEL_REQUEST_FAILED', {
+        message: 'Media belum bisa diambil dari Telegram. Coba lagi beberapa saat lagi.',
+      });
+    }
+  }
+
+  /**
+   * Fase 6 — unduh lampiran Messenger/Instagram dari CDN Meta: HANYA host allowlist, tanpa token,
+   * tanpa redirect, ukuran dibatasi (SSRF).
+   */
+  async function downloadMetaCdn(
+    url: string,
+    sink: (chunk: Uint8Array) => Promise<void>,
+    signal: AbortSignal,
+  ): Promise<void> {
+    if (!isMetaSocialCdnUrl(url)) throw notFound(MEDIA_UNAVAILABLE);
+    let response: Response;
+    try {
+      response = await fetchCdn(url, { redirect: 'error', signal });
+    } catch {
+      throw new AppError('CHANNEL_REQUEST_FAILED', {
+        message: 'Media belum bisa diambil dari Meta. Coba lagi beberapa saat lagi.',
+      });
+    }
+    if (!response.ok || !response.body) throw notFound(MEDIA_UNAVAILABLE);
+    const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        await sink(value);
+      }
+    } catch (error) {
+      await reader.cancel().catch(() => undefined);
+      throw error;
+    }
+  }
+
   async function sendAs(
     sender: Sender,
     conversationId: string,
@@ -592,13 +725,32 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
     const conversation = await scopedConversation(grant, conversationId);
     const at = now();
     const channel = await liveChannel(grant.organizationId, conversation.channel.id);
-    // Di luar jendela 24 jam hanya template Meta yang disetujui yang boleh (Fase 4).
+    // Fase 6: jenis pesan harus berlaku di channel ini (template hanya WhatsApp, dst.).
+    if (!channelSupportsOutbound(channel.type, input.type)) throw unsupportedForChannel(channel);
     if (
-      input.type !== 'template' &&
-      (!conversation.windowExpiresAt || conversation.windowExpiresAt.getTime() <= at.getTime())
+      (channel.type === 'messenger' || channel.type === 'instagram') &&
+      input.type === 'text' &&
+      input.text.length > 2000
     ) {
-      throw new AppError('WINDOW_CLOSED');
+      throw new AppError('VALIDATION_ERROR', {
+        message: 'Pesan Messenger/Instagram maksimal 2.000 karakter.',
+      });
     }
+    if (channel.type === 'telegram' && input.type === 'interactive') {
+      // Tombol inline Telegram: `callback_data` maks. 64 byte.
+      const ids =
+        input.interactive.kind === 'button'
+          ? input.interactive.buttons.map((button) => button.id)
+          : input.interactive.sections.flatMap((section) => section.rows.map((row) => row.id));
+      if (ids.some((id) => Buffer.byteLength(id) > 64)) {
+        throw new AppError('VALIDATION_ERROR', {
+          message: 'ID tombol untuk Telegram maksimal 64 byte.',
+        });
+      }
+    }
+    // Di luar jendela 24 jam hanya template Meta yang disetujui yang boleh (Fase 4). Telegram & Email
+    // tidak punya jendela (Fase 6).
+    assertWindowOpen(channel, conversation, input.type, at);
     // Rem pengiriman: rem darurat, batas harian pengguna/organisasi, batas per percakapan.
     await sendingLimits.assertCanSend({
       organizationId: grant.organizationId,
@@ -638,7 +790,11 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
       occurredAt: at,
     };
 
-    if ('replyToMessageId' in input && input.replyToMessageId) {
+    if (
+      'replyToMessageId' in input &&
+      input.replyToMessageId &&
+      CHANNEL_CAPABILITIES[channel.type].quoteReply
+    ) {
       const quoted = await target(grant, contactId, channelId, input.replyToMessageId);
       values.replyToMessageId = quoted.id;
       values.replyToWamid = quoted.wamid;
@@ -738,15 +894,24 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
             ),
           )
           .limit(1);
-        if (!file || !file.metaMediaRef || file.expiresAt.getTime() <= at.getTime()) {
+        if (
+          !file ||
+          (channel.type === 'whatsapp' ? !file.metaMediaRef : !file.storageKey) ||
+          file.expiresAt.getTime() <= at.getTime()
+        ) {
           throw notFound(MEDIA_NOT_FOUND);
+        }
+        if (file.sizeBytes > CHANNEL_CAPABILITIES[channel.type].maxOutboundMediaBytes) {
+          throw new AppError('PAYLOAD_TOO_LARGE', {
+            message: `Berkas terlalu besar untuk channel ini (maks. ${String(Math.floor(CHANNEL_CAPABILITIES[channel.type].maxOutboundMediaBytes / (1024 * 1024)))} MB).`,
+          });
         }
         values.type = file.kind;
         values.text = input.caption?.trim() ? input.caption : null;
         values.mediaFileId = file.id;
         values.media = {
           kind: file.kind,
-          metaMediaId: file.metaMediaRef,
+          metaMediaId: file.metaMediaRef ?? `local:${file.id}`,
           mimeType: file.mimeType,
           sha256: null,
           filename: file.filename,
@@ -809,7 +974,9 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
     const { grant } = sender;
     const conversation = await scopedConversation(grant, conversationId);
     const channel = await liveChannel(grant.organizationId, conversation.channel.id);
-    const credentials = credentialsOf(channel);
+    if (!channelSupportsOutbound(channel.type, 'media')) throw unsupportedForChannel(channel);
+    // Fase 6: hanya WhatsApp yang mengunggah ke Meta saat ini; channel lain mengirim berkas lokal.
+    const credentials = channel.type === 'whatsapp' ? credentialsOf(channel) : null;
     const release = uploadGate.tryAcquire(sender.userId ?? `key:${sender.apiKey?.id ?? ''}`);
     if (!release) throw busy('unggahan');
     const filename = cleanFileName(file.filename);
@@ -825,7 +992,10 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
         detected = detectMedia(head, filename, { verifyContainer: false });
         verdict = checkOutboundMedia(detected, 0);
         if (!verdict.ok) throw unsupportedMedia();
-        writer.maxBytes = OUTBOUND_MEDIA_LIMITS[verdict.kind].maxBytes;
+        writer.maxBytes = Math.min(
+          OUTBOUND_MEDIA_LIMITS[verdict.kind].maxBytes,
+          CHANNEL_CAPABILITIES[channel.type].maxOutboundMediaBytes,
+        );
       };
       try {
         for await (const chunk of file.stream) {
@@ -861,23 +1031,24 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
       // Isi wadah Office (review ruang chat R1) diperiksa dari berkas di disk, tanpa memuat utuh.
       if (!(await officeContainerAcceptable(stored, detected, filename))) throw unsupportedMedia();
 
-      let metaId: string;
-      try {
-        ({ id: metaId } = await uploadWhatsAppMedia(
-          meta,
-          credentials,
-          channel.waPhoneNumberId ?? '',
-          {
-            blob: await store.blob(stored.storageKey, chosen.mimeType),
-            mimeType: chosen.mimeType,
-            filename: filename ?? `berkas-${stored.storageKey.slice(-12)}`,
-          },
-          { signal: AbortSignal.timeout(120_000) },
-        ));
-      } catch (error) {
-        if (isMetaApiError(error)) throw metaFailure(error);
-        throw error;
-      }
+      let metaId: string | null = null;
+      if (credentials)
+        try {
+          ({ id: metaId } = await uploadWhatsAppMedia(
+            meta,
+            credentials,
+            channel.waPhoneNumberId ?? '',
+            {
+              blob: await store.blob(stored.storageKey, chosen.mimeType),
+              mimeType: chosen.mimeType,
+              filename: filename ?? `berkas-${stored.storageKey.slice(-12)}`,
+            },
+            { signal: AbortSignal.timeout(120_000) },
+          ));
+        } catch (error) {
+          if (isMetaApiError(error)) throw metaFailure(error);
+          throw error;
+        }
       const days = Math.min(
         await mediaRetentionDays(grant.organizationId),
         UPLOAD_MAX_RETENTION_DAYS,
@@ -1060,13 +1231,8 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
         throw new AppError('CONFLICT', { message: 'Pesan ini tidak bisa dikirim ulang.' });
       }
       const conversation = await scopedConversation(grant, message.conversationId);
-      await liveChannel(grant.organizationId, message.channelId);
-      if (
-        message.type !== 'template' &&
-        (!conversation.windowExpiresAt || conversation.windowExpiresAt.getTime() <= now().getTime())
-      ) {
-        throw new AppError('WINDOW_CLOSED');
-      }
+      const channel = await liveChannel(grant.organizationId, message.channelId);
+      assertWindowOpen(channel, conversation, message.type, now());
       await sendingLimits.assertCanSend({
         organizationId: grant.organizationId,
         userId: grant.userId,
@@ -1100,6 +1266,22 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
       await publishFor(row, false);
       logger.info({ messageId: row.id, attempt: row.sendAttempts }, 'Pesan keluar dikirim ulang');
       return view(row);
+    },
+
+    async emailHtml(grant, messageId) {
+      const message = await scopedMessage(grant, messageId);
+      const [body] = await db
+        .select({ html: messageEmailBodies.html })
+        .from(messageEmailBodies)
+        .where(
+          and(
+            eq(messageEmailBodies.organizationId, grant.organizationId),
+            eq(messageEmailBodies.messageId, message.id),
+          ),
+        )
+        .limit(1);
+      if (!body) throw notFound('Versi HTML email ini tidak tersedia.');
+      return { html: body.html };
     },
 
     async media(grant, messageId, signal) {

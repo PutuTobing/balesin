@@ -17,6 +17,7 @@ import {
   webhookEvents,
   type DbExecutor,
 } from '@balesin/db';
+import type { ChannelType } from '@balesin/shared';
 import { and, eq, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
 
 /**
@@ -36,8 +37,18 @@ export interface DeletedContactData {
  * worker (`contact_id` kosong: masih `pending`, gagal, atau dilewati). `wa_id` di payload Meta =
  * nomor tanpa `+`.
  */
-function payloadMatchesIdentity(waBsuid: string | null, phone: string | null): SQL | undefined {
+function payloadMatchesIdentity(
+  waBsuid: string | null,
+  phone: string | null,
+  external: { channelType: ChannelType; externalUserId: string | null } | null = null,
+): SQL | undefined {
   const conditions: SQL[] = [];
+  // Fase 6: kejadian channel lain (Telegram/Email/Messenger/Instagram) berbentuk netral.
+  if (external?.externalUserId && external.channelType !== 'whatsapp') {
+    conditions.push(
+      sql`(${webhookEvents.source} = ${external.channelType} and (${webhookEvents.payload} -> 'sender' ->> 'externalUserId' = ${external.externalUserId} or ${webhookEvents.payload} ->> 'recipientExternalUserId' = ${external.externalUserId}))`,
+    );
+  }
   const message = sql`${webhookEvents.payload} -> 'message'`;
   const contact = sql`${webhookEvents.payload} -> 'contact'`;
   const status = sql`${webhookEvents.payload} -> 'status'`;
@@ -85,6 +96,7 @@ export async function deleteContactData(
       channelType: contacts.channelType,
       waBsuid: contacts.waBsuid,
       phone: contacts.phone,
+      externalUserId: contacts.externalUserId,
     })
     .from(contacts)
     .where(and(eq(contacts.organizationId, organizationId), eq(contacts.id, contactId)))
@@ -117,7 +129,10 @@ export async function deleteContactData(
     );
 
   const now = new Date();
-  const identityMatch = payloadMatchesIdentity(contact.waBsuid, contact.phone);
+  const identityMatch = payloadMatchesIdentity(contact.waBsuid, contact.phone, {
+    channelType: contact.channelType,
+    externalUserId: contact.externalUserId,
+  });
   const purgedEvents = await tx
     .update(webhookEvents)
     .set({
@@ -152,6 +167,7 @@ export async function deleteContactData(
     contactIdentityLockKeys(organizationId, contact.channelType, {
       bsuid: contact.waBsuid,
       phone: contact.phone,
+      externalUserId: contact.externalUserId,
     }),
   );
 

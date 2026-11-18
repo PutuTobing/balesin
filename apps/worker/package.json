@@ -16,10 +16,13 @@
     "@balesin/shared": "workspace:*",
     "bullmq": "6.7.2",
     "drizzle-orm": "catalog:",
+    "imapflow": "2.12.1",
     "ioredis": "catalog:",
+    "mailparser": "3.14.5",
     "nodemailer": "10.5.0",
     "pg": "catalog:",
     "pino": "catalog:",
+    "sanitize-html": "2.18.2",
     "uuid": "catalog:",
     "zod": "catalog:"
   },

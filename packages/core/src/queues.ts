@@ -44,6 +44,11 @@ export const QUEUE_NAMES = {
    * lonjakan pesan keluar + retensi data penerima), `alarms` (kirim outbox alarm ke Telegram).
    */
   broadcast: 'broadcast',
+  /**
+   * Channel selain WhatsApp (Fase 6): `email-tick` berkala (pilih kotak masuk email yang jatuh tempo)
+   * dan `email-poll` per channel (payload hanya ID; ambil email baru lewat IMAP).
+   */
+  channels: 'channels',
 } as const;
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
@@ -237,6 +242,11 @@ export const MAINTENANCE_JOBS = {
   sensitiveTemplateWipe: 'sensitive-template-wipe',
   /** CSAT otomatis (Fase 5): buat/kirim survei, terima kasih, kedaluwarsa — tiap 15 detik. */
   csatDispatch: 'csat-dispatch',
+  /**
+   * Jam kerja/pesan otomatis/alokasi (Fase 5): penugasan round-robin + sapaan/di luar jam kerja/
+   * "ditangani agen" — tiap 10 detik.
+   */
+  workspaceDispatch: 'workspace-dispatch',
 } as const;
 export type MaintenanceJobName = (typeof MAINTENANCE_JOBS)[keyof typeof MAINTENANCE_JOBS];
 
@@ -256,6 +266,8 @@ export const SENSITIVE_TEMPLATE_MAX_AGE_MS = 60 * 60 * 1000;
 export const SENSITIVE_TEMPLATE_WIPE_INTERVAL_MS = 10 * 60 * 1000;
 /** Selang job CSAT. */
 export const CSAT_DISPATCH_INTERVAL_MS = 15_000;
+/** Selang job alokasi & pesan otomatis. */
+export const WORKSPACE_DISPATCH_INTERVAL_MS = 10_000;
 /** Selang pemeriksa klaim kirim macet. */
 export const STALE_SEND_CLAIMS_INTERVAL_MS = 60 * 1000;
 
@@ -503,3 +515,39 @@ export const emailJobResultSchema = z.object({
   reason: z.enum(['email_not_configured', 'recipient_unavailable', 'no_longer_valid']).optional(),
 });
 export type EmailJobResult = z.infer<typeof emailJobResultSchema>;
+
+// ── Antrian `channels` (Fase 6) ─────────────────────────────────────────────
+
+export const CHANNEL_JOBS = {
+  /** Berkala: antrekan `email-poll` untuk kotak masuk yang jatuh tempo. Payload kosong. */
+  emailTick: 'email-tick',
+  /** Satu putaran ambil email baru satu channel. */
+  emailPoll: 'email-poll',
+} as const;
+
+export const EMAIL_TICK_INTERVAL_MS = 30_000;
+/** Kotak masuk yang diambil per putaran tick (sisanya tick berikutnya). */
+export const EMAIL_TICK_BATCH = 50;
+/** Email per putaran per channel (sisanya putaran berikutnya, segera). */
+export const EMAIL_POLL_MAX_MESSAGES = 25;
+
+export const emailPollJobPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  channelId: z.uuid(),
+});
+export type EmailPollJobPayload = z.infer<typeof emailPollJobPayloadSchema>;
+
+/** Satu job menunggu per channel (tick berikutnya tidak menggandakan). */
+export function emailPollJobId(channelId: string): string {
+  return `email-poll-${channelId}`;
+}
+
+/**
+ * Tanpa ulangan BullMQ: kegagalan dicatat di `email_mailbox_states` dan dicoba lagi sesuai jadwal.
+ * Job selesai/gagal LANGSUNG dihapus — ID job per channel harus bebas lagi untuk putaran berikutnya.
+ */
+export const EMAIL_POLL_JOB_OPTIONS = {
+  attempts: 1,
+  removeOnComplete: true,
+  removeOnFail: true,
+};

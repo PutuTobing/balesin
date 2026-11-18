@@ -11,6 +11,7 @@ import {
   templateSendComponents,
   sendMessageJobPayloadSchema,
   sendWhatsAppMessage,
+  createTelegramBotClient,
   type InboxBusEventInput,
   type InboxEventPublisher,
   type Logger,
@@ -35,6 +36,7 @@ import {
   webhookEvents,
   type Database,
   type DbExecutor,
+  type MessageExtras,
   type MessageRow,
 } from '@balesin/db';
 import {
@@ -45,8 +47,15 @@ import {
   type OutboundFailureReason,
 } from '@balesin/shared';
 import { UnrecoverableError, Worker } from 'bullmq';
+import {
+  SMTP_ALLOWED_PORTS,
+  channelHasCustomerWindow,
+  channelSupportsOutbound,
+  outboundKindOfMessageType,
+} from '@balesin/shared';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 
+import { prepareChannelSend, type ChannelSendDeps, type ChannelSendOutcome } from './channel-send';
 import type { QueueConnectionOptions } from './system';
 
 /**
@@ -86,6 +95,26 @@ export interface MessageJobDeps {
   secretBox: SecretBox | null;
   publisher?: InboxEventPublisher;
   now?: () => Date;
+  /**
+   * Fase 6 — channel selain WhatsApp: klien Telegram, penyimpanan media (lampiran), SMTP keluar.
+   * Bawaan: Telegram api.telegram.org, tanpa media store (pesan media gagal `media_unavailable`),
+   * SMTP port baku.
+   */
+  channels?: Partial<Omit<ChannelSendDeps, 'secretBox' | 'meta'>>;
+}
+
+function channelSendDeps(deps: MessageJobDeps): ChannelSendDeps {
+  return {
+    secretBox: deps.secretBox,
+    meta: deps.meta,
+    telegram: deps.channels?.telegram ?? createTelegramBotClient(),
+    store: deps.channels?.store ?? null,
+    smtp: deps.channels?.smtp ?? {
+      allowedPorts: [...SMTP_ALLOWED_PORTS],
+      plaintextLogin: 'private-only',
+      fallback: null,
+    },
+  };
 }
 
 export type SendMessageResult =
@@ -129,7 +158,11 @@ async function prepare(
   message: MessageRow,
   deps: MessageJobDeps,
   now: Date,
-): Promise<{ prepared: Prepared } | { failure: OutboundFailureReason }> {
+): Promise<
+  | { prepared: Prepared }
+  | { channelSend: { send: () => Promise<ChannelSendOutcome> } }
+  | { failure: OutboundFailureReason }
+> {
   const org = message.organizationId;
   // Rem darurat (review ruang chat S2): antrean berhenti seketika, pesan gagal dengan alasan yang
   // bisa dikirim ulang setelah pengiriman dilanjutkan.
@@ -143,7 +176,12 @@ async function prepare(
     .from(channels)
     .where(and(eq(channels.organizationId, org), eq(channels.id, message.channelId)))
     .limit(1);
-  if (!channel || !channel.enabled || channel.deletedAt !== null || !channel.waPhoneNumberId) {
+  if (
+    !channel ||
+    !channel.enabled ||
+    channel.deletedAt !== null ||
+    (channel.type === 'whatsapp' && !channel.waPhoneNumberId)
+  ) {
     return { failure: 'channel_unavailable' };
   }
   const [conversation] = await tx
@@ -176,9 +214,7 @@ async function prepare(
     const holders = conversation.assigneeUserId ? [conversation.assigneeUserId] : [];
     const ticketHolders =
       scope === 'assigned' || scope === 'department'
-        ? ((await openTicketHoldersOf(tx, org, [conversation.contactId])).get(
-            conversation.contactId,
-          ) ?? [])
+        ? ((await openTicketHoldersOf(tx, org, [conversation])).get(conversation.id) ?? [])
         : [];
     if (
       !scope ||
@@ -218,11 +254,35 @@ async function prepare(
   }
 
   // Jendela 24 jam (jam server). Template Meta yang disetujui boleh di luar jendela (Fase 4).
+  // Fase 6: hanya channel yang memakai jendela (WhatsApp, Messenger, Instagram).
   if (
+    channelHasCustomerWindow(channel.type) &&
     message.type !== 'template' &&
     (!conversation.windowExpiresAt || conversation.windowExpiresAt.getTime() <= now.getTime())
   ) {
     return { failure: 'window_closed' };
+  }
+
+  if (channel.type !== 'whatsapp') {
+    // Fase 6: jenis pesan harus berlaku di channel ini (pemeriksaan ulang api).
+    const kind = outboundKindOfMessageType(message.type);
+    if (!kind || !channelSupportsOutbound(channel.type, kind))
+      return { failure: 'channel_rejected' };
+    const [recipient] = await tx
+      .select({ externalUserId: contacts.externalUserId })
+      .from(contacts)
+      .where(and(eq(contacts.organizationId, org), eq(contacts.id, message.contactId)))
+      .limit(1);
+    if (!recipient?.externalUserId) return { failure: 'recipient_unavailable' };
+    const prepared = await prepareChannelSend(
+      tx,
+      message,
+      channel,
+      recipient.externalUserId,
+      channelSendDeps(deps),
+      now,
+    );
+    return 'failure' in prepared ? prepared : { channelSend: prepared };
   }
 
   const [contact] = await tx
@@ -345,7 +405,7 @@ async function prepare(
   return {
     prepared: {
       message,
-      phoneNumberId: channel.waPhoneNumberId,
+      phoneNumberId: channel.waPhoneNumberId ?? '',
       credentials,
       to: contact.phone.replace(/^\+/, ''),
       content,
@@ -500,7 +560,8 @@ export async function processSendMessageJob(
       return { status: 'failed', reason: check.failure, errorCode: null };
     }
 
-    const { prepared } = check;
+    const maxAttempts = job.opts?.attempts ?? 1;
+    const lastAttempt = (job.attemptsMade ?? 0) + 1 >= maxAttempts;
 
     // Klaim atomik SEBELUM memanggil Meta (review ruang chat R3). Klaim yang sudah ada tanpa wamid =
     // percobaan sebelumnya berhenti di tengah (proses mati / job tersendat) — Meta mungkin sudah
@@ -540,54 +601,90 @@ export async function processSendMessageJob(
       return { status: 'failed', reason: 'delivery_unknown', errorCode: null };
     }
     let wamid: string;
-    try {
-      ({ wamid } = await sendWhatsAppMessage(
-        deps.meta,
-        prepared.credentials,
-        prepared.phoneNumberId,
-        {
-          to: prepared.to,
-          content: prepared.content,
-          replyToWamid: prepared.replyToWamid,
-        },
-      ));
-    } catch (error) {
-      if (!isMetaApiError(error)) throw error;
-      const maxAttempts = job.opts?.attempts ?? 1;
-      const lastAttempt = (job.attemptsMade ?? 0) + 1 >= maxAttempts;
-      if (
-        (error.kind === 'rate_limited' || error.kind === 'temporarily_unavailable') &&
-        !lastAttempt
-      ) {
-        // Meta belum memproses: aman diulang (BullMQ, jeda eksponensial). Pesan baru: kode saja.
+    // Fase 6: Telegram / Email / Messenger / Instagram — status langsung `sent` bila diterima.
+    let channelExtras: MessageExtras | undefined;
+    const otherChannel = 'channelSend' in check ? check.channelSend : null;
+    if (otherChannel) {
+      const outcome = await otherChannel.send();
+      if (!outcome.ok) {
+        if (outcome.retry && !lastAttempt) {
+          logger.warn({ messageId, kind: outcome.kind }, 'Kirim pesan diulang');
+          await db
+            .update(messages)
+            .set({ sendClaimedAt: null })
+            .where(and(eq(messages.organizationId, organizationId), eq(messages.id, messageId)));
+          retrying = true;
+          throw new Error(`Kirim pesan ditunda (${outcome.kind})`);
+        }
+        if (await markFailed(db, message, outcome.reason, outcome.errorCode, new Date())) {
+          await publisher.publish(events);
+        }
+        logger.warn({ messageId, reason: outcome.reason, kind: outcome.kind }, 'Kirim pesan gagal');
+        return { status: 'failed', reason: outcome.reason, errorCode: outcome.errorCode };
+      }
+      wamid = outcome.externalId;
+      channelExtras = outcome.extras;
+    } else
+      try {
+        if (!('prepared' in check)) throw new Error('Pesan WhatsApp tanpa isi siap kirim');
+        const { prepared } = check;
+        ({ wamid } = await sendWhatsAppMessage(
+          deps.meta,
+          prepared.credentials,
+          prepared.phoneNumberId,
+          {
+            to: prepared.to,
+            content: prepared.content,
+            replyToWamid: prepared.replyToWamid,
+          },
+        ));
+      } catch (error) {
+        if (!isMetaApiError(error)) throw error;
+        if (
+          (error.kind === 'rate_limited' || error.kind === 'temporarily_unavailable') &&
+          !lastAttempt
+        ) {
+          // Meta belum memproses: aman diulang (BullMQ, jeda eksponensial). Pesan baru: kode saja.
+          logger.warn(
+            { messageId, kind: error.kind, metaCode: error.metaCode },
+            'Kirim pesan diulang',
+          );
+          // Meta jelas belum memproses → klaim dilepas supaya percobaan berikutnya boleh mengirim.
+          await db
+            .update(messages)
+            .set({ sendClaimedAt: null })
+            .where(and(eq(messages.organizationId, organizationId), eq(messages.id, messageId)));
+          retrying = true;
+          throw new Error(`Kirim pesan ditunda (${error.kind})`, { cause: error });
+        }
+        const reason: OutboundFailureReason =
+          error.kind === 'network_error' ? 'delivery_unknown' : 'meta_rejected';
+        if (await markFailed(db, message, reason, error.metaCode, new Date())) {
+          await publisher.publish(events);
+        }
         logger.warn(
-          { messageId, kind: error.kind, metaCode: error.metaCode },
-          'Kirim pesan diulang',
+          { messageId, reason, kind: error.kind, metaCode: error.metaCode },
+          'Kirim pesan gagal',
         );
-        // Meta jelas belum memproses → klaim dilepas supaya percobaan berikutnya boleh mengirim.
-        await db
-          .update(messages)
-          .set({ sendClaimedAt: null })
-          .where(and(eq(messages.organizationId, organizationId), eq(messages.id, messageId)));
-        retrying = true;
-        throw new Error(`Kirim pesan ditunda (${error.kind})`, { cause: error });
+        return { status: 'failed', reason, errorCode: error.metaCode };
       }
-      const reason: OutboundFailureReason =
-        error.kind === 'network_error' ? 'delivery_unknown' : 'meta_rejected';
-      if (await markFailed(db, message, reason, error.metaCode, new Date())) {
-        await publisher.publish(events);
-      }
-      logger.warn(
-        { messageId, reason, kind: error.kind, metaCode: error.metaCode },
-        'Kirim pesan gagal',
-      );
-      return { status: 'failed', reason, errorCode: error.metaCode };
-    }
 
     await db.transaction(async (tx) => {
       const saved = await tx
         .update(messages)
-        .set({ wamid, errorCode: null, failureReason: null })
+        .set({
+          wamid,
+          errorCode: null,
+          failureReason: null,
+          // Fase 6: channel tanpa webhook status kirim (Telegram/Email) → `sent` saat diterima.
+          ...(otherChannel
+            ? {
+                status: 'sent' as const,
+                statusUpdatedAt: new Date(),
+                ...(channelExtras ? { extras: channelExtras } : {}),
+              }
+            : {}),
+        })
         .where(
           and(
             eq(messages.organizationId, organizationId),
@@ -635,7 +732,10 @@ export async function processSendMessageJob(
       }
     });
     await publisher.publish(events);
-    logger.info({ messageId }, 'Pesan keluar diterima Meta');
+    logger.info(
+      { messageId },
+      otherChannel ? 'Pesan keluar diterima layanan channel' : 'Pesan keluar diterima Meta',
+    );
     return { status: 'sent', wamid };
   } finally {
     if (!retrying) await wipeSensitiveTemplate(db, message);

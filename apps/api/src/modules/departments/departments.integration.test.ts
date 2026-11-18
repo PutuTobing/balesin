@@ -14,13 +14,16 @@ import {
   departmentAccessResponseSchema,
   departmentListResponseSchema,
   departmentResponseSchema,
+  inboxStreamEventSchema,
   ticketActionResponseSchema,
   ticketBoardResponseSchema,
   ticketListResponseSchema,
+  type InboxStreamEvent,
 } from '@balesin/shared';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { TEST_APP_ORIGIN } from '../../testing/build-test-app';
 import {
   agent,
   seedConversation,
@@ -287,5 +290,46 @@ describe('akses "hanya departemen sendiri"', () => {
     });
     expect(self.statusCode, self.body).toBe(201);
     expect(ticketActionResponseSchema.parse(self.json()).ticket?.assignee?.id).toBe(cs.userId);
+  });
+});
+
+describe('review Fase 5 Info 2: real-time saat akses departemen berubah', () => {
+  it('percakapan pindah keluar departemen → conversation.removed; akses diubah → resync', async () => {
+    const csDept = await department('CS');
+    const techDept = await department('Teknisi');
+    const cs = await agent(world, 'cs', 'Sinta CS');
+    await setAccess(cs, [csDept.id], true, false);
+    const { conversation } = await seedConversation(world, { departmentId: csDept.id });
+    const events: InboxStreamEvent[] = [];
+    const socket = await harness.app.injectWS(API_ROUTES.inbox.stream, {
+      headers: { cookie: cs.cookie, origin: TEST_APP_ORIGIN },
+    });
+    socket.on('message', (data: Buffer) => {
+      events.push(inboxStreamEventSchema.parse(JSON.parse(data.toString('utf8'))));
+    });
+    const waitFor = async (match: (event: InboxStreamEvent) => boolean) => {
+      const started = Date.now();
+      while (Date.now() - started < 3000 && !events.some(match)) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      return events.some(match);
+    };
+    const moved = await send(
+      world,
+      world.owner,
+      'POST',
+      apiPath(API_ROUTES.inbox.department, { conversationId: conversation.id }),
+      { departmentId: techDept.id },
+    );
+    expect(moved.statusCode, moved.body).toBe(200);
+    expect(
+      await waitFor(
+        (event) =>
+          event.type === 'conversation.removed' && event.conversationId === conversation.id,
+      ),
+    ).toBe(true);
+    expect((await setAccess(cs, [csDept.id, techDept.id], true)).statusCode).toBe(200);
+    expect(await waitFor((event) => event.type === 'resync')).toBe(true);
+    socket.terminate();
   });
 });

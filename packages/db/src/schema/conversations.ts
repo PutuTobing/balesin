@@ -31,6 +31,8 @@ export const conversationStatus = pgEnum('conversation_status', CONVERSATION_STA
  * - Jendela 24 jam: `last_inbound_at` = waktu pesan masuk terakhir menurut JAM SERVER (`received_at`
  *   kejadian webhook, bukan cap waktu Meta — review webhook R4); `window_expires_at` =
  *   `last_inbound_at` + 24 jam (dihitung aplikasi; kolom biasa supaya bisa diindeks/difilter).
+ *   Channel tanpa jendela (`channelHasCustomerWindow` = false: Telegram, Email) membiarkan
+ *   `window_expires_at` kosong.
  * - `assignee_user_id` = agen utama (cakupan `assigned` Teknisi). Perubahan status/assign menyusul
  *   (butir assign/antrian); urutan kunci: kontak → percakapan.
  * - `number` = nomor publik berurutan (`conversation_id` numerik mode kompatibel MobiChat, URL
@@ -127,9 +129,11 @@ export const conversations = pgTable(
     index('conversations_bot_awaiting_idx')
       .on(table.botAwaitingSince)
       .where(sql`${table.status} = 'bot' and ${table.botAwaitingSince} is not null`),
+    // Jendela 24 jam selalu dari pesan masuk; channel TANPA jendela (Telegram, Email — Fase 6)
+    // mencatat `last_inbound_at` tanpa `window_expires_at`.
     check(
-      'conversations_window_matches_inbound',
-      sql`(${table.lastInboundAt} is null) = (${table.windowExpiresAt} is null)`,
+      'conversations_window_requires_inbound',
+      sql`${table.windowExpiresAt} is null or ${table.lastInboundAt} is not null`,
     ),
     check(
       'conversations_resolved_at_matches_status',

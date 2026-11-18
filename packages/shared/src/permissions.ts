@@ -115,11 +115,14 @@ export const PERMISSIONS = [
   // ── CRM ───────────────────────────────────────────────────────────────────
   /** Lihat kontak dan riwayatnya. Bercakupan. */
   'contacts.view',
-  /** Buat/ubah kontak, tag, atribut kustom, gabung duplikat. */
+  /** Buat/ubah kontak, tag, nilai atribut kustom. */
   'contacts.manage',
-  /** Impor & ekspor kontak massal (data pribadi, UU PDP). */
+  /** Impor & ekspor kontak MASSAL (PRD §4 "Impor/ekspor kontak massal"; data pribadi, UU PDP). */
   'contacts.export',
-  /** Hapus kontak beserta data pribadinya (UU PDP, SECURITY.md §10). */
+  /**
+   * Hapus kontak beserta data pribadinya (UU PDP, SECURITY.md §10) — juga GABUNG kontak duplikat
+   * (permanen: kontak sumber terhapus; review Fase 5 Info 4).
+   */
   'contacts.delete',
   /** Buat/ubah tiket, status, penanggung jawab, tenggat. Bercakupan. */
   'tickets.manage',
@@ -335,14 +338,17 @@ export function isWithinScope(
   switch (scope) {
     case 'all':
       return true;
-    case 'department':
-      return (
-        target.holderUserIds.includes(userId) ||
-        (target.linkedTicketHolderUserIds ?? []).includes(userId) ||
-        (target.departmentId !== undefined &&
-          target.departmentId !== null &&
-          userDepartmentIds.includes(target.departmentId))
-      );
+    case 'department': {
+      const ownDepartment =
+        target.departmentId !== undefined &&
+        target.departmentId !== null &&
+        userDepartmentIds.includes(target.departmentId);
+      // Review Fase 5 S1: "terkait tiket" hanya di departemen sendiri atau data tanpa departemen.
+      const linked =
+        (target.linkedTicketHolderUserIds ?? []).includes(userId) &&
+        (target.departmentId === undefined || target.departmentId === null || ownDepartment);
+      return target.holderUserIds.includes(userId) || linked || ownDepartment;
+    }
     case 'assigned':
       return (
         target.holderUserIds.includes(userId) ||
@@ -379,7 +385,7 @@ export const PERMISSION_LABELS: Readonly<Record<Permission, string>> = {
   'contacts.view': 'Lihat kontak',
   'contacts.manage': 'Ubah kontak',
   'contacts.export': 'Impor dan ekspor kontak',
-  'contacts.delete': 'Hapus kontak',
+  'contacts.delete': 'Hapus dan gabung kontak',
   'tickets.manage': 'Kelola tiket',
   'tickets.configure': 'Atur board dan kolom tiket',
   'reports.view': 'Lihat laporan',

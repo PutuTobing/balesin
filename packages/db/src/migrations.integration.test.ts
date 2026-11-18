@@ -37,6 +37,7 @@ describe('migrasi dari nol', () => {
 
     expect(await publicTables()).toEqual([
       'account_tokens',
+      'agent_states',
       'alarm_events',
       'api_keys',
       'attribute_definitions',
@@ -49,6 +50,7 @@ describe('migrasi dari nol', () => {
       'contact_events',
       'contact_tags',
       'contacts',
+      'conversation_auto_messages',
       'conversation_events',
       'conversation_notes',
       'conversations',
@@ -56,10 +58,12 @@ describe('migrasi dari nol', () => {
       'csat_surveys',
       'department_members',
       'departments',
+      'email_mailbox_states',
       'email_settings',
       'email_settings_change_notices',
       'installation',
       'media_files',
+      'message_email_bodies',
       'message_templates',
       'messages',
       'notification_preferences',
@@ -84,6 +88,7 @@ describe('migrasi dari nol', () => {
       'webhook_deliveries',
       'webhook_endpoints',
       'webhook_events',
+      'workspace_settings',
     ]);
 
     const { rows: roles } = await client.query<{ enumlabel: string }>(
@@ -131,6 +136,12 @@ describe('migrasi dari nol', () => {
     'external_id',
     'waba_id',
     'meta_template_id',
+    // Fase 6: ID bot Telegram, ID Halaman/akun Instagram Meta, identitas kontak per channel
+    // (ID pengguna Telegram, alamat email, PSID/IGSID).
+    'tg_bot_id',
+    'meta_page_id',
+    'meta_ig_account_id',
+    'external_user_id',
   ]);
 
   it('semua kolom waktu bertipe timestamptz dan semua id bertipe uuid', async () => {

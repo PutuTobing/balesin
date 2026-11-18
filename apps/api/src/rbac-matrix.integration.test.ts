@@ -136,6 +136,17 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'POST /api/v1/settings/channels/:channelId/webhook/verify-token': 'channels.manage',
   'GET /api/v1/settings/channels/:channelId/business-profile': 'channels.manage',
   'PUT /api/v1/settings/channels/:channelId/business-profile': 'channels.manage',
+  // channel selain WhatsApp (Fase 6): Telegram, Email, Messenger, Instagram
+  'GET /api/v1/settings/channel-connections': 'channels.manage',
+  'POST /api/v1/settings/channel-connections': 'channels.manage',
+  'GET /api/v1/settings/channel-connections/:channelId': 'channels.manage',
+  'PATCH /api/v1/settings/channel-connections/:channelId': 'channels.manage',
+  'DELETE /api/v1/settings/channel-connections/:channelId': 'channels.manage',
+  'POST /api/v1/settings/channel-connections/:channelId/disable': 'channels.manage',
+  'POST /api/v1/settings/channel-connections/:channelId/enable': 'channels.manage',
+  'POST /api/v1/settings/channel-connections/:channelId/test': 'channels.manage',
+  'GET /api/v1/settings/channel-connections/:channelId/webhook': 'channels.manage',
+  'POST /api/v1/settings/channel-connections/:channelId/webhook': 'channels.manage',
   // bot eksternal per channel (saklar, jam kerja bot, batas waktu)
   'GET /api/v1/settings/channels/:channelId/bot': 'integrations.manage',
   'PUT /api/v1/settings/channels/:channelId/bot': 'integrations.manage',
@@ -217,6 +228,7 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'POST /api/v1/conversations/:conversationId/media': 'inbox.reply',
   'POST /api/v1/messages/:messageId/retry': 'inbox.reply',
   'GET /api/v1/messages/:messageId/media': 'inbox.view',
+  'GET /api/v1/messages/:messageId/email-html': 'inbox.view',
   'GET /api/v1/contacts/:contactId': 'contacts.view',
   // UU PDP: hapus kontak = contacts.delete (Owner/Admin, + konfirmasi identitas); ekspor = contacts.export
   'DELETE /api/v1/contacts/:contactId': 'contacts.delete',
@@ -230,7 +242,7 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'GET /api/v1/contacts': 'contacts.view',
   'POST /api/v1/contacts/export': 'contacts.export',
   'POST /api/v1/contacts/import': 'contacts.export',
-  'POST /api/v1/contacts/:contactId/merge': 'contacts.manage',
+  'POST /api/v1/contacts/:contactId/merge': 'contacts.delete',
   'GET /api/v1/contact-attributes': 'contacts.view',
   'POST /api/v1/contact-attributes': 'settings.workspace.manage',
   'PATCH /api/v1/contact-attributes/:attributeId': 'settings.workspace.manage',
@@ -265,6 +277,13 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'GET /api/v1/settings/department-access/:userId': 'settings.workspace.manage',
   'PUT /api/v1/settings/department-access/:userId': 'settings.workspace.manage',
   'POST /api/v1/conversations/:conversationId/department': 'inbox.assign',
+  // Jam kerja, pesan otomatis, alokasi (Fase 5): pengaturan = workspace; ketersediaan diri = inbox.reply
+  'GET /api/v1/settings/workspace': 'settings.workspace.manage',
+  'PUT /api/v1/settings/workspace': 'settings.workspace.manage',
+  'GET /api/v1/settings/workspace/agents': 'settings.workspace.manage',
+  'PATCH /api/v1/settings/workspace/agents/:userId': 'settings.workspace.manage',
+  'GET /api/v1/inbox/availability': 'inbox.reply',
+  'PUT /api/v1/inbox/availability': 'inbox.reply',
   'GET /api/v1/tags': 'inbox.view',
   'POST /api/v1/tags': 'contacts.manage',
   'PATCH /api/v1/tags/:tagId': 'settings.workspace.manage',
@@ -354,6 +373,12 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   // penerima webhook Meta: publik — keaslian dari verify token (GET) / tanda tangan App Secret (POST)
   'GET /webhooks/whatsapp/:channelId': 'public',
   'POST /webhooks/whatsapp/:channelId': 'public',
+  // penerima webhook Fase 6: Telegram (secret token), Messenger/Instagram (tanda tangan App Secret)
+  'POST /webhooks/telegram/:channelId': 'public',
+  'GET /webhooks/messenger/:channelId': 'public',
+  'POST /webhooks/messenger/:channelId': 'public',
+  'GET /webhooks/instagram/:channelId': 'public',
+  'POST /webhooks/instagram/:channelId': 'public',
 };
 
 const LOGOUT = 'POST /api/v1/auth/logout';

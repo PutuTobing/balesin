@@ -429,6 +429,11 @@ export const contactImportMappingSchema = z.object({
   mode: contactImportModeSchema.default('upsert'),
   /** `true` = hanya periksa (tanpa menyimpan) — untuk pratinjau hasil. */
   dryRun: z.boolean().default(false),
+  /**
+   * Konfirmasi identitas — WAJIB untuk impor sungguhan mode `upsert` (menimpa data kontak yang ada
+   * secara massal; review Fase 5 Info 3). `dryRun` dan `create_only` tidak memerlukannya.
+   */
+  confirmation: identityConfirmationSchema.optional(),
 });
 export type ContactImportMapping = z.infer<typeof contactImportMappingSchema>;
 
