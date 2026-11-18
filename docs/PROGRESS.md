@@ -1,7 +1,7 @@
 # Progress
 
-**Fase aktif:** 3 — Bot & API untuk n8n (berjalan bersama Fase 4 — Template & Broadcast)
-**Terakhir diperbarui:** 2026-11-21 malam (Fase 4 **Terakhir diperbarui:** 2026-11-21 (Fase 4 backend + UI template; Fase 5 backend menunggu commit gabungan) 5 backend di-commit; jam kerja + Fase 6 + UI Fase 5 dihentikan sementara)
+**Fase aktif:** 5–7 berjalan paralel (Fase 2 selesai, Fase 3 & 4 tinggal review/terblokir)
+**Terakhir diperbarui:** 2026-11-22 (backend Fase 5 & 6 selesai; UI Fase 5 + Fase 7 berjalan)
 
 ## Selesai
 
@@ -69,28 +69,26 @@
   security backend & web AMAN; kritikus putaran 1 REVISI **BC1–BC4**
   (`docs/design-reviews/2026-11-21-fase4-broadcast.md`).
 
-### Fase 5 — backend di-commit (c5668a3)
-- CRM (atribut, impor/ekspor, gabung), tiket multi-board, departemen, laporan + biaya Meta, CSAT.
-  Security AMAN dengan **S1** (akses departemen lewat tiket) — perbaikannya BELUM di-commit (lihat bawah).
+### Fase 5 — backend selesai (c5668a3, f335d9c)
+- CRM (atribut, impor/ekspor, gabung), tiket multi-board, departemen, laporan + biaya Meta, CSAT,
+  jam kerja tim + pesan otomatis + round-robin. Security AMAN putaran 2
+  (`docs/security-reviews/2026-11-21-fase5-backend.md`, `...-fase5-jam-kerja.md`). UI Fase 5 BELUM.
 
-## Sedang dikerjakan (dihentikan 21 Nov malam, BELUM di-commit)
-- **Backend Fase 5 lanjutan (agen CRM)** — SELESAI: perbaikan security S1 + Info 1–5, dan **jam kerja
-  tim, pesan otomatis, round-robin** (migrasi `0028_jam_kerja_pesan_otomatis_alokasi`, modul
-  `workspace`). Security sedang mereview (dihentikan; laporan target
-  `docs/security-reviews/2026-11-21-fase5-jam-kerja.md` + "Putaran 2" di `...-fase5-backend.md`).
-- **Backend Fase 6 Telegram/Email/Messenger/IG** — dihentikan di tengah ("Meta social parser tests"),
-  migrasi `0029_channel_telegram_email_meta`, `packages/core/src/channels/*`,
-  `channel-webhooks.service.ts`; masih ada 14 error lint + rute webhook publik belum di daftar
-  `http-units.test.ts`.
-- Kedua pekerjaan backend di atas BERCAMPUR (`app.ts`, `core/queues.ts`, `_journal.json` 0028+0029)
-  → tuntaskan Fase 6, lalu `pnpm -r typecheck` + `pnpm lint` + api penuh + tes migrasi, commit
-  gabungan, lalu security Fase 6.
-- **Frontend lama** — revisi template R1 + broadcast BC1–BC4 baru mulai (penyebab R1: `.bubbleBody`
-  `display:flex`).
-- **Frontend baru** — UI Fase 5 (Kontak, Tiket Kanban, Departemen, Laporan + CSAT) dihentikan di
-  awal ("contacts queries + header-reading helper").
-- Berikutnya: UI jam kerja/pesan otomatis/ketersediaan agen, UI channel Telegram/Email, Fase 7
-  (devops), E2E penuh saat mesin senggang.
+### Fase 6 — backend selesai (f335d9c)
+- Telegram, Email (IMAP/SMTP), Messenger & IG (nonaktif bawaan sampai App Review). Kontrak
+  `docs/KONTRAK-API-CHANNEL-LAIN.md`. Security sedang mereview. UI channel baru BELUM.
+
+## Sedang dikerjakan (22 Nov)
+- **Frontend lama**: revisi template R1 + broadcast BC1–BC4 + saran SELESAI di working tree (belum
+  di-commit — `id.ts` bercampur dengan UI Fase 5; commit bersama setelah UI Fase 5).
+- **Frontend baru**: UI Fase 5 (Kontak, Tiket Kanban, Departemen, Laporan + CSAT).
+- **Security**: review Fase 6 + putaran 2 pesan otomatis.
+- **Devops**: Fase 7 butir 1–4 (compose produksi, install.sh, CLI `balesin`, nginx) + CLI pemulihan
+  Owner, `docs/DEPLOY.md`.
+- Berikutnya: UI jam kerja/pesan otomatis/ketersediaan agen, UI channel Telegram/Email/Meta, kritikus
+  broadcast putaran 2 + template putaran 3 + UI Fase 5, E2E penuh saat mesin senggang, Fase 7 butir
+  5–6.
+- Terblokir: Fase 3 mode tangkap (BUTUH-TOBING #10); kredensial nyata #3/#4/#8/#15/#16/#17.
 
 ## Catatan untuk sesi berikutnya
 
