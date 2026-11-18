@@ -96,3 +96,22 @@ Berkas baru: `apps/api/src/modules/departments/security-review-fase5-akses.integ
 | `packages/shared`: `vitest run` | 150 lulus |
 | `tsc` apps/worker | bersih; apps/api gagal hanya karena pohon kerja (Info 7) |
 | `pnpm audit` | 1 high build-only + 2 moderate dev-only |
+
+---
+
+## Putaran 2 — verifikasi perbaikan (pohon kerja, belum di-commit)
+
+Ditinjau dari pohon kerja (bercampur pekerjaan Fase 6 Telegram/Email); hanya berkas Fase 5 yang dinilai.
+
+| Butir | Bukti | Status |
+|---|---|---|
+| S1 batas departemen lewat tiket | `apps/api/src/modules/auth/permission-grant.ts` `departmentNarrowed`: "terkait tiket" hanya bila percakapan TANPA departemen atau di departemen pengguna (`and(linked, or(department is null, ownDepartment))`); padanan in-memory `isWithinScope('department')` di `packages/shared/src/permissions.ts` sama (dipakai hub real-time `inbox-stream.ts:311-326` dan worker kirim `messages.ts:215-236`, keduanya mengisi `departmentId`). Tes penjaga S1 `it.fails` → `it` dengan asersi IDENTIK (detail & pesan 404) dan lulus | **Tertutup** |
+| Info 1 tiket membuka seluruh riwayat | `apps/api/src/modules/inbox/inbox.repo.ts` `conversationLinkedByTicket` + `packages/db/src/access.ts` `openTicketHoldersOf` per percakapan: tiket hanya membuka percakapan yang ditaut eksplisit, masih terbuka, atau dibuat setelah tiket — riwayat lama yang sudah selesai tidak terbuka (berlaku juga untuk tiket dari API key) | **Tertutup** |
+| Info 2 pindah departemen | `inbox-stream.ts`: `conversation.updated` dengan `previousDepartmentId` → pengguna bertanda departemen lama menerima `conversation.removed` (ID saja); `access.changed` → `resync` ke socket pengguna itu | **Tertutup** |
+| Info 3 impor menimpa data | `crm.service.ts`: impor sungguhan mode `upsert` wajib `mapping.confirmation` (konfirmasi identitas); `dryRun`/`create_only` tidak | **Tertutup** |
+| Info 4 gabung kontak | `crm.routes.ts`: gabung = `contacts.delete` (Owner/Admin) + konfirmasi | **Tertutup** |
+| Info 5 laporan memegang pool DB | `reports.routes.ts`: gerbang laporan berjalan bersamaan 2/organisasi, 6/proses → 429 seketika | **Tertutup** (catatan: gerbang per organisasi berarti dua laporan berat milik satu pengguna `own` bisa membuat manajer menunggu beberapa detik — dapat diterima) |
+| Info 6–8 | tidak berubah (komentar CSAT, pohon kerja, audit) | Info |
+
+Tes: penjaga S1 lulus. Rangkaian tes Fase 5 dijalankan ulang pada pohon kerja (lihat laporan
+`2026-11-21-fase5-jam-kerja.md` bagian E). Putusan tetap **AMAN**.
