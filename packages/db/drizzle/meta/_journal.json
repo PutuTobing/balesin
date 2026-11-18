@@ -211,6 +211,13 @@
       "when": 1794949520309,
       "tag": "0029_channel_telegram_email_meta",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1794971259270,
+      "tag": "0030_email_verifikasi_pengirim",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { maskedSecret, telegramWebhookUrlUsable } from '@balesin/core';
+import { defaultTrustedAuthServIds, maskedSecret, telegramWebhookUrlUsable } from '@balesin/core';
 import type { Channel, EmailMailboxState } from '@balesin/db';
 import {
   CHANNEL_TYPE_AVAILABILITY,
@@ -105,6 +105,11 @@ export function toConnectionChannel(
         },
         pollIntervalMinutes: row.emailPollIntervalMinutes ?? 2,
         markAsRead: row.emailMarkAsRead ?? true,
+        senderVerification: {
+          trustedAuthServIds:
+            row.emailTrustedAuthServIds ?? defaultTrustedAuthServIds(row.emailImapHost ?? ''),
+          isDefault: row.emailTrustedAuthServIds === null,
+        },
         smtp:
           row.emailSmtpMode === 'custom'
             ? {

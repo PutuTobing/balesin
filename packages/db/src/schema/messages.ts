@@ -119,6 +119,8 @@ export interface MessageExtras {
     inReplyTo: string | null;
     references: string[];
     authWarning: boolean;
+    /** Review Fase 6 R1 — `pass`/`fail`/`unverified` (data lama: tidak ada → dari `authWarning`). */
+    senderVerification?: 'pass' | 'fail' | 'unverified';
     skippedAttachments: number;
     hasHtml: boolean;
   };

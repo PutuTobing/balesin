@@ -668,7 +668,7 @@ describe('Email', () => {
     const text = listed.find((message) => message.type === 'text');
     expect(text).toMatchObject({
       text: 'Tagihan saya dobel.',
-      email: { subject: 'Tagihan Oktober', hasHtml: true },
+      email: { subject: 'Tagihan Oktober', hasHtml: true, senderVerification: 'unverified' },
     });
     expect(listed.find((message) => message.type === 'document')).toMatchObject({
       media: { filename: 'bukti.pdf' },

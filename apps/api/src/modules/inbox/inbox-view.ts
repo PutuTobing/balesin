@@ -4,6 +4,7 @@ import {
   MAX_SEND_ATTEMPTS,
   MESSAGE_MEDIA_KINDS,
   channelHasCustomerWindow,
+  emailSenderVerificationSchema,
   interactiveMessageSchema,
   isRetryableFailure,
   outboundFailureMessage,
@@ -218,12 +219,21 @@ const storedEmailSchema = z.object({
   subject: nullableText,
   hasHtml: z.boolean().catch(false),
   authWarning: z.boolean().catch(false),
+  senderVerification: emailSenderVerificationSchema.optional().catch(undefined),
   skippedAttachments: z.number().int().nonnegative().catch(0),
 });
 
-/** Fase 6 — info email (tanpa header utas mentah). */
+/**
+ * Fase 6 — info email (tanpa header utas mentah). Data lama tanpa `senderVerification` (review R1):
+ * `fail` bila dulu diperingatkan, selain itu `unverified` (tidak pernah dianggap lolos).
+ */
 function emailOf(value: unknown): Message['email'] {
-  return parsed(storedEmailSchema, value);
+  const email = parsed(storedEmailSchema, value);
+  if (!email) return null;
+  return {
+    ...email,
+    senderVerification: email.senderVerification ?? (email.authWarning ? 'fail' : 'unverified'),
+  };
 }
 
 const storedTemplateSchema = z.object({

@@ -14,6 +14,10 @@ export default defineConfig({
   entry: {
     index: 'src/index.ts',
     'import-thread': 'src/modules/broadcasts/import-thread.ts',
+    // Perintah server (Fase 7, dipanggil layanan `migrate` dan CLI `balesin`): migrasi + peran DB
+    // runtime, dan pemulihan password Owner tanpa SMTP. Lihat `src/cli/`.
+    migrate: 'src/cli/migrate.ts',
+    'reset-owner-password': 'src/cli/reset-owner-password.ts',
   },
   format: 'esm',
   platform: 'node',

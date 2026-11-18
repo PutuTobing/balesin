@@ -99,6 +99,12 @@ export const channels = pgTable(
     emailImapPasswordTail: text('email_imap_password_tail'),
     emailImapFolder: text('email_imap_folder'),
     emailPollIntervalMinutes: integer('email_poll_interval_minutes'),
+    /**
+     * Review Fase 6 R1: `authserv-id` server penerima yang hasil `Authentication-Results`-nya
+     * dipercaya untuk verifikasi pengirim. `null` = bawaan dari host IMAP
+     * (`defaultTrustedAuthServIds`). Entri berawalan `.` = domain itu beserta subdomainnya.
+     */
+    emailTrustedAuthServIds: text('email_trusted_auth_serv_ids').array(),
     emailMarkAsRead: boolean('email_mark_as_read'),
     /** `system` = pakai Pengaturan → Email pengirim; `custom` = akun SMTP di bawah. */
     emailSmtpMode: text('email_smtp_mode'),
@@ -232,7 +238,7 @@ export const channels = pgTable(
     ),
     check(
       'channels_fase6_formats',
-      sql`(${table.tgBotId} is null or ${table.tgBotId} ~ '^[0-9]{5,16}$') and (${table.tgBotUsername} is null or ${table.tgBotUsername} ~ '^[A-Za-z0-9_]{1,64}$') and (${table.metaPageId} is null or ${table.metaPageId} ~ '^[0-9]{5,32}$') and (${table.metaIgAccountId} is null or ${table.metaIgAccountId} ~ '^[0-9]{5,32}$') and (${table.emailAddress} is null or char_length(${table.emailAddress}) between 3 and 254) and (${table.emailFromName} is null or char_length(${table.emailFromName}) between 1 and 100) and (${table.emailImapHost} is null or char_length(${table.emailImapHost}) between 1 and 253) and (${table.emailSmtpHost} is null or char_length(${table.emailSmtpHost}) between 1 and 253) and (${table.emailImapUsername} is null or char_length(${table.emailImapUsername}) between 1 and 255) and (${table.emailSmtpUsername} is null or char_length(${table.emailSmtpUsername}) between 1 and 255) and (${table.emailImapFolder} is null or char_length(${table.emailImapFolder}) between 1 and 200) and (${table.emailImapPort} is null or ${table.emailImapPort} between 1 and 65535) and (${table.emailSmtpPort} is null or ${table.emailSmtpPort} between 1 and 65535) and (${table.emailPollIntervalMinutes} is null or ${table.emailPollIntervalMinutes} between 1 and 60) and (${table.emailImapSecurity} is null or ${table.emailImapSecurity} in ('ssl', 'starttls')) and (${table.emailSmtpSecurity} is null or ${table.emailSmtpSecurity} in ('ssl', 'starttls', 'none')) and (${table.emailSmtpMode} is null or ${table.emailSmtpMode} in ('system', 'custom'))`,
+      sql`(${table.tgBotId} is null or ${table.tgBotId} ~ '^[0-9]{5,16}$') and (${table.tgBotUsername} is null or ${table.tgBotUsername} ~ '^[A-Za-z0-9_]{1,64}$') and (${table.metaPageId} is null or ${table.metaPageId} ~ '^[0-9]{5,32}$') and (${table.metaIgAccountId} is null or ${table.metaIgAccountId} ~ '^[0-9]{5,32}$') and (${table.emailAddress} is null or char_length(${table.emailAddress}) between 3 and 254) and (${table.emailFromName} is null or char_length(${table.emailFromName}) between 1 and 100) and (${table.emailImapHost} is null or char_length(${table.emailImapHost}) between 1 and 253) and (${table.emailSmtpHost} is null or char_length(${table.emailSmtpHost}) between 1 and 253) and (${table.emailImapUsername} is null or char_length(${table.emailImapUsername}) between 1 and 255) and (${table.emailSmtpUsername} is null or char_length(${table.emailSmtpUsername}) between 1 and 255) and (${table.emailImapFolder} is null or char_length(${table.emailImapFolder}) between 1 and 200) and (${table.emailImapPort} is null or ${table.emailImapPort} between 1 and 65535) and (${table.emailSmtpPort} is null or ${table.emailSmtpPort} between 1 and 65535) and (${table.emailPollIntervalMinutes} is null or ${table.emailPollIntervalMinutes} between 1 and 60) and (${table.emailImapSecurity} is null or ${table.emailImapSecurity} in ('ssl', 'starttls')) and (${table.emailSmtpSecurity} is null or ${table.emailSmtpSecurity} in ('ssl', 'starttls', 'none')) and (${table.emailSmtpMode} is null or ${table.emailSmtpMode} in ('system', 'custom')) and (${table.emailTrustedAuthServIds} is null or (cardinality(${table.emailTrustedAuthServIds}) between 1 and 5 and array_to_string(${table.emailTrustedAuthServIds}, ',') ~ '^[a-z0-9.,-]{1,1300}$'))`,
     ),
     check(
       'channels_last_test_complete',

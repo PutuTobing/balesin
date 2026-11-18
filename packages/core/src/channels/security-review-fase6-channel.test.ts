@@ -1,6 +1,6 @@
 /**
  * Tes penjaga review keamanan Fase 6 — channel Telegram / Email / Messenger & IG (unit)
- * (docs/security-reviews/2026-11-22-fase6-channel.md). `it` = regresi. `it.fails` = temuan terbuka (perilaku yang DIHARAPKAN; gagal sekarang).
+ * (docs/security-reviews/2026-11-22-fase6-channel.md). `it` = regresi (R1 sudah diperbaiki).
  */
 import { createRequire } from 'node:module';
 
@@ -156,7 +156,7 @@ describe('review keamanan — pengirim email palsu', () => {
     expect(emailAuthWarning(headers as never)).toBe(true);
   });
 
-  it.fails('R1: tanpa Authentication-Results (server tidak memeriksa) pengirim dianggap BELUM terverifikasi', () => {
+  it('R1: tanpa Authentication-Results (server tidak memeriksa) pengirim dianggap BELUM terverifikasi', () => {
     expect(emailAuthWarning(new Map() as never)).toBe(true);
   });
 });

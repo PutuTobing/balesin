@@ -10,6 +10,7 @@ import {
   OnMessageError,
   QUEUE_NAMES,
   QUEUE_PREFIX,
+  defaultTrustedAuthServIds,
   emailExternalId,
   emailPollJobId,
   emailPollJobPayloadSchema,
@@ -269,7 +270,12 @@ async function storeEmail(
   now: Date,
 ): Promise<'stored' | 'skipped' | 'duplicate'> {
   const { db } = deps;
-  const parsed = await parseInboundEmail(raw, ownAddresses);
+  // Review Fase 6 R1: hanya hasil verifikasi dari server penerima tepercaya kotak masuk ini.
+  const parsed = await parseInboundEmail(
+    raw,
+    ownAddresses,
+    channel.emailTrustedAuthServIds ?? defaultTrustedAuthServIds(channel.emailImapHost ?? ''),
+  );
   if (!parsed.ok) {
     deps.logger.info({ channelId: channel.id, reason: parsed.reason }, 'Email masuk dilewati');
     return 'skipped';
@@ -347,6 +353,7 @@ async function storeEmail(
         inReplyTo: email.inReplyTo,
         references: email.references,
         authWarning: email.authWarning,
+        senderVerification: email.senderVerification,
         skippedAttachments,
         html: email.html,
         attachments,

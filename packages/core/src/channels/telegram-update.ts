@@ -147,7 +147,9 @@ export function normalizeTelegramUpdate(body: unknown): TelegramUpdateResult {
 
   if (update.callback_query) {
     const query = update.callback_query;
-    if (query.from.is_bot || (query.message && query.message.chat.type !== 'private')) {
+    // Review Fase 6 Info 4: tombol tanpa pesan (inline mode — tidak dipakai Balesin) atau dari chat
+    // selain pribadi diabaikan.
+    if (query.from.is_bot || !query.message || query.message.chat.type !== 'private') {
       return { ok: false, reason: 'ignored', updateId: update.update_id };
     }
     const data = cleanCustomerText(query.data ?? null, 256);

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   classifyEmailAttachment,
+  defaultTrustedAuthServIds,
+  emailSenderVerification,
   emailExternalId,
   normalizeMessageId,
   parseInboundEmail,
@@ -85,6 +87,8 @@ describe('parseInboundEmail', () => {
     });
     expect(email.skippedAttachments).toBe(1);
     expect(email.authWarning).toBe(false);
+    // Tanpa Authentication-Results dari server tepercaya = belum terverifikasi (review R1).
+    expect(email.senderVerification).toBe('unverified');
   });
 
   it.each([
@@ -117,8 +121,49 @@ describe('parseInboundEmail', () => {
         'Authentication-Results': 'mx.contoh.test; spf=fail smtp.mailfrom=bank.test; dmarc=fail',
       },
     });
-    const result = await parseInboundEmail(Buffer.from(raw), OWN);
+    const result = await parseInboundEmail(Buffer.from(raw), OWN, ['mx.contoh.test']);
     expect(result.ok && result.email.authWarning).toBe(true);
+    expect(result.ok && result.email.senderVerification).toBe('fail');
+    // Header yang sama dari server yang TIDAK dipercaya diabaikan → hanya "belum terverifikasi".
+    const untrusted = await parseInboundEmail(Buffer.from(raw), OWN, ['mx.lain.test']);
+    expect(untrusted.ok && untrusted.email).toMatchObject({
+      authWarning: false,
+      senderVerification: 'unverified',
+    });
+  });
+
+  it('verifikasi pengirim: hanya header TERATAS dari server tepercaya; DKIM harus selaras domain', async () => {
+    const pass = testEmail({
+      from: 'budi@pelanggan.test',
+      headers: {
+        'Authentication-Results':
+          'mail.contoh.test; dkim=pass header.d=pelanggan.test; spf=pass smtp.mailfrom=pelanggan.test',
+      },
+    });
+    const trusted = defaultTrustedAuthServIds('imap.contoh.test');
+    expect(trusted).toEqual(['imap.contoh.test', '.contoh.test']);
+    const result = await parseInboundEmail(Buffer.from(pass), OWN, trusted);
+    expect(result.ok && result.email.senderVerification).toBe('pass');
+
+    // DKIM lolos untuk domain LAIN (penyerang) tidak membuktikan alamat From.
+    expect(
+      emailSenderVerification(
+        ['mail.contoh.test; dkim=pass header.d=penyerang.test; spf=pass'],
+        trusted,
+        'pelanggan.test',
+      ),
+    ).toBe('unverified');
+    // Header palsu dari pengirim berada DI BAWAH header server kita → header teratas yang dipakai.
+    expect(
+      emailSenderVerification(
+        ['mail.contoh.test; spf=none; dkim=none', 'mail.contoh.test; dmarc=pass'],
+        trusted,
+        'pelanggan.test',
+      ),
+    ).toBe('unverified');
+    expect(emailSenderVerification(['mail.contoh.test; dmarc=pass'], trusted, null)).toBe('pass');
+    expect(emailSenderVerification([], trusted, 'pelanggan.test')).toBe('unverified');
+    expect(defaultTrustedAuthServIds('imap.gmail.com')).toContain('mx.google.com');
   });
 
   it('tanpa Message-ID → ID sintetis yang unik', async () => {

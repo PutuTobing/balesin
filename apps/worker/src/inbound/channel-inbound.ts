@@ -170,6 +170,7 @@ export async function handleChannelMessage(
       inReplyTo: message.email.inReplyTo,
       references: message.email.references,
       authWarning: message.email.authWarning,
+      senderVerification: message.email.senderVerification,
       skippedAttachments: message.email.skippedAttachments,
       hasHtml: message.email.html !== null,
     };

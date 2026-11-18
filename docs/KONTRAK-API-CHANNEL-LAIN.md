@@ -32,9 +32,13 @@ di sana = 404).
   (nama profil dari channel non-WhatsApp — tidak tepercaya, tampilkan `channelHandle` di sampingnya).
 - `Conversation.windowApplies` (`false` = sembunyikan hitung mundur); `windowOpen` selalu `true`
   untuk Telegram/Email; `windowExpiresAt` `null` untuk channel tanpa jendela.
-- `Message.email`: `{ subject, hasHtml, authWarning, skippedAttachments }` (`null` untuk pesan lain).
-  `authWarning` = server penerima melaporkan SPF/DKIM/DMARC gagal → tampilkan peringatan
-  "pengirim belum terverifikasi".
+- `Message.email`: `{ subject, hasHtml, authWarning, senderVerification, skippedAttachments }`
+  (`null` untuk pesan lain). `senderVerification` (review Fase 6 R1) = `pass` | `fail` |
+  `unverified` dari header `Authentication-Results` TERATAS yang dibuat server tepercaya kotak
+  masuk itu: `pass` = DMARC lolos atau DKIM lolos selaras domain pengirim; `fail` = DMARC gagal /
+  SPF gagal tanpa DKIM lolos (`authWarning: true`, peringatan keras); `unverified` = tidak ada hasil
+  tepercaya → label NETRAL `EMAIL_SENDER_VERIFICATION_LABELS.unverified` ("Pengirim tidak
+  diverifikasi server email"). Data lama tanpa isian ini dibaca sebagai `fail`/`unverified`.
 - `GET /api/v1/messages/:messageId/email-html` (`inbox.view` + cakupan) → `{ html }` HTML yang SUDAH
   disanitasi server. **Web wajib** menampilkannya di `<iframe sandbox>` (tanpa `allow-scripts` dan
   `allow-same-origin`) via `srcdoc`; 404 bila tidak ada versi HTML.
@@ -83,6 +87,10 @@ smtp: { mode: 'system' } | { mode: 'custom', host, port, security, username, pas
 - SMTP `system` = Pengaturan → Email pengirim (From = alamat sistem, Reply-To = alamat channel);
   `custom` = akun sendiri (From = alamat channel). `none` ditolak di production.
 - Mengganti host/port/keamanan/username tanpa password → 400 (isi ulang password).
+- `trustedAuthServIds` (opsional, maks. 5; `null` = bawaan): `authserv-id` server penerima yang
+  hasil verifikasinya dipercaya, mis. `mx.google.com`, atau `.perusahaan.co.id` (domain +
+  subdomain). Bawaan = host IMAP + domain induknya (+ `mx.google.com` untuk Gmail). Mengubahnya =
+  konfirmasi identitas. Tampilan: `channel.senderVerification = { trustedAuthServIds, isDefault }`.
 - Tes: `incoming` (IMAP login + folder) + `outgoing` (SMTP verify).
 - `channel.mailbox` = status pengambilan terakhir (`lastPolledAt`, `lastPollOk`, `lastPollCode`,
   `lastPollMessage`, `skippedMessages`).

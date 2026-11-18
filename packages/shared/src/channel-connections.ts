@@ -122,6 +122,26 @@ export const imapFolderSchema = z
     'Nama folder tidak valid.',
   );
 
+/**
+ * Review Fase 6 R1: `authserv-id` server penerima yang dipercaya (mis. `mx.google.com`, atau
+ * `.perusahaan.co.id` untuk domain + subdomain). Maks. 5. `null` = bawaan dari host IMAP.
+ */
+export const trustedAuthServIdsSchema = z
+  .array(
+    z
+      .string()
+      .trim()
+      .toLowerCase()
+      .regex(
+        /^\.?[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/,
+        'Nama server tidak valid. Contoh: mx.google.com atau .perusahaan.co.id',
+      )
+      .max(253, 'Nama server terlalu panjang.'),
+  )
+  .min(1, 'Isi minimal satu nama server, atau kosongkan untuk memakai bawaan.')
+  .max(5, 'Paling banyak 5 nama server.')
+  .nullable();
+
 export const imapSettingsInputSchema = z.object({
   host: imapHostSchema,
   port: smtpPortSchema,
@@ -202,6 +222,7 @@ export const createEmailChannelSchema = z.object({
   /** Tandai email sudah dibaca di server setelah diambil. */
   markAsRead: z.boolean().default(true),
   smtp: emailChannelSmtpInputSchema,
+  trustedAuthServIds: trustedAuthServIdsSchema.optional(),
   confirmation,
 });
 
@@ -265,6 +286,8 @@ export const updateConnectionChannelRequestSchema = z.discriminatedUnion(
         .optional(),
       markAsRead: z.boolean().optional(),
       smtp: emailChannelSmtpInputSchema.optional(),
+      /** `null` = kembali ke bawaan. Mengubahnya wajib konfirmasi identitas. */
+      trustedAuthServIds: trustedAuthServIdsSchema.optional(),
       confirmation,
     }),
     z.object({
@@ -469,6 +492,14 @@ export const emailChannelSchema = z.object({
   }),
   pollIntervalMinutes: z.number().int(),
   markAsRead: z.boolean(),
+  /**
+   * Review Fase 6 R1: `authserv-id` tepercaya yang BERLAKU (diatur atau bawaan dari host IMAP) dan
+   * apakah itu bawaan.
+   */
+  senderVerification: z.object({
+    trustedAuthServIds: z.array(z.string()),
+    isDefault: z.boolean(),
+  }),
   smtp: z.discriminatedUnion('mode', [
     z.object({ mode: z.literal('system') }),
     z.object({

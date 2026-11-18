@@ -749,6 +749,7 @@ export function createConnectionsService(deps: ConnectionsServiceDeps): Connecti
             emailImapFolder: input.imap.folder ?? 'INBOX',
             emailPollIntervalMinutes: input.pollIntervalMinutes ?? 2,
             emailMarkAsRead: input.markAsRead ?? true,
+            emailTrustedAuthServIds: input.trustedAuthServIds ?? null,
             emailSmtpMode: input.smtp.mode,
             ...(input.smtp.mode === 'custom' && input.smtp.password !== undefined
               ? {
@@ -939,6 +940,15 @@ export function createConnectionsService(deps: ConnectionsServiceDeps): Connecti
           if (input.markAsRead !== undefined && input.markAsRead !== row.emailMarkAsRead) {
             changes.emailMarkAsRead = input.markAsRead;
             plainFields.push('markAsRead');
+          }
+          // Review Fase 6 R1: daftar server tepercaya menentukan label "terverifikasi" — perubahan
+          // diperlakukan seperti kredensial (konfirmasi identitas + pemberitahuan Owner).
+          if (
+            input.trustedAuthServIds !== undefined &&
+            JSON.stringify(input.trustedAuthServIds) !== JSON.stringify(row.emailTrustedAuthServIds)
+          ) {
+            changes.emailTrustedAuthServIds = input.trustedAuthServIds;
+            credentialFields.push('trustedAuthServIds');
           }
           if (input.emailAddress !== undefined && input.emailAddress !== row.emailAddress) {
             changes.emailAddress = input.emailAddress;

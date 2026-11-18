@@ -145,6 +145,18 @@ export type MessageSenderKind = z.infer<typeof messageSenderKindSchema>;
  * `unsupported` → `unsupported` (jenis aslinya di `rawType`); `system` (mis. pelanggan ganti nomor)
  * → `system`.
  */
+/** Review Fase 6 R1 — verifikasi pengirim email (SPF/DKIM/DMARC dari server penerima tepercaya). */
+export const EMAIL_SENDER_VERIFICATIONS = ['pass', 'fail', 'unverified'] as const;
+export const emailSenderVerificationSchema = z.enum(EMAIL_SENDER_VERIFICATIONS);
+export type EmailSenderVerificationValue = z.infer<typeof emailSenderVerificationSchema>;
+export const EMAIL_SENDER_VERIFICATION_LABELS: Readonly<
+  Record<EmailSenderVerificationValue, string>
+> = {
+  pass: 'Pengirim terverifikasi server email',
+  fail: 'Verifikasi pengirim gagal — alamat pengirim bisa palsu. Jangan proses permintaan sensitif tanpa konfirmasi lain.',
+  unverified: 'Pengirim tidak diverifikasi server email',
+};
+
 export const MESSAGE_TYPES = [
   'text',
   'image',
@@ -789,7 +801,14 @@ export const messageSchema = z.object({
     .object({
       subject: z.string().nullable(),
       hasHtml: z.boolean(),
+      /** `true` hanya bila verifikasi pengirim GAGAL (`senderVerification: 'fail'`). */
       authWarning: z.boolean(),
+      /**
+       * Review Fase 6 R1 — hasil verifikasi pengirim oleh server email penerima TEPERCAYA: `pass`,
+       * `fail` (peringatan keras: alamat bisa palsu), `unverified` (tidak ada hasil tepercaya —
+       * tampilkan label NETRAL `EMAIL_SENDER_VERIFICATION_LABELS.unverified`). Server selalu mengisi.
+       */
+      senderVerification: emailSenderVerificationSchema.optional(),
       /** Lampiran yang dilewati (terlalu besar / terlalu banyak / jenis berbahaya). */
       skippedAttachments: z.number().int().nonnegative(),
     })

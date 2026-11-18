@@ -9,6 +9,9 @@ import {
 import { simpleParser, type AddressObject, type HeaderValue } from 'mailparser';
 import sanitizeHtml from 'sanitize-html';
 
+/** Review Fase 6 R1: hasil verifikasi pengirim email. */
+export type EmailSenderVerification = 'pass' | 'fail' | 'unverified';
+
 import { cleanCustomerText, cleanFileName } from '../meta/contact-identity';
 import { detectMedia } from '../meta/media-sniff';
 
@@ -16,7 +19,8 @@ import { detectMedia } from '../meta/media-sniff';
  * Email masuk channel Email (Fase 6): urai RFC 822 → bentuk aman.
  *
  *  - Identitas pengirim = alamat `From` (huruf kecil). Alamat bisa dipalsukan (sifat email): hasil
- *    `Authentication-Results` server penerima (SPF/DKIM/DMARC gagal) diteruskan sebagai `authWarning`.
+ *    `Authentication-Results` dari server penerima TEPERCAYA menjadi `senderVerification`
+ *    (`pass`/`fail`/`unverified`, review Fase 6 R1); tanpa hasil tepercaya = `unverified`.
  *  - Anti-loop: balasan otomatis (`Auto-Submitted`, `Precedence: bulk/junk/list/auto_reply`,
  *    `X-Autoreply`/`X-Autorespond`), laporan bounce (`multipart/report`, MAILER-DAEMON, `Return-Path: <>`)
  *    dan email dari alamat channel sendiri DILEWATI (tidak masuk inbox, tidak dibalas).
@@ -47,6 +51,12 @@ export interface ParsedInboundEmail {
   text: string | null;
   /** HTML tersanitasi (≤ `EMAIL_MAX_HTML_BYTES`), atau `null`. */
   html: string | null;
+  /**
+   * Review Fase 6 R1 — hasil verifikasi pengirim dari server penerima TEPERCAYA (lihat
+   * `emailSenderVerification`): `pass` / `fail` / `unverified` (tidak ada hasil tepercaya).
+   */
+  senderVerification: EmailSenderVerification;
+  /** `true` hanya bila verifikasi GAGAL (`fail`) — peringatan keras. */
   authWarning: boolean;
   attachments: EmailAttachmentPart[];
   skippedAttachments: number;
@@ -139,12 +149,103 @@ export function automatedEmailReason(
   return null;
 }
 
-/** `Authentication-Results` server penerima: DMARC gagal, atau SPF gagal tanpa DKIM lolos. */
-export function emailAuthWarning(headers: ReadonlyMap<string, HeaderValue>): boolean {
-  const results = headerText(headers.get('authentication-results')).toLowerCase();
-  if (results === '') return false;
-  if (/\bdmarc=fail\b/.test(results)) return true;
-  return /\bspf=(fail|softfail)\b/.test(results) && !/\bdkim=pass\b/.test(results);
+/**
+ * `authserv-id` header `Authentication-Results` (token pertama sebelum `;`, tanpa versi, huruf kecil).
+ * `null` bila bentuknya tidak dikenali.
+ */
+export function authServIdOf(value: string): string | null {
+  const id = value.split(';', 1)[0]?.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
+  return /^[a-z0-9.-]{1,253}$/.test(id) ? id : null;
+}
+
+/** `authserv-id` cocok dengan daftar tepercaya: sama persis, atau `*.domain` untuk entri `.domain`. */
+function authServTrusted(id: string, trusted: readonly string[]): boolean {
+  return trusted.some((entry) =>
+    entry.startsWith('.') ? id.endsWith(entry) || id === entry.slice(1) : id === entry,
+  );
+}
+
+/**
+ * Daftar `authserv-id` tepercaya bawaan untuk kotak masuk di host IMAP ini: host itu sendiri, domain
+ * induknya (`.domain`, mis. `mail.perusahaan.co.id` → `.perusahaan.co.id`), plus penyedia besar yang
+ * dikenal (Gmail menandai `mx.google.com`).
+ */
+export function defaultTrustedAuthServIds(imapHost: string): string[] {
+  const host = imapHost.trim().toLowerCase();
+  const labels = host.split('.');
+  const list = [host];
+  if (labels.length >= 3) list.push(`.${labels.slice(1).join('.')}`);
+  const known: Readonly<Record<string, string[]>> = {
+    'imap.gmail.com': ['mx.google.com'],
+    'imap.googlemail.com': ['mx.google.com'],
+    'imap.mail.yahoo.com': ['.yahoo.com'],
+  };
+  return [...new Set([...list, ...(known[host] ?? [])])];
+}
+
+/**
+ * Status verifikasi pengirim (review Fase 6 R1). Hanya header `Authentication-Results` TERATAS yang
+ * dibuat server tepercaya (`trusted`, `null` = tanpa saringan) yang dipakai — header lebih bawah bisa
+ * disisipkan pengirim. Tanpa header tepercaya = `unverified` (bukan dianggap lolos).
+ *
+ * - `fail`: `dmarc=fail`, atau `spf=fail/softfail` tanpa `dkim=pass`.
+ * - `pass`: `dmarc=pass`, atau `dkim=pass` dengan `header.d`/`header.i` domain pengirim.
+ * - selain itu `unverified`.
+ */
+export function emailSenderVerification(
+  results: readonly string[],
+  trusted: readonly string[] | null,
+  fromDomain: string | null,
+): EmailSenderVerification {
+  const header = results.find((value) => {
+    const id = authServIdOf(value);
+    return id !== null && (trusted === null || authServTrusted(id, trusted));
+  });
+  if (header === undefined) return 'unverified';
+  const text = header.toLowerCase();
+  if (/\bdmarc=fail\b/.test(text)) return 'fail';
+  if (/\bspf=(fail|softfail)\b/.test(text) && !/\bdkim=pass\b/.test(text)) return 'fail';
+  if (/\bdmarc=pass\b/.test(text)) return 'pass';
+  if (fromDomain) {
+    const domain = fromDomain.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const aligned = new RegExp(
+      `\\bdkim=pass\\b[^;]*\\bheader\\.(d=${domain}|i=[^\\s;]*@${domain})(?![a-z0-9.-])`,
+    );
+    if (aligned.test(text)) return 'pass';
+  }
+  return 'unverified';
+}
+
+/** Nilai mentah header `Authentication-Results` (urutan dari atas; lipatan baris dirapatkan). */
+export function authenticationResultsOf(
+  headerLines: ReadonlyArray<{ key: string; line: string }>,
+): string[] {
+  return headerLines
+    .filter((entry) => entry.key === 'authentication-results')
+    .map((entry) =>
+      entry.line
+        .replace(/^[^:]*:/, '')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    );
+}
+
+/**
+ * `true` bila pengirim TIDAK terbukti (gagal ATAU tanpa hasil tepercaya). `trusted` tidak diberikan =
+ * semua `authserv-id` diterima (hanya untuk tes/utilitas).
+ */
+export function emailAuthWarning(
+  headers: ReadonlyMap<string, HeaderValue>,
+  trusted: readonly string[] | null = null,
+): boolean {
+  const raw = headers.get('authentication-results');
+  const values =
+    raw === undefined
+      ? []
+      : Array.isArray(raw)
+        ? raw.map((item) => headerText(item as HeaderValue))
+        : [headerText(raw)];
+  return emailSenderVerification(values, trusted, null) !== 'pass';
 }
 
 // ── HTML ────────────────────────────────────────────────────────────────────
@@ -358,6 +459,8 @@ function addressesOf(value: AddressObject | AddressObject[] | undefined): Addres
 export async function parseInboundEmail(
   raw: Buffer,
   ownAddresses: readonly string[],
+  /** `authserv-id` tepercaya kotak masuk ini (`defaultTrustedAuthServIds` bila tidak diatur). */
+  trustedAuthServIds: readonly string[] = [],
 ): Promise<EmailParseResult> {
   const parsed = await simpleParser(raw, {
     skipImageLinks: true,
@@ -398,6 +501,11 @@ export async function parseInboundEmail(
 
   const messageId =
     normalizeMessageId(parsed.messageId) ?? `tanpa-id.${randomUUID()}@balesin.invalid`;
+  const verification = emailSenderVerification(
+    authenticationResultsOf(parsed.headerLines),
+    trustedAuthServIds,
+    fromAddress.split('@')[1] ?? null,
+  );
   return {
     ok: true,
     email: {
@@ -409,7 +517,8 @@ export async function parseInboundEmail(
       date: parsed.date && !Number.isNaN(parsed.date.getTime()) ? parsed.date : null,
       text: cleanBody(parsed.text),
       html,
-      authWarning: emailAuthWarning(parsed.headers),
+      senderVerification: verification,
+      authWarning: verification === 'fail',
       attachments,
       skippedAttachments,
     },

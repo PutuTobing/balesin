@@ -1,4 +1,4 @@
-import { MESSAGE_MEDIA_KINDS, MESSAGE_TYPES } from '@balesin/shared';
+import { EMAIL_SENDER_VERIFICATIONS, MESSAGE_MEDIA_KINDS, MESSAGE_TYPES } from '@balesin/shared';
 import { z } from 'zod';
 
 /**
@@ -75,6 +75,8 @@ export const channelInboundMessageSchema = z.object({
       inReplyTo: z.string().max(256).nullable(),
       references: z.array(z.string().max(256)).max(20),
       authWarning: z.boolean(),
+      /** Review Fase 6 R1. Payload lama tanpa isian ini = `unverified`. */
+      senderVerification: z.enum(EMAIL_SENDER_VERIFICATIONS).default('unverified'),
       skippedAttachments: z.number().int().nonnegative(),
       /** HTML tersanitasi (disalin ke `message_email_bodies`). */
       html: z.string().max(524_288).nullable(),

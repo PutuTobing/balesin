@@ -120,6 +120,23 @@ describe('normalizeTelegramUpdate', () => {
     });
   });
 
+  it('tombol inline tanpa pesan (inline mode) / dari grup → diabaikan (review Info 4)', () => {
+    expect(
+      normalizeTelegramUpdate({ update_id: 13, callback_query: { id: 'cb-2', from, data: 'x' } }),
+    ).toEqual({ ok: false, reason: 'ignored', updateId: 13 });
+    expect(
+      normalizeTelegramUpdate({
+        update_id: 14,
+        callback_query: {
+          id: 'cb-3',
+          from,
+          data: 'x',
+          message: { message_id: 1, chat: { id: -100, type: 'supergroup' } },
+        },
+      }),
+    ).toEqual({ ok: false, reason: 'ignored', updateId: 14 });
+  });
+
   it('grup, bot, update tak dikenal → diabaikan; bentuk rusak → invalid', () => {
     expect(
       normalizeTelegramUpdate({
