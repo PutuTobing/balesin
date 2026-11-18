@@ -82,3 +82,14 @@ Berkas baru: `apps/api/src/modules/workspace/security-review-fase5-jam-kerja.int
 | `apps/api`: `vitest run src/modules/departments src/modules/tickets crm.integration src/modules/reports src/modules/workspace src/modules/realtime permission-grant` | 69 lulus + 1 `it.fails`, 11 berkas |
 | `apps/worker`: `vitest run src/queues/workspace.integration.test.ts` | 7 lulus |
 | ESLint berkas tes baru | bersih |
+
+---
+
+## Putaran 2 — verifikasi perbaikan (commit `f335d9c`)
+
+| Butir | Bukti | Status |
+|---|---|---|
+| S1 teks pesan otomatis | `apps/api/src/modules/workspace/workspace.service.ts:160-175`: MENGAKTIFKAN atau MENGUBAH teks pesan otomatis wajib konfirmasi identitas (`workspace.auto_messages`); mematikan tidak (arah aman). `autoMessageAudit` (`:75-97`) mencatat teks lama & baru per jenis (≤ 1.000 karakter) + `risky`/`addedLinks`/`addedNumbers` (detektor balasan cepat) → kejadian keamanan `auto_message_risky` (warning, `apps/api/src/modules/audit/audit.service.ts:100,229`) untuk SIAPA PUN pengubahnya. Tes penjaga S1 `it.fails` → `it` dengan asersi IDENTIK (PUT tanpa konfirmasi ≥ 400, teks tidak berubah) dan lulus | **Tertutup** |
+
+Hasil: `apps/api` `vitest run src/modules/workspace` lulus (bagian dari 95 lulus di laporan
+`2026-11-22-fase6-channel.md`). Putusan tetap **AMAN**.
