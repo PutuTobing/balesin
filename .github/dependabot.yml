@@ -31,7 +31,7 @@ updates:
         patterns: ['*']
 
   - package-ecosystem: docker
-    directory: /deploy
+    directory: /deploy/docker
     schedule:
       interval: weekly
       day: monday

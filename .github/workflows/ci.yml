@@ -108,3 +108,57 @@ jobs:
             e2e/test-results
           retention-days: 7
           if-no-files-found: ignore
+
+  deploy:
+    name: Image produksi + installer (uji asap)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Shellcheck install.sh dan CLI balesin
+        run: docker run --rm -v "$PWD/deploy:/mnt:ro" -w /mnt koalaman/shellcheck:v0.11.0 -x install.sh balesin
+      - name: Build image api, worker, web
+        run: |
+          for target in api worker web; do
+            docker build -f deploy/docker/Dockerfile --target "$target" -t "balesin-ci/balesin-$target:0.0.0-ci" .
+          done
+      - name: Konfigurasi gateway nginx valid
+        run: docker run --rm --read-only --tmpfs /tmp:uid=101,gid=101 --add-host api:127.0.0.1 balesin-ci/balesin-web:0.0.0-ci nginx -t
+      # Installer sungguhan (mode A, image lokal) → wizard setup terbuka → backup → restore.
+      - name: Pasang dengan install.sh
+        env:
+          BALESIN_HOME: ${{ runner.temp }}/balesin
+          BALESIN_MODE: A
+          BALESIN_DOMAIN: balesin.ci.example
+          BALESIN_UPSTREAM_PROXY: 192.0.2.10
+          BALESIN_BIND_ADDRESS: 127.0.0.1
+          BALESIN_HTTP_PORT: '18080'
+          BALESIN_APP_URL: http://localhost:18080
+          BALESIN_VERSION: 0.0.0-ci
+          BALESIN_IMAGE_PREFIX: balesin-ci/balesin
+          BALESIN_PROJECT_NAME: balesin-ci
+          BALESIN_NO_PULL: '1'
+          BALESIN_ASSUME_YES: '1'
+          BALESIN_SKIP_LINK: '1'
+        run: sudo -E bash deploy/install.sh
+      - name: Cek kesehatan, header, dan wizard setup
+        run: |
+          curl -fsS http://localhost:18080/ready | grep -q '"status":"ok"'
+          curl -fsS http://localhost:18080/api/v1/setup/status | grep -q '"needsSetup":true'
+          curl -fsSI http://localhost:18080/setup | grep -qi "content-security-policy: default-src 'self'"
+          curl -fsSI http://localhost:18080/sw.js | grep -qi 'cache-control: no-cache'
+      - name: Backup lalu restore
+        env:
+          BALESIN_HOME: ${{ runner.temp }}/balesin
+        run: |
+          sudo -E "$BALESIN_HOME/balesin" backup
+          backup="$(sudo ls "$BALESIN_HOME"/backups/ | grep -E '\.tar\.enc$' | head -n 1)"
+          sudo -E "$BALESIN_HOME/balesin" restore "$BALESIN_HOME/backups/$backup" --yes --tanpa-backup-pengaman
+          curl -fsS http://localhost:18080/ready | grep -q '"status":"ok"'
+      - name: Log bila gagal
+        if: failure()
+        env:
+          BALESIN_HOME: ${{ runner.temp }}/balesin
+        run: sudo -E "$BALESIN_HOME/balesin" logs || true

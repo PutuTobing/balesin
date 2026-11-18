@@ -1,0 +1,25 @@
+# Konteks build image produksi (deploy/docker/Dockerfile). Hanya kode sumber yang dibutuhkan build;
+# rahasia, dokumen internal, referensi pelanggan, dan hasil build lokal tidak pernah ikut.
+**/node_modules
+**/dist
+**/coverage
+**/.vite
+**/*.tsbuildinfo
+**/*.log
+.git
+.github
+.claude
+.env*
+!.env.example
+*.pem
+*.key
+docs
+assets
+e2e/*
+!e2e/package.json
+deploy/*
+!deploy/docker
+media
+data
+CLAUDE.md
+README.md

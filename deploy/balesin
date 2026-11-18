@@ -1,0 +1,710 @@
+#!/usr/bin/env bash
+# balesin — CLI pengelola instalasi Balesin self-hosted (dipasang install.sh ke /opt/balesin).
+#
+#   balesin status                   ringkasan layanan, kesehatan, versi, backup terakhir
+#   balesin logs [layanan] [-f]      log container (api, worker, web, postgres, redis, …)
+#   balesin version                  versi terpasang
+#   balesin backup                   backup database + media (terenkripsi) ke /opt/balesin/backups
+#   balesin restore <berkas>         pulihkan dari backup (dengan konfirmasi)
+#   balesin update [versi]           backup → tarik image → migrasi → restart → cek kesehatan
+#                                    → rollback otomatis bila gagal
+#   balesin reset-owner-password [email]
+#                                    ganti password Owner dari server (lupa password tanpa SMTP)
+#   balesin setup-token              tampilkan token wizard setup
+#   balesin start | stop | restart   nyalakan / matikan / jalankan ulang semua layanan
+#
+# Semua rahasia hanya ada di /opt/balesin/.env (chmod 600). Skrip ini tidak pernah mencetak isi
+# .env selain token setup (perintah setup-token) dan tidak pernah menulis rahasia ke berkas lain.
+# Panduan lengkap: docs/DEPLOY.md.
+
+# Perintah `sh -c '…$POSTGRES_USER…'` sengaja memakai kutip tunggal: variabel dibaca DI DALAM container.
+# shellcheck disable=SC2016
+
+set -Eeuo pipefail
+umask 077
+
+readonly CLI_VERSION="1.0.0"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+BALESIN_HOME="${BALESIN_HOME:-$(dirname "$SCRIPT_PATH")}"
+ENV_FILE="$BALESIN_HOME/.env"
+COMPOSE_FILE="$BALESIN_HOME/docker-compose.yml"
+BACKUP_DIR="$BALESIN_HOME/backups"
+LOG_DIR="$BALESIN_HOME/logs"
+readonly APP_SERVICES=(api worker web)
+# Batas tunggu layanan sehat (detik).
+HEALTH_TIMEOUT="${BALESIN_HEALTH_TIMEOUT:-180}"
+
+# ── Tampilan ────────────────────────────────────────────────────────────────────────────────────
+if [[ -t 1 ]]; then
+  BOLD=$'\e[1m' RED=$'\e[31m' GREEN=$'\e[32m' YELLOW=$'\e[33m' DIM=$'\e[2m' RESET=$'\e[0m'
+else
+  BOLD='' RED='' GREEN='' YELLOW='' DIM='' RESET=''
+fi
+
+info() { printf '%s\n' "$*"; }
+step() { printf '\n%s==> %s%s\n' "$BOLD" "$*" "$RESET"; }
+ok() { printf '%s[OK]%s %s\n' "$GREEN" "$RESET" "$*"; }
+warn() { printf '%s[!]%s %s\n' "$YELLOW" "$RESET" "$*" >&2; }
+die() {
+  printf '%sGagal:%s %s\n' "$RED" "$RESET" "$*" >&2
+  exit 1
+}
+
+usage() {
+  sed -n '2,19p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'
+}
+
+# ── Lingkungan ──────────────────────────────────────────────────────────────────────────────────
+require_root() {
+  if [[ "${EUID:-$(id -u)}" -ne 0 && "${BALESIN_ALLOW_NONROOT:-0}" != "1" ]]; then
+    die "Jalankan dengan sudo (berkas .env hanya bisa dibaca root): sudo balesin $*"
+  fi
+}
+
+require_install() {
+  [[ -f "$ENV_FILE" ]] || die "Instalasi tidak ditemukan di $BALESIN_HOME (tidak ada .env). Jalankan install.sh dulu."
+  [[ -f "$COMPOSE_FILE" ]] || die "Berkas $COMPOSE_FILE tidak ada. Jalankan ulang install.sh."
+  command -v docker >/dev/null 2>&1 || die "Perintah docker tidak ditemukan."
+  docker compose version >/dev/null 2>&1 || die "Docker Compose v2 (docker compose) tidak ditemukan."
+  # Izin .env dijaga tetap 600 (rahasia).
+  chmod 600 "$ENV_FILE" 2>/dev/null || true
+}
+
+# Nilai satu variabel dari .env (tanpa `source`: isi .env tidak pernah dieksekusi sebagai skrip).
+env_get() {
+  local key="$1" line value
+  line="$(grep -E "^${key}=" "$ENV_FILE" | tail -n 1 || true)"
+  value="${line#*=}"
+  # Buang tanda kutip pembungkus bila ada.
+  if [[ "$value" =~ ^\"(.*)\"$ || "$value" =~ ^\'(.*)\'$ ]]; then value="${BASH_REMATCH[1]}"; fi
+  printf '%s' "$value"
+}
+
+# Mengganti/menambah satu variabel di .env secara atomik (izin 600 tetap).
+env_set() {
+  local key="$1" value="$2" tmp
+  tmp="$(mktemp "$BALESIN_HOME/.env.XXXXXX")"
+  awk -v k="$key" -v v="$value" '
+    BEGIN { done = 0 }
+    index($0, k "=") == 1 { if (!done) { print k "=" v; done = 1 }; next }
+    { print }
+    END { if (!done) print k "=" v }
+  ' "$ENV_FILE" >"$tmp"
+  chmod 600 "$tmp"
+  mv -f "$tmp" "$ENV_FILE"
+}
+
+compose() {
+  docker compose --project-directory "$BALESIN_HOME" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" "$@"
+}
+
+# Compose dengan berkas compose lain (dipakai update: berkas versi baru di folder staging).
+compose_with() {
+  local file="$1"
+  shift
+  docker compose --project-directory "$BALESIN_HOME" -f "$file" --env-file "$ENV_FILE" "$@"
+}
+
+service_running() {
+  [[ -n "$(compose ps --status running -q "$1" 2>/dev/null)" ]]
+}
+
+LOCK_DIR=""
+acquire_lock() {
+  local lock="$BALESIN_HOME/.balesin.lock"
+  if command -v flock >/dev/null 2>&1; then
+    exec 9>"$lock"
+    flock -n 9 || die "Perintah balesin lain (update/backup/restore) sedang berjalan. Coba lagi nanti."
+  else
+    LOCK_DIR="$lock.d"
+    mkdir "$LOCK_DIR" 2>/dev/null || die "Perintah balesin lain sedang berjalan (hapus $LOCK_DIR bila yakin tidak ada)."
+  fi
+}
+
+release_lock() {
+  if [[ -n "$LOCK_DIR" ]]; then rmdir "$LOCK_DIR" 2>/dev/null || true; fi
+}
+
+WORK_DIRS=()
+cleanup() {
+  local dir
+  for dir in "${WORK_DIRS[@]}"; do
+    [[ -n "$dir" && -d "$dir" ]] && rm -rf -- "$dir"
+  done
+  release_lock
+}
+trap cleanup EXIT
+
+# Membuat folder kerja sementara (dibersihkan saat keluar) → variabel global WORK_DIR.
+WORK_DIR=""
+new_work_dir() {
+  mkdir -p "$BACKUP_DIR"
+  chmod 700 "$BACKUP_DIR"
+  WORK_DIR="$(mktemp -d "$BACKUP_DIR/.kerja-XXXXXX")"
+  WORK_DIRS+=("$WORK_DIR")
+}
+
+confirm_word() {
+  local word="$1" prompt="$2" answer
+  if [[ "${ASSUME_YES:-0}" == "1" ]]; then return 0; fi
+  [[ -t 0 ]] || die "Butuh konfirmasi interaktif. Jalankan di terminal, atau tambahkan --yes bila benar-benar yakin."
+  printf '%s\nKetik %s%s%s untuk melanjutkan: ' "$prompt" "$BOLD" "$word" "$RESET"
+  read -r answer
+  [[ "$answer" == "$word" ]] || die "Dibatalkan."
+}
+
+version_le() { [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" == "$1" ]]; }
+
+# ── Kesehatan ───────────────────────────────────────────────────────────────────────────────────
+# GET lewat gateway (container web) — menguji jalur yang sama dengan pengguna: web → api.
+gateway_get() {
+  compose exec -T web wget -q -T 5 -O - "http://127.0.0.1:8080$1" 2>/dev/null
+}
+
+wait_ready() {
+  local deadline=$((SECONDS + HEALTH_TIMEOUT)) body=""
+  while ((SECONDS < deadline)); do
+    body="$(gateway_get /ready || true)"
+    if [[ "$body" == *'"status":"ok"'* ]]; then
+      return 0
+    fi
+    sleep 3
+  done
+  warn "Pemeriksaan /ready tidak hijau dalam ${HEALTH_TIMEOUT} detik. Jawaban terakhir: ${body:-(tidak ada)}"
+  return 1
+}
+
+workers_healthy() {
+  local id health
+  id="$(compose ps -q worker 2>/dev/null || true)"
+  [[ -n "$id" ]] || return 1
+  health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$id" 2>/dev/null || true)"
+  [[ "$health" == "healthy" ]]
+}
+
+# Menyalakan layanan aplikasi dan menunggu sehat. Argumen opsional: berkas compose lain.
+start_and_check() {
+  local file="${1:-$COMPOSE_FILE}"
+  if ! compose_with "$file" up -d --remove-orphans --wait --wait-timeout "$HEALTH_TIMEOUT"; then
+    warn "Sebagian layanan tidak sehat dalam ${HEALTH_TIMEOUT} detik."
+    return 1
+  fi
+  wait_ready || return 1
+  workers_healthy || {
+    warn "Worker belum sehat."
+    return 1
+  }
+  return 0
+}
+
+# ── Database ────────────────────────────────────────────────────────────────────────────────────
+# psql sebagai pemilik tabel lewat socket lokal container postgres (tanpa password di argumen).
+psql_owner() {
+  compose exec -T postgres sh -c 'exec psql -X -q -v ON_ERROR_STOP=1 -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"' psql "$@"
+}
+
+migration_count() {
+  psql_owner -c "select count(*) from drizzle.__drizzle_migrations" 2>/dev/null | tr -d '[:space:]' || true
+}
+
+run_migrations() {
+  local file="${1:-$COMPOSE_FILE}"
+  compose_with "$file" run --rm --no-deps -T migrate
+}
+
+ensure_data_services() {
+  compose up -d --wait --wait-timeout "$HEALTH_TIMEOUT" postgres redis >/dev/null 2>&1 ||
+    die "Postgres/Redis tidak sehat. Lihat: sudo balesin logs postgres redis"
+}
+
+# ── Backup ──────────────────────────────────────────────────────────────────────────────────────
+# Membuat backup penuh: database (pg_dump format custom) + volume media. Terenkripsi AES-256
+# (openssl, kunci BACKUP_PASSPHRASE di .env) + berkas .sha256. Path berkas → BACKUP_RESULT.
+BACKUP_RESULT=""
+do_backup() {
+  local label="$1" ts version work name out passphrase migrations
+  ts="$(date -u +%Y%m%d-%H%M%S)"
+  version="$(env_get BALESIN_VERSION)"
+  new_work_dir
+  work="$WORK_DIR"
+  name="balesin-${ts}-v${version}-${label}"
+
+  ensure_data_services
+  info "Mencadangkan database ..."
+  compose exec -T postgres sh -c 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc -Z 6' >"$work/database.dump" ||
+    die "pg_dump gagal. Backup dibatalkan."
+  [[ -s "$work/database.dump" ]] || die "Hasil pg_dump kosong. Backup dibatalkan."
+
+  info "Mencadangkan media ..."
+  if service_running api; then
+    compose exec -T api tar -C /data/media -czf - . >"$work/media.tar.gz" || die "Gagal mengarsip volume media."
+  else
+    compose run --rm --no-deps -T --entrypoint tar api -C /data/media -czf - . >"$work/media.tar.gz" ||
+      die "Gagal mengarsip volume media."
+  fi
+
+  migrations="$(migration_count)"
+  {
+    echo "format=1"
+    echo "created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "balesin_version=$version"
+    echo "migrations=${migrations:-0}"
+    echo "label=$label"
+  } >"$work/manifest.txt"
+
+  passphrase="$(env_get BACKUP_PASSPHRASE)"
+  if [[ -n "$passphrase" ]] && command -v openssl >/dev/null 2>&1; then
+    out="$BACKUP_DIR/$name.tar.enc"
+    tar -C "$work" -cf - manifest.txt database.dump media.tar.gz |
+      BACKUP_PASSPHRASE="$passphrase" openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+        -pass env:BACKUP_PASSPHRASE -out "$out.part" || die "Enkripsi backup gagal."
+  else
+    warn "BACKUP_PASSPHRASE kosong atau openssl tidak ada: backup TIDAK terenkripsi."
+    out="$BACKUP_DIR/$name.tar"
+    tar -C "$work" -cf "$out.part" manifest.txt database.dump media.tar.gz || die "Gagal membuat arsip backup."
+  fi
+  mv -f "$out.part" "$out"
+  chmod 600 "$out"
+  (cd "$BACKUP_DIR" && sha256sum "$(basename "$out")" >"$(basename "$out").sha256")
+  chmod 600 "$out.sha256"
+  rm -rf -- "$work"
+  BACKUP_RESULT="$out"
+}
+
+prune_backups() {
+  local days
+  days="$(env_get BACKUP_RETENTION_DAYS)"
+  [[ "$days" =~ ^[0-9]+$ ]] || days=14
+  find "$BACKUP_DIR" -maxdepth 1 -type f -name 'balesin-*.tar*' -mtime +"$days" -print -delete 2>/dev/null |
+    sed 's/^/  dihapus (lebih dari '"$days"' hari): /' || true
+}
+
+# Membuka berkas backup ke folder kerja → manifest.txt, database.dump, media.tar.gz.
+open_backup() {
+  local file="$1" work="$2" passphrase
+  if [[ -f "$file.sha256" ]]; then
+    (cd "$(dirname "$file")" && sha256sum -c --quiet "$(basename "$file").sha256") ||
+      die "Checksum backup tidak cocok — berkas rusak atau diubah."
+  else
+    warn "Berkas $file.sha256 tidak ada; keutuhan backup tidak bisa diperiksa."
+  fi
+  case "$file" in
+    *.tar.enc)
+      passphrase="$(env_get BACKUP_PASSPHRASE)"
+      [[ -n "$passphrase" ]] || die "BACKUP_PASSPHRASE di .env kosong; backup terenkripsi tidak bisa dibuka."
+      BACKUP_PASSPHRASE="$passphrase" openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+        -pass env:BACKUP_PASSPHRASE -in "$file" | tar -C "$work" -xf - ||
+        die "Gagal membuka backup (passphrase salah atau berkas rusak)."
+      ;;
+    *.tar) tar -C "$work" -xf "$file" || die "Gagal membuka arsip backup." ;;
+    *) die "Format backup tidak dikenal: $file (harus .tar.enc atau .tar)." ;;
+  esac
+  [[ -s "$work/database.dump" && -f "$work/manifest.txt" ]] || die "Isi backup tidak lengkap."
+}
+
+manifest_get() { grep -E "^$2=" "$1/manifest.txt" | tail -n 1 | cut -d= -f2-; }
+
+# Mengganti isi database (dan media bila diminta) dari folder kerja backup yang sudah dibuka.
+restore_data() {
+  local work="$1" with_media="$2"
+  info "Menghentikan layanan aplikasi ..."
+  compose stop "${APP_SERVICES[@]}" >/dev/null 2>&1 || true
+  ensure_data_services
+
+  info "Memulihkan database ..."
+  compose exec -T postgres sh -c '
+    set -e
+    dropdb -U "$POSTGRES_USER" --force --if-exists "$POSTGRES_DB"
+    createdb -U "$POSTGRES_USER" -O "$POSTGRES_USER" "$POSTGRES_DB"
+  ' || die "Gagal membuat ulang database."
+  # Tanpa owner/ACL dari backup: hak peran runtime diberikan ulang oleh layanan migrate.
+  compose exec -T postgres sh -c 'exec pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-acl --exit-on-error --single-transaction' \
+    <"$work/database.dump" || die "pg_restore gagal."
+
+  if [[ "$with_media" == "1" && -f "$work/media.tar.gz" ]]; then
+    info "Memulihkan media ..."
+    compose run --rm --no-deps -T --entrypoint sh api -c 'find /data/media -mindepth 1 -delete && tar -C /data/media -xzf -' \
+      <"$work/media.tar.gz" || die "Gagal memulihkan volume media."
+  fi
+}
+
+# ── Rilis (berkas compose/CLI versi baru) ───────────────────────────────────────────────────────
+# Sumber: BALESIN_RELEASE_BASE di .env — URL https (…/v{VERSI}/<berkas>) atau folder lokal.
+release_source() {
+  local base
+  base="$(env_get BALESIN_RELEASE_BASE)"
+  printf '%s' "${BALESIN_RELEASE_BASE_OVERRIDE:-$base}"
+}
+
+# fetch_release <versi> <folder-tujuan>: unduh docker-compose.yml, Caddyfile, balesin + SHA256SUMS.
+fetch_release() {
+  local version="$1" dest="$2" base src file
+  base="$(release_source)"
+  [[ -n "$base" ]] || return 1
+  src="${base//\{VERSI\}/$version}"
+  for file in docker-compose.yml Caddyfile balesin SHA256SUMS; do
+    if [[ "$src" == http*://* ]]; then
+      curl -fsSL --proto '=https' --tlsv1.2 --max-time 60 "$src/$file" -o "$dest/$file" || return 1
+    else
+      cp "$src/$file" "$dest/$file" 2>/dev/null || return 1
+    fi
+  done
+  (cd "$dest" && grep -E ' (docker-compose\.yml|Caddyfile|balesin)$' SHA256SUMS | sha256sum -c --quiet -) ||
+    die "Checksum berkas rilis $version tidak cocok."
+}
+
+# Versi terbaru: BALESIN_RELEASE_LATEST di .env = URL https atau path berkas berisi nomor versi.
+latest_version() {
+  local src
+  src="${BALESIN_RELEASE_LATEST_OVERRIDE:-$(env_get BALESIN_RELEASE_LATEST)}"
+  [[ -n "$src" ]] || return 1
+  if [[ "$src" == http*://* ]]; then
+    curl -fsSL --proto '=https' --tlsv1.2 --max-time 30 "$src" | tr -d '[:space:]'
+  else
+    tr -d '[:space:]' <"$src"
+  fi
+}
+
+images_present() {
+  local version="$1" prefix service
+  prefix="$(env_get BALESIN_IMAGE_PREFIX)"
+  for service in api worker web; do
+    docker image inspect "${prefix}-${service}:${version}" >/dev/null 2>&1 || return 1
+  done
+}
+
+# ── Perintah ────────────────────────────────────────────────────────────────────────────────────
+cmd_version() {
+  require_root version
+  require_install
+  info "Balesin $(env_get BALESIN_VERSION) (CLI $CLI_VERSION)"
+  info "Image: $(env_get BALESIN_IMAGE_PREFIX)-{api,worker,web}:$(env_get BALESIN_VERSION)"
+}
+
+cmd_status() {
+  require_root status
+  require_install
+  local mode app_url trust upstream ready setup latest age
+  mode="$(env_get BALESIN_NETWORK_MODE)"
+  app_url="$(env_get APP_URL)"
+  info "${BOLD}Balesin $(env_get BALESIN_VERSION)${RESET} — mode jaringan ${mode:-?} — $app_url"
+  echo
+  compose ps --format 'table {{.Service}}\t{{.Status}}'
+  echo
+
+  ready="$(gateway_get /ready || true)"
+  if [[ "$ready" == *'"status":"ok"'* ]]; then
+    ok "Kesehatan (/ready lewat gateway): Postgres dan Redis terjangkau"
+  else
+    warn "Kesehatan (/ready): ${ready:-tidak menjawab}"
+  fi
+  if workers_healthy; then ok "Worker tersambung ke antrian"; else warn "Worker belum sehat (balesin logs worker)"; fi
+
+  setup="$(gateway_get /api/v1/setup/status || true)"
+  if [[ "$setup" == *'"needsSetup":true'* ]]; then
+    warn "Wizard setup belum diselesaikan: buka $app_url/setup (token: sudo balesin setup-token)"
+  fi
+
+  trust="$(env_get TRUST_PROXY)"
+  upstream="$(env_get UPSTREAM_PROXY_IPS)"
+  info "TRUST_PROXY: $trust"
+  if [[ "$mode" == "A" && -z "$upstream" ]]; then
+    warn "Mode A tanpa UPSTREAM_PROXY_IPS: semua pengunjung akan tampak ber-IP reverse proxy (batas login/webhook per IP salah). Isi IP reverse proxy lalu jalankan ulang install.sh."
+  fi
+
+  latest="$(find "$BACKUP_DIR" -maxdepth 1 -type f -name 'balesin-*.tar*' ! -name '*.sha256' -exec stat -c '%Y %n' {} + 2>/dev/null | sort -n | tail -n 1 || true)"
+  if [[ -n "$latest" ]]; then
+    age=$((($(date +%s) - ${latest%% *}) / 3600))
+    info "Backup terakhir: ${latest#* } (${age} jam lalu)"
+    ((age <= 48)) || warn "Backup terakhir lebih dari 2 hari. Cek cron /etc/cron.d/balesin."
+  else
+    warn "Belum ada backup. Jalankan: sudo balesin backup"
+  fi
+  df -h "$BALESIN_HOME" | tail -n 1 | awk '{print "Disk " $6 ": terpakai " $5 ", sisa " $4}'
+}
+
+cmd_logs() {
+  require_root logs
+  require_install
+  local follow=() services=() arg
+  for arg in "$@"; do
+    case "$arg" in
+      -f | --follow) follow=(--follow) ;;
+      -*) die "Opsi tidak dikenal: $arg" ;;
+      *) services+=("$arg") ;;
+    esac
+  done
+  compose logs --tail "${BALESIN_LOG_TAIL:-200}" --timestamps "${follow[@]}" "${services[@]}"
+}
+
+cmd_backup() {
+  require_root backup
+  require_install
+  local label="manual" arg
+  for arg in "$@"; do
+    case "$arg" in
+      --auto) label="harian" ;;
+      *) die "Opsi tidak dikenal: $arg" ;;
+    esac
+  done
+  acquire_lock
+  step "Backup database + media"
+  do_backup "$label"
+  ok "Backup tersimpan: $BACKUP_RESULT ($(du -h "$BACKUP_RESULT" | cut -f1))"
+  prune_backups
+  info "${DIM}Simpan salinan backup di luar server ini, dan salinan .env (BALESIN_MASTER_KEY + BACKUP_PASSPHRASE) di tempat aman terpisah — tanpa keduanya backup tidak bisa dipakai.${RESET}"
+}
+
+cmd_restore() {
+  require_root restore
+  require_install
+  local file="" arg work version current safety=1
+  for arg in "$@"; do
+    case "$arg" in
+      --yes) ASSUME_YES=1 ;;
+      --tanpa-backup-pengaman) safety=0 ;;
+      -*) die "Opsi tidak dikenal: $arg" ;;
+      *) file="$arg" ;;
+    esac
+  done
+  [[ -n "$file" ]] || die "Sebutkan berkas backup: sudo balesin restore $BACKUP_DIR/balesin-….tar.enc"
+  [[ -f "$file" ]] || die "Berkas tidak ditemukan: $file"
+  file="$(readlink -f "$file")"
+  acquire_lock
+
+  new_work_dir
+  work="$WORK_DIR"
+  step "Memeriksa backup"
+  open_backup "$file" "$work"
+  version="$(manifest_get "$work" balesin_version)"
+  current="$(env_get BALESIN_VERSION)"
+  info "Dibuat: $(manifest_get "$work" created_at) · versi Balesin $version · versi terpasang $current"
+  if ! version_le "$version" "$current"; then
+    die "Backup berasal dari versi lebih baru ($version) daripada yang terpasang ($current). Jalankan dulu: sudo balesin update $version"
+  fi
+
+  confirm_word PULIHKAN "${YELLOW}PERHATIAN:${RESET} seluruh data Balesin sekarang (database dan media) akan DIGANTI isi backup ini. Pesan/perubahan setelah backup dibuat akan hilang."
+
+  if [[ "$safety" == "1" ]]; then
+    step "Backup pengaman keadaan sekarang"
+    do_backup sebelum-pulihkan
+    ok "Tersimpan: $BACKUP_RESULT"
+  fi
+
+  step "Memulihkan"
+  restore_data "$work" 1
+  # Antrian & batas laju di Redis milik keadaan lama: dikosongkan supaya tidak merujuk data yang tidak ada.
+  compose exec -T redis sh -c 'redis-cli FLUSHALL >/dev/null' || warn "Gagal mengosongkan Redis."
+  step "Migrasi + peran database"
+  run_migrations || die "Migrasi setelah restore gagal. Lihat: sudo balesin logs migrate"
+  step "Menyalakan layanan"
+  start_and_check || die "Layanan tidak sehat setelah restore. Lihat: sudo balesin logs"
+  ok "Pemulihan selesai dari $(basename "$file")."
+}
+
+cmd_update() {
+  require_root update
+  require_install
+  local target="" arg current prefix stage before after backup ts failed_log rollback_reason=""
+  for arg in "$@"; do
+    case "$arg" in
+      --yes) ASSUME_YES=1 ;;
+      -*) die "Opsi tidak dikenal: $arg" ;;
+      *) target="$arg" ;;
+    esac
+  done
+  target="${target#v}"
+  current="$(env_get BALESIN_VERSION)"
+  prefix="$(env_get BALESIN_IMAGE_PREFIX)"
+  if [[ -z "$target" ]]; then
+    target="$(latest_version || true)"
+    [[ -n "$target" ]] || die "Versi terbaru tidak bisa diperiksa. Sebutkan versinya: sudo balesin update 0.2.0"
+  fi
+  [[ "$target" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]] || die "Format versi tidak valid: $target"
+  if [[ "$target" == "$current" && "${BALESIN_FORCE:-0}" != "1" ]]; then
+    ok "Sudah versi $current."
+    return 0
+  fi
+  if ! version_le "$current" "$target"; then
+    die "Turun versi ($current → $target) tidak didukung lewat update. Pakai restore dari backup versi itu."
+  fi
+  acquire_lock
+  info "${BOLD}Update Balesin $current → $target${RESET}"
+
+  step "1/6 Pemeriksaan awal"
+  local free_kb
+  free_kb="$(df -Pk "$BALESIN_HOME" | awk 'NR==2 {print $4}')"
+  ((free_kb > 2 * 1024 * 1024)) || die "Ruang disk kurang dari 2 GB di $BALESIN_HOME. Kosongkan dulu."
+  service_running postgres || die "Postgres tidak berjalan. Nyalakan dulu: sudo balesin start"
+  ok "Disk cukup, layanan data berjalan"
+
+  new_work_dir
+  stage="$WORK_DIR"
+  if fetch_release "$target" "$stage"; then
+    chmod 600 "$stage/docker-compose.yml" "$stage/Caddyfile"
+    BALESIN_VERSION="$target" compose_with "$stage/docker-compose.yml" config -q ||
+      die "Berkas compose versi $target tidak valid dengan .env ini."
+    ok "Berkas rilis $target diunduh dan diperiksa"
+  else
+    warn "Berkas rilis $target tidak tersedia dari BALESIN_RELEASE_BASE; berkas compose sekarang dipakai."
+    cp "$COMPOSE_FILE" "$stage/docker-compose.yml"
+    rm -f "$stage/balesin" "$stage/Caddyfile"
+  fi
+
+  step "2/6 Backup sebelum update"
+  do_backup "sebelum-update-v$target"
+  backup="$BACKUP_RESULT"
+  ok "Backup: $backup"
+
+  step "3/6 Menarik image $target"
+  if [[ "${BALESIN_NO_PULL:-0}" == "1" ]]; then
+    images_present "$target" || die "Image ${prefix}-{api,worker,web}:$target tidak ada di mesin ini."
+    ok "Memakai image lokal (BALESIN_NO_PULL=1)"
+  else
+    BALESIN_VERSION="$target" compose_with "$stage/docker-compose.yml" pull api worker web ||
+      die "Gagal menarik image $target. Versi lama tetap berjalan, tidak ada yang diubah."
+    ok "Image $target siap"
+  fi
+
+  step "4/6 Migrasi database"
+  before="$(migration_count)"
+  if ! BALESIN_VERSION="$target" run_migrations "$stage/docker-compose.yml"; then
+    after="$(migration_count)"
+    if [[ "$after" == "$before" ]]; then
+      die "Migrasi $target gagal dan sudah dibatalkan otomatis (database tidak berubah). Versi $current tetap berjalan."
+    fi
+    rollback_reason="migrasi gagal setelah sebagian diterapkan"
+  else
+    after="$(migration_count)"
+    ok "Migrasi selesai (${before:-0} → ${after:-0})"
+  fi
+
+  if [[ -z "$rollback_reason" ]]; then
+    step "5/6 Menjalankan versi $target"
+    if BALESIN_VERSION="$target" start_and_check "$stage/docker-compose.yml"; then
+      step "6/6 Menyimpan"
+      env_set BALESIN_VERSION "$target"
+      if [[ -f "$stage/balesin" ]]; then
+        cp "$COMPOSE_FILE" "$COMPOSE_FILE.sebelumnya"
+        install -m 600 "$stage/docker-compose.yml" "$COMPOSE_FILE.new" && mv -f "$COMPOSE_FILE.new" "$COMPOSE_FILE"
+        install -m 600 "$stage/Caddyfile" "$BALESIN_HOME/Caddyfile.new" && mv -f "$BALESIN_HOME/Caddyfile.new" "$BALESIN_HOME/Caddyfile"
+        install -m 755 "$stage/balesin" "$BALESIN_HOME/balesin.new" && mv -f "$BALESIN_HOME/balesin.new" "$BALESIN_HOME/balesin"
+      fi
+      ok "Balesin sekarang versi $target."
+      return 0
+    fi
+    rollback_reason="layanan versi $target tidak sehat"
+  fi
+
+  # ── Rollback ──
+  warn "Update gagal: $rollback_reason. Mengembalikan ke versi $current ..."
+  mkdir -p "$LOG_DIR"
+  chmod 700 "$LOG_DIR"
+  ts="$(date -u +%Y%m%d-%H%M%S)"
+  failed_log="$LOG_DIR/update-gagal-$target-$ts.log"
+  BALESIN_VERSION="$target" compose_with "$stage/docker-compose.yml" logs --no-color --tail 300 migrate api worker web >"$failed_log" 2>&1 || true
+  chmod 600 "$failed_log"
+
+  local rb_work
+  if [[ "$(migration_count)" != "$before" ]]; then
+    info "Skema database sudah berubah — memulihkan database dari backup sebelum update ..."
+    new_work_dir
+    rb_work="$WORK_DIR"
+    open_backup "$backup" "$rb_work"
+    restore_data "$rb_work" 0
+    run_migrations || warn "Migrasi versi $current setelah rollback gagal."
+  fi
+  if start_and_check; then
+    warn "Rollback selesai: versi $current berjalan kembali. Log kegagalan: $failed_log"
+  else
+    warn "Rollback selesai tetapi layanan $current belum sehat. Cek: sudo balesin status; backup: $backup"
+  fi
+  exit 1
+}
+
+cmd_reset_owner_password() {
+  require_root reset-owner-password
+  require_install
+  local email="" arg password confirm runner
+  for arg in "$@"; do
+    case "$arg" in
+      -*) die "Opsi tidak dikenal: $arg" ;;
+      *) email="$arg" ;;
+    esac
+  done
+  [[ -t 0 ]] || die "Perintah ini interaktif (password diketik tersembunyi). Jalankan di terminal."
+  confirm_word RESET "Mengganti password Owner${email:+ ($email)} dari server. Semua sesi Owner akan dicabut dan tindakan ini tercatat di audit log. 2FA Owner TIDAK dimatikan."
+  printf 'Password baru (min. 10 karakter, tidak ditampilkan): '
+  read -rs password
+  echo
+  printf 'Ulangi password baru: '
+  read -rs confirm
+  echo
+  [[ -n "$password" ]] || die "Password kosong."
+  [[ "$password" == "$confirm" ]] || die "Kedua password tidak sama."
+  if service_running api; then runner=(exec -T api); else runner=(run --rm --no-deps -T api); fi
+  # Password lewat stdin — tidak muncul di argumen proses atau `docker inspect`.
+  printf '%s\n' "$password" | compose "${runner[@]}" node dist/reset-owner-password.js ${email:+"$email"}
+}
+
+cmd_setup_token() {
+  require_root setup-token
+  require_install
+  local token
+  token="$(env_get SETUP_TOKEN)"
+  [[ -n "$token" ]] || die "SETUP_TOKEN kosong."
+  info "URL wizard : $(env_get APP_URL)/setup"
+  info "Token setup: $token"
+  info "${DIM}Token hanya berlaku sampai Owner pertama dibuat. Jangan dibagikan.${RESET}"
+}
+
+cmd_start() {
+  require_root start
+  require_install
+  acquire_lock
+  step "Menyalakan Balesin $(env_get BALESIN_VERSION)"
+  start_and_check || die "Layanan tidak sehat. Lihat: sudo balesin logs"
+  ok "Semua layanan sehat."
+}
+
+cmd_stop() {
+  require_root stop
+  require_install
+  acquire_lock
+  compose stop
+  ok "Semua layanan dihentikan (data tetap tersimpan)."
+}
+
+cmd_restart() {
+  require_root restart
+  require_install
+  acquire_lock
+  compose restart "${APP_SERVICES[@]}"
+  wait_ready || die "Layanan tidak sehat setelah restart."
+  ok "Layanan aplikasi dijalankan ulang."
+}
+
+main() {
+  local command="${1:-}"
+  [[ $# -gt 0 ]] && shift
+  case "$command" in
+    status) cmd_status "$@" ;;
+    logs | log) cmd_logs "$@" ;;
+    version | --version | -v) cmd_version "$@" ;;
+    backup) cmd_backup "$@" ;;
+    restore) cmd_restore "$@" ;;
+    update) cmd_update "$@" ;;
+    reset-owner-password) cmd_reset_owner_password "$@" ;;
+    setup-token) cmd_setup_token "$@" ;;
+    start) cmd_start "$@" ;;
+    stop) cmd_stop "$@" ;;
+    restart) cmd_restart "$@" ;;
+    help | --help | -h | "") usage ;;
+    *)
+      usage
+      die "Perintah tidak dikenal: $command"
+      ;;
+  esac
+}
+
+main "$@"
