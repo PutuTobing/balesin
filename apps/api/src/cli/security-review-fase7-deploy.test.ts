@@ -9,8 +9,10 @@ import { describe, expect, it } from 'vitest';
  *
  * Berkas deploy (compose, nginx, Dockerfile, CLI Bash) tidak punya tes unit sendiri; tes ini
  * membaca teksnya dan mengunci sifat keamanan yang sudah benar supaya tidak mundur diam-diam.
- * `it.fails` = temuan yang BELUM diperbaiki (lulus selama temuan masih ada; begitu diperbaiki,
- * ubah menjadi `it`).
+ * Temuan S1–S4 dan R1 sudah diperbaiki (putaran 2) — tesnya kini `it` biasa.
+ *
+ * Tes ini tidak butuh database: `pnpm --filter @balesin/api test:deploy` menjalankannya tanpa
+ * globalSetup Postgres (vitest.deploy.config.ts).
  */
 
 const root = join(import.meta.dirname, '..', '..', '..', '..');
@@ -70,10 +72,23 @@ describe('compose produksi', () => {
     expect(service('migrate')).toMatch(/DATABASE_URL: postgres:\/\/\$\{POSTGRES_USER/);
   });
 
-  // S1: `command: [sh, -c, exec redis-server …]` membuat entrypoint image redis tidak menurunkan
-  // hak ke pengguna `redis` → redis-server berjalan sebagai root (Uid 0, capability bawaan Docker).
-  it.fails('S1: Redis berjalan sebagai pengguna non-root (user: di compose)', () => {
-    expect(service('redis')).toMatch(/^\s+user:\s*\S+/m);
+  // S1: redis sebagai pengguna `redis` sejak awal (entrypoint resmi, tanpa `sh -c`), tanpa
+  // capability, read-only; postgres hanya capability yang dibutuhkan entrypoint-nya.
+  it('S1: Redis berjalan sebagai pengguna non-root (user: di compose)', () => {
+    const redis = service('redis');
+    expect(redis).toMatch(/^\s+user:\s*redis$/m);
+    expect(redis).toMatch(/cap_drop: \[ALL\]/);
+    expect(redis).toMatch(/read_only: true/);
+    expect(redis).not.toMatch(/- sh\n\s+- -c/);
+    expect(redis).toMatch(/command:\n\s+- redis-server/);
+  });
+
+  it('S1: Postgres tanpa capability bawaan Docker, read-only + tmpfs', () => {
+    const postgres = service('postgres');
+    expect(postgres).toMatch(/cap_drop: \[ALL\]/);
+    expect(postgres).toMatch(/cap_add: \[CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID\]/);
+    expect(postgres).toMatch(/read_only: true/);
+    expect(postgres).toMatch(/\/var\/run\/postgresql/);
   });
 });
 
@@ -97,11 +112,21 @@ describe('image', () => {
   // R1: pola .dockerignore hanya berlaku di AKAR konteks. `apps/api/.env`, `apps/api/*.pem`, dan
   // folder media dev (`MEDIA_DIR=./media` → apps/api/media) ikut `COPY apps apps` dan disalin
   // `pnpm deploy` ke /app di image akhir (diuji: /app/.env terbaca di image api).
-  it.fails('R1: .dockerignore membuang .env, kunci, dan media di folder mana pun', () => {
+  it('R1: .dockerignore membuang .env, kunci, dan media di folder mana pun', () => {
     const ignore = read('.dockerignore');
     expect(ignore).toMatch(/^\*\*\/\.env\*$/m);
     expect(ignore).toMatch(/^\*\*\/\*\.pem$/m);
+    expect(ignore).toMatch(/^\*\*\/\*\.key$/m);
     expect(ignore).toMatch(/^\*\*\/media$/m);
+    // Tidak ada pengecualian yang memasukkan kembali berkas .env apa pun.
+    expect(ignore).not.toMatch(/^!.*\.env/m);
+    // Kode sumber bernama `media` (packages/core/src/media) tetap ikut build.
+    expect(ignore).toMatch(/^!\*\*\/src\/media$/m);
+  });
+
+  it('Info 5: source map tidak masuk image produksi', () => {
+    expect(dockerfile).toMatch(/rm -f apps\/api\/dist\/\*\.map apps\/worker\/dist\/\*\.map/);
+    expect(code(dockerfile)).not.toMatch(/--enable-source-maps/);
   });
 });
 
@@ -163,27 +188,60 @@ describe('CLI balesin: backup & restore', () => {
     expect(cli).not.toMatch(/-k "\$/);
   });
 
-  // S2: AES-256-CBC tanpa MAC + `.sha256` tanpa kunci (bisa dihitung ulang siapa pun, dan
-  // `sha256sum -c` memeriksa NAMA berkas yang tertulis di dalam .sha256, bukan berkas yang dipulihkan).
-  it.fails('S2: keutuhan backup diperiksa dengan kunci (HMAC/AEAD) sebelum dibuka', () => {
-    expect(cli).toMatch(/-mac HMAC|-hmac\b|\bage (-d|--decrypt)\b|\bgpg --(de|en)crypt\b/);
+  // S2: encrypt-then-MAC — HMAC-SHA256 berkunci (HKDF dari BACKUP_PASSPHRASE) diverifikasi SEBELUM
+  // dekripsi; hash `.sha256` dibandingkan dengan hash berkas itu sendiri; arsip polos ditolak.
+  it('S2: keutuhan backup diperiksa dengan kunci (HMAC/AEAD) sebelum dibuka', () => {
+    expect(cli).toMatch(/createHmac\("sha256"/);
+    expect(cli).toMatch(/hkdfSync\("sha256"/);
+    const open = cli.slice(cli.indexOf('open_backup() {'), cli.indexOf('manifest_get()'));
+    const macAt = open.indexOf('backup_mac "$file"');
+    expect(macAt).toBeGreaterThan(0);
+    expect(macAt).toBeLessThan(open.indexOf('openssl enc -d'));
+    expect(open).not.toMatch(/sha256sum -c/);
+    expect(cli).toMatch(/BACKUP_KDF_ITER=600000/);
   });
 
-  it.fails('S2: restore menolak arsip .tar tanpa enkripsi (kecuali opsi eksplisit)', () => {
+  it('S2: restore menolak arsip .tar tanpa enkripsi (kecuali opsi eksplisit)', () => {
     expect(cli).not.toMatch(/\*\.tar\) tar -C "\$work" -xf "\$file"/);
+    expect(cli).toMatch(/Arsip polos ditolak/);
+    // Backup tanpa passphrase tidak dibuat sama sekali.
+    expect(cli).toMatch(/backup tanpa enkripsi tidak dibuat/);
+  });
+
+  it('R3: restore ke database sementara lalu ditukar (tidak dropdb database aktif lebih dulu)', () => {
+    const restore = cli.slice(
+      cli.indexOf('restore_data() {'),
+      cli.indexOf('drop_previous_database() {'),
+    );
+    expect(restore).toMatch(/_pulih/);
+    expect(restore.indexOf('pg_restore')).toBeLessThan(restore.indexOf('rename to'));
+    expect(restore).not.toMatch(/dropdb[^\n]*--if-exists "\$POSTGRES_DB"/);
   });
 });
 
 describe('dokumentasi firewall & rilis', () => {
   // S3: port yang dipublikasikan Docker melewati aturan ufw (DNAT sebelum rantai INPUT); contoh
   // `ufw allow from <vm-nginx> to any port 8080` tidak membatasi apa pun.
-  it.fails('S3: DEPLOY.md membatasi port gateway lewat rantai DOCKER-USER', () => {
+  it('S3: DEPLOY.md membatasi port gateway lewat rantai DOCKER-USER', () => {
     expect(deployDoc).toMatch(/DOCKER-USER/);
+    expect(deployDoc).not.toMatch(/ufw allow from <IP-privat-vm-nginx>/);
+    const installer = read('deploy/install.sh');
+    expect(installer).toMatch(/Bind 0\.0\.0\.0 ditolak/);
+    expect(installer).toMatch(/is_private_ipv4 "\$BIND_ADDRESS"/);
   });
 
   // S4: image dirujuk dengan tag yang bisa ditimpa, tanpa tanda tangan/attestation; SHA256SUMS
   // diunduh dari kanal yang sama dengan berkasnya.
-  it.fails('S4: rilis menandatangani image/berkas (cosign/attestation) untuk diverifikasi', () => {
-    expect(releaseWorkflow).toMatch(/cosign|attest-build-provenance|minisign/);
+  it('S4: rilis menandatangani image/berkas (cosign/attestation) untuk diverifikasi', () => {
+    expect(releaseWorkflow).toMatch(/cosign sign --yes/);
+    expect(releaseWorkflow).toMatch(/cosign sign-blob --yes --bundle/);
+    expect(releaseWorkflow).toMatch(/id-token: write/);
+    // Hanya dari main, tag versi tidak boleh ditimpa, compose rilis terkunci digest.
+    expect(releaseWorkflow).toMatch(/git merge-base --is-ancestor "\$GITHUB_SHA" origin\/main/);
+    expect(releaseWorkflow).toMatch(/docker manifest inspect/);
+    expect(releaseWorkflow).toMatch(/@sha256:/);
+    // install.sh dan CLI memverifikasi tanda tangan bila cosign terpasang.
+    expect(cli).toMatch(/cosign verify-blob/);
+    expect(read('deploy/install.sh')).toMatch(/cosign verify-blob/);
   });
 });

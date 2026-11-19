@@ -49,10 +49,31 @@ describe('resetOwnerPassword', () => {
     });
     expect(before.statusCode).toBe(200);
 
+    const notices: unknown[] = [];
     const result = await resetOwnerPassword(
-      { db: harness.db, hasher, redis: harness.redis, redisPrefix: harness.redisPrefix },
+      {
+        db: harness.db,
+        hasher,
+        redis: harness.redis,
+        redisPrefix: harness.redisPrefix,
+        notifier: {
+          securityNotice: (payload) => {
+            notices.push(payload);
+            return Promise.resolve();
+          },
+        },
+      },
       { password: NEW_PASSWORD },
     );
+    // Owner diberi tahu lewat email (review Fase 7 R4), merujuk baris audit yang sama.
+    expect(result.ownerNotified).toBe(true);
+    expect(notices).toEqual([
+      expect.objectContaining({
+        userId: result.userId,
+        event: 'password_changed_by_server',
+        auditLogId: result.auditLogId,
+      }),
+    ]);
     expect(result.revokedSessions).toBeGreaterThanOrEqual(1);
     expect(result.twoFactorEnabled).toBe(true);
     expect(result.maskedEmail).toBe('s***@majujaya.test');
@@ -87,7 +108,7 @@ describe('resetOwnerPassword', () => {
       actorUserId: null,
       targetType: 'user',
       targetId: result.userId,
-      metadata: { via: 'cli', revokedSessions: result.revokedSessions },
+      metadata: { via: 'cli', serverRecovery: true, revokedSessions: result.revokedSessions },
       userAgent: 'balesin-cli reset-owner-password',
     });
     expect(JSON.stringify(audit)).not.toContain(NEW_PASSWORD);

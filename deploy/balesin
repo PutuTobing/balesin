@@ -218,11 +218,47 @@ ensure_data_services() {
 }
 
 # ── Backup ──────────────────────────────────────────────────────────────────────────────────────
-# Membuat backup penuh: database (pg_dump format custom) + volume media. Terenkripsi AES-256
-# (openssl, kunci BACKUP_PASSPHRASE di .env) + berkas .sha256. Path berkas → BACKUP_RESULT.
+# Format backup v2 (review keamanan Fase 7 S2) — encrypt-then-MAC:
+#   <nama>.tar.enc         tar(manifest.txt, database.dump, media.tar.gz) dienkripsi
+#                          openssl enc -aes-256-cbc -pbkdf2 -iter 600000 (kunci BACKUP_PASSPHRASE)
+#   <nama>.tar.enc.hmac    HMAC-SHA256 atas berkas .tar.enc, kunci HKDF-SHA256 dari BACKUP_PASSPHRASE
+#                          (label terpisah dari kunci enkripsi). Diverifikasi SEBELUM dekripsi.
+#   <nama>.tar.enc.sha256  hash biasa untuk deteksi kerusakan saat menyalin (bukan bukti keaslian).
+# Arsip tanpa enkripsi/HMAC ditolak saat restore.
+readonly BACKUP_KDF_ITER=600000
+readonly BACKUP_MAC_TAG="balesin-backup-v2 hmac-sha256"
+
+# HMAC dihitung Node di image api (tanpa jaringan, hanya-baca, tanpa capability) supaya kunci tidak
+# pernah muncul di argumen proses host (`openssl dgst -hmac` menaruh kunci di argv).
+readonly BACKUP_MAC_JS='
+const c = require("node:crypto");
+const p = process.env.BACKUP_PASSPHRASE || "";
+if (!p) { process.stderr.write("BACKUP_PASSPHRASE kosong\n"); process.exit(2); }
+const key = Buffer.from(c.hkdfSync("sha256", Buffer.from(p, "utf8"), Buffer.from("balesin-backup"), Buffer.from("hmac-v2"), 32));
+const h = c.createHmac("sha256", key);
+process.stdin.on("data", (d) => h.update(d));
+process.stdin.on("end", () => process.stdout.write(h.digest("hex") + "\n"));
+'
+
+backup_mac() {
+  local file="$1" image passphrase
+  # Image api yang dipakai compose (rilis merujuk digest, jadi bukan dirakit dari tag).
+  image="$(compose config --images 2>/dev/null | grep -E -- '-api[:@]' | head -n 1 || true)"
+  [[ -n "$image" ]] || image="$(env_get BALESIN_IMAGE_PREFIX)-api:$(env_get BALESIN_VERSION)"
+  passphrase="$(env_get BACKUP_PASSPHRASE)"
+  [[ -n "$passphrase" ]] || die "BACKUP_PASSPHRASE di .env kosong."
+  BACKUP_PASSPHRASE="$passphrase" docker run --rm -i --network none --read-only --cap-drop ALL \
+    --security-opt no-new-privileges:true -e BACKUP_PASSPHRASE --entrypoint node "$image" \
+    -e "$BACKUP_MAC_JS" <"$file"
+}
+
+# Membuat backup penuh: database (pg_dump format custom) + volume media. Path berkas → BACKUP_RESULT.
 BACKUP_RESULT=""
 do_backup() {
-  local label="$1" ts version work name out passphrase migrations
+  local label="$1" ts version work name out passphrase migrations mac
+  passphrase="$(env_get BACKUP_PASSPHRASE)"
+  [[ -n "$passphrase" ]] || die "BACKUP_PASSPHRASE di .env kosong — backup tanpa enkripsi tidak dibuat. Jalankan ulang install.sh untuk membuatnya."
+  command -v openssl >/dev/null 2>&1 || die "openssl tidak ditemukan (apt-get install -y openssl)."
   ts="$(date -u +%Y%m%d-%H%M%S)"
   version="$(env_get BALESIN_VERSION)"
   new_work_dir
@@ -245,28 +281,23 @@ do_backup() {
 
   migrations="$(migration_count)"
   {
-    echo "format=1"
+    echo "format=2"
     echo "created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "balesin_version=$version"
     echo "migrations=${migrations:-0}"
     echo "label=$label"
   } >"$work/manifest.txt"
 
-  passphrase="$(env_get BACKUP_PASSPHRASE)"
-  if [[ -n "$passphrase" ]] && command -v openssl >/dev/null 2>&1; then
-    out="$BACKUP_DIR/$name.tar.enc"
-    tar -C "$work" -cf - manifest.txt database.dump media.tar.gz |
-      BACKUP_PASSPHRASE="$passphrase" openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
-        -pass env:BACKUP_PASSPHRASE -out "$out.part" || die "Enkripsi backup gagal."
-  else
-    warn "BACKUP_PASSPHRASE kosong atau openssl tidak ada: backup TIDAK terenkripsi."
-    out="$BACKUP_DIR/$name.tar"
-    tar -C "$work" -cf "$out.part" manifest.txt database.dump media.tar.gz || die "Gagal membuat arsip backup."
-  fi
+  out="$BACKUP_DIR/$name.tar.enc"
+  tar -C "$work" -cf - manifest.txt database.dump media.tar.gz |
+    BACKUP_PASSPHRASE="$passphrase" openssl enc -aes-256-cbc -pbkdf2 -iter "$BACKUP_KDF_ITER" -salt \
+      -pass env:BACKUP_PASSPHRASE -out "$out.part" || die "Enkripsi backup gagal."
+  mac="$(backup_mac "$out.part")" || die "Gagal menghitung HMAC backup."
+  [[ "$mac" =~ ^[0-9a-f]{64}$ ]] || die "HMAC backup tidak valid."
   mv -f "$out.part" "$out"
-  chmod 600 "$out"
+  printf '%s %s\n' "$BACKUP_MAC_TAG" "$mac" >"$out.hmac"
   (cd "$BACKUP_DIR" && sha256sum "$(basename "$out")" >"$(basename "$out").sha256")
-  chmod 600 "$out.sha256"
+  chmod 600 "$out" "$out.hmac" "$out.sha256"
   rm -rf -- "$work"
   BACKUP_RESULT="$out"
 }
@@ -279,53 +310,99 @@ prune_backups() {
     sed 's/^/  dihapus (lebih dari '"$days"' hari): /' || true
 }
 
-# Membuka berkas backup ke folder kerja → manifest.txt, database.dump, media.tar.gz.
+# Memeriksa keaslian lalu membuka berkas backup ke folder kerja → manifest.txt, database.dump,
+# media.tar.gz. Urutan: format → HMAC berkunci (sebelum dekripsi) → hash berkas itu sendiri → dekripsi.
 open_backup() {
-  local file="$1" work="$2" passphrase
-  if [[ -f "$file.sha256" ]]; then
-    (cd "$(dirname "$file")" && sha256sum -c --quiet "$(basename "$file").sha256") ||
-      die "Checksum backup tidak cocok — berkas rusak atau diubah."
-  else
-    warn "Berkas $file.sha256 tidak ada; keutuhan backup tidak bisa diperiksa."
-  fi
+  local file="$1" work="$2" passphrase expected actual
   case "$file" in
-    *.tar.enc)
-      passphrase="$(env_get BACKUP_PASSPHRASE)"
-      [[ -n "$passphrase" ]] || die "BACKUP_PASSPHRASE di .env kosong; backup terenkripsi tidak bisa dibuka."
-      BACKUP_PASSPHRASE="$passphrase" openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
-        -pass env:BACKUP_PASSPHRASE -in "$file" | tar -C "$work" -xf - ||
-        die "Gagal membuka backup (passphrase salah atau berkas rusak)."
-      ;;
-    *.tar) tar -C "$work" -xf "$file" || die "Gagal membuka arsip backup." ;;
-    *) die "Format backup tidak dikenal: $file (harus .tar.enc atau .tar)." ;;
+    *.tar.enc) ;;
+    *) die "Hanya backup terenkripsi (.tar.enc + .hmac) yang bisa dipulihkan. Arsip polos ditolak: $file" ;;
   esac
+  [[ -f "$file.hmac" ]] || die "Berkas $file.hmac tidak ada — keaslian backup tidak bisa dibuktikan, restore ditolak."
+  expected="$(head -n 1 "$file.hmac")"
+  [[ "$expected" == "$BACKUP_MAC_TAG "* ]] || die "Format $file.hmac tidak dikenal (backup versi lama?)."
+  expected="${expected#"$BACKUP_MAC_TAG "}"
+  actual="$(backup_mac "$file")" || die "Gagal menghitung HMAC backup."
+  [[ "$actual" =~ ^[0-9a-f]{64}$ && "$actual" == "$expected" ]] ||
+    die "HMAC backup TIDAK cocok: berkas diubah, bukan buatan instalasi ini, atau BACKUP_PASSPHRASE berbeda. Restore ditolak."
+  if [[ -f "$file.sha256" ]]; then
+    # Hash BERKAS INI dibandingkan dengan kolom pertama .sha256 (bukan nama yang tertulis di dalamnya).
+    expected="$(awk 'NR==1 {print $1}' "$file.sha256")"
+    actual="$(sha256sum "$file" | awk '{print $1}')"
+    [[ "$actual" == "$expected" ]] || die "Checksum backup tidak cocok — berkas rusak."
+  fi
+  passphrase="$(env_get BACKUP_PASSPHRASE)"
+  BACKUP_PASSPHRASE="$passphrase" openssl enc -d -aes-256-cbc -pbkdf2 -iter "$BACKUP_KDF_ITER" \
+    -pass env:BACKUP_PASSPHRASE -in "$file" | tar -C "$work" -xf - manifest.txt database.dump media.tar.gz ||
+    die "Gagal membuka backup (passphrase salah atau berkas rusak)."
   [[ -s "$work/database.dump" && -f "$work/manifest.txt" ]] || die "Isi backup tidak lengkap."
 }
 
 manifest_get() { grep -E "^$2=" "$1/manifest.txt" | tail -n 1 | cut -d= -f2-; }
 
+# Nama database dari .env (divalidasi supaya aman dirangkai ke SQL).
+db_name() {
+  local name
+  name="$(env_get POSTGRES_DB)"
+  name="${name:-balesin}"
+  [[ "$name" =~ ^[a-z_][a-z0-9_]{0,40}$ ]] || die "POSTGRES_DB di .env tidak valid."
+  printf '%s' "$name"
+}
+
+# psql sebagai pemilik ke database `postgres` (SQL dari stdin).
+psql_maintenance() {
+  compose exec -T -e PGOPTIONS='-c client_min_messages=warning' postgres sh -c 'exec psql -X -q -v ON_ERROR_STOP=1 -At -U "$POSTGRES_USER" -d postgres'
+}
+
 # Mengganti isi database (dan media bila diminta) dari folder kerja backup yang sudah dibuka.
+# Review Fase 7 R3: dump dipulihkan dulu ke database SEMENTARA (layanan masih berjalan); database
+# lama baru ditukar setelah pg_restore berhasil — dump rusak = database lama tetap utuh. Database
+# lama disimpan sebagai <db>_sebelum_pulih sampai layanan sehat (drop_previous_database).
 restore_data() {
-  local work="$1" with_media="$2"
-  info "Menghentikan layanan aplikasi ..."
-  compose stop "${APP_SERVICES[@]}" >/dev/null 2>&1 || true
+  local work="$1" with_media="$2" db
+  db="$(db_name)"
   ensure_data_services
 
-  info "Memulihkan database ..."
-  compose exec -T postgres sh -c '
-    set -e
-    dropdb -U "$POSTGRES_USER" --force --if-exists "$POSTGRES_DB"
-    createdb -U "$POSTGRES_USER" -O "$POSTGRES_USER" "$POSTGRES_DB"
-  ' || die "Gagal membuat ulang database."
+  info "Memulihkan database ke database sementara ${db}_pulih ..."
+  printf 'drop database if exists "%s_pulih" with (force);\n' "$db" | psql_maintenance ||
+    die "Gagal menyiapkan database sementara."
+  compose exec -T postgres sh -c 'exec createdb -U "$POSTGRES_USER" -O "$POSTGRES_USER" "${POSTGRES_DB}_pulih"' ||
+    die "Gagal membuat database sementara."
   # Tanpa owner/ACL dari backup: hak peran runtime diberikan ulang oleh layanan migrate.
-  compose exec -T postgres sh -c 'exec pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-acl --exit-on-error --single-transaction' \
-    <"$work/database.dump" || die "pg_restore gagal."
+  if ! compose exec -T postgres sh -c 'exec pg_restore -U "$POSTGRES_USER" -d "${POSTGRES_DB}_pulih" --no-owner --no-acl --exit-on-error --single-transaction' \
+    <"$work/database.dump"; then
+    printf 'drop database if exists "%s_pulih" with (force);\n' "$db" | psql_maintenance || true
+    die "pg_restore gagal. Database yang berjalan TIDAK diubah."
+  fi
+
+  info "Menghentikan layanan aplikasi dan menukar database ..."
+  compose stop "${APP_SERVICES[@]}" >/dev/null 2>&1 || true
+  {
+    printf 'drop database if exists "%s_sebelum_pulih" with (force);\n' "$db"
+    printf "select pg_terminate_backend(pid) from pg_stat_activity where datname = '%s' and pid <> pg_backend_pid();\n" "$db"
+    printf 'alter database "%s" rename to "%s_sebelum_pulih";\n' "$db" "$db"
+    printf 'alter database "%s_pulih" rename to "%s";\n' "$db" "$db"
+  } | psql_maintenance >/dev/null || die "Gagal menukar database. Periksa: database $db dan ${db}_sebelum_pulih."
 
   if [[ "$with_media" == "1" && -f "$work/media.tar.gz" ]]; then
     info "Memulihkan media ..."
-    compose run --rm --no-deps -T --entrypoint sh api -c 'find /data/media -mindepth 1 -delete && tar -C /data/media -xzf -' \
-      <"$work/media.tar.gz" || die "Gagal memulihkan volume media."
+    # Diekstrak ke folder sementara dulu; isi lama baru dibuang setelah ekstraksi berhasil.
+    compose run --rm --no-deps -T --entrypoint sh api -c '
+      set -e
+      rm -rf /data/media/.pulih
+      mkdir /data/media/.pulih
+      tar -C /data/media/.pulih -xzf -
+      find /data/media -mindepth 1 -maxdepth 1 ! -name .pulih -exec rm -rf {} +
+      find /data/media/.pulih -mindepth 1 -maxdepth 1 -exec mv {} /data/media/ \;
+      rmdir /data/media/.pulih
+    ' <"$work/media.tar.gz" || die "Gagal memulihkan volume media (database sudah dipulihkan)."
   fi
+}
+
+# Membuang database lama setelah layanan terbukti sehat dengan database hasil restore.
+drop_previous_database() {
+  printf 'drop database if exists "%s_sebelum_pulih" with (force);\n' "$(db_name)" | psql_maintenance >/dev/null 2>&1 ||
+    warn "Database lama $(db_name)_sebelum_pulih belum terhapus; hapus manual bila tidak diperlukan."
 }
 
 # ── Rilis (berkas compose/CLI versi baru) ───────────────────────────────────────────────────────
@@ -349,8 +426,43 @@ fetch_release() {
       cp "$src/$file" "$dest/$file" 2>/dev/null || return 1
     fi
   done
+  # Tanda tangan opsional (rilis lama/lokal tidak punya).
+  if [[ "$src" == http*://* ]]; then
+    curl -fsSL --proto '=https' --tlsv1.2 --max-time 60 "$src/SHA256SUMS.sigstore.json" \
+      -o "$dest/SHA256SUMS.sigstore.json" 2>/dev/null || rm -f "$dest/SHA256SUMS.sigstore.json"
+  else
+    cp "$src/SHA256SUMS.sigstore.json" "$dest/" 2>/dev/null || true
+  fi
+  verify_release_signature "$dest"
   (cd "$dest" && grep -E ' (docker-compose\.yml|Caddyfile|balesin)$' SHA256SUMS | sha256sum -c --quiet -) ||
     die "Checksum berkas rilis $version tidak cocok."
+}
+
+# Tanda tangan cosign keyless atas SHA256SUMS (workflow rilis.yml, review Fase 7 S4). Diverifikasi
+# bila cosign terpasang; BALESIN_REQUIRE_SIGNATURE=1 di .env/lingkungan = wajib (tanpa cosign/tanda
+# tangan → gagal).
+readonly DEFAULT_SIGNER_IDENTITY='^https://github\.com/PutuTobing/balesin/\.github/workflows/rilis\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$'
+verify_release_signature() {
+  local dir="$1" identity require
+  identity="${BALESIN_SIGNER_IDENTITY:-$(env_get BALESIN_SIGNER_IDENTITY)}"
+  identity="${identity:-$DEFAULT_SIGNER_IDENTITY}"
+  require="${BALESIN_REQUIRE_SIGNATURE:-$(env_get BALESIN_REQUIRE_SIGNATURE)}"
+  if [[ ! -s "$dir/SHA256SUMS.sigstore.json" ]]; then
+    [[ "$require" == "1" ]] && die "Rilis tanpa tanda tangan (SHA256SUMS.sigstore.json) ditolak."
+    warn "Rilis tanpa tanda tangan cosign; hanya checksum yang diperiksa."
+    return 0
+  fi
+  if ! command -v cosign >/dev/null 2>&1; then
+    [[ "$require" == "1" ]] && die "cosign tidak terpasang, tanda tangan rilis tidak bisa diverifikasi."
+    warn "cosign tidak terpasang: tanda tangan rilis tidak diverifikasi (disarankan memasang cosign)."
+    return 0
+  fi
+  cosign verify-blob --bundle "$dir/SHA256SUMS.sigstore.json" \
+    --certificate-identity-regexp "$identity" \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    "$dir/SHA256SUMS" >/dev/null 2>&1 ||
+    die "Tanda tangan rilis TIDAK valid — berkas bukan dari workflow rilis resmi. Dibatalkan."
+  ok "Tanda tangan rilis terverifikasi (cosign)"
 }
 
 # Versi terbaru: BALESIN_RELEASE_LATEST di .env = URL https atau path berkas berisi nomor versi.
@@ -405,6 +517,7 @@ cmd_status() {
     warn "Wizard setup belum diselesaikan: buka $app_url/setup (token: sudo balesin setup-token)"
   fi
 
+  info "Gateway didengar di: $(env_get BALESIN_BIND_ADDRESS):$(env_get BALESIN_HTTP_PORT)"
   trust="$(env_get TRUST_PROXY)"
   upstream="$(env_get UPSTREAM_PROXY_IPS)"
   info "TRUST_PROXY: $trust"
@@ -498,7 +611,9 @@ cmd_restore() {
   step "Migrasi + peran database"
   run_migrations || die "Migrasi setelah restore gagal. Lihat: sudo balesin logs migrate"
   step "Menyalakan layanan"
-  start_and_check || die "Layanan tidak sehat setelah restore. Lihat: sudo balesin logs"
+  start_and_check ||
+    die "Layanan tidak sehat setelah restore. Database sebelum restore masih ada sebagai $(db_name)_sebelum_pulih. Lihat: sudo balesin logs"
+  drop_previous_database
   ok "Pemulihan selesai dari $(basename "$file")."
 }
 
@@ -615,6 +730,7 @@ cmd_update() {
     run_migrations || warn "Migrasi versi $current setelah rollback gagal."
   fi
   if start_and_check; then
+    drop_previous_database
     warn "Rollback selesai: versi $current berjalan kembali. Log kegagalan: $failed_log"
   else
     warn "Rollback selesai tetapi layanan $current belum sehat. Cek: sudo balesin status; backup: $backup"
@@ -635,10 +751,10 @@ cmd_reset_owner_password() {
   [[ -t 0 ]] || die "Perintah ini interaktif (password diketik tersembunyi). Jalankan di terminal."
   confirm_word RESET "Mengganti password Owner${email:+ ($email)} dari server. Semua sesi Owner akan dicabut dan tindakan ini tercatat di audit log. 2FA Owner TIDAK dimatikan."
   printf 'Password baru (min. 10 karakter, tidak ditampilkan): '
-  read -rs password
+  IFS= read -rs password
   echo
   printf 'Ulangi password baru: '
-  read -rs confirm
+  IFS= read -rs confirm
   echo
   [[ -n "$password" ]] || die "Password kosong."
   [[ "$password" == "$confirm" ]] || die "Kedua password tidak sama."

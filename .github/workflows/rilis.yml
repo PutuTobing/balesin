@@ -1,8 +1,13 @@
-# Rilis Balesin self-hosted: dipicu tag `vX.Y.Z` (dibuat Tobing setelah review `main`).
-# 1. Build + push image api, worker, web ke GHCR (ghcr.io/<pemilik>/balesin-<target>:<versi>).
-# 2. GitHub Release berisi berkas pemasangan: install.sh, docker-compose.yml, Caddyfile, CLI balesin,
-#    contoh nginx, VERSION, SHA256SUMS (diperiksa install.sh dan `balesin update`).
-# Catatan: repo & paket GHCR privat → server pelanggan butuh akses; lihat docs/BUTUH-TOBING.md.
+# Rilis Balesin self-hosted: dipicu tag `vX.Y.Z` yang commit-nya ADA DI `main` (dibuat Tobing setelah
+# review). Review keamanan Fase 7 S4:
+#  - tag harus berasal dari `main` (cek ancestry) dan job memakai environment `rilis` (reviewer wajib
+#    diatur di GitHub → Settings → Environments, lihat docs/BUTUH-TOBING.md #18);
+#  - tag image versi TIDAK boleh ditimpa (gagal bila sudah ada di registry);
+#  - docker-compose.yml rilis merujuk image dengan DIGEST, jadi SHA256SUMS sekaligus mengunci isi image;
+#  - image dan SHA256SUMS ditandatangani cosign keyless (OIDC GitHub, Sigstore); install.sh dan
+#    `balesin update` memverifikasi tanda tangan SHA256SUMS bila cosign terpasang.
+# Catatan: tanda tangan keyless tercatat di log transparansi publik Sigstore (Rekor) beserta nama repo
+# dan workflow ini — lihat DECISIONS 2026-11-22 "Fase 7 — rilis".
 name: Rilis
 
 on:
@@ -20,14 +25,22 @@ jobs:
   rilis:
     name: Image + berkas rilis
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 45
+    environment: rilis
     permissions:
       contents: write
       packages: write
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - name: Tag harus berasal dari main
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main ||
+            { echo "::error::Commit tag ini tidak ada di main. Rilis hanya dari main."; exit 1; }
       - name: Versi dan nama image
         id: versi
         env:
@@ -36,12 +49,7 @@ jobs:
         run: |
           echo "versi=${TAG#v}" >> "$GITHUB_OUTPUT"
           echo "prefix=ghcr.io/${OWNER,,}/balesin" >> "$GITHUB_OUTPUT"
-      - name: Masuk ke GHCR
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ACTOR: ${{ github.actor }}
-        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
-      - name: Build dan push image
+      - name: Build image (sebelum login registry)
         env:
           PREFIX: ${{ steps.versi.outputs.prefix }}
           VERSI: ${{ steps.versi.outputs.versi }}
@@ -52,25 +60,64 @@ jobs:
               --label "org.opencontainers.image.version=$VERSI" \
               --label "org.opencontainers.image.revision=$REVISI" \
               -t "$PREFIX-$target:$VERSI" .
-            docker push "$PREFIX-$target:$VERSI"
           done
-      - name: Siapkan berkas rilis
+      # sigstore/cosign-installer v4.1.3
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532
+      - name: Masuk ke GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+      - name: Push image (tolak menimpa) + tanda tangan
+        id: image
+        env:
+          PREFIX: ${{ steps.versi.outputs.prefix }}
+          VERSI: ${{ steps.versi.outputs.versi }}
+        run: |
+          for target in api worker web; do
+            ref="$PREFIX-$target:$VERSI"
+            if docker manifest inspect "$ref" >/dev/null 2>&1; then
+              echo "::error::$ref sudah ada di registry. Versi rilis tidak boleh ditimpa — naikkan nomor versi."
+              exit 1
+            fi
+          done
+          for target in api worker web; do
+            docker push "$PREFIX-$target:$VERSI"
+            digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$PREFIX-$target:$VERSI")"
+            [[ "$digest" == *@sha256:* ]] || { echo "::error::Digest $target tidak terbaca"; exit 1; }
+            cosign sign --yes "$digest"
+            echo "$target=$PREFIX-$target:$VERSI@${digest#*@}" >> "$GITHUB_OUTPUT"
+          done
+      - name: Siapkan berkas rilis (compose merujuk digest)
         env:
           VERSI: ${{ steps.versi.outputs.versi }}
           PREFIX: ${{ steps.versi.outputs.prefix }}
+          IMG_API: ${{ steps.image.outputs.api }}
+          IMG_WORKER: ${{ steps.image.outputs.worker }}
+          IMG_WEB: ${{ steps.image.outputs.web }}
         run: |
           mkdir -p rilis
-          cp deploy/docker-compose.yml deploy/Caddyfile deploy/balesin rilis/
+          # Ganti `${BALESIN_IMAGE_PREFIX…}-<target>:${BALESIN_VERSION…}` dengan referensi ber-digest.
+          for target in api worker web; do
+            var="IMG_${target^^}"
+            pattern='image: \$\{BALESIN_IMAGE_PREFIX[^}]*\}-'"$target"':\$\{BALESIN_VERSION[^}]*\}'
+            printf 's#%s#image: %s#\n' "$pattern" "${!var}"
+          done > "$RUNNER_TEMP/digest.sed"
+          sed -E -f "$RUNNER_TEMP/digest.sed" deploy/docker-compose.yml > rilis/docker-compose.yml
+          [ "$(grep -c '@sha256:' rilis/docker-compose.yml)" -eq 4 ] ||
+            { echo "::error::Tidak semua image compose terkunci digest"; exit 1; }
+          cp deploy/Caddyfile deploy/balesin rilis/
           cp deploy/nginx/balesin.conf rilis/balesin-nginx.conf
           sed -e "s/^readonly DEFAULT_VERSION=.*/readonly DEFAULT_VERSION=\"$VERSI\"/" \
               -e "s#^readonly DEFAULT_IMAGE_PREFIX=.*#readonly DEFAULT_IMAGE_PREFIX=\"$PREFIX\"#" \
               deploy/install.sh > rilis/install.sh
           printf '%s\n' "$VERSI" > rilis/VERSION
           (cd rilis && sha256sum docker-compose.yml Caddyfile balesin balesin-nginx.conf install.sh VERSION > SHA256SUMS)
+          cosign sign-blob --yes --bundle rilis/SHA256SUMS.sigstore.json rilis/SHA256SUMS
       - name: Buat GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" rilis/* --title "Balesin $TAG" \
+          gh release create "$TAG" rilis/* --verify-tag --title "Balesin $TAG" \
             --notes "Pasang: curl -fsSL <URL>/install.sh | sudo bash — Update: sudo balesin update ${TAG#v}. Panduan: docs/DEPLOY.md."

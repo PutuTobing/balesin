@@ -79,14 +79,40 @@ Tanpa pertanyaan (otomasi): lihat kepala `install.sh` (`BALESIN_MODE`, `BALESIN_
 
 1. **VM Balesin** (IP privat, mis. `10.0.0.20`): jalankan installer, mode **A**, domain
    `balesin.skytech.net.id`, IP reverse proxy = IP privat vm-nginx, IP VM = `10.0.0.20`, port 8080.
-2. **Firewall VM Balesin** (contoh `ufw`; Docker menulis aturan iptables sendiri, jadi selain ufw
-   pastikan port hanya didengar di IP privat — installer sudah mengikat ke IP itu):
+2. **Firewall VM Balesin.** Port container yang dipublikasikan Docker di-DNAT sebelum rantai `INPUT`,
+   jadi **aturan ufw TIDAK berlaku untuk port 8080**. Batasi lewat rantai `DOCKER-USER` (diperiksa
+   Docker sebelum aturannya sendiri). Installer menolak bind `0.0.0.0`/IP publik di mode A; aturan
+   di bawah memastikan hanya vm-nginx yang bisa menjangkau port itu walau dari LAN:
    ```bash
-   ufw default deny incoming
-   ufw allow from <IP-privat-vm-nginx> to any port 8080 proto tcp
-   ufw allow from <jaringan-manajemen> to any port 22 proto tcp
-   ufw enable
+   # /usr/local/sbin/balesin-firewall.sh  (ganti 8080 dan IP vm-nginx)
+   #!/bin/sh
+   set -e
+   PORT=8080; PROXY=<IP-privat-vm-nginx>
+   iptables -N BALESIN-GATEWAY 2>/dev/null || iptables -F BALESIN-GATEWAY
+   iptables -A BALESIN-GATEWAY -s "$PROXY" -j RETURN
+   iptables -A BALESIN-GATEWAY -j DROP
+   iptables -C DOCKER-USER -p tcp -m conntrack --ctorigdstport "$PORT" --ctdir ORIGINAL -j BALESIN-GATEWAY 2>/dev/null ||
+     iptables -I DOCKER-USER -p tcp -m conntrack --ctorigdstport "$PORT" --ctdir ORIGINAL -j BALESIN-GATEWAY
    ```
+   Jalankan otomatis setiap boot SETELAH Docker (unit systemd):
+   ```ini
+   # /etc/systemd/system/balesin-firewall.service
+   [Unit]
+   Description=Batasi port gateway Balesin ke reverse proxy
+   After=docker.service
+   Requires=docker.service
+   [Service]
+   Type=oneshot
+   ExecStart=/usr/local/sbin/balesin-firewall.sh
+   RemainAfterExit=yes
+   [Install]
+   WantedBy=multi-user.target
+   ```
+   `chmod 700 /usr/local/sbin/balesin-firewall.sh && systemctl enable --now balesin-firewall`.
+   **Verifikasi** dari host LAN lain (bukan vm-nginx): `curl -m 5 http://<IP-VM>:8080/health` harus
+   *timeout*; dari vm-nginx harus `{"status":"ok"}`. SSH tetap dibatasi ufw seperti biasa
+   (`ufw allow from <jaringan-manajemen> to any port 22 proto tcp`) — ufw berlaku untuk proses di host.
+   Alternatif setara: firewall Proxmox/VLAN di depan VM.
 3. **DNS** IDCloudHost: A record `balesin` → `198.15.25.13`.
 4. **vm-nginx**: salin `deploy/nginx/balesin.conf` (rilis: `balesin-nginx.conf`) ke
    `/etc/nginx/conf.d/balesin.conf`, ganti `10.0.0.20:8080`. Ikuti urutan di kepala berkas: blok 443
@@ -112,7 +138,8 @@ CSP & header keamanan lain datang dari gateway Balesin — **jangan** ditambahka
   container `caddy` pertama kali menerima domain itu. Log Caddy: `sudo balesin logs caddy`.
 - **C**: di Cloudflare Zero Trust → Networks → Tunnels → buat tunnel (Cloudflared), salin token ke
   installer. Tambahkan **Public Hostname**: domain → Service `HTTP` → `web:8080`. Tidak ada port
-  yang perlu dibuka.
+  yang perlu dibuka. HSTS sudah dipasang gateway Balesin — biarkan HSTS di dasbor Cloudflare mati
+  (atau samakan nilainya: `max-age=15552000; includeSubDomains`) supaya header tidak dobel.
 
 ## 4. Perintah `balesin`
 
@@ -135,16 +162,29 @@ Satu perintah pengubah (backup/restore/update/start/stop) berjalan dalam satu wa
 
 - Isi backup: `database.dump` (pg_dump format custom, termasuk audit log), `media.tar.gz` (volume
   media), `manifest.txt` (versi, waktu, jumlah migrasi).
-- Terenkripsi AES-256 (`openssl enc -aes-256-cbc -pbkdf2`, kunci `BACKUP_PASSPHRASE` di `.env`)
-  + berkas `.sha256` untuk deteksi kerusakan/perubahan. Retensi `BACKUP_RETENTION_DAYS` (14 hari).
+- Format v2 (encrypt-then-MAC), tiga berkas per backup:
+  - `….tar.enc` — dienkripsi `openssl enc -aes-256-cbc -pbkdf2 -iter 600000` dengan
+    `BACKUP_PASSPHRASE` dari `.env` (passphrase lewat variabel lingkungan, tidak pernah di argumen);
+  - `….tar.enc.hmac` — HMAC-SHA256 atas berkas terenkripsi, kunci diturunkan (HKDF) dari
+    `BACKUP_PASSPHRASE`, dihitung di container api tanpa jaringan. **Restore memeriksa HMAC ini
+    SEBELUM mendekripsi**: berkas yang diubah atau bukan buatan instalasi ini (passphrase lain)
+    ditolak;
+  - `….tar.enc.sha256` — hash biasa untuk mendeteksi kerusakan saat menyalin.
+  Backup tidak dibuat sama sekali bila `BACKUP_PASSPHRASE` kosong; arsip `.tar` polos dan backup
+  tanpa `.hmac` ditolak saat restore. Retensi `BACKUP_RETENTION_DAYS` (14 hari).
+- Salin ketiga berkas bersama-sama ke penyimpanan luar server.
 - **Wajib**: salin backup ke luar server (mis. `rsync` harian ke NAS/penyimpanan lain), dan simpan
   salinan `.env` di tempat aman terpisah (password manager). Tanpa `BALESIN_MASTER_KEY`, kredensial
   tersimpan (token Meta, SMTP) tidak bisa dibuka; tanpa `BACKUP_PASSPHRASE`, backup tidak bisa dibuka.
 - **Uji restore** minimal sebulan sekali di server staging: pasang Balesin dengan `.env` yang sama
   (salin `.env` sebelum `install.sh`), lalu `sudo balesin restore <berkas>`.
-- Restore: hentikan api/worker/web → buat ulang database → `pg_restore` (tanpa owner/ACL) → ganti isi
-  volume media → kosongkan Redis (antrian lama) → migrasi + hak peran runtime → nyalakan → cek sehat.
-  Backup dari versi lebih baru dari yang terpasang ditolak (update dulu ke versi itu).
+- Restore: periksa HMAC → dekripsi → `pg_restore` (tanpa owner/ACL) ke database SEMENTARA
+  `<db>_pulih` sementara layanan masih berjalan → bila berhasil, hentikan api/worker/web dan tukar
+  nama (`<db>` → `<db>_sebelum_pulih`, `<db>_pulih` → `<db>`) → ganti isi volume media (diekstrak
+  ke folder sementara dulu) → kosongkan Redis (antrian lama) → migrasi + hak peran runtime →
+  nyalakan → cek sehat → baru `<db>_sebelum_pulih` dihapus. Dump rusak = database yang berjalan tidak
+  tersentuh; layanan gagal sehat = database lama masih ada untuk ditukar balik. Backup dari versi
+  lebih baru dari yang terpasang ditolak (update dulu ke versi itu).
 
 ## 6. Update & rollback
 
@@ -160,9 +200,21 @@ Satu perintah pengubah (backup/restore/update/start/stop) berjalan dalam satu wa
 
 Gagal di langkah 5 → **rollback otomatis**: log container disimpan ke
 `/opt/balesin/logs/update-gagal-<versi>-<waktu>.log`; bila skema database sudah berubah, database
-dipulihkan dari backup langkah 2 (data yang masuk selama beberapa menit update ikut kembali ke titik
-backup; media tidak disentuh); versi lama dinyalakan dan diperiksa. Turun versi lewat `update`
-ditolak — pakai restore.
+dipulihkan dari backup langkah 2 (lewat database sementara + tukar nama, seperti restore); media tidak
+disentuh; versi lama dinyalakan dan diperiksa. Turun versi lewat `update` ditolak — pakai restore.
+
+**Risiko yang perlu diketahui saat rollback memulihkan database**: semua data yang masuk SETELAH
+backup langkah 2 hilang — termasuk pesan WhatsApp/Telegram yang webhook-nya sudah dijawab 200 oleh
+versi baru sebelum dinyatakan tidak sehat (Meta tidak mengirim ulang webhook yang sudah sukses).
+Jendelanya biasanya beberapa menit. Mitigasi: jalankan update di jam sepi; setelah rollback, cek
+percakapan terbaru di inbox dan WhatsApp Business Manager, lalu minta pelanggan yang terdampak
+mengirim ulang bila perlu. Selama api lama/baru tidak berjalan, gateway menjawab 502 sehingga Meta
+mencoba ulang webhook itu sendiri (tidak hilang).
+
+Rilis resmi ditandatangani (cosign keyless dari workflow `rilis.yml`) dan `docker-compose.yml` rilis
+merujuk image dengan **digest**. Installer dan `balesin update` memverifikasi tanda tangan
+`SHA256SUMS` bila `cosign` terpasang di server; isi `BALESIN_REQUIRE_SIGNATURE=1` di `.env` untuk
+mewajibkannya (disarankan setelah kanal rilis dibuka, lihat BUTUH-TOBING #18).
 
 Diuji (Fase 7): update berhasil, layanan baru tidak sehat setelah migrasi baru (rollback memulihkan
 skema & data), dan migrasi gagal (dibatalkan tanpa restart).
@@ -176,19 +228,28 @@ sudo balesin reset-owner-password owner@perusahaan.co.id   # bila Owner lebih da
 
 Konfirmasi dengan mengetik `RESET`, lalu password baru diketik dua kali (tidak ditampilkan, dikirim
 lewat stdin — tidak terlihat di daftar proses). Aturan password sama dengan aplikasi. Efeknya: semua
-sesi Owner dicabut, kunci login dilepas, tercatat di audit log (`Password diatur ulang`, `via: cli`).
-**2FA tidak dimatikan** — Owner masuk dengan kode autentikator atau kode cadangan.
+sesi Owner dicabut, kunci login dilepas, tercatat di audit log (`Password diatur ulang`, metadata
+`via: cli`, `serverRecovery: true`), dan Owner menerima email "Password diganti dari server" bila
+email pengirim sudah diatur. **2FA tidak dimatikan** — Owner masuk dengan kode autentikator atau
+kode cadangan.
 
 ## 8. Keamanan operasional
 
 - `.env` = semua rahasia, izin 600 root. Jangan disalin ke tiket/chat. `BALESIN_MASTER_KEY` jangan
   pernah diganti setelah ada data.
+- **Jangan menambahkan pengguna ke grup `docker`**: anggota grup itu setara root (bisa
+  `docker inspect` semua rahasia di environment container, menjalankan perintah di container mana pun).
+  Kelola server dengan `sudo`.
+- **Hardening container**: api/worker/web/migrate non-root, read-only, tanpa capability; redis
+  berjalan sebagai pengguna `redis`, read-only, tanpa capability; postgres read-only (+tmpfs) dengan
+  capability minimal untuk entrypoint (CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID) lalu turun ke
+  pengguna `postgres`. Image produksi tanpa source map.
 - **Peran database**: `POSTGRES_USER` (pemilik tabel) hanya dipakai migrasi/backup/restore;
   api & worker memakai `APP_DB_USER` (hak SELECT/INSERT/UPDATE/DELETE saja, `audit_logs` hanya
   SELECT/INSERT) — tidak bisa mengubah skema atau mematikan trigger audit.
 - **TRUST_PROXY** = IP tetap gateway (`.10` di subnet Docker) + proxy di depannya (mode A: IP
-  reverse proxy; B: caddy `.11`; C: cloudflared `.12`). Alamat bridge Docker dan klien LAN tidak
-  dipercaya. Salah isi → semua pengunjung tampak ber-IP sama (batas login/webhook per IP keliru);
+  reverse proxy, CIDR minimal /16 dan disarankan IP tunggal; B: caddy `.11`; C: cloudflared `.12`).
+  Gateway bridge Docker (alamat pertama rentang dinamis, `.128`) dan klien LAN tidak dipercaya. Salah isi → semua pengunjung tampak ber-IP sama (batas login/webhook per IP keliru);
   `balesin status` memperingatkan bila mode A tanpa IP proxy.
 - **Log**: gateway dan contoh nginx mencatat path tanpa query string; api mencatat path saja.
 - **CSP halaman web** (gateway): `script-src 'self'` tanpa inline; lihat komentar di

@@ -39,6 +39,8 @@ jobs:
       # Gagalkan bila library WhatsApp tidak resmi masuk lockfile.
       - run: pnpm check:deps
       - run: pnpm typecheck
+      # Penjaga keamanan berkas deploy (review Fase 7), tanpa database.
+      - run: pnpm --filter @balesin/api test:deploy
       - run: pnpm build
 
   tes:

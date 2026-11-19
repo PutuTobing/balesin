@@ -749,6 +749,19 @@ describe('template email', () => {
     expect(changed.text).toContain('Semua perangkat yang sedang masuk sudah dikeluarkan');
     expect(changed.text).toContain('Alamat IP: tidak diketahui');
     expect(changed.text).toContain('Perangkat: Perangkat tidak dikenal');
+
+    // Pemulihan Owner dari server (balesin reset-owner-password, review Fase 7 R4).
+    const byServer = renderSecurityNoticeEmail({
+      brand: brand(),
+      userName: 'Budi',
+      event: 'password_changed_by_server',
+      occurredAt: at,
+      timeZone: 'Asia/Jakarta',
+      origin: { ip: null, userAgent: 'balesin-cli reset-owner-password' },
+    });
+    expect(byServer.subject).toContain('diganti dari server');
+    expect(byServer.text).toContain('pengelola server');
+    expect(byServer.text).not.toContain('tautan atur ulang');
   });
 
   it('2FA aktif ke Owner/Admin: nama, peran, waktu, IP, perangkat', () => {

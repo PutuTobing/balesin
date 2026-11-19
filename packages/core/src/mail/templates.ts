@@ -593,6 +593,20 @@ export function renderSecurityNoticeEmail(input: SecurityNoticeEmailInput): Mail
           'Kalau bukan kamu yang menggantinya, segera atur ulang password lagi dari halaman masuk, amankan kotak email-mu, dan kabari Owner atau Admin di tempatmu.',
         ],
       });
+    case 'password_changed_by_server':
+      return compose(input.brand, {
+        subject: `Password akun ${product}-mu diganti dari server`,
+        preheader: 'Password diganti oleh pengelola server, bukan lewat aplikasi.',
+        heading: 'Password diganti dari server',
+        paragraphs: [
+          greeting,
+          `Password akunmu diganti pada ${when} oleh pengelola server ${product} (perintah pemulihan Owner di server). Semua perangkat yang sedang masuk sudah dikeluarkan. Verifikasi dua langkah tetap aktif.`,
+        ],
+        details,
+        notes: [
+          'Kalau bukan kamu yang meminta pemulihan ini, segera hubungi pengelola server: siapa pun yang menjalankannya memegang akses penuh ke server. Ganti password lagi setelah masuk.',
+        ],
+      });
     case 'two_factor_reset': {
       const by = input.actor
         ? `${singleLine(input.actor.name)} (${USER_ROLE_LABELS[input.actor.role]})`

@@ -368,6 +368,8 @@ export const SECURITY_NOTICE_EVENTS = [
   'password_changed',
   /** 2FA diatur ulang Owner/Admin (autentikator + kode cadangan dibuang). `actorUserId` = pelaku. */
   'two_factor_reset',
+  /** Password Owner diganti operator server lewat `balesin reset-owner-password` (Fase 7, R4). */
+  'password_changed_by_server',
 ] as const;
 export type SecurityNoticeEvent = (typeof SECURITY_NOTICE_EVENTS)[number];
 

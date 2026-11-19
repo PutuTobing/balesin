@@ -4,6 +4,7 @@ import { DEFAULT_PRODUCT_NAME, normalizeEmail } from '@balesin/shared';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 
 import { createRateLimiter } from '../http/rate-limit';
+import type { EmailNotifier } from '../queues/email-queue';
 import { AUDIT_ACTIONS, maskEmail, recordAudit } from '../modules/audit/audit';
 import {
   ACCOUNT_LOCK_FLAG,
@@ -26,7 +27,9 @@ import { deleteChallenges } from '../modules/two-factor/two-factor.repo';
  *    nama/email/organisasi);
  *  - semua sesi Owner dicabut, tantangan 2FA yang menggantung dibuang, kunci login dilepas;
  *  - 2FA TIDAK dimatikan — Owner tetap memakai aplikasi autentikator atau kode cadangannya;
- *  - tercatat di audit log (`auth.password_reset.completed`, metadata `via: "cli"`).
+ *  - tercatat di audit log (`auth.password_reset.completed`, metadata `via: "cli"`);
+ *  - Owner diberi tahu lewat email (`password_changed_by_server`) bila email pengirim sudah diatur
+ *    (review Fase 7 R4) — tanpa tautan apa pun.
  */
 
 export class OwnerRecoveryError extends Error {
@@ -46,6 +49,8 @@ export interface OwnerRecoveryResult {
   userId: string;
   /** Email tersamar untuk ditampilkan (mis. `s***@contoh.co.id`). */
   maskedEmail: string;
+  /** `true` = email pemberitahuan ke Owner sudah diantrekan. */
+  ownerNotified: boolean;
   revokedSessions: number;
   twoFactorEnabled: boolean;
   auditLogId: string;
@@ -58,6 +63,9 @@ export interface OwnerRecoveryDeps {
   redis?: Redis;
   /** Awalan kunci Redis batas laju (sama dengan api, bawaan `balesin`). */
   redisPrefix?: string;
+  /** Opsional: mengantre email pemberitahuan ke Owner (gagal = hanya diabaikan). */
+  notifier?: Pick<EmailNotifier, 'securityNotice'>;
+  now?: () => Date;
 }
 
 /** Owner aktif organisasi milik instalasi, urut dari yang paling lama. */
@@ -139,7 +147,7 @@ export async function resetOwnerPassword(
       action: AUDIT_ACTIONS.passwordResetCompleted,
       targetType: 'user',
       targetId: target.id,
-      metadata: { via: 'cli', revokedSessions: revokedIds.length },
+      metadata: { via: 'cli', serverRecovery: true, revokedSessions: revokedIds.length },
       client: { ip: null, userAgent: 'balesin-cli reset-owner-password' },
     });
     return { revoked: revokedIds.length, auditLogId: auditId };
@@ -157,9 +165,26 @@ export async function resetOwnerPassword(
     }
   }
 
+  let ownerNotified = false;
+  if (deps.notifier) {
+    try {
+      await deps.notifier.securityNotice({
+        organizationId: organization.id,
+        userId: owner.id,
+        event: 'password_changed_by_server',
+        occurredAt: (deps.now?.() ?? new Date()).toISOString(),
+        auditLogId,
+      });
+      ownerNotified = true;
+    } catch {
+      // Antrian/Redis bermasalah: perubahan tetap sah dan tercatat di audit log.
+    }
+  }
+
   return {
     userId: owner.id,
     maskedEmail: maskEmail(owner.email),
+    ownerNotified,
     revokedSessions: revoked,
     twoFactorEnabled: owner.totpEnabledAt !== null,
     auditLogId,

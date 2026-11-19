@@ -10,6 +10,7 @@ import { closeRedis, createRedis, createLogger, scrubSecretsInText } from '@bale
 import { closeDb, createDb } from '@balesin/db';
 
 import { createPasswordHasher } from '../modules/auth/password-hasher';
+import { createEmailQueue, type EmailQueue } from '../queues/email-queue';
 import { OwnerRecoveryError, resetOwnerPassword } from './owner-recovery';
 
 async function readFirstLine(): Promise<string> {
@@ -53,16 +54,35 @@ async function main(): Promise<number> {
         logger: createLogger({ service: 'cli', level: 'error' }),
       })
     : undefined;
+  // Koneksi terpisah untuk antrean email pemberitahuan (pola sama dengan api).
+  const queueRedis = redisUrl
+    ? createRedis(redisUrl, {
+        role: 'client',
+        name: 'balesin-cli-antrian',
+        logger: createLogger({ service: 'cli', level: 'error' }),
+      })
+    : undefined;
+  const emailQueue: EmailQueue | undefined = queueRedis
+    ? createEmailQueue({ connection: queueRedis })
+    : undefined;
 
   try {
     const result = await resetOwnerPassword(
-      { db, hasher: createPasswordHasher({ concurrency: 1 }), redis },
+      {
+        db,
+        hasher: createPasswordHasher({ concurrency: 1 }),
+        redis,
+        notifier: emailQueue?.notifier,
+      },
       { email: args[0], password },
     );
     process.stdout.write(
       [
         `Password Owner ${result.maskedEmail} sudah diganti.`,
         `Sesi yang dicabut: ${String(result.revokedSessions)}. Tercatat di audit log.`,
+        result.ownerNotified
+          ? 'Email pemberitahuan diantrekan ke Owner (terkirim bila email pengirim sudah diatur).'
+          : 'Email pemberitahuan ke Owner tidak bisa diantrekan (Redis tidak terjangkau).',
         result.twoFactorEnabled
           ? 'Verifikasi dua langkah (2FA) tetap aktif: saat masuk, pakai kode dari aplikasi autentikator atau kode cadangan.'
           : 'Owner belum mengaktifkan 2FA: aplikasi akan meminta pendaftaran 2FA setelah masuk.',
@@ -80,6 +100,8 @@ async function main(): Promise<number> {
     return 1;
   } finally {
     await closeDb(db);
+    if (emailQueue) await emailQueue.close().catch(() => undefined);
+    if (queueRedis) await closeRedis(queueRedis).catch(() => undefined);
     if (redis) await closeRedis(redis).catch(() => undefined);
   }
 }

@@ -115,9 +115,33 @@ is_ip_or_cidr() {
   ip="${value%%/*}"
   if [[ "$value" == */* ]]; then
     prefix="${value#*/}"
-    [[ "$prefix" =~ ^[0-9]{1,2}$ ]] && ((prefix >= 8 && prefix <= 32)) || return 1
+    [[ "$prefix" =~ ^[0-9]{1,2}$ ]] && ((prefix >= 16 && prefix <= 32)) || return 1
   fi
   is_ipv4 "$ip"
+}
+
+# IP privat RFC 1918 / CGNAT (100.64/10) atau loopback (proxy di host yang sama).
+is_private_ipv4() {
+  local ip="$1" a b
+  is_ipv4 "$ip" || return 1
+  IFS=. read -r a b _ _ <<<"$ip"
+  ((a == 10 || a == 127)) && return 0
+  ((a == 172 && b >= 16 && b <= 31)) && return 0
+  ((a == 192 && b == 168)) && return 0
+  ((a == 100 && b >= 64 && b <= 127)) && return 0
+  return 1
+}
+
+valid_port() { [[ "$1" =~ ^[0-9]{1,5}$ ]] && (("$1" >= 1 && "$1" <= 65535)); }
+
+valid_email() { [[ "$1" =~ ^[^@[:space:]{}\"]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}$ ]]; }
+
+# Nilai yang ditulis ke .env harus satu baris tanpa karakter kendali (cegah sisipan baris .env).
+assert_env_value() {
+  local name="$1" value="$2"
+  if [[ "$value" == *$'\n'* || "$value" == *$'\r'* || "$value" =~ [[:cntrl:]] ]]; then
+    die "Nilai $name mengandung baris baru/karakter kendali."
+  fi
 }
 
 valid_ip_list() {
@@ -265,14 +289,28 @@ configure_network() {
         ask UPSTREAM "IP privat reverse proxy (mis. vm-nginx; beberapa dipisah koma)" "$UPSTREAM"
         UPSTREAM="${UPSTREAM// /}"
         valid_ip_list "$UPSTREAM" ||
-          die "IP reverse proxy wajib diisi (IPv4 atau CIDR). Tanpa itu semua pengunjung tampak ber-IP sama dan batas laju per IP salah."
+          die "IP reverse proxy wajib diisi dan valid (IPv4, atau CIDR minimal /16 — sebaiknya IP tunggal). Tanpa itu semua pengunjung tampak ber-IP sama dan batas laju per IP salah."
         local detected
-        detected="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
-        BIND_ADDRESS="${BALESIN_BIND_ADDRESS:-${BIND_ADDRESS:-${detected:-0.0.0.0}}}"
-        ask BIND_ADDRESS "IP VM ini yang didengar Balesin (IP privat)" "$BIND_ADDRESS"
-        is_ipv4 "$BIND_ADDRESS" || die "IP tidak valid: $BIND_ADDRESS"
+        # Bawaan: IP PRIVAT pertama VM ini (bukan IP publik, bukan 0.0.0.0).
+        local candidate
+        detected=""
+        for candidate in $(hostname -I 2>/dev/null || true); do
+          if is_private_ipv4 "$candidate" && [[ "$candidate" != 127.* ]]; then
+            detected="$candidate"
+            break
+          fi
+        done
+        BIND_ADDRESS="${BALESIN_BIND_ADDRESS:-${BIND_ADDRESS:-$detected}}"
+        ask BIND_ADDRESS "IP privat VM ini yang menghadap reverse proxy" "$BIND_ADDRESS"
+        is_ipv4 "$BIND_ADDRESS" || die "IP tidak valid: '$BIND_ADDRESS'"
+        # Review Fase 7 S3: port gateway tidak boleh didengar di semua antarmuka/IP publik.
+        [[ "$BIND_ADDRESS" != "0.0.0.0" ]] ||
+          die "Bind 0.0.0.0 ditolak: gateway akan terbuka di semua antarmuka (termasuk IP publik). Isi IP privat yang menghadap reverse proxy."
+        is_private_ipv4 "$BIND_ADDRESS" ||
+          die "$BIND_ADDRESS bukan IP privat. Di mode A gateway hanya boleh didengar di IP privat yang menghadap reverse proxy (pakai mode B untuk IP publik)."
         HTTP_PORT="${BALESIN_HTTP_PORT:-${HTTP_PORT:-8080}}"
         ask HTTP_PORT "Port HTTP Balesin untuk reverse proxy" "$HTTP_PORT"
+        valid_port "$HTTP_PORT" || die "Port tidak valid: '$HTTP_PORT' (1–65535)."
         ;;
       B)
         BIND_ADDRESS="127.0.0.1"
@@ -280,6 +318,7 @@ configure_network() {
         UPSTREAM=""
         ACME_EMAIL="${BALESIN_ACME_EMAIL:-$ACME_EMAIL}"
         ask ACME_EMAIL "Email untuk pemberitahuan Let's Encrypt (boleh kosong)" "$ACME_EMAIL"
+        [[ -z "$ACME_EMAIL" ]] || valid_email "$ACME_EMAIL" || die "Email tidak valid: '$ACME_EMAIL'"
         local port
         for port in 80 443; do
           if command -v ss >/dev/null 2>&1 && ss -ltnH "sport = :$port" 2>/dev/null | grep -q .; then
@@ -303,6 +342,16 @@ configure_network() {
     APP_URL="${BALESIN_APP_URL:-https://$DOMAIN}"
   fi
   APP_URL="${BALESIN_APP_URL:-${APP_URL:-https://$DOMAIN}}"
+  [[ "$APP_URL" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?$ ]] || die "APP_URL tidak valid: '$APP_URL'"
+  if [[ "$MODE" == "A" ]]; then
+    local proxy
+    IFS=',' read -ra proxies <<<"$UPSTREAM"
+    for proxy in "${proxies[@]}"; do
+      if [[ "$proxy" == */* ]] && ((${proxy#*/} < 29)); then
+        warn "IP reverse proxy '$proxy' adalah rentang lebar: setiap alamat di rentang itu dipercaya mengisi X-Forwarded-For. Sebaiknya isi IP tunggal reverse proxy."
+      fi
+    done
+  fi
 
   pick_subnet
   # Alamat tetap di jaringan edge (/24): gateway .10, caddy .11, cloudflared .12; dinamis .128–.255.
@@ -312,7 +361,7 @@ configure_network() {
   TUNNEL_IP="$prefix.12"
   DYNAMIC_RANGE="$prefix.128/25"
   # Yang dipercaya api hanya proxy sungguhan, bukan seluruh subnet (alamat gateway bridge Docker
-  # .1 — tempat lalu lintas lokal host masuk — tidak ikut dipercaya).
+  # alamat pertama rentang dinamis, .128 — tempat lalu lintas lokal host masuk — tidak ikut dipercaya).
   case "$MODE" in
     A) TRUST_PROXY="$GATEWAY_IP,$UPSTREAM" ;;
     B) TRUST_PROXY="$GATEWAY_IP,$CADDY_IP" ;;
@@ -353,12 +402,20 @@ write_env() {
   VERSION="$(keep_or BALESIN_VERSION "${BALESIN_VERSION:-$RELEASE_VERSION}")"
 
   local managed=(COMPOSE_PROJECT_NAME COMPOSE_PROFILES BALESIN_VERSION BALESIN_IMAGE_PREFIX
-    BALESIN_RELEASE_BASE BALESIN_RELEASE_LATEST BALESIN_NETWORK_MODE BALESIN_DOMAIN APP_URL API_URL
+    BALESIN_RELEASE_BASE BALESIN_RELEASE_LATEST BALESIN_REQUIRE_SIGNATURE BALESIN_NETWORK_MODE BALESIN_DOMAIN APP_URL API_URL
     BALESIN_BIND_ADDRESS BALESIN_HTTP_PORT BALESIN_SUBNET BALESIN_DYNAMIC_RANGE BALESIN_GATEWAY_IP
     BALESIN_CADDY_IP BALESIN_TUNNEL_IP UPSTREAM_PROXY_IPS TRUST_PROXY ACME_EMAIL
     CLOUDFLARE_TUNNEL_TOKEN POSTGRES_USER POSTGRES_DB POSTGRES_PASSWORD APP_DB_USER APP_DB_PASSWORD
     REDIS_PASSWORD BALESIN_MASTER_KEY SESSION_SECRET SETUP_TOKEN BACKUP_PASSPHRASE
     BACKUP_RETENTION_DAYS LOG_LEVEL OUTBOUND_PRIVATE_ALLOWLIST META_GRAPH_VERSION)
+
+  local name
+  for name in MODE DOMAIN APP_URL BIND_ADDRESS HTTP_PORT SUBNET UPSTREAM TRUST_PROXY ACME_EMAIL TUNNEL_TOKEN VERSION; do
+    assert_env_value "$name" "${!name}"
+  done
+  for name in BALESIN_IMAGE_PREFIX BALESIN_RELEASE_BASE BALESIN_RELEASE_LATEST BALESIN_PROJECT_NAME; do
+    assert_env_value "$name" "${!name:-}"
+  done
 
   local tmp
   tmp="$(mktemp "$BALESIN_HOME/.env.XXXXXX")"
@@ -379,6 +436,8 @@ BALESIN_VERSION=$VERSION
 BALESIN_IMAGE_PREFIX=$(keep_or BALESIN_IMAGE_PREFIX "${BALESIN_IMAGE_PREFIX:-$DEFAULT_IMAGE_PREFIX}")
 BALESIN_RELEASE_BASE=$(keep_or BALESIN_RELEASE_BASE "${BALESIN_RELEASE_BASE:-$DEFAULT_RELEASE_BASE}")
 BALESIN_RELEASE_LATEST=$(keep_or BALESIN_RELEASE_LATEST "${BALESIN_RELEASE_LATEST:-$DEFAULT_RELEASE_LATEST}")
+# 1 = tanda tangan cosign rilis WAJIB terverifikasi (pasang cosign di server).
+BALESIN_REQUIRE_SIGNATURE=$(keep_or BALESIN_REQUIRE_SIGNATURE "${BALESIN_REQUIRE_SIGNATURE:-0}")
 
 # ── Jaringan (mode A/B/C, docs/ARCHITECTURE.md §5) ──
 BALESIN_NETWORK_MODE=$MODE
@@ -445,6 +504,33 @@ EOF
   ok "$ENV_FILE (izin 600)"
 }
 
+# Tanda tangan cosign keyless atas SHA256SUMS (workflow rilis.yml, review Fase 7 S4). Diverifikasi
+# bila cosign terpasang; BALESIN_REQUIRE_SIGNATURE=1 di .env/lingkungan = wajib (tanpa cosign/tanda
+# tangan → gagal).
+readonly DEFAULT_SIGNER_IDENTITY='^https://github\.com/PutuTobing/balesin/\.github/workflows/rilis\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$'
+verify_release_signature() {
+  local dir="$1" identity require
+  identity="${BALESIN_SIGNER_IDENTITY:-$(env_get BALESIN_SIGNER_IDENTITY)}"
+  identity="${identity:-$DEFAULT_SIGNER_IDENTITY}"
+  require="${BALESIN_REQUIRE_SIGNATURE:-$(env_get BALESIN_REQUIRE_SIGNATURE)}"
+  if [[ ! -s "$dir/SHA256SUMS.sigstore.json" ]]; then
+    [[ "$require" == "1" ]] && die "Rilis tanpa tanda tangan (SHA256SUMS.sigstore.json) ditolak."
+    warn "Rilis tanpa tanda tangan cosign; hanya checksum yang diperiksa."
+    return 0
+  fi
+  if ! command -v cosign >/dev/null 2>&1; then
+    [[ "$require" == "1" ]] && die "cosign tidak terpasang, tanda tangan rilis tidak bisa diverifikasi."
+    warn "cosign tidak terpasang: tanda tangan rilis tidak diverifikasi (disarankan memasang cosign)."
+    return 0
+  fi
+  cosign verify-blob --bundle "$dir/SHA256SUMS.sigstore.json" \
+    --certificate-identity-regexp "$identity" \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    "$dir/SHA256SUMS" >/dev/null 2>&1 ||
+    die "Tanda tangan rilis TIDAK valid — berkas bukan dari workflow rilis resmi. Dibatalkan."
+  ok "Tanda tangan rilis terverifikasi (cosign)"
+}
+
 # ── 5. Berkas rilis ─────────────────────────────────────────────────────────────────────────────
 release_files() {
   step "Berkas Balesin (docker-compose.yml, Caddyfile, CLI balesin)"
@@ -465,6 +551,13 @@ release_files() {
         cp "$src/$file" "$TMP_DIR/$file" || die "Berkas $src/$file tidak ada"
       fi
     done
+    if [[ "$src" == http*://* ]]; then
+      curl -fsSL --proto '=https' --tlsv1.2 --max-time 60 "$src/SHA256SUMS.sigstore.json" \
+        -o "$TMP_DIR/SHA256SUMS.sigstore.json" 2>/dev/null || rm -f "$TMP_DIR/SHA256SUMS.sigstore.json"
+    else
+      cp "$src/SHA256SUMS.sigstore.json" "$TMP_DIR/" 2>/dev/null || true
+    fi
+    verify_release_signature "$TMP_DIR"
     (cd "$TMP_DIR" && grep -E ' (docker-compose\.yml|Caddyfile|balesin)$' SHA256SUMS | sha256sum -c --quiet -) ||
       die "Checksum berkas rilis tidak cocok — unduhan rusak atau diubah."
     ok "Berkas rilis $VERSION diunduh dan checksum cocok"
@@ -530,7 +623,14 @@ finish() {
       info "  1. DNS: A record $DOMAIN → IP publik reverse proxy."
       info "  2. Di reverse proxy, pasang contoh nginx/balesin.conf (lihat docs/DEPLOY.md),"
       info "     arahkan ke http://$BIND_ADDRESS:$HTTP_PORT lalu buat sertifikat (certbot)."
-      info "  3. Firewall VM ini: port $HTTP_PORT hanya dari $UPSTREAM."
+      info "  3. Firewall: Docker MELEWATI ufw untuk port container. Batasi port $HTTP_PORT lewat rantai"
+      info "     DOCKER-USER supaya hanya $UPSTREAM yang bisa menjangkau (docs/DEPLOY.md §3.1), mis.:"
+      info "       iptables -I DOCKER-USER -p tcp -m conntrack --ctorigdstport $HTTP_PORT --ctdir ORIGINAL -j DROP"
+      local proxy_ip
+      IFS=',' read -ra proxies <<<"$UPSTREAM"
+      for proxy_ip in "${proxies[@]}"; do
+        info "       iptables -I DOCKER-USER -p tcp -m conntrack --ctorigdstport $HTTP_PORT --ctdir ORIGINAL -s $proxy_ip -j RETURN"
+      done
       ;;
     B)
       info "Langkah berikutnya (mode B — Caddy):"

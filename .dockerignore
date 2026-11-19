@@ -1,25 +1,37 @@
 # Konteks build image produksi (deploy/docker/Dockerfile). Hanya kode sumber yang dibutuhkan build;
-# rahasia, dokumen internal, referensi pelanggan, dan hasil build lokal tidak pernah ikut.
+# rahasia, dokumen internal, referensi pelanggan, data/media dev, dan hasil build lokal tidak pernah
+# ikut. Pola `**/` berlaku di folder mana pun (pola tanpa `**/` hanya cocok di akar konteks) —
+# review keamanan Fase 7 R1: `COPY apps apps` + `pnpm deploy` menyalin isi folder paket ke /app.
 **/node_modules
 **/dist
 **/coverage
 **/.vite
 **/*.tsbuildinfo
 **/*.log
-.git
+**/.git
+**/.env*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/media
+**/data
+# …kecuali folder kode sumber bernama sama (mis. packages/core/src/media).
+!**/src/media
+!**/src/data
+**/backups
+**/playwright-report
+**/test-results
+**/screenshots
+**/.DS_Store
+**/Thumbs.db
 .github
 .claude
-.env*
-!.env.example
-*.pem
-*.key
 docs
 assets
 e2e/*
 !e2e/package.json
 deploy/*
 !deploy/docker
-media
-data
 CLAUDE.md
 README.md

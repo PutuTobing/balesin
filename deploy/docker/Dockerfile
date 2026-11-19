@@ -39,7 +39,10 @@ FROM deps AS build
 COPY tsconfig.base.json ./
 COPY packages packages
 COPY apps apps
-RUN pnpm --filter @balesin/api --filter @balesin/worker --filter @balesin/web build
+# Source map dan metafile tsup tidak ikut image produksi (review Fase 7 Info 5).
+RUN pnpm --filter @balesin/api --filter @balesin/worker --filter @balesin/web build \
+ && rm -f apps/api/dist/*.map apps/worker/dist/*.map apps/*/dist/metafile-esm.json \
+ && ! find apps/web/dist -name '*.map' | grep -q .
 
 # node_modules produksi per aplikasi (tanpa devDependencies), dalam folder mandiri.
 FROM build AS prod-deps
@@ -75,7 +78,7 @@ ENV API_HOST=0.0.0.0 \
 EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=4 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:'+(process.env.API_PORT||3000)+'/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
-CMD ["node", "--enable-source-maps", "dist/index.js"]
+CMD ["node", "dist/index.js"]
 
 # ── worker: antrian BullMQ ────────────────────────────────────────────────────────────────────
 FROM node-runtime AS worker
@@ -84,7 +87,7 @@ COPY --from=build /repo/apps/worker/dist /app/dist
 COPY deploy/docker/worker-healthcheck.mjs /app/healthcheck.mjs
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   CMD ["node", "/app/healthcheck.mjs"]
-CMD ["node", "--enable-source-maps", "dist/index.js"]
+CMD ["node", "dist/index.js"]
 
 # ── web: berkas statis PWA + gateway (proxy ke api) ───────────────────────────────────────────
 FROM nginxinc/nginx-unprivileged:1.30.6-alpine3.24 AS web
