@@ -84,12 +84,17 @@
   Owner dari server), nginx vm, rilis bertanda tangan (cosign). Security **AMAN putaran 2**.
 - Suite tes API stabil (15d977b): database per berkas dari template, DROP di teardown global.
 
-## Sedang dikerjakan (posisi 38ed4e3)
-- **Frontend** — W1/W2 security, perbaikan E2E `jam-kerja.spec.ts` (langkah saklar Tersedia), F11,
-  K1–K8, foto ulang layar kanal, perluasan `channel-lain.spec.ts` pakai server tiruan. Belum di-commit.
-- Berikutnya: commit → kritikus putaran berikut (F11 + K1–K8) → security verifikasi W1/W2 → centang
-  ROADMAP Fase 5 & 6 → Fase 7 butir 5 (white-label + dokumentasi pengguna) & butir 6 (`/audit`
-  penuh) → E2E penuh.
+## Sedang dikerjakan (posisi b785c4f)
+- Sudah di-commit: panduan pengguna `docs/panduan/` (c2888c5), white-label berkas rilis + 
+  `docs/DEPLOY-SKYTECH.md` (94995cf), web W1/W2 + F11 + K1–K8 + perbaikan hapus/tes koneksi channel
+  lain + E2E channel-lain dengan server tiruan (b785c4f).
+- **Backend** — white-label API: `PATCH` branding (nama, logo, warna, nama maskot), ikon PWA/favicon
+  dari logo, migrasi 0031, teks "Balesin" hardcode, teks "segera hadir" basi. Belum di-commit.
+- **Kritikus** verifikasi F11 + K1–K8; **security** verifikasi W1/W2; **QA** E2E crm/channel-lain/
+  jam-kerja di HEAD.
+- Berikutnya: frontend halaman Pengaturan → Merek (setelah kontrak backend) → centang ROADMAP Fase 5,
+  6, 7 butir 5 → saklar bot untuk Telegram/Email (PRD "saklar bot per channel", kini hanya WhatsApp)
+  → `/audit` penuh → E2E penuh.
 - Terblokir: Fase 3 mode tangkap (#10); kredensial nyata (#3, #4, #8, #15, #16, #17); distribusi (#18);
   deploy produksi (#19, menunggu #6/#7).
 
