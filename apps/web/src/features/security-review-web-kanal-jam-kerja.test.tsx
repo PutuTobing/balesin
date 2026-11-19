@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import {
   API_ROUTES,
   AUTO_MESSAGE_DEFAULT_TEXTS,
+  CSRF_HEADER_NAME,
   EMAIL_SENDER_VERIFICATION_LABELS,
   apiPath,
   channelTypeInfos,
@@ -13,7 +14,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest';
 import { t } from '../i18n/id';
 import { media } from '../lib/media';
-import { json, type FakeHandler } from '../test/fake-api';
+import { apiError, json, type FakeHandler, type FakeRequest } from '../test/fake-api';
 import { fakeConversation, fakeMessage } from '../test/fake-inbox';
 import { confirmIdentity, TEST_CODE, TEST_PASSWORD } from '../test/identity';
 import { setMediaQuery } from '../test/match-media';
@@ -419,5 +420,181 @@ describe('pola di seluruh apps/web', () => {
     const main = readFileSync(join(SRC, 'main.tsx'), 'utf8');
     const firstImport = /^import\s+(?:[^'"]+from\s+)?['"]([^'"]+)['"]/m.exec(main)?.[1];
     expect(firstImport).toBe('./zod-config');
+  });
+});
+
+// ── Putaran 2 (verifikasi perbaikan b785c4f) ──────────────────────────────────────────────────
+// Rahasia yang ditunggu konfirmasi identitas dipegang di `useRef` komponen. Pemindai ini menyusuri
+// pohon fiber React yang AKTIF dan memeriksa nilai setiap hook (useState/useRef/useMemo/...) —
+// tempat yang tidak dijangkau `expectSecretNowhere` (cache Query, storage, console, DOM).
+
+type Fiber = { child: Fiber | null; sibling: Fiber | null; memoizedState: unknown; type: unknown };
+
+function hookStateContains(container: HTMLElement, secret: string): boolean {
+  const key = Object.keys(container).find((name) => name.startsWith('__reactContainer$'));
+  if (!key) throw new Error('akar React tidak ditemukan');
+  // `__reactContainer$` = fiber HostRoot awal; pohon aktif ada di `stateNode.current`.
+  const host = (container as unknown as Record<string, { stateNode: { current: Fiber } }>)[key]!;
+  const seen = new WeakSet<object>();
+  const contains = (value: unknown, depth: number): boolean => {
+    if (typeof value === 'string') return value.includes(secret);
+    if (!value || typeof value !== 'object' || depth > 8) return false;
+    if (value instanceof Node || seen.has(value)) return false;
+    seen.add(value);
+    let entries: unknown[];
+    try {
+      entries = Object.values(value);
+    } catch {
+      return false;
+    }
+    return entries.some((entry) => contains(entry, depth + 1));
+  };
+  const stack: Fiber[] = [host.stateNode.current];
+  while (stack.length > 0) {
+    const fiber = stack.pop()!;
+    if (typeof fiber.type === 'function' || (fiber.type && typeof fiber.type === 'object')) {
+      let hook = fiber.memoizedState as { memoizedState: unknown; next: unknown } | null;
+      if (hook && typeof hook === 'object' && !('next' in hook) && contains(hook, 0)) return true;
+      while (hook && typeof hook === 'object' && 'next' in hook) {
+        if (contains(hook.memoizedState, 0)) return true;
+        hook = hook.next as typeof hook;
+      }
+    }
+    if (fiber.child) stack.push(fiber.child);
+    if (fiber.sibling) stack.push(fiber.sibling);
+  }
+  return false;
+}
+
+const WRONG_PASSWORD = 'Password-Salah-77';
+const confirmationRejected = () =>
+  apiError(400, 'VALIDATION_ERROR', 'Password atau kode salah.', {
+    details: [{ field: 'confirmation.password', message: 'Password salah.' }],
+  });
+
+async function startTokenRotation(patch: FakeHandler) {
+  const spies = secretSpies();
+  const view = await renderApp(
+    `/pengaturan/channel/lain/${TELEGRAM.id}`,
+    connectionRoutes([TELEGRAM], {
+      [`GET ${apiPath(R.channel, { channelId: TELEGRAM.id })}`]: () => json({ channel: TELEGRAM }),
+      [`PATCH ${apiPath(R.channel, { channelId: TELEGRAM.id })}`]: patch,
+    }),
+  );
+  fireEvent.click(await screen.findByRole('button', { name: c.edit }));
+  const dialog = await screen.findByRole('dialog', { name: c.editTitle });
+  fireEvent.change(within(dialog).getByLabelText(c.botToken), { target: { value: NEW_TOKEN } });
+  fireEvent.click(within(dialog).getByRole('button', { name: c.save }));
+  await screen.findByRole('dialog', { name: c.editConfirmTitle });
+  // Kontrol positif pemindai: selama menunggu konfirmasi, token baru MEMANG dipegang ref.
+  expect(hookStateContains(view.container, NEW_TOKEN)).toBe(true);
+  return { view, spies };
+}
+
+describe('Putaran 2 — W1: rahasia rotasi tidak tertinggal', () => {
+  it('sukses: token baru & password konfirmasi lenyap dari hook, cache, storage, console, DOM', async () => {
+    const patched: unknown[] = [];
+    const { view, spies } = await startTokenRotation((request) => {
+      patched.push(request.body);
+      return json({ channel: TELEGRAM });
+    });
+    await confirmIdentity(c.editConfirmTitle, c.save);
+    await waitFor(() => expect(patched).toHaveLength(1));
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: c.editConfirmTitle })).toBeNull(),
+    );
+    expect(screen.queryByRole('dialog', { name: c.editTitle })).toBeNull();
+    expect(hookStateContains(view.container, NEW_TOKEN)).toBe(false);
+    expect(hookStateContains(view.container, TEST_PASSWORD)).toBe(false);
+    expectSecretNowhere(view, NEW_TOKEN, spies);
+    expectSecretNowhere(view, TEST_PASSWORD, spies);
+  });
+
+  it('password salah lalu Batal: token dibuang dari ref dan isian kosong lagi', async () => {
+    const patched: unknown[] = [];
+    const { view, spies } = await startTokenRotation((request) => {
+      patched.push(request.body);
+      return confirmationRejected();
+    });
+    const identity = await confirmIdentity(c.editConfirmTitle, c.save, {
+      password: WRONG_PASSWORD,
+    });
+    await waitFor(() => expect(patched).toHaveLength(1));
+    // Ditolak karena konfirmasi: dialog tetap terbuka, token masih ditunggu (untuk dicoba lagi).
+    await within(identity).findByRole('button', { name: c.save });
+    await waitFor(() =>
+      expect(within(identity).getByRole('button', { name: c.save })).toBeEnabled(),
+    );
+    expect(hookStateContains(view.container, NEW_TOKEN)).toBe(true);
+    fireEvent.click(within(identity).getByRole('button', { name: t.identity.cancel }));
+    const edit = await screen.findByRole('dialog', { name: c.editTitle });
+    expect(within(edit).getByLabelText<HTMLInputElement>(c.botToken).value).toBe('');
+    expect(hookStateContains(view.container, NEW_TOKEN)).toBe(false);
+    expect(hookStateContains(view.container, WRONG_PASSWORD)).toBe(false);
+    expectSecretNowhere(view, NEW_TOKEN, spies);
+    expectSecretNowhere(view, WRONG_PASSWORD, spies);
+  });
+
+  it('server gagal (500) setelah konfirmasi: token & password dibuang, galat tampil', async () => {
+    const { view, spies } = await startTokenRotation(() =>
+      apiError(500, 'INTERNAL_ERROR', 'Terjadi kesalahan di server.'),
+    );
+    await confirmIdentity(c.editConfirmTitle, c.save);
+    const edit = await screen.findByRole('dialog', { name: c.editTitle });
+    expect(await within(edit).findByText('Terjadi kesalahan di server.')).toBeVisible();
+    expect(within(edit).getByLabelText<HTMLInputElement>(c.botToken).value).toBe('');
+    expect(hookStateContains(view.container, NEW_TOKEN)).toBe(false);
+    expect(hookStateContains(view.container, TEST_PASSWORD)).toBe(false);
+    expectSecretNowhere(view, NEW_TOKEN, spies);
+    expectSecretNowhere(view, TEST_PASSWORD, spies);
+  });
+});
+
+describe('Putaran 2 — W2: pesan otomatis', () => {
+  it('password konfirmasi tidak tertinggal di hook, cache Query/mutasi, storage, console, DOM', async () => {
+    const spies = secretSpies();
+    const { view, bodies } = await enableGreetingWithIdentity();
+    await confirmIdentity(w.autoConfirmTitle, w.autoConfirm);
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({ confirmation: { password: TEST_PASSWORD, code: TEST_CODE } });
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: w.autoConfirmTitle })).toBeNull(),
+    );
+    expect(hookStateContains(view.container, TEST_PASSWORD)).toBe(false);
+    expect(view.queryClient.getMutationCache().getAll()).toHaveLength(0);
+    expectSecretNowhere(view, TEST_PASSWORD, spies);
+  });
+});
+
+describe('Putaran 2 — hapus channel lain', () => {
+  it('DELETE: password & kode di body tingkat atas, ber-CSRF, tidak di URL, tidak tertinggal', async () => {
+    const spies = secretSpies();
+    const requests: FakeRequest[] = [];
+    const view = await renderApp(
+      `/pengaturan/channel/lain/${TELEGRAM.id}`,
+      connectionRoutes([TELEGRAM], {
+        [`GET ${apiPath(R.channel, { channelId: TELEGRAM.id })}`]: () =>
+          json({ channel: TELEGRAM }),
+        [`DELETE ${apiPath(R.channel, { channelId: TELEGRAM.id })}`]: (incoming) => {
+          requests.push(incoming);
+          return json({ status: 'deleted' });
+        },
+      }),
+    );
+    fireEvent.click(await screen.findByRole('button', { name: c.delete }));
+    await confirmIdentity(c.deleteTitle, c.deleteConfirm);
+    await waitFor(() => expect(view.router.state.location.pathname).toBe('/pengaturan/channel'));
+    expect(requests).toHaveLength(1);
+    const sent = requests[0]!;
+    expect(sent.body).toEqual({ password: TEST_PASSWORD, code: TEST_CODE });
+    const headers = Object.fromEntries(
+      Object.entries(sent.headers).map(([name, value]) => [name.toLowerCase(), value]),
+    );
+    expect(headers[CSRF_HEADER_NAME]).toBeTruthy();
+    expect(headers['content-type']).toBe('application/json');
+    expect(`${sent.path}?${sent.query.toString()}`).not.toContain(TEST_PASSWORD);
+    expect(JSON.stringify(view.router.state.location)).not.toContain(TEST_PASSWORD);
+    expect(hookStateContains(view.container, TEST_PASSWORD)).toBe(false);
+    expectSecretNowhere(view, TEST_PASSWORD, spies);
   });
 });

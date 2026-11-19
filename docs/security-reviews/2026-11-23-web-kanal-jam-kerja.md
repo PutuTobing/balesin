@@ -135,3 +135,72 @@ Berkas baru: `apps/web/src/features/security-review-web-kanal-jam-kerja.test.tsx
 | Dependensi | tidak berubah di commit ini |
 
 Tidak memakai stack E2E (3100/5180) maupun stack kritikus (3191/5191); semua uji di jsdom.
+
+---
+
+## Putaran 2 — verifikasi perbaikan `b785c4f`
+
+- Commit: `b785c4f` (`feat(web): revisi K1–K8 & F11, saklar Tersedia ber-teks, W1/W2 security, …`)
+- Lingkup: `ConnectionPage.tsx` (EditDialog, StatusCard), `WorkspaceSettingsPage.tsx`
+  (AutoMessagesSection, AgentRow), `lib/api/endpoints-channels.ts`, `Switch.tsx`,
+  `AvailabilityToggle.tsx`, `ContactPanel.tsx`, `EmailMessage.tsx`, tes penjaga.
+- Tidak ada perubahan kode produk oleh peninjau; hanya tes ditambah.
+
+### Putusan putaran 2: **AMAN**
+
+W1 dan W2 tertutup. Tidak ada temuan baru Kritis/Tinggi/Sedang/Rendah; dua catatan Info.
+
+### Status per temuan
+
+| Temuan | Status | Bukti |
+|---|---|---|
+| **W1** (Sedang) rotasi rahasia lewat "Ubah" gagal diam-diam | **AMAN — tertutup** | `ConnectionPage.tsx:524` `pendingBody = useRef` (bukan state, tidak dirender, tidak di-log); diisi SEKALI dari `form.build()` saat Simpan (`:558`, `:567` bila server minta konfirmasi); dikosongkan saat sukses (`:534` + `form.clearSecrets()` `:535`), Batal (`:603`), dan galat selain konfirmasi (`:618`). Hanya dipertahankan saat password/kode ditolak (`isConfirmationError` → dialog tetap terbuka untuk dicoba lagi) — wajar, lalu dibuang saat Batal. `SecretField` tetap tak terkendali (tidak ada `value` di state/atribut); setelah Batal/galat isian token muncul KOSONG. Dikirim lewat `endpoints.connections.update` langsung (tanpa `useMutation`); respons hanya `…Hint`. |
+| **W2** (Rendah) password + kode di cache mutasi | **AMAN — tertutup** | `WorkspaceSettingsPage.tsx:340-390` — `AutoMessagesSection` memanggil `endpoints.workspace.update` langsung (`:381`), hasil ke `setQueryData(workspaceKeys.settings)` (`:382`; respons tanpa `confirmation`); `failure` menyimpan `ApiError` (`client.ts:35-59` — tanpa body permintaan). `useSaveWorkspace` (`:96`) masih dipakai jam kerja & alokasi, keduanya tanpa konfirmasi identitas (`grep confirmation` hanya di `:368-372`, `:488-490`). |
+| Hapus channel lain (perubahan baru) | **AMAN** | `endpoints-channels.ts:53-59` — `DELETE` dengan body JSON `{ password, code }` di tingkat atas, cocok `deleteChannelRequestSchema = identityConfirmationSchema` (`packages/shared/src/channels.ts:157`, `identity.ts:17-20`), rute server `connections.routes.ts:152`. Bukan URL/query. `client.ts:75,148` memasang `X-CSRF-Token` untuk DELETE; `credentials: 'include'`, tidak ada cache HTTP/Query. Dipanggil dari `StatusCard.remove` (`ConnectionPage.tsx:651-661`) langsung, tanpa `useMutation`. Bentuk lama `{ confirmation }` ditolak server (400) — itu bug fungsional, bukan celah (tidak ada jalan hapus tanpa password). |
+| Tes `it.fails` → `it` | **Bukan tautologi, tapi belum menguji kebocoran** | Tes W1 lama hanya membuktikan PATCH memuat token baru (fungsional). Tes W2 lama memeriksa `mutation.state.variables` — bermakna (gagal sebelum perbaikan), tetapi tidak memeriksa tempat lain. Ditambah tes putaran 2 (di bawah). |
+| `Switch.tsx` | AMAN | tombol `type="button"` `role="switch"`, tanpa form/rahasia. |
+| `AgentRow` (Switch "Ikut pembagian" / "Tersedia") | AMAN | hanya `endpoints.workspace.updateAgent(userId, { excluded } / { available })`; penegakan peran di server (review backend jam kerja). |
+| `AvailabilityToggle.tsx` | AMAN | tetap hanya `{ available }` diri sendiri; `aria-label`/`title` dari teks i18n, tanpa data pengguna lain. |
+| `ContactPanel.tsx` | AMAN | nama profil kini berlabel "dari <channel>"; alamat pengirim channel Email (`:204-206`) dirender sebagai teks (`EmailText`, tanpa `href`/`mailto:`). |
+| `EmailMessage.tsx` | AMAN | iframe tetap `sandbox=""` + `referrerPolicy="no-referrer"` + `srcDoc` (`:110-118`); hanya ditambah label teks. Tes statis "iframe srcDoc selalu sandbox" & tes 9 vektor XSS tetap lulus. |
+| Dependensi | AMAN | `b785c4f` tidak mengubah `package.json`/lockfile; `pnpm audit --prod`: *No known vulnerabilities found*. |
+
+### Info (putaran 2)
+
+6. **Residu UX W1**: setelah Batal di dialog identitas atau galat server, isian token/password
+   kembali KOSONG tanpa keterangan. Bila Admin lalu menekan Simpan lagi tanpa mengetik ulang, hanya
+   isian non-rahasia yang terkirim dan UI menampilkan "Tersimpan". Berbeda dengan W1 asli (gagal
+   tanpa aksi pengguna), di sini pengguna sudah melihat batal/galat dan isian terlihat kosong — bukan
+   celah. Saran (`frontend`): pesan singkat "Isi ulang token/password baru" di atas form setelah
+   batal/galat bila sebelumnya ada rahasia yang diganti.
+7. **Alamat pengirim email di kolom "Email" kontak** (`ContactPanel.tsx:204-206`) berasal dari
+   header `From` yang bisa dipalsukan; label verifikasi pengirim (`fail` = peringatan keras) ada di
+   gelembung pesan, bukan di panel. Pertimbangkan keterangan "dari channel Email" seperti nama
+   profil.
+
+### Tes penjaga baru (putaran 2)
+
+`apps/web/src/features/security-review-web-kanal-jam-kerja.test.tsx` (+5 `it`, total 18, 0
+`it.fails`). Pemindai baru `hookStateContains` menyusuri pohon fiber React AKTIF (`stateNode.current`)
+dan memeriksa nilai SETIAP hook (`useState`/`useRef`/…), jadi `useRef` yang tidak dikosongkan pasti
+tertangkap; kontrol positif: saat dialog identitas terbuka (dan setelah password ditolak) pemindai
+MENEMUKAN token di `pendingBody` — membuktikan pemeriksaan "tidak ada" setelahnya tidak tautologis.
+- W1 sukses: token baru & password konfirmasi tidak ada di hook, cache Query/mutasi, storage,
+  console, HTML, nilai isian;
+- W1 password salah → Batal: token dipertahankan selama dialog terbuka, lalu dibuang dari ref;
+  isian token kosong; password salah juga tidak tertinggal;
+- W1 server 500 setelah konfirmasi: galat tampil, token & password dibuang dari ref dan isian;
+- W2: body membawa `confirmation`, lalu password tidak ada di hook/cache/storage/console/DOM dan
+  `MutationCache` kosong;
+- Hapus channel lain: `DELETE` body `{ password, code }`, header `x-csrf-token` + JSON, password tidak
+  di path/query maupun `router.state.location`, tidak tertinggal di hook/cache/storage/DOM.
+
+### Hasil perintah (putaran 2)
+
+| Perintah | Hasil |
+|---|---|
+| `vitest run src/features/security-review-web-kanal-jam-kerja.test.tsx` | 18 lulus |
+| `vitest run src/features/channels src/features/workspace` | 8 berkas, 80 lulus |
+| `eslint` + `prettier --check` berkas tes | bersih |
+| `tsc --noEmit -p apps/web` (berkas tes) | tanpa galat |
+| `pnpm audit --prod` | tidak ada kerentanan |
