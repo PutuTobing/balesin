@@ -287,3 +287,111 @@ T/G = terang dan gelap bernilai sama kecuali disebut.
   - bagian "Putaran 2" laporan broadcast (+10 `p2-*.png`);
   - bagian "Putaran 3" laporan template (+5 `p3-*.png`).
 - Tidak ada kode produk yang diubah, tidak ada commit.
+
+---
+
+# Putaran 2
+
+- **Tanggal:** 2026-11-19 · **Penilai:** `kritikus-desain` · **Putaran:** 2
+- **Kode yang dinilai:** HEAD `15d977b` (revisi UI Fase 5 ada di `9aeb2f1`).
+- **Cara:**
+  - Worktree terisolasi dari HEAD: API 3191 / web 5191, `balesin_kd_e2e` migrasi sampai `0030`, Redis db 11, 2 worker.
+  - 22 layar `e2e/capture/screens-crm.ts` × 390/1440 × terang/gelap.
+  - Foto tinggi tambahan (390 × 2600 dan 1440 × 2000) supaya tabel laporan, detail tiket, dan Atur board terlihat utuh.
+  - Kanban keyboard di 1440: fokus pegangan, Spasi, lalu →.
+  - Audit terukur di 360/390/1440, terang/gelap: kontras teks, target sentuh sampai 4 tinggi layar ke bawah, teks
+    terpotong, scroll horizontal.
+- **Screenshot:** berkas berawalan `p2-` di `docs/design-reviews/2026-11-22-fase5-crm-tiket-laporan/`.
+
+## Putusan putaran 2: REVISI (satu butir kecil)
+
+Semua revisi wajib F1–F10 lolos dan sebagian besar saran ikut dikerjakan. Audit: tidak ada teks < 4,5:1 dan tidak ada
+scroll horizontal di 360, 390, maupun 1440. Yang tersisa satu regresi kecil di 360 px (F11).
+
+| Butir | Hasil (terukur) | Status |
+|---|---|---|
+| **F1** bahasa laporan biaya | Tabel kategori "Pemasaran", "Utilitas", "Autentikasi". "Sumber tarif" menjadi label sendiri dan kalimatnya hanya punya satu ":". "Dihitung hari ini, 11.14" | Lolos |
+| **F2** tabel laporan di HP | Di 390 setiap baris menjadi blok bertumpuk: nama kategori/agen sebagai judul, label kiri, nilai kanan. Biaya setiap kategori, Respons pertama, dan CSAT per agen terlihat tanpa gulir menyamping (`p2-laporan-*-tabel--390-terang.png`) | Lolos |
+| **F3** Kanban HP | Seluruh kartu bisa diketuk (tautan direntang). Item menu "Pindah ke…" setinggi 44 px. Pegangan seret tersembunyi di layar sentuh. Kolom sekarang ditandai "● Baru · sekarang", dan "Selesai" diberi catatan "kolom selesai" (`p2-tiket-kanban-pindah--390-terang.png`) | Lolos |
+| **F4** kartu pertama di paruh atas | Tepi atas kartu pertama ±306 px dari 844 (sebelumnya ±495). Tombol "⋮" board dan "Saring" menggantikan dua baris kontrol | Lolos |
+| **F5** "Tambah kolom" di 1440 | Teks utuh. Kolom 17rem; 4 kolom + tombol muat di 1440 | Lolos |
+| **F6** judul tiket di detail kontak | "Internet putus sejak pagi, lampu LOS merah" turun 2 baris tanpa elipsis. Nomor dan prioritas pindah ke baris meta | Lolos |
+| **F7** gabung kontak | Opsi pertama "+62 812-3000-7919", opsi kedua "budi.santoso@gmail.com". Kalimat bawah sudah diganti sesuai usulan | Lolos |
+| **F8** target sentuh | Tautan Kontak/Percakapan di detail tiket, chip anggota departemen, dan "Ubah tarif di Pengaturan → Batas kirim" ≥ 44 px di 390/360 | Lolos (lihat F11) |
+| **F9** istilah pembatasan | Lencana "Terbatas ke departemen". Pengantar "anggota yang dibatasi ke departemennya". Subjudul "Batas akses" | Lolos |
+| **F10** daftar tiket sejajar | Di semua baris, prioritas mulai di x≈1690, tenggat di x≈1908, dan avatar di x≈2325 (koordinat foto). Sel kosong tetap memegang tempat | Lolos |
+| S1 petunjuk keyboard | Strip "← → pindah kolom · ↑ ↓ ubah urutan · Spasi letakkan · Esc batal" tampil selama kartu diangkat. Pegangan tidak lagi menempel ke "#241" | Lolos |
+| S2 ikon "Pindah ke…" | `ArrowRightLeft` | Lolos |
+| S3 penanggung jawab kosong | Ikon `UserPlus` dalam lingkaran putus-putus | Lolos |
+| S4 detail tiket | Di HP, Rincian sudah di atas komentar. Tiga hal belum dikerjakan: tenggat masih tampil dua kali ("19/11/2026 14:07" dan "19 Nov, 14.07"), "Hapus tenggat" masih menjorok, "Hapus tiket" masih sejajar dengan "Ubah" | Sebagian |
+| S5 laporan | "1 jam 30 mnt" dan petak "Bot" tersendiri sudah ada. "Unduh CSV" di HP masih menjorok sendirian di bawah judul kartu | Sebagian |
+| S6 detail kontak | "Nama dari profil WhatsApp" dan "kota (atribut bebas)" sudah ada. Dua hal tersisa: judul "Data pribadi" masih 13 px, dan "Lihat kontak lainnya" tanpa ikon di samping "Gabung kontak" yang berikon | Sebagian |
+| S7 Atur board | Kotak centang berlabel "Selesai", ikon hapus `--ink-2` | Lolos |
+| S9 departemen | "Chat baru dari pelanggan…" | Lolos |
+| S11 data contoh | 7 batang untuk "7 hari terakhir"; "121 jawaban dari 186 survei" sama dengan jumlah sebaran; Utilitas Gratis 54 = 1.420 − 1.366 | Lolos |
+
+### Wajib
+
+**F11. Tombol baris kolom di Atur board menyusut di 360 px** — `BoardSettingsPage.tsx`, `Tickets.module.css`
+(`.columnRowActions`, ±baris 986 dan `@media` ±baris 1256)
+
+- Terukur di `tiket-atur-board` 360 (terang & gelap): Naikkan, Turunkan, Ganti nama, dan Hapus kolom berukuran
+  **36 × 44 px** di setiap baris. Di 390 masih 44 × 44.
+- Penyebab: kotak centang "Selesai" yang baru diberi label (saran F-S7) membuat baris lebih lebar, lalu tombol ikon ikut
+  menyusut (`flex-shrink`).
+- Perbaikan:
+  - `.columnRowActions > button { flex: none; width: var(--size-touch); }`.
+  - Biarkan kotak "Selesai" yang menyusut (`min-width: 0`), atau di ≤ 400 px pindahkan kotak itu ke baris sendiri di
+    bawah nama kolom.
+- Kriteria lolos: audit 360/390 `tiket-atur-board` tidak menemukan target < 44 px.
+
+### Saran (tidak menahan)
+
+- **F-S12. Tombol ghost menjorok dari garis teks (pola berulang).**
+  - Contoh: "Unduh CSV" dan "Lihat sebagai tabel" di laporan HP, "Hapus tenggat", "Buat tiket", dan juga di layar kanal
+    ("Lihat versi HTML", "Salin").
+  - Ikon tombol mulai 24–32 px di kanan tepi teks di atasnya karena padding tombol.
+  - Di kelompok kartu, pakai satu varian "ghost rata kiri", misalnya
+    `margin-inline-start: calc(-1 * var(--space-12))` pada `Button variant="ghost"` di dalam `.cardBody`, atau taruh
+    tombol di kanan judul kartu (seperti di 1440).
+- **F-S13. Kanban HP.**
+  - Dua tombol "⋮" bersebelahan berbeda gaya: menu board berbingkai 44 × 44, menu kolom tanpa bingkai. Samakan
+    (berbingkai).
+  - Segmen Kanban/Daftar setinggi ±54 px, tombol "Saring" di sampingnya 44 px. Samakan tinggi ke `--size-touch`.
+  - "#241" (12 px) duduk ±3 px lebih tinggi dari "● Mendesak". Gunakan `align-items: baseline` di kepala kartu.
+- **F-S14.** Daftar tiket 390: judul tetap satu baris berelipsis ("Internet putus sejak pagi, lampu LO…"). Pakai
+  `-webkit-line-clamp: 2` seperti F6.
+- **F-S15.** Sisa S4, S5, dan S6 di atas.
+- **F-S16.** `laporan-biaya`: "rate card" masih bahasa Inggris. Usulan:
+  **"Periksa daftar tarif resmi Meta (rate card) lalu sesuaikan."**
+
+### Tabel nilai putaran 2
+
+T/G = terang dan gelap bernilai sama.
+
+| Layar | Ukuran · tema | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `kontak-daftar`, `-kosong`, `-memuat` | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 4 | 5 |
+| `kontak-detail` | 390 · 1440 T/G | 5 | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 4 | 5 |
+| `kontak-gabung` | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| `kontak-impor` | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 4 | 4 | 5 |
+| `atribut-kontak`, `-tambah` | 390 · 1440 T/G | 5 | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 4 | 5 |
+| `tiket-kanban` | 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 4 | 5 |
+| | 390 T/G | 5 | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 4 | 5 |
+| `tiket-kanban-pindah` | 390 · 1440 T/G | 5 | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 5 | 5 |
+| Kanban keyboard | 1440 T | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| `tiket-daftar` | 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| | 390 T/G | 5 | 5 | 4 | 4 | 5 | 5 | 5 | 5 | 4 | 5 |
+| `tiket-kosong`, `tiket-baru` | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| `tiket-detail` | 390 · 1440 T/G | 4 | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 4 | 5 |
+| `tiket-atur-board` | 390 · 1440 T/G | 5 | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 4 | 5 |
+| | 360 T/G | 5 | 5 | 5 | 4 | **3** | 5 | 5 | 5 | 4 | 5 |
+| `departemen`, `departemen-ubah` | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 4 | 5 |
+| `laporan-kinerja` | 390 · 1440 T/G | 5 | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 4 | 5 |
+| `laporan-biaya` | 390 · 1440 T/G | 5 | 5 | 5 | 4 | 5 | 5 | 5 | 4 | 4 | 5 |
+| `laporan-saya`, `laporan-berat` | 390 · 1440 T/G | 5 | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 4 | 5 |
+| `csat-pengaturan` | 390 · 1440 T/G | 5 | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 5 | 5 |
+
+**§3 dan §4:**
+- §3 bersih: kategori sudah berbahasa Indonesia, ikon Lucide, warna dari token, satu tombol berwarna per kartu/dialog.
+- §4 lolos.

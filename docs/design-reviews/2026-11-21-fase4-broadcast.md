@@ -179,3 +179,36 @@ Tidak ada teks < 4,5:1, tidak ada scroll horizontal.
 - **BC-S11.** Petak corong dan petak status memakai gaya yang sama. Pemisah tipis atau ikon panah kecil antar-petak
   corong akan membuat sifat "bertingkat" terlihat tanpa harus membaca keterangan. Keterangan juga belum menyebut Dibalas
   ("… Dibaca mencakup yang sudah dibalas").
+
+---
+
+# Putaran 3
+
+- **Tanggal:** 2026-11-19 · **Penilai:** `kritikus-desain` · **Putaran:** 3
+- **Kode yang dinilai:** HEAD `15d977b` (BC5 ada di `9aeb2f1`).
+- **Cara:**
+  - Stack dan worktree sama dengan putaran 2 Fase 5 (API 3191 / web 5191, `balesin_kd_e2e`, Redis db 11, 2 worker).
+  - Layar `broadcast-berjalan`, `-dijeda`, `-persetujuan` × 390/1440 × terang/gelap.
+  - Foto tinggi 390 × 2600 supaya daftar penerima terlihat.
+  - Ukuran tautan "Buka chat" diukur langsung di DOM.
+  - Audit target sentuh di 360/390.
+- **Lingkup:** hanya BC5 dan BC-S8.
+- **Screenshot:** berkas berawalan `p3-`.
+
+## Putusan putaran 3: LOLOS
+
+| Butir | Hasil (terukur) | Status |
+|---|---|---|
+| **BC5** "Buka chat" ≥ 44 px di HP | `broadcast-berjalan` dan `broadcast-dijeda` 390 terang/gelap: ketiga tautan **62 × 44 px** (sebelumnya 62 × 19). Di 1440 tetap 62 × 19 (penunjuk mouse, sesuai rancangan). Audit 360/390: tidak ada target < 44 px di `broadcast-*` selain `select` 42 px dalam bingkai 44 yang sudah diterima | Lolos |
+| **BC-S8** penerima kampanye yang belum mulai | `broadcast-persetujuan`: kelima penerima berstatus "Belum dikirim", tanpa tautan "Buka chat" dan tanpa waktu dibaca/dibalas (`p3-broadcast-persetujuan--390-terang.png`). Saringan "Tampilkan" masih tampil; itu opsional | Lolos |
+
+Tidak ada teks < 4,5:1, tidak ada scroll horizontal.
+
+### Saran tersisa (tidak menahan)
+
+- **BC-S9** belum dikerjakan: "Menunggu persetujuan" masih tampil dua kali berturut-turut (lencana kepala kartu dan judul
+  kotak peringatan). Judul kotak: **"Perlu persetujuan Owner atau Admin"**.
+- **BC-S12.** Nomor penerima di daftar tampil mentah ("+6281234567890"), sedangkan inbox dan kontak memformatnya
+  ("+62 812-3456-7890"). Pakai formatter nomor yang sama.
+- **BC-S13.** Judul "Penerima" turun ±12 px dari garis tengah saringan "Tampilkan" di sebelahnya. Pakai
+  `align-items: end` atau letakkan label saringan di kanan judul, satu baris.

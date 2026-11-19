@@ -51,11 +51,11 @@ Orkestrator mengerjakan dari atas ke bawah. Tandai `[x]` saat Definition of Done
 
 ## Fase 4 — Template & Broadcast
 - [x] Sinkron & ajukan template Meta
-- [ ] Broadcast: sumber CSV/Excel/segmen/konektor REST, pemetaan variabel, pratinjau
-- [ ] Estimasi biaya, persetujuan > ambang, jadwal, throttle, jeda/batal
-- [ ] Anti-dobel, rem darurat, alarm Telegram
-- [ ] Laporan kampanye
-- [ ] Tag percakapan otomatis untuk penerima broadcast
+- [x] Broadcast: sumber CSV/Excel/segmen/konektor REST, pemetaan variabel, pratinjau
+- [x] Estimasi biaya, persetujuan > ambang, jadwal, throttle, jeda/batal
+- [x] Anti-dobel, rem darurat, alarm Telegram
+- [x] Laporan kampanye
+- [x] Tag percakapan otomatis untuk penerima broadcast
 - [x] Preset template industri (ISP dahulu) sebagai draf siap ajukan
 
 ## Fase 5 — CRM, tiket, laporan
