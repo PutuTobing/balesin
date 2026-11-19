@@ -27,6 +27,19 @@ function block(selector: string, vars: CssVariables, scheme?: ThemeName, indent 
 }
 
 /**
+ * Token khusus web yang belum ada di `packages/shared/src/design-tokens.ts` (tercatat di
+ * docs/DESIGN.md §1). `--logo-plate`: pelat di balik `<img>` logo ORGANISASI (raster, warnanya
+ * tidak bisa diubah) supaya logo gelap tetap terbaca di mode gelap; di tema terang transparan.
+ */
+export function webThemeVariables(theme: ThemeName): CssVariables {
+  return { '--logo-plate': theme === 'light' ? 'transparent' : color.light.bg };
+}
+
+function themeBlockVariables(theme: ThemeName): CssVariables {
+  return { ...themeVariables(theme), ...webThemeVariables(theme) };
+}
+
+/**
  * Stylesheet token. Tema default mengikuti `prefers-color-scheme` murni lewat CSS;
  * atribut `data-theme` (di <html> atau elemen mana pun) memaksa terang/gelap.
  */
@@ -34,11 +47,11 @@ export function renderTokensCss(): string {
   return [
     '/* Dihasilkan otomatis dari packages/shared/src/design-tokens.ts. Jangan disunting. */',
     block(':root', staticVariables()),
-    block(":root,\n[data-theme='light']", themeVariables('light'), 'light'),
-    block("[data-theme='dark']", themeVariables('dark'), 'dark'),
+    block(":root,\n[data-theme='light']", themeBlockVariables('light'), 'light'),
+    block("[data-theme='dark']", themeBlockVariables('dark'), 'dark'),
     [
       '@media (prefers-color-scheme: dark) {',
-      block(":root:not([data-theme='light'])", themeVariables('dark'), 'dark', '  '),
+      block(":root:not([data-theme='light'])", themeBlockVariables('dark'), 'dark', '  '),
       '}',
     ].join('\n'),
     '',

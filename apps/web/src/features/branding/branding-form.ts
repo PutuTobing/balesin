@@ -86,3 +86,10 @@ export function previewColors(value: string): {
     lowContrast: HEX.test(hex) && text === null,
   };
 }
+
+/** Alamat pratinjau logo: berkas baru yang dipilih, logo tersimpan, atau `null` (tanda bawaan). */
+export function logoPreviewUrl(settings: BrandingSettings, draft: BrandingDraft): string | null {
+  if (draft.logo.kind === 'new') return draft.logo.draft.dataUrl;
+  if (draft.logo.kind === 'keep' && settings.logo) return settings.logo.url;
+  return null;
+}

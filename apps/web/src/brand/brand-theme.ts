@@ -22,15 +22,20 @@ export function mixHex(a: string, b: string, amount: number): string {
 }
 
 /** Porsi warna utama di isian lembut (item navigasi aktif, pilihan terpilih). */
-const SOFT_AMOUNT: Record<ThemeName, number> = { light: 0.12, dark: 0.22 };
+// Terang 10%: tautan `--primary` di atas gelembung keluar (= isian lembut) tetap ≥ 4,5:1 untuk
+// warna sekelas biru bawaan.
+const SOFT_AMOUNT: Record<ThemeName, number> = { light: 0.1, dark: 0.22 };
 
 /**
  * Token aksen dari warna utama organisasi untuk satu tema: `--primary`, `--on-primary` (teks yang
- * terbaca di atasnya, `brandColorTextColor`), dan `--primary-soft`. Hanya dipakai bila SEMUA
- * pasangan kontras yang dijamin design system (`contrastPairs`: primary sebagai teks/link di atas
- * bg/surface/gelembung, sebagai grafis di atas surface2/primary-soft, tinta di atas primary-soft)
- * tetap lolos di tema itu; selain itu `null` = token bawaan tema. Jadi warna gelap (mis. biru dongker)
- * dipakai di tema terang tetapi mode gelap tetap memakai biru bawaannya yang terbaca.
+ * terbaca di atasnya, `brandColorTextColor`), `--primary-soft`, dan `--bubble-out` (gelembung pesan
+ * dari tim = isian lembut yang sama, seperti di design system bawaan). Hanya dipakai bila SEMUA
+ * pasangan kontras yang dijamin design system tetap lolos di tema itu:
+ *  - primary sebagai teks/link di atas bg, surface, gelembung masuk, dan isian lembut (≥ 4,5:1);
+ *  - primary sebagai grafis di atas surface2 (≥ 3:1);
+ *  - tinta & tinta sekunder di atas isian lembut / gelembung keluar (≥ 4,5:1).
+ * Selain itu `null` = token bawaan tema. Jadi warna gelap (mis. biru dongker) dipakai di tema terang
+ * tetapi mode gelap tetap memakai biru bawaannya yang terbaca.
  */
 export function brandThemeVariables(
   primaryColor: string | null,
@@ -42,14 +47,38 @@ export function brandThemeVariables(
   if (!onPrimary) return null;
   const palette = color[theme];
   const soft = mixHex(primary, palette.surface.toLowerCase(), SOFT_AMOUNT[theme]);
-  const text = [palette.bg, palette.surface, palette.bubbleOut, palette.bubbleIn];
-  const graphic = [palette.surface2, soft];
+  const text = [palette.bg, palette.surface, palette.bubbleIn, soft];
   const ok =
     text.every((background) => contrastRatio(primary, background) >= MIN_TEXT_CONTRAST) &&
-    graphic.every((background) => contrastRatio(primary, background) >= MIN_GRAPHIC_CONTRAST) &&
-    contrastRatio(palette.ink, soft) >= MIN_TEXT_CONTRAST;
+    contrastRatio(primary, palette.surface2) >= MIN_GRAPHIC_CONTRAST &&
+    contrastRatio(palette.ink, soft) >= MIN_TEXT_CONTRAST &&
+    contrastRatio(palette.ink2, soft) >= MIN_TEXT_CONTRAST;
   if (!ok) return null;
-  return { '--primary': primary, '--on-primary': onPrimary, '--primary-soft': soft };
+  return {
+    '--primary': primary,
+    '--on-primary': onPrimary,
+    '--primary-soft': soft,
+    '--bubble-out': soft,
+  };
 }
 
-export const BRAND_THEME_PROPERTIES = ['--primary', '--on-primary', '--primary-soft'] as const;
+/**
+ * Versi lebih gelap dari `hex` yang lolos di tema terang (usulan saat warna tidak terpakai), atau
+ * `null` bila tidak ada. Digelapkan 2% per langkah ke arah hitam.
+ */
+export function darkerUsableColor(hex: string): string | null {
+  const value = hex.trim().toLowerCase();
+  if (!HEX.test(value)) return null;
+  for (let amount = 0.98; amount > 0.2; amount -= 0.02) {
+    const candidate = mixHex(value, '#000000', amount);
+    if (brandThemeVariables(candidate, 'light')) return candidate;
+  }
+  return null;
+}
+
+export const BRAND_THEME_PROPERTIES = [
+  '--primary',
+  '--on-primary',
+  '--primary-soft',
+  '--bubble-out',
+] as const;

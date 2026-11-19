@@ -29,11 +29,32 @@ describe('BrandMark (white-label)', () => {
     expect(container.querySelector('svg')).toHaveAttribute('viewBox', symbol.tightViewBox);
   });
 
-  it('memakai logo organisasi bila diatur', () => {
-    const { container } = withBrand({ logoUrl: '/media/logo-organisasi.png' }, <BrandMark />);
+  it('memakai ikon persegi dari logo organisasi bila ada', () => {
+    const icon = '/api/v1/branding/icons/icon-192.png?v=1';
+    const { container } = withBrand(
+      {
+        logoUrl: '/media/logo-organisasi.png',
+        icons: {
+          favicon: '/f.png',
+          appleTouchIcon: '/a.png',
+          manifest: [{ src: icon, sizes: '192x192', type: 'image/png', purpose: 'any' }],
+        },
+      },
+      <BrandMark />,
+    );
 
-    expect(container.querySelector('img')).toHaveAttribute('src', '/media/logo-organisasi.png');
+    expect(container.querySelector('img')).toHaveAttribute('src', icon);
     expect(container.querySelector('svg')).toBeNull();
+  });
+
+  it('logo tanpa ikon persegi (data lama): monogram huruf pertama nama aplikasi', () => {
+    const { container } = withBrand(
+      { logoUrl: '/media/logo-organisasi.png', productName: 'halo CS' },
+      <BrandMark />,
+    );
+
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.textContent).toBe('H');
   });
 });
 

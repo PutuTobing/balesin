@@ -6,7 +6,7 @@ import {
 } from '@balesin/shared';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { brandThemeVariables, mixHex } from '../../brand/brand-theme';
+import { brandThemeVariables, darkerUsableColor, mixHex } from '../../brand/brand-theme';
 import { t } from '../../i18n/id';
 import { apiError, defaultBranding, fakeSession, json } from '../../test/fake-api';
 import { renderApp } from '../../test/render-app';
@@ -38,10 +38,12 @@ afterEach(() => {
 describe('warna merek → token tema', () => {
   it('biru dongker: dipakai di tema terang, mode gelap tetap bawaan (kurang terbaca)', () => {
     const light = brandThemeVariables('#1B3557', 'light');
+    const soft = mixHex('#1b3557', '#ffffff', 0.1);
     expect(light).toEqual({
       '--primary': '#1b3557',
       '--on-primary': '#ffffff',
-      '--primary-soft': mixHex('#1b3557', '#ffffff', 0.12),
+      '--primary-soft': soft,
+      '--bubble-out': soft,
     });
     expect(brandThemeVariables('#1b3557', 'dark')).toBeNull();
   });
@@ -196,6 +198,28 @@ describe('Pengaturan → Merek', () => {
     fireEvent.click(screen.getByRole('button', { name: b.save }));
     await act(() => Promise.resolve());
     expect(patched).toBe(0);
+  });
+});
+
+describe('catatan warna per tema', () => {
+  it.each([
+    ['#1b3557', b.colorDarkNote],
+    ['#f2b544', b.colorLightNote],
+    ['#1f9d6b', b.colorUnusedNote(darkerUsableColor('#1f9d6b'))],
+  ])('%s → catatan yang sesuai', async (hex, note) => {
+    await renderApp('/pengaturan/merek', { routes: { [`GET ${R}`]: () => json(respond()) } });
+    fireEvent.change(await screen.findByLabelText(b.colorCode), { target: { value: hex } });
+    expect(screen.getByText(note)).toBeVisible();
+  });
+
+  it('warna tidak terpakai: tombol usulan mengisi versi lebih gelap yang terpakai', async () => {
+    await renderApp('/pengaturan/merek', { routes: { [`GET ${R}`]: () => json(respond()) } });
+    const field = await screen.findByLabelText(b.colorCode);
+    fireEvent.change(field, { target: { value: '#1f9d6b' } });
+    const suggestion = darkerUsableColor('#1f9d6b') ?? '';
+    fireEvent.click(screen.getByRole('button', { name: b.colorUseSuggestion(suggestion) }));
+    expect(field).toHaveValue(suggestion);
+    expect(screen.queryByText(b.colorUnusedNote(suggestion))).toBeNull();
   });
 });
 

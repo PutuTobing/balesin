@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { asGuest, json } from './mocks';
+import { PHOTO_CHAT, inboxMocks } from './mocks-inbox';
 import { quietSecurity } from './mocks-tim';
 import type { Screen } from './screens';
 
@@ -13,10 +14,10 @@ const NAME = 'Layanan Maju Jaya';
 const COLOR = '#1b3557';
 
 /** Logo contoh organisasi (hanya untuk foto; server sungguhan menerima PNG/JPG/WebP). */
-const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 56">
-<rect x="4" y="8" width="40" height="40" rx="12" fill="${COLOR}"/>
-<path d="M14 36 L24 18 L34 36 Z" fill="#ffffff"/>
-<text x="54" y="37" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="${COLOR}">Maju Jaya</text>
+const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 196 48">
+<rect x="0" y="2" width="44" height="44" rx="12" fill="${COLOR}"/>
+<path d="M11 36 L22 14 L33 36 Z" fill="#ffffff"/>
+<text x="54" y="35" font-family="Arial, sans-serif" font-size="29" font-weight="700" fill="${COLOR}">Maju Jaya</text>
 </svg>`;
 
 /** Ikon persegi yang dibuat server dari logo (rail, favicon, PWA). */
@@ -61,7 +62,11 @@ const DEFAULT_SETTINGS = {
   defaults: DEFAULTS,
 };
 
-async function brandingMocks(page: Page, custom: boolean): Promise<void> {
+async function brandingMocks(
+  page: Page,
+  custom: boolean,
+  primaryColor: string = COLOR,
+): Promise<void> {
   await quietSecurity(page);
   await page.route(`${API}/branding/logo**`, (route) =>
     route.fulfill({ status: 200, contentType: 'image/svg+xml', body: LOGO_SVG }),
@@ -73,7 +78,7 @@ async function brandingMocks(page: Page, custom: boolean): Promise<void> {
     json(route, {
       productName: custom ? NAME : 'Balesin',
       organizationName: 'PT Maju Jaya',
-      primaryColor: custom ? COLOR : null,
+      primaryColor: custom ? primaryColor : null,
       logoUrl: custom ? LOGO_URL : null,
       mascotName: custom ? 'Mbak Ayu' : 'Kak Sky',
       icons: custom ? ICONS : null,
@@ -115,6 +120,43 @@ export const brandingScreens: Screen[] = [
       await page.getByLabel('Kode warna').blur();
       await settle(page);
     },
+  },
+  {
+    // Warna sah tetapi terlalu pucat untuk tautan di mode terang → mode terang tetap bawaan.
+    name: 'merek-warna-terang',
+    path: '/pengaturan/merek',
+    before: (page) => brandingMocks(page, false),
+    waitFor: 'text=Warna utama',
+    prepare: async (page) => {
+      await page.getByLabel('Kode warna').fill('#f2b544');
+      await page.getByText('Mode terang · Warna bawaan').first().waitFor();
+      await settle(page);
+    },
+    tall: true,
+  },
+  {
+    // Tidak terbaca di kedua tema → catatan peringatan + usulan versi lebih gelap.
+    name: 'merek-warna-tidak-dipakai',
+    path: '/pengaturan/merek',
+    before: (page) => brandingMocks(page, false),
+    waitFor: 'text=Warna utama',
+    prepare: async (page) => {
+      await page.getByLabel('Kode warna').fill('#1f9d6b');
+      await page.getByText(/Coba versi yang lebih gelap/).waitFor();
+      await settle(page);
+    },
+    tall: true,
+  },
+  {
+    // Inbox dengan warna merek magenta: tombol, penanda aktif, gelembung keluar ikut merek.
+    name: 'inbox-merek',
+    path: `/inbox?chat=${PHOTO_CHAT.id}`,
+    before: async (page) => {
+      await brandingMocks(page, true, '#c2185b');
+      await inboxMocks(page);
+    },
+    waitFor: 'text=Budi Santoso >> visible=true',
+    prepare: settle,
   },
   {
     name: 'masuk-merek',

@@ -19,7 +19,8 @@ import { Page } from '../../components/ui/Page';
 import { Skeleton, SkeletonRegion } from '../../components/ui/Skeleton';
 import { BrandLogo } from '../../brand/BrandLogo';
 import { BrandContext, defaultBrand } from '../../brand/brand';
-import { brandThemeVariables } from '../../brand/brand-theme';
+import { brandThemeVariables, darkerUsableColor } from '../../brand/brand-theme';
+import { color, type ThemeName } from '@balesin/shared/design-tokens';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
@@ -32,6 +33,7 @@ import { brandingSettingsKey, brandingSettingsQuery } from './branding-queries';
 import {
   buildBrandingUpdate,
   draftFrom,
+  logoPreviewUrl,
   normalizeColor,
   previewColors,
   type BrandingDraft,
@@ -53,10 +55,22 @@ export function BrandingSettingsPage() {
     <Page>
       <div className={styles.page}>
         {settings.isPending ? (
-          <SkeletonRegion className={styles.card}>
-            <Skeleton className={styles.skeletonTitle} />
+          // Susunan sama dengan isi akhir (teks pembuka + 3 kartu), tanpa lompatan saat data datang.
+          <SkeletonRegion className={styles.form}>
             <Skeleton className={styles.skeletonLine} />
-            <Skeleton className={styles.skeletonLine} />
+            {(['nama', 'logo', 'warna'] as const).map((card) => (
+              <div key={card} className={styles.card}>
+                <Skeleton className={styles.skeletonTitle} />
+                {card === 'logo' ? (
+                  <Skeleton className={styles.skeletonTile} />
+                ) : (
+                  <>
+                    <Skeleton className={styles.skeletonField} />
+                    <Skeleton className={styles.skeletonField} />
+                  </>
+                )}
+              </div>
+            ))}
           </SkeletonRegion>
         ) : settings.isError ? (
           <EmptyState
@@ -184,6 +198,7 @@ function BrandingForm({ settings }: { settings: BrandingSettings }) {
       <ColorSection
         value={draft.primaryColor}
         productName={draft.productName.trim() || productFallback}
+        logoUrl={logoPreviewUrl(settings, draft)}
         error={errors.primaryColor}
         disabled={pending}
         onChange={(primaryColor) => update({ primaryColor })}
@@ -231,12 +246,7 @@ function LogoSection({
   const errorId = useId();
   const choice = draft.logo;
   const productName = draft.productName.trim() || settings.defaults.productName;
-  const previewUrl =
-    choice.kind === 'new'
-      ? choice.draft.dataUrl
-      : choice.kind === 'keep' && settings.logo
-        ? settings.logo.url
-        : null;
+  const previewUrl = logoPreviewUrl(settings, draft);
 
   const pick = async (file: File | undefined) => {
     if (!file) return;
@@ -271,15 +281,14 @@ function LogoSection({
         {b.logoTitle}
       </h2>
       <div className={styles.logoBox}>
-        <div className={styles.logoPreview}>
-          {previewUrl ? (
-            <img src={previewUrl} alt={setupCopy.logoPreviewAlt} />
-          ) : (
-            // Tanpa logo: tanda bawaan dengan nama aplikasi, persis seperti di halaman masuk.
-            <BrandContext value={{ ...defaultBrand, productName }}>
-              <BrandLogo className={styles.logoMark} />
-            </BrandContext>
-          )}
+        {/* Hasil sebenarnya di kedua tema (logo gelap di mode gelap memakai pelat terang). */}
+        <div className={styles.tiles}>
+          {THEMES.map((theme) => (
+            <div key={theme} data-theme={theme} className={styles.logoTile}>
+              <span className={styles.tileLabel}>{b.themeLabel[theme]}</span>
+              <LogoImage src={previewUrl} productName={productName} />
+            </div>
+          ))}
         </div>
         <div className={styles.logoMeta}>
           <p className={styles.logoStatus} role="status">
@@ -346,12 +355,14 @@ function LogoSection({
 function ColorSection({
   value,
   productName,
+  logoUrl,
   error,
   disabled,
   onChange,
 }: {
   value: string;
   productName: string;
+  logoUrl: string | null;
   error: string | undefined;
   disabled: boolean;
   onChange: (value: string) => void;
@@ -359,13 +370,24 @@ function ColorSection({
   const preview = previewColors(value);
   const pickerId = useId();
   const hex = normalizeColor(value);
-  // Warna sah tetapi kurang terbaca di mode gelap → mode gelap memakai warna bawaan.
-  const darkFallback = preview.custom && brandThemeVariables(hex, 'dark') === null;
+  const validHex = /^#[0-9a-f]{6}$/.test(hex);
   const shownError = error ?? (preview.lowContrast ? BRAND_COLOR_LOW_CONTRAST_MESSAGE : undefined);
+  // Warna efektif tiap tema: warna merek bila lolos kontras di tema itu, selain itu bawaan.
+  const effective = (theme: ThemeName) => {
+    const vars = preview.custom ? brandThemeVariables(hex, theme) : null;
+    return {
+      primary: vars?.['--primary'] ?? color[theme].primary.toLowerCase(),
+      onPrimary: vars?.['--on-primary'] ?? color[theme].onPrimary.toLowerCase(),
+      custom: vars !== null,
+    };
+  };
+  const light = effective('light');
+  const dark = effective('dark');
+  const suggestion = preview.custom && !light.custom ? darkerUsableColor(hex) : null;
 
   return (
     <section className={styles.card} aria-labelledby="merek-warna">
-      <div>
+      <div className={styles.cardHead}>
         <h2 id="merek-warna" className={styles.cardTitle}>
           {b.colorTitle}
         </h2>
@@ -380,7 +402,8 @@ function ColorSection({
             id={pickerId}
             type="color"
             className={styles.swatch}
-            value={preview.custom ? hex : preview.primary}
+            // Kotak selalu sama dengan kode yang diketik, juga bila kodenya ditolak.
+            value={validHex ? hex : preview.primary}
             onChange={(event) => onChange(event.target.value)}
             disabled={disabled}
           />
@@ -401,40 +424,79 @@ function ColorSection({
       </div>
       {value.trim() ? (
         <div>
-          <Button variant="ghost" onClick={() => onChange('')} disabled={disabled}>
+          <Button onClick={() => onChange('')} disabled={disabled}>
             <Icon icon={RotateCcw} size={16} />
             {b.colorDefault}
           </Button>
         </div>
       ) : null}
-      {darkFallback ? <Notice tone="info">{b.colorDarkNote}</Notice> : null}
+      {preview.custom && !light.custom && !dark.custom ? (
+        <Notice
+          tone="warning"
+          actions={
+            suggestion ? (
+              <Button onClick={() => onChange(suggestion)} disabled={disabled}>
+                {b.colorUseSuggestion(suggestion)}
+              </Button>
+            ) : undefined
+          }
+        >
+          {b.colorUnusedNote(suggestion)}
+        </Notice>
+      ) : preview.custom && !light.custom ? (
+        <Notice tone="info">{b.colorLightNote}</Notice>
+      ) : preview.custom && !dark.custom ? (
+        <Notice tone="info">{b.colorDarkNote}</Notice>
+      ) : null}
 
-      {/* Pratinjau dalam tema terang (tampilan halaman masuk & email); mode gelap: catatan di atas. */}
-      <div className={styles.preview} data-theme="light" aria-labelledby="merek-pratinjau">
-        <p id="merek-pratinjau" className={styles.previewTitle}>
-          {b.previewTitle}
-          {preview.custom ? null : (
-            <span className={styles.previewNote}> · {b.previewDefaultColor}</span>
-          )}
-        </p>
-        <div className={styles.previewBody}>
-          <span className={styles.previewName}>{productName}</span>
-          <span
-            className={styles.previewButton}
-            style={{ background: preview.primary, color: preview.onPrimary }}
-            aria-hidden="true"
-          >
-            {b.previewButton}
-          </span>
-          <span
-            className={styles.previewLink}
-            style={{ color: preview.primary }}
-            aria-hidden="true"
-          >
-            {b.previewLink}
-          </span>
+      <div className={styles.previewGroup}>
+        <p className={styles.previewTitle}>{b.previewTitle}</p>
+        <div className={styles.tiles}>
+          {(
+            [
+              ['light', light],
+              ['dark', dark],
+            ] as const
+          ).map(([theme, colors]) => (
+            <div key={theme} data-theme={theme} className={styles.preview}>
+              <span className={styles.tileLabel}>
+                {b.themeLabel[theme]}
+                {colors.custom ? null : <> · {b.previewDefaultColor}</>}
+              </span>
+              <LogoImage src={logoUrl} productName={productName} />
+              <div className={styles.previewBody}>
+                <span
+                  className={styles.previewButton}
+                  style={{ background: colors.primary, color: colors.onPrimary }}
+                  aria-hidden="true"
+                >
+                  {b.previewButton}
+                </span>
+                <span
+                  className={styles.previewLink}
+                  style={{ color: colors.primary }}
+                  aria-hidden="true"
+                >
+                  {b.previewLink}
+                </span>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </section>
+  );
+}
+
+const THEMES = ['light', 'dark'] as const;
+
+/** Logo organisasi (dengan pelat yang sama dengan halaman masuk), atau tanda bawaan + nama. */
+function LogoImage({ src, productName }: { src: string | null; productName: string }) {
+  return src ? (
+    <img src={src} alt={setupCopy.logoPreviewAlt} className={styles.orgLogo} />
+  ) : (
+    <BrandContext value={{ ...defaultBrand, productName }}>
+      <BrandLogo className={styles.logoMark} />
+    </BrandContext>
   );
 }

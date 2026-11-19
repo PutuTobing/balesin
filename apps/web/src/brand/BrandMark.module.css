@@ -9,6 +9,34 @@
   width: auto;
 }
 
+.monogram {
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-card);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: var(--text-16);
+  font-weight: var(--weight-bold);
+}
+
+/*
+ * Logo ORGANISASI (raster, warnanya tidak bisa diubah): pelat `--logo-plate` di baliknya — transparan
+ * di tema terang, terang di tema gelap — supaya logo gelap tetap terbaca. Padding sama di kedua
+ * tema (tanpa lompatan saat ganti tema). Tanda bawaan (SVG) mengikuti token, tanpa pelat.
+ */
+img.mark {
+  padding: 1px;
+  border-radius: var(--radius-card);
+  background: var(--logo-plate);
+}
+
+img.logo {
+  box-sizing: content-box;
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-input);
+  background: var(--logo-plate);
+}
+
 .symbol {
   fill: var(--primary);
 }

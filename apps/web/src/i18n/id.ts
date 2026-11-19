@@ -1483,14 +1483,14 @@ export const t = {
     menuDefault: 'Bawaan',
     intro:
       'Tampil di halaman masuk, menu, judul tab, ikon aplikasi di HP, dan email dari sistem. Kosongkan isian untuk kembali ke bawaan.',
-    loadFailed: 'Pengaturan merek belum bisa dimuat.',
+    loadFailed: 'Pengaturan merek belum bisa dimuat',
 
     namesTitle: 'Nama',
     productName: 'Nama aplikasi',
     productNameHint: (fallback: string) => `Kosongkan untuk memakai “${fallback}”.`,
     mascotName: 'Nama maskot',
     mascotNameHint: (fallback: string, example: string) =>
-      `Dipakai di sapaan seperti “${example}”. Kosongkan untuk memakai “${fallback}”. Gambar maskotnya tetap.`,
+      `Dipakai di sapaan, mis. “${example}” Kosongkan untuk memakai “${fallback}”. Gambar maskotnya tetap.`,
 
     logoTitle: 'Logo',
     logoCurrent: (kb: number) => `Logo tersimpan · ${kb} KB`,
@@ -1508,6 +1508,14 @@ export const t = {
     colorDefault: 'Pakai warna bawaan',
     colorDarkNote:
       'Di mode gelap warna ini kurang terbaca, jadi mode gelap tetap memakai warna bawaan.',
+    colorLightNote:
+      'Di mode terang warna ini terlalu pucat untuk tautan, jadi mode terang tetap memakai warna bawaan.',
+    colorUnusedNote: (suggestion: string | null) =>
+      `Warna ini kurang terbaca di mode terang maupun gelap, jadi aplikasi tetap memakai warna bawaan.${
+        suggestion ? ` Coba versi yang lebih gelap, mis. ${suggestion}.` : ''
+      }`,
+    colorUseSuggestion: (hex: string) => `Pakai ${hex}`,
+    themeLabel: { light: 'Mode terang', dark: 'Mode gelap' } as const,
     previewTitle: 'Pratinjau',
     previewButton: 'Tombol utama',
     previewLink: 'Contoh tautan',
@@ -3478,14 +3486,30 @@ export const t = {
       bot: 'Bot',
     },
 
-    /** Kartu Bot di halaman nomor (saklar bot channel, jam kerja, batas waktu). */
+    /**
+     * Kartu Bot di halaman nomor WhatsApp & channel lain (saklar bot channel, jam kerja, batas
+     * waktu). `place` = "nomor ini" (WhatsApp) atau "channel ini".
+     */
     bot: {
       title: 'Bot',
-      hint: 'Saat aktif, chat baru di nomor ini dipegang bot lebih dulu (lewat webhook ke n8n atau bot lain). Chat pindah ke tim saat bot menyerahkannya, saat agen mengambil alih, atau bila bot tidak membalas dalam batas waktu.',
+      hint: (place: string) =>
+        `Saat aktif, chat baru di ${place} dipegang bot lebih dulu (lewat webhook ke n8n atau bot lain). Chat pindah ke tim saat bot menyerahkannya, saat agen mengambil alih, atau bila bot tidak membalas dalam batas waktu.`,
+      placeNumber: 'nomor ini',
+      placeChannel: 'channel ini',
+      windowNote:
+        'Balasan bot ikut aturan sesi 24 jam: di luar 24 jam sejak pesan terakhir pelanggan, bot hanya bisa mengirim template.',
+      noWindowNote: (channel: string) =>
+        `${channel} tidak punya batas sesi 24 jam, jadi bot bisa membalas kapan saja.`,
+      receiverMissingTitle: 'Belum ada penerima bot',
+      receiverMissingWhatsApp:
+        'Chat baru tetap langsung masuk antrian tim sampai ada webhook aktif yang menerima "Pesan masuk dari pelanggan" (format native atau MobiChat).',
+      receiverMissingOther:
+        'Chat baru tetap langsung masuk antrian tim sampai ada webhook aktif format native yang menerima "Pesan masuk dari pelanggan". Format MobiChat hanya untuk WhatsApp.',
+      openWebhooks: 'Buka Pengaturan → Webhook',
       statusOn: 'Memegang chat baru',
       statusOutside: 'Di luar jam kerja bot',
       statusOff: 'Mati',
-      enable: 'Aktifkan bot untuk nomor ini',
+      enable: (place: string) => `Aktifkan bot untuk ${place}`,
       noReceiver:
         'Bot hanya memegang chat bila ada webhook aktif yang menerima "Pesan masuk dari pelanggan". Tanpa itu chat baru langsung masuk antrian tim.',
       hoursLabel: 'Jam kerja bot',
@@ -3510,9 +3534,9 @@ export const t = {
       saving: 'Menyimpan…',
       saved: 'Pengaturan bot disimpan.',
       loadFailed: 'Pengaturan bot belum bisa dimuat',
-      disableTitle: 'Matikan bot di nomor ini?',
-      disableBody:
-        'Semua chat yang sedang dipegang bot di nomor ini langsung pindah ke antrian tim, dan chat baru masuk antrian.',
+      disableTitle: (place: string) => `Matikan bot di ${place}?`,
+      disableBody: (place: string) =>
+        `Semua chat yang sedang dipegang bot di ${place} langsung pindah ke antrian tim, dan chat baru masuk antrian.`,
       disableConfirm: 'Matikan bot',
       cancel: 'Batal',
     },

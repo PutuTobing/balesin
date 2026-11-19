@@ -22,6 +22,8 @@ function routes(settings: Record<string, unknown>, extra: Record<string, FakeHan
           timeoutMinutes: null,
           timezone: 'Asia/Jakarta',
           activeNow: false,
+          channelType: 'whatsapp',
+          receiverReady: true,
           updatedAt: null,
           ...settings,
         },
@@ -32,6 +34,8 @@ function routes(settings: Record<string, unknown>, extra: Record<string, FakeHan
           ...(body as object),
           timezone: 'Asia/Jakarta',
           activeNow: true,
+          channelType: 'whatsapp',
+          receiverReady: true,
           updatedAt: '2026-11-17T03:00:00.000Z',
         },
       }),
@@ -71,7 +75,7 @@ describe('kartu Bot di halaman nomor', () => {
       (await screen.findByRole('heading', { level: 2, name: b.title })).closest('section')!,
     );
     expect(card.getByText(b.statusOff)).toBeVisible();
-    fireEvent.click(card.getByRole('checkbox', { name: b.enable }));
+    fireEvent.click(card.getByRole('checkbox', { name: b.enable(b.placeNumber) }));
     // Tidak ada pilihan "tanpa batas waktu": isian menit selalu ada.
     expect(card.getByLabelText(b.timeoutLabel)).toHaveValue('15');
     fireEvent.click(card.getByRole('radio', { name: b.schedule }));
@@ -95,7 +99,7 @@ describe('kartu Bot di halaman nomor', () => {
     const card = within(
       (await screen.findByRole('heading', { level: 2, name: b.title })).closest('section')!,
     );
-    fireEvent.click(card.getByRole('checkbox', { name: b.enable }));
+    fireEvent.click(card.getByRole('checkbox', { name: b.enable(b.placeNumber) }));
     fireEvent.click(card.getByRole('radio', { name: b.schedule }));
     // Label "Mulai/Selesai" tidak diulang per hari; tiap isian tetap berlabel untuk pembaca layar.
     fireEvent.change(card.getByLabelText(b.startOf('Senin')), { target: { value: '09:00' } });
@@ -120,7 +124,7 @@ describe('kartu Bot di halaman nomor', () => {
     const card = within(
       (await screen.findByRole('heading', { level: 2, name: b.title })).closest('section')!,
     );
-    fireEvent.click(card.getByRole('checkbox', { name: b.enable }));
+    fireEvent.click(card.getByRole('checkbox', { name: b.enable(b.placeNumber) }));
     fireEvent.change(card.getByLabelText(b.timeoutLabel), { target: { value: '0' } });
     fireEvent.click(card.getByRole('button', { name: b.save }));
     expect(await card.findByText(b.timeoutInvalid)).toBeVisible();
@@ -134,9 +138,11 @@ describe('kartu Bot di halaman nomor', () => {
     const card = within(
       (await screen.findByRole('heading', { level: 2, name: b.title })).closest('section')!,
     );
-    fireEvent.click(await card.findByRole('checkbox', { name: b.enable }));
+    fireEvent.click(await card.findByRole('checkbox', { name: b.enable(b.placeNumber) }));
     fireEvent.click(card.getByRole('button', { name: b.save }));
-    const dialog = within(await screen.findByRole('dialog', { name: b.disableTitle }));
+    const dialog = within(
+      await screen.findByRole('dialog', { name: b.disableTitle(b.placeNumber) }),
+    );
     expect(requestsTo(api, 'PUT', API_ROUTES.channels.bot)).toHaveLength(0);
     fireEvent.click(dialog.getByRole('button', { name: b.disableConfirm }));
     await waitFor(() =>
@@ -144,5 +150,29 @@ describe('kartu Bot di halaman nomor', () => {
         enabled: false,
       }),
     );
+  });
+
+  it('WhatsApp: keterangan sesi 24 jam; bot aktif tanpa penerima → peringatan + tautan Webhook', async () => {
+    await renderApp(path, {
+      routes: routes({ enabled: true, timeoutMinutes: 10, activeNow: true, receiverReady: false }),
+    });
+    const card = within(
+      (await screen.findByRole('heading', { level: 2, name: b.title })).closest('section')!,
+    );
+    expect(card.getByText(b.windowNote)).toBeVisible();
+    expect(card.getByText(b.receiverMissingWhatsApp)).toBeVisible();
+    expect(card.getByRole('link', { name: b.openWebhooks })).toHaveAttribute(
+      'href',
+      '/pengaturan/webhook',
+    );
+  });
+
+  it('penerima siap / bot mati: tanpa peringatan', async () => {
+    await renderApp(path, { routes: routes({ enabled: false, receiverReady: false }) });
+    const card = within(
+      (await screen.findByRole('heading', { level: 2, name: b.title })).closest('section')!,
+    );
+    await card.findByRole('checkbox', { name: b.enable(b.placeNumber) });
+    expect(card.queryByText(b.receiverMissingTitle)).toBeNull();
   });
 });

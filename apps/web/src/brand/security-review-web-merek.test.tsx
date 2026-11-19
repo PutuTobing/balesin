@@ -110,15 +110,17 @@ describe('review keamanan — warna merek ke CSSOM', () => {
             const soft = vars['--primary-soft']!;
             for (const v of [primary, on, soft]) expect(v).toMatch(HEX);
             expect(contrastRatio(on, primary)).toBeGreaterThanOrEqual(MIN_TEXT_CONTRAST);
-            for (const bg of [p.bg, p.surface, p.bubbleOut, p.bubbleIn]) {
+            // Gelembung keluar ikut merek (= isian lembut): tautan, tinta, dan tinta sekunder di
+            // atasnya tetap ≥ 4,5:1 (review desain Merek W3).
+            expect(vars['--bubble-out']).toBe(soft);
+            for (const bg of [p.bg, p.surface, p.bubbleIn, soft]) {
               expect(contrastRatio(primary, bg), `${theme} ${value}`).toBeGreaterThanOrEqual(
                 MIN_TEXT_CONTRAST,
               );
             }
-            for (const bg of [p.surface2, soft]) {
-              expect(contrastRatio(primary, bg)).toBeGreaterThanOrEqual(MIN_GRAPHIC_CONTRAST);
-            }
+            expect(contrastRatio(primary, p.surface2)).toBeGreaterThanOrEqual(MIN_GRAPHIC_CONTRAST);
             expect(contrastRatio(p.ink, soft)).toBeGreaterThanOrEqual(MIN_TEXT_CONTRAST);
+            expect(contrastRatio(p.ink2, soft)).toBeGreaterThanOrEqual(MIN_TEXT_CONTRAST);
             // `--on-primary` juga dipakai DI LUAR latar primary (tombol `.danger` di atas
             // `--danger-ink`, Button.module.css). Di tema terang selalu putih (= bawaan); di tema
             // gelap selalu tinta gelap — keduanya tetap terbaca di atas danger-ink.

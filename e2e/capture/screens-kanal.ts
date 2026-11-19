@@ -201,6 +201,25 @@ async function connectionMocks(page: Page, channels: unknown[] = CONNECTIONS): P
       warning: null,
     }),
   );
+  // Kartu Bot (semua jenis channel): Telegram aktif tanpa penerima native (peringatan), Email mati,
+  // Messenger mati.
+  for (const channel of CONNECTIONS) {
+    const telegram = channel.id === TELEGRAM.id;
+    await page.route(`${API}/settings/channels/${channel.id}/bot`, (route) =>
+      json(route, {
+        settings: {
+          enabled: telegram,
+          hours: { mode: 'always' },
+          timeoutMinutes: telegram ? 15 : null,
+          channelType: channel.type,
+          timezone: 'Asia/Jakarta',
+          activeNow: telegram,
+          receiverReady: false,
+          updatedAt: telegram ? ago(2 * HOUR) : null,
+        },
+      }),
+    );
+  }
 }
 
 // ── Inbox multi-channel ─────────────────────────────────────────────────────

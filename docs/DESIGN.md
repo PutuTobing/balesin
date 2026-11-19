@@ -40,6 +40,7 @@ pasangan teks/latar yang terdaftar di `contrastPairs`).
 | `--primary-soft` | `#E3EEFF` | `#1A3354` | latar item aktif (sama dengan bubble keluar) |
 | `--tag-purple` | `#7A52CC` | `#A98BF0` | warna tag "Ungu" (titik/chip, non-teks ≥ 3:1) |
 | `--tag-teal` | `#0B8A9E` | `#3CC4D6` | warna tag "Toska" (titik/chip, non-teks ≥ 3:1) |
+| `--logo-plate` | `transparent` | `#F6F4EF` | pelat di balik `<img>` logo organisasi (raster) supaya logo gelap terbaca di mode gelap; tanda bawaan SVG tidak memakainya |
 
 Aturan pakai: `--success`/`--warning`/`--danger` untuk latar, titik, dan garis; untuk **teks**
 pakai varian `-ink`. `--accent` bukan untuk teks. `--primary` di atas `--surface-2` (terang)

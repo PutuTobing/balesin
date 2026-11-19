@@ -35,7 +35,9 @@ import { apiFieldErrors } from '../../../lib/form';
 import { useLock } from '../../../lib/use-lock';
 import { isConfirmationError, needsConfirmation } from '../../identity/confirmation-error';
 import { IdentityDialog } from '../../identity/IdentityDialog';
+import { useCan } from '../../auth/session';
 import { isNotFound } from '../../inbox/inbox-queries';
+import { BotCard } from '../BotCard';
 import { ChannelStatusBadge } from '../ChannelBadges';
 import { CHANNEL_TYPE_ICONS, channelTypeLabel } from '../channel-type';
 import { Fact } from '../NumberFacts';
@@ -100,6 +102,7 @@ export function ConnectionPage() {
 
 function ConnectionDetail({ channel }: { channel: ConnectionChannel }) {
   const [flash, setFlash] = useState(() => takeConnectionFlash());
+  const canBot = useCan('integrations.manage');
   const TypeIcon = CHANNEL_TYPE_ICONS[channel.type];
   const meta = channel.type === 'messenger' || channel.type === 'instagram' ? channel : null;
   return (
@@ -134,6 +137,8 @@ function ConnectionDetail({ channel }: { channel: ConnectionChannel }) {
       {meta ? <MetaFacts channel={meta} onDone={setFlash} /> : null}
 
       <TestCard channel={channel} />
+      {/* Bot berlaku untuk semua jenis channel (KONTRAK-API-CHANNEL-LAIN "Bot"). */}
+      {canBot ? <BotCard channelId={channel.id} /> : null}
       <SettingsCard channel={channel} onDone={setFlash} />
       <StatusCard channel={channel} onDone={setFlash} />
     </div>

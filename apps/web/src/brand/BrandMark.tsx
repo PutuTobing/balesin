@@ -31,15 +31,24 @@ export function DefaultSymbol({ className, fit = 'square' }: SymbolProps) {
  * Memakai logo organisasi bila tersedia, kalau tidak simbol logo bawaan.
  */
 export function BrandMark({ className, fit = 'square' }: BrandMarkProps) {
-  const { logoUrl, icons } = useBrand();
+  const { logoUrl, icons, productName } = useBrand();
   // Tempat persegi (rail, dll.): ikon persegi yang dibuat server dari logo (latar transparan)
   // lebih terbaca daripada logo melebar yang diperkecil.
-  const square =
-    icons?.manifest.find((icon) => icon.purpose === 'any' && icon.sizes === '192x192')?.src ??
-    logoUrl;
+  const square = icons?.manifest.find(
+    (icon) => icon.purpose === 'any' && icon.sizes === '192x192',
+  )?.src;
 
   if (square) {
     return <img src={square} alt="" className={cx(styles.mark, className)} />;
+  }
+  if (logoUrl) {
+    // Ada logo tetapi belum ada ikon persegi (data lama / ikon gagal dibuat): logo melebar tidak
+    // terbaca di kotak 32 px, jadi monogram huruf pertama nama aplikasi.
+    return (
+      <span className={cx(styles.mark, styles.monogram, className)} aria-hidden="true">
+        {Array.from(productName.trim())[0]?.toLocaleUpperCase('id-ID') ?? ''}
+      </span>
+    );
   }
 
   return (

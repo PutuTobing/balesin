@@ -1,4 +1,12 @@
-import { BOT_DAY_LABELS, channelBotSettingsSchema, type ChannelBotSettings } from '@balesin/shared';
+import {
+  BOT_DAY_LABELS,
+  CHANNEL_TYPE_LABELS,
+  channelBotSettingsSchema,
+  channelHasCustomerWindow,
+  type ChannelBotSettings,
+  type ChannelType,
+} from '@balesin/shared';
+import { Link } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CopyCheck } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
@@ -33,6 +41,9 @@ export function BotCard({ channelId }: { channelId: string }) {
     queryFn: ({ signal }) => endpoints.channels.bot(channelId, signal),
   });
   const data = settings.data?.settings;
+  // Klien/data lama tanpa `channelType`: kartu ini dulu hanya di halaman nomor WhatsApp.
+  const channelType: ChannelType = data?.channelType ?? 'whatsapp';
+  const place = channelType === 'whatsapp' ? copy.placeNumber : copy.placeChannel;
   const status = !data
     ? null
     : !data.enabled
@@ -48,12 +59,35 @@ export function BotCard({ channelId }: { channelId: string }) {
           <h2 id="channel-bot" className={styles.cardTitle}>
             {copy.title}
           </h2>
-          <p className={styles.hint}>{copy.hint}</p>
+          <p className={styles.hint}>{copy.hint(place)}</p>
+          {data ? (
+            <p className={styles.hint}>
+              {channelHasCustomerWindow(channelType)
+                ? copy.windowNote
+                : copy.noWindowNote(CHANNEL_TYPE_LABELS[channelType])}
+            </p>
+          ) : null}
         </div>
         {status ? <StatusBadge tone={status.tone} label={status.label} /> : null}
       </div>
+      {data?.enabled && data.receiverReady === false ? (
+        // Bot aktif tetapi tidak ada yang menerima event-nya: chat baru tetap ke antrian tim.
+        <Notice
+          tone="warning"
+          title={copy.receiverMissingTitle}
+          actions={
+            <Button asChild>
+              <Link to="/pengaturan/webhook">{copy.openWebhooks}</Link>
+            </Button>
+          }
+        >
+          {channelType === 'whatsapp' ? copy.receiverMissingWhatsApp : copy.receiverMissingOther}
+        </Notice>
+      ) : null}
       {data ? (
         <BotForm
+          place={place}
+          receiverWarned={data.enabled && data.receiverReady === false}
           channelId={channelId}
           initial={botFormFrom(data)}
           timezone={data.timezone}
@@ -80,11 +114,16 @@ export function BotCard({ channelId }: { channelId: string }) {
 }
 
 function BotForm({
+  place,
+  receiverWarned,
   channelId,
   initial,
   timezone,
   wasEnabled,
 }: {
+  place: string;
+  /** Peringatan "belum ada penerima" sudah tampil di atas: petunjuk umumnya tidak diulang. */
+  receiverWarned: boolean;
   channelId: string;
   initial: BotForm;
   timezone: string;
@@ -172,11 +211,11 @@ function BotForm({
         checked={form.enabled}
         onChange={(event) => change({ enabled: event.target.checked })}
       >
-        {copy.enable}
+        {copy.enable(place)}
       </Checkbox>
       {form.enabled ? (
         <>
-          <p className={styles.hint}>{copy.noReceiver}</p>
+          {receiverWarned ? null : <p className={styles.hint}>{copy.noReceiver}</p>}
           <fieldset className={styles.botFieldset}>
             <legend className={styles.botLegend}>{copy.hoursLabel}</legend>
             <div className={styles.botModes} role="radiogroup" aria-label={copy.hoursLabel}>
@@ -289,8 +328,8 @@ function BotForm({
       </div>
       <ConfirmDialog
         open={confirmOff !== null}
-        title={copy.disableTitle}
-        body={copy.disableBody}
+        title={copy.disableTitle(place)}
+        body={copy.disableBody(place)}
         cancelLabel={copy.cancel}
         confirmLabel={copy.disableConfirm}
         confirmVariant="danger"

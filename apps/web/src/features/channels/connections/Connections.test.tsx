@@ -250,6 +250,36 @@ describe('Pengaturan → Channel lain', () => {
     expect(await screen.findByText(c.savedWithoutSecret)).toBeVisible();
   });
 
+  it('halaman Telegram: kartu Bot tanpa sesi 24 jam; bot aktif tanpa penerima native → peringatan', async () => {
+    const bot = t.channels.bot;
+    await renderApp(
+      `/pengaturan/channel/lain/${TELEGRAM.id}`,
+      routes([TELEGRAM], {
+        [`GET ${apiPath(R.channel, { channelId: TELEGRAM.id })}`]: () =>
+          json({ channel: TELEGRAM }),
+        [`GET ${apiPath(API_ROUTES.channels.bot, { channelId: TELEGRAM.id })}`]: () =>
+          json({
+            settings: {
+              enabled: true,
+              hours: { mode: 'always' },
+              timeoutMinutes: 15,
+              channelType: 'telegram',
+              timezone: 'Asia/Jakarta',
+              activeNow: true,
+              receiverReady: false,
+              updatedAt: null,
+            },
+          }),
+      }),
+    );
+    const card = within(
+      (await screen.findByRole('heading', { level: 2, name: bot.title })).closest('section')!,
+    );
+    expect(await card.findByText(bot.noWindowNote('Telegram'))).toBeVisible();
+    expect(card.getByText(bot.receiverMissingOther)).toBeVisible();
+    expect(card.getByRole('checkbox', { name: bot.enable(bot.placeChannel) })).toBeChecked();
+  });
+
   it('halaman Messenger: App Review + aktifkan menunggu tes berhasil', async () => {
     await renderApp(
       `/pengaturan/channel/lain/${MESSENGER.id}`,
