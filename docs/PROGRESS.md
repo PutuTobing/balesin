@@ -62,44 +62,36 @@
 - Fase 3 bot/interaktif/MobiChat kritikus **LOLOS** putaran 2 → Fase 3 tinggal mode tangkap
   `/compat/<vendor>/*` + Qiscus (terblokir BUTUH-TOBING #10).
 
-### Fase 4 — Template & Broadcast (sudah di-commit)
-- **Template Meta** backend + UI (f185b2a): security backend & web AMAN; kritikus putaran 2 tinggal
-  **R1** (chip nilai di pratinjau harus inline).
-- **Broadcast** backend (f0fad04, 6474d8e, 2ac0d72, 6a47174 laporan "Terkirim") + UI (83a4e87):
-  security backend & web AMAN; kritikus putaran 1 REVISI **BC1–BC4**
-  (`docs/design-reviews/2026-11-21-fase4-broadcast.md`).
+### Fase 4 — Template & Broadcast SELESAI (38ed4e3)
+- **Template Meta** backend + UI (f185b2a) dan **Broadcast** backend + UI (f0fad04, 6474d8e, 2ac0d72,
+  6a47174, 83a4e87): security backend & web AMAN; kritikus template & broadcast **LOLOS** putaran 3.
 
-### Fase 5 — backend selesai (c5668a3, f335d9c)
+### Fase 5 — backend selesai, UI di-commit (3a18705, 9aeb2f1)
 - CRM (atribut, impor/ekspor, gabung), tiket multi-board, departemen, laporan + biaya Meta, CSAT,
-  jam kerja tim + pesan otomatis + round-robin. Security AMAN putaran 2
-  (`docs/security-reviews/2026-11-21-fase5-backend.md`, `...-fase5-jam-kerja.md`). UI Fase 5 BELUM.
+  jam kerja tim + pesan otomatis + round-robin. Security backend AMAN putaran 2. Kritikus UI putaran 2
+  tinggal **F11** (tombol aksi kolom Kanban).
 
-### Fase 6 — backend selesai (f335d9c)
+### Fase 6 — backend + UI di-commit (f335d9c, 9aeb2f1, 015bfae)
 - Telegram, Email (IMAP/SMTP), Messenger & IG (nonaktif bawaan sampai App Review). Kontrak
-  `docs/KONTRAK-API-CHANNEL-LAIN.md`. Security sedang mereview. UI channel baru BELUM.
+  `docs/KONTRAK-API-CHANNEL-LAIN.md`. Server Telegram & IMAP tiruan untuk E2E. Security web AMAN
+  (8a2c6fd) dengan W1 (Sedang, rotasi rahasia "Ubah" gagal diam-diam) & W2 (Rendah, password di cache
+  mutasi) dikunci `it.fails`. Kritikus kanal & jam kerja REVISI **K1–K8**
+  (`docs/design-reviews/2026-11-23-kanal-jam-kerja.md`).
 
-### Fase 7 — butir 1–4 SELESAI (9779996, 2a09122, 4301bd7)
+### Fase 7 — butir 1–4 SELESAI (9779996, 2a09122, 4301bd7, c5c3614, 015bfae)
 - Compose produksi + image non-root, gateway nginx, install.sh (mode A/B/C), CLI `balesin` (update/
-  rollback, backup v2 encrypt-then-MAC, restore aman, reset-owner-password + email Owner), nginx vm,
-  rilis bertanda tangan (cosign). Security **AMAN putaran 2**
-  (`docs/security-reviews/2026-11-22-fase7-deploy.md`). Tersisa: banner Owner untuk reset dari server
-  (`owner_password_reset_server`, backend + frontend).
+  rollback, backup v2 encrypt-then-MAC, restore aman, reset-owner-password + email Owner + banner
+  Owner dari server), nginx vm, rilis bertanda tangan (cosign). Security **AMAN putaran 2**.
+- Suite tes API stabil (15d977b): database per berkas dari template, DROP di teardown global.
 
-## Sedang dikerjakan (dihentikan 23 Nov, BELUM di-commit)
-- **Devops** — 3 Rendah putaran 2 Fase 7: P2-R3 hapus `git fetch origin main` di `rilis.yml`, P2-R1
-  shebang skrip firewall di `docs/DEPLOY.md`, P2-R2 installer memasang cosign; Info (vitest.deploy di
-  image, catatan nftables).
-- **Frontend (agen UI Fase 5)** — revisi kritikus F1–F10 + BC5 + T3-S1, UI channel Telegram/Email/
-  Meta, inbox multi-channel, jam kerja/pesan otomatis/alokasi, saklar "Tersedia",
-  `z.config({jitless})` (E2E baru `jam-kerja.spec.ts`, `channel-lain.spec.ts`).
-- **Backend** — stabilisasi suite tes API (timeout `afterAll`, alarm Telegram): `apps/api/src/testing/*`,
-  `vitest.config.ts`, `packages/db/src/testing/*`, `apps/api/src/cli/db-roles.integration.test.ts`.
-- Berikutnya: commit masing-masing setelah lolos pemeriksaan → kritikus (UI Fase 5 putaran 2 + UI baru)
-  → security web UI baru → banner reset Owner → Fase 7 butir 5 (white-label + dokumentasi pengguna)
-  & butir 6 (`/audit` penuh) → E2E penuh.
-- Terblokir: Fase 3 mode tangkap (#10); kredensial nyata (#3, #4, #8, #15, #16, #17); distribusi (#18:
-  kanal, environment `rilis`, ruleset tag, cosign keyless/kunci); deploy produksi (#19, menunggu
-  #6/#7).
+## Sedang dikerjakan (posisi 38ed4e3)
+- **Frontend** — W1/W2 security, perbaikan E2E `jam-kerja.spec.ts` (langkah saklar Tersedia), F11,
+  K1–K8, foto ulang layar kanal, perluasan `channel-lain.spec.ts` pakai server tiruan. Belum di-commit.
+- Berikutnya: commit → kritikus putaran berikut (F11 + K1–K8) → security verifikasi W1/W2 → centang
+  ROADMAP Fase 5 & 6 → Fase 7 butir 5 (white-label + dokumentasi pengguna) & butir 6 (`/audit`
+  penuh) → E2E penuh.
+- Terblokir: Fase 3 mode tangkap (#10); kredensial nyata (#3, #4, #8, #15, #16, #17); distribusi (#18);
+  deploy produksi (#19, menunggu #6/#7).
 
 ## Catatan untuk sesi berikutnya
 
