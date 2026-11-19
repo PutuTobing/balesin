@@ -1,6 +1,6 @@
 # Review keamanan: bot untuk semua jenis channel
 
-- Commit: `f493358` (`feat(bot): bot untuk semua jenis channel — jenis channel di event bot, MobiChat hanya WhatsApp, receiverReady`)
+- Commit: `f493358` (`feat(bot): bot untuk semua jenis channel — jenis channel di event bot, MobiChat hanya WhatsApp, receiverReady`) — putaran 1; perbaikan `d612b29` — putaran 2 (bagian akhir dokumen)
 - Lingkup: `packages/db/src/outgoing-events.ts` (`hasActiveBotReceiver`), `packages/shared/src/bot.ts`,
   `apps/api/src/modules/bot/bot.service.ts`, `apps/worker/src/inbound/handlers.ts`,
   `apps/worker/src/queues/webhooks-out.ts`, `bot-channel-lain.integration.test.ts`, dan kontrak di docs
@@ -160,3 +160,80 @@ Tes penjaga baru:
 - Key tidak mengubah status percakapan Telegram yang dipegang agen.
 - `bot_enabled` ×4 channel (Admin → `warning`).
 - `it.fails` B1.
+
+---
+
+## Putaran 2 — verifikasi perbaikan `d612b29`
+
+Commit: `d612b29` (`fix(bot): verifikasi pengirim email ke bot & email fail tidak dipegang bot, MobiChat
+hanya percakapan WhatsApp, kembalikan ke bot wajib ada penerima`).
+
+### Putusan putaran 2: **AMAN**
+
+B1–B3 dan Info 2–4 **tertutup**. Tidak ada temuan baru di level Sedang atau lebih tinggi, jadi tidak
+ada `it.fails` baru. Ada 3 catatan Info baru (P2-1 sampai P2-3). Tes `it.fails` B1 sudah diubah
+backend menjadi `it` dengan asersi yang sama, dan tes itu lulus.
+
+| Temuan | Bukti perbaikan | Status |
+|---|---|---|
+| B1 verifikasi pengirim ke bot | `apps/worker/src/queues/webhooks-out.ts:223,236-256` (`emailDataOf`): pesan email mengirim `{subject, sender_verification, auth_warning}`, pesan selain email `null`, pesan keluar `sender_verification: null`. Untuk data lama tanpa `senderVerification`, nilainya `fail` bila dulu ada `authWarning` dan selain itu `unverified`, jadi tidak pernah dianggap `pass` (sama dengan `inbox-view.ts:235`). Nilai di luar daftar dibuang. Perbaikan tambahan: `apps/worker/src/inbound/channel-inbound.ts:189-204`. Email `fail` membuat percakapan baru `unserved`, dan percakapan terbuka yang sedang `bot` diserahkan ke antrian lewat `handOffFromBot` (`:136-167`). Update itu bersyarat `status = 'bot'` dan memakai filter `organization_id`, mencatat kejadian `handoff` dengan pelaku sistem, dan mengirim webhook `conversation.handoff` | **Tertutup** |
+| B1 agen tetap tahu | `handOffFromBot` memang tidak mengirim push khusus "queued". Tetapi pesan `fail` itu sendiri tetap memicu push `kind: 'message'` (`apps/worker/src/queues/webhooks.ts:281-296`), dan worker notifikasi membaca status percakapan dari DB saat itu, yaitu `unserved`. Akibatnya cabang antrian berlaku: penerimanya semua yang boleh mengambil, preferensinya `queue`, dan `needsAssign` true (`apps/worker/src/queues/notifications.ts:477-485`). Real-time `conversation.updated` juga dikirim. Tes baru memastikan push `message` diantrekan untuk percakapan itu dan statusnya `unserved` | **Memadai** |
+| B1 bot tidak melihat pesan palsu | Endpoint "hanya saat bot" dinilai saat dispatch (`webhooks-out.ts` `dispatchOne`). Karena status sudah `unserved`, pesan palsu tidak dikirim ke bot. Tes baru: bot hanya menerima pesan `pass` | **Tertutup** |
+| B2 MobiChat hanya WhatsApp | `apps/api/src/modules/compat-mobichat/mobichat.service.ts:191-200`: `innerJoin channels` dengan syarat `organization_id`, `id`, dan `type = 'whatsapp'`. Semua rute `/api/public/*` dan `/api/bot/*` yang memakai nomor percakapan melewati `conversation()` (riwayat, kirim, status, ubah status, lepas, tugaskan, catatan, ganti nama, bot reply/media). `addTags` sudah khusus kontak WhatsApp. URL media bertanda tangan hanya diterbitkan dari riwayat (yang kini hanya WhatsApp) dan tidak bisa dipalsukan tanpa rahasia server. Tes baru: untuk 9 rute, jawaban percakapan Telegram **byte-identik** dengan jawaban nomor yang tidak ada, jadi tidak ada oracle jenis channel. Tidak ada pesan keluar dan status tidak berubah | **Tertutup** |
+| B3 kembalikan ke bot | `apps/api/src/modules/inbox/assignment.service.ts:605-668`. Urutannya: `mutate` → cakupan (`findConversation`), lalu saklar bot channel, lalu aturan "chat agen lain butuh `inbox.assign`" (403), baru kemudian `hasActiveBotReceiver` (409). Pemeriksaan penerima memakai fungsi bersama di transaksi yang sama, sehingga hasilnya identik dengan `receiverReady` dan worker. Tes baru: Teknisi di luar cakupan mendapat 404 (bukan 409, jadi keadaan penerima tidak bocor), dan Owner tanpa penerima mendapat 409 dengan status tetap | **Tertutup** |
+| B3 query pesan terakhir | `assignment.service.ts:651-662`: filter `organization_id` dan `conversation_id`, reaksi dikecualikan, `ORDER BY occurred_at DESC LIMIT 1`, di dalam transaksi yang sama. Nilai input berasal dari baris percakapan yang sudah lolos cakupan. Tidak ada injeksi dan tidak ada lintas organisasi | **Aman** |
+| B3 urutan `...change.patch` | `assignment.service.ts:230-238`: patch kini diterapkan terakhir. Sudah dicek: hanya `bot_resumed` yang memuat `botAwaitingSince`, dan tidak ada patch yang memuat `assigneeUserId` (`:441-667`), sehingga pemegang percakapan tidak bisa tertimpa | **Aman** |
+| Info 3 `bot_enabled` + `channelType` | `apps/api/src/modules/audit/audit.service.ts:272` | **Tertutup** |
+| Info 4 kontrak INBOX | `docs/KONTRAK-API-INBOX.md` (butir "Berlaku untuk percakapan BARU": native semua channel, MobiChat **hanya WhatsApp**) | **Tertutup** |
+| Info 2 `contact.id` bukan handle | `docs/KONTRAK-WEBHOOK-KELUAR.md`, `docs/KONTRAK-API-INBOX.md` | **Tertutup** |
+| B2 klaim DECISIONS | `docs/DECISIONS.md` sudah dikoreksi: key hanya dibatasi untuk perubahan status, sedangkan baca dan kirim berlaku untuk semua percakapan WhatsApp. Opsi key "hanya percakapan bot" dan saringan channel per endpoint (Info 1) dicatat sebagai ide yang ditunda | **Tertutup** (sisa = ide terdokumentasi) |
+
+### Penilaian keputusan B3: `bot_awaiting_since` = saat dikembalikan (bukan `last_inbound_at`)
+
+**Disetujui.** Alasan:
+
+1. Bot tidak pernah menerima pesan lama, karena `message.received` hanya dikirim saat pesan masuk.
+   Kalau penanda diisi `last_inbound_at` yang sudah lama, `handoffTimedOutBots` akan melepas percakapan
+   itu lagi dalam ≤ 1 menit. Fitur "Kembalikan ke bot" jadi tidak berguna, dan tercipta siklus
+   bot↔antrian yang memicu push berulang.
+2. Jaminan R1 tetap terpenuhi. Pelanggan yang menunggu paling lama tertahan `timeoutMinutes` (≤ 1.440)
+   sejak dikembalikan, lalu otomatis kembali ke antrian dengan kejadian `handoff` dan push. Sebelum
+   perbaikan, penantiannya tidak terbatas sampai pelanggan menulis lagi.
+3. Penyalahgunaan oleh akun CS curian (memarkir antrian) kini butuh penerima bot aktif, dibatasi batas
+   waktu, tercatat `bot_resumed`, dan aksi massal tertangkap `watchBulk`.
+
+Pesan terakhir dari tim berarti `null`, dan itu benar karena tidak ada pelanggan yang menunggu.
+
+### Catatan baru (Info)
+
+- **P2-1 — Email `unverified` tetap dilayani bot.** Server IMAP tanpa `Authentication-Results` dari
+  `authserv-id` tepercaya menghasilkan `unverified` untuk *semua* email (review Fase 6 R1). Di organisasi
+  seperti itu, perlindungan bergantung pada kepatuhan bot terhadap kontrak (`≠ pass` = tidak
+  tepercaya). Ini sudah terdokumentasi dan sesuai keputusan. Pertimbangkan opsi per channel "bot email
+  hanya untuk `pass`" di Pengaturan → Bot.
+- **P2-2 — Email palsu bisa memaksa handoff.** Pihak luar yang mengetahui alamat pelanggan bisa
+  mengirim email ber-`From` palsu yang gagal DMARC untuk memindahkan percakapan bot pelanggan itu ke
+  antrian manusia. Dampaknya hanya beban antrian, tanpa kebocoran atau aksi. Arah gagalnya aman, jadi
+  diterima.
+- **P2-3 — Bot tidak diberi tahu saat percakapan dikembalikan kepadanya.** Tidak ada event webhook
+  `conversation.bot_resumed`, sehingga bot baru bertindak saat pelanggan menulis lagi. Untuk keamanan
+  ini aman karena batas waktu berjalan. Ini catatan UX/kontrak untuk masa depan.
+
+### Tes putaran 2
+
+| Perintah | Hasil |
+|---|---|
+| `security-review-bot-semua-channel.integration.test.ts` | **15 lulus** (11 lama, dengan B1 kini `it`, ditambah 4 penjaga baru) |
+| `vitest run src/modules/bot src/modules/compat-mobichat` (apps/api) | 7 berkas, 63 lulus |
+| `assignment.integration` + `security-review-fase2-penanganan` (apps/api) | 16 lulus |
+| `vitest run src/inbound src/queues/webhooks-out` (apps/worker) | 3 berkas, 33 lulus |
+| `eslint` + `tsc --noEmit` (apps/api) | bersih |
+
+Penjaga baru:
+
+- B1: email `fail` di percakapan bot dipindah ke antrian, push `message` tetap diantrekan, dan endpoint
+  "hanya saat bot" tidak menerima pesan palsu.
+- B1: email `unverified` tetap ke bot dengan label `unverified`.
+- B2: 9 rute MobiChat menjawab 404 yang byte-identik dengan nomor yang tidak ada, tanpa efek samping.
+- B3: Teknisi di luar cakupan mendapat 404 (cakupan diperiksa sebelum penerima), dan Owner tanpa
+  penerima mendapat 409.

@@ -10,11 +10,19 @@ import type { AddressInfo } from 'node:net';
 
 import { createSecretBox, Secret, WEBHOOK_JOBS } from '@balesin/core';
 import { createLogCapture } from '@balesin/core/testing';
-import { channels, conversations, newId, webhookEvents, type NewChannel } from '@balesin/db';
+import {
+  channels,
+  conversations,
+  messages,
+  newId,
+  webhookEvents,
+  type NewChannel,
+} from '@balesin/db';
 import { insertUser } from '@balesin/db/testing';
 import {
   API_ROUTES,
   apiPath,
+  MOBICHAT_ROUTES,
   createApiKeyResponseSchema,
   securitySummaryResponseSchema,
   type ChannelBotSettings,
@@ -127,6 +135,8 @@ const SENDERS: Record<OtherChannel, { externalUserId: string; handle: string | n
 };
 
 let sequence = 0;
+/** Pekerjaan push yang diantrekan worker pesan masuk (stub produsen notifikasi). */
+const notified: { kind: string; conversationId?: string | null }[] = [];
 
 async function receive(
   type: OtherChannel,
@@ -181,7 +191,18 @@ async function receive(
       attemptsMade: 0,
       opts: { attempts: 8 },
     },
-    { db: harness.db, logger: logs.logger },
+    {
+      db: harness.db,
+      logger: logs.logger,
+      notifications: {
+        enqueue: (jobs) => {
+          notified.push(
+            ...jobs.map((job) => ({ kind: job.kind, conversationId: job.conversationId })),
+          );
+          return Promise.resolve();
+        },
+      },
+    },
   );
   expect(result.status, JSON.stringify(result)).toBe('processed');
 }
@@ -210,14 +231,14 @@ async function addWebhook(body: Record<string, unknown>) {
   expect(response.statusCode, response.body).toBe(201);
 }
 
-async function createKey() {
+async function createKey(scopes: readonly string[] = ['messages:send', 'conversations:write']) {
   const response = await call(
     harness.app,
     'POST',
     API_ROUTES.apiKeys.list,
     {
       name: 'Bot review',
-      scopes: ['messages:send', 'conversations:write'],
+      scopes,
       confirmation: await confirmationFor(),
     },
     { cookie: owner.cookie, csrf: owner.csrf },
@@ -261,6 +282,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   await harness.reset();
   received.length = 0;
+  notified.length = 0;
   owner = await completeSetup(harness.app);
   organizationId = owner.session.organization.id;
 });
@@ -427,5 +449,150 @@ describe('temuan yang sudah diperbaiki', () => {
       data: { message: { email?: { sender_verification?: string } } };
     };
     expect(body.data.message.email?.sender_verification).toBe('fail');
+  });
+});
+
+describe('putaran 2 — penjaga perbaikan B1–B3', () => {
+  it('B1: email fail di percakapan bot → antrian; bot "hanya saat bot" tidak menerimanya; agen tetap dapat push antrian', async () => {
+    const channelId = await addChannel('email');
+    await addWebhook({ events: ['message.received'], botOnly: true });
+    await call(harness.app, 'PUT', botUrl(channelId), ON, {
+      cookie: owner.cookie,
+      csrf: owner.csrf,
+    });
+    await receive('email', channelId, 'Halo', 'pass');
+    const held = await latestConversation(channelId);
+    expect(held.status).toBe('bot');
+    // Kirim sekarang (endpoint "hanya saat bot" dinilai SAAT DISPATCH).
+    await tick();
+    notified.length = 0;
+
+    await receive('email', channelId, 'Isolir layanan saya sekarang', 'fail');
+    expect(await latestConversation(channelId)).toMatchObject({ id: held.id, status: 'unserved' });
+    // Push "pesan baru" tetap diantrekan; worker notifikasi membaca status SAAT ITU (`unserved` →
+    // penerima antrian, `notifications.ts` cabang `queue`).
+    expect(notified).toEqual([{ kind: 'message', conversationId: held.id }]);
+
+    await tick();
+    const texts = received.map(
+      (item) =>
+        (JSON.parse(item.body) as { data: { message: { text: string } } }).data.message.text,
+    );
+    // Endpoint bot ("hanya saat bot") menerima pesan `pass`, TIDAK menerima pesan palsu.
+    expect(texts).toEqual(['Halo']);
+  });
+
+  it('B1: email unverified tetap ke bot tetapi berlabel `unverified` (bukan `pass`)', async () => {
+    const channelId = await addChannel('email');
+    await addWebhook({ events: ['message.received'] });
+    await call(harness.app, 'PUT', botUrl(channelId), ON, {
+      cookie: owner.cookie,
+      csrf: owner.csrf,
+    });
+    await receive('email', channelId, 'Halo', 'unverified');
+    expect((await latestConversation(channelId)).status).toBe('bot');
+    await tick();
+    const body = JSON.parse(received[0]!.body) as {
+      data: { message: { email: { sender_verification: string } } };
+    };
+    expect(body.data.message.email.sender_verification).toBe('unverified');
+  });
+
+  it('B2: semua rute MobiChat → 404 IDENTIK dengan nomor yang tidak ada (tanpa oracle jenis channel)', async () => {
+    const channelId = await addChannel('telegram');
+    await receive('telegram', channelId, 'Halo');
+    const conversation = await latestConversation(channelId);
+    const { secret } = await createKey([
+      'conversations:read',
+      'conversations:write',
+      'messages:read',
+      'messages:send',
+      'contacts:write',
+    ]);
+    const missing = conversation.number + 100_000;
+    const asKey = (method: 'GET' | 'POST' | 'PUT', url: string, body?: unknown) =>
+      harness.app.inject({
+        method,
+        url,
+        headers: {
+          'x-api-key': secret,
+          accept: 'application/json',
+          ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+        },
+        ...(body !== undefined ? { payload: JSON.stringify(body) } : {}),
+      });
+    const cases = (n: number): ['GET' | 'POST' | 'PUT', string, unknown][] => [
+      ['GET', `${MOBICHAT_ROUTES.messages}?conversation_id=${String(n)}&limit=5`, undefined],
+      ['POST', MOBICHAT_ROUTES.messages, { conversation_id: n, messages: [{ message_text: 'x' }] }],
+      ['GET', `${MOBICHAT_ROUTES.conversationStatus}?conversation_id=${String(n)}`, undefined],
+      ['POST', MOBICHAT_ROUTES.conversationStatus, { conversation_id: n, status: 'resolved' }],
+      ['POST', MOBICHAT_ROUTES.unassignAgent, { conversation_id: n }],
+      ['POST', MOBICHAT_ROUTES.agents, { conversation_id: n, agent_id: owner.session.user.id }],
+      ['POST', MOBICHAT_ROUTES.notes, { conversation_id: n, notes: 'catatan' }],
+      ['PUT', MOBICHAT_ROUTES.contacts, { conversation_id: n, name: 'Nama Baru' }],
+      ['POST', MOBICHAT_ROUTES.botReply, { conversation_id: n, message_text: 'x' }],
+    ];
+    const real = cases(conversation.number);
+    const ghost = cases(missing);
+    for (const [index, [method, url, body]] of real.entries()) {
+      const actual = await asKey(method, url, body);
+      const [gMethod, gUrl, gBody] = ghost[index]!;
+      const expected = await asKey(gMethod, gUrl, gBody);
+      expect(expected.statusCode, `${gMethod} ${gUrl} ${expected.body}`).toBe(404);
+      expect(actual.statusCode, `${method} ${url} ${actual.body}`).toBe(404);
+      expect(actual.body, `${method} ${url}`).toBe(expected.body);
+    }
+    // Tidak ada efek samping di percakapan Telegram.
+    const outbound = await harness.db
+      .select()
+      .from(messages)
+      .where(and(eq(messages.conversationId, conversation.id), eq(messages.direction, 'outbound')));
+    expect(outbound).toHaveLength(0);
+    expect(await latestConversation(channelId)).toMatchObject({
+      status: conversation.status,
+      contactId: conversation.contactId,
+    });
+  });
+
+  it('B3: cakupan diperiksa SEBELUM penerima — Teknisi di luar cakupan dapat 404, bukan 409', async () => {
+    const channelId = await addChannel('telegram');
+    await call(harness.app, 'PUT', botUrl(channelId), ON, {
+      cookie: owner.cookie,
+      csrf: owner.csrf,
+    });
+    await receive('telegram', channelId, 'Halo');
+    const conversation = await latestConversation(channelId);
+    expect(conversation.status).toBe('unserved');
+    const teknisi = await insertUser(harness.db, organizationId, {
+      role: 'teknisi',
+      email: 'teknisi.bot@review.test',
+      passwordHash: await hasher.hash(PASSWORD),
+    });
+    const session = await login(harness.app, { email: teknisi.email, password: PASSWORD });
+    const url = apiPath(API_ROUTES.inbox.bot, { conversationId: conversation.id });
+    const asTeknisi = await call(
+      harness.app,
+      'POST',
+      url,
+      { active: true },
+      {
+        cookie: session.cookie,
+        csrf: session.csrf,
+      },
+    );
+    expect(asTeknisi.statusCode, asTeknisi.body).toBe(404);
+    // Pemegang izin tanpa penerima → 409; status tetap.
+    const asOwner = await call(
+      harness.app,
+      'POST',
+      url,
+      { active: true },
+      {
+        cookie: owner.cookie,
+        csrf: owner.csrf,
+      },
+    );
+    expect(asOwner.statusCode, asOwner.body).toBe(409);
+    expect((await latestConversation(channelId)).status).toBe('unserved');
   });
 });
