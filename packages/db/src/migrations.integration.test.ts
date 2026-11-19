@@ -67,6 +67,7 @@ describe('migrasi dari nol', () => {
       'message_templates',
       'messages',
       'notification_preferences',
+      'organization_logo_icons',
       'organization_logos',
       'organizations',
       'outgoing_events',

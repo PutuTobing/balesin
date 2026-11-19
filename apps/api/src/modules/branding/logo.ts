@@ -1,5 +1,12 @@
 import { AppError, sha256Hex } from '@balesin/core';
-import { LOGO_MAX_BYTES, type LogoContentType, type LogoUpload } from '@balesin/shared';
+import {
+  LOGO_MAX_BYTES,
+  LOGO_MAX_DIMENSION,
+  type LogoContentType,
+  type LogoUpload,
+} from '@balesin/shared';
+
+import { LogoImageError, inspectLogoImage, renderBrandIcons, type RenderedIcon } from './icons';
 
 /**
  * Pemeriksaan logo yang diunggah (SECURITY.md §7): tipe ditentukan dari ISI berkas, bukan
@@ -35,9 +42,12 @@ export function sniffImageType(data: Buffer): LogoContentType | undefined {
  * Mengubah kiriman base64 menjadi logo siap simpan. Melempar `VALIDATION_ERROR` pada isian
  * `field` bila isinya bukan gambar yang diizinkan atau ukurannya melewati batas.
  */
+function invalidLogo(field: string, message: string): AppError {
+  return new AppError('VALIDATION_ERROR', { details: [{ location: 'body', field, message }] });
+}
+
 export function validateLogoUpload(upload: LogoUpload, field: string): ValidatedLogo {
-  const fail = (message: string) =>
-    new AppError('VALIDATION_ERROR', { details: [{ location: 'body', field, message }] });
+  const fail = (message: string) => invalidLogo(field, message);
 
   const data = Buffer.from(upload.dataBase64, 'base64');
   if (data.length === 0) throw fail('Berkas logo kosong. Pilih ulang gambarnya.');
@@ -55,4 +65,35 @@ export function validateLogoUpload(upload: LogoUpload, field: string): Validated
     throw fail('Isi berkas logo tidak cocok dengan jenisnya. Pilih ulang gambarnya.');
   }
   return { contentType: sniffed, data, sha256: sha256Hex(data) };
+}
+
+export interface PreparedLogo extends ValidatedLogo {
+  width: number;
+  height: number;
+  /** Ikon PNG `BRAND_ICONS` yang dibuat dari logo ini. */
+  icons: RenderedIcon[];
+}
+
+const LOGO_IMAGE_MESSAGES: Readonly<Record<LogoImageError['reason'], string>> = {
+  unreadable: 'Gambar logo rusak atau tidak bisa dibaca. Simpan ulang gambarnya lalu coba lagi.',
+  too_large: `Ukuran gambar logo maksimal ${LOGO_MAX_DIMENSION}×${LOGO_MAX_DIMENSION} piksel. Perkecil gambarnya lalu coba lagi.`,
+  format_mismatch: 'Isi berkas logo tidak cocok dengan jenisnya. Pilih ulang gambarnya.',
+};
+
+/**
+ * `validateLogoUpload` + pemeriksaan gambar sungguhan (dekoder dibatasi) + pembuatan ikon PWA.
+ * Dipanggil SEBELUM transaksi (mengolah gambar memakan CPU).
+ */
+export async function prepareLogoUpload(upload: LogoUpload, field: string): Promise<PreparedLogo> {
+  const logo = validateLogoUpload(upload, field);
+  try {
+    const { width, height } = await inspectLogoImage(logo.data, logo.contentType);
+    const icons = await renderBrandIcons(logo.data);
+    return { ...logo, width, height, icons };
+  } catch (error) {
+    if (error instanceof LogoImageError) {
+      throw invalidLogo(field, LOGO_IMAGE_MESSAGES[error.reason]);
+    }
+    throw error;
+  }
 }

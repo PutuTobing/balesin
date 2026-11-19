@@ -120,8 +120,12 @@ export const API_ROUTES = {
   branding: {
     get: `${API_PREFIX}/branding`,
     logo: `${API_PREFIX}/branding/logo`,
+    /** GET publik — ikon PNG dari logo (`:file` = `BRAND_ICON_FILES`). */
+    icon: `${API_PREFIX}/branding/icons/:file`,
   },
   settings: {
+    /** GET/PATCH — Pengaturan → Merek (`organization.manage`, Owner). */
+    branding: `${API_PREFIX}/settings/branding`,
     email: `${API_PREFIX}/settings/email`,
     detectEmailHost: `${API_PREFIX}/settings/email/detect-host`,
     testEmailConnection: `${API_PREFIX}/settings/email/test-connection`,

@@ -561,7 +561,7 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
             signal: combined,
           });
           if (info.fileSize !== null && info.fileSize > MAX_INBOUND_MEDIA_BYTES) {
-            throw notFound('Media terlalu besar untuk diunduh lewat Balesin.');
+            throw notFound('Media terlalu besar untuk diunduh lewat aplikasi ini.');
           }
           await meta.download(credentials, {
             operation: 'media.download',

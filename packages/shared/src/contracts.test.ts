@@ -154,8 +154,9 @@ describe('kontrak autentikasi', () => {
     expect(urls.length).toBeGreaterThanOrEqual(15);
     expect(new Set(urls).size).toBe(urls.length);
     // Segmen huruf kecil, atau parameter `:nama` (diisi `apiPath`) — tidak pernah token.
+    // `:file` = nama ikon merek dari daftar tetap `BRAND_ICON_FILES`.
     for (const url of urls) {
-      expect(url).toMatch(/^\/api\/v1(?:\/(?:[a-z0-9-]+|:[A-Za-z]+Id|:template))+$/);
+      expect(url).toMatch(/^\/api\/v1(?:\/(?:[a-z0-9-]+|:[A-Za-z]+Id|:template|:file))+$/);
     }
   });
 });

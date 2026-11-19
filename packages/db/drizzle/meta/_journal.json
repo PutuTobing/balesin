@@ -218,6 +218,13 @@
       "when": 1794971259270,
       "tag": "0030_email_verifikasi_pengirim",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1795066720602,
+      "tag": "0031_branding_merek_ikon",
+      "breakpoints": true
     }
   ]
 }

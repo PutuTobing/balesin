@@ -19,7 +19,7 @@ import {
   type SmtpResult,
   type SmtpTimeouts,
 } from '@balesin/core';
-import type { Database, DbExecutor, EmailSettings } from '@balesin/db';
+import { organizations, type Database, type DbExecutor, type EmailSettings } from '@balesin/db';
 import {
   EMAIL_TEST_MESSAGES,
   type DetectEmailHostResponse,
@@ -32,6 +32,7 @@ import {
   type EmailTestResult,
   type ErrorDetail,
 } from '@balesin/shared';
+import { eq } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 
 import type { ClientInfo } from '../../http/client-info';
@@ -572,8 +573,16 @@ export function createEmailSettingsService(deps: EmailSettingsServiceDeps): Emai
         EMAIL_TEST_MESSAGES.ok,
       ),
 
-    sendTest: (actor, to, draft, context) =>
-      runTest(
+    sendTest: async (actor, to, draft, context) => {
+      // Warna utama organisasi ikut dipakai (email tes saat wizard setup: organisasi belum ada).
+      const [brand] = actor
+        ? await db
+            .select({ brandColor: organizations.brandColor })
+            .from(organizations)
+            .where(eq(organizations.id, actor.organizationId))
+            .limit(1)
+        : [];
+      return runTest(
         'send',
         actor,
         draft,
@@ -589,14 +598,15 @@ export function createEmailSettingsService(deps: EmailSettingsServiceDeps): Emai
                   productName: transport.sender.fromName,
                   organizationName: null,
                   logoSrc: null,
-                  primaryColor: null,
+                  primaryColor: brand?.brandColor ?? null,
                 },
               }),
             },
             policy,
           ),
         `Email tes terkirim ke ${to}. Cek kotak masuk alamat itu, termasuk folder spam.`,
-      ),
+      );
+    },
 
     detectHost: (emailAddress) => detectEmailHost(emailAddress, dns),
   };

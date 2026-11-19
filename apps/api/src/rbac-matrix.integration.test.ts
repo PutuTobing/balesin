@@ -78,6 +78,10 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   // branding halaman masuk
   'GET /api/v1/branding': 'public',
   'GET /api/v1/branding/logo': 'public',
+  'GET /api/v1/branding/icons/:file': 'public',
+  // Pengaturan → Merek (Fase 7 white-label): Owner
+  'GET /api/v1/settings/branding': 'organization.manage',
+  'PATCH /api/v1/settings/branding': 'organization.manage',
   // Pengaturan → Email pengirim
   'GET /api/v1/settings/email': 'settings.email.manage',
   'PUT /api/v1/settings/email': 'settings.email.manage',
@@ -483,6 +487,8 @@ function observedOutcome(response: Response): Observed {
 const SAMPLE_PARAMS: Readonly<Record<string, string>> = {
   invitationId: '00000000-0000-4000-8000-0000000000aa',
   template: 'invitation',
+  // Ikon merek (Fase 7): tanpa logo → 404 dari handler (publik).
+  file: 'icon-192.png',
   userId: '00000000-0000-4000-8000-0000000000bb',
   sessionId: '00000000-0000-4000-8000-0000000000cc',
   channelId: '00000000-0000-4000-8000-0000000000dd',

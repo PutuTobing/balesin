@@ -192,11 +192,11 @@ export type OutboundFailureReason = z.infer<typeof outboundFailureReasonSchema>;
 
 const REASON_MESSAGES: Readonly<Record<OutboundFailureReason, string>> = {
   window_closed:
-    'Sudah lebih dari 24 jam sejak pesan terakhir pelanggan. Pesan biasa tidak bisa dikirim — tunggu pelanggan membalas, atau kirim template (segera hadir).',
+    'Sudah lebih dari 24 jam sejak pesan terakhir pelanggan. Pesan biasa tidak bisa dikirim — tunggu pelanggan membalas, atau kirim pesan template yang sudah disetujui.',
   channel_unavailable:
     'Nomor WhatsApp pengirim sedang dinonaktifkan atau sudah dihapus. Aktifkan lagi di Pengaturan → Channel.',
   recipient_unavailable:
-    'Pelanggan ini memakai username WhatsApp tanpa nomor. Balesin belum bisa membalas ke username.',
+    'Pelanggan ini memakai username WhatsApp tanpa nomor. Aplikasi ini belum bisa membalas ke username.',
   sender_not_allowed: 'Akunmu tidak lagi berhak membalas percakapan ini, jadi pesan tidak dikirim.',
   media_unavailable: 'Berkas sudah tidak tersedia (kedaluwarsa). Unggah ulang lalu kirim lagi.',
   meta_rejected: 'Meta menolak pesan ini. Periksa isinya lalu kirim ulang.',
@@ -223,8 +223,8 @@ const REASON_MESSAGES: Readonly<Record<OutboundFailureReason, string>> = {
  */
 const META_CODE_MESSAGES: Readonly<Record<number, string>> = {
   131047:
-    'Sudah lebih dari 24 jam sejak pesan terakhir pelanggan. Pesan biasa tidak bisa dikirim — tunggu pelanggan membalas, atau kirim template (segera hadir).',
-  470: 'Sudah lebih dari 24 jam sejak pesan terakhir pelanggan. Pesan biasa tidak bisa dikirim — tunggu pelanggan membalas, atau kirim template (segera hadir).',
+    'Sudah lebih dari 24 jam sejak pesan terakhir pelanggan. Pesan biasa tidak bisa dikirim — tunggu pelanggan membalas, atau kirim pesan template yang sudah disetujui.',
+  470: 'Sudah lebih dari 24 jam sejak pesan terakhir pelanggan. Pesan biasa tidak bisa dikirim — tunggu pelanggan membalas, atau kirim pesan template yang sudah disetujui.',
   131026:
     'Pesan tidak bisa diantar: nomor pelanggan tidak aktif di WhatsApp, belum menyetujui ketentuan terbaru, atau aplikasinya terlalu lama. Hubungi pelanggan lewat kanal lain.',
   131051: 'Jenis pesan ini tidak didukung WhatsApp. Kirim sebagai teks atau berkas lain.',

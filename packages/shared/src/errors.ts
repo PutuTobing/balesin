@@ -112,7 +112,7 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   SENDING_PAUSED:
     'Pengiriman pesan sedang dihentikan sementara oleh Owner/Admin (rem darurat). Hubungi mereka untuk melanjutkan.',
   WINDOW_CLOSED:
-    'Sudah lebih dari 24 jam sejak pesan terakhir pelanggan. Pesan biasa tidak bisa dikirim — tunggu pelanggan membalas, atau kirim template (segera hadir).',
+    'Sudah lebih dari 24 jam sejak pesan terakhir pelanggan. Pesan biasa tidak bisa dikirim — tunggu pelanggan membalas, atau kirim pesan template yang sudah disetujui.',
 };
 
 export const errorDetailLocationSchema = z.enum(['body', 'query', 'params', 'headers']);

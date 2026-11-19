@@ -208,7 +208,7 @@ export function createBroadcastSettingsService(deps: BroadcastSettingsServiceDep
   async function assertUrl(organizationId: string, url: string) {
     const secrets = connectorUrlSecretParams(url);
     if (secrets.length > 0) {
-      const message = `URL memuat parameter yang tampak rahasia (${secrets.join(', ')}). URL tampil apa adanya di Balesin — pindahkan rahasia ke header autentikasi.`;
+      const message = `URL memuat parameter yang tampak rahasia (${secrets.join(', ')}). URL disimpan dan ditampilkan apa adanya di pengaturan — pindahkan rahasia ke header autentikasi.`;
       throw new AppError('VALIDATION_ERROR', {
         message,
         details: [{ location: 'body', field: 'url', message }],

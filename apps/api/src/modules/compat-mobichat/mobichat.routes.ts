@@ -421,7 +421,7 @@ const botRoutes: FastifyPluginCallbackZod<MobichatRoutesOptions> = (app, options
       const type = request.body.message_type ?? 'text';
       if (type !== 'text' && type !== 'button' && type !== 'list') {
         throw new AppError('VALIDATION_ERROR', {
-          message: `message_type "${type.slice(0, 32)}" belum didukung Balesin. Pakai "text", "button", atau "list".`,
+          message: `message_type "${type.slice(0, 32)}" belum didukung. Pakai "text", "button", atau "list".`,
         });
       }
       if (!request.body.message_text?.trim()) {

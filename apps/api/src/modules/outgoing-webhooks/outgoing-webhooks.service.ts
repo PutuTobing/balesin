@@ -300,7 +300,7 @@ export function createOutgoingWebhooksService(deps: {
     if (!normalized) {
       throw invalid(
         'mobichat.baseUrl',
-        'Alamat Balesin harus diawali https:// (atau http://), tanpa nama pengguna, query, atau #.',
+        'Alamat server aplikasi harus diawali https:// (atau http://), tanpa nama pengguna, query, atau #.',
       );
     }
     return normalized;
@@ -443,7 +443,7 @@ export function createOutgoingWebhooksService(deps: {
           input.confirmation,
           'webhook.update_mobichat',
           context,
-          'Masukkan password (dan kode verifikasi) untuk mengubah API key / alamat Balesin di webhook MobiChat.',
+          'Masukkan password (dan kode verifikasi) untuk mengubah API key / alamat server aplikasi di webhook MobiChat.',
         );
       }
       let url: string | undefined;

@@ -179,7 +179,7 @@ export const mobichatOutgoingMessageSchema = z
     context.addIssue({
       code: 'custom',
       path: ['message_type'],
-      message: `message_type "${type.slice(0, 32)}" belum didukung Balesin. Pakai "text", "media", "button", atau "list".`,
+      message: `message_type "${type.slice(0, 32)}" belum didukung. Pakai "text", "media", "button", atau "list".`,
     });
   });
 export type MobichatOutgoingMessage = z.infer<typeof mobichatOutgoingMessageSchema>;

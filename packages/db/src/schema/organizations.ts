@@ -18,6 +18,8 @@ export const organizations = pgTable(
     productName: text('product_name'),
     /** Branding white-label: warna utama `#rrggbb` (huruf kecil). Kosong = warna bawaan. */
     brandColor: text('brand_color'),
+    /** Branding white-label: nama maskot di teks sapaan. Kosong = nama maskot bawaan produk. */
+    mascotName: text('mascot_name'),
     /**
      * Retensi payload kejadian webhook (hari, review webhook S4): isi pesan di `webhook_events`
      * dikosongkan setelah sekian hari (kunci dedup tetap). Diatur lewat UI (PENGATURAN-UI), bukan

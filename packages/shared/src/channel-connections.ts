@@ -358,18 +358,18 @@ export const CONNECTION_TEST_MESSAGES: Readonly<Record<ConnectionTestCode, strin
   rate_limited:
     'Layanan sedang membatasi permintaan dari akun ini. Tunggu beberapa menit, lalu coba lagi.',
   network_error:
-    'Server Balesin tidak bisa menghubungi layanan channel (koneksi terputus atau terlalu lama). Pastikan server punya akses internet keluar, lalu coba lagi.',
+    'Server aplikasi tidak bisa menghubungi layanan channel (koneksi terputus atau terlalu lama). Pastikan server punya akses internet keluar, lalu coba lagi.',
   unexpected_response:
-    'Jawaban layanan channel tidak bisa dibaca. Coba lagi beberapa saat lagi; bila terus terjadi, laporkan ke pengelola Balesin.',
+    'Jawaban layanan channel tidak bisa dibaca. Coba lagi beberapa saat lagi; bila terus terjadi, laporkan ke pengelola server aplikasi.',
   unknown: 'Tes gagal karena sebab yang tidak dikenali. Periksa lagi isian, lalu coba sekali lagi.',
   telegram_token_invalid:
     'Token bot ditolak Telegram (salah atau sudah dicabut). Buat/salin ulang token di @BotFather → /mybots → API Token.',
   telegram_webhook_not_registered:
     'Webhook bot belum terpasang, jadi pesan pelanggan belum masuk. Tekan "Pasang webhook". Telegram hanya menerima alamat https publik (port 443, 80, 88, atau 8443).',
   telegram_webhook_url_mismatch:
-    'Webhook bot mengarah ke alamat lain (mungkin dipakai aplikasi lain). Tekan "Pasang webhook" untuk mengarahkannya ke Balesin. Satu bot hanya bisa dipakai satu aplikasi.',
+    'Webhook bot mengarah ke alamat lain (mungkin dipakai aplikasi lain). Tekan "Pasang webhook" untuk mengarahkannya ke aplikasi ini. Satu bot hanya bisa dipakai satu aplikasi.',
   telegram_webhook_failing:
-    'Telegram gagal mengirim pesan ke Balesin akhir-akhir ini. Pastikan alamat API Balesin bisa diakses dari internet dengan sertifikat https yang sah.',
+    'Telegram gagal mengirim pesan ke aplikasi ini akhir-akhir ini. Pastikan alamat API aplikasi bisa diakses dari internet dengan sertifikat https yang sah.',
   imap_host_not_found:
     'Server email masuk (IMAP) tidak ditemukan. Periksa penulisan host IMAP, contoh: mail.perusahaan.co.id atau imap.gmail.com.',
   imap_host_blocked:
@@ -378,7 +378,7 @@ export const CONNECTION_TEST_MESSAGES: Readonly<Record<ConnectionTestCode, strin
   imap_connection_refused:
     'Server IMAP menolak sambungan di port ini. Periksa port dan keamanannya: 993 untuk SSL/TLS, 143 untuk STARTTLS.',
   imap_connection_timeout:
-    'Server IMAP tidak merespons. Periksa host dan port, lalu pastikan server Balesin boleh mengakses port itu (firewall).',
+    'Server IMAP tidak merespons. Periksa host dan port, lalu pastikan server aplikasi boleh mengakses port itu (firewall).',
   imap_tls_failed:
     'Sambungan aman ke server IMAP gagal. Coba ganti keamanan: 993 memakai SSL/TLS, 143 memakai STARTTLS. Server tanpa enkripsi tidak didukung.',
   imap_certificate_invalid:

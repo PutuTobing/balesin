@@ -318,6 +318,8 @@ describe('deklarasi akses rute (bawaan tolak)', () => {
       '/api/v1/auth/password-reset/inspect',
       '/api/v1/auth/password-reset/request',
       '/api/v1/branding',
+      // Ikon PWA/favicon dari logo (Fase 7 white-label): hanya nama berkas dari daftar tetap.
+      '/api/v1/branding/icons/:file',
       '/api/v1/branding/logo',
       '/api/v1/setup/check-password',
       '/api/v1/setup/complete',

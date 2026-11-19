@@ -67,6 +67,7 @@ import { createTrustedDevices } from './modules/auth/trusted-device';
 import { twoFactorRoutes } from './modules/two-factor/two-factor.routes';
 import { createTwoFactorService } from './modules/two-factor/two-factor.service';
 import { brandingRoutes } from './modules/branding/branding.routes';
+import { createBrandingService } from './modules/branding/branding.service';
 import type { MailDns } from './modules/email-settings/email-host-detection';
 import { emailSettingsRoutes } from './modules/email-settings/email-settings.routes';
 import { createEmailSettingsService } from './modules/email-settings/email-settings.service';
@@ -574,7 +575,7 @@ export async function buildApp(deps: AppDeps) {
   });
   await app.register(authRoutes, { auth, cookieSecure: config.cookieSecure });
   await app.register(twoFactorRoutes, { twoFactor, cookieSecure: config.cookieSecure });
-  await app.register(brandingRoutes, { db });
+  await app.register(brandingRoutes, { branding: createBrandingService({ db }), limiter });
   await app.register(emailSettingsRoutes, {
     emailSettings,
     templatePreview,

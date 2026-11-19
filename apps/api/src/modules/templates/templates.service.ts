@@ -313,7 +313,7 @@ export function createTemplatesService(deps: {
         current.status === 'APPROVED'
       ) {
         throw new AppError('CONFLICT', {
-          message: 'Kategori template yang sudah disetujui tidak bisa diubah dari Balesin.',
+          message: 'Kategori template yang sudah disetujui tidak bisa diubah dari aplikasi ini.',
         });
       }
       let updated: MessageTemplateRow | undefined;
@@ -387,7 +387,7 @@ export function createTemplatesService(deps: {
       if (content.header && content.header.format !== 'TEXT') {
         throw new AppError('VALIDATION_ERROR', {
           message:
-            'Template dengan judul gambar/video/dokumen belum bisa diajukan dari Balesin. Buat di WhatsApp Manager, lalu sinkron.',
+            'Template dengan judul gambar/video/dokumen belum bisa diajukan dari aplikasi ini. Buat di WhatsApp Manager, lalu sinkron.',
         });
       }
       const channel = await liveChannel(auth.organizationId, current.channelId);

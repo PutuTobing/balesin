@@ -196,8 +196,58 @@ satu tes, pakai kode langkah berikutnya (`generateTotp(secret, Date.now() + 30_0
 atau tunggu langkah berganti.
 
 ## Branding (publik)
-- GET `/branding` → `brandingResponseSchema`.
+- GET `/branding` → `brandingResponseSchema`:
+  `{ productName, organizationName, primaryColor, logoUrl, mascotName, icons }`.
+  - `mascotName`: nama maskot untuk teks sapaan (bawaan `DEFAULT_MASCOT_NAME` = "Kak Sky").
+    Ilustrasi maskot tetap bawaan produk; hanya namanya yang bisa diganti.
+  - `icons`: `null` bila tanpa logo (pakai favicon & ikon PWA bawaan produk). Bila ada logo:
+    `{ favicon, appleTouchIcon, manifest: [{ src, sizes, type: 'image/png', purpose }] }`.
+    - `favicon` → `<link rel="icon" type="image/png" sizes="32x32">`; `appleTouchIcon` →
+      `<link rel="apple-touch-icon">` (180×180, latar penuh).
+    - `manifest` (192/512 `any` + 192/512 `maskable`) **menggantikan seluruh** `icons` manifest PWA —
+      ikon bawaan Balesin tidak ikut. `src` relatif terhadap origin yang sama; jadikan absolut bila
+      manifest dibuat sebagai Blob.
+  - Kedua field baru punya nilai bawaan saat diurai (`mascotName` → "Kak Sky", `icons` → `null`),
+    jadi mock/respons lama tetap sah. Tipe `BrandingResponse` = bentuk masukan (field baru opsional);
+    `ParsedBrandingResponse` = hasil urai (selalu lengkap).
 - GET `/branding/logo?v=…` → berkas biner, atau 404 bila belum ada logo.
+- GET `/branding/icons/:file?v=…` → PNG (`:file` salah satu `BRAND_ICON_FILES`: `favicon-32.png`,
+  `apple-touch-icon.png`, `icon-192.png`, `icon-512.png`, `maskable-192.png`, `maskable-512.png`), atau
+  404 bila belum ada logo / nama berkas di luar daftar. Ber-`?v=` → `cache-control: immutable`
+  (versi berubah saat logo diganti). Ikon dibuat server sekali saat logo disimpan; logo lama (sebelum
+  fitur ini) dibuatkan ikonnya saat pertama diminta.
+
+## Pengaturan → Merek (izin `organization.manage` = Owner; tulis butuh CSRF)
+- GET `/settings/branding` → `brandingSettingsResponseSchema` `{ branding }`:
+  - `productName`, `primaryColor`, `mascotName`: isian TERSIMPAN; `null` = memakai bawaan
+    (`defaults.productName` / warna bawaan design system / `defaults.mascotName`).
+  - `primaryTextColor`: warna teks yang terbaca di atas `primaryColor` (`#ffffff` atau tinta gelap
+    `BRAND_DARK_TEXT`) untuk pratinjau tombol; `null` bila tanpa warna. Fungsi yang sama untuk
+    pratinjau langsung di form: `brandColorTextColor(hex)` dari `@balesin/shared`.
+  - `logo`: `{ url, contentType, byteSize, updatedAt }` atau `null`.
+  - `defaults`: `{ productName: 'Balesin', mascotName: 'Kak Sky' }`.
+- PATCH `/settings/branding` (`updateBrandingRequestSchema`) → 200 `brandingSettingsResponseSchema`.
+  Field yang **tidak dikirim** = tidak berubah; **`null`** = kembali ke bawaan. Minimal satu field.
+  - `productName`: 2–40 karakter satu baris. `mascotName`: 2–30 karakter satu baris. Keduanya
+    menolak kata "WhatsApp" (merek dagang Meta), termasuk "Whats App"/"whats-app".
+  - `primaryColor`: `#rrggbb` (dibakukan huruf kecil). Ditolak bila teks putih **dan** teks gelap
+    sama-sama < 4.5:1 di atasnya ("Teks di atas warna ini sulit dibaca…"; mis. abu-abu tengah
+    `#7d7d7d`). Aturan yang sama berlaku di wizard setup. Warna dipakai di tombol & tautan email
+    sistem (lihat "Email sistem bermerek") dan email tes Pengaturan → Email.
+  - `logo`: `{ contentType, dataBase64 }` sama dengan wizard setup (PNG/JPG/WebP ≤ 256 KB, SVG
+    ditolak, isi harus cocok jenisnya), plus diperiksa sebagai gambar sungguhan: rusak → "Gambar logo
+    rusak…", sisi > 4096 px (`LOGO_MAX_DIMENSION`) → "Ukuran gambar logo maksimal 4096×4096 piksel…".
+    `logo: null` = hapus logo (ikon ikut terhapus, favicon/ikon PWA kembali ke bawaan).
+  - Galat: 400 `VALIDATION_ERROR` dengan `details[].field` = nama field di atas (body kosong → pesan
+    "Tidak ada perubahan untuk disimpan."); 401; 403 (bukan Owner, atau CSRF/Origin salah); 429
+    (20 perubahan / 10 menit per pengguna: "Terlalu banyak perubahan merek…").
+  - Menyimpan isian yang sama persis = 200 tanpa audit. Setiap perubahan diaudit
+    `settings.branding.updated` ("Merek aplikasi diubah"): `changedFields`, nilai lama & baru untuk
+    nama/warna/maskot; logo hanya `{action: 'uploaded'|'removed', contentType, byteSize, width,
+    height, sha256, replaced}` — isi berkas tidak dicatat.
+- Web (Pengaturan → Merek): setelah PATCH sukses, invalidasi query `GET /branding` supaya nama,
+  warna, favicon, dan manifest langsung berganti. Pilih logo → baca berkas jadi base64 (tanpa awalan
+  `data:`) seperti wizard setup.
 
 ## Pengaturan → Email pengirim (izin `settings.email.manage` = Owner/Admin; tulis butuh CSRF)
 - GET `/settings/email` → `emailSettingsResponseSchema`: `source` database/env/none, `status`

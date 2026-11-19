@@ -413,6 +413,8 @@ describe('branding dan logo', () => {
       organizationName: null,
       primaryColor: null,
       logoUrl: null,
+      mascotName: 'Kak Sky',
+      icons: null,
     });
     expect(logo.statusCode).toBe(404);
   });
@@ -449,6 +451,12 @@ describe('branding dan logo', () => {
     });
     expect(cached.statusCode).toBe(304);
     expect(await harness.db.select().from(organizationLogos)).toHaveLength(1);
+
+    // Ikon PWA/favicon dibuat dari logo saat setup (Fase 7 white-label).
+    expect(branding.icons?.manifest).toHaveLength(4);
+    const icon = await call(harness.app, 'GET', branding.icons?.manifest[0]?.src ?? '');
+    expect(icon.statusCode).toBe(200);
+    expect(icon.headers['content-type']).toBe('image/png');
   });
 
   it.each([

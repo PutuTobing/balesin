@@ -8,6 +8,7 @@ export interface InstallationOrganization {
   timezone: string;
   productName: string | null;
   brandColor: string | null;
+  mascotName: string | null;
 }
 
 /**
@@ -25,6 +26,7 @@ export async function findInstallationOrganization(
       timezone: organizations.timezone,
       productName: organizations.productName,
       brandColor: organizations.brandColor,
+      mascotName: organizations.mascotName,
     })
     .from(installation)
     .innerJoin(organizations, eq(organizations.id, installation.organizationId))

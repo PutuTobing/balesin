@@ -84,8 +84,8 @@ export const MOBICHAT_WEBHOOK_EVENTS = ['message.received'] as const;
 const mobichatBaseUrlSchema = z
   .string()
   .trim()
-  .min(8, 'Alamat Balesin terlalu pendek.')
-  .max(2048, 'Alamat Balesin terlalu panjang.')
+  .min(8, 'Alamat server aplikasi terlalu pendek.')
+  .max(2048, 'Alamat server aplikasi terlalu panjang.')
   .refine((value) => !hasControlCharacters(value), 'Alamat memuat karakter khusus.');
 const mobichatApiKeySchema = z
   .string({ error: 'API key wajib diisi.' })

@@ -162,6 +162,11 @@ export const AUDIT_ACTIONS = {
   privateNetworkUpdated: 'settings.private_network.updated',
   /** Pengaturan notifikasi organisasi diubah (`preview` lama & baru). */
   notificationSettingsUpdated: 'settings.notifications.updated',
+  /**
+   * Merek diubah (`changedFields`; nilai lama & baru untuk nama produk/maskot/warna; logo hanya
+   * `logo: 'uploaded' | 'removed'` + jenis, ukuran, sha256 — isi berkas tidak dicatat).
+   */
+  brandingUpdated: 'settings.branding.updated',
   // ── Broadcast (Fase 4) — tanpa nomor/isi pesan; hanya ID, nama kampanye, jumlah ──
   broadcastCreated: 'broadcast.created',
   broadcastUpdated: 'broadcast.updated',
@@ -334,6 +339,7 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'quick_reply.updated': 'Balasan cepat diubah',
   'quick_reply.deleted': 'Balasan cepat dihapus',
   'settings.notifications.updated': 'Pengaturan notifikasi diubah',
+  'settings.branding.updated': 'Merek aplikasi diubah',
   'contact.deleted': 'Kontak dihapus (UU PDP)',
   'contact.exported': 'Data kontak diekspor',
   'api_key.created': 'API key dibuat',

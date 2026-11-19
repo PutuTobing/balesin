@@ -4,7 +4,6 @@ import {
   emailSettings as emailSettingsTable,
   installation,
   isPgError,
-  organizationLogos,
   organizations,
   users,
   type Database,
@@ -32,7 +31,8 @@ import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
 import type { PasswordHasher } from '../auth/password-hasher';
 import { checkPassword } from '../auth/password-policy';
 import type { IssuedSession, SessionService } from '../auth/session.service';
-import { validateLogoUpload } from '../branding/logo';
+import { storeLogo } from '../branding/branding.service';
+import { prepareLogoUpload } from '../branding/logo';
 import type { EmailSettingsService } from '../email-settings/email-settings.service';
 import { isSetupCompleted } from '../installation/installation.repo';
 import type { SetupEmailTestMemo } from './setup-email-test-memo';
@@ -190,8 +190,9 @@ export function createSetupService(deps: SetupServiceDeps): SetupService {
 
       // Semua pemeriksaan isi dilakukan SEBELUM transaksi (hashing password itu mahal).
       assertOwnerPassword(input);
+      // Logo diperiksa sebagai gambar sungguhan dan ikon PWA-nya dibuat di sini (memakan CPU).
       const logo = input.branding?.logo
-        ? validateLogoUpload(input.branding.logo, 'branding.logo')
+        ? await prepareLogoUpload(input.branding.logo, 'branding.logo')
         : undefined;
       const preparedEmail = input.email
         ? emailSettings.prepare(input.email, undefined, 'email.')
@@ -238,15 +239,7 @@ export function createSetupService(deps: SetupServiceDeps): SetupService {
           // Pengunci tingkat database: baris kedua mustahil ada (primary key satu nilai).
           await tx.insert(installation).values({ organizationId: organization.id });
 
-          if (logo) {
-            await tx.insert(organizationLogos).values({
-              organizationId: organization.id,
-              contentType: logo.contentType,
-              data: logo.data,
-              byteSize: logo.data.length,
-              sha256: logo.sha256,
-            });
-          }
+          if (logo) await storeLogo(tx, organization.id, logo);
           if (preparedEmail) {
             await tx.insert(emailSettingsTable).values({
               organizationId: organization.id,

@@ -261,7 +261,7 @@ export const EMAIL_TEST_MESSAGES: Record<EmailTestCode, string> = {
   connection_refused:
     'Server menolak sambungan di port ini. Periksa port dan pilihan keamanannya: 465 untuk SSL/TLS, 587 untuk STARTTLS.',
   connection_timeout:
-    'Server email tidak merespons. Periksa host dan port, lalu pastikan server Balesin boleh mengakses port itu (firewall).',
+    'Server email tidak merespons. Periksa host dan port, lalu pastikan server aplikasi boleh mengakses port itu (firewall).',
   tls_failed:
     'Sambungan aman gagal dibuat. Coba ganti pilihan keamanan: port 465 memakai SSL/TLS, port 587 memakai STARTTLS.',
   certificate_invalid:

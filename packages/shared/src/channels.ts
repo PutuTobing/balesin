@@ -348,9 +348,9 @@ export const META_ERROR_MESSAGES: Readonly<Record<MetaErrorKind, string>> = {
   temporarily_unavailable:
     'Layanan Meta sedang bermasalah sementara. Coba lagi beberapa menit lagi; cek juga metastatus.com.',
   network_error:
-    'Server Balesin tidak bisa menghubungi Meta (koneksi terputus atau terlalu lama). Pastikan server punya akses internet keluar ke graph.facebook.com, lalu coba lagi.',
+    'Server aplikasi tidak bisa menghubungi Meta (koneksi terputus atau terlalu lama). Pastikan server punya akses internet keluar ke graph.facebook.com, lalu coba lagi.',
   unexpected_response:
-    'Jawaban dari Meta tidak bisa dibaca. Coba lagi beberapa saat lagi; bila terus terjadi, laporkan ke pengelola Balesin.',
+    'Jawaban dari Meta tidak bisa dibaca. Coba lagi beberapa saat lagi; bila terus terjadi, laporkan ke pengelola server aplikasi.',
   unknown:
     'Meta menolak permintaan ini tanpa alasan yang dikenali. Coba lagi beberapa saat lagi; bila terus terjadi, periksa pengaturan aplikasi di developers.facebook.com.',
 };
