@@ -84,8 +84,8 @@ Tanpa pertanyaan (otomasi): lihat kepala `install.sh` (`BALESIN_MODE`, `BALESIN_
    Docker sebelum aturannya sendiri). Installer menolak bind `0.0.0.0`/IP publik di mode A; aturan
    di bawah memastikan hanya vm-nginx yang bisa menjangkau port itu walau dari LAN:
    ```bash
-   # /usr/local/sbin/balesin-firewall.sh  (ganti 8080 dan IP vm-nginx)
    #!/bin/sh
+   # /usr/local/sbin/balesin-firewall.sh  (ganti 8080 dan IP vm-nginx). Baris #!/bin/sh HARUS baris pertama.
    set -e
    PORT=8080; PROXY=<IP-privat-vm-nginx>
    iptables -N BALESIN-GATEWAY 2>/dev/null || iptables -F BALESIN-GATEWAY
@@ -103,7 +103,7 @@ Tanpa pertanyaan (otomasi): lihat kepala `install.sh` (`BALESIN_MODE`, `BALESIN_
    Requires=docker.service
    [Service]
    Type=oneshot
-   ExecStart=/usr/local/sbin/balesin-firewall.sh
+   ExecStart=/bin/sh /usr/local/sbin/balesin-firewall.sh
    RemainAfterExit=yes
    [Install]
    WantedBy=multi-user.target
@@ -113,6 +113,21 @@ Tanpa pertanyaan (otomasi): lihat kepala `install.sh` (`BALESIN_MODE`, `BALESIN_
    *timeout*; dari vm-nginx harus `{"status":"ok"}`. SSH tetap dibatasi ufw seperti biasa
    (`ufw allow from <jaringan-manajemen> to any port 22 proto tcp`) — ufw berlaku untuk proses di host.
    Alternatif setara: firewall Proxmox/VLAN di depan VM.
+
+   **Backend firewall Docker**: rantai `DOCKER-USER` hanya ada bila Docker memakai backend iptables
+   (bawaan Docker Engine di Ubuntu/Debian, termasuk saat `iptables` adalah lapisan `iptables-nft`).
+   Docker versi baru bisa dijalankan dengan backend **nftables** asli (`"firewall-backend": "nftables"`
+   di `/etc/docker/daemon.json`) — di situ `DOCKER-USER` TIDAK dipakai dan aturan di atas tidak
+   berpengaruh. Cek:
+   ```bash
+   docker info --format '{{json .}}' | grep -o '"FirewallBackend":{[^}]*}'   # driver "iptables" = aman
+   iptables -L DOCKER-USER -n >/dev/null && echo "DOCKER-USER ada"
+   ```
+   Bila backend nftables: (a) kembalikan ke iptables (hapus `firewall-backend` dari `daemon.json`,
+   `systemctl restart docker`), atau (b) buat tabel nftables sendiri dengan hook `forward` prioritas
+   lebih awal dari tabel Docker yang men-`drop` `ct original proto-dst 8080` kecuali dari IP vm-nginx,
+   atau (c) andalkan firewall Proxmox/VLAN di depan VM. Verifikasi dengan `curl` dari host LAN lain
+   seperti di atas apa pun caranya.
 3. **DNS** IDCloudHost: A record `balesin` → `198.15.25.13`.
 4. **vm-nginx**: salin `deploy/nginx/balesin.conf` (rilis: `balesin-nginx.conf`) ke
    `/etc/nginx/conf.d/balesin.conf`, ganti `10.0.0.20:8080`. Ikuti urutan di kepala berkas: blok 443
@@ -212,8 +227,9 @@ mengirim ulang bila perlu. Selama api lama/baru tidak berjalan, gateway menjawab
 mencoba ulang webhook itu sendiri (tidak hilang).
 
 Rilis resmi ditandatangani (cosign keyless dari workflow `rilis.yml`) dan `docker-compose.yml` rilis
-merujuk image dengan **digest**. Installer dan `balesin update` memverifikasi tanda tangan
-`SHA256SUMS` bila `cosign` terpasang di server; isi `BALESIN_REQUIRE_SIGNATURE=1` di `.env` untuk
+merujuk image dengan **digest**. Installer memasang cosign (versi dipin + checksum, ke
+`/usr/local/bin/cosign`) saat mengunduh rilis; installer dan `balesin update` memverifikasi tanda
+tangan `SHA256SUMS` bila `cosign` terpasang di server; isi `BALESIN_REQUIRE_SIGNATURE=1` di `.env` untuk
 mewajibkannya (disarankan setelah kanal rilis dibuka, lihat BUTUH-TOBING #18).
 
 Diuji (Fase 7): update berhasil, layanan baru tidak sehat setelah migrasi baru (rollback memulihkan

@@ -37,9 +37,12 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - name: Tag harus berasal dari main
+        # fetch-depth: 0 sudah mengambil semua branch (refs/remotes/origin/*); fetch ulang tanpa
+        # kredensial akan gagal di repo privat (persist-credentials: false).
         run: |
-          git fetch --no-tags origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main ||
+          git rev-parse --verify --quiet refs/remotes/origin/main >/dev/null ||
+            { echo "::error::origin/main tidak ada di checkout."; exit 1; }
+          git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main ||
             { echo "::error::Commit tag ini tidak ada di main. Rilis hanya dari main."; exit 1; }
       - name: Versi dan nama image
         id: versi

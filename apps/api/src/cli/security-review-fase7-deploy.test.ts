@@ -237,11 +237,42 @@ describe('dokumentasi firewall & rilis', () => {
     expect(releaseWorkflow).toMatch(/cosign sign-blob --yes --bundle/);
     expect(releaseWorkflow).toMatch(/id-token: write/);
     // Hanya dari main, tag versi tidak boleh ditimpa, compose rilis terkunci digest.
-    expect(releaseWorkflow).toMatch(/git merge-base --is-ancestor "\$GITHUB_SHA" origin\/main/);
+    expect(releaseWorkflow).toMatch(
+      /git merge-base --is-ancestor "\$GITHUB_SHA" (refs\/remotes\/)?origin\/main/,
+    );
     expect(releaseWorkflow).toMatch(/docker manifest inspect/);
     expect(releaseWorkflow).toMatch(/@sha256:/);
     // install.sh dan CLI memverifikasi tanda tangan bila cosign terpasang.
     expect(cli).toMatch(/cosign verify-blob/);
     expect(read('deploy/install.sh')).toMatch(/cosign verify-blob/);
+  });
+
+  // P2-R3: repo privat + persist-credentials: false → `git fetch` di job rilis gagal autentikasi.
+  it('P2-R3: job rilis tidak mengambil ulang dari remote (cukup fetch-depth: 0)', () => {
+    expect(code(releaseWorkflow)).not.toMatch(/git fetch/);
+    expect(releaseWorkflow).toMatch(/fetch-depth: 0/);
+  });
+
+  // P2-R1: shebang harus baris pertama skrip firewall; unit systemd memanggil lewat /bin/sh.
+  it('P2-R1: contoh skrip firewall diawali shebang dan unit memakai /bin/sh', () => {
+    const block = /```bash\n {3}#!\/bin\/sh\n {3}# \/usr\/local\/sbin\/balesin-firewall\.sh/.exec(
+      deployDoc,
+    );
+    expect(block).not.toBeNull();
+    expect(deployDoc).toMatch(/ExecStart=\/bin\/sh \/usr\/local\/sbin\/balesin-firewall\.sh/);
+    expect(deployDoc).toMatch(/nftables/);
+  });
+
+  // P2-R2: installer memasang cosign versi dipin dengan checksum.
+  it('P2-R2: installer memasang cosign versi dipin + checksum', () => {
+    const installer = read('deploy/install.sh');
+    expect(installer).toMatch(/^readonly COSIGN_VERSION="v\d+\.\d+\.\d+"$/m);
+    expect(installer).toMatch(/^readonly COSIGN_SHA256_AMD64="[0-9a-f]{64}"$/m);
+    expect(installer).toMatch(/^readonly COSIGN_SHA256_ARM64="[0-9a-f]{64}"$/m);
+    expect(installer).toMatch(/sha256sum "\$tmp"/);
+  });
+
+  it('Info: konfigurasi vitest tidak ikut image', () => {
+    expect(read('.dockerignore')).toMatch(/^\*\*\/vitest\*\.config\.ts$/m);
   });
 });

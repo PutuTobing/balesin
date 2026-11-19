@@ -13,7 +13,8 @@
 #   BALESIN_ASSUME_YES=1 sudo -E bash install.sh
 # Variabel lain: BALESIN_HOME, BALESIN_VERSION, BALESIN_BIND_ADDRESS, BALESIN_HTTP_PORT,
 # BALESIN_ACME_EMAIL, CLOUDFLARE_TUNNEL_TOKEN, BALESIN_IMAGE_PREFIX, BALESIN_RELEASE_BASE,
-# BALESIN_NO_PULL=1 (pakai image lokal). Panduan: docs/DEPLOY.md.
+# BALESIN_NO_PULL=1 (pakai image lokal), BALESIN_SKIP_COSIGN=1 (jangan pasang cosign).
+# Panduan: docs/DEPLOY.md.
 
 set -Eeuo pipefail
 umask 077
@@ -23,6 +24,11 @@ readonly DEFAULT_IMAGE_PREFIX="ghcr.io/pututobing/balesin"
 # Kanal distribusi rilis ({VERSI} diganti nomor versi). Lihat docs/BUTUH-TOBING.md (repo privat).
 readonly DEFAULT_RELEASE_BASE="https://github.com/PutuTobing/balesin/releases/download/v{VERSI}"
 readonly DEFAULT_RELEASE_LATEST="https://github.com/PutuTobing/balesin/releases/latest/download/VERSION"
+# cosign untuk verifikasi tanda tangan rilis (review Fase 7 P2-R2): versi dipin + SHA-256 resmi dari
+# cosign_checksums.txt rilis Sigstore. Diperbarui sengaja (ubah versi DAN kedua checksum bersamaan).
+readonly COSIGN_VERSION="v3.1.4"
+readonly COSIGN_SHA256_AMD64="424e2c97d0b45fd7a6b608a87f090f35633f4c23ece5f092d48bba11aaf4bbfa"
+readonly COSIGN_SHA256_ARM64="ade83b7aac62e131cacfe96d958948b2150cc9efec46a570a2649b8e27dedad2"
 readonly DEFAULT_SUBNETS=("172.31.250.0/24" "172.31.251.0/24" "10.250.250.0/24" "192.168.250.0/24")
 
 BALESIN_HOME="${BALESIN_HOME:-/opt/balesin}"
@@ -504,6 +510,39 @@ EOF
   ok "$ENV_FILE (izin 600)"
 }
 
+# Memasang cosign ke /usr/local/bin bila belum ada versi yang sama. Gagal unduh/checksum: ditolak bila
+# BALESIN_REQUIRE_SIGNATURE=1, selain itu peringatan (verifikasi tanda tangan dilewati).
+install_cosign() {
+  local arch expected tmp current require
+  require="${BALESIN_REQUIRE_SIGNATURE:-$(env_get BALESIN_REQUIRE_SIGNATURE)}"
+  if [[ "${BALESIN_SKIP_COSIGN:-0}" == "1" ]]; then
+    return 0
+  fi
+  current="$(cosign version 2>/dev/null | awk '/GitVersion/ {print $2}' || true)"
+  if [[ "$current" == "$COSIGN_VERSION" ]]; then
+    ok "cosign $COSIGN_VERSION sudah terpasang"
+    return 0
+  fi
+  case "$(uname -m)" in
+    x86_64 | amd64) arch=amd64 expected="$COSIGN_SHA256_AMD64" ;;
+    aarch64 | arm64) arch=arm64 expected="$COSIGN_SHA256_ARM64" ;;
+    *) arch="" expected="" ;;
+  esac
+  tmp="$(mktemp)"
+  if [[ -n "$arch" ]] && command -v curl >/dev/null 2>&1 &&
+    curl -fsSL --proto '=https' --tlsv1.2 --max-time 120 \
+      "https://github.com/sigstore/cosign/releases/download/$COSIGN_VERSION/cosign-linux-$arch" -o "$tmp" &&
+    [[ "$(sha256sum "$tmp" | awk '{print $1}')" == "$expected" ]]; then
+    install -m 755 "$tmp" /usr/local/bin/cosign
+    rm -f "$tmp"
+    ok "cosign $COSIGN_VERSION terpasang (checksum cocok) untuk verifikasi tanda tangan rilis"
+    return 0
+  fi
+  rm -f "$tmp"
+  [[ "$require" == "1" ]] && die "cosign $COSIGN_VERSION gagal dipasang (unduhan/checksum), padahal tanda tangan rilis diwajibkan."
+  warn "cosign gagal dipasang (unduhan/checksum); tanda tangan rilis tidak akan diverifikasi."
+}
+
 # Tanda tangan cosign keyless atas SHA256SUMS (workflow rilis.yml, review Fase 7 S4). Diverifikasi
 # bila cosign terpasang; BALESIN_REQUIRE_SIGNATURE=1 di .env/lingkungan = wajib (tanpa cosign/tanda
 # tangan → gagal).
@@ -540,6 +579,7 @@ release_files() {
     for file in docker-compose.yml Caddyfile balesin; do cp "$SCRIPT_DIR/$file" "$TMP_DIR/$file"; done
     ok "Memakai berkas lokal dari $SCRIPT_DIR"
   else
+    install_cosign
     base="${BALESIN_RELEASE_BASE:-$(env_get BALESIN_RELEASE_BASE)}"
     base="${base:-$DEFAULT_RELEASE_BASE}"
     src="${base//\{VERSI\}/$VERSION}"
