@@ -2,6 +2,7 @@ import {
   BOT_TIMEOUT_DEFAULT_MINUTES,
   BOT_TIMEOUT_MINUTES,
   type ChannelBotSettings,
+  type UpdateChannelBotSettingsRequest,
 } from '@balesin/shared';
 
 export const channelBotKey = (channelId: string) =>
@@ -20,6 +21,11 @@ export interface BotForm {
   /** Satu jendela per hari (0 = Minggu … 6 = Sabtu). */
   days: BotDay[];
   timeout: string;
+  /**
+   * Channel Email saja: bot hanya melayani pengirim terverifikasi. `undefined` di channel lain
+   * (tidak dikirim ke server).
+   */
+  requireVerifiedSender?: boolean;
 }
 
 /** `<input type="time">` tidak bisa 24:00: tengah malam ditampilkan 23:59. */
@@ -28,7 +34,10 @@ const fromInput = (value: string) => (value === '23:59' ? '24:00' : value);
 
 const WORKDAYS = new Set([1, 2, 3, 4, 5]);
 
-export function botFormFrom(settings: ChannelBotSettings): BotForm {
+export function botFormFrom(
+  settings: ChannelBotSettings & { requireVerifiedSender?: boolean },
+  options: { email?: boolean } = {},
+): BotForm {
   const windows = settings.hours.mode === 'schedule' ? settings.hours.windows : [];
   return {
     enabled: settings.enabled,
@@ -41,6 +50,7 @@ export function botFormFrom(settings: ChannelBotSettings): BotForm {
           { day, on: windows.length === 0 && WORKDAYS.has(day), start: '08:00', end: '17:00' };
     }),
     timeout: String(settings.timeoutMinutes ?? BOT_TIMEOUT_DEFAULT_MINUTES),
+    ...(options.email ? { requireVerifiedSender: settings.requireVerifiedSender ?? false } : {}),
   };
 }
 
@@ -49,7 +59,7 @@ export function botFormFrom(settings: ChannelBotSettings): BotForm {
  * (nilai terakhir) supaya menyalakan lagi tidak kehilangan pengaturan.
  */
 export function botSettingsFrom(form: BotForm): {
-  settings: ChannelBotSettings;
+  settings: UpdateChannelBotSettingsRequest;
   timeoutInvalid: boolean;
   noDay: boolean;
 } {
@@ -67,6 +77,9 @@ export function botSettingsFrom(form: BotForm): {
       hours: form.mode === 'always' ? { mode: 'always' } : { mode: 'schedule', windows },
       timeoutMinutes:
         Number.isFinite(minutes) && minutes >= 1 ? minutes : BOT_TIMEOUT_DEFAULT_MINUTES,
+      ...(form.requireVerifiedSender === undefined
+        ? {}
+        : { requireVerifiedSender: form.requireVerifiedSender }),
     },
     timeoutInvalid,
     noDay,

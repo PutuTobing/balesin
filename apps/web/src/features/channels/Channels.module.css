@@ -1135,3 +1135,9 @@ ul.botDays,
 .cardHead > .hint + .hint {
   margin-top: var(--space-4);
 }
+
+.botVerified {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}

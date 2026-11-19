@@ -495,7 +495,7 @@ export const t = {
       botHandoff: 'Serahkan ke tim',
       botResume: 'Kembalikan ke bot',
       botResumeOff: 'Bot belum aktif di channel ini.',
-      botResumeNoReceiver: 'Belum ada penerima bot aktif untuk channel ini (Pengaturan → Webhook).',
+      botResumeNoReceiver: 'Belum ada webhook penerima bot. Atur di pengaturan webhook.',
       nothing: 'Tidak ada tindakan lain',
       working: 'Memproses…',
       cancel: 'Batal',
@@ -3535,6 +3535,9 @@ export const t = {
       timeoutHint:
         'Bila bot tidak membalas pesan pelanggan selama ini, chat otomatis masuk antrian tim. 1–1.440 menit.',
       timeoutInvalid: 'Isi 1–1.440 menit.',
+      requireVerified: 'Bot hanya melayani pengirim terverifikasi',
+      requireVerifiedHint:
+        'Email yang belum lolos pemeriksaan pengirim (SPF/DKIM/DMARC) langsung masuk antrian tim. Biarkan mati bila server email belum mencatat hasil pemeriksaannya.',
       noDay: 'Pilih minimal satu hari.',
       save: 'Simpan pengaturan bot',
       saving: 'Menyimpan…',

@@ -197,4 +197,20 @@ describe('kartu Bot di halaman nomor', () => {
     expect(await card.findByText(b.receiverReady)).toBeVisible();
     expect(card.queryByText(b.noReceiver)).toBeNull();
   });
+
+  it('WhatsApp: tanpa sakelar pengirim terverifikasi, dan tidak ikut dikirim', async () => {
+    const { api } = await renderApp(path, {
+      routes: routes({ enabled: true, timeoutMinutes: 10, activeNow: true }),
+    });
+    const card = within(
+      (await screen.findByRole('heading', { level: 2, name: b.title })).closest('section')!,
+    );
+    await card.findByRole('checkbox', { name: b.enable(b.placeNumber) });
+    expect(card.queryByRole('checkbox', { name: b.requireVerified })).toBeNull();
+    fireEvent.click(card.getByRole('button', { name: b.save }));
+    await waitFor(() => expect(requestsTo(api, 'PUT', API_ROUTES.channels.bot)).toHaveLength(1));
+    expect(requestsTo(api, 'PUT', API_ROUTES.channels.bot)[0]?.body).not.toHaveProperty(
+      'requireVerifiedSender',
+    );
+  });
 });

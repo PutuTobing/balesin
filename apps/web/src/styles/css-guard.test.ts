@@ -83,7 +83,9 @@ describe('CSS variables dari token', () => {
     const unknown = sources.flatMap(({ path, css }) =>
       [...css.matchAll(/var\((--[a-z0-9-]+)/g)]
         .map((match) => match[1])
-        .filter((name) => !definedVariables.has(name))
+        // `--radix-*`: ukuran yang dipasang Radix saat runtime (mis. ruang tersedia untuk menu),
+        // bukan nilai desain — boleh dipakai untuk membatasi ukuran popover.
+        .filter((name) => !definedVariables.has(name) && !name?.startsWith('--radix-'))
         .map((name) => `${path} → ${name}`),
     );
     expect(unknown).toEqual([]);

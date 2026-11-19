@@ -20,6 +20,8 @@
 .menu {
   z-index: 40;
   min-width: 14rem;
+  /* Tidak pernah melewati tepi layar (HP 390); alasan panjang dibungkus, bukan melebarkan menu. */
+  max-width: min(20rem, var(--radix-dropdown-menu-content-available-width));
   padding: var(--space-4);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
@@ -170,4 +172,14 @@
   font-size: var(--text-12);
   font-weight: var(--weight-regular);
   white-space: normal;
+}
+
+/* Item dua baris (label + alasan): ikon sejajar baris label, bukan di tengah. */
+.item:has(.itemText) {
+  align-items: flex-start;
+  padding-block: var(--space-8);
+}
+
+.item:has(.itemText) > svg {
+  margin-top: 1px;
 }

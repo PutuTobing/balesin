@@ -82,7 +82,7 @@ import {
   verifyTwoFactorResponseSchema,
   vapidPublicKeyResponseSchema,
   channelBotSettingsResponseSchema,
-  type ChannelBotSettings,
+  type UpdateChannelBotSettingsRequest,
   apiKeyListResponseSchema,
   apiKeyResponseSchema,
   createApiKeyResponseSchema,
@@ -569,7 +569,7 @@ export function createEndpoints(client: ApiClient) {
           schema: channelBotSettingsResponseSchema,
           signal,
         }),
-      updateBot: (channelId: string, body: ChannelBotSettings) =>
+      updateBot: (channelId: string, body: UpdateChannelBotSettingsRequest) =>
         client.request(apiPath(API_ROUTES.channels.bot, { channelId }), {
           method: 'PUT',
           body,

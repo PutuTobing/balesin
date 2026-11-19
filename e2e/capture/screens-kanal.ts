@@ -201,21 +201,24 @@ async function connectionMocks(page: Page, channels: unknown[] = CONNECTIONS): P
       warning: null,
     }),
   );
-  // Kartu Bot (semua jenis channel): Telegram aktif tanpa penerima native (peringatan), Email mati,
-  // Messenger mati.
+  // Telegram aktif tanpa penerima (peringatan); Email aktif dengan penerima siap (sakelar
+  // "pengirim terverifikasi" tampil); Messenger mati.
   for (const channel of CONNECTIONS) {
     const telegram = channel.id === TELEGRAM.id;
+    const email = channel.id === EMAIL.id;
+    const enabled = telegram || email;
     await page.route(`${API}/settings/channels/${channel.id}/bot`, (route) =>
       json(route, {
         settings: {
-          enabled: telegram,
+          enabled,
           hours: { mode: 'always' },
-          timeoutMinutes: telegram ? 15 : null,
+          timeoutMinutes: enabled ? 15 : null,
           channelType: channel.type,
           timezone: 'Asia/Jakarta',
-          activeNow: telegram,
-          receiverReady: false,
-          updatedAt: telegram ? ago(2 * HOUR) : null,
+          activeNow: enabled,
+          receiverReady: email,
+          requireVerifiedSender: false,
+          updatedAt: enabled ? ago(2 * HOUR) : null,
         },
       }),
     );
@@ -531,6 +534,28 @@ export const channelConnectionScreens: Screen[] = [
     // Cuplikan di daftar tersembunyi di HP saat chat terbuka: tunggu gelembung yang tampil.
     waitFor: 'text=Kak, router saya kedip merah terus. >> visible=true',
     prepare: settle,
+  },
+  {
+    // Menu "Tindakan chat" Telegram: pengaturan bot channel sudah di cache (dibuka dari Pengaturan),
+    // bot aktif tanpa penerima → "Kembalikan ke bot" nonaktif dengan alasan terbaca.
+    name: 'inbox-bot-menu',
+    path: `/pengaturan/channel/lain/${TELEGRAM.id}`,
+    before: async (page) => {
+      await connectionMocks(page);
+      await multiChannelInbox(page);
+    },
+    waitFor: 'text=Belum ada penerima bot',
+    prepare: async (page) => {
+      // Navigasi di dalam aplikasi (cache tetap): ke chat Telegram, lalu buka menu tindakan.
+      await page.evaluate((url) => {
+        window.history.pushState({}, '', url);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }, `/inbox?chat=${TG_CONVERSATION.id}`);
+      await page.getByText('Kak, router saya kedip merah terus.').last().waitFor();
+      await page.getByRole('button', { name: 'Tindakan chat' }).click();
+      await page.getByText('Belum ada webhook penerima bot.', { exact: false }).waitFor();
+      await settle(page);
+    },
   },
   {
     name: 'inbox-email',

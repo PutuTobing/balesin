@@ -2,9 +2,9 @@ import {
   BOT_DAY_LABELS,
   CHANNEL_CAPABILITIES,
   CHANNEL_TYPE_LABELS,
-  channelBotSettingsSchema,
   channelHasCustomerWindow,
-  type ChannelBotSettings,
+  updateChannelBotSettingsRequestSchema,
+  type UpdateChannelBotSettingsRequest,
   type ChannelType,
 } from '@balesin/shared';
 import { Link } from '@tanstack/react-router';
@@ -98,7 +98,8 @@ export function BotCard({ channelId }: { channelId: string }) {
           receiverWarned={data.enabled && data.receiverReady === false}
           receiverReady={data.receiverReady === true}
           channelId={channelId}
-          initial={botFormFrom(data)}
+          email={channelType === 'email'}
+          initial={botFormFrom(data, { email: channelType === 'email' })}
           timezone={data.timezone}
           wasEnabled={data.enabled}
         />
@@ -123,6 +124,7 @@ export function BotCard({ channelId }: { channelId: string }) {
 }
 
 function BotForm({
+  email,
   place,
   receiverWarned,
   receiverReady,
@@ -131,6 +133,8 @@ function BotForm({
   timezone,
   wasEnabled,
 }: {
+  /** Channel Email: sakelar "hanya pengirim terverifikasi". */
+  email: boolean;
   place: string;
   /** Peringatan "belum ada penerima" sudah tampil di atas: petunjuk umumnya tidak diulang. */
   receiverWarned: boolean;
@@ -147,7 +151,7 @@ function BotForm({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [failure, setFailure] = useState<unknown>(null);
-  const [confirmOff, setConfirmOff] = useState<ChannelBotSettings | null>(null);
+  const [confirmOff, setConfirmOff] = useState<UpdateChannelBotSettingsRequest | null>(null);
 
   const change = (next: Partial<BotForm>) => {
     setForm((current) => ({ ...current, ...next }));
@@ -175,13 +179,13 @@ function BotForm({
     setSaved(false);
   };
 
-  const save = async (body: ChannelBotSettings) => {
+  const save = async (body: UpdateChannelBotSettingsRequest) => {
     setSaving(true);
     setFailure(null);
     try {
       const response = await endpoints.channels.updateBot(channelId, body);
       queryClient.setQueryData(channelBotKey(channelId), response);
-      setForm(botFormFrom(response.settings));
+      setForm(botFormFrom(response.settings, { email }));
       setSaved(true);
     } catch (caught) {
       if (isApiError(caught) && caught.code === 'VALIDATION_ERROR') {
@@ -201,7 +205,7 @@ function BotForm({
     const nextErrors: FieldErrors = {};
     if (built.timeoutInvalid) nextErrors.timeoutMinutes = copy.timeoutInvalid;
     if (built.noDay) nextErrors.hours = copy.noDay;
-    const parsed = channelBotSettingsSchema.safeParse(built.settings);
+    const parsed = updateChannelBotSettingsRequestSchema.safeParse(built.settings);
     if (!parsed.success || Object.keys(nextErrors).length > 0) {
       setErrors({ ...(parsed.success ? {} : zodFieldErrors(parsed.error)), ...nextErrors });
       return;
@@ -323,6 +327,18 @@ function BotForm({
             maxLength={4}
             className={styles.botTimeout}
           />
+          {email ? (
+            // Email: bot tidak memegang email yang pengirimnya belum terverifikasi (bisa dipalsukan).
+            <div className={styles.botVerified}>
+              <Checkbox
+                checked={form.requireVerifiedSender ?? false}
+                onChange={(event) => change({ requireVerifiedSender: event.target.checked })}
+              >
+                {copy.requireVerified}
+              </Checkbox>
+              <p className={styles.hint}>{copy.requireVerifiedHint}</p>
+            </div>
+          ) : null}
         </>
       ) : null}
       {saved ? (

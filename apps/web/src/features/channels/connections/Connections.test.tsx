@@ -312,6 +312,45 @@ describe('Pengaturan → Channel lain', () => {
     expect(note.textContent).not.toMatch(/template/i);
   });
 
+  it('halaman Email: sakelar "hanya pengirim terverifikasi" ikut dikirim (bawaan mati)', async () => {
+    const bot = t.channels.bot;
+    const bodies: unknown[] = [];
+    const botPath = apiPath(API_ROUTES.channels.bot, { channelId: EMAIL.id });
+    const settings = {
+      enabled: true,
+      hours: { mode: 'always' },
+      timeoutMinutes: 15,
+      channelType: 'email',
+      timezone: 'Asia/Jakarta',
+      activeNow: true,
+      receiverReady: true,
+      requireVerifiedSender: false,
+      updatedAt: null,
+    };
+    await renderApp(
+      `/pengaturan/channel/lain/${EMAIL.id}`,
+      routes([EMAIL], {
+        [`GET ${apiPath(R.channel, { channelId: EMAIL.id })}`]: () => json({ channel: EMAIL }),
+        [`GET ${botPath}`]: () => json({ settings }),
+        [`PUT ${botPath}`]: (request) => {
+          bodies.push(request.body);
+          return json({ settings: { ...settings, ...(request.body as object) } });
+        },
+      }),
+    );
+    const card = within(
+      (await screen.findByRole('heading', { level: 2, name: bot.title })).closest('section')!,
+    );
+    const verified = await card.findByRole('checkbox', { name: bot.requireVerified });
+    expect(verified).not.toBeChecked();
+    expect(card.getByText(bot.requireVerifiedHint)).toBeVisible();
+    fireEvent.click(verified);
+    fireEvent.click(card.getByRole('button', { name: bot.save }));
+    await waitFor(() =>
+      expect(bodies[0]).toMatchObject({ enabled: true, requireVerifiedSender: true }),
+    );
+  });
+
   it('halaman Messenger: App Review + aktifkan menunggu tes berhasil', async () => {
     await renderApp(
       `/pengaturan/channel/lain/${MESSENGER.id}`,
