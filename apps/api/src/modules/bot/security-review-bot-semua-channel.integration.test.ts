@@ -804,3 +804,164 @@ describe('putaran 3 — requireVerifiedSender & conversation.bot_resumed (d9766b
     expect(texts).not.toContain('Ganti paket saya');
   });
 });
+
+describe('putaran 4 — penjaga perbaikan P3-1, P3-2, P3-I1 (e611a65)', () => {
+  type Resumed = {
+    event: string;
+    data: { conversation: { status: string }; message: { id: string; text: string | null } | null };
+  };
+  const resumedBodies = () =>
+    received
+      .map((item) => JSON.parse(item.body) as Resumed)
+      .filter((body) => body.event === 'conversation.bot_resumed');
+  const putBot = (channelId: string, body: Record<string, unknown>, who: SignedIn = owner) =>
+    call(harness.app, 'PUT', botUrl(channelId), body, { cookie: who.cookie, csrf: who.csrf });
+  const resume = (conversationId: string, active = true) =>
+    call(
+      harness.app,
+      'POST',
+      apiPath(API_ROUTES.inbox.bot, { conversationId }),
+      { active },
+      { cookie: owner.cookie, csrf: owner.csrf },
+    );
+
+  /**
+   * Satu kasus: email masuk (`verification`) → antrian → dikembalikan ke bot. Event `bot_resumed`
+   * WAJIB tetap terkirim (asersi P3-1 tidak boleh lulus hanya karena event hilang), `message` sesuai.
+   */
+  async function resumedMessage(options: {
+    verification: 'pass' | 'fail' | 'unverified';
+    requireVerifiedSender: boolean;
+    legacy?: boolean;
+    botOnly?: boolean;
+  }) {
+    const channelId = await addChannel('email');
+    await addWebhook({
+      events: ['message.received', 'conversation.bot_resumed'],
+      botOnly: options.botOnly ?? false,
+    });
+    const on = await putBot(channelId, {
+      ...ON,
+      requireVerifiedSender: options.requireVerifiedSender,
+    });
+    expect(on.statusCode, on.body).toBe(200);
+    await receive('email', channelId, 'Pesan tertunda', options.verification);
+    const conversation = await latestConversation(channelId);
+    if (conversation.status === 'bot') {
+      expect((await resume(conversation.id, false)).statusCode).toBe(200);
+    }
+    const [pending] = await harness.db
+      .select({ id: messages.id, extras: messages.extras })
+      .from(messages)
+      .where(eq(messages.conversationId, conversation.id));
+    if (options.legacy) {
+      // Data lama: tanpa `senderVerification`, hanya `authWarning`.
+      const email = { ...pending!.extras.email } as Record<string, unknown>;
+      delete email.senderVerification;
+      await harness.db
+        .update(messages)
+        .set({ extras: { ...pending!.extras, email } as (typeof messages.$inferInsert)['extras'] })
+        .where(eq(messages.id, pending!.id));
+    }
+    received.length = 0;
+    const response = await resume(conversation.id);
+    expect(response.statusCode, response.body).toBe(200);
+    await tick();
+    const bodies = resumedBodies();
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]!.data.conversation.status).toBe('bot');
+    return { message: bodies[0]!.data.message, pendingId: pending!.id };
+  }
+
+  it('P3-1: fail → message null (event tetap terkirim, juga ke endpoint botOnly)', async () => {
+    expect((await resumedMessage({ verification: 'fail', requireVerifiedSender: false })).message)
+      .toBeNull();
+    await harness.reset();
+    owner = await completeSetup(harness.app);
+    organizationId = owner.session.organization.id;
+    received.length = 0;
+    expect(
+      (await resumedMessage({ verification: 'fail', requireVerifiedSender: false, botOnly: true }))
+        .message,
+    ).toBeNull();
+  });
+
+  it('P3-1: data lama tanpa senderVerification + authWarning → dianggap fail → message null', async () => {
+    const { message } = await resumedMessage({
+      verification: 'fail',
+      requireVerifiedSender: false,
+      legacy: true,
+    });
+    expect(message).toBeNull();
+  });
+
+  it('P3-1: unverified + requireVerifiedSender → null; tanpa opsi → diteruskan; pass → diteruskan', async () => {
+    expect(
+      (await resumedMessage({ verification: 'unverified', requireVerifiedSender: true })).message,
+    ).toBeNull();
+    await harness.reset();
+    owner = await completeSetup(harness.app);
+    organizationId = owner.session.organization.id;
+    received.length = 0;
+    const loose = await resumedMessage({ verification: 'unverified', requireVerifiedSender: false });
+    expect(loose.message?.id).toBe(loose.pendingId);
+    await harness.reset();
+    owner = await completeSetup(harness.app);
+    organizationId = owner.session.organization.id;
+    received.length = 0;
+    const trusted = await resumedMessage({ verification: 'pass', requireVerifiedSender: true });
+    expect(trusted.message?.id).toBe(trusted.pendingId);
+  });
+
+  it('P3-2: botOnly dinilai saat dispatch — endpoint tanpa botOnly tetap menerima, botOnly tidak', async () => {
+    const channelId = await addChannel('telegram');
+    expect((await putBot(channelId, ON)).statusCode).toBe(200);
+    await receive('telegram', channelId, 'Halo');
+    const conversation = await latestConversation(channelId);
+    await addWebhook({ events: ['message.received', 'conversation.bot_resumed'], botOnly: true });
+    const all = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.outgoingWebhooks.list,
+      {
+        url: `${receiverOrigin}/semua`,
+        events: ['conversation.bot_resumed'],
+        confirmation: await confirmationFor(),
+      },
+      { cookie: owner.cookie, csrf: owner.csrf },
+    );
+    expect(all.statusCode, all.body).toBe(201);
+    expect((await resume(conversation.id)).statusCode).toBe(200);
+    expect((await resume(conversation.id, false)).statusCode).toBe(200);
+    received.length = 0;
+    await tick();
+    // Hanya endpoint tanpa botOnly yang menerima (status sudah bukan `bot` saat dispatch).
+    const bodies = resumedBodies();
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]!.data.conversation.status).not.toBe('bot');
+  });
+
+  it('P3-I1: Admin menyalakan bot SEKALIGUS mematikan perlindungan → tetap ada warning', async () => {
+    const channelId = await addChannel('email');
+    expect(
+      (await putBot(channelId, { ...ON, enabled: false, requireVerifiedSender: true })).statusCode,
+    ).toBe(200);
+    const user = await insertUser(harness.db, organizationId, {
+      role: 'admin',
+      email: 'admin.p4@review.test',
+      passwordHash: await hasher.hash(PASSWORD),
+    });
+    const admin = await login(harness.app, { email: user.email, password: PASSWORD });
+    const response = await putBot(channelId, { ...ON, requireVerifiedSender: false }, admin);
+    expect(response.statusCode, response.body).toBe(200);
+    const summary = await call(harness.app, 'GET', API_ROUTES.audit.securitySummary, undefined, {
+      cookie: owner.cookie,
+    });
+    expect(summary.statusCode, summary.body).toBe(200);
+    const kinds = securitySummaryResponseSchema
+      .parse(summary.json())
+      .events.map((event) => event.kind);
+    // Satu baris audit = satu jenis: yang tampil `bot_enabled` (warning).
+    expect(kinds).toContain('bot_enabled');
+  });
+});

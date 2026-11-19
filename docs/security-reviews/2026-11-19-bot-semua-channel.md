@@ -1,6 +1,6 @@
 # Review keamanan: bot untuk semua jenis channel
 
-- Commit: `f493358` (`feat(bot): bot untuk semua jenis channel — jenis channel di event bot, MobiChat hanya WhatsApp, receiverReady`) — putaran 1; perbaikan `d612b29` — putaran 2; fitur P2-1/P2-3 `d9766b3` — putaran 3 (bagian akhir dokumen)
+- Commit: `f493358` (`feat(bot): bot untuk semua jenis channel — jenis channel di event bot, MobiChat hanya WhatsApp, receiverReady`) — putaran 1; perbaikan `d612b29` — putaran 2; fitur P2-1/P2-3 `d9766b3` — putaran 3; perbaikan `e611a65` — putaran 4 (bagian akhir dokumen)
 - Lingkup: `packages/db/src/outgoing-events.ts` (`hasActiveBotReceiver`), `packages/shared/src/bot.ts`,
   `apps/api/src/modules/bot/bot.service.ts`, `apps/worker/src/inbound/handlers.ts`,
   `apps/worker/src/queues/webhooks-out.ts`, `bot-channel-lain.integration.test.ts`, dan kontrak di docs
@@ -346,3 +346,61 @@ Penjaga baru (`describe('putaran 3 …')`, `security-review-bot-semua-channel.in
   header email/email agen).
 - Endpoint MobiChat tidak bisa melanggan `conversation.bot_resumed` lewat PATCH.
 - `it.fails` P3-1 ×2 (`:763` email `fail`; `:787` `unverified` + `requireVerifiedSender`).
+
+---
+
+## Putaran 4 — verifikasi perbaikan `e611a65`
+
+Commit: `e611a65` (`fix(bot): kembalikan ke bot tidak meneruskan email tak tepercaya, saringan botOnly
+untuk bot_resumed, kejadian keamanan bot_verified_sender_disabled`).
+
+### Putusan putaran 4: **AMAN**
+
+P3-1, P3-2, P3-I1, dan P3-I2 **tertutup**. Tidak ada temuan baru di level Sedang atau lebih tinggi, jadi
+tidak ada `it.fails` baru. Kedua `it.fails` P3-1 sudah menjadi `it` dengan asersi yang tidak diubah
+(sudah dicek di diff) dan lulus. Ada 2 catatan Info baru.
+
+| Temuan | Bukti perbaikan | Status |
+|---|---|---|
+| P3-1 email tak tepercaya ke bot | `apps/api/src/modules/inbox/assignment.service.ts:147` (`trustedForBot`) dan `:708`. Pesan selain email selalu diteruskan. Email `pass` diteruskan, `fail` tidak pernah, dan data lama tanpa hasil verifikasi tetapi ber-`authWarning` dianggap `fail`. `unverified` (termasuk data lama tanpa peringatan) hanya diteruskan bila opsi channel mati. Opsi channel dibaca di transaksi yang sama, dengan filter `organization_id`. Event tetap terkirim dengan `message: null`, dan `bot_awaiting_since` tetap diisi, jadi batas waktu tetap mengembalikan pelanggan ke tim. Agen tidak dihalangi | **Tertutup** |
+| P3-1 kekuatan tes | Asersi `it` lama (`not.toContain(text)`) juga lulus bila event sama sekali tidak terkirim. Karena itu ditambah penjaga yang mewajibkan **tepat 1** `bot_resumed` berstatus `bot` dengan `message: null` (`fail`, `fail` ke endpoint `botOnly`, data lama ber-`authWarning`, `unverified` + opsi) dan `message.id` = pesan tertunda (`unverified` tanpa opsi, `pass` + opsi) | **Terkunci** |
+| P3-2 saringan `botOnly` | `apps/worker/src/queues/webhooks-out.ts:629-633`: `botHolds` (dibaca saat dispatch, dengan filter `organization_id`) kini berlaku juga untuk `conversation.bot_resumed`. Tes backend: event dilewati bila agen sudah mengambil alih. Tes baru: endpoint tanpa `botOnly` tetap menerima event itu, tetapi endpoint `botOnly` tidak | **Tertutup** |
+| P3-I1 kejadian keamanan | `packages/shared/src/audit.ts` (`bot_verified_sender_disabled`, `warning`), `apps/api/src/modules/audit/audit.service.ts:100` (SQL), `:229-237` (`kindOf`), `:278` (detail tanpa data pelanggan). Kejadian hanya dicatat untuk pelaku selain Owner, sama seperti `bot_enabled`. Syarat SQL dan `kindOf` sama: satu baris audit menghasilkan satu jenis kejadian, dan `bot_enabled` didahulukan | **Tertutup** |
+| P3-I2 idempotensi + status | `docs/KONTRAK-WEBHOOK-KELUAR.md`: bot wajib membuang duplikat berdasarkan `data.message.id` dan mengabaikan event bila `data.conversation.status` bukan `bot`. `docs/KONTRAK-API-INBOX.md` memuat aturan `message: null` | **Tertutup** |
+
+### Catatan baru (Info)
+
+- **P4-I1 — Mematikan perlindungan bersamaan dengan menyalakan bot hanya muncul sebagai
+  `bot_enabled`.** Admin bisa mematikan bot (tanpa banner), lalu dalam satu permintaan menyalakannya
+  lagi sambil mematikan `requireVerifiedSender`. Owner melihat banner `warning` "Bot channel
+  dinyalakan", tetapi `DETAIL_KEYS.bot_enabled` (`audit.service.ts:277`) tidak memuat
+  `requireVerifiedSender`, jadi Owner tidak tahu perlindungan ikut dimatikan. Tetap ada banner
+  peringatan dan audit lengkap, jadi bukan celah. Saran: tambahkan `requireVerifiedSender` dan
+  `previousRequireVerifiedSender` ke `DETAIL_KEYS.bot_enabled`. Tes baru memastikan banner `bot_enabled`
+  tetap muncul untuk kasus ini.
+- **P4-I2 — Dua penafsir verifikasi email.** `trustedForBot` (`assignment.service.ts:147`) dan
+  `emailDataOf` (`webhooks-out.ts`) berbeda untuk nilai di luar `pass`/`fail`/`unverified`.
+  `emailDataOf` + `authWarning` menghasilkan `fail`, sedangkan `trustedForBot` menghasilkan
+  `unverified`. Nilai seperti itu hanya mungkin muncul karena bug, sebab worker menulis enum bertipe.
+  Saran: satukan ke satu fungsi di `@balesin/shared`/`@balesin/db` yang juga dipakai `inbox-view.ts`.
+
+### Tes putaran 4
+
+| Perintah | Hasil |
+|---|---|
+| `security-review-bot-semua-channel.integration.test.ts` | **27 lulus** (22 lama, dengan P3-1 kini `it`, ditambah 5 penjaga baru) |
+| `vitest run src/modules/bot src/modules/inbox/assignment.integration.test.ts src/modules/outgoing-webhooks src/modules/audit` (apps/api) | 11 berkas, 106 lulus |
+| `vitest run src/queues/webhooks-out src/inbound` (apps/worker) | 33 lulus |
+| `eslint` (berkas tes) + `tsc --noEmit` (apps/api) | bersih |
+| `pnpm audit --prod` | 0 kerentanan (commit ini tidak mengubah dependensi) |
+
+Penjaga baru (`describe('putaran 4 …')`, `security-review-bot-semua-channel.integration.test.ts:808`):
+
+- P3-1: `fail` menghasilkan tepat satu `bot_resumed` dengan `message: null`, juga untuk endpoint `botOnly`.
+- P3-1: data lama tanpa `senderVerification` + `authWarning` menghasilkan `message: null`.
+- P3-1: `unverified` + opsi menghasilkan `null`; `unverified` tanpa opsi dan `pass` + opsi tetap
+  diteruskan (fitur tidak rusak).
+- P3-2: endpoint tanpa `botOnly` tetap menerima event, endpoint `botOnly` tidak, bila status sudah
+  bukan `bot` saat dispatch.
+- P3-I1/P4-I1: Admin yang menyalakan bot sekaligus mematikan perlindungan tetap memunculkan banner
+  `warning` (`bot_enabled`).
