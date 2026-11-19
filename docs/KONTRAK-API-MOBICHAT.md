@@ -152,6 +152,12 @@ Pengaturan → Webhook, `format: "mobichat"` (tidak bisa diubah setelah dibuat),
   resmi bisa mengirim ID/judul buatan): bot memperlakukannya seperti teks pelanggan, bukan perintah.
 - Opsi `botOnly` endpoint: kirim hanya selama bot memegang (bawaan: semua pesan pelanggan — workflow
   ULAN memutuskan diam sendiri).
+- **Batasan: format MobiChat = WhatsApp saja** (DECISIONS 2026-11-19). Body berbasis nomor WhatsApp
+  (`phone`, `contact_details[type=whatsapp]`), jadi pesan dari channel Telegram/Email/Messenger/
+  Instagram TIDAK dikirim ke endpoint format ini, dan endpoint format ini tidak dihitung sebagai
+  penerima bot untuk channel tersebut (percakapan baru di sana langsung ke antrian tim, bukan diparkir
+  di bot). Bot untuk channel lain memakai webhook format native (`data.conversation.channel_type`) +
+  API publik v1. Body untuk percakapan WhatsApp tidak berubah sedikit pun.
 - **Peringatan `http://`**: bila URL webhook atau `mobichat_base_url` memakai `http://`, API key
   mengalir tanpa TLS. Hanya pantas untuk jaringan LAN tepercaya (allowlist IP privat); UI wajib
   menampilkan peringatan. Alamat LAN tanpa DNS: pakai IP (resolver tidak membaca `/etc/hosts`).

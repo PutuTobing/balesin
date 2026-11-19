@@ -3,6 +3,7 @@ import {
   channels,
   conversationEvents,
   conversations,
+  hasActiveBotReceiver,
   organizations,
   recordOutgoingEvent,
   type Database,
@@ -25,7 +26,8 @@ import { assertActorStillAuthorized } from '../auth/actor-check';
 import type { AuthContext } from '../auth/session.service';
 
 /**
- * Pengaturan bot per channel (Fase 3, docs/KONTRAK-API-INBOX.md "Bot"): saklar bot, jam kerja bot
+ * Pengaturan bot per channel (Fase 3, docs/KONTRAK-API-INBOX.md "Bot") — semua jenis channel
+ * (WhatsApp, Telegram, Email, Messenger, Instagram; DECISIONS 2026-11-19): saklar bot, jam kerja bot
  * (zona waktu organisasi), batas waktu bot. Izin `integrations.manage` (Owner/Admin — "Kelola
  * webhook, bot, dan integrasi"). Diaudit `channel.bot_updated` (tanpa data pelanggan). Berlaku untuk
  * percakapan BARU; percakapan yang sedang dipegang bot tetap sampai diserahkan/batas waktu.
@@ -57,6 +59,7 @@ export function createBotService(deps: {
   async function load(organizationId: string, channelId: string) {
     const [row] = await db
       .select({
+        channelType: channels.type,
         enabled: channels.botEnabled,
         hours: channels.botHours,
         timeoutMinutes: channels.botTimeoutMinutes,
@@ -77,12 +80,19 @@ export function createBotService(deps: {
     // Isi jsonb rusak → dianggap 24 jam untuk tampilan (worker memperlakukannya di luar jam kerja).
     const parsed = botHoursSchema.safeParse(row.hours);
     const hours: BotHours = parsed.success ? parsed.data : { mode: 'always' };
+    const at = now();
     return {
       enabled: row.enabled,
       hours,
       timeoutMinutes: row.timeoutMinutes,
+      channelType: row.channelType,
       timezone: row.timezone,
-      activeNow: row.enabled && parsed.success && isWithinBotHours(hours, row.timezone, now()),
+      activeNow: row.enabled && parsed.success && isWithinBotHours(hours, row.timezone, at),
+      receiverReady: await hasActiveBotReceiver(db, {
+        organizationId,
+        channelType: row.channelType,
+        at,
+      }),
       updatedAt: row.updatedAt?.toISOString() ?? null,
     };
   }
@@ -102,7 +112,11 @@ export function createBotService(deps: {
       const released = await db.transaction(async (tx) => {
         const { role } = await assertActorStillAuthorized(tx, auth, 'integrations.manage');
         const [current] = await tx
-          .select({ enabled: channels.botEnabled, timeout: channels.botTimeoutMinutes })
+          .select({
+            type: channels.type,
+            enabled: channels.botEnabled,
+            timeout: channels.botTimeoutMinutes,
+          })
           .from(channels)
           .where(
             and(
@@ -129,6 +143,7 @@ export function createBotService(deps: {
           targetType: 'channel',
           targetId: channelId,
           metadata: {
+            channelType: current.type,
             enabled: input.enabled,
             previousEnabled: current.enabled,
             hoursMode: input.hours.mode,

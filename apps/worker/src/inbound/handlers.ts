@@ -10,17 +10,16 @@ import {
   type NormalizedInboundMessage,
 } from '@balesin/core';
 import {
-  apiKeys,
   channels,
   conversations,
   messages,
   organizations,
-  webhookEndpoints,
   webhookEvents,
   type ConversationRow,
   type DbExecutor,
   type MessageExtras,
   type NewMessageRow,
+  hasActiveBotReceiver,
   recordOutgoingEvent,
 } from '@balesin/db';
 import {
@@ -70,7 +69,8 @@ export interface InboundHandlerOptions {
 }
 
 /**
- * Status awal percakapan baru menurut saklar bot channel + jam kerja bot (Fase 3). Jam kerja dari
+ * Status awal percakapan baru menurut saklar bot channel + jam kerja bot (Fase 3) — SEMUA jenis
+ * channel (WhatsApp, Telegram, Email, Messenger, Instagram). Jam kerja dari
  * `receivedAt` (jam server); `bot_hours` rusak → dianggap di luar jam kerja (aman: ke tim).
  */
 export async function botAwareInitialStatus(
@@ -78,6 +78,7 @@ export async function botAwareInitialStatus(
 ): Promise<ConversationStatus> {
   const [row] = await context.tx
     .select({
+      type: channels.type,
       enabled: channels.botEnabled,
       hours: channels.botHours,
       timezone: organizations.timezone,
@@ -93,26 +94,13 @@ export async function botAwareInitialStatus(
   if (!hours.success) return 'unserved';
   if (!isWithinBotHours(hours.data, row.timezone, context.receivedAt)) return 'unserved';
   // Review bot R1: tanpa penerima yang benar-benar aktif (endpoint aktif yang melanggan pesan masuk;
-  // format MobiChat: key-nya masih aktif) pelanggan langsung ke tim, bukan diparkir di bot.
-  const [receiver] = await context.tx
-    .select({ id: webhookEndpoints.id })
-    .from(webhookEndpoints)
-    .leftJoin(
-      apiKeys,
-      and(
-        eq(apiKeys.organizationId, webhookEndpoints.organizationId),
-        eq(apiKeys.id, webhookEndpoints.mobichatApiKeyId),
-      ),
-    )
-    .where(
-      and(
-        eq(webhookEndpoints.organizationId, context.organizationId),
-        eq(webhookEndpoints.enabled, true),
-        sql`'message.received' = any(${webhookEndpoints.events})`,
-        sql`(${webhookEndpoints.format} <> 'mobichat' or (${apiKeys.revokedAt} is null and ${apiKeys.id} is not null and (${apiKeys.expiresAt} is null or ${apiKeys.expiresAt} > ${context.receivedAt})))`,
-      ),
-    )
-    .limit(1);
+  // format MobiChat: hanya channel WhatsApp + key-nya masih aktif) pelanggan langsung ke tim, bukan
+  // diparkir di bot. Berlaku sama untuk semua jenis channel (DECISIONS 2026-11-19).
+  const receiver = await hasActiveBotReceiver(context.tx, {
+    organizationId: context.organizationId,
+    channelType: row.type,
+    at: context.receivedAt,
+  });
   return receiver ? 'bot' : 'unserved';
 }
 

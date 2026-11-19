@@ -23,6 +23,10 @@ di sana = 404).
   (bisa digabung hanya bila jenis channel sama dan identitas tidak bertentangan).
 - Percakapan tetap per kontak × channel; inbox, penanganan, panel, laporan, webhook keluar, bot,
   departemen, alokasi berlaku untuk semua jenis. **Broadcast, template, CSAT = WhatsApp saja (v1).**
+- **Bot**: saklar bot, jam kerja bot, batas waktu, handoff = `GET`/`PUT /settings/channels/:channelId/bot`
+  yang sama dengan WhatsApp (KONTRAK-API-INBOX "Bot eksternal"); ID channel dari
+  `GET /settings/channel-connections`. Penerima bot channel ini = webhook format **native** saja
+  (format MobiChat hanya WhatsApp); event memuat `conversation.channel_type`.
 - `conversations.window_expires_at` hanya diisi channel berjendela; Telegram/Email mengisi
   `last_inbound_at` saja.
 

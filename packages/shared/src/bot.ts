@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { CHANNEL_TYPES } from './channels';
 import { isoDateTimeSchema } from './fields';
 
 /**
@@ -7,8 +8,9 @@ import { isoDateTimeSchema } from './fields';
  * "Aturan handoff"; docs/KONTRAK-API-INBOX.md "Bot"). Bot = penerima webhook keluar (native atau
  * format MobiChat) yang membalas lewat API key.
  *
- * - Saklar per CHANNEL (`integrations.manage`): percakapan BARU di channel itu masuk status `bot`
- *   bila bot aktif DAN sekarang dalam jam kerja bot; selain itu `unserved` (antrian tim).
+ * - Saklar per CHANNEL (`integrations.manage`) — SEMUA jenis channel (WhatsApp, Telegram, Email,
+ *   Messenger, Instagram): percakapan BARU di channel itu masuk status `bot` bila bot aktif DAN
+ *   sekarang dalam jam kerja bot DAN ada penerima bot aktif; selain itu `unserved` (antrian tim).
  * - Saklar per PERCAKAPAN (`inbox.reply` + cakupan): matikan = serahkan ke tim (`handoff`),
  *   nyalakan = kembalikan ke bot (`bot_resumed`).
  * - Batas waktu: pesan pelanggan tidak dibalas bot selama N menit → otomatis ke antrian (`handoff`
@@ -77,10 +79,23 @@ export const updateChannelBotSettingsRequestSchema = channelBotSettingsSchema;
 
 export const channelBotSettingsResponseSchema = z.object({
   settings: channelBotSettingsSchema.extend({
+    /**
+     * Jenis channel (bot berlaku sama di SEMUA jenis — DECISIONS 2026-11-19). UI memakai
+     * `channelHasCustomerWindow(channelType)` untuk keterangan jendela 24 jam (hanya channel Meta).
+     * `channelType` & `receiverReady` SELALU dikirim server; opsional di skema hanya supaya klien &
+     * data tiruan yang dibuat sebelum 2026-11-19 tetap lolos validasi (penambahan non-breaking).
+     */
+    channelType: z.enum(CHANNEL_TYPES).optional(),
     /** Zona waktu jam kerja bot (zona organisasi). */
     timezone: z.string(),
-    /** Percakapan baru SAAT INI akan masuk ke bot (aktif + dalam jam kerja). */
+    /** Bot aktif + sekarang dalam jam kerja bot (belum memperhitungkan penerima). */
     activeNow: z.boolean(),
+    /**
+     * Ada penerima bot aktif untuk channel ini: endpoint webhook aktif yang melanggan
+     * `message.received` — format native (semua channel) atau format MobiChat (WhatsApp saja, key
+     * masih aktif). Percakapan baru masuk ke bot hanya bila `activeNow && receiverReady`.
+     */
+    receiverReady: z.boolean().optional(),
     updatedAt: isoDateTimeSchema.nullable(),
   }),
 });

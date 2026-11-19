@@ -438,8 +438,11 @@ Bot = penerima webhook keluar (native atau format MobiChat) yang membalas lewat 
 (docs/KONTRAK-API-PUBLIK.md, docs/KONTRAK-API-MOBICHAT.md). Skema: `packages/shared/src/bot.ts`.
 
 **Saklar bot channel** — `GET`/`PUT /api/v1/settings/channels/:channelId/bot` (`integrations.manage`,
-Owner/Admin; PUT ber-CSRF, 30/menit, diaudit `channel.bot_updated` tanpa data pelanggan, tanpa
-konfirmasi identitas — bisa dibalik kapan saja):
+Owner/Admin; PUT ber-CSRF, 30/menit, diaudit `channel.bot_updated` tanpa data pelanggan — metadata
+memuat `channelType` — tanpa konfirmasi identitas, bisa dibalik kapan saja). **Berlaku untuk SEMUA
+jenis channel** (WhatsApp, Telegram, Email, Messenger, Instagram — DECISIONS 2026-11-19): `:channelId`
+= ID dari `GET /settings/channels` (WhatsApp) atau `GET /settings/channel-connections` (channel lain);
+perilaku, batas waktu, handoff, dan saklar per percakapan sama persis.
 
 ```json
 { "enabled": true,
@@ -449,8 +452,13 @@ konfirmasi identitas — bisa dibalik kapan saja):
 
 - `day` 0 = Minggu … 6 = Sabtu, `HH:MM` 00:00–24:00, mulai < selesai (lewat tengah malam = dua
   jendela), maks. 21 jendela; zona waktu = zona organisasi. `timeoutMinutes` 1–1.440 (`null` saat aktif → 15).
-- Jawaban `{ settings: { …, timezone, activeNow, updatedAt } }` — `activeNow` = percakapan baru SAAT
-  INI masuk ke bot.
+- Jawaban `{ settings: { …, channelType, timezone, activeNow, receiverReady, updatedAt } }` —
+  `activeNow` = bot aktif + sekarang dalam jam kerja bot; `receiverReady` = ada penerima bot aktif
+  untuk channel ini (endpoint aktif yang melanggan `message.received`: format native untuk semua
+  channel, format MobiChat **hanya WhatsApp** + key masih aktif). Percakapan baru masuk ke bot hanya
+  bila `activeNow && receiverReady` — UI menampilkan peringatan bila bot aktif tetapi
+  `receiverReady: false`. `channelType` & `receiverReady` selalu dikirim (opsional di skema hanya demi
+  klien lama).
 - Berlaku untuk percakapan BARU: worker memberi status `bot` bila bot aktif + dalam jam kerja bot +
   **ada penerima aktif** (endpoint webhook aktif yang melanggan `message.received`; format MobiChat:
   key-nya masih aktif) (`botAwareInitialStatus`), selain itu `unserved`. Isi jam rusak → `unserved`.
@@ -460,7 +468,12 @@ konfirmasi identitas — bisa dibalik kapan saja):
   menyalakan bot oleh SELAIN Owner = kejadian keamanan `bot_enabled` (warning, banner).
 
 **Selama `bot`**: pesan pelanggan masuk ke tab "Bot", TIDAK memicu push ke manusia; bot menerima
-`message.received` lewat webhook keluar (opsi endpoint `botOnly`: hanya selama bot memegang).
+`message.received` lewat webhook keluar (opsi endpoint `botOnly`: hanya selama bot memegang). Body
+native memuat `data.conversation.channel_type` + `data.conversation.channel { id, type, name }` dan
+`data.contact.channel_type`/`channel_handle` supaya satu bot bisa melayani banyak channel. Balasan bot
+(`POST /api/v1/public/conversations/:id/messages`) selalu terkirim lewat channel percakapan itu, dengan
+aturan kirim channel tersebut (`CHANNEL_CAPABILITIES`: jenis pesan, ukuran media); **jendela 24 jam
+hanya WhatsApp/Messenger/Instagram** (Telegram & Email tanpa jendela).
 `conversations.bot_awaiting_since` = pesan pelanggan pertama yang belum dibalas bot (dikosongkan saat
 bot membalas lewat API key atau status bukan `bot`).
 

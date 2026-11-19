@@ -18,6 +18,7 @@ import {
 import {
   apiKeys,
   auditLogs,
+  channels,
   contactTags,
   contacts,
   conversations,
@@ -127,6 +128,10 @@ async function contactData(db: DbExecutor, organizationId: string, contactId: st
     name: row.name,
     profile_name: row.profileName,
     email: row.email,
+    // Jenis channel kontak + pengenal tampilan di channel selain WhatsApp (`@username` Telegram,
+    // alamat email; `null` untuk WhatsApp/Messenger/Instagram). Tanpa BSUID/PSID mentah.
+    channel_type: row.channelType,
+    channel_handle: row.channelHandle,
     attributes: Array.isArray(row.attributes) ? row.attributes : [],
     tags: tagRows.map((tag) => tag.name),
   };
@@ -147,18 +152,34 @@ async function conversationData(
   conversationId: string | null,
 ) {
   if (!conversationId) return null;
-  const [row] = await db
-    .select()
+  const [found] = await db
+    .select({
+      conversation: conversations,
+      channelType: channels.type,
+      channelName: channels.name,
+    })
     .from(conversations)
+    .innerJoin(
+      channels,
+      and(
+        eq(channels.organizationId, conversations.organizationId),
+        eq(channels.id, conversations.channelId),
+      ),
+    )
     .where(
       and(eq(conversations.organizationId, organizationId), eq(conversations.id, conversationId)),
     );
-  if (!row) return null;
+  if (!found) return null;
+  const row = found.conversation;
   return {
     id: row.id,
     number: row.number,
     status: row.status,
     channel_id: row.channelId,
+    // Bot per channel (DECISIONS 2026-11-19): bot tahu channel asal percakapan (balasannya lewat API
+    // publik otomatis terkirim di channel ini; jendela 24 jam hanya WhatsApp/Messenger/Instagram).
+    channel_type: found.channelType,
+    channel: { id: row.channelId, type: found.channelType, name: found.channelName },
     assignee: await userRef(db, organizationId, row.assigneeUserId),
     window_expires_at: row.windowExpiresAt?.toISOString() ?? null,
     created_at: row.createdAt.toISOString(),
@@ -352,6 +373,13 @@ export async function buildMobichatBody(
     .from(conversations)
     .where(and(eq(conversations.organizationId, org), eq(conversations.id, event.conversationId)));
   if (!message || !conversation || message.type === 'reaction') return null;
+  // Format MobiChat = WhatsApp saja (nomor sebagai identitas). Pesan channel lain hanya ke endpoint
+  // native — sama dengan `hasActiveBotReceiver` (DECISIONS 2026-11-19).
+  const [channel] = await db
+    .select({ type: channels.type })
+    .from(channels)
+    .where(and(eq(channels.organizationId, org), eq(channels.id, conversation.channelId)));
+  if (channel?.type !== 'whatsapp') return null;
   const contact = await contactData(db, org, conversation.contactId);
   if (!contact) return null;
   const phone = contact.phone ? contact.phone.replace(/\D/g, '') : null;
