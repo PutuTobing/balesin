@@ -395,3 +395,40 @@ T/G = terang dan gelap bernilai sama.
 **§3 dan §4:**
 - §3 bersih: kategori sudah berbahasa Indonesia, ikon Lucide, warna dari token, satu tombol berwarna per kartu/dialog.
 - §4 lolos.
+
+---
+
+# Putaran 3
+
+- **Tanggal:** 2026-11-19 · **Penilai:** `kritikus-desain` · **Putaran:** 3
+- **Kode yang dinilai:** `b785c4f`.
+- **Cara:**
+  - Stack dan worktree sama dengan putaran 2 laporan kanal (API 3191 / web 5191, `balesin_kd_e2e`, Redis db 11).
+  - Layar `tiket-kanban`, `-kanban-pindah`, `-daftar`, `-atur-board` × 390/1440 × terang/gelap.
+  - Audit target sentuh dan kontras di 360/390 (terang, plus gelap 390) dan 1440.
+- **Lingkup:** F11, F-S13, F-S14.
+- **Screenshot:** berkas berawalan `p3-`.
+
+## Putusan putaran 3: LOLOS
+
+| Butir | Hasil (terukur) | Status |
+|---|---|---|
+| **F11** tombol kolom Atur board di 360 | Kotak "Selesai" pindah ke baris sendiri di bawah nama kolom. Naikkan, Turunkan, Ganti nama, dan Hapus tetap 44 × 44 (`flex: none; width: var(--size-touch)`). Audit `tiket-atur-board` 360 & 390 terang/gelap: tidak ada tombol < 44 px. Yang tersisa hanya isian/`select` 42 px dalam bingkai 44 yang sudah diterima (`p3-tiket-atur-board--390-terang.png`) | Lolos |
+| F-S13 Kanban HP | Menu "⋮" kolom sekarang berbingkai, sama dengan menu board. Segmen Kanban/Daftar dan "Saring" sama tinggi. "#241" sebaris dengan "● Mendesak" (`align-items: baseline`) | Lolos |
+| F-S14 daftar tiket 390 | Judul turun ke 2 baris ("Internet putus sejak pagi, lampu LOS / merah") tanpa elipsis (`p3-tiket-daftar--390-terang.png`) | Lolos |
+
+- Tidak ada teks < 4,5:1 dan tidak ada scroll horizontal di 360/390/1440.
+- Kanban 1440 tidak berubah dari putaran 2.
+
+**Tabel nilai putaran 3** (layar yang dinilai ulang; layar lain tetap seperti putaran 2):
+
+| Layar | Ukuran · tema | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `tiket-kanban`, `-kanban-pindah` | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| `tiket-daftar` | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| `tiket-atur-board` | 360 · 390 · 1440 T/G | 5 | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 4 | 5 |
+
+**Saran tersisa (tidak menahan):** F-S12 (tombol ghost menjorok), F-S15 (sisa S4/S5/S6), F-S16 ("rate card"). Teks
+`id.ts:1125` sudah "daftar tarif resmi Meta (rate card)". Bila itu satu-satunya kemunculan, F-S16 dianggap selesai.
+
+§3 bersih, §4 lolos.

@@ -264,3 +264,185 @@ daftar `subscribeFields`), `Connections.module.css` (`.row` ±baris 195, `@media
   - bagian "Putaran 2" laporan Fase 5 (+14 `p2-*.png`);
   - bagian "Putaran 3" laporan broadcast (+2 `p3-*.png`).
 - Tidak ada kode produk yang diubah, tidak ada commit.
+
+---
+
+# Putaran 2
+
+- **Tanggal:** 2026-11-19 · **Penilai:** `kritikus-desain` · **Putaran:** 2
+- **Kode yang dinilai:** `b785c4f` (revisi K1–K8). HEAD sekarang `5470c29`, tetapi commit itu tidak menyentuh berkas
+  temuan di bawah (`ChatRoom.tsx`, `Connections.module.css`, `EmailMessage.*`, `contact-identity.ts`). Temuan berlaku
+  untuk HEAD.
+- **Cara:**
+  - Worktree terisolasi dari `b785c4f`: API 3191 / web 5191, `balesin_kd_e2e`, Redis db 11.
+  - 14 layar `screens-kanal.ts` + `tiket-*` + `broadcast-*` × 390/1440 × terang/gelap: 85/85 lulus.
+  - Audit terukur di 360/390/1440 (terang, plus gelap di 390/1440) untuk 19 layar: kontras teks, ukuran huruf,
+    target sentuh, scroll horizontal, posisi isian jam/sakelar/baris chat. 96/96 lulus.
+  - Foto tinggi `broadcast-berjalan` (daftar penerima) dan `departemen-ubah` (K3 di dialog).
+- **Screenshot:** berkas berawalan `p2-` di `docs/design-reviews/2026-11-23-kanal-jam-kerja/`.
+
+## Putusan putaran 2: REVISI (tiga butir kecil, satu di antaranya regresi)
+
+K1–K8 semuanya lolos. Hasil audit:
+- tidak ada teks < 4,5:1;
+- tidak ada scroll horizontal di 360, 390, maupun 1440;
+- tidak ada target sentuh baru < 44 px (isian 42 px dalam bingkai 44 sudah diterima sejak Fase 1).
+
+Yang menahan:
+1. Usaha K-S6 membuat tombol halaman wizard di HP jadi dua balok setinggi 96 px yang berdampingan (K9).
+2. Kepala chat desktop menyebut channel dua kali (K10). Ini baru terlihat setelah mock K8 dilengkapi.
+3. Label "Tampilan asli email" menempel ke bingkai (K11).
+
+| Butir | Hasil (terukur) | Status |
+|---|---|---|
+| **K1** ikon channel sebaris | Baris Telegram 85 px, Email 84 px, WhatsApp 83–86 px (390 & 1440). Ikon `Send`/`Mail` sebaris dengan nama channel; di 1440 ujungnya berelipsis ("Bot CS Maju …") | Lolos |
+| **K2** saklar Tersedia ber-teks | `role="switch"`, 94 × 44 px, bulatan hijau + "Tersedia" di kepala daftar chat (390 & 1440, terang & gelap) | Lolos |
+| **K3** jam berdampingan | `jam-kerja` 1440: jam mulai x 249–361, jam selesai x 385–497. Celah 24 px dengan "–" di tengah (±12 px tiap sisi). Dialog Departemen ikut rapi (657–769 / 793–905) | Lolos |
+| **K4** daftar agen | Grid: kedua sakelar di x 459 dan 702 untuk keempat agen. Sakelar "Ikut pembagian otomatis" positif. "Tersedia" nonaktif saat agen tidak ikut (Rina). Status jadi teks di meta (hijau "Tersedia" / "Tidak tersedia" / "Tidak ikut pembagian"). Di 390 kontrol di baris kedua untuk semua agen. Tidak ada keadaan bertentangan | Lolos |
+| **K5** detail channel HP | Satu kolom. IMAP: `mail.majujaya.co.id:993` (mono), lalu "SSL/TLS · cs@majujaya.co.id · folder INBOX". Event webhook Messenger berupa daftar mono tanpa koma. Alamat webhook 2 baris (Messenger & Telegram). Tidak ada baris yang dimulai tanda baca | Lolos |
+| **K6** halaman Channel | WhatsApp menjadi kartu ringkas "WhatsApp · Belum terhubung" + "Hubungkan nomor" berbingkai. Baris channel pertama di 390 mulai ±310 px. Kartu WhatsApp ringkas (±125 px) dan baris Telegram sudah tampil di layar pertama; selisih 10 px dari target ≤ 300 diterima. Di 1440 ada garis + ±28 px sebelum "Tambah channel" | Lolos |
+| **K7** teks | `nameHint` per jenis ("mis. "Email CS"", "mis. "Messenger Maju Jaya""). Isi peringatan tidak mengulang judul. "Event webhook yang dicentang di Meta". "sandi aplikasi (app password)" di pengantar. `trustedHint` tanpa "Opsional.". Konfirmasi pesan otomatis: satu kalimat + "Konfirmasi dulu bahwa ini memang kamu." | Lolos |
+| **K8** foto identitas | `inbox-telegram` 390 lulus difoto. Kepala chat "Telegram · @andika_dps", panel "@andika_dps". `inbox-email` "rudi.hartono@gmail.com" di kepala chat dan panel. Foto `tall` memotret `jam-kerja` dan wizard Email utuh | Lolos |
+| K-S2 composer email | "Tulis balasan email…". Baris subjek balasan di atas composer belum ada | Sebagian |
+| K-S5 detail Telegram | "Pasang ulang webhook", `/newbot` mono, kalimat webhook diperbaiki | Lolos |
+| K-S6 urutan tombol wizard HP | Dikerjakan, tetapi menimbulkan regresi K9 | Regresi |
+| K-S7 meta Messenger | "Messenger · Halaman 104523987612345" utuh di 390 | Lolos |
+| K-S1 iframe email | Label "Tampilan asli email" ada, tetapi menempel (K11). Isi masih Times, iframe masih ±512 px dengan bidang putih kosong | Sebagian |
+| K-S3, K-S4, K-S8 | Belum dikerjakan | Tetap saran |
+
+**Broadcast sekilas (sudah LOLOS, cek regresi):**
+- **BC-S9:** judul kotak "Perlu persetujuan Owner atau Admin"; lencana kepala tetap "Menunggu persetujuan".
+- **BC-S12:** nomor penerima "+62 812-3456-7890".
+- **BC-S13:** judul "Penerima" sejajar bawah dengan saringan "Tampilkan".
+- Kesimpulan: ketiganya lolos. Petak hasil, biaya, dan alasan gagal di 1440 tidak berubah. Tidak ada regresi
+  (`p2-broadcast-persetujuan--390-terang.png`, `p2-broadcast-berjalan-tinggi--390-terang.png`).
+
+### Wajib
+
+**K9. Regresi: tombol halaman wizard di HP berdampingan setinggi 96 px** —
+`apps/web/src/features/channels/connections/Connections.module.css:438-448` (dalam `@media (max-width: 640px)`
+baris 413)
+
+- Terukur di `channel-telegram-baru`, `-messenger-baru`, dan `-email-baru` (390 & 360, terang & gelap):
+  - "Hubungkan" berukuran **179 × 96 px** (360: 164 × 96).
+  - "Batal" ada di sebelah kirinya, sama tinggi.
+  - Hasilnya dua balok raksasa (`p2-channel-telegram-baru--390-*.png`).
+- Penyebab:
+  - `.actions` diberi `flex-direction: column-reverse`, tetapi `flex-wrap: wrap` (baris 299) dan
+    `.actions > * { flex: 1 1 100%; }` (baris 438–442) masih berlaku.
+  - Dalam arah kolom, `flex-basis: 100%` menjadi **tinggi**, lalu `wrap` membuat setiap tombol menjadi kolom sendiri.
+- Perbaikan, di blok `@media` yang sama:
+  ```css
+  .actions {
+    flex-direction: column-reverse;
+    flex-wrap: nowrap;
+  }
+  .actions > * {
+    flex: none;
+    width: 100%;
+  }
+  ```
+  Pertahankan `flex: 1 1 100%` hanya untuk `.actionsStart > *` dan `.actionsSplit > *`, yang tetap baris.
+- Kriteria lolos:
+  - Di 360/390 "Hubungkan" 100% lebar × 44 px, di atas "Batal" yang juga 100% × 44 px, jarak `--space-8`.
+  - Di 1440 tetap sebaris di kanan (sekarang 112 × 36, tidak berubah).
+
+**K10. Kepala chat desktop menyebut channel dua kali** — `apps/web/src/features/inbox/ChatRoom.tsx:229-233`
+
+- Terukur di `inbox-telegram` 1440: "Telegram · @andika_dps · **dari Telegram**". Di `inbox-email` 1440: "Email ·
+  rudi.hartono@gmail.com · **dari Email**".
+- Penyebab: `sub` berisi `CHANNEL_TYPE_LABELS[channelType]` **dan** `untrustedNameLabel(...)`. Untuk channel
+  non-WhatsApp, label kedua juga "dari <channel>".
+- Perbaikan: bila penanda nama tidak tepercaya ikut tampil (desktop, `!onOpenDetail`), jangan tulis jenis channel di
+  depannya:
+  ```ts
+  const showUntrusted = untrusted && !onOpenDetail;
+  const sub = [
+    channelType !== 'whatsapp' && !showUntrusted ? CHANNEL_TYPE_LABELS[channelType] : null,
+    identity.handle,
+    showUntrusted ? untrusted : null,
+  ].filter(Boolean);
+  ```
+- Hasil:
+  - Desktop: "@andika_dps · dari Telegram" / "rudi.hartono@gmail.com · dari Email".
+  - HP tetap "Telegram · @andika_dps".
+  - Kontak yang sudah diberi nama oleh tim (tanpa penanda) tetap "Telegram · @andika_dps".
+- Kriteria lolos: tidak ada nama channel yang muncul dua kali di subjudul kepala chat, di 390 maupun 1440.
+
+**K11. Label "Tampilan asli email" menempel ke bingkai** — `apps/web/src/features/inbox/EmailMessage.tsx:111`,
+`EmailMessage.module.css:87-91`
+
+- Terukur di `inbox-email-html` 1440 terang/gelap: teks label 0 px dari garis kiri dan atas `.frameWrap`. Di dalam
+  bingkai ia tidak punya padding, sedangkan isi email di bawahnya menjorok ±12 px.
+- Perbaikan, pilih salah satu:
+  - (disarankan) pindahkan `<p className={styles.frameLabel}>` ke **atas** `<div className={styles.frameWrap}>`,
+    sejajar tepi kiri dialog. Ganti `margin-bottom` dengan `margin-top: var(--space-16)` dan hapus `margin-top` di
+    `.frameWrap` (baris 57) supaya jaraknya tidak dobel.
+  - atau jadikan pita kepala di dalam bingkai:
+    `padding: var(--space-8) var(--space-12); margin: 0; border-bottom: 1px solid var(--line); background: var(--surface-2);`.
+- Kriteria lolos: ada ≥ 8 px antara teks label dan garis bingkai terdekat, di 390 dan 1440, terang dan gelap.
+
+### Saran (tidak menahan)
+
+- **K-S1 (sisa).** Isi iframe masih Times dan tingginya tetap `min(60dvh, 32rem)`, sehingga ±60% bidangnya putih
+  kosong untuk email pendek. Usul sebelumnya masih berlaku: sisipkan `<style>` dasar di `srcDoc` dan tinggi mengikuti
+  isi (maks 70vh). Lihat `EmailMessage.module.css:68-73`.
+- **K-S3.** Halaman Jam kerja:
+  - Tiga tombol "Simpan" berwarna masih ada.
+  - Hari kerja masih ubin biru terisi ×6 dan terlalu berat, terutama di 390 karena setiap hari jadi balok penuh.
+  - Teks "Kapasitas per agen" masih terjepit 3 baris di 1440 (`WorkspaceSettingsPage.tsx:324-327`).
+  - Kotak centang pesan otomatis masih mengulang nama di label "Isi pesan: …".
+- **K-S4.** Kotak merah "Username atau password IMAP ditolak." di kartu Koneksi belum memberi jalan keluar. Selain
+  itu, teks galat Tes koneksi masih "pakai app password". Sumbernya `packages/shared/src/channel-connections.ts:387`.
+  Ganti dengan **"…aktifkan IMAP dan pakai sandi aplikasi (app password), bukan password akun biasa."** supaya sama
+  dengan pengantar K7.
+- **K-S8.** Baris WhatsApp di daftar chat masih tanpa ikon, padahal organisasi ini punya tiga jenis channel.
+- **K-S9 (baru).** Meta agen di 1440 selalu terpotong ("Belum …", "Terakhir dapat c…") karena kolom teks hanya
+  ±330 px. Dua pilihan:
+  - pindahkan "Terakhir dapat chat …" ke baris kedua (`--ink-2`, 13 px);
+  - atau beri `title` berisi meta lengkap pada `.agentMeta` (`Workspace.module.css:237`).
+- **K-S10 (baru).** `apps/web/src/components/ui/Switch.module.css:92` dan `:97` memakai selektor
+  `.row[aria-checked='true'] .track` dua kali. Gabungkan menjadi satu blok. Ini kerapian kode, tidak berdampak
+  visual.
+- **K-S11 (baru).** Panel detail Email memecah alamat menjadi "rudi.hartono / @gmail.com". Untuk nilai alamat email,
+  pakai `overflow-wrap: anywhere` hanya bila lebih panjang dari kolom, atau tampilkan nilai di bawah label (satu kolom)
+  di panel 360 px.
+- **K-S12 (baru).** Dua tombol "Salin" di detail Messenger berbeda letak: alamat webhook di bawah dan menjorok ±10 px
+  (pola F-S12), verify token di samping. Samakan, misalnya keduanya di bawah nilai dan rata kiri.
+
+### Tabel nilai putaran 2
+
+T/G = terang dan gelap bernilai sama.
+
+| Layar | Ukuran · tema | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `channel-lain` | 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| | 390 T/G | 5 | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 4 | 5 |
+| `channel-lain-kosong` | 390 · 1440 T/G | 4 | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 4 | 5 |
+| `channel-telegram-baru`, `-messenger-baru`, `-email-baru` | 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 4 | 5 |
+| | 390 T/G | 4 | 5 | 5 | **2** | 5 | 5 | 5 | 5 | **2** | 5 |
+| `channel-telegram` | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| `channel-email` | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 4 | 4 | 5 |
+| `channel-messenger` | 390 · 1440 T/G | 5 | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 4 | 5 |
+| Daftar chat (`inbox-tersedia`) | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 4 | 5 |
+| `inbox-telegram`, `inbox-email` | 1440 T/G | 5 | 5 | 5 | 4 | 5 | 5 | 5 | **3** | **3** | 5 |
+| | 390 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| `inbox-email-html` | 390 · 1440 T/G | 5 | 5 | 4 | **3** | 5 | 5 | 5 | 5 | **3** | 5 |
+| `jam-kerja` | 1440 T/G | 4 | 5 | 5 | 5 | 5 | 4 | 5 | 5 | 4 | 5 |
+| | 390 T/G | 4 | 5 | 5 | 4 | 5 | 4 | 5 | 5 | 4 | 5 |
+| `jam-kerja-konfirmasi` | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+
+**§3 dan §4:**
+- §3 bersih. "Field" sudah hilang. Warna sakelar memakai token (`--primary`, `--on-primary`, `--ink-2`, `--surface-2`).
+  Ikon Lucide. Tanpa gradien. Satu tombol berwarna per kartu/dialog.
+- §4 lolos. Urutan tombol dialog konfirmasi sudah benar (berwarna di atas). Setelah K9 diperbaiki, halaman wizard ikut
+  pola yang sama.
+
+## Bersih-bersih putaran 2
+
+- Worktree dihapus (`git worktree list` hanya repo utama).
+- Port 3191/5191 kosong, `balesin_kd_e2e` di-drop, Redis db 11 `DBSIZE` 0, folder `balesin-e2e-media-3191` dihapus.
+- Berkas repo:
+  - bagian ini + 18 `p2-*.png`;
+  - bagian "Putaran 3" laporan Fase 5 (+4 `p3-*.png`).
+- Tidak ada kode produk yang diubah, tidak ada commit.

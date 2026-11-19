@@ -59,12 +59,12 @@ Orkestrator mengerjakan dari atas ke bawah. Tandai `[x]` saat Definition of Done
 - [x] Preset template industri (ISP dahulu) sebagai draf siap ajukan
 
 ## Fase 5 — CRM, tiket, laporan
-- [ ] Kontak: atribut kustom, impor/ekspor, gabung duplikat
-- [ ] Tiket/tugas untuk teknisi + akses terbatas peran Teknisi; multi-board, Kanban/Daftar, atribut kustom, API tiket untuk bot
-- [ ] Departemen + akses "departemen sendiri"
-- [ ] CSAT otomatis setelah percakapan selesai
-- [ ] Dashboard laporan (waktu respons pertama/tunggu/resolusi, kinerja agen & bot) + **biaya pesan Meta** (kuota 1.000 layanan gratis/nomor/bulan, perkiraan biaya)
-- [ ] Jam kerja (tim & bot terpisah), pesan otomatis (termasuk saat di-assign), alokasi agen ambil sendiri/round-robin + kapasitas per agen
+- [x] Kontak: atribut kustom, impor/ekspor, gabung duplikat
+- [x] Tiket/tugas untuk teknisi + akses terbatas peran Teknisi; multi-board, Kanban/Daftar, atribut kustom, API tiket untuk bot
+- [x] Departemen + akses "departemen sendiri"
+- [x] CSAT otomatis setelah percakapan selesai
+- [x] Dashboard laporan (waktu respons pertama/tunggu/resolusi, kinerja agen & bot) + **biaya pesan Meta** (kuota 1.000 layanan gratis/nomor/bulan, perkiraan biaya)
+- [x] Jam kerja (tim & bot terpisah), pesan otomatis (termasuk saat di-assign), alokasi agen ambil sendiri/round-robin + kapasitas per agen
 
 ## Fase 6 — Channel tambahan
 - [ ] Telegram Bot
