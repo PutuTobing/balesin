@@ -96,6 +96,8 @@ const SECURITY_EVENT_CONDITIONS: Readonly<Record<SecurityEventKind, SQL>> = {
   webhook_disabled: sql`${auditLogs.action} = ${AUDIT_ACTIONS.outgoingWebhookAutoDisabled}`,
   api_key_changed: sql`${auditLogs.action} in (${AUDIT_ACTIONS.apiKeyCreated}, ${AUDIT_ACTIONS.apiKeyRevoked})`,
   bot_enabled: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.channelBotUpdated} and ${auditLogs.metadata} ->> 'enabled' = 'true' and ${auditLogs.metadata} ->> 'previousEnabled' = 'false' and ${auditLogs.metadata} ->> 'actorRole' <> 'owner')`,
+  // Satu baris audit = satu jenis (`kindOf`): bila bersamaan dengan menyalakan bot, tampil `bot_enabled`.
+  bot_verified_sender_disabled: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.channelBotUpdated} and ${auditLogs.metadata} ->> 'requireVerifiedSender' = 'false' and ${auditLogs.metadata} ->> 'previousRequireVerifiedSender' = 'true' and ${auditLogs.metadata} ->> 'actorRole' <> 'owner' and not (${auditLogs.metadata} ->> 'enabled' = 'true' and ${auditLogs.metadata} ->> 'previousEnabled' = 'false'))`,
   quick_reply_risky: sql`(${auditLogs.action} in (${AUDIT_ACTIONS.quickReplyCreated}, ${AUDIT_ACTIONS.quickReplyUpdated}) and ${auditLogs.metadata} ->> 'risky' = 'true')`,
   owner_password_reset_server: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.passwordResetCompleted} and ${auditLogs.metadata} ->> 'serverRecovery' = 'true')`,
   auto_message_risky: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.workspaceSettingsUpdated} and ${auditLogs.metadata} ->> 'risky' = 'true')`,
@@ -225,10 +227,13 @@ function kindOf(row: AuditRow): SecurityEventKind | undefined {
     case AUDIT_ACTIONS.apiKeyRevoked:
       return 'api_key_changed';
     case AUDIT_ACTIONS.channelBotUpdated:
-      return row.metadata.enabled === true &&
-        row.metadata.previousEnabled === false &&
-        row.metadata.actorRole !== 'owner'
-        ? 'bot_enabled'
+      if (row.metadata.actorRole === 'owner') return undefined;
+      if (row.metadata.enabled === true && row.metadata.previousEnabled === false) {
+        return 'bot_enabled';
+      }
+      return row.metadata.requireVerifiedSender === false &&
+        row.metadata.previousRequireVerifiedSender === true
+        ? 'bot_verified_sender_disabled'
         : undefined;
     case AUDIT_ACTIONS.quickReplyCreated:
     case AUDIT_ACTIONS.quickReplyUpdated:
@@ -270,6 +275,7 @@ const DETAIL_KEYS: Readonly<Record<SecurityEventKind, readonly string[]>> = {
   webhook_changed: ['change', 'host', 'previousHost', 'events', 'cidrs', 'actorRole'],
   webhook_disabled: ['host', 'failures'],
   bot_enabled: ['channelType', 'hoursMode', 'timeoutMinutes', 'actorRole'],
+  bot_verified_sender_disabled: ['channelType', 'enabled', 'actorRole'],
   sending_limits_changed: [
     'change',
     'dailyPerUser',

@@ -760,53 +760,47 @@ describe('putaran 3 — requireVerifiedSender & conversation.bot_resumed (d9766b
   // lewat `conversation.bot_resumed`. Ini melewati jaminan worker B1 ("email `fail` tidak pernah
   // dilayani bot"), yang sengaja tidak bergantung pada kepatuhan bot ke kontrak. Diharapkan: ditolak
   // 409, ATAU `data.message` tidak memuat pesan itu (`null`).
-  it.fails(
-    'P3-1: email `fail` yang belum dibalas tidak diteruskan ke bot saat dikembalikan',
-    async () => {
-      const channelId = await addChannel('email');
-      await addWebhook({
-        events: ['message.received', 'conversation.bot_resumed'],
-        botOnly: true,
-      });
-      await call(harness.app, 'PUT', botUrl(channelId), ON, {
-        cookie: owner.cookie,
-        csrf: owner.csrf,
-      });
-      await receive('email', channelId, 'Isolir layanan saya sekarang', 'fail');
-      const conversation = await latestConversation(channelId);
-      expect(conversation.status).toBe('unserved');
-      await resume(conversation.id);
-      await tick();
-      const texts = resumedBodies().map((body) => body.data.message?.text ?? null);
-      expect(texts).not.toContain('Isolir layanan saya sekarang');
-    },
-  );
+  it('P3-1: email `fail` yang belum dibalas tidak diteruskan ke bot saat dikembalikan', async () => {
+    const channelId = await addChannel('email');
+    await addWebhook({
+      events: ['message.received', 'conversation.bot_resumed'],
+      botOnly: true,
+    });
+    await call(harness.app, 'PUT', botUrl(channelId), ON, {
+      cookie: owner.cookie,
+      csrf: owner.csrf,
+    });
+    await receive('email', channelId, 'Isolir layanan saya sekarang', 'fail');
+    const conversation = await latestConversation(channelId);
+    expect(conversation.status).toBe('unserved');
+    await resume(conversation.id);
+    await tick();
+    const texts = resumedBodies().map((body) => body.data.message?.text ?? null);
+    expect(texts).not.toContain('Isolir layanan saya sekarang');
+  });
 
   // P3-1 (Sedang), varian P2-1: channel Email dengan `requireVerifiedSender` — `unverified` yang
   // belum dibalas juga diteruskan ke bot lewat `conversation.bot_resumed`.
-  it.fails(
-    'P3-1: requireVerifiedSender — email `unverified` yang belum dibalas tidak diteruskan ke bot',
-    async () => {
-      const channelId = await addChannel('email');
-      await addWebhook({
-        events: ['message.received', 'conversation.bot_resumed'],
-        botOnly: true,
-      });
-      const on = await call(
-        harness.app,
-        'PUT',
-        botUrl(channelId),
-        { ...ON, requireVerifiedSender: true },
-        { cookie: owner.cookie, csrf: owner.csrf },
-      );
-      expect(on.statusCode, on.body).toBe(200);
-      await receive('email', channelId, 'Ganti paket saya', 'unverified');
-      const conversation = await latestConversation(channelId);
-      expect(conversation.status).toBe('unserved');
-      await resume(conversation.id);
-      await tick();
-      const texts = resumedBodies().map((body) => body.data.message?.text ?? null);
-      expect(texts).not.toContain('Ganti paket saya');
-    },
-  );
+  it('P3-1: requireVerifiedSender — email `unverified` yang belum dibalas tidak diteruskan ke bot', async () => {
+    const channelId = await addChannel('email');
+    await addWebhook({
+      events: ['message.received', 'conversation.bot_resumed'],
+      botOnly: true,
+    });
+    const on = await call(
+      harness.app,
+      'PUT',
+      botUrl(channelId),
+      { ...ON, requireVerifiedSender: true },
+      { cookie: owner.cookie, csrf: owner.csrf },
+    );
+    expect(on.statusCode, on.body).toBe(200);
+    await receive('email', channelId, 'Ganti paket saya', 'unverified');
+    const conversation = await latestConversation(channelId);
+    expect(conversation.status).toBe('unserved');
+    await resume(conversation.id);
+    await tick();
+    const texts = resumedBodies().map((body) => body.data.message?.text ?? null);
+    expect(texts).not.toContain('Ganti paket saya');
+  });
 });

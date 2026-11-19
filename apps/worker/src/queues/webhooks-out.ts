@@ -626,7 +626,11 @@ async function dispatchOne(tx: DbExecutor, event: OutgoingEventRow, now: Date): 
   // Endpoint "hanya saat bot": pesan masuk dikirim hanya bila bot memegang percakapan SAAT DISPATCH.
   let botHolds: boolean | undefined;
   for (const endpoint of endpoints) {
-    if (endpoint.botOnly && event.type === 'message.received') {
+    // P3-2: `conversation.bot_resumed` (membawa pesan pelanggan) dinilai ulang dengan cara yang sama.
+    if (
+      endpoint.botOnly &&
+      (event.type === 'message.received' || event.type === 'conversation.bot_resumed')
+    ) {
       if (botHolds === undefined) {
         const [conversation] = event.conversationId
           ? await tx

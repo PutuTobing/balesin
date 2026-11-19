@@ -571,6 +571,11 @@ export const SECURITY_EVENT_KINDS = [
   /** Bot channel dinyalakan oleh SELAIN Owner (review bot R1: percakapan baru dialihkan ke bot). */
   'bot_enabled',
   /**
+   * Perlindungan Email "bot hanya melayani pengirim terverifikasi" dimatikan oleh SELAIN Owner (review
+   * bot semua channel P3-I1): email tak terverifikasi kembali dilayani bot otomatis.
+   */
+  'bot_verified_sender_disabled',
+  /**
    * Teks pesan otomatis (sapaan/di luar jam kerja/ditangani agen — dikirim ke SEMUA pelanggan baru)
    * diberi tautan/angka panjang baru (review jam kerja S1).
    */
@@ -615,6 +620,7 @@ export const SECURITY_EVENT_SEVERITY: Readonly<Record<SecurityEventKind, 'warnin
   api_key_changed: 'warning',
   webhook_changed: 'warning',
   bot_enabled: 'warning',
+  bot_verified_sender_disabled: 'warning',
   webhook_disabled: 'warning',
   auto_message_risky: 'warning',
   owner_password_reset_server: 'warning',
@@ -642,6 +648,7 @@ export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> 
   api_key_changed: 'API key dibuat atau dicabut',
   webhook_changed: 'Webhook keluar / allowlist IP privat diubah',
   bot_enabled: 'Bot channel dinyalakan oleh selain Owner',
+  bot_verified_sender_disabled: 'Bot Email kembali melayani pengirim yang tidak terverifikasi',
   webhook_disabled: 'Webhook keluar dinonaktifkan karena gagal beruntun',
   auto_message_risky: 'Pesan otomatis diberi tautan/angka baru',
   owner_password_reset_server: 'Password Owner diatur ulang dari server',

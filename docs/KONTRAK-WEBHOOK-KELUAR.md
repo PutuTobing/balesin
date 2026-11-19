@@ -34,12 +34,20 @@ Kejadian keamanan: `webhook_changed` (dibuat, URL diubah, rahasia dirotasi, allo
 alih, batas waktu bot); `data.actor` kosong bila oleh key/sistem. `conversation.bot_resumed`
 (2026-11-19) — percakapan dikembalikan ke bot oleh agen; `data.conversation`, `data.contact`,
 `data.actor`, dan `data.message` = pesan pelanggan TERAKHIR yang belum dibalas (bentuk sama dengan
-`message.received`, termasuk `email.sender_verification`) atau `null` bila pesan terakhir dari tim.
-Hanya format native (format MobiChat tetap hanya `message.received`); tidak terkena saringan `botOnly`. `ticket.created` /
+`message.received`, termasuk `email.sender_verification`) atau `null` bila pesan terakhir dari tim
+**atau pesan itu email yang tidak boleh dilayani bot** (`fail`, termasuk data lama ber-peringatan
+DMARC; `unverified` bila channel memakai "hanya pengirim terverifikasi") — event tetap terkirim, isi
+email itu tidak. Hanya format native (format MobiChat tetap hanya `message.received`). Endpoint
+`botOnly` menerimanya hanya bila percakapan masih `bot` SAAT DISPATCH (sama dengan
+`message.received`). **Idempotensi di sisi bot**: pesan tertunda yang sama bisa muncul lagi di
+`message.received` dan di beberapa `conversation.bot_resumed` (siklus matikan/kembalikan) — bot WAJIB
+membuang duplikat berdasarkan `data.message.id` (bukan `id` kejadian), dan mengabaikan event bila
+`data.conversation.status` bukan `bot`. `ticket.created` /
 `ticket.updated` (Fase 5) — `data.ticket` + kontak/percakapan tautannya, lihat
 `docs/KONTRAK-API-CRM-TIKET.md`. Menyusul: `broadcast.completed`.
 
-Opsi endpoint **`botOnly`** (buat/ubah, tanpa konfirmasi): `message.received` hanya dikirim bila
+Opsi endpoint **`botOnly`** (buat/ubah, tanpa konfirmasi): `message.received` dan
+`conversation.bot_resumed` hanya dikirim bila
 percakapan berstatus `bot` SAAT DISPATCH — untuk penerima yang berperan bot (seperti bot eksternal
 MobiChat). Bawaan `false`: semua pesan masuk (workflow ULAN memutuskan diam sendiri dan tetap mencatat
 "chat menunggu").

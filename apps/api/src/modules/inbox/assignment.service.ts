@@ -15,6 +15,7 @@ import {
   type ConversationRow,
   type Database,
   type DbExecutor,
+  type MessageExtras,
 } from '@balesin/db';
 import {
   CONTACT_EDITABLE_FIELDS,
@@ -137,6 +138,21 @@ export interface AssignmentService {
 }
 
 const NOT_FOUND = 'Percakapan tidak ditemukan.';
+
+/**
+ * Boleh diteruskan ke bot (review bot semua channel P3-1)? Pesan selain email selalu boleh. Email:
+ * `fail` (atau data lama tanpa hasil verifikasi tetapi ber-`authWarning`) tidak pernah; `unverified`
+ * (termasuk data lama tanpa peringatan) hanya bila channel tidak mewajibkan pengirim terverifikasi.
+ */
+function trustedForBot(extras: MessageExtras, requireVerifiedSender: boolean): boolean {
+  const email = extras.email;
+  if (!email) return true;
+  const verification =
+    email.senderVerification ?? (email.authWarning === true ? 'fail' : 'unverified');
+  if (verification === 'pass') return true;
+  if (verification === 'fail') return false;
+  return !requireVerifiedSender;
+}
 
 interface Change {
   /** `null` = tidak ada yang berubah (aksi idempoten). */
@@ -621,7 +637,11 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
         if (conversation.status === 'resolved') throw await heldBy(tx, conversation);
         if (conversation.status === 'bot') return { kind: null };
         const [channel] = await tx
-          .select({ type: channels.type, botEnabled: channels.botEnabled })
+          .select({
+            type: channels.type,
+            botEnabled: channels.botEnabled,
+            requireVerifiedSender: channels.botRequireVerifiedSender,
+          })
           .from(channels)
           .where(
             and(
@@ -665,7 +685,7 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
         // dari SAAT dikembalikan (bot tidak pernah menerima pesan lama itu lewat webhook; memakai
         // `last_inbound_at` lama akan langsung melepasnya lagi di pemeriksaan berikutnya).
         const [latest] = await tx
-          .select({ id: messages.id, direction: messages.direction })
+          .select({ id: messages.id, direction: messages.direction, extras: messages.extras })
           .from(messages)
           .where(
             and(
@@ -681,7 +701,13 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
           kind: 'bot_resumed',
           assigneeUserId: null,
           patch: { status: 'bot', botAwaitingSince: awaiting ? at : null },
-          pendingMessageId: awaiting ? (latest?.id ?? null) : null,
+          // P3-1: email palsu (`fail`, termasuk data lama ber-`authWarning`) — atau `unverified` saat
+          // "hanya pengirim terverifikasi" hidup — TIDAK diteruskan ke bot; event tetap terkirim
+          // dengan `message: null` (agen tidak dihalangi, bot tidak menerima isi yang tak tepercaya).
+          pendingMessageId:
+            awaiting && latest && trustedForBot(latest.extras, channel.requireVerifiedSender)
+              ? latest.id
+              : null,
         };
       }),
 

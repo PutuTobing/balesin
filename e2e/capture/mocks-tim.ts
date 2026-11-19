@@ -399,6 +399,7 @@ const COUNTS = {
   auto_message_risky: 0,
   owner_password_reset_server: 0,
   branding_changed: 0,
+  bot_verified_sender_disabled: 0,
 };
 
 /** Ringkasan keamanan tiruan dengan kejadian `warning` (banner tampil untuk Owner/Admin). */

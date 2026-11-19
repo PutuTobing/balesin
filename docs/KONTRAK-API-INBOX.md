@@ -510,7 +510,8 @@ dikembalikan sehingga batas waktu bot berjalan; percakapan selesai →
 409; mengambil dari agen LAIN butuh `inbox.assign` (403 + audit penolakan). Jawaban = bentuk aksi
 penanganan (`{ conversation }`). Webhook native `conversation.bot_resumed` (`data.conversation`,
 `data.contact`, `data.actor`, dan `data.message` = pesan pelanggan terakhir yang belum dibalas atau
-`null`) supaya bot bisa langsung bertindak. Tab Log: `handoff` "Menyerahkan dari bot ke tim", `bot_resumed`
+`null` — juga `null` bila pesan itu email `fail`, atau `unverified` saat `requireVerifiedSender` hidup)
+supaya bot bisa langsung bertindak; agen tidak dihalangi. Tab Log: `handoff` "Menyerahkan dari bot ke tim", `bot_resumed`
 "Mengembalikan ke bot" (pelaku pengguna / "Bot · <nama key>" / sistem bila `actor` `null`).
 
 ## Pesan interaktif (Fase 3)

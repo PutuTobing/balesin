@@ -30,6 +30,7 @@ import {
   apiPath,
   channelBotSettingsResponseSchema,
   createApiKeyResponseSchema,
+  securitySummaryResponseSchema,
   type ChannelBotSettings,
   type ChannelType,
 } from '@balesin/shared';
@@ -824,5 +825,72 @@ describe('putaran 2 review bot semua channel', () => {
     await tick();
     expect(resumedBodies()).toHaveLength(2);
     expect(resumedBodies()[1]?.data.message).toBeNull();
+  });
+});
+
+describe('putaran 3 review bot semua channel', () => {
+  it('P3-2: endpoint "hanya saat bot" tidak menerima bot_resumed bila agen sudah mengambil alih', async () => {
+    const channelId = await addChannel('telegram');
+    await putBot(channelId, { enabled: true, hours: { mode: 'always' }, timeoutMinutes: 10 });
+    await receive('telegram', channelId, 'Halo');
+    const conversation = await latestConversation(channelId);
+    await addWebhook({ events: ['message.received', 'conversation.bot_resumed'], botOnly: true });
+    const resumed = await call(
+      harness.app,
+      'POST',
+      apiPath(API_ROUTES.inbox.bot, { conversationId: conversation.id }),
+      { active: true },
+      { cookie: owner.cookie, csrf: owner.csrf },
+    );
+    expect(resumed.statusCode, resumed.body).toBe(200);
+    // Diambil agen SEBELUM dispatch → event dinilai ulang dan dilewati.
+    const claimed = await call(
+      harness.app,
+      'POST',
+      apiPath(API_ROUTES.inbox.claim, { conversationId: conversation.id }),
+      undefined,
+      { cookie: owner.cookie, csrf: owner.csrf },
+    );
+    expect(claimed.statusCode, claimed.body).toBe(200);
+    await tick();
+    expect(received).toHaveLength(0);
+  });
+
+  it('P3-I1: Admin mematikan "hanya pengirim terverifikasi" → kejadian keamanan warning; Owner tidak', async () => {
+    const email = await addChannel('email');
+    const on: ChannelBotSettings = { enabled: true, hours: { mode: 'always' }, timeoutMinutes: 10 };
+    const put = (signed: SignedIn, requireVerifiedSender: boolean) =>
+      call(
+        harness.app,
+        'PUT',
+        botUrl(email),
+        { ...on, requireVerifiedSender },
+        { cookie: signed.cookie, csrf: signed.csrf },
+      );
+    const summary = async () => {
+      const response = await call(harness.app, 'GET', API_ROUTES.audit.securitySummary, undefined, {
+        cookie: owner.cookie,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      return securitySummaryResponseSchema
+        .parse(response.json())
+        .events.filter((event) => event.kind === 'bot_verified_sender_disabled');
+    };
+    expect((await put(owner, true)).statusCode).toBe(200);
+    // Owner mematikan sendiri → tidak jadi banner.
+    expect((await put(owner, false)).statusCode).toBe(200);
+    expect(await summary()).toHaveLength(0);
+
+    expect((await put(owner, true)).statusCode).toBe(200);
+    const user = await insertUser(harness.db, organizationId, {
+      role: 'admin',
+      email: 'admin.verifikasi@majujaya.test',
+      passwordHash: await hasher.hash(PASSWORD),
+    });
+    const admin = await login(harness.app, { email: user.email, password: PASSWORD });
+    expect((await put(admin, false)).statusCode).toBe(200);
+    const events = await summary();
+    expect(events).toHaveLength(1);
+    expect(events[0]?.severity).toBe('warning');
   });
 });
