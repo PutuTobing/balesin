@@ -62,14 +62,20 @@ X-Balesin-Signature: t=<unix detik>,v1=<hex>[,v1=<hex rahasia lama>]
 - `data` dibangun worker SAAT DISPATCH dari database: `message` (id, number, direction, sender_kind,
   type, text, media {kind, mime_type, filename}, location, `interactive` (balasan tombol/daftar
   pelanggan `{type, id, title, description}` — masukan pelanggan TIDAK tepercaya, bisa dipalsukan
-  klien tidak resmi), `interactive_message` (tombol/daftar keluar), status,
+  klien tidak resmi), `interactive_message` (tombol/daftar keluar), `email` (pesan email saja, selain
+  itu `null`: `{ subject, sender_verification: pass|fail|unverified, auth_warning }`; pesan keluar
+  `sender_verification: null`. **Selain `pass` = pengirim tidak tepercaya** — alamat `From` bisa
+  dipalsukan; bot/n8n TIDAK BOLEH menjalankan aksi akun atas pesan itu dan sebaiknya handoff ke tim.
+  Email `fail` tidak pernah dipegang bot), status,
   error_code, created_at),
   `conversation` (id, number, status, channel_id, **channel_type**, **channel {id, type, name}**,
   assignee {id,name}, window_expires_at, created_at, resolved_at), `contact` (id, number, phone,
   wa_username, name, profile_name, email, **channel_type**, **channel_handle** — `@username` Telegram /
   alamat email, `null` untuk WhatsApp/Messenger/Instagram — attributes, tags), `actor` {id,name} bila
   ada. `channel_type` ∈ `whatsapp`·`telegram`·`email`·`messenger`·`instagram` (tambahan 2026-11-19,
-  kompatibel: isian lama tidak berubah). `window_expires_at` hanya terisi di channel berjendela 24 jam. Memuat data pelanggan seperlunya untuk bot/n8n (isi pesan,
+  kompatibel: isian lama tidak berubah). `window_expires_at` hanya terisi di channel berjendela 24 jam.
+  `channel_handle`, `profile_name`, `name` = masukan pelanggan (username Telegram bisa berpindah
+  tangan): kenali pelanggan lewat `contact.id`. Memuat data pelanggan seperlunya untuk bot/n8n (isi pesan,
   nomor); TANPA rahasia, ID media Meta, atau BSUID. Subjek sudah dihapus → tidak dikirim.
 - Potongan jawaban penerima disensor SEBELUM disimpan/ditampilkan (review MobiChat S1): API key yang
   disisipkan (utuh atau terpotong di batas 500 byte) + pola rahasia yang dikenal (`blsn_live_…`,

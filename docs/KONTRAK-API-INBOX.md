@@ -460,8 +460,13 @@ perilaku, batas waktu, handoff, dan saklar per percakapan sama persis.
   `receiverReady: false`. `channelType` & `receiverReady` selalu dikirim (opsional di skema hanya demi
   klien lama).
 - Berlaku untuk percakapan BARU: worker memberi status `bot` bila bot aktif + dalam jam kerja bot +
-  **ada penerima aktif** (endpoint webhook aktif yang melanggan `message.received`; format MobiChat:
-  key-nya masih aktif) (`botAwareInitialStatus`), selain itu `unserved`. Isi jam rusak → `unserved`.
+  **ada penerima aktif** (endpoint webhook aktif yang melanggan `message.received`: format native
+  untuk semua channel; format MobiChat **hanya WhatsApp** + key-nya masih aktif)
+  (`botAwareInitialStatus`), selain itu `unserved`. Isi jam rusak → `unserved`.
+- **Email yang gagal verifikasi pengirim** (`senderVerification: fail` — SPF/DKIM/DMARC) tidak pernah
+  dilayani bot: percakapan barunya langsung `unserved`, dan bila percakapan terbuka sedang dipegang
+  bot, ia diserahkan ke antrian (kejadian `handoff` pelaku sistem + webhook `conversation.handoff`).
+  Pesan email `unverified`/`pass` tetap ke bot; bot wajib membaca `data.message.email.sender_verification`.
 - Review bot R1 (tidak ada pelanggan terjebak di bot): bot aktif SELALU punya batas waktu —
   `timeoutMinutes: null` saat `enabled` diisi 15 (constraint DB); **mematikan bot channel menyerahkan
   semua percakapan `bot` channel itu ke antrian** (kejadian `handoff` oleh pengguna, webhook, push);
@@ -473,7 +478,10 @@ native memuat `data.conversation.channel_type` + `data.conversation.channel { id
 `data.contact.channel_type`/`channel_handle` supaya satu bot bisa melayani banyak channel. Balasan bot
 (`POST /api/v1/public/conversations/:id/messages`) selalu terkirim lewat channel percakapan itu, dengan
 aturan kirim channel tersebut (`CHANNEL_CAPABILITIES`: jenis pesan, ukuran media); **jendela 24 jam
-hanya WhatsApp/Messenger/Instagram** (Telegram & Email tanpa jendela).
+hanya WhatsApp/Messenger/Instagram** (Telegram & Email tanpa jendela). **Pesan email**:
+`data.message.email.sender_verification` ≠ `pass` = pengirim TIDAK tepercaya (alamat `From` bisa
+dipalsukan) — bot tidak boleh menjalankan aksi akun (ubah paket, isolir, ubah data) dan sebaiknya
+langsung handoff. Kenali pelanggan lewat `contact.id`, bukan `channel_handle`/nama (masukan pelanggan).
 `conversations.bot_awaiting_since` = pesan pelanggan pertama yang belum dibalas bot (dikosongkan saat
 bot membalas lewat API key atau status bukan `bot`).
 
@@ -486,7 +494,11 @@ bot membalas lewat API key atau status bukan `bot`).
 - agen "Ambil" (`claim`) dari bot → `served` + `conversation.handoff`.
 
 **Kembali ke bot**: `POST /api/v1/conversations/:id/bot { "active": true }` (`inbox.reply` + cakupan)
-→ status `bot`, tanpa pemegang, kejadian `bot_resumed`. Bot channel mati → 409; percakapan selesai →
+→ status `bot`, tanpa pemegang, kejadian `bot_resumed`. Bot channel mati → 409; **belum ada penerima
+bot aktif untuk channel itu** (sama dengan `receiverReady: false`) → 409 `CONFLICT` "Belum ada penerima
+bot aktif untuk channel ini. Tambahkan webhook bot di Pengaturan → Webhook, lalu coba lagi." (diperiksa
+SETELAH izin); bila pesan terakhir dari pelanggan (belum dibalas), `bot_awaiting_since` = saat
+dikembalikan sehingga batas waktu bot berjalan; percakapan selesai →
 409; mengambil dari agen LAIN butuh `inbox.assign` (403 + audit penolakan). Jawaban = bentuk aksi
 penanganan (`{ conversation }`). Tab Log: `handoff` "Menyerahkan dari bot ke tim", `bot_resumed`
 "Mengembalikan ke bot" (pelaku pengguna / "Bot · <nama key>" / sistem bila `actor` `null`).

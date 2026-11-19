@@ -217,9 +217,41 @@ async function messageData(db: DbExecutor, organizationId: string, messageId: st
     // Balasan tombol/daftar pelanggan (id + judul pilihan) / pesan interaktif keluar.
     interactive: interactiveReplyOf(row),
     interactive_message: row.extras.interactiveMessage ?? null,
+    // Review bot semua channel B1: pesan email membawa hasil verifikasi pengirim (SPF/DKIM/DMARC).
+    // Bot WAJIB memperlakukan selain `pass` sebagai pengirim tidak tepercaya (alamat `From` bisa
+    // dipalsukan) — tidak menjalankan aksi akun, sebaiknya handoff ke tim.
+    email: emailDataOf(row),
     status: row.status,
     error_code: row.errorCode,
     created_at: row.occurredAt.toISOString(),
+  };
+}
+
+/**
+ * `{ subject, sender_verification, auth_warning }` untuk pesan email (keluar: verifikasi `null`),
+ * selain itu `null`. Data lama
+ * tanpa `senderVerification`: `fail` bila dulu diperingatkan, selain itu `unverified` (tidak pernah
+ * dianggap lolos — sama dengan inbox).
+ */
+function emailDataOf(row: typeof messages.$inferSelect) {
+  const email = row.extras.email;
+  if (!email || typeof email !== 'object') return null;
+  const subject = typeof email.subject === 'string' ? email.subject : null;
+  // Pesan keluar (balasan tim/bot) tidak punya pengirim yang perlu diverifikasi.
+  if (row.direction !== 'inbound') {
+    return { subject, sender_verification: null, auth_warning: false };
+  }
+  const authWarning = email.authWarning === true;
+  const verification = email.senderVerification;
+  return {
+    subject,
+    sender_verification:
+      verification === 'pass' || verification === 'fail' || verification === 'unverified'
+        ? verification
+        : authWarning
+          ? 'fail'
+          : 'unverified',
+    auth_warning: authWarning,
   };
 }
 

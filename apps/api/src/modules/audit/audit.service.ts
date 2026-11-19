@@ -269,7 +269,7 @@ const DETAIL_KEYS: Readonly<Record<SecurityEventKind, readonly string[]>> = {
   api_key_changed: ['change', 'name', 'displayPrefix', 'scopes', 'actorRole'],
   webhook_changed: ['change', 'host', 'previousHost', 'events', 'cidrs', 'actorRole'],
   webhook_disabled: ['host', 'failures'],
-  bot_enabled: ['hoursMode', 'timeoutMinutes', 'actorRole'],
+  bot_enabled: ['channelType', 'hoursMode', 'timeoutMinutes', 'actorRole'],
   sending_limits_changed: [
     'change',
     'dailyPerUser',

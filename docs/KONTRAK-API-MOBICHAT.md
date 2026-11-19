@@ -89,8 +89,14 @@ polos (n8n / penyedia AI) — header `nosniff`, CSP sandbox, `Cache-Control: pri
   Balesin (`bot`/`unserved`/`served`/`resolved`). `assignments`: `{ user: { id: "bot", name: "Bot",
   role: "chatbot" } }` saat status `bot`; agen pemegang `{ user: { id, name, email: null, role: "agent" } }`
   (email agen sengaja tidak dibuka).
-- **Key hanya bertindak atas percakapan bot / antrian** (review Info 2, DECISIONS): tidak pernah
-  mengeluarkan atau mengalihkan agen manusia.
+- **Perubahan STATUS oleh key hanya atas percakapan bot / antrian** (review Info 2, DECISIONS): tidak
+  pernah mengeluarkan atau mengalihkan agen manusia. Membaca riwayat, mengirim pesan, catatan, dan
+  ganti nama kontak berlaku untuk semua percakapan WhatsApp organisasi (cakupan data API publik =
+  seluruh organisasi), termasuk yang sedang dipegang agen — batas harian per key, rem darurat, dan
+  audit tetap berlaku.
+- **Hanya percakapan WhatsApp** (review bot semua channel B2): `conversation_id` milik percakapan
+  Telegram/Email/Messenger/Instagram dijawab **404** yang sama dengan percakapan yang tidak ada, di
+  semua rute `/api/public/*` dan `/api/bot/*`.
 - `POST unassign-agent { conversation_id, agent_id? }` = **lepas bot** (handoff): status `bot` →
   `unserved` (antrian "Belum dilayani"), kejadian `handoff`, webhook `conversation.handoff`, push
   antrian. `agent_id` diabaikan. Percakapan yang tidak dipegang bot **tidak diubah** (200 + pesan).
@@ -157,7 +163,8 @@ Pengaturan → Webhook, `format: "mobichat"` (tidak bisa diubah setelah dibuat),
   Instagram TIDAK dikirim ke endpoint format ini, dan endpoint format ini tidak dihitung sebagai
   penerima bot untuk channel tersebut (percakapan baru di sana langsung ke antrian tim, bukan diparkir
   di bot). Bot untuk channel lain memakai webhook format native (`data.conversation.channel_type`) +
-  API publik v1. Body untuk percakapan WhatsApp tidak berubah sedikit pun.
+  API publik v1. Body untuk percakapan WhatsApp tidak berubah sedikit pun. Rute `/api/public/*` &
+  `/api/bot/*` juga menjawab 404 untuk percakapan non-WhatsApp.
 - **Peringatan `http://`**: bila URL webhook atau `mobichat_base_url` memakai `http://`, API key
   mengalir tanpa TLS. Hanya pantas untuk jaringan LAN tepercaya (allowlist IP privat); UI wajib
   menampilkan peringatan. Alamat LAN tanpa DNS: pakai IP (resolver tidak membaca `/etc/hosts`).

@@ -10,6 +10,7 @@ import {
 } from '@balesin/core';
 import {
   apiKeys,
+  channels,
   contacts,
   conversations,
   messages,
@@ -187,6 +188,16 @@ export function createMobichatService(deps: MobichatServiceDeps) {
         assigneeUserId: conversations.assigneeUserId,
       })
       .from(conversations)
+      // Lapisan kompatibel MobiChat = WhatsApp saja (DECISIONS 2026-11-19, review bot semua channel
+      // B2): percakapan Telegram/Email/Messenger/Instagram dijawab 404 yang sama dengan "tidak ada".
+      .innerJoin(
+        channels,
+        and(
+          eq(channels.organizationId, conversations.organizationId),
+          eq(channels.id, conversations.channelId),
+          eq(channels.type, 'whatsapp'),
+        ),
+      )
       .where(
         and(eq(conversations.organizationId, organizationId), eq(conversations.number, number)),
       )

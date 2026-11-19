@@ -7,7 +7,9 @@ import {
   conversationEvents,
   conversations,
   departments,
+  hasActiveBotReceiver,
   isPgError,
+  messages,
   recordOutgoingEvent,
   users,
   type ConversationRow,
@@ -228,10 +230,11 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
         await tx
           .update(conversations)
           .set({
-            ...change.patch,
             assigneeUserId: nextAssignee,
             // Penanda "menunggu balasan bot" hanya bermakna selama bot memegang.
             ...(nextStatus !== 'bot' || current.status !== 'bot' ? { botAwaitingSince: null } : {}),
+            // Aksi yang mengisi penanda sendiri (kembali ke bot, B3) menang.
+            ...change.patch,
           })
           .where(
             and(eq(conversations.organizationId, organizationId), eq(conversations.id, current.id)),
@@ -602,7 +605,7 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
         if (conversation.status === 'resolved') throw await heldBy(tx, conversation);
         if (conversation.status === 'bot') return { kind: null };
         const [channel] = await tx
-          .select({ botEnabled: channels.botEnabled })
+          .select({ type: channels.type, botEnabled: channels.botEnabled })
           .from(channels)
           .where(
             and(
@@ -629,7 +632,40 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
             message: 'Kamu hanya bisa mengembalikan ke bot percakapan yang kamu pegang.',
           });
         }
-        return { kind: 'bot_resumed', assigneeUserId: null, patch: { status: 'bot' } };
+        // Review bot semua channel B3: jangan parkir pelanggan di bot yang tidak menerima apa pun.
+        const at = now();
+        const receiverReady = await hasActiveBotReceiver(tx, {
+          organizationId: conversation.organizationId,
+          channelType: channel.type,
+          at,
+        });
+        if (!receiverReady) {
+          throw new AppError('CONFLICT', {
+            message:
+              'Belum ada penerima bot aktif untuk channel ini. Tambahkan webhook bot di Pengaturan → Webhook, lalu coba lagi.',
+          });
+        }
+        // B3: pesan pelanggan terakhir belum dibalas → batas waktu bot langsung berjalan, dihitung
+        // dari SAAT dikembalikan (bot tidak pernah menerima pesan lama itu lewat webhook; memakai
+        // `last_inbound_at` lama akan langsung melepasnya lagi di pemeriksaan berikutnya).
+        const [latest] = await tx
+          .select({ direction: messages.direction })
+          .from(messages)
+          .where(
+            and(
+              eq(messages.organizationId, conversation.organizationId),
+              eq(messages.conversationId, conversation.id),
+              ne(messages.type, 'reaction'),
+            ),
+          )
+          .orderBy(desc(messages.occurredAt))
+          .limit(1);
+        const awaiting = latest?.direction === 'inbound' && conversation.lastInboundAt !== null;
+        return {
+          kind: 'bot_resumed',
+          assigneeUserId: null,
+          patch: { status: 'bot', botAwaitingSince: awaiting ? at : null },
+        };
       }),
 
     async events(grant, conversationId) {

@@ -410,13 +410,14 @@ describe('kejadian keamanan bot_enabled (fokus 4)', () => {
   );
 });
 
-describe('temuan terbuka', () => {
-  // B1 (Sedang): verifikasi pengirim email tidak ikut ke bot. Manusia di inbox melihat label
+describe('temuan yang sudah diperbaiki', () => {
+  // B1 (Sedang, DIPERBAIKI: `data.message.email.sender_verification`): verifikasi pengirim email
+  // dulu tidak ikut ke bot. Manusia di inbox melihat label
   // "pengirim tidak diverifikasi"/peringatan DMARC; bot yang menerima `message.received` lewat
   // webhook TIDAK mendapat sinyal itu, padahal identitas kontak email = alamat `From` (bisa
   // dipalsukan). Nama isian yang diharapkan di sini hanya usulan — sesuaikan bila kontrak memilih
   // nama lain, tetapi asersinya tetap: verifikasi `fail` harus terlihat di body.
-  it.fails('B1: body native message.received email memuat hasil verifikasi pengirim', async () => {
+  it('B1: body native message.received email memuat hasil verifikasi pengirim', async () => {
     const channelId = await addChannel('email');
     await addWebhook({ events: ['message.received'] });
     await receive('email', channelId, 'Tolong ganti paket saya', 'fail');

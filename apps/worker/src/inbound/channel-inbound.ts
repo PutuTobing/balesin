@@ -6,6 +6,7 @@ import {
 } from '@balesin/core';
 import {
   contacts,
+  conversationEvents,
   conversations,
   lockAdvisoryKeys,
   messageEmailBodies,
@@ -131,6 +132,40 @@ function attachmentExternalId(externalId: string, index: number): string {
     : `sha256:${createHash('sha256').update(candidate).digest('hex')}`;
 }
 
+/** Lepas percakapan dari bot ke antrian (pelaku sistem): kejadian `handoff` + webhook. */
+async function handOffFromBot(
+  context: InboundEventContext,
+  conversationId: string,
+  contactId: string,
+): Promise<void> {
+  const { tx, organizationId } = context;
+  const moved = await tx
+    .update(conversations)
+    .set({ status: 'unserved', assigneeUserId: null, botAwaitingSince: null })
+    .where(
+      and(
+        eq(conversations.organizationId, organizationId),
+        eq(conversations.id, conversationId),
+        eq(conversations.status, 'bot'),
+      ),
+    )
+    .returning({ id: conversations.id });
+  if (moved.length === 0) return;
+  await tx.insert(conversationEvents).values({
+    organizationId,
+    conversationId,
+    kind: 'handoff',
+    actorUserId: null,
+    apiKeyId: null,
+  });
+  await recordOutgoingEvent(tx, {
+    organizationId,
+    type: 'conversation.handoff',
+    conversationId,
+    contactId,
+  });
+}
+
 export async function handleChannelMessage(
   message: ChannelInboundMessage,
   channelType: ChannelType,
@@ -151,13 +186,22 @@ export async function handleChannelMessage(
   });
   await linkEventToContact(context, contact.id);
 
+  // Review bot semua channel B1: email yang GAGAL verifikasi pengirim (SPF/DKIM/DMARC) tidak boleh
+  // dilayani bot otomatis (alamat `From` bisa dipalsukan) — langsung ke antrian manusia.
+  const unverifiedEmail = message.email?.senderVerification === 'fail';
+  const open = await openConversation(tx, organizationId, contact.id, channelId);
   const conversation =
-    (await openConversation(tx, organizationId, contact.id, channelId)) ??
+    open ??
     (await createInboundConversation(
       context,
       contact.id,
-      options.initialConversationStatus ?? botAwareInitialStatus,
+      unverifiedEmail
+        ? () => 'unserved'
+        : (options.initialConversationStatus ?? botAwareInitialStatus),
     ));
+  if (open && unverifiedEmail && open.status === 'bot') {
+    await handOffFromBot(context, open.id, contact.id);
+  }
 
   const occurredAt = inboundOccurredAt(new Date(message.sentAt), receivedAt);
   const extras: MessageExtras = {};

@@ -16,6 +16,7 @@ import { createLogCapture } from '@balesin/core/testing';
 import {
   auditLogs,
   channels,
+  conversationEvents,
   conversations,
   messages,
   newId,
@@ -25,6 +26,7 @@ import {
 import { insertUser } from '@balesin/db/testing';
 import {
   API_ROUTES,
+  MOBICHAT_ROUTES,
   apiPath,
   channelBotSettingsResponseSchema,
   createApiKeyResponseSchema,
@@ -140,7 +142,12 @@ const SENDERS: Record<OtherChannel, { externalUserId: string; handle: string | n
 let sequence = 0;
 
 /** Pesan masuk netral (bentuk yang disimpan penerima/pengambil kotak masuk) → worker produksi. */
-async function receive(type: OtherChannel, channelId: string, text: string) {
+async function receive(
+  type: OtherChannel,
+  channelId: string,
+  text: string,
+  senderVerification: 'pass' | 'fail' | 'unverified' = 'pass',
+) {
   sequence += 1;
   const externalId = `${type}-masuk-${String(sequence)}`;
   const [event] = await harness.db
@@ -172,7 +179,7 @@ async function receive(type: OtherChannel, channelId: string, text: string) {
                 inReplyTo: null,
                 references: [],
                 authWarning: false,
-                senderVerification: 'pass',
+                senderVerification,
                 skippedAttachments: 0,
                 html: null,
                 attachments: [],
@@ -512,5 +519,158 @@ describe('format MobiChat = WhatsApp saja', () => {
     // Endpoint native ditambahkan → Telegram punya penerima.
     await addWebhook({ events: ['message.received'] });
     expect((await getBot(telegram)).receiverReady).toBe(true);
+  });
+});
+
+describe('perbaikan review bot semua channel', () => {
+  it('B1: email gagal verifikasi tidak dipegang bot; bot menerima hasil verifikasi', async () => {
+    const channelId = await addChannel('email');
+    await addWebhook({ events: ['message.received', 'conversation.handoff'] });
+    await putBot(channelId, { enabled: true, hours: { mode: 'always' }, timeoutMinutes: 10 });
+
+    // Percakapan baru dari email `fail` → langsung antrian manusia.
+    await receive('email', channelId, 'Tolong isolir nomor saya', 'fail');
+    expect((await latestConversation(channelId)).status).toBe('unserved');
+    await resolveAll();
+
+    // `pass` → bot.
+    await receive('email', channelId, 'Halo', 'pass');
+    const held = await latestConversation(channelId);
+    expect(held.status).toBe('bot');
+    // Pesan `fail` berikutnya di percakapan bot → diserahkan ke tim (pelaku sistem) + webhook.
+    await receive('email', channelId, 'Ganti paket saya', 'fail');
+    expect(await latestConversation(channelId)).toMatchObject({
+      id: held.id,
+      status: 'unserved',
+      botAwaitingSince: null,
+    });
+    const events = await harness.db
+      .select()
+      .from(conversationEvents)
+      .where(eq(conversationEvents.conversationId, held.id));
+    expect(events).toEqual([
+      expect.objectContaining({ kind: 'handoff', actorUserId: null, apiKeyId: null }),
+    ]);
+
+    await tick();
+    const delivered = received.map(
+      (item) =>
+        JSON.parse(item.body) as {
+          event: string;
+          data: { message?: { email: { sender_verification: string | null } | null } };
+        },
+    );
+    expect(
+      delivered
+        .filter((body) => body.event === 'message.received')
+        .map((body) => body.data.message?.email?.sender_verification),
+    ).toEqual(['fail', 'pass', 'fail']);
+    expect(delivered.filter((body) => body.event === 'conversation.handoff')).toHaveLength(1);
+  });
+
+  it('B1: pesan non-email → `message.email` null', async () => {
+    const channelId = await addChannel('telegram');
+    await addWebhook({ events: ['message.received'] });
+    await receive('telegram', channelId, 'Halo');
+    await tick();
+    const body = JSON.parse(received[0]!.body) as { data: { message: { email: unknown } } };
+    expect(body.data.message.email).toBeNull();
+  });
+
+  it('B2: lapisan MobiChat menjawab 404 untuk percakapan non-WhatsApp', async () => {
+    const channelId = await addChannel('telegram');
+    await receive('telegram', channelId, 'Halo');
+    const conversation = await latestConversation(channelId);
+    const { secret } = await createKey();
+    const asKey = (method: 'GET' | 'POST', url: string, body?: unknown) =>
+      harness.app.inject({
+        method,
+        url,
+        headers: {
+          'x-api-key': secret,
+          accept: 'application/json',
+          ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+        },
+        ...(body !== undefined ? { payload: JSON.stringify(body) } : {}),
+      });
+    const number = conversation.number;
+    const cases: ['GET' | 'POST', string, unknown][] = [
+      ['GET', `${MOBICHAT_ROUTES.messages}?conversation_id=${String(number)}&limit=5`, undefined],
+      [
+        'POST',
+        MOBICHAT_ROUTES.messages,
+        { conversation_id: number, messages: [{ message_text: 'x' }] },
+      ],
+      ['POST', MOBICHAT_ROUTES.botReply, { conversation_id: number, message_text: 'x' }],
+      ['POST', MOBICHAT_ROUTES.unassignAgent, { conversation_id: number }],
+    ];
+    for (const [method, url, body] of cases) {
+      const response = await asKey(method, url, body);
+      expect(response.statusCode, `${method} ${url} ${response.body}`).toBe(404);
+    }
+    const sent = await harness.db
+      .select()
+      .from(messages)
+      .where(and(eq(messages.conversationId, conversation.id), eq(messages.direction, 'outbound')));
+    expect(sent).toHaveLength(0);
+  });
+
+  it('B3: kembalikan ke bot butuh penerima aktif; penanda batas waktu diisi', async () => {
+    const channelId = await addChannel('telegram');
+    await putBot(channelId, { enabled: true, hours: { mode: 'always' }, timeoutMinutes: 5 });
+    await receive('telegram', channelId, 'Halo');
+    const conversation = await latestConversation(channelId);
+    expect(conversation.status).toBe('unserved');
+    const resume = () =>
+      call(
+        harness.app,
+        'POST',
+        apiPath(API_ROUTES.inbox.bot, { conversationId: conversation.id }),
+        { active: true },
+        { cookie: owner.cookie, csrf: owner.csrf },
+      );
+
+    // Hanya endpoint MobiChat (tidak berlaku untuk Telegram) → 409, status tetap.
+    const { secret } = await createKey();
+    await addWebhook({
+      events: ['message.received'],
+      format: 'mobichat',
+      mobichat: { apiKey: secret },
+    });
+    const refused = await resume();
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json<{ error: { code: string; message: string } }>().error).toMatchObject({
+      code: 'CONFLICT',
+      message: expect.stringContaining('Belum ada penerima bot aktif') as unknown,
+    });
+    expect((await latestConversation(channelId)).status).toBe('unserved');
+
+    // Penerima native → boleh; pesan pelanggan belum dibalas → batas waktu berjalan.
+    await addWebhook({ events: ['message.received'] });
+    const before = Date.now();
+    const ok = await resume();
+    expect(ok.statusCode, ok.body).toBe(200);
+    const resumed = await latestConversation(channelId);
+    expect(resumed.status).toBe('bot');
+    expect(resumed.botAwaitingSince?.getTime()).toBeGreaterThanOrEqual(before - 1_000);
+    expect(
+      await handoffTimedOutBots(harness.db, {
+        now: new Date(resumed.botAwaitingSince!.getTime() + 5 * 60_000 + 1_000),
+      }),
+    ).toBe(1);
+    expect((await latestConversation(channelId)).status).toBe('unserved');
+
+    // Pesan terakhir dari tim (sudah dibalas) → kembali ke bot tanpa penanda.
+    const reply = await bearer(
+      secret,
+      apiPath(API_ROUTES.publicApi.messages, { conversationId: conversation.id }),
+      { type: 'text', text: 'Sudah kami bantu ya' },
+    );
+    expect(reply.statusCode, reply.body).toBe(202);
+    expect((await resume()).statusCode).toBe(200);
+    expect(await latestConversation(channelId)).toMatchObject({
+      status: 'bot',
+      botAwaitingSince: null,
+    });
   });
 });
