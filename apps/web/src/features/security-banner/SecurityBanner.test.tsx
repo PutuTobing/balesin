@@ -190,6 +190,24 @@ describe('banner peringatan keamanan', () => {
     expect(banner).not.toHaveTextContent('oleh');
   });
 
+  it('password Owner diatur ulang dari server: tanpa pelaku, menyebut Owner & sesi yang dikeluarkan', async () => {
+    const reset = event({
+      kind: 'owner_password_reset_server',
+      actor: null,
+      subject: { id: OWNER_ID, name: 'Rina Kartika', role: 'owner' },
+      details: { via: 'cli', revokedSessions: 3 },
+    });
+    expect(auditSearchFor([reset], emptySecuritySummary.since)).toMatchObject({
+      action: 'auth.password_reset.completed',
+    });
+    await renderApp('/inbox', { securitySummary: summary([reset]) });
+    const banner = await screen.findByRole('region', { name: copy.title(1) });
+    expect(banner).toHaveTextContent(
+      /Terbaru: password Owner Rina Kartika diatur ulang dari server \(perintah balesin\), \S.*; 3 sesi dikeluarkan\./,
+    );
+    expect(banner).not.toHaveTextContent(' oleh ');
+  });
+
   it('anggota baru bergabung: kalimat menyebut anggota itu, tautan ke undangan diterima', async () => {
     const joined = event({
       kind: 'member_joined',

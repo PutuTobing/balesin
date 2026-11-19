@@ -250,16 +250,12 @@ function DepartmentDialog({
         if (!parsed.success) throw parsed.error;
         return endpoints.departments.update(department.id, parsed.data);
       }
-      const parsed = createDepartmentRequestSchema.safeParse(values);
+      const parsed = createDepartmentRequestSchema.safeParse({
+        ...values,
+        teamHours: builtHours.hours,
+      });
       if (!parsed.success) throw parsed.error;
-      const created = await endpoints.departments.create(parsed.data);
-      // Jam kerja khusus diatur lewat PATCH (POST tidak menerimanya).
-      if (builtHours.hours) {
-        return endpoints.departments.update(created.department.id, {
-          teamHours: builtHours.hours,
-        });
-      }
-      return created;
+      return endpoints.departments.create(parsed.data);
     },
     onSuccess: onSaved,
     onError: (error) => {

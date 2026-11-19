@@ -16,7 +16,7 @@ export function ConnectionFields({ form, disabled }: { form: ConnectionForm; dis
     <div className={styles.fields}>
       <TextField
         label={c.name}
-        hint={c.nameHint}
+        hint={c.nameHint[type]}
         value={values.name}
         onChange={(event) => set('name', event.target.value)}
         error={errors.name}

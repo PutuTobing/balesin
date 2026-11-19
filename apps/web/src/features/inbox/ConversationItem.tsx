@@ -154,13 +154,16 @@ export const ConversationItem = memo(function ConversationItem({
               ) : null}
               <span className={styles.metaRest}>
                 {parts.length > 0 ? ' · ' : ''}
-                {channelType !== 'whatsapp' ? (
-                  <Icon icon={ChannelIcon} size={16} className={styles.metaChannelIcon} />
-                ) : null}
-                <span className="sr-only">
-                  {t.inbox.item.channelType(CHANNEL_TYPE_LABELS[channelType])}:{' '}
+                {/* Ikon + nama channel selalu satu baris; yang terlalu panjang berelipsis. */}
+                <span className={styles.metaChannel}>
+                  {channelType !== 'whatsapp' ? (
+                    <Icon icon={ChannelIcon} size={16} className={styles.metaChannelIcon} />
+                  ) : null}
+                  <span className="sr-only">
+                    {t.inbox.item.channelType(CHANNEL_TYPE_LABELS[channelType])}:{' '}
+                  </span>
+                  <span className={styles.metaChannelName}>{conversation.channel.name}</span>
                 </span>
-                {conversation.channel.name}
               </span>
             </span>
           </span>

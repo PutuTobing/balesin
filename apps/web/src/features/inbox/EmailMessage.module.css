@@ -83,3 +83,9 @@
   width: 80%;
   height: 0.75rem;
 }
+
+.frameLabel {
+  margin-bottom: var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}

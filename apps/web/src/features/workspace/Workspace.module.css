@@ -211,10 +211,9 @@ ul.agents,
 }
 
 .agent {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-8) var(--space-16);
   padding: var(--space-8) var(--space-12) var(--space-8) var(--space-16);
 }
@@ -236,23 +235,78 @@ ul.agents,
 }
 
 .agentMeta {
+  overflow: hidden;
   color: var(--ink-2);
   font-size: var(--text-12);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentStatusOn {
+  color: var(--success-ink);
+  font-weight: var(--weight-medium);
+}
+
+.agentStatusOff {
+  color: var(--ink-2);
 }
 
 .agentToggles {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4) var(--space-12);
+  gap: var(--space-4) var(--space-16);
 }
 
-/* Saklar "Tersedia" di kepala daftar chat. */
+/* HP: kontrol selalu di baris kedua, untuk semua agen. */
+@media (max-width: 640px) {
+  .agent {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .agentToggles {
+    flex-wrap: wrap;
+  }
+}
+
+/* Saklar "Tersedia" di kepala daftar chat: pil bertulisan + bulatan status. */
 .availability {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: var(--size-touch);
+  padding: 0 var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
   color: var(--ink-2);
+  font-size: var(--text-13);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.availability:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.availability:disabled {
+  cursor: default;
 }
 
 .availabilityOn {
   color: var(--success-ink);
+}
+
+.availabilityDot {
+  width: var(--space-8);
+  height: var(--space-8);
+  border: 1px solid var(--ink-2);
+  border-radius: var(--radius-pill);
+}
+
+.availabilityOn .availabilityDot {
+  border-color: var(--success);
+  background: var(--success);
 }
 
 .skeletonTitle {

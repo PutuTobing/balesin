@@ -774,9 +774,15 @@ export async function inboxMocks(page: Page, options: InboxMockOptions = {}): Pr
               phone: found.contact.phone,
               // Kontak tanpa nama (hanya nomor): `name` null seperti data sungguhan.
               name: found.contact.nameSource === 'team' ? found.contact.displayName : null,
-              profileName:
-                found.contact.nameSource === 'whatsapp' ? found.contact.displayName : null,
+              // Nama profil dari WhatsApp/Telegram/email (tidak tepercaya), seperti respons server.
+              profileName: ['whatsapp', 'channel'].includes(found.contact.nameSource)
+                ? found.contact.displayName
+                : null,
               waUsername: found.contact.waUsername,
+              // Kontak Telegram/Email: jenis & alamat channel ikut, seperti respons sungguhan.
+              channelType: found.channel.type,
+              channelHandle:
+                'channelHandle' in found.contact ? (found.contact.channelHandle ?? null) : null,
               tags: [],
               email: null,
               notes: null,

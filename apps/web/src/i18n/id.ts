@@ -182,6 +182,7 @@ export const t = {
       viewHtml: 'Lihat versi HTML',
       htmlTitle: 'Versi HTML email',
       htmlFrameTitle: 'Isi email versi HTML (tanpa skrip)',
+      htmlOriginal: 'Tampilan asli email',
       htmlNote:
         'Ditampilkan dalam mode aman: skrip, gambar luar, dan formulir dimatikan. Jangan masukkan password dari tautan di email.',
       htmlMissing: 'Versi HTML email ini tidak tersedia.',
@@ -242,6 +243,7 @@ export const t = {
       label: 'Tulis balasan',
       placeholder: 'Tulis pesan…',
       captionPlaceholder: 'Tambahkan keterangan (opsional)…',
+      emailPlaceholder: 'Tulis balasan email…',
       send: 'Kirim',
       sending: 'Mengirim…',
       attach: 'Lampirkan berkas',
@@ -575,6 +577,7 @@ export const t = {
       phone: 'Nomor',
       username: 'Username WhatsApp',
       profileName: 'Nama profil WhatsApp',
+      profileNameFrom: (channel: string) => `Nama profil ${channel}`,
       teamName: 'Nama di tim',
       notSet: 'Belum diisi',
       createdAt: 'Tercatat sejak',
@@ -1006,7 +1009,7 @@ export const t = {
     confirmCancelBody:
       'Penerima yang belum dikirimi tidak akan dikirimi. Pesan yang sudah terkirim tetap terkirim. Tidak bisa dibatalkan.',
     cancelling: 'Membatalkan…',
-    pendingTitle: 'Menunggu persetujuan',
+    pendingTitle: 'Perlu persetujuan Owner atau Admin',
     pendingBody: (threshold: number) =>
       `Penerima dalam 24 jam melebihi ambang ${threshold.toLocaleString('id-ID')}, jadi kampanye perlu disetujui Owner atau Admin selain pembuatnya sebelum dikirim.`,
     pendingOwn: 'Kamu yang mengajukan kampanye ini, jadi Owner atau Admin lain yang menyetujuinya.',
@@ -1118,7 +1121,8 @@ export const t = {
       addRate: 'Tambah negara',
       removeRate: (country: string) => `Hapus tarif ${country}`,
       ratesSource: 'Sumber tarif',
-      ratesSourceHint: 'Tampil di perkiraan biaya. Cocokkan dengan rate card resmi Meta.',
+      ratesSourceHint:
+        'Tampil di perkiraan biaya. Cocokkan dengan daftar tarif resmi Meta (rate card).',
       updatedBy: (name: string, when: string) => `Terakhir diubah ${name}, ${when}`,
       save: 'Simpan pengaturan broadcast',
       saving: 'Menyimpan…',
@@ -1525,8 +1529,7 @@ export const t = {
     autoText: 'Isi pesan',
     autoVariables: (variables: string) => `Variabel: ${variables}`,
     autoConfirmTitle: 'Simpan pesan otomatis?',
-    autoConfirmBody:
-      'Pesan ini dikirim otomatis ke semua pelanggan baru dari nomor resmi. Masukkan password dan kode verifikasi untuk melanjutkan.',
+    autoConfirmBody: 'Pesan ini dikirim otomatis ke pelanggan baru di semua channel.',
     autoConfirm: 'Simpan pesan',
 
     agentsTitle: 'Agen untuk pembagian otomatis',
@@ -1536,7 +1539,7 @@ export const t = {
     agentsFailed: 'Daftar agen belum bisa dimuat.',
     agentsLabel: 'Daftar agen',
     available: 'Tersedia',
-    excluded: 'Jangan beri chat otomatis',
+    included: 'Ikut pembagian otomatis',
     load: (count: number) => `${count} chat terbuka`,
     lastAssigned: (when: string) => `Terakhir dapat chat ${when}`,
     neverAssigned: 'Belum pernah dapat chat otomatis',
@@ -1548,7 +1551,9 @@ export const t = {
     availabilityOff: 'Tidak tersedia',
     availabilityHintOn: 'Kamu ikut pembagian chat otomatis.',
     availabilityHintOff: 'Kamu tidak menerima chat otomatis.',
-    availabilityExcluded: 'Owner atau Admin mengecualikanmu dari pembagian otomatis.',
+    availabilityExcludedShort: 'Tidak ikut pembagian',
+    availabilityExcluded:
+      'Kamu tidak ikut pembagian otomatis (Owner dan Admin bawaannya tidak ikut). Diatur di Pengaturan → Jam kerja & alokasi.',
     availabilityFailed: 'Status ketersediaan belum bisa diubah.',
   },
 
@@ -2619,6 +2624,14 @@ export const t = {
     /** `member_joined`: pelakunya anggota baru itu sendiri, jadi bukan "… oleh …". */
     latestJoined: (name: string, role: string, time: string) =>
       `Terbaru: ${name} (${role}) bergabung lewat undangan, ${time}.`,
+    /**
+     * `owner_password_reset_server`: dijalankan operator server (perintah `balesin`), tanpa
+     * pelaku pengguna. Ajak memastikan itu memang tim sendiri.
+     */
+    latestServerReset: (name: string | null, sessions: number | null, time: string) =>
+      `Terbaru: password Owner${name ? ` ${name}` : ''} diatur ulang dari server (perintah balesin), ${time}${
+        sessions ? `; ${sessions} sesi dikeluarkan` : ''
+      }. Bila bukan tim TI-mu, segera ganti password server.`,
     /** Kejadian tanpa pelaku pada satu channel (mis. webhook ditolak berulang). */
     onChannel: (label: string, channel: string) => `${label} di channel ${channel}`,
     review: 'Periksa di Audit log',
@@ -2941,13 +2954,17 @@ export const t = {
     // Wizard
     newTitle: (type: string) => `Hubungkan ${type}`,
     name: 'Nama channel',
-    nameHint: 'Nama yang tampil di inbox dan saringan, mis. "Bot Telegram CS".',
+    nameHint: {
+      telegram: 'Nama yang tampil di inbox dan saringan, mis. "Bot Telegram CS".',
+      email: 'Nama yang tampil di inbox dan saringan, mis. "Email CS".',
+      messenger: 'Nama yang tampil di inbox dan saringan, mis. "Messenger Maju Jaya".',
+      instagram: 'Nama yang tampil di inbox dan saringan, mis. "Instagram Maju Jaya".',
+    } as Record<string, string>,
     create: 'Hubungkan',
     creating: 'Menghubungkan…',
     cancel: 'Batal',
     confirmTitle: (type: string) => `Hubungkan ${type}?`,
-    confirmBody:
-      'Kredensial disimpan terenkripsi di server dan tidak pernah ditampilkan lagi. Masukkan password dan kode verifikasi untuk melanjutkan.',
+    confirmBody: 'Kredensial disimpan terenkripsi di server dan tidak pernah ditampilkan lagi.',
     unknownType: 'Jenis channel ini tidak dikenal.',
     created: 'Channel terhubung. Tes koneksi untuk memastikan pesan bisa masuk dan keluar.',
     createdDisabled:
@@ -2955,13 +2972,13 @@ export const t = {
     telegramSteps: [
       'Buka @BotFather di Telegram, kirim /newbot, lalu ikuti petunjuknya.',
       'Salin token bot yang diberikan (bentuknya 123456789:AAH…).',
-      'Tempel di bawah. Webhook dipasang otomatis bila alamat server https publik.',
+      'Tempel di bawah. Webhook dipasang otomatis bila server bisa diakses publik lewat https.',
     ],
     botToken: 'Token bot',
     botTokenHint:
       'Dari @BotFather → /mybots → API Token. Satu bot hanya bisa dipakai satu aplikasi.',
     emailIntro:
-      'Email pelanggan diambil berkala dari kotak masuk (IMAP), lalu dibalas lewat SMTP. Untuk Gmail dan Microsoft 365, aktifkan IMAP dan pakai app password.',
+      'Email pelanggan diambil berkala dari kotak masuk (IMAP), lalu dibalas lewat SMTP. Untuk Gmail dan Microsoft 365, aktifkan IMAP dan pakai sandi aplikasi (app password).',
     emailAddress: 'Alamat email channel',
     fromName: 'Nama pengirim',
     fromNameHint: 'Tampil di kotak masuk pelanggan, mis. "CS Maju Jaya".',
@@ -2978,6 +2995,7 @@ export const t = {
     password: 'Password',
     passwordKeep: 'Kosongkan bila tidak berubah.',
     folder: 'Folder',
+    folderNamed: (name: string) => `folder ${name}`,
     pollInterval: 'Cek email tiap (menit)',
     pollHint: '1–60 menit.',
     markAsRead: 'Tandai email sudah dibaca di server setelah diambil',
@@ -2990,9 +3008,17 @@ export const t = {
     smtpHost: 'Host SMTP',
     trustedTitle: 'Server verifikasi tepercaya',
     trustedHint:
-      'Opsional. Nama server yang hasil cek SPF/DKIM/DMARC-nya dipercaya, satu per baris, mis. mx.google.com atau .perusahaan.co.id. Kosongkan untuk memakai bawaan dari host IMAP.',
+      'Nama server yang hasil cek SPF/DKIM/DMARC-nya dipercaya, satu per baris, mis. mx.google.com atau .perusahaan.co.id. Kosongkan untuk memakai bawaan dari host IMAP.',
     metaReviewTitle: 'Butuh App Review Meta',
+    /** Isi peringatan (judulnya sudah "Butuh App Review Meta" — jangan diulang). */
+    metaReviewBody: {
+      messenger:
+        'Meta harus menyetujui izin pages_messaging untuk aplikasimu. Channel dibuat nonaktif; aktifkan setelah disetujui dan tes koneksi berhasil.',
+      instagram:
+        'Meta harus menyetujui izin instagram_manage_messages untuk aplikasimu, dan akun Instagram profesional harus terhubung ke Halaman Facebook. Channel dibuat nonaktif; aktifkan setelah disetujui dan tes koneksi berhasil.',
+    } as Record<string, string>,
     pageId: 'ID Halaman Facebook',
+    pageShort: (id: string) => `Halaman ${id}`,
     instagramAccountId: 'ID akun Instagram',
     pageAccessToken: 'Page Access Token',
     pageAccessTokenHint:
@@ -3013,6 +3039,7 @@ export const t = {
     webhookRegistered: 'Terpasang',
     webhookNotRegistered: 'Belum terpasang',
     registerWebhook: 'Pasang webhook',
+    reregisterWebhook: 'Pasang ulang webhook',
     registeringWebhook: 'Memasang…',
     webhookRegisteredDone: 'Webhook terpasang. Pesan baru ke bot akan masuk ke inbox.',
     rotateVerifyToken: 'Buat ulang verify token',
@@ -3020,7 +3047,7 @@ export const t = {
     verifyToken: 'Verify token',
     verifyTokenRotated:
       'Verify token baru dibuat. Perbarui juga di pengaturan webhook aplikasi Meta.',
-    subscribeFields: 'Field yang dilanggan',
+    subscribeFields: 'Event webhook yang dicentang di Meta',
     mailboxTitle: 'Kotak masuk',
     lastPolled: 'Terakhir dicek',
     neverPolled: 'Belum pernah dicek',
@@ -3056,7 +3083,7 @@ export const t = {
     saved: 'Perubahan tersimpan. Tes koneksi lagi bila kredensial diganti.',
     editConfirmTitle: 'Simpan kredensial baru?',
     editConfirmBody:
-      'Kredensial atau tujuan koneksi berubah. Status channel kembali "Belum dites". Masukkan password dan kode verifikasi.',
+      'Kredensial atau tujuan koneksi berubah. Status channel kembali "Belum dites".',
     newSecretHint: 'Kosongkan bila tidak diganti.',
     reenterPassword: 'Isi ulang password karena host, port, keamanan, atau username berubah.',
     statusTitle: 'Status',
@@ -3107,6 +3134,10 @@ export const t = {
       emptyBody:
         'Hubungkan nomor WhatsApp Business lewat Cloud API resmi Meta, supaya chat pelanggan masuk ke inbox timmu.',
       emptyAction: 'Hubungkan nomor pertama',
+      /** Belum ada nomor WhatsApp tetapi channel lain sudah ada: baris ringkas, bukan ilustrasi. */
+      compactTitle: 'WhatsApp',
+      compactStatus: 'Belum terhubung',
+      compactAction: 'Hubungkan nomor',
       loadFailedTitle: 'Channel belum bisa dimuat',
       limitTitle: 'Batas nomor sudah tercapai',
       limitBody: (max: number) =>

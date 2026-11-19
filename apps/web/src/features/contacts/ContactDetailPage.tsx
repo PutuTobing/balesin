@@ -1,7 +1,7 @@
 import type { AttributeDefinition, Contact } from '@balesin/shared';
 import { useQuery } from '@tanstack/react-query';
 import { Link, getRouteApi, useNavigate } from '@tanstack/react-router';
-import { GitMerge, Pencil } from 'lucide-react';
+import { ArrowRight, GitMerge, Pencil } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import {
   ContactsIllustration,
@@ -297,6 +297,7 @@ function DuplicateNotice({
           {otherContact ? (
             <Button asChild>
               <Link to="/kontak/$contactId" params={{ contactId: otherId }}>
+                <Icon icon={ArrowRight} size={16} />
                 {c.openOther}
               </Link>
             </Button>

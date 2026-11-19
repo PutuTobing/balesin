@@ -447,7 +447,7 @@ export const channelConnectionScreens: Screen[] = [
     before: (page) => connectionMocks(page),
     waitFor: 'text=Bot CS Maju Jaya',
     prepare: settle,
-    fullPage: true,
+    tall: true,
   },
   {
     name: 'channel-lain-kosong',
@@ -472,7 +472,7 @@ export const channelConnectionScreens: Screen[] = [
     before: (page) => connectionMocks(page),
     waitFor: 'text=Hubungkan Email',
     prepare: settle,
-    fullPage: true,
+    tall: true,
   },
   {
     name: 'channel-messenger-baru',
@@ -487,7 +487,7 @@ export const channelConnectionScreens: Screen[] = [
     before: (page) => connectionMocks(page),
     waitFor: 'text=@majujaya_cs_bot',
     prepare: settle,
-    fullPage: true,
+    tall: true,
   },
   {
     name: 'channel-email',
@@ -495,7 +495,7 @@ export const channelConnectionScreens: Screen[] = [
     before: (page) => connectionMocks(page),
     waitFor: 'text=cs@majujaya.co.id',
     prepare: settle,
-    fullPage: true,
+    tall: true,
   },
   {
     name: 'channel-messenger',
@@ -503,13 +503,14 @@ export const channelConnectionScreens: Screen[] = [
     before: (page) => connectionMocks(page),
     waitFor: 'text=bls_vt_9f3c2a71d8',
     prepare: settle,
-    fullPage: true,
+    tall: true,
   },
   {
     name: 'inbox-telegram',
     path: `/inbox?chat=${TG_CONVERSATION.id}`,
     before: multiChannelInbox,
-    waitFor: 'text=Kak, router saya kedip merah terus.',
+    // Cuplikan di daftar tersembunyi di HP saat chat terbuka: tunggu gelembung yang tampil.
+    waitFor: 'text=Kak, router saya kedip merah terus. >> visible=true',
     prepare: settle,
   },
   {
@@ -536,7 +537,7 @@ export const channelConnectionScreens: Screen[] = [
     before: (page) => workspaceMocks(page),
     waitFor: 'text=Jam kerja tim',
     prepare: settle,
-    fullPage: true,
+    tall: true,
   },
   {
     name: 'jam-kerja-konfirmasi',

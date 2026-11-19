@@ -78,22 +78,30 @@ export function SecurityBanner() {
           {copy.title(events.length)}
         </p>
         <p className={styles.body}>
-          {latest.kind === 'member_joined' && latest.actor
-            ? copy.latestJoined(
-                latest.actor.name,
-                USER_ROLE_LABELS[latest.actor.role],
+          {latest.kind === 'owner_password_reset_server'
+            ? copy.latestServerReset(
+                latest.subject?.name ?? null,
+                typeof latest.details.revokedSessions === 'number'
+                  ? latest.details.revokedSessions
+                  : null,
                 formatDateTimeInline(latest.occurredAt),
               )
-            : copy.latest(
-                latest.kind === 'webhook_signature_failed' &&
-                  typeof latest.details.name === 'string'
-                  ? copy.onChannel(SECURITY_EVENT_LABELS[latest.kind], latest.details.name)
-                  : SECURITY_EVENT_LABELS[latest.kind],
-                formatDateTimeInline(latest.occurredAt),
-                latest.actor
-                  ? { name: latest.actor.name, role: USER_ROLE_LABELS[latest.actor.role] }
-                  : undefined,
-              )}
+            : latest.kind === 'member_joined' && latest.actor
+              ? copy.latestJoined(
+                  latest.actor.name,
+                  USER_ROLE_LABELS[latest.actor.role],
+                  formatDateTimeInline(latest.occurredAt),
+                )
+              : copy.latest(
+                  latest.kind === 'webhook_signature_failed' &&
+                    typeof latest.details.name === 'string'
+                    ? copy.onChannel(SECURITY_EVENT_LABELS[latest.kind], latest.details.name)
+                    : SECURITY_EVENT_LABELS[latest.kind],
+                  formatDateTimeInline(latest.occurredAt),
+                  latest.actor
+                    ? { name: latest.actor.name, role: USER_ROLE_LABELS[latest.actor.role] }
+                    : undefined,
+                )}
         </p>
       </div>
       <div className={styles.actions}>

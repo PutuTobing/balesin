@@ -1,7 +1,7 @@
 import type { ChannelSettingsListResponse, WhatsAppChannel } from '@balesin/shared';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useRouterState } from '@tanstack/react-router';
-import { ChevronRight, Plus, Smartphone } from 'lucide-react';
+import { ChevronRight, MessageCircle, Plus, Smartphone } from 'lucide-react';
 import {
   ChannelIllustration,
   LoadFailedIllustration,
@@ -22,6 +22,7 @@ import { addBlockedReason } from './channel-status';
 import { MasterKeyCommand } from './MasterKeyCommand';
 import styles from './Channels.module.css';
 import { ChannelListSkeleton } from './ChannelsSkeleton';
+import { connectionsQuery } from './connections/connection-queries';
 import { ConnectionsSection } from './connections/ConnectionsSection';
 import './route-state';
 
@@ -36,6 +37,12 @@ const BLOCKED_NOTICE_ID = 'channel-tambah-alasan';
 export function ChannelsPage() {
   const list = useQuery(channelSettingsQuery);
   const deleted = useRouterState({ select: (state) => state.location.state.deletedChannel });
+  const deletedConnection = useRouterState({
+    select: (state) => state.location.state.deletedConnection,
+  });
+  // Ilustrasi besar "Belum ada nomor WhatsApp" hanya bila belum ada channel apa pun.
+  const connections = useQuery(connectionsQuery);
+  const hasOtherChannels = !connections.isSuccess || connections.data.channels.length > 0;
 
   return (
     <Page>
@@ -45,9 +52,14 @@ export function ChannelsPage() {
             {copy.deleted(deleted)}
           </Notice>
         ) : null}
+        {deletedConnection ? (
+          <Notice tone="success" role="status">
+            {t.connections.deleted(deletedConnection)}
+          </Notice>
+        ) : null}
         {list.data ? (
           <>
-            <ChannelList data={list.data} />
+            <ChannelList data={list.data} compactEmpty={hasOtherChannels} />
             <ConnectionsSection />
           </>
         ) : list.isPending ? (
@@ -71,8 +83,32 @@ export function ChannelsPage() {
   );
 }
 
-function ChannelList({ data }: { data: ChannelSettingsListResponse }) {
+function ChannelList({
+  data,
+  compactEmpty,
+}: {
+  data: ChannelSettingsListResponse;
+  compactEmpty: boolean;
+}) {
   const blocked = addBlockedReason(data);
+
+  if (data.channels.length === 0 && compactEmpty) {
+    return (
+      <section className={styles.card} aria-labelledby="channel-whatsapp">
+        {blocked ? <BlockedNotice reason={blocked} max={data.maxChannels} /> : null}
+        <div className={styles.compactRow}>
+          <span className={cx(styles.channelIcon, styles.channelIconOff)}>
+            <Icon icon={MessageCircle} size={20} />
+          </span>
+          <h2 id="channel-whatsapp" className={styles.compactText}>
+            <span className={styles.channelName}>{copy.compactTitle}</span>
+            <span className={styles.channelMeta}>{copy.compactStatus}</span>
+          </h2>
+          <AddButton blocked={blocked !== null} label={copy.compactAction} variant="secondary" />
+        </div>
+      </section>
+    );
+  }
 
   if (data.channels.length === 0) {
     return (
@@ -112,17 +148,25 @@ function ChannelList({ data }: { data: ChannelSettingsListResponse }) {
 }
 
 /** Nonaktif = tombol biasa yang dimatikan, dengan alasannya di kotak pesan (`aria-describedby`). */
-function AddButton({ blocked, label }: { blocked: boolean; label: string }) {
+function AddButton({
+  blocked,
+  label,
+  variant = 'primary',
+}: {
+  blocked: boolean;
+  label: string;
+  variant?: 'primary' | 'secondary';
+}) {
   if (blocked) {
     return (
-      <Button variant="primary" disabled aria-describedby={BLOCKED_NOTICE_ID}>
+      <Button variant={variant} disabled aria-describedby={BLOCKED_NOTICE_ID}>
         <Icon icon={Plus} size={16} />
         {label}
       </Button>
     );
   }
   return (
-    <Button asChild variant="primary">
+    <Button asChild variant={variant}>
       <Link to="/pengaturan/channel/tambah">
         <Icon icon={Plus} size={16} />
         {label}

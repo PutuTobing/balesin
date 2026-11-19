@@ -26,12 +26,11 @@
 }
 
 .subTitle {
-  margin-top: var(--space-4);
-  color: var(--ink-2);
-  font-size: var(--text-12);
+  margin-top: var(--space-8);
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--line);
+  font-size: var(--text-14);
   font-weight: var(--weight-semibold);
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
 }
 
 .hint {
@@ -46,8 +45,20 @@
 
 /* ---------- Tambah channel ---------- */
 
+/* Daftar channel di kartu yang masih berlanjut ("Tambah channel" di bawahnya): tidak menempel ke
+   dasar kartu seperti daftar WhatsApp, tapi ditutup garis. Spesifisitas di atas `.card .channelList`. */
+ul.connectionList.connectionList {
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+ul.connectionList.connectionList li:last-child > * {
+  border-radius: 0;
+}
+
 .addBlock {
   display: flex;
+  margin-top: var(--space-8);
   flex-direction: column;
   gap: var(--space-12);
 }
@@ -320,6 +331,27 @@ ol.steps,
   min-width: 0;
 }
 
+/* "Salin" rata dengan tepi teks di atasnya (padding tombol ghost tidak membuatnya menjorok). */
+.urlRow > button {
+  margin-left: calc(var(--space-12) * -1);
+}
+
+/* Alamat webhook selebar kartu (≤ 3 baris di HP). */
+.factWide {
+  grid-column: 1 / -1;
+}
+
+.fieldList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+  list-style: none;
+}
+
 .url {
   min-width: 0;
   font-family: var(--font-mono);
@@ -346,7 +378,7 @@ ol.steps,
 .factNote {
   display: block;
   color: var(--ink-2);
-  font-size: var(--text-12);
+  font-size: var(--text-13);
 }
 
 ul.checks,
@@ -384,6 +416,11 @@ ul.checks,
     padding: var(--space-16);
   }
 
+  /* Satu fakta per baris: nilai panjang (host:port, alamat) tidak terpecah di setengah lebar. */
+  dl.facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   ul.typeGrid,
   .typeGrid,
   .row {
@@ -404,4 +441,13 @@ ul.checks,
     flex: 1 1 100%;
     min-height: var(--size-touch);
   }
+
+  /* Sama dengan pola dialog (§4): tombol berwarna di atas, "Batal" di bawahnya. */
+  .actions {
+    flex-direction: column-reverse;
+  }
+}
+
+.code {
+  font-family: var(--font-mono);
 }

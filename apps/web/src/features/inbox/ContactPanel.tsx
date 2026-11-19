@@ -190,7 +190,7 @@ function InfoTab({ conversationId, onClosed }: { conversationId: string; onClose
               {contact.name ? <span dir="auto">{contact.name}</span> : <Muted>{d.notSet}</Muted>}
             </Fact>
             {contact.profileName ? (
-              <Fact term={d.profileName}>
+              <Fact term={d.profileNameFrom(CHANNEL_TYPE_LABELS[contact.channelType])}>
                 <span dir="auto">{contact.profileName}</span>
               </Fact>
             ) : null}
@@ -199,7 +199,14 @@ function InfoTab({ conversationId, onClosed }: { conversationId: string; onClose
               <Fact term={d.username}>{formatUsername(contact.waUsername)}</Fact>
             ) : null}
             <Fact term={p.email}>
-              {contact.email ? <EmailText email={contact.email} /> : <Muted>{d.notSet}</Muted>}
+              {contact.email ? (
+                <EmailText email={contact.email} />
+              ) : contact.channelType === 'email' && contact.channelHandle ? (
+                // Kontak dari channel Email: alamat pengirimnya (belum diisi tim).
+                <EmailText email={contact.channelHandle} />
+              ) : (
+                <Muted>{d.notSet}</Muted>
+              )}
             </Fact>
             {contact.notes ? (
               <Fact term={p.notes}>

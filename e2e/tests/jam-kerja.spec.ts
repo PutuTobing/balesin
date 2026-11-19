@@ -57,18 +57,34 @@ test('hari libur, pesan otomatis (konfirmasi), pembagian round-robin + saklar Te
   await allocation.getByRole('radio', { name: /Bagi otomatis bergiliran/ }).click();
   await allocation.getByRole('button', { name: 'Simpan' }).click();
   await expect(allocation.getByText('Tersimpan.')).toBeVisible();
-  await expect(page.getByRole('list', { name: 'Daftar agen' })).toBeVisible();
+  const agents = page.getByRole('list', { name: 'Daftar agen' });
+  await expect(agents).toBeVisible();
 
+  // Owner bawaannya dikecualikan (KONTRAK-API-INBOX): di inbox saklarnya nonaktif dengan alasannya.
+  const included = agents.getByRole('switch', { name: `Ikut pembagian otomatis: ${owner.name}` });
+  await expect(included).toHaveAttribute('aria-checked', 'false');
   await page.goto('/inbox');
-  const toggle = page.getByRole('button', { name: /Tersedia untuk chat baru/ });
-  await expect(toggle).toBeVisible();
-  const before = await toggle.getAttribute('aria-pressed');
-  await toggle.click();
-  await expect(toggle).not.toHaveAttribute('aria-pressed', before ?? '');
-  await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-pressed', before ?? '');
+  await expect(
+    page.getByRole('switch', { name: 'Tersedia untuk chat baru: Tidak ikut pembagian' }),
+  ).toBeDisabled();
 
+  // Diikutkan → saklar bisa dipakai sendiri.
   await page.goto('/pengaturan/jam-kerja');
+  await included.click(); // terkendali server: berubah setelah PATCH + muat ulang daftar
+  await expect(included).toHaveAttribute('aria-checked', 'true');
+  await page.goto('/inbox');
+  const toggle = page.getByRole('switch', { name: /Tersedia untuk chat baru/ });
+  await expect(toggle).toBeEnabled();
+  const before = await toggle.getAttribute('aria-checked');
+  await toggle.click();
+  await expect(toggle).not.toHaveAttribute('aria-checked', before ?? '');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-checked', before ?? '');
+
+  // Kembalikan: Owner dikecualikan lagi, pembagian kembali ambil sendiri.
+  await page.goto('/pengaturan/jam-kerja');
+  await included.click();
+  await expect(included).toHaveAttribute('aria-checked', 'false');
   await page
     .getByRole('form', { name: 'Pembagian chat' })
     .getByRole('radio', { name: /Ambil sendiri dari antrian/ })
@@ -82,6 +98,6 @@ test('hari libur, pesan otomatis (konfirmasi), pembagian round-robin + saklar Te
   ).toBeVisible();
   await page.goto('/inbox');
   await expect(page.getByRole('heading', { level: 1, name: 'Inbox' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Tersedia untuk chat baru/ })).toHaveCount(0);
+  await expect(page.getByRole('switch', { name: /Tersedia untuk chat baru/ })).toHaveCount(0);
   watched.expectClean();
 });

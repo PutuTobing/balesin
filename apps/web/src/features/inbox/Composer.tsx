@@ -406,7 +406,15 @@ export function Composer({
           }
           aria-busy={usingTemplate || undefined}
           aria-describedby={isHp ? undefined : hintId}
-          placeholder={paused ? k.pausedPlaceholder : file ? k.captionPlaceholder : k.placeholder}
+          placeholder={
+            paused
+              ? k.pausedPlaceholder
+              : file
+                ? k.captionPlaceholder
+                : conversation.channel.type === 'email'
+                  ? k.emailPlaceholder
+                  : k.placeholder
+          }
           className={styles.input}
           disabled={disabled}
           enterKeyHint={isHp ? 'enter' : 'send'}

@@ -1113,3 +1113,20 @@ ul.botDays,
     max-width: none;
   }
 }
+
+/* WhatsApp belum terhubung, channel lain sudah ada: satu baris ringkas (bukan ilustrasi besar). */
+.compactRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-12) var(--space-16);
+}
+
+.compactText {
+  display: flex;
+  flex: 1 1 10rem;
+  flex-direction: column;
+  min-width: 0;
+  font-size: var(--text-14);
+  font-weight: var(--weight-regular);
+}

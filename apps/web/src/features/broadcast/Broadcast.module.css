@@ -870,3 +870,8 @@ ul.recipients,
     padding-left: calc(var(--size-icon-md) + var(--space-8));
   }
 }
+
+/* Judul sejajar dengan isian saringan di sebelahnya (bukan dengan labelnya). */
+.cardHeadRowEnd {
+  align-items: flex-end;
+}

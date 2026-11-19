@@ -343,7 +343,7 @@ ol.cards,
 
 .cardTop {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: var(--space-4);
 }
 
@@ -990,6 +990,12 @@ ol.columnList,
   gap: var(--space-4);
 }
 
+/* Tombol ikon tidak ikut menyusut di 360 px (F11): yang mengalah kotak "Selesai". */
+.columnRowActions > button {
+  flex: none;
+  width: var(--size-touch);
+}
+
 /* ---------- Tiket terkait ---------- */
 
 .linked {
@@ -1200,6 +1206,11 @@ ul.linkedList,
     align-items: stretch;
   }
 
+  /* Setinggi saklar Kanban/Daftar di sebelahnya (Button punya tinggi tetap). */
+  .viewRow .filterToggle {
+    height: auto;
+  }
+
   .column {
     flex: 1 1 100%;
     max-height: none;
@@ -1210,6 +1221,21 @@ ul.linkedList,
   .handle {
     width: var(--size-touch);
     height: var(--size-touch);
+  }
+
+  /* Menu kolom di samping pemilih kolom: berbingkai seperti menu board di atasnya. */
+  .columnPicker .columnMenu {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-input);
+    background: var(--surface);
+  }
+
+  /* Judul tiket di daftar: dua baris, bukan satu baris berelipsis. */
+  .listTitle {
+    display: -webkit-box;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
 
   .card {

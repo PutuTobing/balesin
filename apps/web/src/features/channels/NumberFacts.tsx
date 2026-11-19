@@ -14,9 +14,17 @@ import styles from './Channels.module.css';
 
 const copy = t.channels.number;
 
-export function Fact({ label, children }: { label: string; children: ReactNode }) {
+export function Fact({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <div className={styles.fact}>
+    <div className={className ? `${styles.fact} ${className}` : styles.fact}>
       <dt className={styles.factLabel}>{label}</dt>
       <dd className={styles.factValue}>{children}</dd>
     </div>

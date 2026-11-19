@@ -106,13 +106,17 @@ function EmailHtmlDialog({
                 : t.api.network}
           </p>
         ) : (
-          <iframe
-            title={e.htmlFrameTitle}
-            className={styles.frame}
-            sandbox=""
-            referrerPolicy="no-referrer"
-            srcDoc={html.data.html}
-          />
+          <>
+            {/* Dokumen email selalu berlatar terang (dirancang begitu), juga di mode gelap. */}
+            <p className={styles.frameLabel}>{e.htmlOriginal}</p>
+            <iframe
+              title={e.htmlFrameTitle}
+              className={styles.frame}
+              sandbox=""
+              referrerPolicy="no-referrer"
+              srcDoc={html.data.html}
+            />
+          </>
         )}
       </div>
       <p className={styles.note}>{e.htmlNote}</p>

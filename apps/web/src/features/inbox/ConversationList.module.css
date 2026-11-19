@@ -342,9 +342,12 @@ ul.items {
 }
 
 .metaRest {
+  display: inline-flex;
+  align-items: center;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
+  /* `pre`: spasi di depan " · " tetap ada. */
+  white-space: pre;
 }
 
 .countdown {
@@ -438,8 +441,21 @@ ul.items {
 }
 
 /* Ikon jenis channel (Telegram, email, …) di depan nama channel; WhatsApp tanpa ikon. */
+.metaChannel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  white-space: nowrap;
+}
+
 .metaChannelIcon {
-  margin-right: var(--space-4);
-  vertical-align: -3px;
+  flex: none;
   color: var(--ink-2);
+}
+
+.metaChannelName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

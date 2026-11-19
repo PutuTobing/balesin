@@ -68,7 +68,12 @@ describe('Pengaturan → Departemen', () => {
     fireEvent.click(within(dialog).getByLabelText(channel.name));
     fireEvent.click(within(dialog).getByRole('button', { name: d.save }));
     await waitFor(() =>
-      expect(created).toEqual({ name: 'CS', description: null, defaultChannelIds: [channel.id] }),
+      expect(created).toEqual({
+        name: 'CS',
+        description: null,
+        defaultChannelIds: [channel.id],
+        teamHours: null,
+      }),
     );
     expect(api.requests.some((request) => request.method === 'PATCH')).toBe(false);
     expect(await screen.findByText(d.saved)).toBeVisible();

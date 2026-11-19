@@ -47,6 +47,11 @@ export interface Screen {
   prepare?: (page: Page) => Promise<void>;
   /** Foto seluruh halaman (bukan hanya viewport). Default: false. */
   fullPage?: boolean;
+  /**
+   * Halaman yang menggulir di dalam kontainer (Pengaturan, dll.): `fullPage` hanya memotret satu
+   * layar. `tall` meninggikan viewport setinggi isi kontainer gulir sebelum difoto.
+   */
+  tall?: boolean;
 }
 
 /** Klik tombol bila tampil di ukuran layar ini (sebagian kontrol hanya ada di desktop). */

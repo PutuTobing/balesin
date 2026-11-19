@@ -41,6 +41,8 @@ import {
   broadcastQuery,
   storeBroadcast,
 } from './broadcast-queries';
+import { cx } from '../../lib/cx';
+import { formatPhone } from '../inbox/contact-identity';
 import { BroadcastWizard } from './BroadcastWizard';
 import styles from './Broadcast.module.css';
 
@@ -607,7 +609,7 @@ function RecipientsCard({ campaign }: { campaign: BroadcastCampaign }) {
   const items = list.data?.pages.flatMap((page) => page.recipients) ?? [];
   return (
     <section className={styles.card} aria-labelledby="kampanye-penerima">
-      <div className={styles.cardHeadRow}>
+      <div className={cx(styles.cardHeadRow, styles.cardHeadRowEnd)}>
         <h2 id="kampanye-penerima" className={styles.cardTitle}>
           {b.recipientsTitle}
         </h2>
@@ -640,7 +642,9 @@ function RecipientsCard({ campaign }: { campaign: BroadcastCampaign }) {
             return (
               <li key={recipient.id} className={styles.recipient}>
                 <div className={styles.recipientMain}>
-                  <span className={styles.recipientPhone}>{recipient.phone}</span>
+                  <span className={styles.recipientPhone}>
+                    {formatPhone(recipient.phone) ?? recipient.phone}
+                  </span>
                   <span className={styles.recipientRow}>{b.recipientRow(recipient.row)}</span>
                 </div>
                 <div className={styles.recipientState}>

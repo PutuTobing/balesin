@@ -109,13 +109,24 @@ function ConnectionWizard({ type }: { type: ConnectionChannelType }) {
         </div>
         {reviewNote ? (
           <Notice tone="warning" title={c.metaReviewTitle}>
-            {reviewNote}
+            {c.metaReviewBody[type] ?? reviewNote}
           </Notice>
         ) : null}
         {type === 'telegram' ? (
           <ol className={styles.steps}>
             {c.telegramSteps.map((step) => (
-              <li key={step}>{step}</li>
+              <li key={step}>
+                {/* Perintah bot (/newbot, /mybots) dalam huruf mono. */}
+                {step.split(/(\/[a-z]+)/).map((part, index) =>
+                  index % 2 === 1 ? (
+                    <code key={index} className={styles.code}>
+                      {part}
+                    </code>
+                  ) : (
+                    part
+                  ),
+                )}
+              </li>
             ))}
           </ol>
         ) : null}

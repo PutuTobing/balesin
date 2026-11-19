@@ -153,35 +153,32 @@ describe('Channel Telegram/Email/Meta — rahasia', () => {
   // `send(confirmation)` membangun ulang body dari ref yang sudah null → rahasia baru HILANG diam-diam:
   // ganti token/password/app secret (mis. rotasi setelah bocor) tidak pernah terkirim. Diuji: setelah
   // konfirmasi TIDAK ADA permintaan PATCH sama sekali (body kosong → dialog ditutup diam-diam).
-  it.fails(
-    'W1: mengganti token Telegram lewat "Ubah" + konfirmasi identitas benar-benar mengirim token baru',
-    async () => {
-      let patched: Record<string, unknown> | null = null;
-      await renderApp(
-        `/pengaturan/channel/lain/${TELEGRAM.id}`,
-        connectionRoutes([TELEGRAM], {
-          [`GET ${apiPath(R.channel, { channelId: TELEGRAM.id })}`]: () =>
-            json({ channel: TELEGRAM }),
-          [`PATCH ${apiPath(R.channel, { channelId: TELEGRAM.id })}`]: (request) => {
-            patched = request.body as Record<string, unknown>;
-            return json({ channel: TELEGRAM });
-          },
-        }),
-      );
-      fireEvent.click(await screen.findByRole('button', { name: c.edit }));
-      const dialog = await screen.findByRole('dialog', { name: c.editTitle });
-      fireEvent.change(within(dialog).getByLabelText(c.botToken), {
-        target: { value: NEW_TOKEN },
-      });
-      fireEvent.click(within(dialog).getByRole('button', { name: c.save }));
-      await confirmIdentity(c.editConfirmTitle, c.save);
-      await waitFor(() => expect(patched).not.toBeNull());
-      expect(patched).toMatchObject({
-        botToken: NEW_TOKEN,
-        confirmation: { password: TEST_PASSWORD, code: TEST_CODE },
-      });
-    },
-  );
+  it('W1: mengganti token Telegram lewat "Ubah" + konfirmasi identitas benar-benar mengirim token baru', async () => {
+    let patched: Record<string, unknown> | null = null;
+    await renderApp(
+      `/pengaturan/channel/lain/${TELEGRAM.id}`,
+      connectionRoutes([TELEGRAM], {
+        [`GET ${apiPath(R.channel, { channelId: TELEGRAM.id })}`]: () =>
+          json({ channel: TELEGRAM }),
+        [`PATCH ${apiPath(R.channel, { channelId: TELEGRAM.id })}`]: (request) => {
+          patched = request.body as Record<string, unknown>;
+          return json({ channel: TELEGRAM });
+        },
+      }),
+    );
+    fireEvent.click(await screen.findByRole('button', { name: c.edit }));
+    const dialog = await screen.findByRole('dialog', { name: c.editTitle });
+    fireEvent.change(within(dialog).getByLabelText(c.botToken), {
+      target: { value: NEW_TOKEN },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: c.save }));
+    await confirmIdentity(c.editConfirmTitle, c.save);
+    await waitFor(() => expect(patched).not.toBeNull());
+    expect(patched).toMatchObject({
+      botToken: NEW_TOKEN,
+      confirmation: { password: TEST_PASSWORD, code: TEST_CODE },
+    });
+  });
 });
 
 // ── Pesan otomatis (jam kerja) ────────────────────────────────────────────────────────────────
@@ -239,7 +236,7 @@ describe('Pesan otomatis — konfirmasi identitas', () => {
   // `save.mutateAsync({ autoMessages, confirmation })` → password akun + kode 2FA tersimpan di
   // `mutation.state.variables` (cache mutasi) selama halaman terbuka + gcTime. Pola lain di web
   // memanggil `endpoints.*` langsung untuk permintaan berkonfirmasi.
-  it.fails('W2: password konfirmasi tidak tertinggal di cache mutasi', async () => {
+  it('W2: password konfirmasi tidak tertinggal di cache mutasi', async () => {
     const { view, bodies } = await enableGreetingWithIdentity();
     await confirmIdentity(w.autoConfirmTitle, w.autoConfirm);
     await waitFor(() => expect(bodies).toHaveLength(1));

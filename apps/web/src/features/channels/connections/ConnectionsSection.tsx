@@ -61,7 +61,10 @@ function ConnectionList({ data }: { data: ConnectionChannelListResponse }) {
   return (
     <>
       {data.channels.length > 0 ? (
-        <ul className={channelStyles.channelList} aria-label={c.listLabel}>
+        <ul
+          className={cx(channelStyles.channelList, styles.connectionList)}
+          aria-label={c.listLabel}
+        >
           {data.channels.map((channel) => (
             <li key={channel.id}>
               <ConnectionRow channel={channel} />
@@ -120,7 +123,7 @@ function connectionMeta(channel: ConnectionChannel): string {
     case 'email':
       return channel.emailAddress;
     default:
-      return `${c.pageId} ${channel.pageId}`;
+      return c.pageShort(channel.pageId);
   }
 }
 

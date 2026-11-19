@@ -229,6 +229,8 @@ ul.members,
 .day {
   display: grid;
   grid-template-columns: 8rem minmax(0, 7rem) auto minmax(0, 7rem);
+  /* Kolom `auto` (tanda –) melebar mengisi sisa ruang tanpa ini → jam selesai terlempar ke kanan. */
+  justify-content: start;
   align-items: center;
   gap: var(--space-8);
 }

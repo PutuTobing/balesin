@@ -53,7 +53,8 @@ export function createChannelEndpoints(client: ApiClient) {
       remove: (channelId: string, confirmation: IdentityConfirmation) =>
         client.request(one(R.channel, channelId), {
           method: 'DELETE',
-          body: { confirmation },
+          // `deleteChannelRequestSchema`: password & kode di tingkat atas (bukan `{ confirmation }`).
+          body: confirmation,
           schema: deleteChannelResponseSchema,
         }),
       enable: (channelId: string) =>

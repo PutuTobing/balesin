@@ -148,7 +148,7 @@ describe('Pengaturan → Jam kerja & alokasi', () => {
     expect(bodies[1]).toEqual({ allocation: { mode: 'round_robin', maxOpenPerAgent: 8 } });
   });
 
-  it('agen: saklar dikecualikan', async () => {
+  it('agen: satu sakelar positif "Ikut pembagian otomatis"; status sebagai teks', async () => {
     let patched: unknown = null;
     await renderApp(
       '/pengaturan/jam-kerja',
@@ -162,7 +162,13 @@ describe('Pengaturan → Jam kerja & alokasi', () => {
       }),
     );
     const agents = within(await screen.findByRole('list', { name: w.agentsLabel }));
-    fireEvent.click(agents.getByLabelText(new RegExp(w.excluded)));
+    expect(
+      agents.getByText(new RegExp(`^${w.availabilityOn}$`), { selector: 'span span' }),
+    ).toBeVisible();
+    const included = agents.getByRole('switch', { name: `${w.included}: Agus Saputra` });
+    expect(included).toHaveAttribute('aria-checked', 'true');
+    expect(agents.getByRole('switch', { name: `${w.available}: Agus Saputra` })).toBeEnabled();
+    fireEvent.click(included);
     await waitFor(() => expect(patched).toEqual({ excluded: true }));
   });
 });
@@ -182,11 +188,29 @@ describe('saklar "Tersedia" di inbox', () => {
         },
       },
     });
-    const toggle = await screen.findByRole('button', { name: new RegExp(w.availabilityLabel) });
-    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    const toggle = await screen.findByRole('switch', {
+      name: `${w.availabilityLabel}: ${w.availabilityOn}`,
+    });
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
     fireEvent.click(toggle);
     await waitFor(() => expect(body).toEqual({ available: false }));
-    await waitFor(() => expect(toggle).toHaveAttribute('aria-pressed', 'false'));
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'));
+    expect(toggle).toHaveAccessibleName(`${w.availabilityLabel}: ${w.availabilityOff}`);
+  });
+
+  it('Owner (bawaan dikecualikan): saklar nonaktif, namanya tetap "Tersedia untuk chat baru"', async () => {
+    act(() => setMediaQuery(media.desktop, true));
+    await renderApp('/inbox', {
+      routes: {
+        [`GET ${API_ROUTES.inbox.availability}`]: () =>
+          json({ availability: { available: true, excluded: true, mode: 'round_robin' } }),
+      },
+    });
+    const toggle = await screen.findByRole('switch', {
+      name: `${w.availabilityLabel}: ${w.availabilityExcludedShort}`,
+    });
+    expect(toggle).toHaveAttribute('title', w.availabilityExcluded);
+    expect(toggle).toBeDisabled();
   });
 
   it('Teknisi (409) tidak melihat saklar', async () => {
@@ -199,7 +223,7 @@ describe('saklar "Tersedia" di inbox', () => {
       },
     });
     await screen.findByRole('heading', { level: 1, name: t.inbox.title });
-    expect(screen.queryByRole('button', { name: new RegExp(w.availabilityLabel) })).toBeNull();
+    expect(screen.queryByRole('switch', { name: new RegExp(w.availabilityLabel) })).toBeNull();
   });
 });
 

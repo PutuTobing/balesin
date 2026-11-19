@@ -6,6 +6,7 @@ import {
   type IdentityConfirmation,
   type MetaSocialChannel,
   type TelegramChannel,
+  type UpdateConnectionChannelRequest,
 } from '@balesin/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, getRouteApi, useNavigate } from '@tanstack/react-router';
@@ -28,6 +29,7 @@ import { Skeleton, SkeletonRegion } from '../../../components/ui/Skeleton';
 import { t } from '../../../i18n/id';
 import { isApiError } from '../../../lib/api/client';
 import { endpoints } from '../../../lib/api/endpoints';
+import { cx } from '../../../lib/cx';
 import { formatDateTime } from '../../../lib/format';
 import { apiFieldErrors } from '../../../lib/form';
 import { useLock } from '../../../lib/use-lock';
@@ -122,7 +124,7 @@ function ConnectionDetail({ channel }: { channel: ConnectionChannel }) {
         </div>
         {meta && !meta.enabled ? (
           <Notice tone="warning" title={c.metaReviewTitle}>
-            {meta.reviewNote}
+            {c.metaReviewBody[meta.type] ?? meta.reviewNote}
           </Notice>
         ) : null}
       </section>
@@ -158,7 +160,7 @@ function TelegramFacts({
       <h2 id="channel-koneksi" className={styles.cardTitle}>
         {c.connectionTitle}
       </h2>
-      <dl className={channelStyles.facts}>
+      <dl className={cx(channelStyles.facts, styles.facts)}>
         <Fact label={c.bot}>{channel.botUsername ? `@${channel.botUsername}` : '—'}</Fact>
         <Fact label={c.botId}>
           <span className={channelStyles.mono}>{channel.botId}</span>
@@ -169,8 +171,8 @@ function TelegramFacts({
         <Fact label={c.credentialsUpdated}>{formatDateTime(channel.credentialsUpdatedAt)}</Fact>
       </dl>
       <h3 className={styles.subTitle}>{c.webhookTitle}</h3>
-      <dl className={channelStyles.facts}>
-        <Fact label={c.webhookUrl}>
+      <dl className={cx(channelStyles.facts, styles.facts)}>
+        <Fact label={c.webhookUrl} className={styles.factWide}>
           <span className={styles.urlRow}>
             <span className={styles.url}>{channel.webhook.url}</span>
           </span>
@@ -197,7 +199,11 @@ function TelegramFacts({
       ) : null}
       <div className={styles.actionsStart}>
         <Button loading={renew.isPending} onClick={() => renew.mutate()}>
-          {renew.isPending ? c.registeringWebhook : c.registerWebhook}
+          {renew.isPending
+            ? c.registeringWebhook
+            : channel.webhook.registeredAt
+              ? c.reregisterWebhook
+              : c.registerWebhook}
         </Button>
       </div>
     </section>
@@ -211,15 +217,18 @@ function EmailFacts({ channel }: { channel: EmailChannel }) {
       <h2 id="channel-koneksi" className={styles.cardTitle}>
         {c.connectionTitle}
       </h2>
-      <dl className={channelStyles.facts}>
+      <dl className={cx(channelStyles.facts, styles.facts)}>
         <Fact label={c.emailAddress}>{channel.emailAddress}</Fact>
         <Fact label={c.fromName}>{channel.fromName}</Fact>
         <Fact label={c.imapTitle}>
+          {/* Alamat server utuh di baris sendiri; rincian di baris kedua (tidak terpecah di HP). */}
           <span className={channelStyles.mono}>
             {channel.imap.host}:{channel.imap.port}
-          </span>{' '}
-          · {c.securityLabels[channel.imap.security]} · {channel.imap.username} ·{' '}
-          {channel.imap.folder}
+          </span>
+          <span className={styles.factNote}>
+            {c.securityLabels[channel.imap.security]} · {channel.imap.username} ·{' '}
+            {c.folderNamed(channel.imap.folder)}
+          </span>
         </Fact>
         <Fact label={c.password}>
           <span className={channelStyles.mono}>{channel.imap.passwordHint ?? c.stored}</span>
@@ -231,8 +240,10 @@ function EmailFacts({ channel }: { channel: EmailChannel }) {
             <>
               <span className={channelStyles.mono}>
                 {channel.smtp.host}:{channel.smtp.port}
-              </span>{' '}
-              · {c.securityLabels[channel.smtp.security]} · {channel.smtp.username}
+              </span>
+              <span className={styles.factNote}>
+                {c.securityLabels[channel.smtp.security]} · {channel.smtp.username}
+              </span>
             </>
           )}
         </Fact>
@@ -247,7 +258,7 @@ function EmailFacts({ channel }: { channel: EmailChannel }) {
         </Fact>
       </dl>
       <h3 className={styles.subTitle}>{c.mailboxTitle}</h3>
-      <dl className={channelStyles.facts}>
+      <dl className={cx(channelStyles.facts, styles.facts)}>
         <Fact label={c.lastPolled}>
           {mailbox.lastPolledAt ? (
             <span className={mailbox.lastPollOk === false ? styles.bad : styles.ok}>
@@ -297,7 +308,7 @@ function MetaFacts({
       <h2 id="channel-koneksi" className={styles.cardTitle}>
         {c.connectionTitle}
       </h2>
-      <dl className={channelStyles.facts}>
+      <dl className={cx(channelStyles.facts, styles.facts)}>
         <Fact label={c.pageId}>
           <span className={channelStyles.mono}>{channel.pageId}</span>
         </Fact>
@@ -314,8 +325,8 @@ function MetaFacts({
         </Fact>
       </dl>
       <h3 className={styles.subTitle}>{c.webhookTitle}</h3>
-      <dl className={channelStyles.facts}>
-        <Fact label={c.webhookUrl}>
+      <dl className={cx(channelStyles.facts, styles.facts)}>
+        <Fact label={c.webhookUrl} className={styles.factWide}>
           <span className={styles.urlRow}>
             <span className={styles.url}>{channel.webhookUrl}</span>
             <CopyButton
@@ -349,7 +360,11 @@ function MetaFacts({
         </Fact>
         {webhook.data ? (
           <Fact label={c.subscribeFields}>
-            <span className={channelStyles.mono}>{webhook.data.subscribeFields.join(', ')}</span>
+            <ul className={styles.fieldList}>
+              {webhook.data.subscribeFields.map((field) => (
+                <li key={field}>{field}</li>
+              ))}
+            </ul>
           </Fact>
         ) : null}
       </dl>
@@ -397,7 +412,7 @@ function TestCard({ channel }: { channel: ConnectionChannel }) {
         </h2>
         <p className={styles.hint}>{c.testHint}</p>
       </div>
-      <dl className={channelStyles.facts}>
+      <dl className={cx(channelStyles.facts, styles.facts)}>
         <Fact label={c.lastTest}>
           {last ? (
             <span className={last.ok ? styles.ok : styles.bad}>
@@ -426,7 +441,7 @@ function TestCard({ channel }: { channel: ConnectionChannel }) {
                 <Icon icon={check.ok ? CheckCircle2 : CircleAlert} size={16} />
                 {c.checkLabels[check.name] ?? check.name}
               </span>
-              {!check.ok ? <span className={styles.checkMessage}>{check.message}</span> : null}
+              {check.message ? <span className={styles.checkMessage}>{check.message}</span> : null}
             </li>
           ))}
         </ul>
@@ -501,22 +516,25 @@ function EditDialog({
   const [confirming, setConfirming] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  /**
+   * Isi PATCH yang dibaca SEKALI saat "Simpan" ditekan (security W1): selama konfirmasi identitas
+   * dialog ubah dilepas, `SecretField` ikut lepas, jadi rahasia baru tidak bisa dibaca ulang. Ref
+   * (bukan state), dikosongkan begitu terkirim atau dibatalkan.
+   */
+  const pendingBody = useRef<UpdateConnectionChannelRequest | null>(null);
 
-  const send = async (confirmation?: IdentityConfirmation) => {
-    const built = form.build();
-    if (!built.ok) return 'invalid' as const;
-    if (built.empty) {
-      onClose();
-      return 'done' as const;
-    }
+  const send = async (
+    body: UpdateConnectionChannelRequest,
+    confirmation?: IdentityConfirmation,
+  ) => {
     const { channel: next } = await endpoints.connections.update(channel.id, {
-      ...built.update,
+      ...body,
       ...(confirmation ? { confirmation } : {}),
     });
+    pendingBody.current = null;
     form.clearSecrets();
     storeConnection(queryClient, next);
     onSaved();
-    return 'done' as const;
   };
 
   const handle = (caught: unknown) => {
@@ -532,16 +550,23 @@ function EditDialog({
     setError(null);
     const built = form.build();
     if (!built.ok) return;
+    if (built.empty) {
+      onClose();
+      return;
+    }
     if (built.sensitive) {
+      pendingBody.current = built.update;
       setConfirming(true);
       return;
     }
     setPending(true);
     try {
-      await send();
+      await send(built.update);
     } catch (caught) {
-      if (needsConfirmation(caught)) setConfirming(true);
-      else handle(caught);
+      if (needsConfirmation(caught)) {
+        pendingBody.current = built.update;
+        setConfirming(true);
+      } else handle(caught);
     } finally {
       setPending(false);
     }
@@ -574,13 +599,23 @@ function EditDialog({
         confirmLabel={c.save}
         pendingLabel={c.saving}
         requireCode
-        onCancel={() => setConfirming(false)}
+        onCancel={() => {
+          pendingBody.current = null;
+          setConfirming(false);
+        }}
         onConfirm={async (confirmation) => {
+          const body = pendingBody.current;
+          if (!body) {
+            setConfirming(false);
+            return;
+          }
           try {
-            await send(confirmation);
+            await send(body, confirmation);
             setConfirming(false);
           } catch (caught) {
             if (isConfirmationError(caught)) throw caught;
+            // Isian rahasia dilepas selama konfirmasi: minta diisi ulang, jangan kirim sebagian.
+            pendingBody.current = null;
             setConfirming(false);
             handle(caught);
           }
@@ -621,7 +656,7 @@ function StatusCard({
     void queryClient.invalidateQueries({ queryKey: ['inbox', 'channels'] });
     void navigate({
       to: '/pengaturan/channel',
-      state: (previous) => ({ ...previous, deletedChannel: channel.name }),
+      state: (previous) => ({ ...previous, deletedConnection: channel.name }),
     });
   };
 

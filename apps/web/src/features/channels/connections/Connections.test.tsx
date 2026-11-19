@@ -1,4 +1,5 @@
 import {
+  deleteChannelRequestSchema,
   API_ROUTES,
   apiPath,
   channelTypeInfos,
@@ -233,7 +234,8 @@ describe('Pengaturan → Channel lain', () => {
           }),
       }),
     );
-    expect(await screen.findByText(MESSENGER.reviewNote)).toBeVisible();
+    // Isi peringatan dari teks web (tidak mengulang judul "Butuh App Review Meta").
+    expect(await screen.findByText(c.metaReviewBody.messenger ?? '')).toBeVisible();
     expect(screen.getByRole('button', { name: c.enable })).toBeDisabled();
     expect(screen.getByText(c.enableBlocked)).toBeVisible();
     expect(await screen.findByText('verif-123')).toBeVisible();
@@ -284,6 +286,8 @@ describe('Pengaturan → Channel lain', () => {
     fireEvent.click(await screen.findByRole('button', { name: c.delete }));
     await confirmIdentity(c.deleteTitle, c.deleteConfirm);
     await waitFor(() => expect(router.state.location.pathname).toBe('/pengaturan/channel'));
-    expect(body).toEqual({ confirmation: { password: TEST_PASSWORD, code: TEST_CODE } });
+    // Bentuk yang diterima server (`deleteChannelRequestSchema`): password & kode di tingkat atas.
+    expect(body).toEqual({ password: TEST_PASSWORD, code: TEST_CODE });
+    expect(deleteChannelRequestSchema.safeParse(body).success).toBe(true);
   });
 });

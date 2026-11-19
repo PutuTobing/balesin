@@ -1,6 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { UserCheck, UserX } from 'lucide-react';
-import { IconButton } from '../../components/ui/IconButton';
 import { t } from '../../i18n/id';
 import { endpoints } from '../../lib/api/endpoints';
 import { cx } from '../../lib/cx';
@@ -12,7 +10,8 @@ const w = t.workspace;
 /**
  * Saklar "Tersedia" milik agen sendiri di kepala daftar chat (`inbox.reply`). Hanya tampil saat
  * pembagian otomatis (round-robin) aktif; Teknisi (409) dan agen yang tidak bisa dimuat statusnya
- * tidak melihatnya. Agen yang dikecualikan Owner/Admin melihat tombol nonaktif dengan alasannya.
+ * tidak melihatnya. Keadaan terbaca sebagai TEKS ("Tersedia" / "Tidak tersedia"), bukan ikon saja;
+ * agen yang dikecualikan (bawaan Owner/Admin) melihat tombol nonaktif "Tidak ikut pembagian".
  */
 export function AvailabilityToggle() {
   const queryClient = useQueryClient();
@@ -26,20 +25,30 @@ export function AvailabilityToggle() {
   });
   const availability = status.data?.availability;
   if (!availability || availability.mode !== 'round_robin') return null;
-  const on = availability.available && !availability.excluded;
-  const label = availability.excluded
+  const excluded = availability.excluded;
+  const on = availability.available && !excluded;
+  const text = excluded ? w.availabilityExcludedShort : on ? w.availabilityOn : w.availabilityOff;
+  const reason = excluded
     ? w.availabilityExcluded
     : toggle.isError
       ? w.availabilityFailed
-      : `${w.availabilityLabel}: ${on ? w.availabilityOn : w.availabilityOff}. ${on ? w.availabilityHintOn : w.availabilityHintOff}`;
+      : on
+        ? w.availabilityHintOn
+        : w.availabilityHintOff;
   return (
-    <IconButton
-      label={label}
-      icon={on ? UserCheck : UserX}
-      aria-pressed={availability.available}
-      disabled={availability.excluded || toggle.isPending}
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      // Nama = "Tersedia untuk chat baru: <keadaan>" — teks yang terlihat ada di dalam nama.
+      aria-label={`${w.availabilityLabel}: ${text}${toggle.isError ? `. ${w.availabilityFailed}` : ''}`}
+      title={reason}
+      disabled={excluded || toggle.isPending}
       className={cx(styles.availability, on && styles.availabilityOn)}
       onClick={() => toggle.mutate(!availability.available)}
-    />
+    >
+      <span className={styles.availabilityDot} aria-hidden="true" />
+      {text}
+    </button>
   );
 }

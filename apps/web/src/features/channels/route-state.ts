@@ -5,6 +5,8 @@
 declare module '@tanstack/react-router' {
   interface HistoryState {
     deletedChannel?: string;
+    /** Channel lain (Telegram/Email/Messenger/IG) yang baru dihapus — pesannya berbeda. */
+    deletedConnection?: string;
   }
 }
 

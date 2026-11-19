@@ -21,6 +21,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { LoadFailedIllustration } from '../../components/illustrations/illustrations';
 import { Button } from '../../components/ui/Button';
 import { Checkbox } from '../../components/ui/Checkbox';
+import { Switch } from '../../components/ui/Switch';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { TextAreaField, TextField } from '../../components/ui/Field';
 import { Icon } from '../../components/ui/Icon';
@@ -337,7 +338,11 @@ function AllocationSection({ settings }: { settings: WorkspaceSettings }) {
 }
 
 function AutoMessagesSection({ settings }: { settings: WorkspaceSettings }) {
-  const save = useSaveWorkspace();
+  // Bukan `useMutation` (security W2): permintaan ini bisa membawa password + kode konfirmasi, dan
+  // cache mutasi menyimpan `variables` sampai gcTime. Panggil langsung lalu taruh hasil di cache.
+  const queryClient = useQueryClient();
+  const [pending, setPending] = useState(false);
+  const [failure, setFailure] = useState<unknown>(null);
   const [values, setValues] = useState(settings.autoMessages);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saved, setSaved] = useState(false);
@@ -370,8 +375,18 @@ function AutoMessagesSection({ settings }: { settings: WorkspaceSettings }) {
       setErrors(zodFieldErrors(parsed.error));
       return;
     }
-    await save.mutateAsync(parsed.data);
-    setSaved(true);
+    setPending(true);
+    setFailure(null);
+    try {
+      const data = await endpoints.workspace.update(parsed.data);
+      queryClient.setQueryData(workspaceKeys.settings, data);
+      setSaved(true);
+    } catch (caught) {
+      setFailure(caught);
+      throw caught;
+    } finally {
+      setPending(false);
+    }
   };
 
   const submit = async (event: FormEvent) => {
@@ -446,9 +461,9 @@ function AutoMessagesSection({ settings }: { settings: WorkspaceSettings }) {
             </fieldset>
           );
         })}
-        {save.error && !isConfirmationError(save.error) ? (
+        {failure && !isConfirmationError(failure) ? (
           <Notice tone="danger" role="alert">
-            {isApiError(save.error) ? save.error.message : t.api.network}
+            {isApiError(failure) ? failure.message : t.api.network}
           </Notice>
         ) : saved ? (
           <p className={styles.saved} role="status">
@@ -456,13 +471,8 @@ function AutoMessagesSection({ settings }: { settings: WorkspaceSettings }) {
           </p>
         ) : null}
         <div className={styles.actions}>
-          <Button
-            ref={submitRef}
-            type="submit"
-            variant="primary"
-            loading={save.isPending && !confirming}
-          >
-            {save.isPending && !confirming ? w.saving : w.save}
+          <Button ref={submitRef} type="submit" variant="primary" loading={pending && !confirming}>
+            {pending && !confirming ? w.saving : w.save}
           </Button>
         </div>
       </form>
@@ -532,12 +542,18 @@ function AgentRow({ agent }: { agent: AllocationAgent }) {
       endpoints.workspace.updateAgent(agent.userId, patch),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: workspaceKeys.agents }),
   });
+  const status = agent.excluded
+    ? { text: w.availabilityExcludedShort, className: styles.agentStatusOff }
+    : agent.available
+      ? { text: w.availabilityOn, className: styles.agentStatusOn }
+      : { text: w.availabilityOff, className: styles.agentStatusOff };
   return (
     <li className={styles.agent}>
       <div className={styles.agentText}>
         <span className={styles.agentName}>{agent.name}</span>
         <span className={styles.agentMeta}>
-          {USER_ROLE_LABELS[agent.role]} · {w.load(agent.openConversations)} ·{' '}
+          <span className={status.className}>{status.text}</span> · {USER_ROLE_LABELS[agent.role]} ·{' '}
+          {w.load(agent.openConversations)} ·{' '}
           {agent.lastAssignedAt
             ? w.lastAssigned(formatDateTimeInline(agent.lastAssignedAt))
             : w.neverAssigned}
@@ -549,22 +565,23 @@ function AgentRow({ agent }: { agent: AllocationAgent }) {
         ) : null}
       </div>
       <div className={styles.agentToggles}>
-        <Checkbox
-          checked={agent.available}
+        <Switch
+          checked={!agent.excluded}
           disabled={update.isPending}
-          onChange={(event) => update.mutate({ available: event.target.checked })}
+          onChange={(checked) => update.mutate({ excluded: !checked })}
+          aria-label={`${w.included}: ${agent.name}`}
+        >
+          {w.included}
+        </Switch>
+        {/* "Tersedia" hanya berarti bila agen ikut pembagian. */}
+        <Switch
+          checked={agent.available && !agent.excluded}
+          disabled={update.isPending || agent.excluded}
+          onChange={(checked) => update.mutate({ available: checked })}
+          aria-label={`${w.available}: ${agent.name}`}
         >
           {w.available}
-          <span className="sr-only">: {agent.name}</span>
-        </Checkbox>
-        <Checkbox
-          checked={agent.excluded}
-          disabled={update.isPending}
-          onChange={(event) => update.mutate({ excluded: event.target.checked })}
-        >
-          {w.excluded}
-          <span className="sr-only">: {agent.name}</span>
-        </Checkbox>
+        </Switch>
       </div>
     </li>
   );
