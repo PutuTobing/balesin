@@ -578,6 +578,7 @@ export const t = {
       username: 'Username WhatsApp',
       profileName: 'Nama profil WhatsApp',
       profileNameFrom: (channel: string) => `Nama profil ${channel}`,
+      fromEmailChannel: '(dari channel Email, belum diperiksa tim)',
       teamName: 'Nama di tim',
       notSet: 'Belum diisi',
       createdAt: 'Tercatat sejak',
@@ -3081,6 +3082,10 @@ export const t = {
     save: 'Simpan',
     saving: 'Menyimpan…',
     saved: 'Perubahan tersimpan. Tes koneksi lagi bila kredensial diganti.',
+    savedWithoutSecret:
+      'Perubahan lain tersimpan, tetapi kredensial baru BELUM diganti karena isiannya kosong. Buka Ubah pengaturan dan isi ulang bila ingin menggantinya.',
+    refillSecret:
+      'Isi ulang nilai baru — demi keamanan isian dikosongkan setelah batal atau galat.',
     editConfirmTitle: 'Simpan kredensial baru?',
     editConfirmBody:
       'Kredensial atau tujuan koneksi berubah. Status channel kembali "Belum dites".',

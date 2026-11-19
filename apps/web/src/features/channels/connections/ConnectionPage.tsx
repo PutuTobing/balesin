@@ -42,7 +42,7 @@ import { Fact } from '../NumberFacts';
 import channelStyles from '../Channels.module.css';
 import '../route-state';
 import { ConnectionFields } from './connection-form';
-import { useConnectionForm } from './use-connection-form';
+import { useConnectionForm, type SecretName } from './use-connection-form';
 import {
   connectionKeys,
   connectionQuery,
@@ -492,9 +492,9 @@ function SettingsCard({
             setEditing(false);
             requestAnimationFrame(() => openRef.current?.focus());
           }}
-          onSaved={() => {
+          onSaved={(secretKept) => {
             setEditing(false);
-            onDone(c.saved);
+            onDone(secretKept ? c.savedWithoutSecret : c.saved);
           }}
         />
       ) : null}
@@ -509,10 +509,15 @@ function EditDialog({
 }: {
   channel: ConnectionChannel;
   onClose: () => void;
-  onSaved: () => void;
+  /** `secretKept`: ada isian rahasia yang tadi dikosongkan dan tidak diisi ulang (tidak diganti). */
+  onSaved: (secretKept: boolean) => void;
 }) {
   const queryClient = useQueryClient();
   const form = useConnectionForm(channel.type, channel);
+  // NAMA isian rahasia yang ikut di `pendingBody` (bukan nilainya) dan isian yang dikosongkan
+  // sebelumnya tetapi tidak diisi ulang — dibaca saat Simpan, selagi isian masih terpasang.
+  const pendingSecrets = useRef<SecretName[]>([]);
+  const keptSecrets = useRef(false);
   const [confirming, setConfirming] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -532,9 +537,18 @@ function EditDialog({
       ...(confirmation ? { confirmation } : {}),
     });
     pendingBody.current = null;
+    pendingSecrets.current = [];
     form.clearSecrets();
+    form.resetDropped();
     storeConnection(queryClient, next);
-    onSaved();
+    onSaved(keptSecrets.current);
+  };
+
+  /** Batal/galat selama konfirmasi: rahasia yang tertunda dibuang; isiannya diberi keterangan. */
+  const dropPending = () => {
+    pendingBody.current = null;
+    form.markDropped(pendingSecrets.current);
+    pendingSecrets.current = [];
   };
 
   const handle = (caught: unknown) => {
@@ -550,10 +564,12 @@ function EditDialog({
     setError(null);
     const built = form.build();
     if (!built.ok) return;
+    keptSecrets.current = form.unfilledDropped().length > 0;
     if (built.empty) {
       onClose();
       return;
     }
+    pendingSecrets.current = form.filledSecrets();
     if (built.sensitive) {
       pendingBody.current = built.update;
       setConfirming(true);
@@ -600,7 +616,7 @@ function EditDialog({
         pendingLabel={c.saving}
         requireCode
         onCancel={() => {
-          pendingBody.current = null;
+          dropPending();
           setConfirming(false);
         }}
         onConfirm={async (confirmation) => {
@@ -615,7 +631,7 @@ function EditDialog({
           } catch (caught) {
             if (isConfirmationError(caught)) throw caught;
             // Isian rahasia dilepas selama konfirmasi: minta diisi ulang, jangan kirim sebagian.
-            pendingBody.current = null;
+            dropPending();
             setConfirming(false);
             handle(caught);
           }

@@ -11,10 +11,12 @@ import { BASE_URL, VIEWPORTS, webServer } from './viewports';
  *  3. `desktop-1440` dan `hp-390` — semua tes lain, memakai sesi Owner itu (tes tamu
  *     mengosongkan sesinya sendiri lewat `test.use({ storageState })`). Di sini
  *     `email-pengirim.spec.ts` mengatur email pengirim organisasi.
- *  4. `dengan-email` — undangan, lupa/atur ulang password, verifikasi email lewat Mailpit; banner
+ *  4. `berurutan` lalu `berurutan-hp` — spec yang mengubah pengaturan seluruh organisasi, satu per
+ *     satu (desktop, lalu jam kerja di HP).
+ *  5. `dengan-email` — undangan, lupa/atur ulang password, verifikasi email lewat Mailpit; banner
  *     keamanan Owner setelah Admin mengubah email pengirim (`keamanan-dengan-email.spec.ts`).
  *
- * Proyek 2 dan 4 bergantung pada pengaturan email organisasi yang dibagi bersama, jadi masing-
+ * Proyek 2 dan 5 bergantung pada pengaturan email organisasi yang dibagi bersama, jadi masing-
  * masing berjalan sendiri di sela proyek paralel, tidak bersamaan dengannya.
  */
 const sharedEmailSpecs = /(tim-tanpa|tim-dengan|keamanan-dengan)-email\.spec\.ts$/;
@@ -83,8 +85,17 @@ export default defineConfig({
       use: { ...desktop, storageState: OWNER_STATE_PATH },
     },
     {
-      name: 'dengan-email',
+      // Jam kerja & pembagian chat di HP. Setelah `berurutan` (bukan bersamaan): kedua proyek
+      // mengubah pengaturan organisasi yang sama (pesan otomatis, round-robin).
+      name: 'berurutan-hp',
       dependencies: ['berurutan'],
+      testMatch: /jam-kerja\.spec\.ts$/,
+      workers: 1,
+      use: { ...hp, storageState: OWNER_STATE_PATH },
+    },
+    {
+      name: 'dengan-email',
+      dependencies: ['berurutan', 'berurutan-hp'],
       testMatch: /(tim|keamanan)-dengan-email\.spec\.ts$/,
       // Satu per satu: kedua berkas membuat kejadian keamanan baru dan membaca banner Owner yang
       // sama ("N kejadian keamanan baru"); bila paralel, kejadian dari berkas lain memunculkan

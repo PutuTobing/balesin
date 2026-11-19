@@ -19,9 +19,11 @@ test.describe.configure({ mode: 'serial', timeout: 180_000 });
 let owner: SecondOwner;
 let watched: WatchedPage;
 
-test.beforeAll(async ({ browser }) => {
-  owner = await createSecondOwner('jamkerja');
-  watched = await signInSecondOwner(browser, owner);
+test.beforeAll(async ({ browser }, testInfo) => {
+  // Owner kedua terpisah per proyek (desktop / HP): kode cadangan & sesi tidak dipakai bersama.
+  const hp = testInfo.project.name.endsWith('-hp');
+  owner = await createSecondOwner(hp ? 'jamkerjahp' : 'jamkerja');
+  watched = await signInSecondOwner(browser, owner, { hp });
 });
 
 test.afterAll(async () => {

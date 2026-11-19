@@ -217,6 +217,39 @@ describe('Pengaturan → Channel lain', () => {
     expect(screen.queryByRole('dialog', { name: c.editConfirmTitle })).toBeNull();
   });
 
+  it('ubah token lalu Batal di konfirmasi: isian diberi keterangan isi ulang; simpan tanpa token tidak mengklaim diganti', async () => {
+    const bodies: unknown[] = [];
+    await renderApp(
+      `/pengaturan/channel/lain/${TELEGRAM.id}`,
+      routes([TELEGRAM], {
+        [`GET ${apiPath(R.channel, { channelId: TELEGRAM.id })}`]: () =>
+          json({ channel: TELEGRAM }),
+        [`PATCH ${apiPath(R.channel, { channelId: TELEGRAM.id })}`]: (request) => {
+          bodies.push(request.body);
+          return json({ channel: { ...TELEGRAM, name: 'Bot Tagihan' } });
+        },
+      }),
+    );
+    fireEvent.click(await screen.findByRole('button', { name: c.edit }));
+    let dialog = await screen.findByRole('dialog', { name: c.editTitle });
+    fireEvent.change(within(dialog).getByLabelText(c.botToken), { target: { value: TOKEN } });
+    fireEvent.click(within(dialog).getByRole('button', { name: c.save }));
+    const identity = await screen.findByRole('dialog', { name: c.editConfirmTitle });
+    fireEvent.click(within(identity).getByRole('button', { name: t.identity.cancel }));
+
+    dialog = await screen.findByRole('dialog', { name: c.editTitle });
+    const token = within(dialog).getByLabelText(c.botToken);
+    expect(token).toHaveValue('');
+    expect(within(dialog).getByText(c.refillSecret)).toBeVisible();
+    expect(bodies).toHaveLength(0);
+
+    // Hanya nama yang diubah (token dibiarkan kosong): pesan jujur, tidak "kredensial diganti".
+    fireEvent.change(within(dialog).getByLabelText(c.name), { target: { value: 'Bot Tagihan' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: c.save }));
+    await waitFor(() => expect(bodies).toEqual([{ type: 'telegram', name: 'Bot Tagihan' }]));
+    expect(await screen.findByText(c.savedWithoutSecret)).toBeVisible();
+  });
+
   it('halaman Messenger: App Review + aktifkan menunggu tes berhasil', async () => {
     await renderApp(
       `/pengaturan/channel/lain/${MESSENGER.id}`,

@@ -28,7 +28,7 @@ export function ConnectionFields({ form, disabled }: { form: ConnectionForm; dis
         <SecretField
           ref={secretRef('botToken')}
           label={c.botToken}
-          hint={secretHint ?? c.botTokenHint}
+          hint={form.secretHint('botToken', secretHint ?? c.botTokenHint)}
           error={errors.botToken}
           disabled={disabled}
           onChange={() => form.setErrors({})}
@@ -62,14 +62,14 @@ export function ConnectionFields({ form, disabled }: { form: ConnectionForm; dis
           <SecretField
             ref={secretRef('pageAccessToken')}
             label={c.pageAccessToken}
-            hint={secretHint ?? c.pageAccessTokenHint}
+            hint={form.secretHint('pageAccessToken', secretHint ?? c.pageAccessTokenHint)}
             error={errors.pageAccessToken}
             disabled={disabled}
           />
           <SecretField
             ref={secretRef('appSecret')}
             label={c.appSecret}
-            hint={secretHint ?? c.appSecretHint}
+            hint={form.secretHint('appSecret', secretHint ?? c.appSecretHint)}
             error={errors.appSecret}
             disabled={disabled}
           />
@@ -155,7 +155,7 @@ function EmailFields({ form, disabled }: { form: ConnectionForm; disabled?: bool
           <SecretField
             ref={secretRef('imapPassword')}
             label={c.password}
-            hint={editing ? c.passwordKeep : undefined}
+            hint={form.secretHint('imapPassword', editing ? c.passwordKeep : undefined)}
             error={errors['imap.password']}
             disabled={disabled}
           />
@@ -266,7 +266,7 @@ function EmailFields({ form, disabled }: { form: ConnectionForm; disabled?: bool
               <SecretField
                 ref={secretRef('smtpPassword')}
                 label={c.password}
-                hint={editing ? c.passwordKeep : undefined}
+                hint={form.secretHint('smtpPassword', editing ? c.passwordKeep : undefined)}
                 error={errors['smtp.password']}
                 disabled={disabled}
               />

@@ -102,6 +102,17 @@ const inbox = {
       channelType: 'telegram',
       channelHandle: '@andi_dps',
     }),
+    fakeContact({
+      id: email.contact.id,
+      displayName: 'Rudi',
+      nameSource: 'channel',
+      name: null,
+      profileName: 'Rudi',
+      phone: null,
+      email: null,
+      channelType: 'email',
+      channelHandle: 'rudi@contoh.id',
+    }),
   ],
 };
 
@@ -166,6 +177,15 @@ describe('inbox multi-channel', () => {
     // HTML email tidak pernah masuk ke dokumen aplikasi.
     expect(document.body.querySelector('script')).toBeNull();
     expect(dialog.querySelector('b')).toBeNull();
+  });
+
+  it('panel kontak Email: alamat pengirim diberi keterangan sumbernya (bukan data tim)', async () => {
+    await openChat(email.id, 'Mohon kirim ulang tagihan bulan ini.');
+    const panel = within(await screen.findByRole('complementary', { name: t.inbox.detail.label }));
+    const note = await panel.findByText(t.inbox.detail.fromEmailChannel);
+    expect(note.parentElement).toHaveTextContent('rudi@contoh.id');
+    // Teks biasa, bukan tautan mailto.
+    expect(panel.queryByRole('link', { name: /rudi@contoh\.id/ })).toBeNull();
   });
 
   it('Messenger di luar jendela: tanpa tombol "Kirim template"', async () => {

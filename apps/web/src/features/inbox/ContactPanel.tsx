@@ -202,8 +202,11 @@ function InfoTab({ conversationId, onClosed }: { conversationId: string; onClose
               {contact.email ? (
                 <EmailText email={contact.email} />
               ) : contact.channelType === 'email' && contact.channelHandle ? (
-                // Kontak dari channel Email: alamat pengirimnya (belum diisi tim).
-                <EmailText email={contact.channelHandle} />
+                // Kontak dari channel Email: alamat PENGIRIM (bisa dipalsukan; hasil verifikasi ada
+                // di gelembung pesan) — diberi keterangan sumbernya, bukan data yang diisi tim.
+                <>
+                  <EmailText email={contact.channelHandle} /> <Muted>{d.fromEmailChannel}</Muted>
+                </>
               ) : (
                 <Muted>{d.notSet}</Muted>
               )}

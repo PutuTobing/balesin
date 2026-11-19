@@ -10,7 +10,10 @@ import {
   type UpdateConnectionChannelRequest,
 } from '@balesin/shared';
 import { useRef, useState } from 'react';
+import { t } from '../../../i18n/id';
 import { zodFieldErrors, type FieldErrors } from '../../../lib/form';
+
+const c = t.connections;
 
 export type SmtpSecurity = 'ssl' | 'starttls' | 'none';
 export const SMTP_DEFAULT_PORTS: Record<SmtpSecurity, number> = {
@@ -41,7 +44,8 @@ export interface ConnectionValues {
   instagramAccountId: string;
 }
 
-type SecretName = 'botToken' | 'imapPassword' | 'smtpPassword' | 'pageAccessToken' | 'appSecret';
+export type SecretName =
+  'botToken' | 'imapPassword' | 'smtpPassword' | 'pageAccessToken' | 'appSecret';
 
 /** Isian yang mengubah kredensial/tujuan koneksi → wajib konfirmasi identitas (kontrak PATCH). */
 const SENSITIVE_KEYS = [
@@ -116,6 +120,22 @@ export function useConnectionForm(type: ConnectionChannelType, channel: Connecti
   const clearSecrets = () => {
     for (const element of Object.values(secrets.current)) if (element) element.value = '';
   };
+  /**
+   * Isian rahasia yang dikosongkan karena konfirmasi identitas dibatalkan/gagal (NAMA isian saja,
+   * bukan nilainya). Isian itu diberi keterangan "isi ulang" sampai berhasil disimpan.
+   */
+  const [dropped, setDropped] = useState<SecretName[]>([]);
+  const filledSecrets = (): SecretName[] =>
+    (Object.keys(secrets.current) as SecretName[]).filter((name) => secret(name) !== undefined);
+  const markDropped = (names: readonly SecretName[]) => {
+    clearSecrets();
+    setDropped((current) => [...new Set([...current, ...names])]);
+  };
+  /** Isian yang tadi dikosongkan dan masih kosong (tidak ikut terkirim). */
+  const unfilledDropped = () => dropped.filter((name) => secret(name) === undefined);
+  const resetDropped = () => setDropped([]);
+  const secretHint = (name: SecretName, fallback: string | undefined) =>
+    dropped.includes(name) ? c.refillSecret : fallback;
 
   function emailBody() {
     const imapChanged =
@@ -253,7 +273,22 @@ export function useConnectionForm(type: ConnectionChannelType, channel: Connecti
     };
   }
 
-  return { type, editing, values, set, errors, setErrors, secretRef, build, clearSecrets };
+  return {
+    type,
+    editing,
+    values,
+    set,
+    errors,
+    setErrors,
+    secretRef,
+    build,
+    clearSecrets,
+    filledSecrets,
+    markDropped,
+    unfilledDropped,
+    resetDropped,
+    secretHint,
+  };
 }
 
 export type ConnectionForm = ReturnType<typeof useConnectionForm>;
