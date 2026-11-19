@@ -263,3 +263,84 @@ Pastikan:
 - alasan terbaca utuh.
 
 Kartu Bot channel tidak perlu difoto ulang.
+
+---
+
+# Putaran 4 — 2026-11-19 (commit `531cabc`)
+
+- Diperiksa di worktree sementara dengan stack terpisah: API 3191, web 5191, database `balesin_kd_e2e`, Redis db 11.
+- Layar yang difoto, masing-masing di 390 dan 1440, terang dan gelap:
+  - `inbox-bot-menu` (baru di `e2e/capture/screens-kanal.ts:538`);
+  - `channel-email`, kini bot aktif dengan penerima siap, sehingga sakelar baru tampil;
+  - `channel-telegram`, `nomor-bot`, dan `nomor-bot-mati` untuk cek regresi.
+- Semua 21 foto berhasil diambil.
+- **Foto bukti:** `docs/design-reviews/2026-11-19-bot-channel-lain/putaran-4/` (10 foto).
+
+## Putusan putaran 4: LOLOS
+
+### Verifikasi K1 dan KS1
+
+| # | Hasil | Bukti |
+|---|---|---|
+| K1 Lebar menu | **Beres** | `HandlingActions.module.css:24` memakai `max-width: min(20rem, var(--radix-dropdown-menu-content-available-width))`. Di 390 menu ±318 px dan tepi kanannya ±13 px dari tepi layar. Di 1440 lebarnya juga ±318 px, tidak lagi ±460 px (`inbox-bot-menu--390-terang.png`, `--390-gelap.png`, `--1440-terang.png`, `--1440-gelap.png`) |
+| K1 Alasan | **Beres** | `id.ts:498`: "Belum ada webhook penerima bot. Atur di pengaturan webhook." Teks ini terbungkus 2 baris dan terbaca utuh di keempat foto. Istilahnya sama dengan tombol "Buka pengaturan webhook" di kartu Bot |
+| KS1 Ikon dua baris | **Beres** | `HandlingActions.module.css:177-185`: ikon robot sejajar dengan baris label "Kembalikan ke bot", tidak lagi di tengah dua baris. Jarak atas-bawah item 8 px |
+| KS2 Cache | **Dicatat** | Sudah ada di `docs/DECISIONS.md` (entri 2026-11-19 "alasan … hanya dari cache") |
+
+### Layar baru: pilihan Email "Bot hanya melayani pengirim terverifikasi"
+
+Lokasinya `BotCard.tsx:330-341`, `Channels.module.css:1139-1143`, dan `id.ts:3538-3540`.
+
+- Pilihan ini memakai `Checkbox` berbingkai yang sama dengan "Aktifkan bot untuk channel ini", jadi tampilannya konsisten. Petunjuknya memakai `.hint` (`--ink-2`) dengan jarak 4 px.
+- Pilihan ini hanya muncul untuk Email ketika bot aktif. Foto Telegram dan WhatsApp tidak menampilkannya, jadi sudah benar.
+- Petunjuknya menjelaskan akibat ("langsung masuk antrian tim") dan memberi alasan bawaan mati ("Biarkan mati bila server email belum mencatat hasil pemeriksaannya"). Isinya sesuai dengan DECISIONS P2-1.
+- Di 390, label terbungkus 2 baris dan kotak centangnya tetap sejajar. Di gelap kontrasnya cukup.
+
+**Regresi Telegram dan WhatsApp: tidak ada.**
+- Telegram (`channel-telegram--1440-gelap.png`) masih utuh:
+  - lencana kuning "Belum ada penerima";
+  - peringatan "Belum ada penerima bot" dengan tombol "Buka pengaturan webhook";
+  - teks "format Standar".
+- WhatsApp (`nomor-bot--390-terang.png`) masih utuh:
+  - teks "nomor ini";
+  - catatan sesi "…hanya bisa mengirim template.";
+  - lencana hijau;
+  - kalimat positif saat penerima siap;
+  - jadwal dan zona waktu.
+
+## Tabel nilai putaran 4
+
+| Layar | Ukuran · tema | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Menu "Kembalikan ke bot", Telegram (tanpa penerima) | 390 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| | 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| `channel-email` aktif + penerima siap + sakelar terverifikasi | 390 · 1440 T/G | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 5 | 4 | 5 |
+| `channel-telegram` (aktif, tanpa penerima) | 1440 G | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| `nomor-bot` / `nomor-bot-mati` (WhatsApp) | 390 · 1440 T/G | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+
+Kriteria 9 untuk `channel-email` bernilai 4 karena ada sedikit ketidakcocokan kata pada petunjuk sakelar (lihat KS3).
+Kriteria 3 bernilai 4 karena alasan yang sama dengan putaran sebelumnya: kepala kartu Bot cukup padat.
+
+## Daftar larangan §3
+
+| Larangan | Hasil |
+|---|---|
+| Gradien ungu-biru, glassmorphism, emoji sebagai ikon | Bersih |
+| Semua tombol pill, bayangan tebal | Bersih (bayangan menu tetap tipis) |
+| Kartu ikon + judul + 1 kalimat berulang | Bersih |
+| Teks Inggris nyasar / Lorem | Bersih. "SPF/DKIM/DMARC" adalah nama standar teknis, bukan teks nyasar |
+| Ukuran font/jarak tidak konsisten | Bersih |
+| Warna di luar token | Bersih (`.botVerified` hanya memakai `--space-4`; `--radix-*` bukan warna) |
+
+## Saran (tidak menahan)
+
+- **KS3. Kata "mati" pada kotak centang.**
+  - Kontrolnya kotak centang, bukan sakelar, jadi frasa "Biarkan mati" kurang pas.
+  - Di `id.ts:3540`, ganti dengan:
+    ```ts
+    'Email yang belum lolos pemeriksaan pengirim (SPF/DKIM/DMARC) langsung masuk antrian tim. Jangan dicentang bila server email belum mencatat hasil pemeriksaannya.',
+    ```
+- **KS4. Kaitkan dengan bagian "Verifikasi pengirim" di kartu Koneksi (opsional).**
+  - Admin bisa bingung dari mana "hasil pemeriksaan" berasal.
+  - Bila petunjuk diperpanjang, tambahkan: "Server tepercaya diatur di bagian Verifikasi pengirim."
+  - Kalimat ini cukup sebagai teks biasa, tidak perlu tautan.

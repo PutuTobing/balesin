@@ -3537,7 +3537,7 @@ export const t = {
       timeoutInvalid: 'Isi 1–1.440 menit.',
       requireVerified: 'Bot hanya melayani pengirim terverifikasi',
       requireVerifiedHint:
-        'Email yang belum lolos pemeriksaan pengirim (SPF/DKIM/DMARC) langsung masuk antrian tim. Biarkan mati bila server email belum mencatat hasil pemeriksaannya.',
+        'Email yang belum lolos pemeriksaan pengirim (SPF/DKIM/DMARC) langsung masuk antrian tim. Jangan dicentang bila server email belum mencatat hasil pemeriksaannya.',
       noDay: 'Pilih minimal satu hari.',
       save: 'Simpan pengaturan bot',
       saving: 'Menyimpan…',
