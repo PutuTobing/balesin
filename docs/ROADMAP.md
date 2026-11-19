@@ -76,7 +76,7 @@ Orkestrator mengerjakan dari atas ke bawah. Tandai `[x]` saat Definition of Done
 - [x] `install.sh` (curl | bash), pilihan mode jaringan A/B/C, generate secret
 - [x] CLI `balesin` (update dengan backup + migrasi, backup, restore, status, logs)
 - [x] `deploy/nginx/balesin.conf` untuk vm-nginx Sky Tech
-- [ ] White-label lengkap + dokumentasi pengguna (bahasa Indonesia)
+- [x] White-label lengkap + dokumentasi pengguna (bahasa Indonesia)
 - [ ] Audit akhir penuh (`/audit`) sebelum rilis 1.0
 
 ## Fase 8 — NANTI

@@ -143,3 +143,123 @@ Pastikan:
 - lencana Telegram "Belum ada penerima" (kuning);
 - Messenger tanpa kata "template";
 - tidak ada "native" di teks.
+
+# Putaran 3
+
+- **Penilai:** `kritikus-desain` · **Putaran:** 3 (penilaian kedua untuk kartu ini; nomornya mengikuti siklus
+  Merek) · **Tanggal:** 2026-11-19
+- **Kode yang dinilai:** `1e9afaf` ("fix(web): revisi Merek putaran 2 & kartu Bot …"), branch `dev`.
+- **Cara memotret:** worktree sementara, API 3191, web 5191, DB `balesin_kd_e2e`, Redis db 11.
+- **Layar frontend:** `channel-telegram`, `channel-email`, `channel-messenger`, `nomor-bot`, `nomor-bot-mati`.
+- **Layar tambahan penilai** (hanya di worktree):
+  - `kd-channel-email-bot-aktif`: Email, bot aktif, `receiverReady: true` (untuk cek BS2);
+  - `kd-inbox-bot-menu-telegram` dan `kd-inbox-bot-menu-email`:
+    - buka kartu Bot channel dulu, supaya cache pengaturan bot terisi;
+    - pindah ke inbox lewat router;
+    - buka menu "Tindakan chat";
+    - Telegram = bot aktif tanpa penerima, Email = bot mati.
+- Semua layar difoto di 390 dan 1440, terang dan gelap, dan semuanya lulus.
+- **Foto bukti:** `docs/design-reviews/2026-11-19-bot-channel-lain/putaran-3/` (14 foto, awalan `kd-` dibuang).
+
+## Putusan putaran 3: REVISI (1 perbaikan kecil di menu inbox)
+
+Kartu Bot di ketiga channel **lolos**: B1–B3 dan BS1–BS4 beres, dan kartu WhatsApp tidak mundur.
+
+Yang masih menahan hanya menu "Kembalikan ke bot" yang baru: di HP, alasan untuk Telegram terpotong.
+
+### Verifikasi B1–B3, BS1–BS4
+
+| # | Hasil | Bukti |
+|---|---|---|
+| B1 Lencana | **Beres** | Telegram aktif tanpa penerima kini berlencana kuning **"Belum ada penerima"**, selaras dengan peringatan di bawahnya (`channel-telegram--1440-terang.png`, `--390-gelap.png`) |
+| B2 Sesi Messenger/IG | **Beres** | Teksnya kini "Messenger punya batas sesi 24 jam: … bot belum bisa membalas sampai pelanggan mengirim pesan lagi.", tanpa kata "template" (`channel-messenger--1440-gelap.png`, `--390-terang.png`). Pilihan teks memakai `CHANNEL_CAPABILITIES[type].templates` |
+| B3 "Standar" | **Beres** | Teksnya kini "…webhook aktif format Standar…". Hasil `grep native id.ts` tinggal kunci kode `formats.native`/`descriptions.native` (`id.ts:4024-4026`), bukan teks yang dilihat pengguna |
+| BS1 Kepala ringkas | **Beres** | Di 1440 petunjuk tinggal 3 baris, dan jaraknya ke catatan sesi 8 px. Catatan sesi kini terbaca sebagai fakta terpisah |
+| BS2 Penerima siap | **Beres** | Tampil "Ada webhook aktif yang menerima chat baru untuk bot." (`channel-email-bot-aktif--390-terang.png`) |
+| BS3 Label tombol | **Beres** | "Buka pengaturan webhook" |
+| BS4 "Sepanjang hari" | **Beres** | Dipakai di Telegram, Email, dan WhatsApp (`nomor-bot--390-terang.png`, `--1440-gelap.png`) |
+
+**Regresi WhatsApp: tidak ada.** Yang tetap utuh:
+- teks "nomor ini";
+- catatan sesi "…hanya bisa mengirim template." (benar untuk WhatsApp);
+- lencana hijau "Memegang chat baru";
+- kalimat positif saat penerima siap;
+- jadwal, zona waktu, dan batas waktu.
+
+## Temuan baru
+
+| # | Kriteria | Nilai | Layar | Bukti |
+|---|---|---|---|---|
+| K1 | 4 Responsif, 6 Keadaan | **2** (390) · 4 (1440) | `inbox-bot-menu-telegram--390-gelap.png`, `--390-terang.png` | Menu "Tindakan chat" tidak punya batas lebar. Alasan "Belum ada penerima bot aktif untuk channel ini (Pengaturan → Webhook)." tampil satu baris, jadi menu melebar melewati tepi kanan layar 390. Teks terpotong di "(Pengaturan →" dan tepi kanan menu hilang. Akibatnya alasan yang seharusnya terbaca justru tidak terbaca. Di 1440 menu jadi ±460 px (`inbox-bot-menu-telegram--1440-terang.png`), jauh lebih lebar dari isi menu lainnya. Alasan Email pendek ("Bot belum aktif di channel ini."), jadi aman |
+
+## Tabel nilai putaran 3
+
+| Layar | Ukuran · tema | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `channel-telegram` (aktif, tanpa penerima) | 390 · 1440 T/G | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| `channel-email` (mati) | 390 · 1440 T/G | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 5 | 4 | 5 |
+| `channel-email` aktif + penerima siap | 390 · 1440 T/G | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| `channel-messenger` (mati) | 390 · 1440 T/G | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| `nomor-bot` / `nomor-bot-mati` (WhatsApp) | 390 · 1440 T/G | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| Menu "Kembalikan ke bot", Email (bot mati) | 390 · 1440 T/G | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 5 | 4 | 5 |
+| Menu "Kembalikan ke bot", Telegram (tanpa penerima) | 1440 T/G | 4 | 5 | 4 | 4 | 5 | 5 | 5 | 4 | **3** | 5 |
+| | 390 T/G | 4 | 5 | 4 | **2** | 5 | **2** | 5 | 4 | **3** | 5 |
+
+Catatan: kriteria 3 bernilai 4 karena di item dua baris, ikon robot dipusatkan vertikal sehingga tidak sejajar
+dengan baris label (lihat KS1).
+
+## Daftar larangan §3
+
+| Larangan | Hasil |
+|---|---|
+| Gradien ungu-biru, glassmorphism, emoji sebagai ikon | Bersih |
+| Semua tombol pill, bayangan tebal | Bersih |
+| Kartu ikon + judul + 1 kalimat berulang | Bersih |
+| Teks Inggris nyasar / Lorem | Bersih ("native" sudah hilang dari teks pengguna) |
+| Ukuran font/jarak tidak konsisten | Bersih |
+| Warna di luar token | Bersih (`.itemReason` memakai `--ink-2` dan `--text-12`) |
+
+## Perbaikan wajib putaran 3 (untuk `frontend`)
+
+### K1. Menu tindakan chat: batasi lebarnya, bungkus alasannya, pendekkan teksnya
+
+1. Di `apps/web/src/features/inbox/HandlingActions.module.css:20-28` (`.menu`), tambahkan:
+   ```css
+   max-width: min(20rem, var(--radix-dropdown-menu-content-available-width));
+   ```
+   `20rem` = 320 px. Variabel Radix menjamin menu tidak melewati tepi layar di 390.
+2. Di `apps/web/src/i18n/id.ts:498`, ganti teksnya supaya lebih pendek dan istilahnya sama dengan BS3:
+   ```ts
+   botResumeNoReceiver: 'Belum ada webhook penerima bot. Atur di pengaturan webhook.',
+   ```
+3. Tes `BotInteractive.test.tsx:105` sudah memakai kunci `h.botResumeNoReceiver`, jadi tidak perlu diubah. Pesan 409
+   server di baris 81 terpisah dan boleh tetap.
+
+Hasil yang diharapkan di 390:
+- lebar menu ≤ 320 px, dengan tepi kanan berjarak 8 px dari tepi layar;
+- alasan tampil 2 baris dan terbaca utuh.
+
+## Saran (tidak menahan)
+
+- **KS1. Ikon item dua baris.**
+  - Di `HandlingActions.module.css:161`, untuk item yang berisi `.itemText`, sejajarkan ikon dengan baris label,
+    bukan di tengah dua baris:
+    ```css
+    .item:has(.itemText) { align-items: flex-start; padding-block: var(--space-8); }
+    .item:has(.itemText) > svg { margin-top: 2px; }
+    ```
+- **KS2. Alasan bergantung pada cache.**
+  - Alasan hanya muncul bila pengaturan bot channel sudah ada di cache (`enabled: false` di `useQuery`,
+    `HandlingActions.tsx:60-64`).
+  - Akibatnya, agen yang belum pernah membuka Pengaturan → Channel tetap melihat item ini aktif, lalu baru mendapat
+    409 saat menekannya.
+  - Ini keputusan yang disengaja (supaya tidak ada permintaan tambahan). Catat di `docs/DECISIONS.md` bila belum.
+
+## Untuk putaran 4
+
+Foto ulang hanya `kd-inbox-bot-menu-telegram` (atau layar menu yang setara), di 390 dan 1440, terang dan gelap.
+Pastikan:
+- menu tidak melewati tepi layar;
+- alasan terbaca utuh.
+
+Kartu Bot channel tidak perlu difoto ulang.
