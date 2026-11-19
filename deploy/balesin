@@ -15,7 +15,7 @@
 #
 # Semua rahasia hanya ada di /opt/balesin/.env (chmod 600). Skrip ini tidak pernah mencetak isi
 # .env selain token setup (perintah setup-token) dan tidak pernah menulis rahasia ke berkas lain.
-# Panduan lengkap: docs/DEPLOY.md.
+# Panduan lengkap: panduan pengguna bab 8 "Pemeliharaan server" (docs/panduan/08-pemeliharaan.md).
 
 # Perintah `sh -c '…$POSTGRES_USER…'` sengaja memakai kutip tunggal: variabel dibaca DI DALAM container.
 # shellcheck disable=SC2016

@@ -27,7 +27,7 @@ sudo balesin update          # versi terbaru
 sudo balesin update 0.2.0    # versi tertentu
 ```
 
-Yang terjadi:
+Yang terjadi (6 langkah, tampil di layar):
 
 1. Pemeriksaan awal (disk minimal 2 GB, database berjalan), unduh berkas rilis + checksum.
 2. **Backup penuh** otomatis (berkas `…-sebelum-update-v<versi>.tar.enc`).
@@ -35,19 +35,25 @@ Yang terjadi:
 4. Perbarui struktur database dalam satu transaksi. Bila gagal, dibatalkan seluruhnya dan versi
    lama tetap berjalan.
 5. Nyalakan versi baru, tunggu semua layanan sehat.
+6. Simpan nomor versi baru dan berkas pendukungnya.
 
-**Rollback otomatis**: bila versi baru tidak sehat di langkah 5, Balesin kembali ke versi lama
-sendiri. Bila struktur database sudah berubah, database dipulihkan dari backup langkah 2. Log
-kegagalan disimpan di `/opt/balesin/logs/update-gagal-<versi>-<waktu>.log`. Tidak ada perintah
-rollback terpisah; untuk kembali ke versi lama secara manual, gunakan `restore` dengan backup
-yang dibuat sebelum update.
+**Rollback otomatis**: bila versi baru tidak sehat di langkah 5 (atau pembaruan database gagal
+setelah sebagian diterapkan), Balesin kembali ke versi lama sendiri. Bila struktur database
+sudah berubah, database dipulihkan dari backup langkah 2. Log kegagalan disimpan di
+`/opt/balesin/logs/update-gagal-<versi>-<waktu>.log`.
+
+**Tidak ada perintah `balesin rollback`**, dan `update` ke versi yang lebih lama ditolak.
+Perintah `restore` hanya mengembalikan **data** (database dan media) ke saat backup dibuat;
+aplikasi tetap memakai versi yang sedang terpasang, dan struktur database otomatis diperbarui
+lagi ke versi itu. Jadi bila update sudah dinyatakan berhasil tetapi Anda menemukan masalah di
+versi baru, jangan mencoba turun versi sendiri: hubungi tim Balesin, perbaikan dikirim sebagai
+versi baru.
 
 Tips:
 
 - Jalankan update di **jam sepi**. Bila rollback sampai memulihkan database, pesan yang masuk
   selama beberapa menit proses update bisa hilang. Setelah rollback, periksa chat terbaru di
   inbox dan di WhatsApp Manager.
-- Turun versi lewat `update` ditolak; gunakan `restore`.
 - Pengguna yang sedang membuka aplikasi melihat **Versi baru tersedia** dan cukup menekan
   **Muat ulang**.
 

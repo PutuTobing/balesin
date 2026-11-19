@@ -25,7 +25,7 @@ Periksa berurutan:
 7. Bila memakai nomor tes Meta, hanya nomor yang terdaftar di daftar penerima uji yang bisa
    saling berkirim pesan.
 8. Untuk admin server: nginx di depan yang membatasi ukuran body terlalu kecil bisa menolak
-   webhook (gejala: kode 413). Lihat [panduan operasional deploy](../DEPLOY.md) §9.
+   webhook (gejala: kode 413). Lihat [Webhook ditolak dengan kode 413](#webhook-ditolak-dengan-kode-413).
 
 ### "Sesi 24 jam sudah habis" / pesan gagal karena lebih dari 24 jam
 
@@ -198,15 +198,54 @@ diizinkan.
 
 ## Server
 
+Ringkasan cepat (rincian di bawah tabel):
+
+| Gejala | Periksa |
+|---|---|
+| Installer berhenti di langkah "Menyalakan" | `sudo balesin logs migrate api` — pesannya berbahasa Indonesia dan menyebut variabel yang salah |
+| Halaman 502 dari nginx perusahaan (mode A) | `curl http://<IP-server>:8080/ready` dari server reverse proxy; firewall server Balesin; IP server Balesin yang diisi saat instalasi |
+| Koneksi inbox putus tiap ±60 detik | `proxy_read_timeout` di nginx depan harus > 30 detik (contoh: `3600s`) |
+| Webhook Meta ditolak kode 413 | `client_max_body_size` untuk `/webhooks/` di nginx depan minimal `3m` (contoh: `4m`) |
+| Semua login kena batas percobaan bersamaan | IP reverse proxy salah — `sudo bash install.sh --ubah-jaringan` |
+| Owner lupa password, email pengirim belum diatur | `sudo balesin reset-owner-password` |
+| Update gagal | Sudah dikembalikan otomatis; kirim `/opt/balesin/logs/update-gagal-*.log` ke tim Balesin |
+
+### Installer berhenti di langkah "Menyalakan"
+
+Jalankan `sudo balesin logs migrate api`. Pesan kesalahan berbahasa Indonesia dan menyebut
+nama variabel di `/opt/balesin/.env` yang bermasalah. Perbaiki, lalu jalankan ulang installer
+(aman, rahasia yang sudah ada tidak diganti).
+
 ### Halaman tidak bisa dibuka / galat 502
 
-Jalankan `sudo balesin status` dan `sudo balesin logs api`. Untuk mode A, pastikan reverse proxy
-bisa menjangkau port Balesin dan firewall tidak memblokirnya.
+Jalankan `sudo balesin status` dan `sudo balesin logs api`. Untuk mode A:
+
+1. Dari server reverse proxy, jalankan `curl http://<IP-server-Balesin>:8080/ready`. Harus
+   menjawab `{"status":"ok", …}`.
+2. Bila tidak menjawab, periksa [firewall Mode A](01-instalasi.md#firewall-untuk-mode-a)
+   (IP reverse proxy harus diizinkan) dan alamat `upstream` di konfigurasi nginx.
+3. Pastikan IP server Balesin yang diisi saat instalasi benar. Ubah dengan
+   `sudo bash install.sh --ubah-jaringan`.
 
 ### Koneksi inbox sering terputus (pesan baru tidak muncul real-time)
 
-Untuk mode A: batas waktu baca di nginx depan harus lebih dari 30 detik (contoh konfigurasi
-memakai 1 jam). Lihat [panduan operasional deploy](../DEPLOY.md) §9.
+Untuk mode A: batas waktu baca di nginx depan harus lebih dari 30 detik. Contoh konfigurasi
+(`balesin-nginx.conf`) memakai 1 jam untuk `location = /api/v1/inbox/stream`:
+
+```nginx
+proxy_read_timeout 3600s;
+proxy_send_timeout 3600s;
+```
+
+Bila memakai konfigurasi nginx sendiri, pastikan juga header `Upgrade` dan `Connection`
+diteruskan dan header `Origin` **tidak** diubah.
+
+### Webhook ditolak dengan kode 413
+
+Nginx di depan Balesin menolak kiriman Meta karena ukurannya melebihi batas. Untuk
+`location /webhooks/`, isi `client_max_body_size` minimal `3m` (contoh konfigurasi: `4m`),
+lalu `nginx -t && systemctl reload nginx`. Untuk unggah media dari aplikasi, contoh
+konfigurasi memakai `101m`.
 
 ### Semua pengguna tiba-tiba terkunci bersamaan
 

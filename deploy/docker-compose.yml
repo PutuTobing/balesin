@@ -2,7 +2,7 @@
 #
 # Dipasang `install.sh` ke /opt/balesin bersama `.env` (chmod 600, berisi SEMUA rahasia) dan
 # dikelola lewat CLI `balesin` (update, backup, restore, status, logs). Jangan menjalankan berkas
-# ini dari folder repo untuk produksi. Panduan: docs/DEPLOY.md.
+# ini dari folder repo untuk produksi. Panduan: docs/panduan/.
 #
 # Topologi:
 #   internet → [proxy: nginx perusahaan (mode A) | caddy (B) | cloudflared (C)] → web:8080

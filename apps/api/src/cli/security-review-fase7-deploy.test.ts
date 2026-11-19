@@ -276,3 +276,60 @@ describe('dokumentasi firewall & rilis', () => {
     expect(read('.dockerignore')).toMatch(/^\*\*\/vitest\*\.config\.ts$/m);
   });
 });
+
+// Fase 7 butir 5 — white-label berkas rilis: artefak GitHub Release dipakai semua pelanggan, jadi
+// tidak boleh memuat domain/IP/nama khusus Sky Tech (nilai Sky Tech ada di docs/DEPLOY-SKYTECH.md).
+describe('white-label berkas rilis', () => {
+  const khususSkyTech = /skytech|sky ?tech|vm-nginx|198\.15\.25\.|idcloudhost|103\.\d+\.\d+\.\d+/i;
+
+  it('setiap berkas yang disalin workflow rilis netral dari detail Sky Tech', () => {
+    const sources = [...releaseWorkflow.matchAll(/\b(deploy\/[\w./-]+)/g)].map(
+      (match) => match[1] ?? '',
+    );
+    const files = [...new Set(sources)].filter((path) => path !== '' && !path.endsWith('/'));
+    // install.sh, docker-compose.yml, Caddyfile, balesin, nginx/balesin.conf (+ Dockerfile build).
+    expect(files).toEqual(
+      expect.arrayContaining([
+        'deploy/install.sh',
+        'deploy/docker-compose.yml',
+        'deploy/Caddyfile',
+        'deploy/balesin',
+        'deploy/nginx/balesin.conf',
+      ]),
+    );
+    for (const path of files) {
+      expect(read(path), path).not.toMatch(khususSkyTech);
+    }
+    // Catatan rilis juga tampil ke pelanggan.
+    expect(releaseWorkflow).not.toMatch(khususSkyTech);
+  });
+
+  it('contoh nginx memakai nilai contoh netral yang ditandai GANTI', () => {
+    expect(code(vmNginx)).toMatch(/server_name cs\.contoh\.co\.id;/);
+    // IP contoh dari blok dokumentasi RFC 5737 (192.0.2.0/24), bukan IP sungguhan.
+    expect(code(vmNginx)).toMatch(/server 192\.0\.2\.\d+:8080;/);
+    expect(vmNginx).toMatch(/GANTI/);
+  });
+
+  it('panduan pelanggan memuat skrip firewall DOCKER-USER sendiri dan tidak merujuk DEPLOY.md', () => {
+    const instalasi = read('docs/panduan/01-instalasi.md');
+    expect(instalasi).toMatch(/#### Firewall untuk Mode A/);
+    expect(instalasi).toMatch(
+      /```bash\n {3}#!\/bin\/sh\n {3}# \/usr\/local\/sbin\/balesin-firewall\.sh/,
+    );
+    expect(instalasi).toMatch(/ExecStart=\/bin\/sh \/usr\/local\/sbin\/balesin-firewall\.sh/);
+    expect(instalasi).toMatch(/nftables/);
+    for (const bab of ['01-instalasi.md', '08-pemeliharaan.md', '09-tanya-jawab.md', 'README.md']) {
+      const isi = read(`docs/panduan/${bab}`);
+      expect(isi, bab).not.toMatch(/DEPLOY(-SKYTECH)?\.md/);
+      expect(isi, bab).not.toMatch(/skytech|vm-nginx|198\.15\.25\./i);
+    }
+  });
+
+  it('panduan tidak menjanjikan perintah rollback yang tidak ada di CLI', () => {
+    expect(cli).not.toMatch(/^\s+rollback\)/m);
+    const pemeliharaan = read('docs/panduan/08-pemeliharaan.md');
+    expect(pemeliharaan).toMatch(/Tidak ada perintah `balesin rollback`/);
+    expect(pemeliharaan).not.toMatch(/sudo balesin rollback/);
+  });
+});

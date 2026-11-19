@@ -70,17 +70,89 @@ naik. Untuk naik versi pakai `sudo balesin update` (lihat [Pemeliharaan](08-peme
 1. Jalankan installer, pilih **A**, isi domain, IP privat reverse proxy, IP server Balesin,
    dan port.
 2. Di server reverse proxy, pasang contoh konfigurasi nginx yang ikut di rilis
-   (`balesin-nginx.conf`). Ganti nama domain dan alamat `IP-server-Balesin:8080` sesuai
-   milik Anda.
-3. Buat sertifikat HTTPS (misalnya dengan certbot), lalu muat ulang nginx.
-4. **Batasi port 8080** supaya hanya reverse proxy yang bisa membukanya. Perhatian: aturan
-   `ufw` biasa **tidak berlaku** untuk port container Docker. Ikuti contoh skrip firewall
-   `DOCKER-USER` di [panduan operasional deploy](../DEPLOY.md) §3.1, atau pakai firewall di depan VM.
+   (`balesin-nginx.conf`) sebagai `/etc/nginx/conf.d/balesin.conf`. Berkas itu berisi nilai
+   **contoh** yang wajib diganti (ditandai `GANTI` di dalam berkas):
+   - `cs.contoh.co.id` → domain Balesin Anda (4 tempat);
+   - `192.0.2.20:8080` → IP privat server Balesin dan port (bawaan 8080).
+3. Buat sertifikat HTTPS, ikuti urutan di kepala berkas: blok `listen 443` dikomentari dulu →
+   `nginx -t && systemctl reload nginx` →
+   `certbot certonly --webroot -w /var/www/certbot -d <domain-anda>` → aktifkan lagi blok 443 →
+   `nginx -t && systemctl reload nginx`.
+4. **Batasi port 8080** supaya hanya reverse proxy yang bisa membukanya. Lihat
+   [Firewall untuk Mode A](#firewall-untuk-mode-a) di bawah.
 5. Periksa: dari komputer lain di jaringan yang sama (bukan reverse proxy), membuka
    `http://<IP-server>:8080/health` harus **gagal / timeout**.
 
 Jangan menambahkan header keamanan (CSP dan sejenisnya) di nginx Anda; Balesin sudah
 memasangnya sendiri.
+
+#### Firewall untuk Mode A
+
+Perhatian: aturan `ufw` biasa **tidak berlaku** untuk port container Docker (Docker
+meneruskan lalu lintas ke container sebelum aturan `ufw` diperiksa). Batasi port lewat rantai
+`DOCKER-USER`, yang diperiksa Docker sebelum aturannya sendiri. Jalankan di **server Balesin**:
+
+1. Buat berkas `/usr/local/sbin/balesin-firewall.sh`. Ganti `8080` bila port Anda lain dan
+   `<IP-privat-reverse-proxy>` dengan IP reverse proxy. Baris `#!/bin/sh` harus menjadi baris
+   pertama.
+
+   ```bash
+   #!/bin/sh
+   # /usr/local/sbin/balesin-firewall.sh — hanya reverse proxy yang boleh ke port Balesin.
+   set -e
+   PORT=8080; PROXY=<IP-privat-reverse-proxy>
+   iptables -N BALESIN-GATEWAY 2>/dev/null || iptables -F BALESIN-GATEWAY
+   iptables -A BALESIN-GATEWAY -s "$PROXY" -j RETURN
+   iptables -A BALESIN-GATEWAY -j DROP
+   iptables -C DOCKER-USER -p tcp -m conntrack --ctorigdstport "$PORT" --ctdir ORIGINAL -j BALESIN-GATEWAY 2>/dev/null ||
+     iptables -I DOCKER-USER -p tcp -m conntrack --ctorigdstport "$PORT" --ctdir ORIGINAL -j BALESIN-GATEWAY
+   ```
+
+2. Supaya aturan dipasang ulang setiap server menyala (setelah Docker), buat
+   `/etc/systemd/system/balesin-firewall.service`:
+
+   ```ini
+   [Unit]
+   Description=Batasi port gateway Balesin ke reverse proxy
+   After=docker.service
+   Requires=docker.service
+   [Service]
+   Type=oneshot
+   ExecStart=/bin/sh /usr/local/sbin/balesin-firewall.sh
+   RemainAfterExit=yes
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+3. Aktifkan:
+
+   ```bash
+   sudo chmod 700 /usr/local/sbin/balesin-firewall.sh
+   sudo systemctl enable --now balesin-firewall
+   ```
+
+4. **Uji.** Dari komputer lain di LAN (bukan reverse proxy):
+   `curl -m 5 http://<IP-server>:8080/health` harus *timeout*. Dari reverse proxy harus
+   menjawab `{"status":"ok"}`.
+
+SSH tetap dibatasi dengan `ufw` seperti biasa (mis. `ufw allow from <jaringan-manajemen> to any
+port 22 proto tcp`), karena `ufw` berlaku untuk layanan yang berjalan langsung di server.
+
+> **Docker dengan backend nftables.** Rantai `DOCKER-USER` hanya ada bila Docker memakai
+> backend iptables (bawaan Docker Engine di Ubuntu/Debian). Periksa:
+>
+> ```bash
+> docker info --format '{{json .}}' | grep -o '"FirewallBackend":{[^}]*}'   # driver "iptables" = aman
+> sudo iptables -L DOCKER-USER -n >/dev/null && echo "DOCKER-USER ada"
+> ```
+>
+> Bila `/etc/docker/daemon.json` berisi `"firewall-backend": "nftables"`, aturan di atas tidak
+> berpengaruh. Pilihannya: hapus pengaturan itu lalu `sudo systemctl restart docker`, atau
+> batasi port lewat firewall di depan server (firewall hypervisor/VLAN/cloud). Apa pun caranya,
+> selalu uji dengan `curl` dari komputer lain seperti langkah 4.
+
+Cara lain yang setara: firewall di depan server (mis. firewall Proxmox, VLAN, atau security
+group penyedia cloud) yang hanya mengizinkan IP reverse proxy ke port 8080.
 
 ### Mode B — Caddy bawaan
 

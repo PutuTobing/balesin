@@ -1,13 +1,20 @@
 # Panduan Operasional Deploy — Balesin Self-Hosted
 
-Untuk admin server yang memasang dan merawat Balesin. Keputusan di balik desain ini ada di
-`docs/DECISIONS.md` (cari "Fase 7"); arsitektur umum di `docs/ARCHITECTURE.md` §5.
+Untuk admin server yang memasang dan merawat Balesin (dokumen internal pengembang/operasional,
+generik untuk semua pelanggan). Keputusan di balik desain ini ada di `docs/DECISIONS.md` (cari
+"Fase 7"); arsitektur umum di `docs/ARCHITECTURE.md` §5.
+
+- Panduan untuk **pelanggan** (ikut produk, bahasa awam): `docs/panduan/` — terutama
+  `01-instalasi.md`, `08-pemeliharaan.md`, `09-tanya-jawab.md`. Isi yang dibutuhkan pelanggan
+  (skrip firewall, pemecahan masalah) harus ada di sana juga, bukan hanya di sini.
+- Langkah deploy produksi **Sky Tech** (domain, IP, DNS): `docs/DEPLOY-SKYTECH.md`. Berkas rilis
+  (`deploy/`) dan dokumen ini tidak boleh memuat detail khusus Sky Tech (white-label).
 
 ## 1. Gambaran
 
 ```
 internet ─HTTPS─► [proxy depan]                         ─► web:8080 (gateway)  ─► api:3000
-                  A: nginx perusahaan (mis. vm-nginx)       berkas PWA statis       REST + WebSocket
+                  A: nginx perusahaan (sudah ada)          berkas PWA statis       REST + WebSocket
                   B: caddy bawaan (80/443, Let's Encrypt)   /api /webhooks           │
                   C: cloudflared (tanpa port terbuka)       /health /ready           ▼
                                                                          postgres, redis (jaringan
@@ -43,7 +50,8 @@ Folder instalasi `/opt/balesin`:
 ## 2. Prasyarat server
 
 - Ubuntu 24.04 LTS (disarankan; Debian juga), x86_64 atau arm64.
-- Sky Tech: 4 vCPU, 8 GB RAM, 80 GB disk. Minimum produk: 2 vCPU, 2 GB RAM, 20 GB.
+- Minimum: 2 vCPU, 2 GB RAM, 20 GB disk. Disarankan: 4 vCPU, 8 GB RAM, 80 GB disk (media chat
+  ikut tersimpan di disk server).
 - Docker Engine + plugin Compose ≥ 2.24 (installer menawarkan memasangnya), `openssl`, `curl`.
 - Mode A: IP privat cukup; reverse proxy perusahaan bisa menjangkau port Balesin.
   Mode B: IP publik, port 80/443 terbuka, DNS A record ke server. Mode C: domain di Cloudflare.
@@ -75,19 +83,23 @@ tidak menaikkan versi (pakai `balesin update`). Variabel tambahan yang diisi adm
 Tanpa pertanyaan (otomasi): lihat kepala `install.sh` (`BALESIN_MODE`, `BALESIN_DOMAIN`,
 `BALESIN_UPSTREAM_PROXY`, `BALESIN_ASSUME_YES=1`, …).
 
-### 3.1 Mode A untuk Sky Tech (vm-nginx)
+### 3.1 Mode A (di belakang reverse proxy nginx yang sudah ada)
 
-1. **VM Balesin** (IP privat, mis. `10.0.0.20`): jalankan installer, mode **A**, domain
-   `balesin.skytech.net.id`, IP reverse proxy = IP privat vm-nginx, IP VM = `10.0.0.20`, port 8080.
+Contoh nilai di bawah: domain `cs.contoh.co.id`, server Balesin `192.0.2.20`, reverse proxy
+`192.0.2.10` (alamat dokumentasi RFC 5737 — ganti dengan milik Anda). Contoh untuk instalasi
+Sky Tech: `docs/DEPLOY-SKYTECH.md`.
+
+1. **Server Balesin** (IP privat, mis. `192.0.2.20`): jalankan installer, mode **A**, domain
+   `cs.contoh.co.id`, IP reverse proxy = IP privat nginx depan, IP VM = `192.0.2.20`, port 8080.
 2. **Firewall VM Balesin.** Port container yang dipublikasikan Docker di-DNAT sebelum rantai `INPUT`,
    jadi **aturan ufw TIDAK berlaku untuk port 8080**. Batasi lewat rantai `DOCKER-USER` (diperiksa
    Docker sebelum aturannya sendiri). Installer menolak bind `0.0.0.0`/IP publik di mode A; aturan
-   di bawah memastikan hanya vm-nginx yang bisa menjangkau port itu walau dari LAN:
+   di bawah memastikan hanya reverse proxy yang bisa menjangkau port itu walau dari LAN:
    ```bash
    #!/bin/sh
-   # /usr/local/sbin/balesin-firewall.sh  (ganti 8080 dan IP vm-nginx). Baris #!/bin/sh HARUS baris pertama.
+   # /usr/local/sbin/balesin-firewall.sh  (ganti 8080 dan IP reverse proxy). Baris #!/bin/sh HARUS baris pertama.
    set -e
-   PORT=8080; PROXY=<IP-privat-vm-nginx>
+   PORT=8080; PROXY=<IP-privat-reverse-proxy>
    iptables -N BALESIN-GATEWAY 2>/dev/null || iptables -F BALESIN-GATEWAY
    iptables -A BALESIN-GATEWAY -s "$PROXY" -j RETURN
    iptables -A BALESIN-GATEWAY -j DROP
@@ -109,8 +121,8 @@ Tanpa pertanyaan (otomasi): lihat kepala `install.sh` (`BALESIN_MODE`, `BALESIN_
    WantedBy=multi-user.target
    ```
    `chmod 700 /usr/local/sbin/balesin-firewall.sh && systemctl enable --now balesin-firewall`.
-   **Verifikasi** dari host LAN lain (bukan vm-nginx): `curl -m 5 http://<IP-VM>:8080/health` harus
-   *timeout*; dari vm-nginx harus `{"status":"ok"}`. SSH tetap dibatasi ufw seperti biasa
+   **Verifikasi** dari host LAN lain (bukan reverse proxy): `curl -m 5 http://<IP-VM>:8080/health`
+   harus *timeout*; dari reverse proxy harus `{"status":"ok"}`. SSH tetap dibatasi ufw seperti biasa
    (`ufw allow from <jaringan-manajemen> to any port 22 proto tcp`) — ufw berlaku untuk proses di host.
    Alternatif setara: firewall Proxmox/VLAN di depan VM.
 
@@ -125,21 +137,22 @@ Tanpa pertanyaan (otomasi): lihat kepala `install.sh` (`BALESIN_MODE`, `BALESIN_
    ```
    Bila backend nftables: (a) kembalikan ke iptables (hapus `firewall-backend` dari `daemon.json`,
    `systemctl restart docker`), atau (b) buat tabel nftables sendiri dengan hook `forward` prioritas
-   lebih awal dari tabel Docker yang men-`drop` `ct original proto-dst 8080` kecuali dari IP vm-nginx,
+   lebih awal dari tabel Docker yang men-`drop` `ct original proto-dst 8080` kecuali dari IP reverse proxy,
    atau (c) andalkan firewall Proxmox/VLAN di depan VM. Verifikasi dengan `curl` dari host LAN lain
    seperti di atas apa pun caranya.
-3. **DNS** IDCloudHost: A record `balesin` → `198.15.25.13`.
-4. **vm-nginx**: salin `deploy/nginx/balesin.conf` (rilis: `balesin-nginx.conf`) ke
-   `/etc/nginx/conf.d/balesin.conf`, ganti `10.0.0.20:8080`. Ikuti urutan di kepala berkas: blok 443
-   dikomentari dulu → `certbot certonly --webroot -w /var/www/certbot -d balesin.skytech.net.id` →
-   aktifkan blok 443 → `nginx -t && systemctl reload nginx`. Perpanjangan otomatis certbot cukup
-   memakai `--deploy-hook "systemctl reload nginx"`.
+3. **DNS**: A record domain → IP publik reverse proxy.
+4. **Reverse proxy**: salin `deploy/nginx/balesin.conf` (rilis: `balesin-nginx.conf`) ke
+   `/etc/nginx/conf.d/balesin.conf`, ganti `cs.contoh.co.id` (4 tempat) dan `192.0.2.20:8080`. Ikuti
+   urutan di kepala berkas: blok 443 dikomentari dulu →
+   `certbot certonly --webroot -w /var/www/certbot -d <domain>` → aktifkan blok 443 →
+   `nginx -t && systemctl reload nginx`. Perpanjangan otomatis certbot cukup memakai
+   `--deploy-hook "systemctl reload nginx"`.
 5. Periksa dari luar:
    ```bash
-   curl -sI https://balesin.skytech.net.id/ | grep -iE 'strict-transport|content-security|x-frame'
-   curl -s https://balesin.skytech.net.id/ready      # {"status":"ok",...}
+   curl -sI https://cs.contoh.co.id/ | grep -iE 'strict-transport|content-security|x-frame'
+   curl -s https://cs.contoh.co.id/ready      # {"status":"ok",...}
    ```
-6. Buka `https://balesin.skytech.net.id/setup`, masukkan token (`sudo balesin setup-token`).
+6. Buka `https://cs.contoh.co.id/setup`, masukkan token (`sudo balesin setup-token`).
 
 Yang dilakukan contoh nginx: TLS 1.2/1.3 + HSTS 180 hari, `X-Forwarded-For` = alamat klien asli
 (kiriman klien dibuang), `X-Forwarded-Proto`, WebSocket `/api/v1/inbox/stream` (timeout baca 1 jam,
@@ -216,7 +229,14 @@ Satu perintah pengubah (backup/restore/update/start/stop) berjalan dalam satu wa
 Gagal di langkah 5 → **rollback otomatis**: log container disimpan ke
 `/opt/balesin/logs/update-gagal-<versi>-<waktu>.log`; bila skema database sudah berubah, database
 dipulihkan dari backup langkah 2 (lewat database sementara + tukar nama, seperti restore); media tidak
-disentuh; versi lama dinyalakan dan diperiksa. Turun versi lewat `update` ditolak — pakai restore.
+disentuh; versi lama dinyalakan dan diperiksa. Rollback juga berjalan bila migrasi gagal setelah
+sebagian diterapkan (jarang; migrasi biasanya satu transaksi).
+
+**Tidak ada perintah `balesin rollback` / turun versi manual.** `update` ke versi lebih lama ditolak.
+`restore` hanya mengembalikan **data** (database + media) ke saat backup dibuat; aplikasi tetap
+versi yang terpasang dan skema database dinaikkan lagi oleh migrasi setelah restore. Jadi setelah
+update yang **berhasil**, kembali ke versi lama tidak didukung lewat CLI — laporkan masalah ke tim
+Balesin (perbaikan dirilis sebagai versi baru).
 
 **Risiko yang perlu diketahui saat rollback memulihkan database**: semua data yang masuk SETELAH
 backup langkah 2 hilang — termasuk pesan WhatsApp/Telegram yang webhook-nya sudah dijawab 200 oleh
@@ -275,10 +295,12 @@ kode cadangan.
 
 ## 9. Pemecahan masalah
 
+Versi untuk pelanggan: `docs/panduan/09-tanya-jawab.md` bagian "Server" (jaga keduanya selaras).
+
 | Gejala | Periksa |
 |---|---|
 | Installer berhenti di "Menyalakan" | `sudo balesin logs migrate api` — pesan bahasa Indonesia menyebut variabel yang salah |
-| Halaman 502 dari nginx perusahaan | `curl http://<IP-VM>:8080/ready` dari vm-nginx; firewall VM; `BALESIN_BIND_ADDRESS` |
+| Halaman 502 dari nginx perusahaan | `curl http://<IP-VM>:8080/ready` dari reverse proxy; firewall VM; `BALESIN_BIND_ADDRESS` |
 | WebSocket putus tiap ±60 dtk | `proxy_read_timeout` di nginx depan harus > 30 dtk (contoh: 3600s) |
 | Webhook Meta 413 | `client_max_body_size` `/webhooks/` di nginx depan ≥ 3m |
 | Semua login kena batas laju bersama | `TRUST_PROXY`/`UPSTREAM_PROXY_IPS` — jalankan `install.sh --ubah-jaringan` |

@@ -123,4 +123,4 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           gh release create "$TAG" rilis/* --verify-tag --title "Balesin $TAG" \
-            --notes "Pasang: curl -fsSL <URL>/install.sh | sudo bash — Update: sudo balesin update ${TAG#v}. Panduan: docs/DEPLOY.md."
+            --notes "Pasang: curl -fsSL <URL>/install.sh | sudo bash — Update: sudo balesin update ${TAG#v}. Panduan: docs/panduan/ (bab 1 Instalasi, bab 8 Pemeliharaan)."

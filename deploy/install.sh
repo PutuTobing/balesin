@@ -14,14 +14,14 @@
 # Variabel lain: BALESIN_HOME, BALESIN_VERSION, BALESIN_BIND_ADDRESS, BALESIN_HTTP_PORT,
 # BALESIN_ACME_EMAIL, CLOUDFLARE_TUNNEL_TOKEN, BALESIN_IMAGE_PREFIX, BALESIN_RELEASE_BASE,
 # BALESIN_NO_PULL=1 (pakai image lokal), BALESIN_SKIP_COSIGN=1 (jangan pasang cosign).
-# Panduan: docs/DEPLOY.md.
+# Panduan: panduan pengguna bab 1 "Instalasi" (docs/panduan/01-instalasi.md).
 
 set -Eeuo pipefail
 umask 077
 
 readonly DEFAULT_VERSION="0.1.0"
 readonly DEFAULT_IMAGE_PREFIX="ghcr.io/pututobing/balesin"
-# Kanal distribusi rilis ({VERSI} diganti nomor versi). Lihat docs/BUTUH-TOBING.md (repo privat).
+# Kanal distribusi rilis ({VERSI} diganti nomor versi). Bisa diganti lewat BALESIN_RELEASE_BASE.
 readonly DEFAULT_RELEASE_BASE="https://github.com/PutuTobing/balesin/releases/download/v{VERSI}"
 readonly DEFAULT_RELEASE_LATEST="https://github.com/PutuTobing/balesin/releases/latest/download/VERSION"
 # cosign untuk verifikasi tanda tangan rilis (review Fase 7 P2-R2): versi dipin + SHA-256 resmi dari
@@ -186,7 +186,7 @@ check_prerequisites() {
 
   mem_mb="$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)"
   if ((mem_mb > 0 && mem_mb < 1800)); then
-    warn "RAM ${mem_mb} MB. Disarankan minimal 2 GB (Sky Tech: 8 GB)."
+    warn "RAM ${mem_mb} MB. Minimal 2 GB; disarankan 4–8 GB untuk tim dengan banyak chat dan media."
   else
     ok "RAM: ${mem_mb} MB"
   fi
@@ -292,7 +292,7 @@ configure_network() {
     case "$MODE" in
       A)
         UPSTREAM="${BALESIN_UPSTREAM_PROXY:-$UPSTREAM}"
-        ask UPSTREAM "IP privat reverse proxy (mis. vm-nginx; beberapa dipisah koma)" "$UPSTREAM"
+        ask UPSTREAM "IP privat reverse proxy (server nginx/proxy di depan Balesin; beberapa dipisah koma)" "$UPSTREAM"
         UPSTREAM="${UPSTREAM// /}"
         valid_ip_list "$UPSTREAM" ||
           die "IP reverse proxy wajib diisi dan valid (IPv4, atau CIDR minimal /16 — sebaiknya IP tunggal). Tanpa itu semua pengunjung tampak ber-IP sama dan batas laju per IP salah."
@@ -661,10 +661,10 @@ finish() {
     A)
       info "Langkah berikutnya (mode A — reverse proxy):"
       info "  1. DNS: A record $DOMAIN → IP publik reverse proxy."
-      info "  2. Di reverse proxy, pasang contoh nginx/balesin.conf (lihat docs/DEPLOY.md),"
+      info "  2. Di reverse proxy, pasang contoh balesin-nginx.conf dari berkas rilis (ganti domain & IP),"
       info "     arahkan ke http://$BIND_ADDRESS:$HTTP_PORT lalu buat sertifikat (certbot)."
       info "  3. Firewall: Docker MELEWATI ufw untuk port container. Batasi port $HTTP_PORT lewat rantai"
-      info "     DOCKER-USER supaya hanya $UPSTREAM yang bisa menjangkau (docs/DEPLOY.md §3.1), mis.:"
+      info "     DOCKER-USER supaya hanya $UPSTREAM yang bisa menjangkau (panduan bab 1, Mode A), mis.:"
       info "       iptables -I DOCKER-USER -p tcp -m conntrack --ctorigdstport $HTTP_PORT --ctdir ORIGINAL -j DROP"
       local proxy_ip
       IFS=',' read -ra proxies <<<"$UPSTREAM"
