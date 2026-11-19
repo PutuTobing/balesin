@@ -1,7 +1,7 @@
 # Progress
 
 **Fase aktif:** 5–7 berjalan paralel (Fase 2 selesai, Fase 3 & 4 tinggal review/terblokir)
-**Terakhir diperbarui:** 2026-11-22 malam (UI Fase 5 + Fase 7 butir 1–4 di-commit; revisi & UI channel/jam kerja berjalan)
+**Terakhir diperbarui:** 2026-11-23 (Fase 7 butir 1–4 selesai; revisi UI Fase 5, UI channel/jam kerja, stabilisasi tes berjalan)
 
 ## Selesai
 
@@ -78,27 +78,28 @@
 - Telegram, Email (IMAP/SMTP), Messenger & IG (nonaktif bawaan sampai App Review). Kontrak
   `docs/KONTRAK-API-CHANNEL-LAIN.md`. Security sedang mereview. UI channel baru BELUM.
 
-### Fase 7 — butir 1–4 di-commit (9779996, 2a09122)
+### Fase 7 — butir 1–4 SELESAI (9779996, 2a09122, 4301bd7)
 - Compose produksi + image non-root, gateway nginx, install.sh (mode A/B/C), CLI `balesin` (update/
-  rollback, backup, restore, reset-owner-password), `deploy/nginx/balesin.conf`, `docs/DEPLOY.md`.
-  Security AMAN dengan **4 Sedang** (`docs/security-reviews/2026-11-22-fase7-deploy.md`): S1 Redis root,
-  S2 backup tanpa autentikasi, S3 contoh ufw tidak efektif (wajib sebelum deploy #19), S4 rantai pasok
-  rilis (wajib sebelum #18) + 4 Rendah.
+  rollback, backup v2 encrypt-then-MAC, restore aman, reset-owner-password + email Owner), nginx vm,
+  rilis bertanda tangan (cosign). Security **AMAN putaran 2**
+  (`docs/security-reviews/2026-11-22-fase7-deploy.md`). Tersisa: banner Owner untuk reset dari server
+  (`owner_password_reset_server`, backend + frontend).
 
-## Sedang dikerjakan (dihentikan 22 Nov malam, BELUM di-commit)
-- **Devops** — perbaikan temuan Fase 7 (S1–S4, R1–R4) di `deploy/*`, `docs/DEPLOY.md`, tes
-  `apps/api/src/cli/security-review-fase7-deploy.test.ts`; berhenti di "full stack install dengan image
-  baru" (stack uji `balesin-uji2` sudah dimatikan).
-- **Frontend (agen UI Fase 5)** — revisi kritikus F1–F10 + BC5 + T3-S1, lalu UI channel Telegram/Email/
-  Meta, inbox multi-channel, jam kerja/pesan otomatis/alokasi, saklar "Tersedia", `z.config({jitless})`;
-  berhenti di "screenshot layar UI baru" (`e2e/tests/jam-kerja.spec.ts`, `channel-lain.spec.ts` baru).
-- **Backend** — stabilisasi suite tes API (timeout `afterAll`, alarm Telegram): perubahan di
-  `apps/api/src/testing/*`, `vitest.config.ts`, `packages/db/src/testing/*`.
-- Berikutnya: commit masing-masing setelah lolos pemeriksaan → kritikus UI Fase 5 putaran 2 + UI baru →
-  security web UI baru → Fase 7 butir 5 (white-label + dokumentasi pengguna) & butir 6 (`/audit`
-  penuh) → E2E penuh.
-- Terblokir: Fase 3 mode tangkap (#10); kredensial nyata (#3, #4, #8, #15, #16, #17); distribusi (#18);
-  deploy produksi (#19, menunggu #6/#7).
+## Sedang dikerjakan (dihentikan 23 Nov, BELUM di-commit)
+- **Devops** — 3 Rendah putaran 2 Fase 7: P2-R3 hapus `git fetch origin main` di `rilis.yml`, P2-R1
+  shebang skrip firewall di `docs/DEPLOY.md`, P2-R2 installer memasang cosign; Info (vitest.deploy di
+  image, catatan nftables).
+- **Frontend (agen UI Fase 5)** — revisi kritikus F1–F10 + BC5 + T3-S1, UI channel Telegram/Email/
+  Meta, inbox multi-channel, jam kerja/pesan otomatis/alokasi, saklar "Tersedia",
+  `z.config({jitless})` (E2E baru `jam-kerja.spec.ts`, `channel-lain.spec.ts`).
+- **Backend** — stabilisasi suite tes API (timeout `afterAll`, alarm Telegram): `apps/api/src/testing/*`,
+  `vitest.config.ts`, `packages/db/src/testing/*`, `apps/api/src/cli/db-roles.integration.test.ts`.
+- Berikutnya: commit masing-masing setelah lolos pemeriksaan → kritikus (UI Fase 5 putaran 2 + UI baru)
+  → security web UI baru → banner reset Owner → Fase 7 butir 5 (white-label + dokumentasi pengguna)
+  & butir 6 (`/audit` penuh) → E2E penuh.
+- Terblokir: Fase 3 mode tangkap (#10); kredensial nyata (#3, #4, #8, #15, #16, #17); distribusi (#18:
+  kanal, environment `rilis`, ruleset tag, cosign keyless/kunci); deploy produksi (#19, menunggu
+  #6/#7).
 
 ## Catatan untuk sesi berikutnya
 
