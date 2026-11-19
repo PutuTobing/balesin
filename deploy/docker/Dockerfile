@@ -6,35 +6,54 @@
 #   docker build -f deploy/docker/Dockerfile --target worker -t balesin-worker .
 #   docker build -f deploy/docker/Dockerfile --target web    -t balesin-web .
 #
+# Multi-arsitektur (rilis): docker buildx build --platform linux/amd64,linux/arm64 …
+#   Stage build (tsup, vite) berjalan di platform MESIN BUILD ($BUILDPLATFORM) karena hasilnya
+#   JavaScript/berkas statis yang sama untuk semua arsitektur — tanpa emulasi QEMU yang lambat.
+#   node_modules produksi (stage prod-deps) dipasang di platform TARGET, supaya biner native prebuilt
+#   (sharp/libvips, @node-rs/argon2, msgpackr-extract) yang dipilih pnpm = linuxmusl-<arsitektur target>.
+#
 # Konteks build = akar repo (.dockerignore membuang docs/, assets/, .env, node_modules, dist).
 # Prinsip: multi-stage (alat build tidak ikut image akhir), berjalan sebagai pengguna non-root,
 # versi base image dikunci (diperbarui sengaja lewat Dependabot/PR), berkas aplikasi milik root
 # dan hanya-baca bagi proses. Tag base image ditulis langsung di FROM (bukan ARG) supaya Dependabot
 # bisa mengusulkan pembaruannya.
 
+# ── Manifest workspace saja: lapisan dependency ter-cache selama lockfile tetap ────────────────
+FROM scratch AS manifests
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json /repo/
+COPY apps/api/package.json /repo/apps/api/
+COPY apps/worker/package.json /repo/apps/worker/
+COPY apps/web/package.json /repo/apps/web/
+COPY packages/core/package.json /repo/packages/core/
+COPY packages/db/package.json /repo/packages/db/
+COPY packages/shared/package.json /repo/packages/shared/
+COPY e2e/package.json /repo/e2e/
+
 # ── Dasar: Node + pnpm (versi sama dengan packageManager di package.json) ──────────────────────
-FROM node:22.23.5-alpine3.24 AS base
+# Dua salinan identik: satu di platform mesin build, satu di platform target.
+FROM --platform=$BUILDPLATFORM node:22.23.5-alpine3.24 AS base-build
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
     CI=true
 RUN npm install --global --no-fund --no-audit pnpm@12.18.0
 WORKDIR /repo
 
-# ── Dependency: hanya manifest dulu supaya lapisan ini ter-cache selama lockfile tetap ─────────
-FROM base AS deps
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
-COPY apps/api/package.json apps/api/
-COPY apps/worker/package.json apps/worker/
-COPY apps/web/package.json apps/web/
-COPY packages/core/package.json packages/core/
-COPY packages/db/package.json packages/db/
-COPY packages/shared/package.json packages/shared/
-COPY e2e/package.json e2e/
-RUN --mount=type=cache,id=balesin-pnpm,target=/pnpm/store \
+FROM node:22.23.5-alpine3.24 AS base-target
+ENV PNPM_HOME=/pnpm \
+    PATH=/pnpm:$PATH \
+    CI=true
+RUN npm install --global --no-fund --no-audit pnpm@12.18.0
+WORKDIR /repo
+
+# ── Dependency build (termasuk devDependencies), platform mesin build ─────────────────────────
+FROM base-build AS deps
+COPY --from=manifests /repo/ ./
+# sharing=locked: stage deps (mesin build) dan prod-deps (target) bisa jalan bersamaan.
+RUN --mount=type=cache,id=balesin-pnpm,target=/pnpm/store,sharing=locked \
     pnpm install --frozen-lockfile \
       --filter "@balesin/api..." --filter "@balesin/worker..." --filter "@balesin/web..."
 
-# ── Build semua aplikasi ───────────────────────────────────────────────────────────────────────
+# ── Build semua aplikasi (JS/berkas statis, tidak bergantung arsitektur) ───────────────────────
 FROM deps AS build
 COPY tsconfig.base.json ./
 COPY packages packages
@@ -44,15 +63,20 @@ RUN pnpm --filter @balesin/api --filter @balesin/worker --filter @balesin/web bu
  && rm -f apps/api/dist/*.map apps/worker/dist/*.map apps/*/dist/metafile-esm.json \
  && ! find apps/web/dist -name '*.map' | grep -q .
 
-# node_modules produksi per aplikasi (tanpa devDependencies), dalam folder mandiri.
-FROM build AS prod-deps
-RUN --mount=type=cache,id=balesin-pnpm,target=/pnpm/store \
+# node_modules produksi per aplikasi (tanpa devDependencies), dalam folder mandiri, dipasang di
+# platform TARGET. Hanya manifest yang disalin: kode @balesin/* sudah di-bundle tsup (stage build),
+# jadi folder paket workspace di /out tidak perlu sumbernya.
+FROM base-target AS prod-deps
+COPY --from=manifests /repo/ ./
+RUN --mount=type=cache,id=balesin-pnpm,target=/pnpm/store,sharing=locked \
     pnpm --filter @balesin/api deploy --prod --legacy /out/api \
  && pnpm --filter @balesin/worker deploy --prod --legacy /out/worker \
- # Kode @balesin/* sudah di-bundle tsup; salinan sumber TypeScript-nya tidak perlu ikut.
- && rm -rf /out/*/src /out/*/dist /out/*/node_modules/@balesin \
-           /out/*/tsconfig.json /out/*/tsup.config.ts /out/*/vitest.config.ts \
-           /out/*/node_modules/.pnpm/node_modules/@balesin
+ && rm -rf /out/*/node_modules/@balesin /out/*/node_modules/.pnpm/node_modules/@balesin \
+           /out/*/node_modules/.pnpm/@balesin+* \
+ # Penjaga: biner native sharp harus untuk arsitektur & libc target (bukan mesin build).
+ && arch="$(node -p process.arch)" \
+ && test -d "/out/api/node_modules/.pnpm/@img+sharp-linuxmusl-$arch@"* \
+ && test -z "$(find /out -maxdepth 4 -name '@img+sharp-*' ! -name "@img+sharp-linuxmusl-$arch@*" ! -name "@img+sharp-libvips-linuxmusl-$arch@*" -print -quit)"
 
 # ── Runtime Node bersama ──────────────────────────────────────────────────────────────────────
 FROM node:22.23.5-alpine3.24 AS node-runtime
