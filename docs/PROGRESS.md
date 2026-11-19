@@ -66,35 +66,29 @@
 - **Template Meta** backend + UI (f185b2a) dan **Broadcast** backend + UI (f0fad04, 6474d8e, 2ac0d72,
   6a47174, 83a4e87): security backend & web AMAN; kritikus template & broadcast **LOLOS** putaran 3.
 
-### Fase 5 — backend selesai, UI di-commit (3a18705, 9aeb2f1)
+### Fase 5 — SELESAI (8964655)
 - CRM (atribut, impor/ekspor, gabung), tiket multi-board, departemen, laporan + biaya Meta, CSAT,
-  jam kerja tim + pesan otomatis + round-robin. Security backend AMAN putaran 2. Kritikus UI putaran 2
-  tinggal **F11** (tombol aksi kolom Kanban).
+  jam kerja tim + pesan otomatis + round-robin. Security backend & web AMAN; kritikus UI **LOLOS**
+  putaran 3. E2E crm/jam-kerja lulus desktop + HP (proyek `berurutan-hp`).
 
-### Fase 6 — backend + UI di-commit (f335d9c, 9aeb2f1, 015bfae)
-- Telegram, Email (IMAP/SMTP), Messenger & IG (nonaktif bawaan sampai App Review). Kontrak
-  `docs/KONTRAK-API-CHANNEL-LAIN.md`. Server Telegram & IMAP tiruan untuk E2E. Security web AMAN
-  (8a2c6fd) dengan W1 (Sedang, rotasi rahasia "Ubah" gagal diam-diam) & W2 (Rendah, password di cache
-  mutasi) dikunci `it.fails`. Kritikus kanal & jam kerja REVISI **K1–K8**
-  (`docs/design-reviews/2026-11-23-kanal-jam-kerja.md`).
+### Fase 6 — SELESAI (740e849)
+- Telegram, Email (IMAP/SMTP), Messenger & IG (siap; aktif setelah App Review — BUTUH-TOBING #17).
+  Security web AMAN putaran 2 (W1/W2 tertutup, 4df2953); kritikus kanal **LOLOS** putaran 3. E2E
+  channel-lain dengan server Telegram & IMAP tiruan.
 
-### Fase 7 — butir 1–4 SELESAI (9779996, 2a09122, 4301bd7, c5c3614, 015bfae)
-- Compose produksi + image non-root, gateway nginx, install.sh (mode A/B/C), CLI `balesin` (update/
-  rollback, backup v2 encrypt-then-MAC, restore aman, reset-owner-password + email Owner + banner
-  Owner dari server), nginx vm, rilis bertanda tangan (cosign). Security **AMAN putaran 2**.
-- Suite tes API stabil (15d977b): database per berkas dari template, DROP di teardown global.
+### Fase 7 — butir 1–4 SELESAI; butir 5 hampir selesai
+- Compose produksi + image non-root, gateway nginx, install.sh (mode A/B/C), CLI `balesin`, nginx
+  contoh netral, rilis bertanda tangan (cosign) **multi-arsitektur amd64+arm64** (b0a3468). Security
+  AMAN putaran 2. Suite tes API stabil (15d977b).
+- Butir 5 white-label: panduan pengguna `docs/panduan/` (c2888c5), berkas rilis netral +
+  `docs/DEPLOY-SKYTECH.md` (94995cf), API merek (4306de7, perbaikan B1–B5 d0fa0c0, security AMAN
+  54e325c), halaman Pengaturan → Merek + tema/favicon/manifest dari merek (fdf90f1).
 
-## Sedang dikerjakan (posisi b785c4f)
-- Sudah di-commit: panduan pengguna `docs/panduan/` (c2888c5), white-label berkas rilis + 
-  `docs/DEPLOY-SKYTECH.md` (94995cf), web W1/W2 + F11 + K1–K8 + perbaikan hapus/tes koneksi channel
-  lain + E2E channel-lain dengan server tiruan (b785c4f).
-- **Backend** — white-label API: `PATCH` branding (nama, logo, warna, nama maskot), ikon PWA/favicon
-  dari logo, migrasi 0031, teks "Balesin" hardcode, teks "segera hadir" basi. Belum di-commit.
-- **Kritikus** verifikasi F11 + K1–K8; **security** verifikasi W1/W2; **QA** E2E crm/channel-lain/
-  jam-kerja di HEAD.
-- Berikutnya: frontend halaman Pengaturan → Merek (setelah kontrak backend) → centang ROADMAP Fase 5,
-  6, 7 butir 5 → saklar bot untuk Telegram/Email (PRD "saklar bot per channel", kini hanya WhatsApp)
-  → `/audit` penuh → E2E penuh.
+## Sedang dikerjakan (posisi fdf90f1)
+- **Kritikus** menilai halaman Merek (`docs/design-reviews/2026-11-24-merek.md`); **security** review
+  web Merek (`docs/security-reviews/2026-11-24-web-merek.md`).
+- Berikutnya: revisi bila ada → centang Fase 7 butir 5 → saklar bot untuk Telegram/Email (PRD "saklar
+  bot per channel", kini hanya WhatsApp) → `/audit` penuh (butir 6) → E2E penuh.
 - Terblokir: Fase 3 mode tangkap (#10); kredensial nyata (#3, #4, #8, #15, #16, #17); distribusi (#18);
   deploy produksi (#19, menunggu #6/#7).
 
