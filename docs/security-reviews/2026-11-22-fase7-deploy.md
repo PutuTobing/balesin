@@ -239,3 +239,99 @@ passphrase lewat `env:`) + 6 `it.fails` (S1, S2×2, S3, S4, R1).
 | `pnpm audit` | 3 temuan lama (1 high dev-only, 2 moderate dev); tidak ada yang baru |
 
 Stack uji (`balesin-sec`), runner, volume, jaringan, dan image `balesin-sec/*` dihapus setelah review.
+
+---
+
+# Putaran 2 — verifikasi perbaikan (commit `4301bd7`)
+
+## Putusan putaran 2: **AMAN** — S1–S4 dan R1–R4 tertutup
+
+Tidak ada temuan Kritis/Tinggi/Sedang tersisa. 3 Rendah baru/sisa (P2-R1–R3), beberapa Info.
+Langkah operasional S4 (ruleset tag, reviewer environment `rilis`, keputusan keyless) tetap menunggu
+BUTUH-TOBING #18 — kodenya sudah siap.
+
+Cara uji: image dibangun dari snapshot `HEAD` (`4301bd7`, `git archive`) **dengan berkas umpan**;
+`install.sh` mode A sungguhan di runner (proyek `balesin-sec2`, port 28480); uji firewall di
+docker-in-docker terpisah (jaringan LAN tiruan `192.168.77.0/24`). Semua dibersihkan; `balesin-dev-*`
+tidak disentuh.
+
+## A. Verifikasi per temuan
+
+| Temuan | Bukti / uji | Hasil |
+|---|---|---|
+| **S1** Redis/Postgres root | `docker-compose.yml:55-118`; `/proc/1/status` di stack uji | redis `Uid 999`, postgres `Uid 70`, api/worker `1000`, web `101`; **`CapEff 0000000000000000` di kelima container**; redis & postgres `ReadonlyRootfs=true`; postgres `CapAdd` hanya CHOWN/DAC_OVERRIDE/FOWNER/SETGID/SETUID (dipakai entrypoint lalu dibuang saat turun ke `postgres`); `docker top` redis → `redis-server *:6379` (999). **Tertutup** |
+| **S2** backup tanpa autentikasi | `deploy/balesin:220-345`; skrip uji 9 skenario | (a) backup sah → restore berhasil; (b) `.tar` polos → "Arsip polos ditolak"; (c) `.tar.enc` tanpa `.hmac` → ditolak; (d) `.hmac` milik backup lain → "HMAC backup TIDAK cocok"; (e) 1 byte ciphertext dibalik (XOR) + `.sha256` dihitung ulang → HMAC ditolak **sebelum dekripsi**; (f) `.sha256` palsu dengan `.hmac` sah → "Checksum … tidak cocok" (hash berkas itu sendiri, bukan nama di dalam `.sha256`); (g) arsip + HMAC sah dari passphrase LAIN (instalasi lain) → ditolak. KDF PBKDF2 600 000 iterasi; kunci HMAC = HKDF-SHA256 terpisah (label `hmac-v2`), dihitung di `docker run --network none --read-only --cap-drop ALL`, passphrase lewat env (argv host hanya memuat nama variabel); ekstraksi dibatasi 3 nama anggota tar; backup tidak dibuat bila passphrase kosong. **Tertutup** |
+| **S3** ufw vs Docker | `docs/DEPLOY.md:80-110`; `install.sh:289-313`; uji dind | Skrip `DOCKER-USER` dari DEPLOY.md dijalankan apa adanya (IP diganti) di host Docker 29.10 (iptables-nft): **sebelum** aturan, proxy & host LAN sama-sama terjangkau; **sesudah**, proxy `TERJANGKAU`, dua host LAN lain `TIDAK-TERJANGKAU`; skrip idempoten (dijalankan 2×: satu lompatan, rantai di-flush ulang); container gateway dibuat ulang → aturan tetap berlaku (`--ctorigdstport` mencocokkan port host, bukan IP container). Installer: `0.0.0.0` → "Bind 0.0.0.0 ditolak", `8.8.8.8` → "bukan IP privat"; bawaan = IP privat pertama VM; `balesin status` menampilkan alamat bind. **Tertutup** (lihat P2-R1 untuk bug salin-tempel unit systemd) |
+| **S4** rantai pasok | `.github/workflows/rilis.yml`; `install.sh:507-560`; `balesin:426-466` | cek ancestry `main`, `environment: rilis`, build sebelum `docker login`, tolak tag image yang sudah ada, `cosign sign` atas DIGEST, compose rilis `…@sha256:` (dicek 4 baris), `cosign sign-blob --bundle` atas `SHA256SUMS`, `gh release create --verify-tag`; cosign-installer dipin SHA; identitas penanda tangan dibatasi regex `…/rilis.yml@refs/tags/vX.Y.Z` + issuer OIDC GitHub. Diuji tanpa cosign: `BALESIN_REQUIRE_SIGNATURE=1` + rilis tanpa bundle → "Rilis tanpa tanda tangan … ditolak"; bundle ada tetapi cosign tidak terpasang → "cosign tidak terpasang …" (gagal tertutup). Bawaan `0` = hanya peringatan (P2-R2). **Tertutup di kode**; ruleset/reviewer menunggu #18 |
+| **R1** `.dockerignore` | build dengan umpan `apps/api/.env`, `apps/api/umpan.pem`, `apps/worker/umpan.key`, `apps/web/.env.local`, `apps/api/media/inbound/umpan.jpg`, `apps/api/data/umpan.txt` | tidak satu pun ada di image api/worker/web (`find / -xdev`); `packages/core/src/media` tetap ikut build (stack sehat); tanpa `*.map` di ketiga image. **Tertutup** |
+| **R2** validasi installer | `install.sh:113-145,289-355,412-418` | ditolak: bind `0.0.0.0`/`8.8.8.8`, proxy `10.0.0.0/8` (< /16), port `99999`, `APP_URL` berisi `$(id)`, email ACME `a@b.co } import x {`, `BALESIN_IMAGE_PREFIX` berisi baris baru `TRUST_PROXY=0.0.0.0/1` ("mengandung baris baru/karakter kendali"); CIDR < /29 → peringatan. **Tertutup** |
+| **R3** restore/rollback | `deploy/balesin:349-405,611-616,730-733` | restore sah → database baru (oid 16384 → 18354), `balesin_sebelum_pulih` dihapus setelah sehat; dump rusak dengan HMAC sah → `pg_restore` gagal → "Database yang berjalan TIDAK diubah", oid tetap 22294, `_pulih` dibuang, `/ready` ok; media diekstrak ke `.pulih` dulu. Risiko webhook selama rollback didokumentasikan (DEPLOY §6) — diterima. **Tertutup** |
+| **R4** pemberitahuan Owner | `owner-recovery.ts`, `reset-owner-password.ts`, `packages/core/src/mail/templates.ts` | email `password_changed_by_server` diantrekan (tanpa tautan, menyebut 2FA tetap aktif), audit `serverRecovery: true`; kegagalan antrean tidak membatalkan reset dan dilaporkan ke operator. Banner ditunda (DECISIONS) — **diterima**: email + audit sudah memberi jejak; banner tinggal memetakan `metadata.serverRecovery` (lihat Info P2-3). **Tertutup** |
+| Info 2/5 | `balesin:754-757`, `Dockerfile:42-45,81,90` | `IFS= read -rs`; source map & metafile dibuang, `--enable-source-maps` hilang |
+| Tes penjaga | `security-review-fase7-deploy.test.ts`, `vitest.deploy.config.ts`, `ci.yml` | 6 `it.fails` → `it`; asersi lama dipertahankan atau diperketat (mis. S2 kini juga memeriksa urutan HMAC < `openssl enc -d` dan tidak ada `sha256sum -c`; S4 memeriksa ancestry, tolak-timpa, digest, verifikasi di install & CLI); tidak ada yang dilonggarkan. `test:deploy` 20/20 lulus dan masuk CI |
+
+## B. Temuan putaran 2
+
+### P2-R1 (Rendah) — Contoh skrip firewall: baris komentar di atas shebang → unit systemd gagal
+
+- Bukti: `docs/DEPLOY.md:87-88` — blok kode dimulai `# /usr/local/sbin/balesin-firewall.sh (ganti …)`
+  lalu `#!/bin/sh` di baris KEDUA. Bila disalin utuh ke berkas, `ExecStart=/usr/local/sbin/balesin-firewall.sh`
+  gagal `Exec format error` (systemd memakai `execve` tanpa jatuh ke `/bin/sh`), sehingga aturan tidak
+  terpasang setelah reboot. `systemctl enable --now` langsung memperlihatkan kegagalan, dan langkah
+  verifikasi dari host LAN akan menangkapnya — maka Rendah.
+- Perbaikan: taruh `#!/bin/sh` di baris pertama blok (judul berkas di luar blok kode), atau
+  `ExecStart=/bin/sh /usr/local/sbin/balesin-firewall.sh`. Pertimbangkan menyertakan skrip + unit sebagai
+  berkas rilis (`balesin firewall --pasang <ip>`) supaya tidak bergantung salin-tempel.
+
+### P2-R2 (Rendah) — Verifikasi tanda tangan rilis bawaan opsional (bisa dilucuti)
+
+- Bukti: `install.sh:514-524`, `balesin:448-458` — `BALESIN_REQUIRE_SIGNATURE` bawaan `0`: tanpa
+  `SHA256SUMS.sigstore.json` atau tanpa cosign hanya `warn`. Pihak yang bisa mengganti aset rilis cukup
+  menghapus bundle.
+- Dampak: perlindungan S4 di sisi server baru berlaku bila operator memasang cosign dan menyalakan wajib.
+  Pengerasan di sisi workflow (main-only, reviewer, tag tak bisa ditimpa) tetap mengurangi risiko utama.
+- Perbaikan: setelah rilis pertama bertanda tangan, jadikan `1` bawaan untuk instalasi baru dan pasang
+  cosign oleh installer (biner versi terkunci + checksum di skrip), atau sematkan kunci publik cosign
+  berkunci di `install.sh`.
+
+### P2-R3 (Rendah) — `rilis.yml`: `git fetch origin main` tanpa kredensial di repo privat
+
+- Bukti: `.github/workflows/rilis.yml:37-42` — `persist-credentials: false` lalu `git fetch --no-tags origin
+  main`. Di repo privat fetch ini gagal autentikasi → langkah gagal → **rilis selalu berhenti** (gagal
+  tertutup, bukan celah). `fetch-depth: 0` sudah mengambil `origin/main`, jadi fetch kedua tidak perlu.
+- Perbaikan: hapus baris `git fetch`, atau beri `GH_TOKEN` hanya ke langkah itu
+  (`git -c http.extraheader=…`). Uji dengan tag rilis-coba di fork/privat sebelum `v0.1.0`.
+
+## C. Info putaran 2
+
+1. **Replay backup lama**: backup sah lama yang diganti nama (`balesin-2999…`) tetap diterima — HMAC
+   mengikat isi, bukan nama. Tanggal & versi dari manifest (di dalam data terautentikasi) ditampilkan
+   sebelum konfirmasi `PULIHKAN`, jadi operator melihatnya. Diterima.
+2. **TOCTOU HMAC → dekripsi**: berkas dibaca dua kali (HMAC lalu `openssl enc -d`). Relevan hanya bila
+   restore langsung dari penyimpanan yang bisa ditulis pihak lain (NAS ter-mount). Saran: salin ke folder
+   kerja 700 dulu, lalu verifikasi + dekripsi dari salinan. `backups/` lokal (700 root) aman.
+3. **Banner Owner** (R4 sisa) — catat di ROADMAP supaya tidak hilang; jenis `owner_password_reset_server`.
+4. **Password Redis di `docker inspect` `.Args`** (sekarang interpolasi compose) — setara paparan env
+   (`REDISCLI_AUTH` sudah ada di env); `/proc/1/cmdline` di container hanya `redis-server *:6379`.
+5. **`docker manifest inspect` gagal tertutup?** Tidak: galat jaringan/autentikasi dianggap "belum ada" →
+   push berjalan. Dampak kecil (GHCR menolak tanpa login yang sudah dilakukan); bisa dibedakan dari
+   "manifest unknown" bila ingin ketat.
+6. `apps/api/vitest.deploy.config.ts` ikut `/app` di image api (salinan `pnpm deploy`) — tidak berbahaya;
+   bisa ditambahkan ke daftar `rm` di Dockerfile.
+7. Docker dengan backend firewall `nftables` (eksperimental di Docker 29) tidak memakai rantai
+   `DOCKER-USER` — DEPLOY.md bisa menyebut "backend iptables (bawaan)".
+
+## D. Hasil perintah putaran 2
+
+| Perintah | Hasil |
+|---|---|
+| `shellcheck -x install.sh balesin` (v0.11.0) | bersih |
+| `docker build` 3 target dari snapshot `4301bd7` + umpan | berhasil; tanpa umpan & `.map` di image |
+| `install.sh` mode A (runner, port 28480) | semua layanan sehat; 7 kasus masukan negatif ditolak |
+| Skrip uji S2/R3 (9 skenario) | sesuai tabel A |
+| Firewall `DOCKER-USER` di dind (Docker 29.10, iptables-nft) | proxy terjangkau, LAN tidak; idempoten |
+| `pnpm --filter @balesin/api test:deploy` | 20/20 lulus |
+| `vitest run src/mail/mail.test.ts` (core, template `password_changed_by_server`) | 69/69 lulus |
+| `vitest run src/cli/owner-recovery.integration.test.ts` | tidak selesai dalam 500 dtk di mesin review (globalSetup/teardown Postgres bersama sedang lambat) — hasil diambil dari putaran devops/qa |
+
+Stack `balesin-sec2`, runner, dind, jaringan LAN tiruan, volume, image uji, dan snapshot dihapus.
