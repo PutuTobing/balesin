@@ -76,19 +76,24 @@
   Security web AMAN putaran 2 (W1/W2 tertutup, 4df2953); kritikus kanal **LOLOS** putaran 3. E2E
   channel-lain dengan server Telegram & IMAP tiruan.
 
-### Fase 7 — butir 1–4 SELESAI; butir 5 hampir selesai
+### Fase 7 — butir 1–5 SELESAI; tinggal butir 6 (audit akhir)
 - Compose produksi + image non-root, gateway nginx, install.sh (mode A/B/C), CLI `balesin`, nginx
   contoh netral, rilis bertanda tangan (cosign) **multi-arsitektur amd64+arm64** (b0a3468). Security
   AMAN putaran 2. Suite tes API stabil (15d977b).
-- Butir 5 white-label: panduan pengguna `docs/panduan/` (c2888c5), berkas rilis netral +
-  `docs/DEPLOY-SKYTECH.md` (94995cf), API merek (4306de7, perbaikan B1–B5 d0fa0c0, security AMAN
-  54e325c), halaman Pengaturan → Merek + tema/favicon/manifest dari merek (fdf90f1).
+- Butir 5 white-label (f11a5de): panduan pengguna `docs/panduan/`, berkas rilis netral +
+  `docs/DEPLOY-SKYTECH.md`, API merek (nama, logo, warna, maskot, ikon PWA dari logo; security AMAN),
+  halaman Pengaturan → Merek (kritikus LOLOS putaran 3, security web AMAN).
 
-## Sedang dikerjakan (posisi fdf90f1)
-- **Kritikus** menilai halaman Merek (`docs/design-reviews/2026-11-24-merek.md`); **security** review
-  web Merek (`docs/security-reviews/2026-11-24-web-merek.md`).
-- Berikutnya: revisi bila ada → centang Fase 7 butir 5 → saklar bot untuk Telegram/Email (PRD "saklar
-  bot per channel", kini hanya WhatsApp) → `/audit` penuh (butir 6) → E2E penuh.
+### Bot di semua channel (celah PRD "saklar bot per channel")
+- Backend f493358, d612b29, d9766b3: event bot memuat jenis channel, MobiChat hanya WhatsApp,
+  `receiverReady`, verifikasi pengirim email ke bot (email `fail` tidak dipegang bot), opsi Email
+  "bot hanya pengirim terverifikasi" (migrasi 0032), event `conversation.bot_resumed`.
+- Web: kartu Bot di Telegram/Email/Messenger/IG + menu "Kembalikan ke bot" berasalan — kritikus
+  **LOLOS** putaran 4 (7ed5871). Security putaran 3: P3-1 Sedang dikunci `it.fails` (2fc1f27).
+
+## Sedang dikerjakan (posisi 7ed5871)
+- **Backend** — P3-1 (kembalikan ke bot tidak meneruskan email palsu), P3-2, P3-I1, P3-I2.
+- Berikutnya: commit → security verifikasi → **`/audit` penuh (Fase 7 butir 6)** → E2E penuh.
 - Terblokir: Fase 3 mode tangkap (#10); kredensial nyata (#3, #4, #8, #15, #16, #17); distribusi (#18);
   deploy produksi (#19, menunggu #6/#7).
 
