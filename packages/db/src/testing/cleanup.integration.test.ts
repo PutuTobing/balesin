@@ -7,6 +7,7 @@ import { describeMigrationFailure, runMigrations } from '../migrator';
 import {
   assertTestDatabaseUrl,
   createTemporaryDatabase,
+  dropReleasedTemporaryDatabases,
   dropStaleTemporaryDatabases,
   TEMPORARY_DATABASE_COMMENT,
 } from './index';
@@ -90,6 +91,31 @@ describe('dropStaleTemporaryDatabases', () => {
       expect(database.name).toMatch(/_test_tmp_[0-9a-z]{8,9}_[0-9a-f]{8}$/);
     } finally {
       await database.drop();
+    }
+  });
+
+  it('release: tanpa DROP; koneksi tersisa diputus; dropReleasedTemporaryDatabases menghapusnya — yang belum dilepas tidak disentuh', async () => {
+    const baseUrl = inject('testDatabaseBaseUrl');
+    const released = await createTemporaryDatabase(baseUrl, { migrate: false });
+    const inUse = await createTemporaryDatabase(baseUrl, { migrate: false });
+    const lingering = new Client({
+      connectionString: released.url,
+      connectionTimeoutMillis: 5_000,
+    });
+    await lingering.connect();
+    lingering.on('error', () => undefined);
+    try {
+      await released.release();
+      expect(await databaseExists(baseUrl, released.name)).toBe(true);
+      await expect(lingering.query('select 1')).rejects.toThrow();
+
+      await dropReleasedTemporaryDatabases(baseUrl);
+      expect(await databaseExists(baseUrl, released.name)).toBe(false);
+      expect(await databaseExists(baseUrl, inUse.name)).toBe(true);
+    } finally {
+      await lingering.end().catch(() => undefined);
+      await released.drop();
+      await inUse.drop();
     }
   });
 });

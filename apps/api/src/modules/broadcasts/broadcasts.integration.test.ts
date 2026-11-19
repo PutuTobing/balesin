@@ -1092,6 +1092,9 @@ describe('alarm Telegram', () => {
   it('token terenkripsi (hanya ekor), tes kirim, alarm outbox dikirim; tanpa Telegram = dilewati', async () => {
     await harness.db.insert(alarmEvents).values({
       organizationId,
+      // Jatuh tempo menurut jam APLIKASI (sama dengan `deliverAlarms`), bukan `now()` Postgres: jam
+      // container database bisa sedikit di depan jam proses tes sehingga alarm belum "jatuh tempo".
+      nextAttemptAt: new Date(Date.now() - 1_000),
       kind: 'broadcast_completed',
       details: { campaign: 'Tanpa Telegram', recipients: 1, sent: 1 },
     });
@@ -1128,6 +1131,7 @@ describe('alarm Telegram', () => {
 
     await harness.db.insert(alarmEvents).values({
       organizationId,
+      nextAttemptAt: new Date(Date.now() - 1_000),
       kind: 'broadcast_auto_paused',
       details: { campaign: 'Tagihan Desember', reason: 'failure_spike', failed: 12 },
     });

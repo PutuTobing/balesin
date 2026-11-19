@@ -25,6 +25,13 @@ const TEMPORARY_MARKER = '_tmp_';
 /** Komentar yang ditempelkan pada setiap database sementara: bukti bahwa alat ini yang membuatnya. */
 export const TEMPORARY_DATABASE_COMMENT = 'balesin: database sementara untuk tes (aman dihapus)';
 
+/**
+ * Komentar database sementara yang SELESAI dipakai (`release`): tidak ada lagi yang menyambung, boleh
+ * dihapus kapan saja oleh `dropReleasedTemporaryDatabases` (teardown global) tanpa menunggu umur.
+ */
+export const RELEASED_DATABASE_COMMENT =
+  'balesin: database sementara untuk tes — selesai dipakai (aman dihapus)';
+
 /** Bagian nama setelah penanda: <waktu dibuat, basis 36>_<8 heksadesimal acak>. */
 const TEMPORARY_SUFFIX = /^([0-9a-z]{8,9})_[0-9a-f]{8}$/;
 
@@ -34,6 +41,11 @@ declare module 'vitest' {
     testDatabaseUrl: string;
     /** Server Postgres tes — untuk membuat database sementara tambahan. */
     testDatabaseBaseUrl: string;
+    /**
+     * Nama database sementara yang SUDAH dimigrasi dan tidak pernah disambungi siapa pun — dipakai
+     * sebagai `TEMPLATE` database per berkas tes (salin, tanpa menjalankan ulang migrasi).
+     */
+    testDatabaseTemplate: string;
   }
 }
 
@@ -47,6 +59,16 @@ export interface TemporaryDatabase {
   reset(): Promise<void>;
   /** Hapus database (memutus koneksi yang masih terbuka). */
   drop(): Promise<void>;
+  /**
+   * Tandai SELESAI dipakai dan putus koneksi yang tersisa — TANPA `DROP DATABASE`. Penghapusannya
+   * diserahkan ke teardown global (`dropReleasedTemporaryDatabases`).
+   *
+   * Alasan: `DROP DATABASE` memaksa checkpoint Postgres (`CHECKPOINT_FORCE | CHECKPOINT_WAIT`).
+   * Saat banyak berkas tes berjalan paralel dan menulis, checkpoint itu antre dan satu `DROP` bisa
+   * makan > 30 detik — `afterAll` habis waktu walau tesnya lulus. Di akhir run tidak ada beban tulis,
+   * jadi penghapusan berurutan cepat.
+   */
+  release(): Promise<void>;
 }
 
 function databaseNameOf(databaseUrl: string): string {
@@ -150,10 +172,38 @@ export async function dropStaleTemporaryDatabases(baseUrl: string): Promise<void
     );
     for (const { datname, comment } of rows) {
       const createdAt = temporaryDatabaseCreatedAt(datname, prefix);
-      if (createdAt === undefined || comment !== TEMPORARY_DATABASE_COMMENT) continue;
-      if (Date.now() - createdAt < STALE_AFTER_MS) continue;
+      if (createdAt === undefined) continue;
+      if (comment !== TEMPORARY_DATABASE_COMMENT && comment !== RELEASED_DATABASE_COMMENT) continue;
+      // Yang sudah dilepas boleh langsung; yang belum hanya bila sudah tua (sisa run terhenti).
+      if (comment !== RELEASED_DATABASE_COMMENT && Date.now() - createdAt < STALE_AFTER_MS)
+        continue;
       await client.query(`drop database if exists ${quoteIdentifier(datname)} with (force)`);
     }
+  });
+}
+
+/**
+ * Menghapus database sementara yang sudah DILEPAS (`release`) — dari run ini atau run lain yang
+ * sudah selesai memakainya. Database yang masih dipakai (komentar biasa) tidak disentuh, jadi aman
+ * walau ada run tes lain yang sedang berjalan di server yang sama.
+ */
+export async function dropReleasedTemporaryDatabases(baseUrl: string): Promise<number> {
+  assertTestDatabaseUrl(baseUrl);
+  const prefix = `${databaseNameOf(baseUrl)}${TEMPORARY_MARKER}`;
+  return withAdminClient(baseUrl, async (client) => {
+    const { rows } = await client.query<{ datname: string; comment: string | null }>(
+      `select datname, shobj_description(oid, 'pg_database') as comment
+       from pg_database where starts_with(datname, $1)`,
+      [prefix],
+    );
+    let dropped = 0;
+    for (const { datname, comment } of rows) {
+      if (temporaryDatabaseCreatedAt(datname, prefix) === undefined) continue;
+      if (comment !== RELEASED_DATABASE_COMMENT) continue;
+      await client.query(`drop database if exists ${quoteIdentifier(datname)} with (force)`);
+      dropped += 1;
+    }
+    return dropped;
   });
 }
 
@@ -163,14 +213,25 @@ export async function dropStaleTemporaryDatabases(baseUrl: string): Promise<void
  */
 export async function createTemporaryDatabase(
   baseUrl: string,
-  options: { migrate?: boolean } = {},
+  options: {
+    migrate?: boolean;
+    /**
+     * Salin dari database sementara yang SUDAH dimigrasi (tanpa koneksi lain ke sana) alih-alih
+     * menjalankan semua migrasi lagi — jauh lebih ringan saat banyak berkas tes dibuat bersamaan.
+     */
+    template?: string;
+  } = {},
 ): Promise<TemporaryDatabase> {
   const baseName = databaseNameOf(assertTestDatabaseUrl(baseUrl));
   const name = `${baseName}${TEMPORARY_MARKER}${Date.now().toString(36)}_${randomBytes(4).toString('hex')}`;
   const url = withDatabaseName(baseUrl, name);
 
   await withAdminClient(baseUrl, async (client) => {
-    await client.query(`create database ${quoteIdentifier(name)}`);
+    await client.query(
+      options.template
+        ? `create database ${quoteIdentifier(name)} template ${quoteIdentifier(options.template)}`
+        : `create database ${quoteIdentifier(name)}`,
+    );
     await client.query(
       `comment on database ${quoteIdentifier(name)} is '${TEMPORARY_DATABASE_COMMENT}'`,
     );
@@ -211,7 +272,7 @@ export async function createTemporaryDatabase(
     }
   };
 
-  if (options.migrate ?? true) {
+  if (!options.template && (options.migrate ?? true)) {
     try {
       await runMigrations(url);
     } catch (error) {
@@ -220,7 +281,20 @@ export async function createTemporaryDatabase(
     }
   }
 
-  return { name, url, reset, drop };
+  const release = async (): Promise<void> => {
+    await withAdminClient(baseUrl, async (client) => {
+      await client.query(
+        `comment on database ${quoteIdentifier(name)} is '${RELEASED_DATABASE_COMMENT}'`,
+      );
+      // Koneksi tersisa (mis. klien yang lupa ditutup) diputus supaya DROP nanti tidak tertahan.
+      await client.query(
+        'select pg_terminate_backend(pid) from pg_stat_activity where datname = $1 and pid <> pg_backend_pid()',
+        [name],
+      );
+    });
+  };
+
+  return { name, url, reset, drop, release };
 }
 
 export * from './expect-pg-error';

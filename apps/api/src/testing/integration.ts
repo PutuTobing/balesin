@@ -104,7 +104,10 @@ export function integrationConfig(): AppConfig {
 export async function createIntegrationHarness(
   options: HarnessOptions = {},
 ): Promise<IntegrationHarness> {
-  const database = await createTemporaryDatabase(inject('testDatabaseBaseUrl'));
+  // Disalin dari template yang sudah dimigrasi (global setup) — tanpa menjalankan ulang migrasi.
+  const database = await createTemporaryDatabase(inject('testDatabaseBaseUrl'), {
+    template: inject('testDatabaseTemplate'),
+  });
   const db = createDb(database.url, { applicationName: 'balesin-test-api' });
   const rateLimitPrefix = `balesin-tes-${randomBytes(6).toString('hex')}`;
 
@@ -163,7 +166,9 @@ export async function createIntegrationHarness(
         await closeRedis(redis);
       }
       await closeDb(db);
-      await database.drop();
+      // Dilepas, bukan di-DROP: `DROP DATABASE` memaksa checkpoint Postgres yang bisa antre > 30 dtk
+      // saat banyak berkas tes berjalan paralel. Dihapus teardown global (lihat `release`).
+      await database.release();
     },
     get app(): App {
       if (!built) throw new Error('Aplikasi tes belum dibangun');

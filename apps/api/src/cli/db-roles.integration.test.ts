@@ -52,8 +52,12 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await closeDb(runtime);
+  // Hak peran di database ini (tabel, skema, CONNECT) dicabut dulu supaya `drop role` tidak butuh
+  // `DROP DATABASE` — yang memaksa checkpoint Postgres dan bisa antre > 30 dtk saat tes paralel.
+  // Database-nya dilepas dan dihapus teardown global (`TemporaryDatabase.release`).
+  await owner.execute(sql.raw(`drop owned by "${ROLE}"`));
   await closeDb(owner);
-  await database.drop();
+  await database.release();
   const admin = createDb(inject('testDatabaseBaseUrl'), { applicationName: 'balesin-tes-peran' });
   try {
     await admin.execute(sql.raw(`drop role if exists "${ROLE}"`));
