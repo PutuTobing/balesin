@@ -67,9 +67,9 @@ Orkestrator mengerjakan dari atas ke bawah. Tandai `[x]` saat Definition of Done
 - [x] Jam kerja (tim & bot terpisah), pesan otomatis (termasuk saat di-assign), alokasi agen ambil sendiri/round-robin + kapasitas per agen
 
 ## Fase 6 — Channel tambahan
-- [ ] Telegram Bot
-- [ ] Email (IMAP/SMTP)
-- [ ] Facebook Messenger & Instagram DM (siapkan, aktifkan setelah App Review)
+- [x] Telegram Bot
+- [x] Email (IMAP/SMTP)
+- [x] Facebook Messenger & Instagram DM (siapkan, aktifkan setelah App Review) — siap; aktivasi menunggu BUTUH-TOBING #17
 
 ## Fase 7 — Produk self-hosted
 - [x] `deploy/docker-compose.yml` produksi, image multi-stage non-root

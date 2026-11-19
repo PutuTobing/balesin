@@ -446,3 +446,96 @@ T/G = terang dan gelap bernilai sama.
   - bagian ini + 18 `p2-*.png`;
   - bagian "Putaran 3" laporan Fase 5 (+4 `p3-*.png`).
 - Tidak ada kode produk yang diubah, tidak ada commit.
+
+---
+
+# Putaran 3
+
+- **Tanggal:** 2026-11-19 · **Penilai:** `kritikus-desain` · **Putaran:** 3 (verifikasi singkat)
+- **Kode yang dinilai:** `dcf73d6` (revisi K9–K11, K-S9, K-S10, K-S12). HEAD sekarang `4306de7` (API merek) dan
+  working tree punya perubahan `apps/web/src/brand/*`. Keduanya tidak menyentuh berkas yang dinilai di bawah
+  (`features/inbox`, `features/channels`, `features/workspace`, `components/ui`), jadi temuan berlaku untuk HEAD.
+- **Cara:**
+  - Worktree terisolasi dari `dcf73d6`: API 3191 / web 5191, `balesin_kd_e2e`, Redis db 11.
+  - 14 layar × 390/1440 × terang/gelap difoto: 10 layar kanal (`screens-kanal.ts`) serta pembanding regresi
+    `inbox-chat`, `inbox-daftar` (WhatsApp), `channel-daftar`, dan `channel-lain`.
+  - Audit terukur 14 layar di 360/390/1440, terang/gelap: posisi dan ukuran tombol wizard, teks kepala chat, jarak
+    label ke bingkai, `title` meta agen, posisi "Salin", scroll horizontal, target sentuh. 141/141 lulus.
+- **Screenshot:** berkas berawalan `p3-` di `docs/design-reviews/2026-11-23-kanal-jam-kerja/` (8 berkas).
+
+## Putusan putaran 3: LOLOS
+
+K9, K10, dan K11 tertutup di 360, 390, dan 1440, terang dan gelap. Hasil audit:
+- tidak ada scroll horizontal;
+- tidak ada target sentuh baru < 44 px (isian 42 px dalam bingkai 44 sudah diterima sejak Fase 1);
+- token warna dan spasi tetap bersih.
+
+Tidak ada regresi di inbox WhatsApp maupun halaman Channel. Semua kriteria ≥ 4 dan tidak ada pelanggaran §3.
+
+| Butir | Hasil (terukur) | Status |
+|---|---|---|
+| **K9** tombol wizard HP | `channel-telegram-baru`, `-messenger-baru`, `-email-baru`: "Hubungkan" **324 × 44** di atas "Batal" 324 × 44, jarak 8 px (390). Di 360 keduanya 294 × 44, jarak 8. Di 1440 tetap sebaris di kanan: "Batal" 69 × 36, "Hubungkan" 112 × 36. Terang dan gelap sama (`Connections.module.css:449-458`) | Lolos |
+| **K10** kepala chat 1440 | `inbox-telegram`: "@andika_dps · dari Telegram". `inbox-email`/`-html`: "rudi.hartono@gmail.com · dari Email". Nama channel muncul sekali. HP tetap "Telegram · @andika_dps" / "Email · rudi.hartono@gmail.com". Regresi WhatsApp: 1440 "+62 812-3456-7890 · dari WhatsApp", 390 "+62 812-3456-7890", sama seperti sebelumnya (`ChatRoom.tsx:230-235`) | Lolos |
+| **K11** label "Tampilan asli email" | Label di atas bingkai, sejajar tepi kiri judul dialog (x 521 = x judul di 1440, x 41 = x judul di 390/360). Jarak label ke garis bingkai **24 px**, tidak lagi 0 (`EmailMessage.tsx:97-98`) | Lolos |
+| K-S9 meta agen | Dikerjakan dengan pilihan `title` (`WorkspaceSettingsPage.tsx:562`). `title` memuat meta lengkap untuk keempat agen. Tampilan tetap berelipsis ("Belum …", "Terakhir dapat c…") di 1440 (kolom 313 px) dan 390 (294 px). Sesuai saran, tetapi lihat K-S15 | Lolos (sebagian) |
+| K-S10 Switch | Kedua blok `.row[aria-checked='true'] .track` sudah digabung. Sakelar di `jam-kerja` dan "Tersedia" di daftar chat tampil sama seperti putaran 2 (bulatan kanan saat aktif) | Lolos |
+| K-S12 tombol "Salin" | Alamat webhook dan verify token Messenger kini sama polanya: "Salin" di bawah nilai, x tombol sama (101 di 1440, 21 di 360/390). Jarak 4 px dari nilai | Lolos |
+| K-S1, K-S3, K-S4, K-S8, K-S11 | Belum dikerjakan. Isi iframe masih Times; tinggi iframe 512 px (1440) dengan ±65% bidang putih untuk email pendek. Kapasitas per agen masih 3 baris | Tetap saran |
+
+**Cek regresi:**
+- `inbox-chat` dan `inbox-daftar` (WhatsApp) di 390/1440 terang/gelap tidak berubah: kepala chat, timer sesi,
+  composer, banner "Ambil chat", dan panel detail "dari WhatsApp".
+- `channel-daftar`: daftar nomor WhatsApp dan tombol "Tambah nomor" tetap sama.
+- `channel-lain`: kartu WhatsApp ringkas, baris channel, dan ubin "Tambah channel" tetap sama.
+- `.actions` yang diubah hanya dipakai `ConnectionWizardPage.tsx:140`. Dialog dan halaman wizard WhatsApp memakai
+  modul CSS lain dan tidak tersentuh.
+
+### Saran (tidak menahan)
+
+- **K-S13 (baru) — jarak label HTML email.** Konten dialog memakai `gap: var(--space-16)` (`ConfirmDialog.module.css:27`).
+  Karena itu `.frameLabel { margin-top: var(--space-16) }` dan `.frameWrapLabelled { margin-top: var(--space-8) }`
+  (`EmailMessage.module.css:87-96`) **ditambahkan** ke gap. Hasilnya deskripsi→label 32 px dan label→bingkai 24 px,
+  bukan 16/8 seperti yang dimaksud komentar di baris 93. Label masih terasa melayang di antara dua blok.
+  - Perbaikan: bungkus label dan bingkai dalam `<figure className={styles.frameFigure}>` dengan
+    `<figcaption className={styles.frameLabel}>`.
+  - CSS: `.frameFigure { display: flex; flex-direction: column; gap: var(--space-8); margin: 0; }`.
+  - Hapus `margin-top` di `.frameLabel` dan `.frameWrapLabelled`, juga `margin-top` di `.frameWrap` bila figure
+    yang dipakai.
+  - Hasil: deskripsi→label 16 px, label→bingkai 8 px.
+- **K-S14 (baru) — "Salin" belum rata dengan teks nilai.** Ikon salin ada 5 px di kanan tepi teks nilai di atasnya
+  (ikon x 38 vs nilai x 33 di 390; 118 vs 113 di 1440). Penyebabnya `margin-left: calc(var(--space-12) * -1)` di
+  `Connections.module.css:336-338`, padahal padding kiri tombol ghost 16 px + garis 1 px. Ganti dengan
+  `margin-left: calc(var(--space-16) * -1 - 1px)` (atau token padding tombol, bila ada) supaya ikon tepat di tepi
+  teks seperti yang dijanjikan komentar baris 335. Jarak ikon ke tepi kotak tombol terukur 17 px.
+- **K-S15 (lanjutan K-S9).** `title` tidak muncul di HP (sentuh) maupun lewat keyboard, jadi di 390 "Terakhir dapat
+  chat …" tetap tidak terbaca. Untuk HP saja (`@media (max-width: 640px)`), biarkan `.agentMeta` membungkus:
+  `white-space: normal;` (`Workspace.module.css:237-243`). Di HP baris agen sudah dua baris, jadi tambahan satu baris
+  meta tidak merusak grid. Di 1440 elipsis + `title` sudah cukup.
+
+### Tabel nilai putaran 3
+
+Hanya layar yang dinilai ulang. Layar lain tetap seperti tabel putaran 2. T/G = terang dan gelap bernilai sama.
+
+| Layar | Ukuran · tema | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `channel-telegram-baru`, `-messenger-baru`, `-email-baru` | 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 4 | 5 |
+| | 390 (dan 360) T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| `channel-messenger` | 390 · 1440 T/G | 5 | 5 | 5 | 4 | 5 | 5 | 5 | 5 | 5 | 5 |
+| `inbox-telegram`, `inbox-email` | 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| | 390 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| `inbox-email-html` | 390 · 1440 T/G | 5 | 5 | 4 | 4 | 5 | 5 | 5 | 5 | 4 | 5 |
+| `jam-kerja` | 1440 T/G | 4 | 5 | 5 | 5 | 5 | 4 | 5 | 5 | 4 | 5 |
+| | 390 T/G | 4 | 5 | 4 | 4 | 5 | 4 | 5 | 5 | 4 | 5 |
+| Regresi: `inbox-chat`, `inbox-daftar`, `channel-daftar`, `channel-lain` | 390 · 1440 T/G | tidak berubah dari penilaian lolos sebelumnya | | | | | | | | | |
+
+**§3 dan §4:**
+- §3 bersih. Tidak ada warna atau spasi di luar token di berkas yang berubah. Tidak ada English nyasar baru.
+- §4 lolos. Halaman wizard di HP kini mengikuti pola dialog: tombol berwarna di atas, "Batal" berbingkai di bawah.
+
+## Bersih-bersih putaran 3
+
+- Worktree kritikus dihapus. `git worktree list` kini berisi repo utama dan `scratchpad/wt-sharp` milik agen lain,
+  yang tidak disentuh.
+- Port 3191/5191 kosong, `balesin_kd_e2e` di-drop, Redis db 11 `DBSIZE` 0, folder `balesin-e2e-media-3191` dihapus.
+- Berkas repo: bagian ini + 8 `p3-*.png`.
+- Tidak ada kode produk yang diubah, tidak ada commit.
