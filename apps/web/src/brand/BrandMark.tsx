@@ -31,10 +31,15 @@ export function DefaultSymbol({ className, fit = 'square' }: SymbolProps) {
  * Memakai logo organisasi bila tersedia, kalau tidak simbol logo bawaan.
  */
 export function BrandMark({ className, fit = 'square' }: BrandMarkProps) {
-  const { logoUrl } = useBrand();
+  const { logoUrl, icons } = useBrand();
+  // Tempat persegi (rail, dll.): ikon persegi yang dibuat server dari logo (latar transparan)
+  // lebih terbaca daripada logo melebar yang diperkecil.
+  const square =
+    icons?.manifest.find((icon) => icon.purpose === 'any' && icon.sizes === '192x192')?.src ??
+    logoUrl;
 
-  if (logoUrl) {
-    return <img src={logoUrl} alt="" className={cx(styles.mark, className)} />;
+  if (square) {
+    return <img src={square} alt="" className={cx(styles.mark, className)} />;
   }
 
   return (

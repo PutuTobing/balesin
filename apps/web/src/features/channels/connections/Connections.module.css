@@ -334,7 +334,8 @@ ol.steps,
 
 /* "Salin" rata dengan tepi teks di atasnya (padding tombol ghost tidak membuatnya menjorok). */
 .urlRow > button {
-  margin-left: calc(var(--space-12) * -1);
+  /* Ikon tepat di bawah huruf pertama nilai: padding tombol + 1px bingkai (K-S14). */
+  margin-left: calc(var(--space-16) * -1 - 1px);
 }
 
 /* Alamat webhook selebar kartu (≤ 3 baris di HP). */

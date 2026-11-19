@@ -495,6 +495,18 @@ const csatSettingsRoute = createRoute({
   ),
 });
 
+/** Pengaturan → Merek (white-label): `organization.manage` (Owner). */
+const brandingSettingsRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/merek',
+  staticData: { page: { title: t.brandingSettings.title, parent: 'settings' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'organization.manage'),
+  component: lazyRouteComponent(
+    () => import('../features/branding/BrandingSettingsPage'),
+    'BrandingSettingsPage',
+  ),
+});
+
 /** Pengaturan → Jam kerja & alokasi: `settings.workspace.manage` (Owner, Admin). */
 const workspaceRoute = createRoute({
   getParentRoute,
@@ -693,6 +705,7 @@ const appChildren = [
   contactAttributesRoute,
   departmentsRoute,
   workspaceRoute,
+  brandingSettingsRoute,
   csatSettingsRoute,
   broadcastRoute,
   broadcastNewRoute,

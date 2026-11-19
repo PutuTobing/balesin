@@ -199,34 +199,49 @@ describe('review keamanan — manifest bermerek', () => {
     ],
   };
 
+  /** Ikon dari logo organisasi (`GET /branding` → `icons`) dengan satu alamat manifest. */
+  const iconsWith = (src: string) => ({
+    favicon: '/api/v1/branding/icons/favicon-32.png?v=1',
+    appleTouchIcon: '/api/v1/branding/icons/apple-touch-icon.png?v=1',
+    manifest: [{ src, sizes: '192x192', type: 'image/png' as const, purpose: 'any' as const }],
+  });
+
   it('logo/ikon/start_url origin lain atau skema berbahaya dibuang', () => {
-    for (const logoUrl of [
+    for (const src of [
       'https://evil.example/logo.png',
       '//evil.example/logo.png',
       'javascript:alert(1)',
       'data:image/svg+xml,<svg/>',
     ]) {
-      const manifest = brandedManifest(base, { productName: 'Toko', logoUrl }, ORIGIN);
-      for (const icon of manifest.icons ?? []) {
-        expect(new URL(icon.src).origin, logoUrl).toBe(ORIGIN);
-      }
+      const manifest = brandedManifest(
+        base,
+        { productName: 'Toko', icons: iconsWith(src) },
+        ORIGIN,
+      );
+      expect(manifest.icons, src).toEqual([]);
     }
+    // Tanpa logo: ikon bawaan, yang lain origin tetap dibuang.
+    const fallback = brandedManifest(base, { productName: 'Toko', icons: null }, ORIGIN);
+    for (const icon of fallback.icons ?? []) expect(new URL(icon.src).origin).toBe(ORIGIN);
     const evilStart = brandedManifest(
       { ...base, start_url: 'https://evil.example/', scope: '//evil.example/' },
-      { productName: 'Toko', logoUrl: null },
+      { productName: 'Toko', icons: null },
       ORIGIN,
     );
     expect(evilStart.start_url).toBeUndefined();
     expect(evilStart.scope).toBeUndefined();
   });
 
-  it('logo sama origin dipakai; nama produk hanya data JSON', () => {
+  it('ikon logo sama origin dipakai; nama produk hanya data JSON', () => {
     const manifest = brandedManifest(
       base,
-      { productName: '<script>x</script>', logoUrl: '/api/v1/branding/logo?v=3' },
+      {
+        productName: '<script>x</script>',
+        icons: iconsWith('/api/v1/branding/icons/icon-192.png?v=3'),
+      },
       ORIGIN,
     );
-    expect(manifest.icons?.[0]?.src).toBe(`${ORIGIN}/api/v1/branding/logo?v=3`);
+    expect(manifest.icons?.[0]?.src).toBe(`${ORIGIN}/api/v1/branding/icons/icon-192.png?v=3`);
     expect(manifest.name).toBe('<script>x</script>');
   });
 });

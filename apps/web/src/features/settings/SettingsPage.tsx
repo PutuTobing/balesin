@@ -17,13 +17,14 @@ import {
   type LucideIcon,
   Mail,
   MessageSquareText,
+  Palette,
   ShieldCheck,
   Smartphone,
   UsersRound,
 } from 'lucide-react';
 import { RadioGroup } from 'radix-ui';
 import { useEffect } from 'react';
-import { useBrand } from '../../brand/brand';
+import { defaultBrand, useBrand } from '../../brand/brand';
 import { Icon } from '../../components/ui/Icon';
 import { Page } from '../../components/ui/Page';
 import { Skeleton } from '../../components/ui/Skeleton';
@@ -83,6 +84,7 @@ export function SettingsPage() {
   const canWebhooks = useCan('integrations.manage');
   const canTemplates = useCan('templates.manage');
   const canWorkspace = useCan('settings.workspace.manage');
+  const canBranding = useCan('organization.manage');
 
   return (
     <Page>
@@ -96,7 +98,8 @@ export function SettingsPage() {
         canSendingLimits ||
         canApiKeys ||
         canWebhooks ||
-        canWorkspace ? (
+        canWorkspace ||
+        canBranding ? (
           <OrganizationSettings
             showChannels={canChannels}
             showTeam={canTeam}
@@ -108,6 +111,7 @@ export function SettingsPage() {
             showApiKeys={canApiKeys}
             showWebhooks={canWebhooks}
             showWorkspace={canWorkspace}
+            showBranding={canBranding}
             canInvite={canInvite}
             canManageTeam={canManageTeam}
           />
@@ -196,6 +200,7 @@ function OrganizationSettings({
   showApiKeys,
   showWebhooks,
   showWorkspace,
+  showBranding,
   canInvite,
   canManageTeam,
 }: {
@@ -209,6 +214,7 @@ function OrganizationSettings({
   showApiKeys: boolean;
   showWebhooks: boolean;
   showWorkspace: boolean;
+  showBranding: boolean;
   canInvite: boolean;
   canManageTeam: boolean;
 }) {
@@ -223,6 +229,7 @@ function OrganizationSettings({
         {showChannels ? <ChannelsMenuItem /> : null}
         {showTeam ? <TeamMenuItem canInvite={canInvite} canManage={canManageTeam} /> : null}
         {showWorkspace ? <WorkspaceMenuItem /> : null}
+        {showBranding ? <BrandingMenuItem /> : null}
         {showWorkspace ? <DepartmentsMenuItem /> : null}
         {showEmail ? <EmailMenuItem /> : null}
         {showTemplates ? <TemplatesMenuItem /> : null}
@@ -352,6 +359,26 @@ function TemplatesMenuItem() {
           : null
       }
       loading={list.isPending}
+    />
+  );
+}
+
+/** Merek: disesuaikan atau masih bawaan (dari `GET /branding` publik — tanpa permintaan tambahan). */
+function BrandingMenuItem() {
+  const brand = useBrand();
+  const custom =
+    brand.productName !== defaultBrand.productName ||
+    brand.mascotName !== defaultBrand.mascotName ||
+    brand.logoUrl !== null ||
+    brand.primaryColor !== null;
+  return (
+    <MenuRow
+      to="/pengaturan/merek"
+      icon={Palette}
+      label={t.brandingSettings.title}
+      hint={t.brandingSettings.menuHint}
+      status={custom ? t.brandingSettings.menuCustom : t.brandingSettings.menuDefault}
+      loading={false}
     />
   );
 }
@@ -513,6 +540,7 @@ function MenuRow({
     | '/pengaturan/atribut-kontak'
     | '/pengaturan/departemen'
     | '/pengaturan/jam-kerja'
+    | '/pengaturan/merek'
     | '/pengaturan/csat';
   icon: LucideIcon;
   label: string;

@@ -7,11 +7,11 @@ import {
   setupTokenSchema,
   type CompleteSetupRequest,
   type EmailTestResult,
-  type LogoContentType,
 } from '@balesin/shared';
 import { t } from '../../i18n/id';
 import type { ApiError } from '../../lib/api/client';
 import { apiFieldErrors, zodFieldErrors, type FieldErrors } from '../../lib/form';
+import type { LogoDraft } from '../../lib/logo-file';
 import {
   emailFormFingerprint,
   emptyEmailForm,
@@ -37,15 +37,7 @@ export type SetupStep = (typeof SETUP_STEPS)[number];
 /** Langkah yang boleh dilewati (ditandai "Opsional"). */
 export const OPTIONAL_STEPS: ReadonlySet<SetupStep> = new Set(['branding', 'email']);
 
-export interface LogoDraft {
-  contentType: LogoContentType;
-  /** Isi berkas base64 tanpa awalan `data:`. */
-  dataBase64: string;
-  /** `data:` URL untuk pratinjau. */
-  dataUrl: string;
-  name: string;
-  size: number;
-}
+export type { LogoDraft };
 
 export interface WizardState {
   step: SetupStep;

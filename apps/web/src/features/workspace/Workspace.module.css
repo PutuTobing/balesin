@@ -262,6 +262,11 @@ ul.agents,
     grid-template-columns: minmax(0, 1fr);
   }
 
+  /* Lebar penuh di HP: meta boleh turun baris, tidak perlu terpotong (K-S15). */
+  .agentMeta {
+    white-space: normal;
+  }
+
   .agentToggles {
     flex-wrap: wrap;
   }

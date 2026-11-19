@@ -1,11 +1,12 @@
-import { DEFAULT_PRODUCT_NAME } from '@balesin/shared';
+import { DEFAULT_PRODUCT_NAME, type BrandIcons } from '@balesin/shared';
 import { useEffect } from 'react';
 import type { Brand } from './brand';
 
 /**
  * Manifest PWA bermerek (white-label). `/manifest.webmanifest` statis memakai nama bawaan; begitu
  * merek organisasi dimuat, `<link rel="manifest">` diganti Blob URL berisi manifest yang sama
- * dengan nama produk dan logo organisasi. Manifest Blob wajib memakai URL ABSOLUT (relatif
+ * dengan nama produk dan ikon dari logo organisasi (`icons.manifest` menggantikan SELURUH ikon
+ * bawaan, docs/KONTRAK-API-AUTH.md "Branding"). Manifest Blob wajib memakai URL ABSOLUT (relatif
  * terhadap `blob:` tidak sah), jadi semua alamat dilengkapi origin halaman.
  */
 interface ManifestIcon {
@@ -38,17 +39,17 @@ function absolute(path: string | undefined, origin: string): string | undefined 
 
 export function brandedManifest(
   base: WebManifest,
-  brand: Pick<Brand, 'productName' | 'logoUrl'>,
+  brand: Pick<Brand, 'productName' | 'icons'>,
   origin: string,
 ): WebManifest {
   const name = brand.productName.trim() || DEFAULT_PRODUCT_NAME;
-  const icons = (base.icons ?? []).flatMap((icon) => {
+  // Ikon dari logo organisasi (192/512 biasa + maskable) menggantikan semua ikon bawaan; tanpa
+  // logo, ikon bawaan produk tetap dipakai. Alamat lain origin dibuang.
+  const source = brand.icons ? brand.icons.manifest : (base.icons ?? []);
+  const icons = source.flatMap((icon) => {
     const src = absolute(icon.src, origin);
     return src ? [{ ...icon, src }] : [];
   });
-  // Logo organisasi (path relatif API yang sama origin) di depan; ikon bawaan tetap ada untuk
-  // ukuran wajib 192/512 dan maskable.
-  const logo = brand.logoUrl ? absolute(brand.logoUrl, origin) : undefined;
   return {
     ...base,
     id: absolute(base.id ?? '/', origin),
@@ -56,18 +57,24 @@ export function brandedManifest(
     scope: absolute(base.scope ?? '/', origin),
     name,
     short_name: name.length > SHORT_NAME_MAX ? name.slice(0, SHORT_NAME_MAX).trimEnd() : name,
-    icons: logo ? [{ src: logo, sizes: 'any', purpose: 'any' }, ...icons] : icons,
+    icons,
   };
 }
 
 export function useBrandManifest(brand: Brand): void {
-  const { productName, logoUrl } = brand;
+  const { productName, icons } = brand;
+  // Kunci stabil: query yang dimuat ulang dengan isi sama tidak membuat manifest baru.
+  const iconsKey = icons ? JSON.stringify(icons.manifest) : '';
   useEffect(() => {
-    if (productName === DEFAULT_PRODUCT_NAME && !logoUrl) return;
+    const brandIcons: BrandIcons['manifest'] | null = iconsKey
+      ? (JSON.parse(iconsKey) as BrandIcons['manifest'])
+      : null;
+    if (productName === DEFAULT_PRODUCT_NAME && !brandIcons) return;
     const link = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
     const title = document.querySelector<HTMLMetaElement>(
       'meta[name="apple-mobile-web-app-title"]',
     );
+    const originalTitle = title?.content;
     if (title) title.content = productName;
     if (!link) return;
     const original = link.getAttribute('href') ?? '/manifest.webmanifest';
@@ -77,7 +84,14 @@ export function useBrandManifest(brand: Brand): void {
       .then((response) => (response.ok ? (response.json() as Promise<WebManifest>) : null))
       .then((base) => {
         if (!base) return;
-        const manifest = brandedManifest(base, { productName, logoUrl }, window.location.origin);
+        const manifest = brandedManifest(
+          base,
+          {
+            productName,
+            icons: brandIcons ? { favicon: '', appleTouchIcon: '', manifest: brandIcons } : null,
+          },
+          window.location.origin,
+        );
         objectUrl = URL.createObjectURL(
           new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' }),
         );
@@ -87,7 +101,42 @@ export function useBrandManifest(brand: Brand): void {
     return () => {
       controller.abort();
       link.setAttribute('href', original);
+      if (title && originalTitle !== undefined) title.content = originalTitle;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [productName, logoUrl]);
+  }, [productName, iconsKey]);
+}
+
+/**
+ * Favicon & ikon layar utama iOS dari logo organisasi. Tautan bawaan (`.ico`, SVG, apple-touch-icon
+ * produk) dilepas sementara — browser memilih SVG bila masih ada — lalu dipasang kembali saat logo
+ * dihapus.
+ */
+export function useBrandIcons(icons: BrandIcons | null): void {
+  const favicon = icons?.favicon ?? null;
+  const appleTouchIcon = icons?.appleTouchIcon ?? null;
+  useEffect(() => {
+    if (!favicon || !appleTouchIcon) return;
+    const head = document.head;
+    const originals = Array.from(
+      head.querySelectorAll<HTMLLinkElement>('link[rel="icon"], link[rel="apple-touch-icon"]'),
+    );
+    for (const link of originals) link.remove();
+    const icon = document.createElement('link');
+    icon.rel = 'icon';
+    icon.type = 'image/png';
+    icon.setAttribute('sizes', '32x32');
+    icon.href = favicon;
+    icon.dataset.brand = '';
+    const apple = document.createElement('link');
+    apple.rel = 'apple-touch-icon';
+    apple.href = appleTouchIcon;
+    apple.dataset.brand = '';
+    head.append(icon, apple);
+    return () => {
+      icon.remove();
+      apple.remove();
+      head.append(...originals);
+    };
+  }, [favicon, appleTouchIcon]);
 }

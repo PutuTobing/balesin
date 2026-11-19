@@ -4,7 +4,6 @@ import {
   LOGO_MAX_BYTES,
   PASSWORD_RULES_HINT,
   SMTP_SECURITY_LABELS,
-  type LogoContentType,
 } from '@balesin/shared';
 import { ImagePlus, Trash2 } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
@@ -20,6 +19,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge';
 import { t } from '../../i18n/id';
 import { endpoints } from '../../lib/api/endpoints';
 import { kilobytes } from '../../lib/format';
+import { isLogoType, readLogoFile } from '../../lib/logo-file';
 import { describedBy, scopeErrors, type FieldErrors } from '../../lib/form';
 import { EmailGuide } from '../email-settings/EmailGuide';
 import { EmailSettingsFields } from '../email-settings/EmailSettingsFields';
@@ -270,33 +270,6 @@ export function BrandingStep({ state, patch, disabled }: StepProps) {
   );
 }
 
-function isLogoType(type: string): type is LogoContentType {
-  return (LOGO_CONTENT_TYPES as readonly string[]).includes(type);
-}
-
-function readLogo(file: File): Promise<LogoDraft> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error(t.setup.steps.branding.logoUnreadable));
-    reader.onload = () => {
-      const dataUrl = typeof reader.result === 'string' ? reader.result : '';
-      const comma = dataUrl.indexOf(',');
-      if (comma === -1 || !isLogoType(file.type)) {
-        reject(new Error(t.setup.steps.branding.logoUnreadable));
-        return;
-      }
-      resolve({
-        contentType: file.type,
-        dataBase64: dataUrl.slice(comma + 1),
-        dataUrl,
-        name: file.name,
-        size: file.size,
-      });
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
 function LogoPicker({
   logo,
   error,
@@ -328,7 +301,7 @@ function LogoPicker({
       return;
     }
     try {
-      onChange(await readLogo(file));
+      onChange(await readLogoFile(file, t.setup.steps.branding.logoUnreadable));
     } catch {
       onChange(logo, t.setup.steps.branding.logoUnreadable);
     }

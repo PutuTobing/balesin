@@ -7,7 +7,6 @@ import { Dialog, DialogActions } from '../../components/ui/Dialog';
 import { Icon } from '../../components/ui/Icon';
 import { Skeleton, SkeletonRegion } from '../../components/ui/Skeleton';
 import { t } from '../../i18n/id';
-import { cx } from '../../lib/cx';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
 import styles from './EmailMessage.module.css';
@@ -94,31 +93,35 @@ function EmailHtmlDialog({
     <Dialog open title={e.htmlTitle} description={subject ?? undefined} onRequestClose={onClose}>
       {/* Label di atas bingkai (sejajar tepi dialog), bukan menempel di dalamnya (K11). Dokumen
           email selalu berlatar terang (dirancang begitu), juga di mode gelap. */}
-      {html.isSuccess ? <p className={styles.frameLabel}>{e.htmlOriginal}</p> : null}
-      <div className={cx(styles.frameWrap, html.isSuccess && styles.frameWrapLabelled)}>
-        {html.isPending ? (
-          <SkeletonRegion className={styles.frameSkeleton}>
-            <Skeleton className={styles.skeletonLine} />
-            <Skeleton className={styles.skeletonLine} />
-          </SkeletonRegion>
-        ) : html.isError ? (
-          <p className={styles.note} role="alert">
-            {isApiError(html.error) && html.error.status === 404
-              ? e.htmlMissing
-              : isApiError(html.error)
-                ? html.error.message
-                : t.api.network}
-          </p>
-        ) : (
-          <iframe
-            title={e.htmlFrameTitle}
-            className={styles.frame}
-            sandbox=""
-            referrerPolicy="no-referrer"
-            srcDoc={html.data.html}
-          />
-        )}
-      </div>
+      <figure className={styles.figure}>
+        {html.isSuccess ? (
+          <figcaption className={styles.frameLabel}>{e.htmlOriginal}</figcaption>
+        ) : null}
+        <div className={styles.frameWrap}>
+          {html.isPending ? (
+            <SkeletonRegion className={styles.frameSkeleton}>
+              <Skeleton className={styles.skeletonLine} />
+              <Skeleton className={styles.skeletonLine} />
+            </SkeletonRegion>
+          ) : html.isError ? (
+            <p className={styles.note} role="alert">
+              {isApiError(html.error) && html.error.status === 404
+                ? e.htmlMissing
+                : isApiError(html.error)
+                  ? html.error.message
+                  : t.api.network}
+            </p>
+          ) : (
+            <iframe
+              title={e.htmlFrameTitle}
+              className={styles.frame}
+              sandbox=""
+              referrerPolicy="no-referrer"
+              srcDoc={html.data.html}
+            />
+          )}
+        </div>
+      </figure>
       <p className={styles.note}>{e.htmlNote}</p>
       <DialogActions>
         <Button variant="primary" onClick={onClose}>

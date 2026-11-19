@@ -31,6 +31,7 @@ import { templateScreens } from './screens-template';
 import { broadcastScreens } from './screens-broadcast';
 import { crmScreens } from './screens-crm';
 import { channelConnectionScreens } from './screens-kanal';
+import { brandingScreens } from './screens-merek';
 
 export interface Screen {
   /** Nama berkas: e2e/screenshots/<name>--<viewport>-<tema>.png */
@@ -1006,4 +1007,6 @@ export const screens: Screen[] = [
   ...broadcastScreens,
   ...crmScreens,
   ...channelConnectionScreens,
+  // Fase 7: white-label (Pengaturan → Merek, halaman masuk bermerek).
+  ...brandingScreens,
 ];

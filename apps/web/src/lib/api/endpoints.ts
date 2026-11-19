@@ -5,6 +5,8 @@ import {
   apiPath,
   auditLogListResponseSchema,
   brandingResponseSchema,
+  brandingSettingsResponseSchema,
+  type UpdateBrandingRequest,
   businessProfileResponseSchema,
   channelResponseSchema,
   channelSettingsListResponseSchema,
@@ -477,6 +479,18 @@ export function createEndpoints(client: ApiClient) {
     branding: {
       get: (signal?: AbortSignal) =>
         client.request(API_ROUTES.branding.get, { schema: brandingResponseSchema, signal }),
+      /** Pengaturan → Merek (`organization.manage`, Owner). */
+      settings: (signal?: AbortSignal) =>
+        client.request(API_ROUTES.settings.branding, {
+          schema: brandingSettingsResponseSchema,
+          signal,
+        }),
+      update: (body: UpdateBrandingRequest) =>
+        client.request(API_ROUTES.settings.branding, {
+          method: 'PATCH',
+          body,
+          schema: brandingSettingsResponseSchema,
+        }),
     },
     /**
      * Pengaturan → Channel (izin `channels.manage`, docs/KONTRAK-API-CHANNEL.md). Token System

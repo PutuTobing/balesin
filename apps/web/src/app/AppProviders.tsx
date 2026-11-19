@@ -1,6 +1,7 @@
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { BrandProvider } from '../brand/BrandProvider';
+import { BrandTheme } from '../brand/BrandTheme';
 import { TooltipProvider } from '../components/ui/Tooltip';
 import { ThemeProvider } from '../theme/ThemeProvider';
 
@@ -16,6 +17,8 @@ export function AppProviders({
     <QueryClientProvider client={queryClient}>
       <BrandProvider>
         <ThemeProvider>
+          {/* Warna utama organisasi → token aksen tema yang sedang tampil. */}
+          <BrandTheme />
           <TooltipProvider>{children}</TooltipProvider>
         </ThemeProvider>
       </BrandProvider>

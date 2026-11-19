@@ -54,7 +54,6 @@
 }
 
 .frameWrap {
-  margin-top: var(--space-16);
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
@@ -85,12 +84,14 @@
 }
 
 .frameLabel {
-  margin-top: var(--space-16);
   color: var(--ink-2);
   font-size: var(--text-12);
 }
 
-/* Label sudah memberi jarak dari deskripsi; bingkai cukup 8 px di bawahnya. */
-.frameWrapLabelled {
-  margin-top: var(--space-8);
+/* Label "Tampilan asli email" + bingkai iframe sebagai satu kesatuan (K-S13). */
+.figure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin: var(--space-16) 0 0;
 }

@@ -203,7 +203,7 @@ describe('banner peringatan keamanan', () => {
     await renderApp('/inbox', { securitySummary: summary([reset]) });
     const banner = await screen.findByRole('region', { name: copy.title(1) });
     expect(banner).toHaveTextContent(
-      /Terbaru: password Owner Rina Kartika diatur ulang dari server \(perintah balesin\), \S.*; 3 sesi dikeluarkan\./,
+      /Terbaru: password Owner Rina Kartika diatur ulang lewat perintah di server, \S.*; 3 sesi dikeluarkan\./,
     );
     expect(banner).not.toHaveTextContent(' oleh ');
   });

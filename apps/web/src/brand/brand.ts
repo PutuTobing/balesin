@@ -1,4 +1,4 @@
-import { DEFAULT_PRODUCT_NAME } from '@balesin/shared';
+import { DEFAULT_MASCOT_NAME, DEFAULT_PRODUCT_NAME, type BrandIcons } from '@balesin/shared';
 import { createContext, useContext } from 'react';
 
 /**
@@ -9,19 +9,25 @@ import { createContext, useContext } from 'react';
 export interface Brand {
   /** Nama produk di UI dan judul tab. */
   productName: string;
-  /** Nama maskot yang disebut di teks keadaan kosong. */
+  /** Nama maskot yang disebut di teks keadaan kosong (ilustrasinya tetap bawaan). */
   mascotName: string;
   /** Nama organisasi pemakai (tampil di halaman masuk). `null` sebelum setup selesai. */
   organizationName: string | null;
   /** URL logo organisasi. `null` = tanda merek bawaan (`BrandMark`). */
   logoUrl: string | null;
+  /** Warna utama organisasi `#rrggbb`; `null` = warna bawaan design system. */
+  primaryColor: string | null;
+  /** Favicon & ikon PWA dari logo; `null` = ikon bawaan produk. */
+  icons: BrandIcons | null;
 }
 
 export const defaultBrand: Brand = {
   productName: DEFAULT_PRODUCT_NAME,
-  mascotName: 'Kak Sky',
+  mascotName: DEFAULT_MASCOT_NAME,
   organizationName: null,
   logoUrl: null,
+  primaryColor: null,
+  icons: null,
 };
 
 export const BrandContext = createContext<Brand>(defaultBrand);

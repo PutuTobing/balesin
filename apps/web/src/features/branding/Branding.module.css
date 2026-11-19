@@ -1,0 +1,223 @@
+/* Pengaturan → Merek: nama, logo, warna utama, nama maskot. */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  width: 100%;
+  max-width: 48rem;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.intro {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  text-wrap: pretty;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  min-width: 0;
+  padding: var(--space-24);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.cardTitle {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.hint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.fieldError {
+  color: var(--danger-ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ---------- Logo ---------- */
+
+.logoBox {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-16) var(--space-24);
+}
+
+.logoPreview {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 12rem;
+  height: 5rem;
+  padding: var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--bg);
+}
+
+.logoPreview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.logoMark {
+  height: 2rem;
+}
+
+.logoMeta {
+  display: flex;
+  flex: 1 1 14rem;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.logoStatus {
+  overflow-wrap: anywhere;
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.logoActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+/* ---------- Warna ---------- */
+
+.colorRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-16);
+}
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.pickerLabel {
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.swatch {
+  width: 4.5rem;
+  height: var(--size-touch);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.swatch:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.codeField {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+/* Pratinjau: warna isian dipasang langsung di elemen contoh (belum jadi token global). */
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding: var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--bg);
+  /* `data-theme="light"`: warna teks dihitung ulang dari token tema terang (bukan diwarisi). */
+  color: var(--ink);
+}
+
+.previewTitle {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.previewNote {
+  font-weight: var(--weight-regular);
+}
+
+.previewBody {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-12) var(--space-24);
+}
+
+.previewName {
+  flex: 1 1 100%;
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+}
+
+.previewButton {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--size-control);
+  padding: 0 var(--space-16);
+  border-radius: var(--radius-input);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.previewLink {
+  font-size: var(--text-14);
+  font-weight: var(--weight-medium);
+  text-decoration: underline;
+}
+
+.skeletonTitle {
+  width: 40%;
+  height: 1rem;
+}
+
+.skeletonLine {
+  width: 80%;
+  height: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: var(--space-16);
+  }
+
+  .logoPreview {
+    width: 100%;
+  }
+
+  .actions > * {
+    flex: 1 1 100%;
+    min-height: var(--size-touch);
+  }
+}

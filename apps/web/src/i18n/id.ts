@@ -1475,6 +1475,51 @@ export const t = {
   },
 
   /** Pengaturan → Jam kerja & alokasi (docs/KONTRAK-API-INBOX.md "Jam kerja, pesan otomatis, alokasi"). */
+  /** Pengaturan → Merek (white-label, Owner; docs/KONTRAK-API-AUTH.md "Pengaturan → Merek"). */
+  brandingSettings: {
+    title: 'Merek',
+    menuHint: 'Nama aplikasi, logo, warna, dan nama maskot',
+    menuCustom: 'Disesuaikan',
+    menuDefault: 'Bawaan',
+    intro:
+      'Tampil di halaman masuk, menu, judul tab, ikon aplikasi di HP, dan email dari sistem. Kosongkan isian untuk kembali ke bawaan.',
+    loadFailed: 'Pengaturan merek belum bisa dimuat.',
+
+    namesTitle: 'Nama',
+    productName: 'Nama aplikasi',
+    productNameHint: (fallback: string) => `Kosongkan untuk memakai “${fallback}”.`,
+    mascotName: 'Nama maskot',
+    mascotNameHint: (fallback: string, example: string) =>
+      `Dipakai di sapaan seperti “${example}”. Kosongkan untuk memakai “${fallback}”. Gambar maskotnya tetap.`,
+
+    logoTitle: 'Logo',
+    logoCurrent: (kb: number) => `Logo tersimpan · ${kb} KB`,
+    logoNone: 'Belum ada logo. Tanda bawaan dipakai.',
+    logoWillRemove: 'Logo akan dihapus saat disimpan. Favicon dan ikon aplikasi kembali ke bawaan.',
+    logoIconsNote: 'Favicon dan ikon aplikasi di HP dibuat otomatis dari logo ini.',
+    logoUndo: 'Batalkan',
+
+    colorTitle: 'Warna utama',
+    colorHint:
+      'Dipakai di tombol, tautan, dan penanda menu aktif, juga di tombol email dari sistem.',
+    colorPicker: 'Pilih warna',
+    colorCode: 'Kode warna',
+    colorCodeHint: 'Heksadesimal 6 digit, mis. #1b3557. Kosongkan untuk memakai warna bawaan.',
+    colorDefault: 'Pakai warna bawaan',
+    colorDarkNote:
+      'Di mode gelap warna ini kurang terbaca, jadi mode gelap tetap memakai warna bawaan.',
+    previewTitle: 'Pratinjau',
+    previewButton: 'Tombol utama',
+    previewLink: 'Contoh tautan',
+    previewDefaultColor: 'Warna bawaan',
+
+    save: 'Simpan perubahan',
+    saving: 'Menyimpan…',
+    noChanges: 'Belum ada yang diubah.',
+    saved: 'Merek tersimpan. Nama, warna, dan logo baru langsung dipakai.',
+    lockedTitle: 'Terlalu banyak perubahan merek',
+  },
+
   workspace: {
     title: 'Jam kerja & alokasi',
     menuHint: 'Jam kerja tim, hari libur, pesan otomatis, pembagian chat',
@@ -2630,7 +2675,7 @@ export const t = {
      * pelaku pengguna. Ajak memastikan itu memang tim sendiri.
      */
     latestServerReset: (name: string | null, sessions: number | null, time: string) =>
-      `Terbaru: password Owner${name ? ` ${name}` : ''} diatur ulang dari server (perintah balesin), ${time}${
+      `Terbaru: password Owner${name ? ` ${name}` : ''} diatur ulang lewat perintah di server, ${time}${
         sessions ? `; ${sessions} sesi dikeluarkan` : ''
       }. Bila bukan tim TI-mu, segera ganti password server.`,
     /** Kejadian tanpa pelaku pada satu channel (mis. webhook ditolak berulang). */

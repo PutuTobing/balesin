@@ -206,32 +206,51 @@ describe('keluar', () => {
 });
 
 describe('PWA', () => {
-  it('manifest bermerek: nama & logo organisasi, alamat absolut', () => {
+  it('manifest bermerek: nama organisasi; ikon dari logo menggantikan SELURUH ikon bawaan', () => {
+    const base = {
+      id: '/',
+      start_url: '/inbox',
+      scope: '/',
+      name: 'Bawaan',
+      icons: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }],
+    };
+    const icons = {
+      favicon: '/api/v1/branding/icons/favicon-32.png?v=1',
+      appleTouchIcon: '/api/v1/branding/icons/apple-touch-icon.png?v=1',
+      manifest: [
+        {
+          src: '/api/v1/branding/icons/icon-192.png?v=1',
+          sizes: '192x192',
+          type: 'image/png' as const,
+          purpose: 'any' as const,
+        },
+        {
+          src: '/api/v1/branding/icons/maskable-512.png?v=1',
+          sizes: '512x512',
+          type: 'image/png' as const,
+          purpose: 'maskable' as const,
+        },
+      ],
+    };
     const manifest = brandedManifest(
-      {
-        id: '/',
-        start_url: '/inbox',
-        scope: '/',
-        name: 'Bawaan',
-        icons: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }],
-      },
-      { productName: 'Halo Pelanggan Nusantara', logoUrl: '/api/v1/branding/logo?v=1' },
+      base,
+      { productName: 'Halo Pelanggan Nusantara', icons },
       'https://inbox.contoh.test',
     );
     expect(manifest.name).toBe('Halo Pelanggan Nusantara');
     expect(manifest.short_name).toBe('Halo Pelangg');
     expect(manifest.start_url).toBe('https://inbox.contoh.test/inbox');
-    expect(manifest.icons?.[0]?.src).toBe('https://inbox.contoh.test/api/v1/branding/logo?v=1');
-    expect(manifest.icons?.[1]?.src).toBe('https://inbox.contoh.test/icons/icon-192.png');
-  });
-
-  it('logo dari origin lain diabaikan', () => {
-    const manifest = brandedManifest(
-      { icons: [] },
-      { productName: 'X', logoUrl: 'https://evil.example/logo.png' },
+    expect(manifest.icons?.map((icon) => icon.src)).toEqual([
+      'https://inbox.contoh.test/api/v1/branding/icons/icon-192.png?v=1',
+      'https://inbox.contoh.test/api/v1/branding/icons/maskable-512.png?v=1',
+    ]);
+    // Tanpa logo: ikon bawaan produk.
+    const plain = brandedManifest(
+      base,
+      { productName: 'X', icons: null },
       'https://inbox.contoh.test',
     );
-    expect(manifest.icons).toEqual([]);
+    expect(plain.icons?.[0]?.src).toBe('https://inbox.contoh.test/icons/icon-192.png');
   });
 
   it('tanpa versi baru yang menunggu, "Muat ulang" memuat ulang halaman', () => {
