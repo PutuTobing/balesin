@@ -1,4 +1,9 @@
-import { BRAND_ICON_FILES, LOGO_CONTENT_TYPES, LOGO_MAX_BYTES } from '@balesin/shared';
+import {
+  BRAND_ICON_FILES,
+  BRAND_ICON_MAX_BYTES,
+  LOGO_CONTENT_TYPES,
+  LOGO_MAX_BYTES,
+} from '@balesin/shared';
 import { sql } from 'drizzle-orm';
 import {
   check,
@@ -21,8 +26,6 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
 
 const CONTENT_TYPE_LIST = sql.raw(LOGO_CONTENT_TYPES.map((type) => `'${type}'`).join(', '));
 const ICON_FILE_LIST = sql.raw(BRAND_ICON_FILES.map((file) => `'${file}'`).join(', '));
-/** Batas atas satu ikon PNG (512×512 terkompresi jauh di bawah ini). */
-const ICON_MAX_BYTES = 1024 * 1024;
 
 /**
  * Logo organisasi (branding white-label). Disimpan di database — bukan di disk — supaya ikut
@@ -86,7 +89,7 @@ export const organizationLogoIcons = pgTable(
     check('organization_logo_icons_file', sql`${table.file} in (${ICON_FILE_LIST})`),
     check(
       'organization_logo_icons_byte_size',
-      sql`${table.byteSize} = octet_length(${table.data}) and ${table.byteSize} between 1 and ${sql.raw(String(ICON_MAX_BYTES))}`,
+      sql`${table.byteSize} = octet_length(${table.data}) and ${table.byteSize} between 1 and ${sql.raw(String(BRAND_ICON_MAX_BYTES))}`,
     ),
   ],
 );

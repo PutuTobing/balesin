@@ -28,7 +28,8 @@ import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
 import { assertActorStillAuthorized } from '../auth/actor-check';
 import type { AuthContext } from '../auth/session.service';
 import { findInstallationOrganization } from '../installation/installation.repo';
-import { renderBrandIcons, type RenderedIcon } from './icons';
+import { riskyAdditions } from '../quick-replies/quick-replies.service';
+import { renderStoredLogoIcons, type RenderedIcon } from './icons';
 import { prepareLogoUpload } from './logo';
 
 /**
@@ -43,7 +44,7 @@ import { prepareLogoUpload } from './logo';
  * NAIKKAN bila `icons.ts` mengubah hasil gambarnya — dan hapus baris `organization_logo_icons`
  * lewat migrasi supaya dibuat ulang.
  */
-const ICON_RENDER_VERSION = 1;
+export const ICON_RENDER_VERSION = 1;
 
 /** Potongan sha256 logo di parameter versi alamat logo/ikon. */
 function versionOf(sha256: string): string {
@@ -213,12 +214,17 @@ export function createBrandingService(deps: BrandingServiceDeps): BrandingServic
     if (running) return running;
     const task = (async () => {
       const [logo] = await db
-        .select({ data: organizationLogos.data, sha256: organizationLogos.sha256 })
+        .select({
+          data: organizationLogos.data,
+          sha256: organizationLogos.sha256,
+          contentType: organizationLogos.contentType,
+        })
         .from(organizationLogos)
         .where(eq(organizationLogos.organizationId, organizationId))
         .limit(1);
       if (logo?.sha256 !== sha256) return false;
-      const icons = await renderBrandIcons(logo.data);
+      // Rantai pemeriksaan yang sama dengan unggahan (format = sniffing, sisi ≤ 4096), di slot dekode.
+      const icons = await renderStoredLogoIcons(logo.data, logo.contentType as LogoContentType);
       await db.transaction(async (tx) => {
         const [current] = await tx
           .select({ sha256: organizationLogos.sha256 })
@@ -366,6 +372,24 @@ export function createBrandingService(deps: BrandingServiceDeps): BrandingServic
         // Tidak ada yang berubah (mis. menyimpan ulang isian yang sama) → tanpa audit.
         if (changed.length === 0) return settingsOf(tx, auth.organizationId);
 
+        // Nama baru yang memuat tautan/angka panjang = teks ajakan di email sistem → kejadian keamanan
+        // `branding_changed` tingkat `warning` (review merek B2; konfirmasi identitas sengaja tidak
+        // diwajibkan, lihat DECISIONS).
+        let addedLinks = 0;
+        let addedNumbers = 0;
+        for (const [previous, next] of [
+          [current.productName, set.productName],
+          [current.mascotName, set.mascotName],
+        ] as const) {
+          if (!next) continue;
+          const added = riskyAdditions(previous ?? '', next);
+          addedLinks += added.links;
+          addedNumbers += added.numbers;
+        }
+        if (addedLinks > 0 || addedNumbers > 0) {
+          Object.assign(metadata, { risky: true, addedLinks, addedNumbers });
+        }
+
         if (Object.keys(set).length > 0) {
           await tx.update(organizations).set(set).where(eq(organizations.id, auth.organizationId));
         }
@@ -386,7 +410,7 @@ export function createBrandingService(deps: BrandingServiceDeps): BrandingServic
           action: AUDIT_ACTIONS.brandingUpdated,
           targetType: 'organization',
           targetId: auth.organizationId,
-          metadata: { changedFields: changed, ...metadata },
+          metadata: { changedFields: changed, actorRole: auth.user.role, ...metadata },
           client: context.client,
         });
         return settingsOf(tx, auth.organizationId);

@@ -15,7 +15,7 @@ import { handleNotFound } from '../../http/error-handler';
 import { enforceRateLimit, type RateLimitRule, type RateLimiter } from '../../http/rate-limit';
 import { PUBLIC, requirePermission } from '../../http/route-access';
 import { requireAuth } from '../auth/auth.hook';
-import type { BrandingService } from './branding.service';
+import { ICON_RENDER_VERSION, type BrandingService } from './branding.service';
 
 export interface BrandingRoutesOptions {
   branding: BrandingService;
@@ -128,7 +128,8 @@ export const brandingRoutes: FastifyPluginCallbackZod<BrandingRoutesOptions> = (
       return sendImage(request, reply, {
         contentType: 'image/png',
         data: icon.data,
-        etag: `${icon.sha256.slice(0, 32)}-${file.data}`,
+        // Versi render ikut: menaikkan `ICON_RENDER_VERSION` membuat ETag lama tidak berlaku.
+        etag: `${icon.sha256.slice(0, 32)}-${file.data}-r${ICON_RENDER_VERSION}`,
         filename: file.data,
       });
     },

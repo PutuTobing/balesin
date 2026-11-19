@@ -229,7 +229,9 @@ atau tunggu langkah berganti.
 - PATCH `/settings/branding` (`updateBrandingRequestSchema`) → 200 `brandingSettingsResponseSchema`.
   Field yang **tidak dikirim** = tidak berubah; **`null`** = kembali ke bawaan. Minimal satu field.
   - `productName`: 2–40 karakter satu baris. `mascotName`: 2–30 karakter satu baris. Keduanya
-    menolak kata "WhatsApp" (merek dagang Meta), termasuk "Whats App"/"whats-app".
+    menolak kata "WhatsApp" (merek dagang Meta), termasuk ejaan pengelabuan: pemisah apa pun di antara
+    hurufnya ("Whats App", "W.h.a.t.s.A.p.p", "What's App"), huruf lebar penuh, karakter tak terlihat
+    (ZWJ), dan huruf Kiril/Yunani yang mirip. Fungsi pemeriksa yang sama: `containsMetaTrademark()`.
   - `primaryColor`: `#rrggbb` (dibakukan huruf kecil). Ditolak bila teks putih **dan** teks gelap
     sama-sama < 4.5:1 di atasnya ("Teks di atas warna ini sulit dibaca…"; mis. abu-abu tengah
     `#7d7d7d`). Aturan yang sama berlaku di wizard setup. Warna dipakai di tombol & tautan email
@@ -238,13 +240,21 @@ atau tunggu langkah berganti.
     ditolak, isi harus cocok jenisnya), plus diperiksa sebagai gambar sungguhan: rusak → "Gambar logo
     rusak…", sisi > 4096 px (`LOGO_MAX_DIMENSION`) → "Ukuran gambar logo maksimal 4096×4096 piksel…".
     `logo: null` = hapus logo (ikon ikut terhapus, favicon/ikon PWA kembali ke bawaan).
+    Yang disimpan dan disajikan adalah logo **hasil olah ulang** dengan format yang sama (orientasi
+    diterapkan, EXIF/ICC/XMP dibuang), jadi `logo.byteSize` bisa berbeda dari berkas yang dipilih.
+    Galat tambahan di field `logo`: "Logo melebihi 256 KB setelah diproses…" dan "Logo ini terlalu
+    rumit untuk dijadikan ikon aplikasi…" (ikon hasil > 1 MiB).
   - Galat: 400 `VALIDATION_ERROR` dengan `details[].field` = nama field di atas (body kosong → pesan
     "Tidak ada perubahan untuk disimpan."); 401; 403 (bukan Owner, atau CSRF/Origin salah); 429
     (20 perubahan / 10 menit per pengguna: "Terlalu banyak perubahan merek…").
   - Menyimpan isian yang sama persis = 200 tanpa audit. Setiap perubahan diaudit
     `settings.branding.updated` ("Merek aplikasi diubah"): `changedFields`, nilai lama & baru untuk
     nama/warna/maskot; logo hanya `{action: 'uploaded'|'removed', contentType, byteSize, width,
-    height, sha256, replaced}` — isi berkas tidak dicatat.
+    height, sha256, replaced}` — isi berkas tidak dicatat — plus `actorRole`, dan `risky`,
+    `addedLinks`, `addedNumbers` bila nama aplikasi/maskot baru memuat tautan/angka panjang.
+  - Ringkasan keamanan (`GET /audit-logs/security-summary`): kejadian `branding_changed` ("Merek
+    aplikasi diubah"), `info`; `warning` (banner) bila `risky`. Rincian: `changedFields`,
+    `addedLinks`, `addedNumbers`, `actorRole`.
 - Web (Pengaturan → Merek): setelah PATCH sukses, invalidasi query `GET /branding` supaya nama,
   warna, favicon, dan manifest langsung berganti. Pilih logo → baca berkas jadi base64 (tanpa awalan
   `data:`) seperti wizard setup.

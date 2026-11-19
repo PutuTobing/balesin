@@ -99,6 +99,7 @@ const SECURITY_EVENT_CONDITIONS: Readonly<Record<SecurityEventKind, SQL>> = {
   quick_reply_risky: sql`(${auditLogs.action} in (${AUDIT_ACTIONS.quickReplyCreated}, ${AUDIT_ACTIONS.quickReplyUpdated}) and ${auditLogs.metadata} ->> 'risky' = 'true')`,
   owner_password_reset_server: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.passwordResetCompleted} and ${auditLogs.metadata} ->> 'serverRecovery' = 'true')`,
   auto_message_risky: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.workspaceSettingsUpdated} and ${auditLogs.metadata} ->> 'risky' = 'true')`,
+  branding_changed: sql`${auditLogs.action} = ${AUDIT_ACTIONS.brandingUpdated}`,
   // Juga dilanjutkan setelah rem darurat (perubahan rem pengiriman oleh siapa pun tercatat).
   sending_limits_changed: sql`${auditLogs.action} in (${AUDIT_ACTIONS.sendingLimitsUpdated}, ${AUDIT_ACTIONS.sendingResumed})`,
 };
@@ -139,6 +140,11 @@ const WARNING_WHEN: Partial<
   sending_limits_changed: {
     sql: sql`(${auditLogs.metadata} ->> 'actorRole' is not null and ${auditLogs.metadata} ->> 'actorRole' <> 'owner')`,
     test: (metadata) => typeof metadata.actorRole === 'string' && metadata.actorRole !== 'owner',
+  },
+  // Nama aplikasi/maskot baru memuat tautan/angka panjang (teks ajakan di email sistem, review merek B2).
+  branding_changed: {
+    sql: sql`${auditLogs.metadata} ->> 'risky' = 'true'`,
+    test: (metadata) => metadata.risky === true,
   },
   account_locked: {
     sql: sql`coalesce(${auditLogs.metadata} ->> 'scope', 'account') in ('account', 'device', 'two_factor')`,
@@ -232,6 +238,8 @@ function kindOf(row: AuditRow): SecurityEventKind | undefined {
     case AUDIT_ACTIONS.sendingLimitsUpdated:
     case AUDIT_ACTIONS.sendingResumed:
       return 'sending_limits_changed';
+    case AUDIT_ACTIONS.brandingUpdated:
+      return 'branding_changed';
     default:
       return undefined;
   }
@@ -257,6 +265,7 @@ const DETAIL_KEYS: Readonly<Record<SecurityEventKind, readonly string[]>> = {
   quick_reply_risky: ['shortcut', 'addedLinks', 'addedNumbers', 'actorRole'],
   owner_password_reset_server: ['via', 'revokedSessions'],
   auto_message_risky: ['changedFields', 'addedLinks', 'addedNumbers', 'actorRole'],
+  branding_changed: ['changedFields', 'addedLinks', 'addedNumbers', 'actorRole'],
   api_key_changed: ['change', 'name', 'displayPrefix', 'scopes', 'actorRole'],
   webhook_changed: ['change', 'host', 'previousHost', 'events', 'cidrs', 'actorRole'],
   webhook_disabled: ['host', 'failures'],

@@ -24,6 +24,7 @@ import {
   setupStatusResponseSchema,
   type ErrorEnvelope,
 } from '@balesin/shared';
+import sharp from 'sharp';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { SETUP_TOKEN_IP_RULE } from './setup.service';
@@ -444,7 +445,9 @@ describe('branding dan logo', () => {
     expect(logo.headers['x-content-type-options']).toBe('nosniff');
     expect(logo.headers['cache-control']).toBe('public, max-age=31536000, immutable');
     expect(logo.headers['content-disposition']).toBe('inline; filename="logo.png"');
-    expect(logo.rawPayload.equals(PNG_1PX)).toBe(true);
+    // Disimpan hasil olah ulang tanpa metadata (review merek B5): format & dimensi sama.
+    const stored = await sharp(logo.rawPayload).metadata();
+    expect([stored.format, stored.width, stored.height]).toEqual(['png', 1, 1]);
 
     const cached = await call(harness.app, 'GET', API_ROUTES.branding.logo, undefined, {
       headers: { 'if-none-match': String(logo.headers.etag) },

@@ -111,7 +111,11 @@ describe('renderBrandIcons', () => {
 describe('inspectLogoImage', () => {
   it('menerima gambar sah dan mengembalikan dimensinya', async () => {
     const png = await solidPng(40, 20, { r: 0, g: 0, b: 0, alpha: 1 });
-    expect(await inspectLogoImage(png, 'image/png')).toEqual({ width: 40, height: 20 });
+    expect(await inspectLogoImage(png, 'image/png')).toEqual({
+      width: 40,
+      height: 20,
+      palette: false,
+    });
   });
 
   it('menolak dimensi di atas batas walau berkasnya kecil (bom dekompresi)', async () => {
@@ -131,6 +135,43 @@ describe('inspectLogoImage', () => {
 });
 
 describe('prepareLogoUpload', () => {
+  it('yang disimpan = olah ulang format sama tanpa EXIF/XMP/ICC dan tanpa data sisipan (review merek B5)', async () => {
+    const cases = [
+      [
+        'image/png',
+        sharp({ create: { width: 48, height: 24, channels: 4, background: '#0b5394' } }).png(),
+      ],
+      [
+        'image/webp',
+        sharp({ create: { width: 48, height: 24, channels: 4, background: '#0b5394' } }).webp(),
+      ],
+      [
+        'image/jpeg',
+        sharp({ create: { width: 48, height: 24, channels: 3, background: '#0b5394' } }).jpeg(),
+      ],
+    ] as const;
+    for (const [contentType, pipeline] of cases) {
+      const original = await pipeline
+        .withExif({ IFD0: { Copyright: 'Lokasi rahasia' } })
+        .withIccProfile('p3')
+        .withXmp('<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF/></x:xmpmeta>')
+        .toBuffer();
+      const withTrailer = Buffer.concat([original, Buffer.from('<svg onload="alert(1)"/>')]);
+      const prepared = await prepareLogoUpload(
+        { contentType, dataBase64: withTrailer.toString('base64') },
+        'logo',
+      );
+      const meta = await sharp(prepared.data).metadata();
+      expect(meta.format, contentType).toBe(contentType.split('/')[1]);
+      expect([meta.width, meta.height], contentType).toEqual([48, 24]);
+      expect(meta.exif, contentType).toBeUndefined();
+      expect(meta.xmp, contentType).toBeUndefined();
+      expect(meta.icc, contentType).toBeUndefined();
+      expect(prepared.data.includes(Buffer.from('<svg')), contentType).toBe(false);
+      expect(prepared.data.includes(Buffer.from('Lokasi rahasia')), contentType).toBe(false);
+    }
+  });
+
   it('logo sah → data, sha256, dimensi, dan enam ikon', async () => {
     const png = await solidPng(64, 64, { r: 11, g: 83, b: 148, alpha: 1 });
     const prepared = await prepareLogoUpload(

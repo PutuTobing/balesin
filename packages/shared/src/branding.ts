@@ -19,15 +19,58 @@ export const DEFAULT_PRODUCT_NAME = 'Balesin';
 export const DEFAULT_MASCOT_NAME = 'Kak Sky';
 
 /**
- * Merek dagang Meta tidak boleh dipakai sebagai nama aplikasi/maskot (CLAUDE.md "Aturan keras").
- * Dicocokkan tanpa memandang huruf besar/kecil, dan tetap kena bila dipisah spasi/titik/tanda hubung.
+ * Huruf Kiril/Yunani yang tampak sama dengan huruf Latin pembentuk "whatsapp" (review merek B3).
+ * Bukan daftar konfusabel Unicode lengkap — cukup untuk ejaan pengelabuan yang umum.
  */
-const META_TRADEMARK_PATTERN = /whats[\s._-]*app/i;
+const LATIN_LOOKALIKES: Readonly<Record<string, string>> = {
+  // Kiril
+  а: 'a',
+  А: 'a',
+  һ: 'h',
+  Һ: 'h',
+  Н: 'h',
+  н: 'h',
+  ѕ: 's',
+  Ѕ: 's',
+  р: 'p',
+  Р: 'p',
+  т: 't',
+  Т: 't',
+  ԝ: 'w',
+  Ԝ: 'w',
+  ѡ: 'w',
+  Ѡ: 'w',
+  // Yunani
+  α: 'a',
+  Α: 'a',
+  Η: 'h',
+  η: 'h',
+  ρ: 'p',
+  Ρ: 'p',
+  τ: 't',
+  Τ: 't',
+  ω: 'w',
+};
+
+/** Huruf "whatsapp" boleh diselingi apa pun yang BUKAN huruf (spasi, tanda baca, simbol, angka). */
+const META_TRADEMARK_PATTERN = /w\P{L}*h\P{L}*a\P{L}*t\P{L}*s\P{L}*a\P{L}*p\P{L}*p/iu;
 const TRADEMARK_MESSAGE =
   'Nama ini tidak boleh memuat kata "WhatsApp" (merek dagang Meta). Pakai nama lain.';
 
+/**
+ * `true` bila teks memuat merek dagang Meta "WhatsApp" (CLAUDE.md "Aturan keras"), termasuk ejaan
+ * pengelabuan: huruf lebar penuh/matematis (NFKC), karakter format tak terlihat (ZWJ dsb., `\p{Cf}`),
+ * huruf Kiril/Yunani yang mirip, dan pemisah apa pun di antara hurufnya.
+ */
+export function containsMetaTrademark(value: string): boolean {
+  const normalized = [...value.normalize('NFKC').replace(/\p{Cf}/gu, '')]
+    .map((char) => LATIN_LOOKALIKES[char] ?? char)
+    .join('');
+  return META_TRADEMARK_PATTERN.test(normalized);
+}
+
 function withoutMetaTrademark<T extends z.ZodType<string>>(schema: T) {
-  return schema.refine((value) => !META_TRADEMARK_PATTERN.test(value), TRADEMARK_MESSAGE);
+  return schema.refine((value) => !containsMetaTrademark(value), TRADEMARK_MESSAGE);
 }
 
 export const organizationNameSchema = singleLineText({
@@ -157,6 +200,8 @@ export const BRAND_ICON_FILES = BRAND_ICONS.map((icon) => icon.file) as [
   ...BrandIconFile[],
 ];
 export const brandIconFileSchema = z.enum(BRAND_ICON_FILES);
+/** Batas atas satu ikon PNG hasil olahan (CHECK `organization_logo_icons.byte_size`). */
+export const BRAND_ICON_MAX_BYTES = 1024 * 1024;
 /** Ikon yang masuk ke `icons` manifest PWA (favicon & apple-touch-icon lewat `<link>`). */
 export const BRAND_MANIFEST_ICON_FILES: readonly BrandIconFile[] = [
   'icon-192.png',

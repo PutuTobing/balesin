@@ -8,6 +8,7 @@ import {
   brandColorSchema,
   brandColorTextColor,
   brandingResponseSchema,
+  containsMetaTrademark,
   mascotNameSchema,
   productNameSchema,
   updateBrandingRequestSchema,
@@ -50,6 +51,39 @@ describe('nama aplikasi & maskot', () => {
     }
     expect(mascotNameSchema.safeParse('Kak WhatsApp').success).toBe(false);
     expect(productNameSchema.parse('  Balesin Maju Jaya ')).toBe('Balesin Maju Jaya');
+  });
+
+  it('ejaan pengelabuan "WhatsApp" ikut ditolak (review merek B3)', () => {
+    const disguised: [string, string][] = [
+      ['ZWJ di tengah (tampil persis "WhatsApp")', 'Whats‍App'],
+      ['zero-width space', 'Whats​App'],
+      ['huruf lebar penuh', 'ＷｈａｔｓＡｐｐ'],
+      ['a Kiril', 'WhаtsApp'],
+      ['s & p Kiril', 'WhatѕAрp'],
+      ['W & h Kiril', 'ԜһatsApp'],
+      ['alfa & rho Yunani', 'WhαtsAρp'],
+      ['en-dash', 'Whats–App'],
+      ['garis miring', 'Whats/App'],
+      ['plus', 'Whats+App'],
+      ['apostrof', "What's App"],
+      ['titik antarhuruf', 'W.h.a.t.s.A.p.p'],
+      ['huruf matematis tebal', '\u{1d416}hatsApp'],
+    ];
+    for (const [name, value] of disguised) {
+      expect(containsMetaTrademark(value), name).toBe(true);
+      expect(productNameSchema.safeParse(`CS ${value}`).success, name).toBe(false);
+      expect(mascotNameSchema.safeParse(value).success, name).toBe(false);
+    }
+    // Nama biasa tidak ikut tertolak.
+    for (const value of [
+      'Balesin Maju Jaya',
+      'Kak Sky',
+      'Chat Center',
+      'Whatever Apps',
+      'Appwhats',
+    ]) {
+      expect(containsMetaTrademark(value), value).toBe(false);
+    }
   });
 
   it('maskot: 2–30 karakter satu baris', () => {

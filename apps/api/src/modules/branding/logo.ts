@@ -6,7 +6,7 @@ import {
   type LogoUpload,
 } from '@balesin/shared';
 
-import { LogoImageError, inspectLogoImage, renderBrandIcons, type RenderedIcon } from './icons';
+import { LogoImageError, processLogoImage, type RenderedIcon } from './icons';
 
 /**
  * Pemeriksaan logo yang diunggah (SECURITY.md §7): tipe ditentukan dari ISI berkas, bukan
@@ -78,18 +78,28 @@ const LOGO_IMAGE_MESSAGES: Readonly<Record<LogoImageError['reason'], string>> = 
   unreadable: 'Gambar logo rusak atau tidak bisa dibaca. Simpan ulang gambarnya lalu coba lagi.',
   too_large: `Ukuran gambar logo maksimal ${LOGO_MAX_DIMENSION}×${LOGO_MAX_DIMENSION} piksel. Perkecil gambarnya lalu coba lagi.`,
   format_mismatch: 'Isi berkas logo tidak cocok dengan jenisnya. Pilih ulang gambarnya.',
+  output_too_large: `Logo melebihi ${LOGO_MAX_BYTES / 1024} KB setelah diproses. Perkecil gambarnya lalu coba lagi.`,
+  icon_too_large:
+    'Logo ini terlalu rumit untuk dijadikan ikon aplikasi. Pakai gambar yang lebih sederhana atau berlatar polos.',
 };
 
 /**
- * `validateLogoUpload` + pemeriksaan gambar sungguhan (dekoder dibatasi) + pembuatan ikon PWA.
- * Dipanggil SEBELUM transaksi (mengolah gambar memakan CPU).
+ * `validateLogoUpload` + pemeriksaan gambar sungguhan (dekoder dibatasi) + olah ulang tanpa metadata
+ * + pembuatan ikon PWA. Dipanggil SEBELUM transaksi (mengolah gambar memakan CPU). Yang disimpan
+ * (dan sha256-nya) adalah logo hasil olah ulang, bukan berkas unggahan apa adanya.
  */
 export async function prepareLogoUpload(upload: LogoUpload, field: string): Promise<PreparedLogo> {
   const logo = validateLogoUpload(upload, field);
   try {
-    const { width, height } = await inspectLogoImage(logo.data, logo.contentType);
-    const icons = await renderBrandIcons(logo.data);
-    return { ...logo, width, height, icons };
+    const processed = await processLogoImage(logo.data, logo.contentType);
+    return {
+      contentType: logo.contentType,
+      data: processed.data,
+      sha256: sha256Hex(processed.data),
+      width: processed.width,
+      height: processed.height,
+      icons: processed.icons,
+    };
   } catch (error) {
     if (error instanceof LogoImageError) {
       throw invalidLogo(field, LOGO_IMAGE_MESSAGES[error.reason]);

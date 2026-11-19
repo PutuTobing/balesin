@@ -3,6 +3,8 @@
  * (unggah/hapus) + ikon PWA/favicon dari logo. Izin `organization.manage` (Owner), CSRF, audit,
  * dan `GET /branding` publik ikut berubah tanpa data sensitif.
  */
+import { deflateSync } from 'node:zlib';
+
 import { auditLogs, organizationLogoIcons, organizationLogos, organizations } from '@balesin/db';
 import {
   API_ROUTES,
@@ -11,7 +13,9 @@ import {
   apiPath,
   brandingResponseSchema,
   brandingSettingsResponseSchema,
+  securitySummaryResponseSchema,
 } from '@balesin/shared';
+import { sha256Hex } from '@balesin/core';
 import { and, eq } from 'drizzle-orm';
 import sharp from 'sharp';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -176,7 +180,8 @@ describe('Pengaturan → Merek', () => {
     const uploaded = await send(world, world.owner, 'PATCH', ROUTE, { logo: upload(first) });
     expect(uploaded.statusCode, uploaded.body).toBe(200);
     const settings = brandingSettingsResponseSchema.parse(uploaded.json()).branding;
-    expect(settings.logo).toMatchObject({ contentType: 'image/png', byteSize: first.length });
+    expect(settings.logo).toMatchObject({ contentType: 'image/png' });
+    expect(settings.logo?.byteSize).toBeGreaterThan(0);
 
     const branding = await publicBranding();
     expect(branding.logoUrl).toBe(settings.logo?.url);
@@ -303,5 +308,132 @@ describe('Pengaturan → Merek', () => {
         .from(organizationLogoIcons)
         .where(eq(organizationLogoIcons.organizationId, world.organizationId)),
     ).toHaveLength(BRAND_ICONS.length);
+  });
+});
+
+/** PNG kecil yang mengaku berdimensi `width`×`height` (header sah, isi terpotong). */
+function claimedPng(width: number, height: number): Buffer {
+  const crc32 = (buffer: Buffer) => {
+    let crc = ~0;
+    for (const byte of buffer) {
+      crc ^= byte;
+      for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+    return ~crc >>> 0;
+  };
+  const chunk = (type: string, data: Buffer) => {
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([length, body, crc]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8;
+  header[9] = 6;
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', header),
+    chunk('IDAT', deflateSync(Buffer.alloc(4096))),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+describe('review keamanan merek (perbaikan B1, B2, B5, Info)', () => {
+  it('B1: isi ulang ikon logo lama memakai rantai pemeriksaan yang sama (format & dimensi) → 404, bukan didekode', async () => {
+    const cases: [string, Buffer, string][] = [
+      ['isi PNG tersimpan sebagai WebP', await logoPng('#0b5394'), 'image/webp'],
+      ['sisi melebihi batas', claimedPng(1, 5_000), 'image/png'],
+    ];
+    for (const [name, data, contentType] of cases) {
+      await harness.db
+        .insert(organizationLogos)
+        .values({
+          organizationId: world.organizationId,
+          contentType,
+          data,
+          byteSize: data.length,
+          sha256: sha256Hex(data),
+        })
+        .onConflictDoUpdate({
+          target: organizationLogos.organizationId,
+          set: { contentType, data, byteSize: data.length, sha256: sha256Hex(data) },
+        });
+      const src = (await publicBranding()).icons!.manifest[0]!.src;
+      expect((await call(harness.app, 'GET', src)).statusCode, name).toBe(404);
+      expect(
+        await harness.db
+          .select()
+          .from(organizationLogoIcons)
+          .where(eq(organizationLogoIcons.organizationId, world.organizationId)),
+        name,
+      ).toHaveLength(0);
+    }
+  });
+
+  it('B2: perubahan merek = kejadian keamanan; nama bertautan/nomor panjang → warning', async () => {
+    const summary = async () =>
+      securitySummaryResponseSchema.parse(
+        (await send(world, world.owner, 'GET', API_ROUTES.audit.securitySummary)).json(),
+      );
+
+    expect(
+      (await send(world, world.owner, 'PATCH', ROUTE, { primaryColor: '#0b5394' })).statusCode,
+    ).toBe(200);
+    let events = (await summary()).events.filter((event) => event.kind === 'branding_changed');
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      severity: 'info',
+      details: { changedFields: '["primaryColor"]', actorRole: 'owner' },
+    });
+
+    const risky = await send(world, world.owner, 'PATCH', ROUTE, {
+      productName: 'Hub 0812 3456 7890',
+      mascotName: 'Kak bit.ly/abc',
+    });
+    expect(risky.statusCode, risky.body).toBe(200);
+    const after = await summary();
+    expect(after.counts.branding_changed).toBe(2);
+    events = after.events.filter((event) => event.kind === 'branding_changed');
+    expect(events[0]).toMatchObject({
+      severity: 'warning',
+      details: { addedLinks: 1, addedNumbers: 1, actorRole: 'owner' },
+    });
+    expect(after.latestWarningAt).not.toBeNull();
+  });
+
+  it('B5: logo disimpan tanpa EXIF/ICC/XMP dan tanpa data sisipan; ETag ikon memuat versi render', async () => {
+    const jpeg = await sharp({
+      create: { width: 120, height: 60, channels: 3, background: '#123456' },
+    })
+      .jpeg()
+      .withMetadata({ orientation: 6 })
+      .withExif({ IFD0: { Copyright: 'Lokasi rahasia' } })
+      .withIccProfile('p3')
+      .withXmp('<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF/></x:xmpmeta>')
+      .toBuffer();
+    const withTrailer = Buffer.concat([jpeg, Buffer.from('<svg onload="alert(1)"/>')]);
+    const response = await send(world, world.owner, 'PATCH', ROUTE, {
+      logo: upload(withTrailer, 'image/jpeg'),
+    });
+    expect(response.statusCode, response.body).toBe(200);
+
+    const branding = await publicBranding();
+    const logo = await call(harness.app, 'GET', branding.logoUrl!);
+    expect(logo.headers['content-type']).toBe('image/jpeg');
+    const meta = await sharp(logo.rawPayload).metadata();
+    expect(meta.format).toBe('jpeg');
+    expect(meta.exif).toBeUndefined();
+    expect(meta.icc).toBeUndefined();
+    expect(meta.xmp).toBeUndefined();
+    // Orientasi EXIF sudah diterapkan (diputar 90°), bukan dibuang.
+    expect([meta.width, meta.height]).toEqual([60, 120]);
+    expect(logo.rawPayload.includes(Buffer.from('<svg'))).toBe(false);
+
+    const icon = await call(harness.app, 'GET', branding.icons!.favicon);
+    expect(String(icon.headers.etag)).toMatch(/-favicon-32\.png-r\d+"$/);
   });
 });

@@ -580,6 +580,11 @@ export const SECURITY_EVENT_KINDS = [
    * server, bukan sesi aplikasi. Audit `auth.password_reset.completed` ber-`metadata.serverRecovery`.
    */
   'owner_password_reset_server',
+  /**
+   * Merek aplikasi (nama, maskot, warna, logo) diubah — tampil di email sistem & halaman masuk
+   * (review merek B2). `info`; `warning` bila nama aplikasi/maskot baru memuat tautan/angka panjang.
+   */
+  'branding_changed',
 ] as const;
 export const securityEventKindSchema = z.enum(SECURITY_EVENT_KINDS);
 export type SecurityEventKind = z.infer<typeof securityEventKindSchema>;
@@ -613,6 +618,7 @@ export const SECURITY_EVENT_SEVERITY: Readonly<Record<SecurityEventKind, 'warnin
   webhook_disabled: 'warning',
   auto_message_risky: 'warning',
   owner_password_reset_server: 'warning',
+  branding_changed: 'info',
 };
 
 export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> = {
@@ -639,6 +645,7 @@ export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> 
   webhook_disabled: 'Webhook keluar dinonaktifkan karena gagal beruntun',
   auto_message_risky: 'Pesan otomatis diberi tautan/angka baru',
   owner_password_reset_server: 'Password Owner diatur ulang dari server',
+  branding_changed: 'Merek aplikasi diubah',
 };
 
 export const securityEventSchema = z.object({
