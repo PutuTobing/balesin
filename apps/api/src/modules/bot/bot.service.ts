@@ -14,6 +14,7 @@ import {
   isWithinBotHours,
   type BotHours,
   type ChannelBotSettings,
+  type UpdateChannelBotSettingsRequest,
   type channelBotSettingsResponseSchema,
 } from '@balesin/shared';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -42,7 +43,7 @@ export interface BotService {
   updateChannelSettings(
     auth: AuthContext,
     channelId: string,
-    input: ChannelBotSettings,
+    input: UpdateChannelBotSettingsRequest,
     client: ClientInfo,
   ): Promise<BotSettingsView>;
 }
@@ -61,6 +62,7 @@ export function createBotService(deps: {
       .select({
         channelType: channels.type,
         enabled: channels.botEnabled,
+        requireVerifiedSender: channels.botRequireVerifiedSender,
         hours: channels.botHours,
         timeoutMinutes: channels.botTimeoutMinutes,
         updatedAt: channels.botSettingsUpdatedAt,
@@ -88,6 +90,7 @@ export function createBotService(deps: {
       channelType: row.channelType,
       timezone: row.timezone,
       activeNow: row.enabled && parsed.success && isWithinBotHours(hours, row.timezone, at),
+      requireVerifiedSender: row.requireVerifiedSender,
       receiverReady: await hasActiveBotReceiver(db, {
         organizationId,
         channelType: row.channelType,
@@ -116,6 +119,7 @@ export function createBotService(deps: {
             type: channels.type,
             enabled: channels.botEnabled,
             timeout: channels.botTimeoutMinutes,
+            requireVerifiedSender: channels.botRequireVerifiedSender,
           })
           .from(channels)
           .where(
@@ -127,9 +131,23 @@ export function createBotService(deps: {
           )
           .for('update');
         if (!current) throw new AppError('NOT_FOUND', { message: NOT_FOUND });
+        if (raw.requireVerifiedSender === true && current.type !== 'email') {
+          throw new AppError('VALIDATION_ERROR', {
+            message: 'Pilihan "hanya pengirim terverifikasi" hanya untuk channel Email.',
+            details: [
+              {
+                location: 'body',
+                field: 'requireVerifiedSender',
+                message: 'Hanya untuk channel Email.',
+              },
+            ],
+          });
+        }
+        const requireVerifiedSender = raw.requireVerifiedSender ?? current.requireVerifiedSender;
         await tx
           .update(channels)
           .set({
+            botRequireVerifiedSender: requireVerifiedSender,
             botEnabled: input.enabled,
             botHours: input.hours,
             botTimeoutMinutes: input.timeoutMinutes,
@@ -149,6 +167,12 @@ export function createBotService(deps: {
             hoursMode: input.hours.mode,
             ...(input.hours.mode === 'schedule' ? { windows: input.hours.windows.length } : {}),
             timeoutMinutes: input.timeoutMinutes ?? 'tanpa',
+            ...(current.type === 'email'
+              ? {
+                  requireVerifiedSender,
+                  previousRequireVerifiedSender: current.requireVerifiedSender,
+                }
+              : {}),
             actorRole: role,
           },
           client,

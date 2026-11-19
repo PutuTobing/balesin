@@ -31,7 +31,11 @@ Kejadian keamanan: `webhook_changed` (dibuat, URL diubah, rahasia dirotasi, allo
 `conversation.created`, `conversation.assigned` (diambil/ditugaskan), `conversation.unassigned`,
 `conversation.resolved`, `conversation.reopened`, `contact.created`, `contact.updated` (termasuk tag).
 `conversation.handoff` — bot berhenti memegang (bot meminta handoff, agen mematikan bot / mengambil
-alih, batas waktu bot); `data.actor` kosong bila oleh key/sistem. `ticket.created` /
+alih, batas waktu bot); `data.actor` kosong bila oleh key/sistem. `conversation.bot_resumed`
+(2026-11-19) — percakapan dikembalikan ke bot oleh agen; `data.conversation`, `data.contact`,
+`data.actor`, dan `data.message` = pesan pelanggan TERAKHIR yang belum dibalas (bentuk sama dengan
+`message.received`, termasuk `email.sender_verification`) atau `null` bila pesan terakhir dari tim.
+Hanya format native (format MobiChat tetap hanya `message.received`); tidak terkena saringan `botOnly`. `ticket.created` /
 `ticket.updated` (Fase 5) — `data.ticket` + kontak/percakapan tautannya, lihat
 `docs/KONTRAK-API-CRM-TIKET.md`. Menyusul: `broadcast.completed`.
 

@@ -156,6 +156,11 @@ export const channels = pgTable(
     botTimeoutMinutes: integer('bot_timeout_minutes'),
     botSettingsUpdatedAt: timestamptz('bot_settings_updated_at'),
     /**
+     * Email saja (DECISIONS 2026-11-19 P2-1): bot hanya melayani email yang lolos verifikasi pengirim
+     * (`pass`); `unverified` ikut langsung ke antrian manusia. Bawaan mati.
+     */
+    botRequireVerifiedSender: boolean('bot_require_verified_sender').notNull().default(false),
+    /**
      * Fase 5: percakapan BARU dari pelanggan di channel ini langsung masuk departemen ini
      * (diatur dari Pengaturan → Departemen). Kosong = tanpa departemen.
      */
@@ -167,6 +172,10 @@ export const channels = pgTable(
     check(
       'channels_bot_timeout_range',
       sql`${table.botTimeoutMinutes} is null or ${table.botTimeoutMinutes} between 1 and 1440`,
+    ),
+    check(
+      'channels_bot_verified_sender_email_only',
+      sql`${table.type} = 'email' or not ${table.botRequireVerifiedSender}`,
     ),
     // Review bot R1: bot aktif selalu punya batas waktu (pelanggan tidak terjebak di bot).
     check(

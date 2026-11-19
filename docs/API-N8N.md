@@ -67,7 +67,7 @@ idempotensi lewat header `Idempotency-Key` untuk kirim pesan.
 ## 3. Webhook keluar
 
 Event: `message.received`, `message.sent`, `message.status` (delivered/read/failed),
-`conversation.assigned`, `conversation.resolved`, `conversation.handoff`,
+`conversation.assigned`, `conversation.resolved`, `conversation.handoff`, `conversation.bot_resumed`,
 `contact.updated`, `broadcast.completed`, `ticket.created`.
 
 Header: `X-Balesin-Event`, `X-Balesin-Delivery`, `X-Balesin-Signature: t=..,v1=..`.

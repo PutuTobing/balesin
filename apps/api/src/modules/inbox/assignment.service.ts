@@ -143,6 +143,11 @@ interface Change {
   kind: ConversationRecordKind | null;
   patch?: Partial<typeof conversations.$inferInsert>;
   assigneeUserId?: string | null;
+  /**
+   * `bot_resumed`: pesan pelanggan terakhir yang belum dibalas (ikut di webhook
+   * `conversation.bot_resumed` supaya bot bisa langsung bertindak), `null` bila tidak ada.
+   */
+  pendingMessageId?: string | null;
 }
 
 export function createAssignmentService(deps: AssignmentServiceDeps): AssignmentService {
@@ -277,6 +282,17 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
           type: outgoingType,
           conversationId: current.id,
           contactId: current.contactId,
+          actorUserId,
+        });
+      }
+      // Dikembalikan ke bot → bot diberi tahu (+ pesan pelanggan yang belum dibalas), DECISIONS P2-3.
+      if (change.kind === 'bot_resumed') {
+        await recordOutgoingEvent(tx, {
+          organizationId,
+          type: 'conversation.bot_resumed',
+          conversationId: current.id,
+          contactId: current.contactId,
+          messageId: change.pendingMessageId ?? null,
           actorUserId,
         });
       }
@@ -649,7 +665,7 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
         // dari SAAT dikembalikan (bot tidak pernah menerima pesan lama itu lewat webhook; memakai
         // `last_inbound_at` lama akan langsung melepasnya lagi di pemeriksaan berikutnya).
         const [latest] = await tx
-          .select({ direction: messages.direction })
+          .select({ id: messages.id, direction: messages.direction })
           .from(messages)
           .where(
             and(
@@ -665,6 +681,7 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
           kind: 'bot_resumed',
           assigneeUserId: null,
           patch: { status: 'bot', botAwaitingSince: awaiting ? at : null },
+          pendingMessageId: awaiting ? (latest?.id ?? null) : null,
         };
       }),
 

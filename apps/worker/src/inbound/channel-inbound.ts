@@ -5,6 +5,7 @@ import {
   type ChannelInboundStatus,
 } from '@balesin/core';
 import {
+  channels,
   contacts,
   conversationEvents,
   conversations,
@@ -132,6 +133,20 @@ function attachmentExternalId(externalId: string, index: number): string {
     : `sha256:${createHash('sha256').update(candidate).digest('hex')}`;
 }
 
+/** Pengaturan bot channel: hanya pengirim email terverifikasi (`pass`) yang dilayani bot. */
+async function requiresVerifiedSender(
+  tx: DbExecutor,
+  organizationId: string,
+  channelId: string,
+): Promise<boolean> {
+  const [row] = await tx
+    .select({ value: channels.botRequireVerifiedSender })
+    .from(channels)
+    .where(and(eq(channels.organizationId, organizationId), eq(channels.id, channelId)))
+    .limit(1);
+  return row?.value === true;
+}
+
 /** Lepas percakapan dari bot ke antrian (pelaku sistem): kejadian `handoff` + webhook. */
 async function handOffFromBot(
   context: InboundEventContext,
@@ -188,7 +203,12 @@ export async function handleChannelMessage(
 
   // Review bot semua channel B1: email yang GAGAL verifikasi pengirim (SPF/DKIM/DMARC) tidak boleh
   // dilayani bot otomatis (alamat `From` bisa dipalsukan) — langsung ke antrian manusia.
-  const unverifiedEmail = message.email?.senderVerification === 'fail';
+  // P2-1: channel Email dengan "bot hanya untuk pengirim terverifikasi" → `unverified` juga ke tim.
+  const verification = message.email ? message.email.senderVerification : null;
+  const unverifiedEmail =
+    verification === 'fail' ||
+    (verification === 'unverified' &&
+      (await requiresVerifiedSender(tx, organizationId, channelId)));
   const open = await openConversation(tx, organizationId, contact.id, channelId);
   const conversation =
     open ??

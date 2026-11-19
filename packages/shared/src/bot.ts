@@ -75,7 +75,16 @@ export const channelBotSettingsSchema = z.object({
 });
 export type ChannelBotSettings = z.infer<typeof channelBotSettingsSchema>;
 
-export const updateChannelBotSettingsRequestSchema = channelBotSettingsSchema;
+export const updateChannelBotSettingsRequestSchema = channelBotSettingsSchema.extend({
+  /**
+   * Channel Email saja: bot hanya melayani pengirim yang LOLOS verifikasi (SPF/DKIM/DMARC `pass`);
+   * email `unverified` juga langsung ke antrian manusia (seperti `fail`). Bawaan mati (server IMAP
+   * tanpa `Authentication-Results` tepercaya = semua email `unverified`). Tidak diisi = tetap.
+   * `true` di channel selain Email → 400.
+   */
+  requireVerifiedSender: z.boolean().optional(),
+});
+export type UpdateChannelBotSettingsRequest = z.infer<typeof updateChannelBotSettingsRequestSchema>;
 
 export const channelBotSettingsResponseSchema = z.object({
   settings: channelBotSettingsSchema.extend({
@@ -96,6 +105,8 @@ export const channelBotSettingsResponseSchema = z.object({
      * masih aktif). Percakapan baru masuk ke bot hanya bila `activeNow && receiverReady`.
      */
     receiverReady: z.boolean().optional(),
+    /** Email: bot hanya untuk pengirim terverifikasi (selalu `false` di channel lain). */
+    requireVerifiedSender: z.boolean().optional(),
     updatedAt: isoDateTimeSchema.nullable(),
   }),
 });

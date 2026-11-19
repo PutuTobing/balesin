@@ -447,12 +447,20 @@ perilaku, batas waktu, handoff, dan saklar per percakapan sama persis.
 ```json
 { "enabled": true,
   "hours": { "mode": "always" }  |  { "mode": "schedule", "windows": [{ "day": 1, "start": "08:00", "end": "17:00" }] },
-  "timeoutMinutes": 10 }
+  "timeoutMinutes": 10,
+  "requireVerifiedSender": true }
 ```
+
+- `requireVerifiedSender` (opsional, **channel Email saja**, bawaan `false`; tidak diisi = tetap): bot
+  hanya melayani email yang LOLOS verifikasi pengirim (`pass`); email `unverified` juga langsung ke
+  antrian manusia seperti `fail` (percakapan baru `unserved`, percakapan bot terbuka diserahkan).
+  Bawaan mati karena server IMAP tanpa `Authentication-Results` tepercaya membuat SEMUA email
+  `unverified`. `true` di channel selain Email → 400 (`details[0].field = requireVerifiedSender`).
+  Audit `channel.bot_updated` (Email) memuat `requireVerifiedSender` + `previousRequireVerifiedSender`.
 
 - `day` 0 = Minggu … 6 = Sabtu, `HH:MM` 00:00–24:00, mulai < selesai (lewat tengah malam = dua
   jendela), maks. 21 jendela; zona waktu = zona organisasi. `timeoutMinutes` 1–1.440 (`null` saat aktif → 15).
-- Jawaban `{ settings: { …, channelType, timezone, activeNow, receiverReady, updatedAt } }` —
+- Jawaban `{ settings: { …, channelType, timezone, activeNow, receiverReady, requireVerifiedSender, updatedAt } }` —
   `activeNow` = bot aktif + sekarang dalam jam kerja bot; `receiverReady` = ada penerima bot aktif
   untuk channel ini (endpoint aktif yang melanggan `message.received`: format native untuk semua
   channel, format MobiChat **hanya WhatsApp** + key masih aktif). Percakapan baru masuk ke bot hanya
@@ -500,7 +508,9 @@ bot aktif untuk channel ini. Tambahkan webhook bot di Pengaturan → Webhook, la
 SETELAH izin); bila pesan terakhir dari pelanggan (belum dibalas), `bot_awaiting_since` = saat
 dikembalikan sehingga batas waktu bot berjalan; percakapan selesai →
 409; mengambil dari agen LAIN butuh `inbox.assign` (403 + audit penolakan). Jawaban = bentuk aksi
-penanganan (`{ conversation }`). Tab Log: `handoff` "Menyerahkan dari bot ke tim", `bot_resumed`
+penanganan (`{ conversation }`). Webhook native `conversation.bot_resumed` (`data.conversation`,
+`data.contact`, `data.actor`, dan `data.message` = pesan pelanggan terakhir yang belum dibalas atau
+`null`) supaya bot bisa langsung bertindak. Tab Log: `handoff` "Menyerahkan dari bot ke tim", `bot_resumed`
 "Mengembalikan ke bot" (pelaku pengguna / "Bot · <nama key>" / sistem bila `actor` `null`).
 
 ## Pesan interaktif (Fase 3)

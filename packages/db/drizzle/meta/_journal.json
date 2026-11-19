@@ -225,6 +225,13 @@
       "when": 1795066720602,
       "tag": "0031_branding_merek_ikon",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1795073130102,
+      "tag": "0032_bot_pengirim_terverifikasi",
+      "breakpoints": true
     }
   ]
 }

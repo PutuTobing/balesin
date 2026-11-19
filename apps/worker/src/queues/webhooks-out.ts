@@ -326,6 +326,9 @@ export async function buildEventBody(
     const message = await messageData(db, org, event.messageId);
     if (!message) return null;
     data.message = message;
+  } else if (event.type === 'conversation.bot_resumed') {
+    // Pesan pelanggan terakhir yang belum dibalas (`null` bila tidak ada / sudah dihapus).
+    data.message = await messageData(db, org, event.messageId);
   }
   if (event.conversationId) {
     const conversation = await conversationData(db, org, event.conversationId);

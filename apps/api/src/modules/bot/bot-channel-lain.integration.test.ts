@@ -33,7 +33,7 @@ import {
   type ChannelBotSettings,
   type ChannelType,
 } from '@balesin/shared';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { handoffTimedOutBots } from '../../../../worker/src/queues/maintenance';
@@ -282,7 +282,9 @@ async function latestConversation(channelId: string) {
 }
 
 const resolveAll = () =>
-  harness.db.update(conversations).set({ status: 'resolved', resolvedAt: new Date() });
+  harness.db
+    .update(conversations)
+    .set({ status: 'resolved', resolvedAt: new Date(), botAwaitingSince: null });
 
 const bodies = () =>
   received.map(
@@ -563,8 +565,10 @@ describe('perbaikan review bot semua channel', () => {
     expect(
       delivered
         .filter((body) => body.event === 'message.received')
-        .map((body) => body.data.message?.email?.sender_verification),
-    ).toEqual(['fail', 'pass', 'fail']);
+        .map((body) => body.data.message?.email?.sender_verification)
+        // Urutan kiriman paralel tidak dijamin.
+        .sort(),
+    ).toEqual(['fail', 'fail', 'pass']);
     expect(delivered.filter((body) => body.event === 'conversation.handoff')).toHaveLength(1);
   });
 
@@ -672,5 +676,153 @@ describe('perbaikan review bot semua channel', () => {
       status: 'bot',
       botAwaitingSince: null,
     });
+  });
+});
+
+describe('putaran 2 review bot semua channel', () => {
+  it('P2-1: Email "bot hanya pengirim terverifikasi" — unverified ke tim; bawaan mati; channel lain 400', async () => {
+    const email = await addChannel('email');
+    const telegram = await addChannel('telegram');
+    await addWebhook({ events: ['message.received'] });
+    const on: ChannelBotSettings = { enabled: true, hours: { mode: 'always' }, timeoutMinutes: 10 };
+
+    // Bawaan mati: email `unverified` tetap dilayani bot.
+    expect((await getBot(email)).requireVerifiedSender).toBe(false);
+    await putBot(email, on);
+    await receive('email', email, 'Halo', 'unverified');
+    expect((await latestConversation(email)).status).toBe('bot');
+    await resolveAll();
+
+    // Channel selain Email: `true` ditolak 400 (tidak tersimpan); `false` boleh.
+    const rejected = await call(
+      harness.app,
+      'PUT',
+      botUrl(telegram),
+      { ...on, requireVerifiedSender: true },
+      { cookie: owner.cookie, csrf: owner.csrf },
+    );
+    expect(rejected.statusCode, rejected.body).toBe(400);
+    expect((await getBot(telegram)).requireVerifiedSender).toBe(false);
+    const allowed = await call(
+      harness.app,
+      'PUT',
+      botUrl(telegram),
+      { ...on, requireVerifiedSender: false },
+      { cookie: owner.cookie, csrf: owner.csrf },
+    );
+    expect(allowed.statusCode, allowed.body).toBe(200);
+
+    // Nyalakan di Email → diaudit; tidak diisi = tetap.
+    const enabled = await call(
+      harness.app,
+      'PUT',
+      botUrl(email),
+      { ...on, requireVerifiedSender: true },
+      { cookie: owner.cookie, csrf: owner.csrf },
+    );
+    expect(enabled.statusCode, enabled.body).toBe(200);
+    expect(channelBotSettingsResponseSchema.parse(enabled.json()).settings).toMatchObject({
+      channelType: 'email',
+      requireVerifiedSender: true,
+    });
+    const [audit] = await harness.db
+      .select()
+      .from(auditLogs)
+      .where(and(eq(auditLogs.action, 'channel.bot_updated'), eq(auditLogs.targetId, email)))
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(1);
+    expect(audit?.metadata).toMatchObject({
+      channelType: 'email',
+      requireVerifiedSender: true,
+      previousRequireVerifiedSender: false,
+    });
+    expect((await putBot(email, on)).statusCode).toBe(200);
+    expect((await getBot(email)).requireVerifiedSender).toBe(true);
+
+    // `unverified` → antrian; `pass` → bot; `unverified` berikutnya di percakapan bot → diserahkan.
+    await receive('email', email, 'Isolir nomor saya', 'unverified');
+    expect((await latestConversation(email)).status).toBe('unserved');
+    await resolveAll();
+    await receive('email', email, 'Halo', 'pass');
+    const held = await latestConversation(email);
+    expect(held.status).toBe('bot');
+    await receive('email', email, 'Ganti paket', 'unverified');
+    expect(await latestConversation(email)).toMatchObject({ id: held.id, status: 'unserved' });
+  });
+
+  it('P2-3: conversation.bot_resumed (native) memuat percakapan + pesan pelanggan yang belum dibalas', async () => {
+    const channelId = await addChannel('telegram');
+    await putBot(channelId, { enabled: true, hours: { mode: 'always' }, timeoutMinutes: 10 });
+    const { secret } = await createKey();
+    // Format MobiChat tidak bisa melanggan event ini.
+    const mobichat = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.outgoingWebhooks.list,
+      {
+        url: `${receiverOrigin}/mobichat`,
+        events: ['conversation.bot_resumed'],
+        format: 'mobichat',
+        mobichat: { apiKey: secret },
+        confirmation: await confirmationFor(),
+      },
+      { cookie: owner.cookie, csrf: owner.csrf },
+    );
+    expect(mobichat.statusCode, mobichat.body).toBe(400);
+
+    // Percakapan di antrian (penerima baru dibuat setelah pesan masuk).
+    await receive('telegram', channelId, 'Internet mati');
+    const conversation = await latestConversation(channelId);
+    expect(conversation.status).toBe('unserved');
+    // "Hanya saat bot": pesan masuk saat antrian tidak dikirim; penerima ini juga syarat B3.
+    await addWebhook({ events: ['message.received', 'conversation.bot_resumed'], botOnly: true });
+    const [pending] = await harness.db
+      .select({ id: messages.id })
+      .from(messages)
+      .where(eq(messages.conversationId, conversation.id));
+    const resume = (active: boolean) =>
+      call(
+        harness.app,
+        'POST',
+        apiPath(API_ROUTES.inbox.bot, { conversationId: conversation.id }),
+        { active },
+        { cookie: owner.cookie, csrf: owner.csrf },
+      );
+    expect((await resume(true)).statusCode).toBe(200);
+    await tick();
+    type Body = {
+      event: string;
+      data: {
+        conversation: { id: string; status: string; channel_type: string };
+        message: { id: string; direction: string; text: string } | null;
+        actor: { id: string } | null;
+      };
+    };
+    const resumedBodies = () =>
+      received
+        .map((item) => JSON.parse(item.body) as Body)
+        .filter((body) => body.event === 'conversation.bot_resumed');
+    const first = resumedBodies()[0];
+    expect(first).toMatchObject({
+      event: 'conversation.bot_resumed',
+      data: {
+        conversation: { id: conversation.id, status: 'bot', channel_type: 'telegram' },
+        message: { id: pending!.id, direction: 'inbound', text: 'Internet mati' },
+        actor: { id: owner.session.user.id },
+      },
+    });
+
+    // Tim sudah membalas → dikembalikan lagi tanpa pesan tertunda (`message: null`).
+    expect((await resume(false)).statusCode).toBe(200);
+    const reply = await bearer(
+      secret,
+      apiPath(API_ROUTES.publicApi.messages, { conversationId: conversation.id }),
+      { type: 'text', text: 'Sudah normal ya' },
+    );
+    expect(reply.statusCode, reply.body).toBe(202);
+    expect((await resume(true)).statusCode).toBe(200);
+    await tick();
+    expect(resumedBodies()).toHaveLength(2);
+    expect(resumedBodies()[1]?.data.message).toBeNull();
   });
 });
