@@ -414,6 +414,41 @@ ul.distribution,
   font-weight: var(--weight-semibold);
 }
 
+.rateSource {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  font-size: var(--text-13);
+}
+
+.rateSource dt {
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+}
+
+.rateSource dd {
+  margin: 0;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+/* Tautan yang berdiri sendiri: target sentuh 44 px di HP. */
+.touchLink {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  color: var(--primary);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .touchLink {
+    min-height: var(--size-touch);
+  }
+}
+
 /* ---------- Pengaturan CSAT ---------- */
 
 .csatLayout {
@@ -493,6 +528,54 @@ ul.distribution,
   height: 12.5rem;
 }
 
+/*
+ * HP: setiap baris tabel jadi blok bertumpuk (label kolom dari `data-label`), tanpa gulir menyamping.
+ * Sel pertama (agen, tanggal, kategori, tag) menjadi judul blok.
+ */
+@media (max-width: 640px) {
+  .tableScroll {
+    overflow-x: visible;
+  }
+
+  .table thead {
+    display: none;
+  }
+
+  .table,
+  .table tbody,
+  .table tr {
+    display: block;
+    width: 100%;
+  }
+
+  .table tr {
+    padding: var(--space-8) 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .table tbody th,
+  .table td {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-12);
+    padding: var(--space-4) 0;
+    border-bottom: 0;
+    text-align: right;
+    white-space: normal;
+  }
+
+  .table tbody th {
+    padding-bottom: var(--space-8);
+    text-align: left;
+  }
+
+  .table td::before {
+    content: attr(data-label);
+    color: var(--ink-2);
+    text-align: left;
+  }
+}
+
 @media (max-width: 1023px) {
   .csatLayout {
     grid-template-columns: minmax(0, 1fr);
@@ -550,7 +633,7 @@ ul.distribution,
   }
 
   .export {
-    align-items: stretch;
+    align-items: flex-start;
   }
 
   .cardHead > :last-child:not(:first-child) {

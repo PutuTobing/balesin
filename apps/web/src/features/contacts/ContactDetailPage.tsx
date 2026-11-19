@@ -17,7 +17,12 @@ import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { formatDateTime } from '../../lib/format';
 import { useCan } from '../auth/session';
-import { contactIdentity, formatPhone, formatUsername } from '../inbox/contact-identity';
+import {
+  contactIdentity,
+  formatPhone,
+  formatUsername,
+  untrustedNameLabel,
+} from '../inbox/contact-identity';
 import { ContactEditDialog } from '../inbox/ContactEditDialog';
 import { ContactPrivacy } from '../inbox/ContactPrivacy';
 import { contactQuery, isNotFound } from '../inbox/inbox-queries';
@@ -110,8 +115,8 @@ function ContactDetail({ contact }: { contact: Contact }) {
                 .filter(Boolean)
                 .join(' · ')}
             </p>
-            {identity.fromWhatsApp ? (
-              <p className={styles.identityBadge}>{t.inbox.item.fromWhatsApp}</p>
+            {untrustedNameLabel(identity, contact.channelType) ? (
+              <p className={styles.identityBadge}>{c.nameFromProfile(channel)}</p>
             ) : null}
           </div>
         </div>
@@ -254,7 +259,7 @@ function AttributesCard({
             );
           })}
           {free.map((item) => (
-            <Fact key={item.key} term={item.key}>
+            <Fact key={item.key} term={`${item.key} (${c.freeAttribute})`}>
               <span dir="auto">{item.value}</span>
             </Fact>
           ))}
@@ -290,7 +295,7 @@ function DuplicateNotice({
       actions={
         <>
           {otherContact ? (
-            <Button variant="ghost" asChild>
+            <Button asChild>
               <Link to="/kontak/$contactId" params={{ contactId: otherId }}>
                 {c.openOther}
               </Link>

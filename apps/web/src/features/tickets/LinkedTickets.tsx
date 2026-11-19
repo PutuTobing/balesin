@@ -55,11 +55,11 @@ export function LinkedTickets({
                 className={styles.linkedItem}
                 aria-label={k.cardLabel(ticket.number, ticket.title)}
               >
-                <span className={styles.number}>#{ticket.number}</span>
                 <span className={styles.linkedTitle} dir="auto">
                   {ticket.title}
                 </span>
                 <span className={styles.linkedMeta}>
+                  <span className={styles.number}>#{ticket.number}</span>
                   {ticket.priority === 'high' || ticket.priority === 'urgent' ? (
                     <PriorityBadge priority={ticket.priority} />
                   ) : null}

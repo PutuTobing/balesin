@@ -109,10 +109,23 @@ test('tiket: board → tiket baru → pindah kolom → komentar', async () => {
   const title = `Internet putus ${suffix}`;
 
   await page.goto('/tiket');
-  await page
-    .getByRole('button', { name: /^(Buat board|Board baru)$/ })
-    .first()
-    .click();
+  // Board pertama: tombol "Buat board". Sudah ada board: "Board baru" (desktop) / menu ⋯ (HP).
+  const first = page.getByRole('button', { name: 'Buat board' });
+  const menu = page.getByRole('button', { name: 'Menu board' });
+  await expect(
+    first
+      .or(menu)
+      .or(page.getByRole('button', { name: 'Board baru' }))
+      .first(),
+  ).toBeVisible();
+  if (await first.isVisible()) {
+    await first.click();
+  } else if (await menu.isVisible()) {
+    await menu.click();
+    await page.getByRole('menuitem', { name: 'Board baru' }).click();
+  } else {
+    await page.getByRole('button', { name: 'Board baru' }).click();
+  }
   const dialog = page.getByRole('dialog', { name: 'Board baru' });
   await dialog.getByLabel('Nama board').fill(board);
   await dialog.getByRole('button', { name: 'Buat board' }).click();

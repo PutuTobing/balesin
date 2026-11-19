@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import type { Conversation, Message } from '@balesin/shared';
+import { CHANNEL_CAPABILITIES, type Conversation, type Message } from '@balesin/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { LayoutTemplate } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
@@ -18,7 +18,7 @@ import { TemplateSendDialog } from './TemplateSendDialog';
 import styles from './Composer.module.css';
 import { forgetConversation, inboxKeys, storeConversation } from './inbox-queries';
 import { useSendingPaused } from './use-sending-paused';
-import { windowState } from './inbox-time';
+import { replyWindowOpen, windowExpiry, windowState } from './inbox-time';
 import { useMinuteClock } from './use-minute-clock';
 
 const k = t.inbox.compose;
@@ -58,9 +58,11 @@ export function ChatFooter({
   const selfId = useSession()?.user.id ?? null;
   const isHp = useMediaQuery(media.hp);
   const canManageLimits = useCan('sending.limits.manage');
-  const window = windowState(conversation.windowExpiresAt, now);
+  const window = windowState(windowExpiry(conversation), now);
   const [templateOpen, setTemplateOpen] = useState(false);
-  const windowOpen = window.kind === 'open' || window.kind === 'expiring';
+  const windowOpen = replyWindowOpen(conversation, now);
+  // Template Meta hanya untuk WhatsApp; Messenger/Instagram menunggu pesan pelanggan berikutnya.
+  const templates = CHANNEL_CAPABILITIES[conversation.channel.type].templates;
 
   const notices = (
     <>
@@ -123,17 +125,25 @@ export function ChatFooter({
         <div className={styles.closed}>
           <div className={styles.closedText} role="status">
             <p className={styles.closedTitle}>{none ? k.windowNoneTitle : k.windowClosedTitle}</p>
-            <p className={styles.closedBody}>{none ? k.windowNoneBody : k.windowClosedBody}</p>
+            <p className={styles.closedBody}>
+              {!templates
+                ? k.windowClosedNoTemplateBody
+                : none
+                  ? k.windowNoneBody
+                  : k.windowClosedBody}
+            </p>
           </div>
-          <Button
-            variant="primary"
-            disabled={paused || lock.locked}
-            aria-describedby={paused ? PAUSED_NOTICE_ID : undefined}
-            onClick={() => setTemplateOpen(true)}
-          >
-            <Icon icon={LayoutTemplate} size={16} />
-            {k.sendTemplate}
-          </Button>
+          {templates ? (
+            <Button
+              variant="primary"
+              disabled={paused || lock.locked}
+              aria-describedby={paused ? PAUSED_NOTICE_ID : undefined}
+              onClick={() => setTemplateOpen(true)}
+            >
+              <Icon icon={LayoutTemplate} size={16} />
+              {k.sendTemplate}
+            </Button>
+          ) : null}
         </div>
         {templateOpen ? (
           <TemplateSendDialog conversation={conversation} onClose={() => setTemplateOpen(false)} />

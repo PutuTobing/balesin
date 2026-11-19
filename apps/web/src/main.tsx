@@ -1,3 +1,5 @@
+// Harus pertama: matikan probe `Function('')` Zod sebelum skema apa pun dipakai (CSP produksi).
+import './zod-config';
 import { configureZodLocale } from '@balesin/shared';
 import { RouterProvider } from '@tanstack/react-router';
 import { StrictMode } from 'react';

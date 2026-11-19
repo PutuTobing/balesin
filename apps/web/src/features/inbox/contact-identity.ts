@@ -1,4 +1,10 @@
-import type { Contact, ContactSummary } from '@balesin/shared';
+import {
+  CHANNEL_TYPE_LABELS,
+  type ChannelType,
+  type Contact,
+  type ContactSummary,
+} from '@balesin/shared';
+import { t } from '../../i18n/id';
 
 /**
  * Identitas kontak di Inbox. Nama bisa berasal dari pelanggan sendiri (nama profil WhatsApp,
@@ -30,6 +36,11 @@ export interface ContactIdentity {
   handle: string | null;
   /** Nama berasal dari profil WhatsApp pelanggan (belum diberi nama oleh tim). */
   fromWhatsApp: boolean;
+  /**
+   * Nama berasal dari profil channel lain (Telegram/Email/Messenger/Instagram) — sama tidak
+   * tepercayanya; `@username`/alamat (`channelHandle`) selalu tampil di sampingnya.
+   */
+  fromChannel: boolean;
 }
 
 /** Hanya angka (untuk membandingkan nama dengan nomor tanpa peduli format). */
@@ -49,7 +60,7 @@ function isSameHandle(name: string, handle: string, raw: string | null): boolean
  */
 export function summaryIdentity(contact: ContactSummary): ContactIdentity {
   const phone = formatPhone(contact.phone);
-  const handleValue = phone ?? formatUsername(contact.waUsername);
+  const handleValue = phone ?? formatUsername(contact.waUsername) ?? contact.channelHandle ?? null;
   const same =
     handleValue !== null &&
     (isSameHandle(contact.displayName, handleValue, contact.phone) ||
@@ -58,6 +69,7 @@ export function summaryIdentity(contact: ContactSummary): ContactIdentity {
     name: same && handleValue ? handleValue : contact.displayName,
     handle: same ? null : handleValue,
     fromWhatsApp: contact.nameSource === 'whatsapp',
+    fromChannel: contact.nameSource === 'channel',
   };
 }
 
@@ -65,7 +77,7 @@ export function summaryIdentity(contact: ContactSummary): ContactIdentity {
 export function contactIdentity(contact: Contact): ContactIdentity {
   const phone = formatPhone(contact.phone);
   const username = formatUsername(contact.waUsername);
-  const handleValue = phone ?? username;
+  const handleValue = phone ?? username ?? contact.channelHandle ?? null;
   const name =
     contact.name?.trim() ||
     contact.profileName?.trim() ||
@@ -77,7 +89,14 @@ export function contactIdentity(contact: Contact): ContactIdentity {
   return {
     name,
     handle,
-    fromWhatsApp: !contact.name?.trim() && Boolean(contact.profileName?.trim()),
+    fromWhatsApp:
+      !contact.name?.trim() &&
+      Boolean(contact.profileName?.trim()) &&
+      contact.channelType === 'whatsapp',
+    fromChannel:
+      !contact.name?.trim() &&
+      Boolean(contact.profileName?.trim()) &&
+      contact.channelType !== 'whatsapp',
   };
 }
 
@@ -93,4 +112,16 @@ export function avatarInitials(name: string): string | null {
   const letters = words.slice(0, 2).map((word) => Array.from(word)[0] ?? '');
   const text = letters.join('').toLocaleUpperCase('id-ID');
   return text || null;
+}
+
+/** "dari WhatsApp" / "dari Telegram" untuk nama kiriman pelanggan; `null` bila nama dari tim. */
+export function untrustedNameLabel(
+  identity: Pick<ContactIdentity, 'fromWhatsApp' | 'fromChannel'>,
+  channelType: ChannelType | undefined,
+): string | null {
+  if (identity.fromWhatsApp) return t.inbox.item.fromWhatsApp;
+  if (identity.fromChannel) {
+    return t.inbox.item.fromChannel(CHANNEL_TYPE_LABELS[channelType ?? 'whatsapp']);
+  }
+  return null;
 }

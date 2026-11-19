@@ -8,12 +8,24 @@ import { t } from '../../i18n/id';
 import { endpoints } from '../../lib/api/endpoints';
 import { formatDate } from '../../lib/format';
 import { IdentityDialog } from '../identity/IdentityDialog';
-import { contactIdentity } from '../inbox/contact-identity';
+import { contactIdentity, formatPhone, formatUsername } from '../inbox/contact-identity';
 import { inboxKeys, storeContact } from '../inbox/inbox-queries';
 import { olderContact, refreshContactLists } from './contact-queries';
 import styles from './Contacts.module.css';
 
 const c = t.contacts;
+
+/** Pengenal yang membedakan dua kontak bernama sama: nomor, email, @username, channel. */
+function contactIdentifiers(contact: Contact): string[] {
+  const items = [
+    formatPhone(contact.phone),
+    contact.email ?? null,
+    formatUsername(contact.waUsername),
+    contact.channelHandle ?? null,
+  ].filter((item): item is string => Boolean(item));
+  const channel = c.channelLabels[contact.channelType] ?? contact.channelType;
+  return items.length > 0 ? [...new Set(items)] : [c.noIdentifier(channel)];
+}
 
 /**
  * Gabung kontak "mungkin duplikat" (`contacts.delete`: Owner/Admin). Langkah 1: pilih kontak yang
@@ -86,9 +98,10 @@ export function MergeDialog({
                     {identity.name}
                   </span>
                   <span className={styles.mergeMeta}>
-                    {[identity.handle, c.createdOn(formatDate(contact.createdAt))]
-                      .filter(Boolean)
-                      .join(' · ')}
+                    {contactIdentifiers(contact).join(' · ')}
+                  </span>
+                  <span className={styles.mergeMeta}>
+                    {c.createdOn(formatDate(contact.createdAt))}
                   </span>
                   {contact.id === recommended.id ? (
                     <span className={styles.recommended}>{c.mergeRecommended}</span>

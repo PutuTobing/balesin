@@ -202,10 +202,11 @@ function OrganizationReport({
             <DurationTile label={r.firstResponse} stats={summary.firstResponse} />
             <DurationTile label={r.wait} stats={summary.wait} />
             <DurationTile label={r.resolution} stats={summary.resolution} />
+            <StatTile label={r.humanHandled} value={formatCount(summary.handledByHuman)} />
             <StatTile
-              label={r.humanHandled}
-              value={formatCount(summary.handledByHuman)}
-              detail={`${r.botOnly}: ${formatCount(summary.resolvedByBotOnly)} · ${r.handoffs}: ${formatCount(summary.handoffs)}`}
+              label={r.botTile}
+              value={formatCount(summary.resolvedByBotOnly)}
+              detail={`${r.botOnly} · ${r.botTileDetail(formatCount(summary.handoffs))}`}
             />
           </dl>
         </section>
@@ -251,9 +252,9 @@ function OrganizationReport({
                   {report.bots.map((bot) => (
                     <tr key={bot.apiKey.id}>
                       <th scope="row">{bot.apiKey.name}</th>
-                      <td>{formatCount(bot.messagesSent)}</td>
-                      <td>{formatCount(bot.conversations)}</td>
-                      <td>{formatCount(bot.handoffs)}</td>
+                      <td data-label={r.colMessages}>{formatCount(bot.messagesSent)}</td>
+                      <td data-label={r.colConversations}>{formatCount(bot.conversations)}</td>
+                      <td data-label={r.colHandoffs}>{formatCount(bot.handoffs)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -288,9 +289,11 @@ function OrganizationReport({
                       <th scope="row">
                         <TagChip tag={row.tag} />
                       </th>
-                      <td>{formatCount(row.conversations)}</td>
-                      <td>{formatCount(row.resolved)}</td>
-                      <td>{formatDuration(row.resolution.medianSeconds)}</td>
+                      <td data-label={r.colConversations}>{formatCount(row.conversations)}</td>
+                      <td data-label={r.colResolved}>{formatCount(row.resolved)}</td>
+                      <td data-label={r.colResolution}>
+                        {formatDuration(row.resolution.medianSeconds)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -393,9 +396,11 @@ function DailyTrend({ report, exportBase }: { report: ReportPerformance; exportB
               {daily.map((day) => (
                 <tr key={day.date}>
                   <th scope="row">{formatDay(day.date, true)}</th>
-                  <td>{formatCount(day.conversations)}</td>
-                  <td>{formatCount(day.resolved)}</td>
-                  <td>{formatDuration(day.averageFirstResponseSeconds)}</td>
+                  <td data-label={r.columnNew}>{formatCount(day.conversations)}</td>
+                  <td data-label={r.columnResolved}>{formatCount(day.resolved)}</td>
+                  <td data-label={r.columnFirstResponse}>
+                    {formatDuration(day.averageFirstResponseSeconds)}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -448,7 +453,7 @@ function HourlyTrend({ report }: { report: ReportPerformance }) {
               {hourly.map((row) => (
                 <tr key={row.hour}>
                   <th scope="row">{hourText(row.hour)}</th>
-                  <td>{formatCount(row.conversations)}</td>
+                  <td data-label={r.columnNew}>{formatCount(row.conversations)}</td>
                 </tr>
               ))}
             </tbody>
@@ -552,11 +557,13 @@ function AgentsTable({ agents }: { agents: readonly AgentPerformance[] }) {
           {agents.map((agent) => (
             <tr key={agent.user.id}>
               <th scope="row">{agent.user.name}</th>
-              <td>{formatCount(agent.conversationsHandled)}</td>
-              <td>{formatCount(agent.resolved)}</td>
-              <td>{formatCount(agent.messagesSent)}</td>
-              <td>{formatDuration(agent.firstResponse.medianSeconds)}</td>
-              <td>
+              <td data-label={r.colHandled}>{formatCount(agent.conversationsHandled)}</td>
+              <td data-label={r.colResolved}>{formatCount(agent.resolved)}</td>
+              <td data-label={r.colMessages}>{formatCount(agent.messagesSent)}</td>
+              <td data-label={r.colFirstResponse}>
+                {formatDuration(agent.firstResponse.medianSeconds)}
+              </td>
+              <td data-label={r.colCsat}>
                 {agent.csat.responses > 0
                   ? `${formatScore(agent.csat.average)} (${formatCount(agent.csat.responses)})`
                   : '—'}

@@ -8,7 +8,7 @@ import {
   Circle,
   EllipsisVertical,
   GripVertical,
-  MoveRight,
+  ArrowRightLeft,
   Pencil,
   Plus,
   Trash2,
@@ -240,6 +240,10 @@ export function KanbanBoard({
   const visible = isHp
     ? shown.filter((entry) => entry.column.id === (hpColumn ?? shown[0]?.column.id))
     : shown;
+  const hpEntry = isHp ? visible[0] : undefined;
+  const hpPosition = hpEntry
+    ? columns.findIndex((item) => item.column.id === hpEntry.column.id)
+    : -1;
 
   return (
     <div className={styles.kanbanWrap}>
@@ -249,21 +253,50 @@ export function KanbanBoard({
       <p className="sr-only" aria-live="assertive">
         {announcement}
       </p>
+      {grab ? (
+        <p className={styles.grabHint} aria-hidden="true">
+          {k.grabHintVisible}
+        </p>
+      ) : null}
       {error ? (
         <Notice tone="danger" role="alert">
           {error}
         </Notice>
       ) : null}
       {isHp ? (
-        <SelectField
-          label={k.columnPickerLabel}
-          value={hpColumn ?? shown[0]?.column.id ?? ''}
-          onChange={(event) => setHpColumn(event.target.value)}
-          options={shown.map((entry) => ({
-            value: entry.column.id,
-            label: `${entry.column.name} (${String(entry.total)})`,
-          }))}
-        />
+        <div className={styles.columnPicker}>
+          <SelectField
+            label={k.columnPickerLabel}
+            value={hpColumn ?? shown[0]?.column.id ?? ''}
+            onChange={(event) => setHpColumn(event.target.value)}
+            options={shown.map((entry) => ({
+              value: entry.column.id,
+              label: `${entry.column.name} (${String(entry.total)})`,
+            }))}
+            className={styles.columnPickerField}
+          />
+          {canConfigure && hpEntry ? (
+            <ColumnMenu
+              column={hpEntry.column}
+              first={hpPosition === 0}
+              last={hpPosition === columns.length - 1}
+              onRename={() => setColumnDialog({ kind: 'rename', column: hpEntry.column })}
+              onToggleDone={() =>
+                columnAction.mutate({
+                  column: hpEntry.column,
+                  patch: { isDone: !hpEntry.column.isDone },
+                })
+              }
+              onMove={(delta) =>
+                columnAction.mutate({
+                  column: hpEntry.column,
+                  patch: { position: hpPosition + delta },
+                })
+              }
+              onDelete={() => setDeleting({ column: hpEntry.column, total: hpEntry.total })}
+            />
+          ) : null}
+        </div>
       ) : null}
       <div className={styles.kanban} role="list" aria-label={k.kanbanLabel(data.board.name)}>
         {visible.map((entry) => {
@@ -278,7 +311,7 @@ export function KanbanBoard({
               )}
               aria-label={k.columnLabel(entry.column.name, entry.total)}
             >
-              <header className={styles.columnHead}>
+              <header className={styles.columnHead} hidden={isHp}>
                 <h2 className={styles.columnName}>
                   {entry.column.isDone ? (
                     <Icon icon={CheckCircle2} size={16} className={styles.doneIcon} />
@@ -480,7 +513,7 @@ function MoveMenu({
     <DropdownMenu.Root modal={false}>
       <DropdownMenu.Trigger asChild>
         <button type="button" className={styles.cardMenu} aria-label={k.moveMenu(ticket.number)}>
-          <Icon icon={MoveRight} size={16} />
+          <Icon icon={ArrowRightLeft} size={16} />
         </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
@@ -491,17 +524,29 @@ function MoveMenu({
           className={styles.menu}
         >
           <DropdownMenu.Label className={styles.menuLabel}>{k.moveTo}</DropdownMenu.Label>
-          {columns.map((column) => (
-            <DropdownMenu.Item
-              key={column.id}
-              className={styles.menuItem}
-              disabled={column.id === ticket.column.id}
-              onSelect={() => onMoveTo(column.id)}
-            >
-              <Icon icon={column.isDone ? CheckCircle2 : Circle} size={16} />
-              {column.name}
-            </DropdownMenu.Item>
-          ))}
+          {columns.map((column) => {
+            const current = column.id === ticket.column.id;
+            return (
+              <DropdownMenu.Item
+                key={column.id}
+                className={styles.menuItem}
+                disabled={current}
+                onSelect={() => onMoveTo(column.id)}
+              >
+                <span
+                  className={styles.menuDot}
+                  data-current={current ? '' : undefined}
+                  aria-hidden="true"
+                />
+                <span className={styles.menuText}>
+                  {current ? k.currentColumn(column.name) : column.name}
+                  {column.isDone ? (
+                    <span className={styles.menuNote}>{k.doneColumnShort}</span>
+                  ) : null}
+                </span>
+              </DropdownMenu.Item>
+            );
+          })}
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

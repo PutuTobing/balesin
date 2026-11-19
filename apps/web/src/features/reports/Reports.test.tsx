@@ -95,7 +95,7 @@ describe('logika laporan', () => {
   it('durasi & skala sumbu', () => {
     expect(formatDuration(45)).toBe('45 dtk');
     expect(formatDuration(95)).toBe('1 mnt 35 dtk');
-    expect(formatDuration(3600)).toBe('1 j');
+    expect(formatDuration(3600)).toBe('1 jam');
     expect(formatDuration(null)).toBe('—');
     expect(niceScale(37)).toEqual({ top: 40, step: 10 });
     expect(niceScale(0)).toEqual({ top: 4, step: 1 });
@@ -218,10 +218,11 @@ describe('biaya Meta', () => {
       },
     });
     fireEvent.click(await screen.findByRole('button', { name: r.tabCosts }));
-    expect(await screen.findByText(r.rateSource('Tarif bawaan Indonesia'))).toBeVisible();
+    expect(await screen.findByText('Tarif bawaan Indonesia')).toBeVisible();
+    expect(screen.getByText(r.rateSourceLabel)).toBeVisible();
     expect(screen.getAllByText(r.estimateBadge).length).toBeGreaterThan(0);
     expect(screen.getByText(r.unknownRate(3))).toBeVisible();
-    expect(screen.getByRole('rowheader', { name: 'Marketing' })).toBeVisible();
+    expect(screen.getByRole('rowheader', { name: 'Pemasaran' })).toBeVisible();
   });
 });
 

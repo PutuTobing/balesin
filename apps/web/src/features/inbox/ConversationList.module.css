@@ -436,3 +436,10 @@ ul.items {
     border-right: 0;
   }
 }
+
+/* Ikon jenis channel (Telegram, email, …) di depan nama channel; WhatsApp tanpa ikon. */
+.metaChannelIcon {
+  margin-right: var(--space-4);
+  vertical-align: -3px;
+  color: var(--ink-2);
+}

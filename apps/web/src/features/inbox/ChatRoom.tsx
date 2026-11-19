@@ -1,4 +1,9 @@
-import type { Conversation, Message } from '@balesin/shared';
+import {
+  CHANNEL_CAPABILITIES,
+  CHANNEL_TYPE_LABELS,
+  type Conversation,
+  type Message,
+} from '@balesin/shared';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDown, ArrowLeft, ChevronRight } from 'lucide-react';
 import {
@@ -27,9 +32,9 @@ import { ChatFooter } from './ChatFooter';
 import { HandlingActions } from './HandlingActions';
 import { newClientMessageId, noteSendError, useOutbox } from './outbox';
 import { OutboxRows } from './OutboxRows';
-import { windowState } from './inbox-time';
+import { replyWindowOpen, windowExpiry } from './inbox-time';
 import styles from './Chat.module.css';
-import { contactIdentity, summaryIdentity } from './contact-identity';
+import { contactIdentity, summaryIdentity, untrustedNameLabel } from './contact-identity';
 import {
   contactQuery,
   conversationQuery,
@@ -219,9 +224,12 @@ function ChatHeader({
   const contact = useQuery(contactQuery(conversation.contact.id)).data?.contact;
   const identity = contact ? contactIdentity(contact) : summaryIdentity(conversation.contact);
   // HP: subjudul cukup nomor/@username (penanda "dari WhatsApp" ada di layar detail).
+  const channelType = conversation.channel.type;
+  const untrusted = untrustedNameLabel(identity, channelType);
   const sub = [
+    channelType !== 'whatsapp' ? CHANNEL_TYPE_LABELS[channelType] : null,
     identity.handle,
-    identity.fromWhatsApp && !onOpenDetail ? t.inbox.item.fromWhatsApp : null,
+    untrusted && !onOpenDetail ? untrusted : null,
   ].filter(Boolean);
   const titleRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
@@ -253,7 +261,7 @@ function ChatHeader({
         ) : null}
       </div>
       <WindowCountdown
-        expiresAt={conversation.windowExpiresAt}
+        expiresAt={windowExpiry(conversation)}
         now={now}
         showEnd
         className={styles.headerCountdown}
@@ -321,15 +329,14 @@ function ChatBody({
     [onError, queryClient, conversation.id],
   );
 
-  const window = windowState(conversation.windowExpiresAt, now);
   const replyable =
-    canReply &&
-    conversation.status !== 'resolved' &&
-    (window.kind === 'open' || window.kind === 'expiring');
+    canReply && conversation.status !== 'resolved' && replyWindowOpen(conversation, now);
 
   const actions = useMemo<ChatActions>(
     () => ({
       canReply: replyable,
+      canQuote: CHANNEL_CAPABILITIES[conversation.channel.type].quoteReply,
+      canReact: CHANNEL_CAPABILITIES[conversation.channel.type].messageTypes.includes('reaction'),
       canRetry: canReply,
       selfId: session?.user.id ?? null,
       retrying,
@@ -377,6 +384,7 @@ function ChatBody({
     [
       replyable,
       canReply,
+      conversation.channel.type,
       session?.user.id,
       retrying,
       agents,

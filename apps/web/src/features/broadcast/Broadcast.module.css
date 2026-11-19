@@ -796,6 +796,13 @@ ul.recipients,
   .segment {
     height: var(--size-touch);
   }
+
+  /* Tautan ke chat penerima: target sentuh 44 px. */
+  .recipientLink {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--size-touch);
+  }
 }
 
 @media (max-width: 640px) {

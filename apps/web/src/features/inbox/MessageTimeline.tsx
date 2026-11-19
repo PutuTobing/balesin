@@ -18,6 +18,7 @@ import { Button } from '../../components/ui/Button';
 import { Icon } from '../../components/ui/Icon';
 import { QUICK_REACTIONS, useChatActions } from './chat-actions';
 import { t } from '../../i18n/id';
+import { EmailHeader } from './EmailMessage';
 import styles from './Chat.module.css';
 import { DeliveryIcon } from './ConversationItem';
 import { dayKey, formatClockTime, formatDayLabel } from './inbox-time';
@@ -184,6 +185,7 @@ function MessageRow({
                 ) : null}
               </div>
             ) : null}
+            {message.email ? <EmailHeader message={message} /> : null}
             {media}
             {/* Media tampil (termasuk kartu dokumen): label jenis tidak diulang. */}
             {body.label && !media ? (
@@ -319,24 +321,31 @@ function MessageMenu({
           sideOffset={4}
           collisionPadding={8}
         >
-          <DropdownMenu.Group className={styles.reactionRow} aria-label={a.react}>
-            {QUICK_REACTIONS.map((emoji) => (
-              <DropdownMenu.Item
-                key={emoji}
-                className={styles.reactionItem}
-                data-active={ownReaction === emoji ? '' : undefined}
-                aria-label={a.reactWith(emoji)}
-                onSelect={() => actions.onReact(message, emoji)}
-              >
-                {emoji}
-              </DropdownMenu.Item>
-            ))}
-          </DropdownMenu.Group>
-          <DropdownMenu.Separator className={styles.menuSeparator} />
-          <DropdownMenu.Item className={styles.menuItem} onSelect={() => actions.onReply(message)}>
-            <Icon icon={Reply} size={16} />
-            {a.reply}
-          </DropdownMenu.Item>
+          {actions.canReact ? (
+            <DropdownMenu.Group className={styles.reactionRow} aria-label={a.react}>
+              {QUICK_REACTIONS.map((emoji) => (
+                <DropdownMenu.Item
+                  key={emoji}
+                  className={styles.reactionItem}
+                  data-active={ownReaction === emoji ? '' : undefined}
+                  aria-label={a.reactWith(emoji)}
+                  onSelect={() => actions.onReact(message, emoji)}
+                >
+                  {emoji}
+                </DropdownMenu.Item>
+              ))}
+            </DropdownMenu.Group>
+          ) : null}
+          {actions.canReact ? <DropdownMenu.Separator className={styles.menuSeparator} /> : null}
+          {actions.canQuote ? (
+            <DropdownMenu.Item
+              className={styles.menuItem}
+              onSelect={() => actions.onReply(message)}
+            >
+              <Icon icon={Reply} size={16} />
+              {a.reply}
+            </DropdownMenu.Item>
+          ) : null}
           <DropdownMenu.Item
             className={styles.menuItem}
             onSelect={() => actions.onStar(message, !message.starredAt)}
@@ -344,7 +353,7 @@ function MessageMenu({
             <Icon icon={Star} size={16} />
             {message.starredAt ? a.unstar : a.star}
           </DropdownMenu.Item>
-          {ownReaction ? (
+          {ownReaction && actions.canReact ? (
             <DropdownMenu.Item
               className={styles.menuItem}
               onSelect={() => actions.onReact(message, '')}

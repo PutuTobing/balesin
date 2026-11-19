@@ -1,5 +1,4 @@
 import {
-  BOT_DAY_LABELS,
   DEPARTMENTS_PER_ORGANIZATION_MAX,
   DEPARTMENT_DESCRIPTION_MAX,
   DEPARTMENT_NAME_MAX,
@@ -32,6 +31,7 @@ import { endpoints } from '../../lib/api/endpoints';
 import { apiFieldErrors, zodFieldErrors, type FieldErrors } from '../../lib/form';
 import { inboxChannelsQuery } from '../inbox/inbox-queries';
 import { departmentKeys, departmentSettingsQuery } from './department-queries';
+import { HoursDays } from './HoursDays';
 import { hoursFormFrom, hoursSummary, teamHoursFrom, type HoursForm } from './team-hours';
 import styles from './Departments.module.css';
 
@@ -351,48 +351,7 @@ function DepartmentDialog({
             ))}
           </RadioGroup.Root>
           {hours.custom ? (
-            <div className={styles.days}>
-              {hours.days.map((item, index) => {
-                const label = BOT_DAY_LABELS[item.day] ?? '';
-                const patch = (next: Partial<typeof item>) =>
-                  setHours({
-                    ...hours,
-                    days: hours.days.map((day, position) =>
-                      position === index ? { ...day, ...next } : day,
-                    ),
-                  });
-                return (
-                  <div key={item.day} className={styles.day}>
-                    <Checkbox
-                      checked={item.on}
-                      onChange={(event) => patch({ on: event.target.checked })}
-                      className={styles.dayToggle}
-                    >
-                      {label}
-                    </Checkbox>
-                    <input
-                      type="time"
-                      className={styles.time}
-                      value={item.start}
-                      onChange={(event) => patch({ start: event.target.value })}
-                      disabled={!item.on}
-                      aria-label={d.start(label)}
-                    />
-                    <span aria-hidden="true" className={styles.muted}>
-                      –
-                    </span>
-                    <input
-                      type="time"
-                      className={styles.time}
-                      value={item.end}
-                      onChange={(event) => patch({ end: event.target.value })}
-                      disabled={!item.on}
-                      aria-label={d.end(label)}
-                    />
-                  </div>
-                );
-              })}
-            </div>
+            <HoursDays days={hours.days} onChange={(days) => setHours({ ...hours, days })} />
           ) : null}
           {hoursError ? (
             <p className={styles.fieldError} role="alert">

@@ -1,7 +1,8 @@
 import { TICKET_DUE_FILTERS, TICKET_PRIORITIES, TICKET_PRIORITY_LABELS } from '@balesin/shared';
 import { useQuery } from '@tanstack/react-query';
-import { Link, getRouteApi, useNavigate } from '@tanstack/react-router';
-import { Columns3, List, Plus, Settings2 } from 'lucide-react';
+import { Link, getRouteApi, useNavigate, useRouter } from '@tanstack/react-router';
+import { Columns3, EllipsisVertical, List, Plus, Settings2, SlidersHorizontal } from 'lucide-react';
+import { DropdownMenu } from 'radix-ui';
 import { useEffect, useState } from 'react';
 import {
   LoadFailedIllustration,
@@ -19,6 +20,7 @@ import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import type { TicketListParams } from '../../lib/api/endpoints-crm';
 import { cx } from '../../lib/cx';
+import { media, useMediaQuery } from '../../lib/media';
 import { useCan, useSession } from '../auth/session';
 import { agentsQuery } from '../inbox/inbox-queries';
 import { BoardCreateDialog } from './ColumnDialogs';
@@ -47,13 +49,28 @@ export function TicketsPage() {
   const [creatingBoard, setCreatingBoard] = useState(false);
   const [creatingTicket, setCreatingTicket] = useState(false);
   const [flash, setFlash] = useState(() => takeTicketFlash());
+  const isHp = useMediaQuery(media.hp);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const activeFilters = [
+    search.pj,
+    search.prioritas,
+    search.status,
+    search.tenggat,
+    search.cari,
+  ].filter(Boolean).length;
 
   const list = boards.data ?? [];
   const board = list.find((item) => item.id === search.board) ?? list[0];
   const view = search.tampilan === 'daftar' ? 'daftar' : 'kanban';
 
-  const update = (patch: Partial<TicketSearch>) =>
+  const router = useRouter();
+  // Saringan tertunda (debounce pencarian) tidak boleh membatalkan navigasi yang sedang berjalan
+  // (mis. baru saja membuka detail): halaman tujuan menang.
+  const update = (patch: Partial<TicketSearch>) => {
+    const resolved = router.state.resolvedLocation;
+    if (resolved && router.latestLocation.pathname !== resolved.pathname) return;
     void navigate({ search: (previous) => ({ ...previous, ...patch }), replace: true });
+  };
 
   const actions =
     board || canConfigure ? (
@@ -105,28 +122,48 @@ export function TicketsPage() {
         ) : (
           <>
             <div className={styles.toolbar}>
-              <SelectField
-                label={k.boardLabel}
-                value={board.id}
-                onChange={(event) => update({ board: event.target.value })}
-                options={list.map((item) => ({ value: item.id, label: item.name }))}
-                className={styles.boardSelect}
-              />
-              <div className={styles.viewSwitch} role="group" aria-label={k.viewLabel}>
-                {(['kanban', 'daftar'] as const).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    className={cx(styles.viewOption)}
-                    aria-pressed={view === value}
-                    onClick={() => update({ tampilan: value === 'daftar' ? 'daftar' : undefined })}
-                  >
-                    <Icon icon={value === 'kanban' ? Columns3 : List} size={16} />
-                    {k.views[value]}
-                  </button>
-                ))}
+              <div className={styles.boardRow}>
+                <SelectField
+                  label={k.boardLabel}
+                  value={board.id}
+                  onChange={(event) => update({ board: event.target.value })}
+                  options={list.map((item) => ({ value: item.id, label: item.name }))}
+                  className={styles.boardSelect}
+                />
+                {canConfigure && isHp ? (
+                  <BoardMenu boardId={board.id} onCreate={() => setCreatingBoard(true)} />
+                ) : null}
               </div>
-              {canConfigure ? (
+              <div className={styles.viewRow}>
+                <div className={styles.viewSwitch} role="group" aria-label={k.viewLabel}>
+                  {(['kanban', 'daftar'] as const).map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={cx(styles.viewOption)}
+                      aria-pressed={view === value}
+                      onClick={() =>
+                        update({ tampilan: value === 'daftar' ? 'daftar' : undefined })
+                      }
+                    >
+                      <Icon icon={value === 'kanban' ? Columns3 : List} size={16} />
+                      {k.views[value]}
+                    </button>
+                  ))}
+                </div>
+                {isHp ? (
+                  <Button
+                    className={styles.filterToggle}
+                    aria-expanded={filtersOpen}
+                    aria-controls="saringan-tiket"
+                    onClick={() => setFiltersOpen((value) => !value)}
+                  >
+                    <Icon icon={SlidersHorizontal} size={16} />
+                    {activeFilters > 0 ? k.filterCount(activeFilters) : k.filter}
+                  </Button>
+                ) : null}
+              </div>
+              {canConfigure && !isHp ? (
                 <div className={styles.boardActions}>
                   <Button variant="ghost" asChild>
                     <Link to="/tiket/board/$boardId" params={{ boardId: board.id }}>
@@ -141,7 +178,9 @@ export function TicketsPage() {
                 </div>
               ) : null}
             </div>
-            <TicketFilters search={search} view={view} own={own} onChange={update} />
+            {!isHp || filtersOpen ? (
+              <TicketFilters search={search} view={view} own={own} onChange={update} />
+            ) : null}
             {view === 'kanban' ? (
               <KanbanView
                 boardId={board.id}
@@ -266,7 +305,7 @@ function TicketFilters({
   }, [text, search.cari, onChange]);
 
   return (
-    <div className={styles.filters} role="group" aria-label={k.filtersLabel}>
+    <div id="saringan-tiket" className={styles.filters} role="group" aria-label={k.filtersLabel}>
       {view === 'daftar' ? (
         <div className={styles.filterSearch}>
           <SearchField
@@ -364,5 +403,39 @@ function BoardSkeleton({ columnsOnly = false }: { columnsOnly?: boolean }) {
         ))}
       </div>
     </SkeletonRegion>
+  );
+}
+
+/** HP: "Atur board" + "Board baru" dalam satu menu ⋯ di samping pemilih board. */
+function BoardMenu({ boardId, onCreate }: { boardId: string; onCreate: () => void }) {
+  const navigate = useNavigate();
+  return (
+    <DropdownMenu.Root modal={false}>
+      <DropdownMenu.Trigger asChild>
+        <button type="button" className={styles.boardMenuButton} aria-label={k.boardMenu}>
+          <Icon icon={EllipsisVertical} size={20} />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="end"
+          sideOffset={4}
+          collisionPadding={8}
+          className={styles.menu}
+        >
+          <DropdownMenu.Item
+            className={styles.menuItem}
+            onSelect={() => void navigate({ to: '/tiket/board/$boardId', params: { boardId } })}
+          >
+            <Icon icon={Settings2} size={16} />
+            {k.boardSettings}
+          </DropdownMenu.Item>
+          <DropdownMenu.Item className={styles.menuItem} onSelect={onCreate}>
+            <Icon icon={Plus} size={16} />
+            {k.newBoard}
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }

@@ -396,6 +396,7 @@ const COUNTS = {
   webhook_changed: 0,
   webhook_disabled: 0,
   bot_enabled: 0,
+  auto_message_risky: 0,
 };
 
 /** Ringkasan keamanan tiruan dengan kejadian `warning` (banner tampil untuk Owner/Admin). */

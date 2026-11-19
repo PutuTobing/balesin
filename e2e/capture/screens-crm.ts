@@ -88,7 +88,12 @@ const CONTACTS = [
     profileName: 'Wayan Sudarma',
     tags: [tag(2)],
   }),
-  contact(5, { displayName: '+62 813-3801-4422', nameSource: 'none', name: null }),
+  contact(5, {
+    displayName: '+6281338014422',
+    nameSource: 'none',
+    name: null,
+    phone: '+6281338014422',
+  }),
   contact(6, {
     displayName: 'Putu Ardana',
     name: 'Putu Ardana',
@@ -448,7 +453,7 @@ const csat = {
 };
 
 function report(scope: 'all' | 'own') {
-  const days = 14;
+  const days = 7;
   const daily = Array.from({ length: days }, (_, index) => {
     const date = new Date(Date.now() - (days - 1 - index) * DAY).toISOString().slice(0, 10);
     const weekend = [0, 6].includes(new Date(date).getUTCDay());
@@ -496,7 +501,7 @@ function report(scope: 'all' | 'own') {
     agent(AGUS, 'teknisi', 26, 410),
   ];
   return {
-    range: { from: daily[0]!.date, to: daily[days - 1]!.date, timezone: 'Asia/Makassar' },
+    range: { from: daily[0]!.date, to: daily[days - 1]!.date, timezone: 'Asia/Jakarta' },
     scope,
     summary:
       scope === 'own'
@@ -534,13 +539,23 @@ function report(scope: 'all' | 'own') {
             resolved: 110 - position * 22,
             resolution: stats(3600 + position * 1800),
           })),
-    csat: scope === 'own' ? { ...csat, sent: 64, responses: 41, average: 4.6 } : csat,
+    csat:
+      scope === 'own'
+        ? {
+            ...csat,
+            sent: 64,
+            responses: 41,
+            average: 4.6,
+            distribution: { '1': 0, '2': 1, '3': 2, '4': 9, '5': 29 },
+            responseRate: 64,
+          }
+        : csat,
   };
 }
 
 const COSTS = {
   month: new Date().toISOString().slice(0, 7),
-  timezone: 'Asia/Makassar',
+  timezone: 'Asia/Jakarta',
   currency: 'IDR',
   rateSource:
     'Perkiraan bawaan: tarif Meta untuk nomor Indonesia per 30 Sep 2026. Periksa rate card resmi Meta lalu sesuaikan.',
@@ -557,7 +572,7 @@ const COSTS = {
       serviceCost: 137_030,
       templates: {
         MARKETING: { sent: 1_250, billable: 1_190, free: 0, cost: 701_100 },
-        UTILITY: { sent: 1_420, billable: 1_366, free: 210, cost: 410_370 },
+        UTILITY: { sent: 1_420, billable: 1_366, free: 54, cost: 410_370 },
         AUTHENTICATION: { sent: 120, billable: 118, free: 0, cost: 35_800 },
       },
       total: 1_284_300,

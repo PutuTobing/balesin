@@ -8,6 +8,10 @@ import { createContext, useContext } from 'react';
 export interface ChatActions {
   /** Pengguna boleh membalas di percakapan ini sekarang (izin + jendela 24 jam + tidak selesai). */
   canReply: boolean;
+  /** Channel mendukung balas-kutip (bukan Email/Messenger/Instagram). */
+  canQuote: boolean;
+  /** Channel mendukung reaksi emoji (WhatsApp saja). */
+  canReact: boolean;
   /** Boleh menekan "Kirim ulang" (izin; jendela diperiksa server). */
   canRetry: boolean;
   onReply: (message: Message) => void;
@@ -27,6 +31,8 @@ const noop = () => undefined;
 
 export const ChatActionsContext = createContext<ChatActions>({
   canReply: false,
+  canQuote: true,
+  canReact: true,
   canRetry: false,
   onReply: noop,
   onReact: noop,

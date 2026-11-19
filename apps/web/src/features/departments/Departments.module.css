@@ -116,6 +116,12 @@ ul.members,
   font-weight: var(--weight-semibold);
 }
 
+@media (max-width: 640px), (pointer: coarse) {
+  .member {
+    min-height: var(--size-touch);
+  }
+}
+
 .member:hover {
   background: var(--surface-2);
 }
@@ -295,6 +301,19 @@ ul.members,
   display: flex;
   flex-direction: column;
   gap: var(--space-12);
+}
+
+.accessLimit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding-top: var(--space-12);
+  border-top: 1px solid var(--line);
+}
+
+.accessLimitTitle {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
 }
 
 .accessActions {

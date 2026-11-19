@@ -146,8 +146,17 @@ describe('halaman tiket', () => {
     fireEvent.keyDown(await screen.findByRole('button', { name: k.moveMenu(12) }), {
       key: 'Enter',
     });
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'Selesai' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^Selesai/ }));
     await waitFor(() => expect(moved).toEqual({ columnId: COLUMN_DONE, afterTicketId: null }));
+  });
+
+  it('menu "Pindah ke…" menandai kolom sekarang (nonaktif)', async () => {
+    await renderApp('/tiket', base());
+    fireEvent.keyDown(await screen.findByRole('button', { name: k.moveMenu(12) }), {
+      key: 'Enter',
+    });
+    const current = await screen.findByRole('menuitem', { name: k.currentColumn('Baru') });
+    expect(current).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('hapus kolom kosong mengirim body `{}`', async () => {

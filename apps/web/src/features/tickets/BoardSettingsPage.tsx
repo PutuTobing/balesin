@@ -280,6 +280,7 @@ function BoardColumns({ board }: { board: TicketBoard }) {
                   update.mutate({ column, patch: { isDone: event.target.checked } })
                 }
               >
+                <span aria-hidden="true">{k.doneShort}</span>
                 <span className="sr-only">{`${k.columnDoneLabel}: ${column.name}`}</span>
               </Checkbox>
               <IconButton
@@ -302,7 +303,6 @@ function BoardColumns({ board }: { board: TicketBoard }) {
               <IconButton
                 label={`${k.deleteColumn}: ${column.name}`}
                 icon={Trash2}
-                className={styles.dangerText}
                 disabled={columns.length === 1}
                 onClick={() => setDeleting(column)}
               />

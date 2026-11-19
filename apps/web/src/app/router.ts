@@ -495,6 +495,18 @@ const csatSettingsRoute = createRoute({
   ),
 });
 
+/** Pengaturan → Jam kerja & alokasi: `settings.workspace.manage` (Owner, Admin). */
+const workspaceRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/jam-kerja',
+  staticData: { page: { title: t.workspace.title, parent: 'settings' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'settings.workspace.manage'),
+  component: lazyRouteComponent(
+    () => import('../features/workspace/WorkspaceSettingsPage'),
+    'WorkspaceSettingsPage',
+  ),
+});
+
 /** Pengaturan → Batas kirim & rem darurat: `sending.limits.manage` (Owner, Admin). */
 const sendingLimitsRoute = createRoute({
   getParentRoute,
@@ -530,6 +542,30 @@ const channelWizardRoute = createRoute({
     'ChannelWizardPage',
   ),
   pendingComponent: ChannelsSkeleton,
+});
+
+/** Channel → hubungkan Telegram / Email / Messenger / Instagram (wizard per jenis). */
+const connectionNewRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/channel/baru/$type',
+  staticData: { page: { title: t.connections.addTitle, parent: 'channels' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'channels.manage'),
+  component: lazyRouteComponent(
+    () => import('../features/channels/connections/ConnectionWizardPage'),
+    'ConnectionWizardPage',
+  ),
+});
+
+/** Channel → halaman channel selain WhatsApp (koneksi, tes, pengaturan, status, hapus). */
+const connectionRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/channel/lain/$channelId',
+  staticData: { page: { title: t.connections.detailTitle, parent: 'channels' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'channels.manage'),
+  component: lazyRouteComponent(
+    () => import('../features/channels/connections/ConnectionPage'),
+    'ConnectionPage',
+  ),
 });
 
 /** Channel → halaman nomor. */
@@ -656,6 +692,7 @@ const appChildren = [
   contactRoute,
   contactAttributesRoute,
   departmentsRoute,
+  workspaceRoute,
   csatSettingsRoute,
   broadcastRoute,
   broadcastNewRoute,
@@ -679,6 +716,8 @@ const appChildren = [
   connectorsRoute,
   alarmsRoute,
   channelWizardRoute,
+  connectionNewRoute,
+  connectionRoute,
   channelRoute,
   teamRoute,
   teamUserRoute,

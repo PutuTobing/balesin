@@ -498,6 +498,8 @@ ul.issues,
 
 /* Variabel belum diisi: contoh nilai redup, atau chip tempat isian (bukan `{{n}}` mentah). */
 .varExample {
+  /* Huruf miring menjorok keluar kotaknya: beri ruang 1px supaya tidak menempel tanda kurung. */
+  padding-inline-end: 1px;
   color: var(--ink-2);
   font-style: italic;
 }

@@ -149,16 +149,22 @@ function AccessForm({
           </Checkbox>
         ))}
       </fieldset>
-      {restrictable ? (
-        <div>
-          <Checkbox checked={restricted} onChange={(event) => setRestricted(event.target.checked)}>
-            {d.restrictedLabel}
-          </Checkbox>
-          <p className={styles.hint}>{d.restrictedHint}</p>
-        </div>
-      ) : (
-        <p className={styles.hint}>{d.restrictedRoleNote}</p>
-      )}
+      <div className={styles.accessLimit}>
+        <h3 className={styles.accessLimitTitle}>{d.accessLimitTitle}</h3>
+        {restrictable ? (
+          <>
+            <Checkbox
+              checked={restricted}
+              onChange={(event) => setRestricted(event.target.checked)}
+            >
+              {d.restrictedLabel}
+            </Checkbox>
+            <p className={styles.hint}>{d.restrictedHint}</p>
+          </>
+        ) : (
+          <p className={styles.hint}>{d.restrictedRoleNote}</p>
+        )}
+      </div>
       {result ? (
         'ok' in result ? (
           <Notice tone="success" role="status">

@@ -14,7 +14,14 @@ import { Skeleton, SkeletonRegion } from '../../components/ui/Skeleton';
 import { t } from '../../i18n/id';
 import { formatDateTime } from '../../lib/format';
 import styles from './ContactPanel.module.css';
-import { contactIdentity, formatPhone, formatUsername, summaryIdentity } from './contact-identity';
+import {
+  contactIdentity,
+  formatPhone,
+  formatUsername,
+  summaryIdentity,
+  untrustedNameLabel,
+} from './contact-identity';
+import { CHANNEL_TYPE_LABELS } from '@balesin/shared';
 import { contactQuery, conversationQuery, goneQuery, isNotFound } from './inbox-queries';
 import { ContactAvatar, WindowCountdown } from './InboxBits';
 import { useMinuteClock } from './use-minute-clock';
@@ -119,8 +126,8 @@ function InfoTab({ conversationId, onClosed }: { conversationId: string; onClose
         </p>
         {/* Nama yang sama dengan nomornya tidak ditulis dua kali. */}
         {handle ? <p className={styles.handle}>{handle}</p> : null}
-        {identity?.fromWhatsApp ? (
-          <p className={styles.badge}>{t.inbox.item.fromWhatsApp}</p>
+        {identity && untrustedNameLabel(identity, conversation.channel.type) ? (
+          <p className={styles.badge}>{untrustedNameLabel(identity, conversation.channel.type)}</p>
         ) : null}
       </div>
 
@@ -140,7 +147,11 @@ function InfoTab({ conversationId, onClosed }: { conversationId: string; onClose
         <dl className={styles.facts}>
           <Fact term={d.status}>{t.inbox.item.status[conversation.status]}</Fact>
           <Fact term={d.assignee}>{conversation.assignee?.name ?? t.inbox.item.unassigned}</Fact>
-          <Fact term={d.channel}>{conversation.channel.name}</Fact>
+          <Fact term={d.channel}>
+            {conversation.channel.type === 'whatsapp'
+              ? conversation.channel.name
+              : `${conversation.channel.name} (${CHANNEL_TYPE_LABELS[conversation.channel.type]})`}
+          </Fact>
           {conversation.department ? (
             <Fact term={d.department}>{conversation.department.name}</Fact>
           ) : null}

@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ArrowLeft, PanelRightClose, PanelRightOpen, SquarePen } from 'lucide-react';
 import { departmentsQuery } from '../departments/department-queries';
+import { AvailabilityToggle } from '../workspace/AvailabilityToggle';
 import {
   useEffect,
   useMemo,
@@ -135,6 +136,7 @@ export function InboxScreen({
   // Daftar agen (`GET /inbox/agents`, izin `inbox.assign` di server): Owner/Admin/Supervisor/CS.
   const canAssign = useCan('inbox.assign');
   const canInitiate = useCan('inbox.initiate');
+  const canReply = useCan('inbox.reply');
   const [startOpen, setStartOpen] = useState(false);
   const agentList = useQuery({ ...agentsQuery, enabled: !loading && canAssign }).data?.agents;
   const isTechnician = session?.user.role === 'teknisi';
@@ -250,6 +252,7 @@ export function InboxScreen({
         chips={chips}
         filterControl={
           <span className={styles.listTools}>
+            {canReply ? <AvailabilityToggle /> : null}
             {canInitiate ? (
               <IconButton
                 label={t.inbox.newConversation.open}

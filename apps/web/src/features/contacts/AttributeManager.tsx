@@ -126,7 +126,6 @@ export function AttributeManager({
                 <IconButton
                   label={a.remove(item.label)}
                   icon={Trash2}
-                  className={styles.danger}
                   onClick={() => setRemoving(item)}
                 />
               </span>

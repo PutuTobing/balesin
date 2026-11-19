@@ -1,4 +1,9 @@
-import type { Conversation, Message, QuickReply } from '@balesin/shared';
+import {
+  CHANNEL_CAPABILITIES,
+  type Conversation,
+  type Message,
+  type QuickReply,
+} from '@balesin/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   FileText,
@@ -199,6 +204,13 @@ export function Composer({
     send();
   };
 
+  // Aksi tambahan sesuai kemampuan channel (email: tanpa tombol interaktif & template).
+  const capabilities = CHANNEL_CAPABILITIES[conversation.channel.type];
+  const allowed = {
+    attach: capabilities.messageTypes.includes('media'),
+    interactive: capabilities.messageTypes.includes('interactive'),
+    template: capabilities.templates,
+  };
   const extras = [
     {
       key: 'attach' as const,
@@ -218,7 +230,7 @@ export function Composer({
       icon: LayoutTemplate,
       disabled: disabled || paused || locked,
     },
-  ];
+  ].filter((extra) => allowed[extra.key]);
 
   /** Aksi tambahan (event handler, bukan saat render). */
   const runExtra = (key: (typeof extras)[number]['key']) => {
@@ -301,7 +313,7 @@ export function Composer({
           onChange={(event) => pickFile(event.target.files?.[0])}
           data-testid="composer-file"
         />
-        {isHp ? (
+        {isHp && extras.length === 0 ? null : isHp ? (
           // HP: satu tombol "+" → menu berlabel, supaya kotak tulis tetap lebar (review template TM1).
           <DropdownMenu.Root modal={false}>
             <DropdownMenu.Trigger asChild>
@@ -342,30 +354,36 @@ export function Composer({
           </DropdownMenu.Root>
         ) : (
           <>
-            <IconButton
-              label={k.attach}
-              icon={Paperclip}
-              tooltipSide="top"
-              disabled={disabled || paused}
-              aria-describedby={pausedNoticeId}
-              onClick={() => fileRef.current?.click()}
-            />
-            <IconButton
-              label={k.interactive}
-              icon={ListChecks}
-              tooltipSide="top"
-              disabled={disabled || paused || locked || file !== null}
-              aria-describedby={pausedNoticeId}
-              onClick={() => setInteractiveOpen(true)}
-            />
-            <IconButton
-              label={k.template}
-              icon={LayoutTemplate}
-              tooltipSide="top"
-              disabled={disabled || paused || locked}
-              aria-describedby={pausedNoticeId}
-              onClick={() => setTemplateOpen(true)}
-            />
+            {allowed.attach ? (
+              <IconButton
+                label={k.attach}
+                icon={Paperclip}
+                tooltipSide="top"
+                disabled={disabled || paused}
+                aria-describedby={pausedNoticeId}
+                onClick={() => fileRef.current?.click()}
+              />
+            ) : null}
+            {allowed.interactive ? (
+              <IconButton
+                label={k.interactive}
+                icon={ListChecks}
+                tooltipSide="top"
+                disabled={disabled || paused || locked || file !== null}
+                aria-describedby={pausedNoticeId}
+                onClick={() => setInteractiveOpen(true)}
+              />
+            ) : null}
+            {allowed.template ? (
+              <IconButton
+                label={k.template}
+                icon={LayoutTemplate}
+                tooltipSide="top"
+                disabled={disabled || paused || locked}
+                aria-describedby={pausedNoticeId}
+                onClick={() => setTemplateOpen(true)}
+              />
+            ) : null}
           </>
         )}
         <textarea

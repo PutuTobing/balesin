@@ -1,6 +1,6 @@
 import type { Contact } from '@balesin/shared';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { Link, getRouteApi } from '@tanstack/react-router';
+import { Link, getRouteApi, useRouter } from '@tanstack/react-router';
 import { ChevronRight, Upload } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
@@ -47,8 +47,14 @@ export function ContactsPage() {
   const [flash] = useState(() => takeContactFlash());
   const [exported, setExported] = useState<ExportResult | null>(null);
 
-  const update = (patch: Partial<ContactSearch>) =>
+  const router = useRouter();
+  // Saringan tertunda (debounce pencarian) tidak boleh membatalkan navigasi yang sedang berjalan
+  // (mis. baru saja membuka detail): halaman tujuan menang.
+  const update = (patch: Partial<ContactSearch>) => {
+    const resolved = router.state.resolvedLocation;
+    if (resolved && router.latestLocation.pathname !== resolved.pathname) return;
     void navigate({ search: (previous) => ({ ...previous, ...patch }), replace: true });
+  };
 
   const actions = canBulk ? (
     <div className={styles.pageActions}>
@@ -308,7 +314,9 @@ function ContactRow({ contact }: { contact: Contact }) {
             {identity.name}
           </span>
           <span className={styles.rowHandle}>
-            {[identity.handle ?? contact.channelHandle, channel].filter(Boolean).join(' · ')}
+            {[identity.handle ?? contact.channelHandle ?? contact.email, channel]
+              .filter(Boolean)
+              .join(' · ')}
           </span>
         </span>
         <span className={styles.rowTags}>

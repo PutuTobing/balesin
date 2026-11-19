@@ -1,5 +1,5 @@
 import { TICKET_PRIORITY_LABELS, type Ticket, type TicketPriority } from '@balesin/shared';
-import { CalendarClock } from 'lucide-react';
+import { CalendarClock, UserPlus } from 'lucide-react';
 import { Icon } from '../../components/ui/Icon';
 import { StatusBadge, type StatusTone } from '../../components/ui/StatusBadge';
 import { t } from '../../i18n/id';
@@ -59,22 +59,24 @@ export function DueText({ ticket, className }: { ticket: Ticket; className?: str
 
 /** Inisial penanggung jawab (nama lengkap di `title` + teks tersembunyi). */
 export function AssigneeInitials({ name }: { name: string | null }) {
+  if (!name) {
+    return (
+      <span className={styles.assignee} title={k.unassigned} data-empty="">
+        <Icon icon={UserPlus} size={16} />
+        <span className="sr-only">{k.unassigned}</span>
+      </span>
+    );
+  }
   const initials = name
-    ? name
-        .split(/\s+/)
-        .filter(Boolean)
-        .slice(0, 2)
-        .map((part) => part.charAt(0).toLocaleUpperCase('id-ID'))
-        .join('')
-    : '–';
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toLocaleUpperCase('id-ID'))
+    .join('');
   return (
-    <span
-      className={styles.assignee}
-      title={name ?? k.unassigned}
-      data-empty={name ? undefined : ''}
-    >
+    <span className={styles.assignee} title={name}>
       <span aria-hidden="true">{initials}</span>
-      <span className="sr-only">{name ?? k.unassigned}</span>
+      <span className="sr-only">{name}</span>
     </span>
   );
 }

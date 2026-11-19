@@ -368,8 +368,26 @@ async function broadcastMocks(page: Page, list: unknown[] = ALL): Promise<void> 
     await page.route(`${API}/broadcasts/${item.id}/report`, (route) =>
       json(route, { report: { ...REPORT, broadcastId: item.id } }),
     );
+    // Kampanye yang belum mulai mengirim: penerima masih antre (tanpa status kirim/dibaca).
+    const unsent = ['draft', 'pending_approval', 'scheduled'].includes(
+      (item as { status: string }).status,
+    );
     await page.route(new RegExp(`/api/v1/broadcasts/${item.id}/recipients(\\?|$)`), (route) =>
-      json(route, { recipients: RECIPIENTS, nextCursor: null }),
+      json(route, {
+        recipients: unsent
+          ? RECIPIENTS.map((recipient) => ({
+              ...recipient,
+              status: 'pending',
+              skipReason: null,
+              messageStatus: null,
+              failure: null,
+              conversationId: null,
+              processedAt: null,
+              repliedAt: null,
+            }))
+          : RECIPIENTS,
+        nextCursor: null,
+      }),
     );
     await page.route(`${API}/broadcasts/${item.id}/estimate`, (route) =>
       json(route, { estimate: ESTIMATE }),

@@ -128,7 +128,6 @@ function CsatForm({ settings }: { settings: CsatSettings }) {
           error={errors.minIntervalHours}
           inputMode="numeric"
           maxLength={3}
-          className={styles.intervalField}
         />
         {save.isError && !(isApiError(save.error) && save.error.details.length > 0) ? (
           <Notice tone="danger" role="alert">

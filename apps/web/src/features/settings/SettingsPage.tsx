@@ -4,6 +4,7 @@ import {
   Bell,
   Building2,
   ChevronRight,
+  Clock,
   ListTree,
   SmilePlus,
   BellRing,
@@ -54,6 +55,7 @@ import { usePushDevice } from '../notifications/use-push-device';
 import { contactAttributesQuery } from '../contacts/contact-queries';
 import { departmentsQuery } from '../departments/department-queries';
 import { csatSettingsQuery } from '../reports/csat-queries';
+import { workspaceQuery } from '../workspace/workspace-queries';
 import styles from './Settings.module.css';
 
 const APPEARANCE_HEADING_ID = 'pengaturan-tampilan';
@@ -220,6 +222,7 @@ function OrganizationSettings({
       <ul className={styles.menu}>
         {showChannels ? <ChannelsMenuItem /> : null}
         {showTeam ? <TeamMenuItem canInvite={canInvite} canManage={canManageTeam} /> : null}
+        {showWorkspace ? <WorkspaceMenuItem /> : null}
         {showWorkspace ? <DepartmentsMenuItem /> : null}
         {showEmail ? <EmailMenuItem /> : null}
         {showTemplates ? <TemplatesMenuItem /> : null}
@@ -349,6 +352,24 @@ function TemplatesMenuItem() {
           : null
       }
       loading={list.isPending}
+    />
+  );
+}
+
+/** Jam kerja & alokasi: sedang di dalam / di luar jam kerja tim. */
+function WorkspaceMenuItem() {
+  const settings = useQuery(workspaceQuery);
+  const data = settings.data?.settings;
+  return (
+    <MenuRow
+      to="/pengaturan/jam-kerja"
+      icon={Clock}
+      label={t.workspace.title}
+      hint={t.workspace.menuHint}
+      status={
+        data ? (data.withinTeamHoursNow ? t.workspace.menuOpen : t.workspace.menuClosed) : null
+      }
+      loading={settings.isPending}
     />
   );
 }
@@ -491,6 +512,7 @@ function MenuRow({
     | '/pengaturan/alarm'
     | '/pengaturan/atribut-kontak'
     | '/pengaturan/departemen'
+    | '/pengaturan/jam-kerja'
     | '/pengaturan/csat';
   icon: LucideIcon;
   label: string;

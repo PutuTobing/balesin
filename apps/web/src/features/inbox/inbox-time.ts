@@ -15,6 +15,27 @@ export type WindowState =
   | { kind: 'expiring'; remainingMs: number }
   | { kind: 'expired' };
 
+/**
+ * Pesan biasa boleh dikirim sekarang: channel tanpa jendela 24 jam (Telegram, Email —
+ * `windowApplies: false`) selalu boleh; selainnya selama jendela terbuka.
+ */
+export function replyWindowOpen(
+  conversation: { windowApplies?: boolean; windowExpiresAt: string | null },
+  now: number,
+): boolean {
+  if (conversation.windowApplies === false) return true;
+  const state = windowState(conversation.windowExpiresAt, now);
+  return state.kind === 'open' || state.kind === 'expiring';
+}
+
+/** Hitung mundur hanya untuk channel berjendela 24 jam. */
+export function windowExpiry(conversation: {
+  windowApplies?: boolean;
+  windowExpiresAt: string | null;
+}): string | null {
+  return conversation.windowApplies === false ? null : conversation.windowExpiresAt;
+}
+
 export function windowState(expiresAt: string | null, now: number): WindowState {
   if (expiresAt === null) return { kind: 'none' };
   const end = Date.parse(expiresAt);

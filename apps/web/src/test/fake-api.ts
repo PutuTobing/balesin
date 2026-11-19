@@ -37,7 +37,12 @@ import {
   type ConversationNote,
   type ConversationEvent,
 } from '@balesin/shared';
-import { REPORT_ROUTES, permissionScope, type ReportPerformance } from '@balesin/shared';
+import {
+  REPORT_ROUTES,
+  channelTypeInfos,
+  permissionScope,
+  type ReportPerformance,
+} from '@balesin/shared';
 import { vi } from 'vitest';
 import { fakeInboxRoutes } from './fake-inbox';
 
@@ -444,6 +449,10 @@ export function installFakeApi(options: FakeApiOptions = {}): FakeApi {
       json({ tickets: [], nextCursor: null }),
     ),
     [`GET ${API_ROUTES.departments.list}`]: fullSessionOnly(() => json({ departments: [] })),
+    // Fase 6: channel selain WhatsApp (bawaan belum ada).
+    [`GET ${API_ROUTES.channelConnections.list}`]: fullSessionOnly(() =>
+      json({ channels: [], types: channelTypeInfos(), canStoreSecrets: true, maxChannels: 20 }),
+    ),
     [`GET ${REPORT_ROUTES.performance}`]: fullSessionOnly((request) =>
       json({ report: emptyReport(request, session?.user.role ?? 'cs') }),
     ),

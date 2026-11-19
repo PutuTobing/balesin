@@ -135,4 +135,5 @@ export const SECURITY_EVENT_FILTERS: Readonly<
   webhook_changed: { targetType: 'webhook' },
   webhook_disabled: { action: 'webhook.auto_disabled' },
   bot_enabled: { action: 'channel.bot_updated' },
+  auto_message_risky: { action: 'settings.workspace.updated' },
 };

@@ -114,9 +114,14 @@ function TicketRow({ ticket }: { ticket: Ticket }) {
             <span>{formatDateTime(ticket.updatedAt)}</span>
           </span>
         </span>
-        <span className={styles.listSide}>
+        {/* Sel tetap: kolom prioritas, tenggat, penanggung jawab sejajar antarbaris. */}
+        <span className={`${styles.listCell} ${styles.listPriority}`}>
           <PriorityBadge priority={ticket.priority} />
+        </span>
+        <span className={`${styles.listCell} ${styles.listDue}`}>
           <DueText ticket={ticket} />
+        </span>
+        <span className={styles.listCellEnd}>
           <AssigneeInitials name={ticket.assignee?.name ?? null} />
         </span>
       </Link>

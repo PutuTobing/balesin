@@ -382,7 +382,11 @@ function LogItem({ event }: { event: ConversationEvent }) {
       <span className={styles.logDot} aria-hidden="true" />
       <div className={styles.logText}>
         <p>
-          <strong>{event.actor?.name ?? p.system}</strong> ·{' '}
+          {/* Penugasan tanpa pelaku = alokasi otomatis (round-robin), bukan "Sistem" umum. */}
+          <strong>
+            {event.actor?.name ?? (event.kind === 'assigned' ? p.automatic : p.system)}
+          </strong>{' '}
+          ·{' '}
           {reassigned
             ? p.logReassigned
             : CONVERSATION_EVENT_LABELS[event.kind].toLocaleLowerCase('id-ID')}

@@ -7,7 +7,7 @@ import { Notice } from '../../components/ui/Notice';
 import { Skeleton, SkeletonRegion } from '../../components/ui/Skeleton';
 import { t } from '../../i18n/id';
 import { endpoints } from '../../lib/api/endpoints';
-import { formatDateTime } from '../../lib/format';
+import { formatDateTimeInline } from '../../lib/format';
 import { useCan, useSession } from '../auth/session';
 import { inboxChannelsQuery } from '../inbox/inbox-queries';
 import { ExportButton, ReportError, ReportSection } from './ReportBits';
@@ -33,7 +33,14 @@ export function CostsReport() {
   const months = recentMonths(todayIn(zone));
   const [month, setMonth] = useState(months[0] ?? '');
   const [channelId, setChannelId] = useState('');
-  const channels = useQuery(inboxChannelsQuery);
+  const channels = useQuery({
+    ...inboxChannelsQuery,
+    // Biaya pesan Meta hanya untuk channel WhatsApp.
+    select: (data) => ({
+      ...data,
+      channels: data.channels.filter((channel) => channel.type === 'whatsapp'),
+    }),
+  });
   const canLimits = useCan('sending.limits.manage');
   const costs = useQuery({
     queryKey: ['reports', 'costs', month, channelId],
@@ -98,21 +105,19 @@ export function CostsReport() {
               <p className={styles.totalValue}>{r.money(data.currency, data.total)}</p>
               <span className={styles.estimate}>{r.estimateBadge}</span>
             </div>
-            <p className={styles.hint}>
-              {r.rateSource(data.rateSource)}
-              {canLimits ? (
-                <>
-                  {' '}
-                  <Link to="/pengaturan/batas-kirim" className={styles.inlineLink}>
-                    {r.rateSettingsLink}
-                  </Link>
-                </>
-              ) : null}
-            </p>
+            <dl className={styles.rateSource}>
+              <dt>{r.rateSourceLabel}</dt>
+              <dd>{data.rateSource}</dd>
+            </dl>
+            {canLimits ? (
+              <Link to="/pengaturan/batas-kirim" className={styles.touchLink}>
+                {r.rateSettingsLink}
+              </Link>
+            ) : null}
             {data.unknownRate > 0 ? (
               <Notice tone="warning">{r.unknownRate(data.unknownRate)}</Notice>
             ) : null}
-            <p className={styles.hint}>{r.computedAt(formatDateTime(data.computedAt))}</p>
+            <p className={styles.hint}>{r.computedAt(formatDateTimeInline(data.computedAt))}</p>
           </ReportSection>
           {data.channels.length === 0 ? (
             <p className={styles.hint}>{r.costsEmpty}</p>
@@ -170,10 +175,10 @@ function ChannelCostCard({ cost, currency }: { cost: ChannelCost; currency: stri
               return (
                 <tr key={category}>
                   <th scope="row">{r.categories[category] ?? category}</th>
-                  <td>{formatCount(row.sent)}</td>
-                  <td>{formatCount(row.billable)}</td>
-                  <td>{formatCount(row.free)}</td>
-                  <td>{r.money(currency, row.cost)}</td>
+                  <td data-label={r.colSent}>{formatCount(row.sent)}</td>
+                  <td data-label={r.colBillable}>{formatCount(row.billable)}</td>
+                  <td data-label={r.colFree}>{formatCount(row.free)}</td>
+                  <td data-label={r.colCost}>{r.money(currency, row.cost)}</td>
                 </tr>
               );
             })}

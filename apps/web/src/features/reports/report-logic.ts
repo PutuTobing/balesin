@@ -85,7 +85,7 @@ export function formatRange(range: DateRange): string {
   return t.reports.rangeText(formatDay(range.from, true), formatDay(range.to, true));
 }
 
-/** Detik → "45 dtk", "3 mnt 20 dtk", "2 j 5 mnt", "3 hr 4 j". `null` → "—". */
+/** Detik → "45 dtk", "3 mnt 20 dtk", "2 jam 5 mnt", "3 hari 4 jam". `null` → "—". */
 export function formatDuration(seconds: number | null): string {
   if (seconds === null || !Number.isFinite(seconds)) return '—';
   const total = Math.max(0, Math.round(seconds));
@@ -98,11 +98,11 @@ export function formatDuration(seconds: number | null): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) {
     const rest = minutes % 60;
-    return rest > 0 ? `${hours} j ${rest} mnt` : `${hours} j`;
+    return rest > 0 ? `${hours} jam ${rest} mnt` : `${hours} jam`;
   }
   const days = Math.floor(hours / 24);
   const rest = hours % 24;
-  return rest > 0 ? `${days} hr ${rest} j` : `${days} hr`;
+  return rest > 0 ? `${days} hari ${rest} jam` : `${days} hari`;
 }
 
 export function formatCount(value: number): string {

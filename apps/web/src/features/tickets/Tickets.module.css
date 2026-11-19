@@ -67,9 +67,38 @@
   gap: var(--space-12) var(--space-16);
 }
 
+.boardRow,
+.viewRow {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-8);
+}
+
 .boardSelect {
   flex: 0 1 16rem;
   min-width: 12rem;
+}
+
+.boardMenuButton {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--size-touch);
+  height: var(--size-touch);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  color: var(--ink-2);
+}
+
+.boardMenuButton:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.filterToggle {
+  flex: none;
+  min-height: var(--size-touch);
 }
 
 .viewSwitch {
@@ -145,13 +174,15 @@
   gap: var(--space-12);
   min-width: 0;
   padding-bottom: var(--space-8);
+  padding-inline-end: var(--space-16);
+  scroll-padding-inline: var(--space-16);
   overflow-x: auto;
   overscroll-behavior-x: contain;
 }
 
 .column {
   display: flex;
-  flex: 0 0 18rem;
+  flex: 0 0 17rem;
   flex-direction: column;
   gap: var(--space-8);
   max-height: calc(100dvh - 15rem);
@@ -237,7 +268,17 @@
 }
 
 .handle {
+  margin-inline-end: var(--space-4);
   cursor: grab;
+}
+
+/* Petunjuk keyboard yang terlihat selama kartu diangkat. */
+.grabHint {
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-input);
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-size: var(--text-13);
 }
 
 .handle[aria-pressed='true'] {
@@ -266,6 +307,7 @@ ol.cards,
 }
 
 .cards > .card {
+  position: relative;
   gap: var(--space-4);
   padding: var(--space-8) var(--space-8) var(--space-12) var(--space-8);
   box-shadow: var(--shadow-1);
@@ -324,6 +366,20 @@ ol.cards,
 
 .cardTitle:hover {
   color: var(--primary);
+}
+
+/* Seluruh kartu = area ketuk ke detail; pegangan & menu tetap bisa ditekan terpisah. */
+.cards > .card .cardTitle::after {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-card);
+  content: '';
+}
+
+.cards > .card .handle,
+.cards > .card .cardMenu {
+  position: relative;
+  z-index: 1;
 }
 
 .cardTitle:focus-visible {
@@ -459,6 +515,56 @@ ol.cards,
   color: var(--danger-ink);
 }
 
+/* Menu "Pindah ke…": bulatan kosong = kolom lain, bulatan terisi = kolom sekarang. */
+.menuDot {
+  flex: none;
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 1.5px solid var(--ink-2);
+  border-radius: var(--radius-pill);
+}
+
+.menuDot[data-current] {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.menuText {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4) var(--space-8);
+}
+
+.menuNote {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .menuItem {
+    min-height: var(--size-touch);
+  }
+}
+
+/* Sentuh: seret tidak berlaku — pindah lewat menu "Pindah ke…". */
+@media (pointer: coarse) {
+  .handle {
+    display: none;
+  }
+}
+
+.columnPicker {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-8);
+}
+
+.columnPickerField {
+  flex: 1;
+  min-width: 0;
+}
+
 /* ---------- Daftar ---------- */
 
 ul.list,
@@ -477,7 +583,8 @@ ul.list,
 }
 
 .listLink {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 7rem 13rem 2.5rem;
   align-items: center;
   gap: var(--space-16);
   min-height: var(--size-touch);
@@ -538,11 +645,19 @@ ul.list,
   color: var(--success-ink);
 }
 
-.listSide {
+.listCell {
   display: flex;
-  flex: none;
   align-items: center;
-  gap: var(--space-12);
+  min-width: 0;
+}
+
+.listCellEnd {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.listCellEnd .assignee {
+  margin-left: 0;
 }
 
 .listSkeleton {
@@ -673,6 +788,14 @@ ul.list,
 
 .inlineLink:hover {
   text-decoration: underline;
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .inlineLink {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--size-touch);
+  }
 }
 
 .tabs {
@@ -904,20 +1027,23 @@ ul.linkedList,
 }
 
 .linkedTitle {
-  flex: 1;
+  display: -webkit-box;
+  flex: 1 1 100%;
   min-width: 0;
   overflow: hidden;
   font-size: var(--text-14);
   font-weight: var(--weight-semibold);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .linkedMeta {
   display: flex;
-  flex: none;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-8);
+  gap: var(--space-4) var(--space-8);
 }
 
 .linkedCreate {
@@ -982,10 +1108,46 @@ ul.linkedList,
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .listSide {
-    flex-direction: column;
-    align-items: flex-end;
-    gap: var(--space-4);
+  /* Rincian (kolom, penanggung jawab) di atas komentar, bukan di bawah semuanya. */
+  .detailMain {
+    display: contents;
+  }
+
+  .descriptionCard {
+    order: 1;
+  }
+
+  .propertiesCard {
+    order: 2;
+  }
+
+  .activityCard {
+    order: 3;
+  }
+
+  .listLink {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      'main main end'
+      'priority due end';
+    row-gap: var(--space-8);
+  }
+
+  .listMain {
+    grid-area: main;
+  }
+
+  .listPriority {
+    grid-area: priority;
+  }
+
+  .listDue {
+    grid-area: due;
+  }
+
+  .listCellEnd {
+    grid-area: end;
+    align-self: start;
   }
 }
 
@@ -995,7 +1157,16 @@ ul.linkedList,
     gap: var(--space-8);
   }
 
-  .boardSelect,
+  .boardRow,
+  .viewRow {
+    flex: 1 1 100%;
+  }
+
+  .boardSelect {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
   .filterSearch {
     flex: 1 1 100%;
   }
@@ -1021,7 +1192,12 @@ ul.linkedList,
   }
 
   .kanban {
+    padding-inline-end: 0;
     overflow-x: visible;
+  }
+
+  .viewRow {
+    align-items: stretch;
   }
 
   .column {
@@ -1062,13 +1238,7 @@ ul.linkedList,
   }
 
   .listLink {
-    flex-wrap: wrap;
     padding: var(--space-12);
-  }
-
-  .listSide {
-    flex-direction: row;
-    width: 100%;
   }
 
   .commentSend,
@@ -1087,4 +1257,8 @@ ul.linkedList,
     width: 100%;
     justify-content: flex-end;
   }
+}
+
+.columnHead[hidden] {
+  display: none;
 }

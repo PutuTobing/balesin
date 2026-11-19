@@ -186,7 +186,10 @@ function TicketDetail({ ticket }: { ticket: Ticket }) {
 
       <div className={styles.detailGrid}>
         <div className={styles.detailMain}>
-          <section className={styles.card} aria-labelledby="tiket-deskripsi">
+          <section
+            className={`${styles.card} ${styles.descriptionCard}`}
+            aria-labelledby="tiket-deskripsi"
+          >
             <h3 id="tiket-deskripsi" className={styles.sectionTitle}>
               {k.descriptionLabel}
             </h3>
@@ -201,7 +204,10 @@ function TicketDetail({ ticket }: { ticket: Ticket }) {
           <Activity ticket={ticket} />
         </div>
 
-        <aside className={styles.card} aria-labelledby="tiket-rincian">
+        <aside
+          className={`${styles.card} ${styles.propertiesCard}`}
+          aria-labelledby="tiket-rincian"
+        >
           <h3 id="tiket-rincian" className={styles.sectionTitle}>
             {k.properties}
           </h3>
@@ -391,7 +397,11 @@ function DueField({
 function Activity({ ticket }: { ticket: Ticket }) {
   const [tab, setTab] = useState('comments');
   return (
-    <Tabs.Root value={tab} onValueChange={setTab} className={styles.card}>
+    <Tabs.Root
+      value={tab}
+      onValueChange={setTab}
+      className={`${styles.card} ${styles.activityCard}`}
+    >
       <Tabs.List className={styles.tabs} aria-label={k.tabsLabel}>
         <Tabs.Trigger value="comments" className={styles.tab}>
           {k.tabComments}

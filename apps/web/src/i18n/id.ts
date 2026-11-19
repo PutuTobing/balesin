@@ -138,6 +138,10 @@ export const t = {
     item: {
       fromWhatsApp: 'dari WhatsApp',
       fromWhatsAppHint: 'Nama dari profil WhatsApp pelanggan, belum diberi nama oleh tim',
+      fromChannel: (channel: string) => `dari ${channel}`,
+      fromChannelHint: (channel: string) =>
+        `Nama dari profil ${channel} pelanggan, belum diberi nama oleh tim`,
+      channelType: (channel: string) => `Channel ${channel}`,
       unread: (count: number) => `${count} pesan belum dibaca`,
       unreadShort: (count: number) => (count > 99 ? '99+' : String(count)),
       assignee: (name: string) => `Ditangani ${name}`,
@@ -171,6 +175,18 @@ export const t = {
     time: {
       yesterday: 'Kemarin',
       today: 'Hari ini',
+    },
+    /** Pesan channel Email (Fase 6). */
+    email: {
+      subject: 'Subjek',
+      viewHtml: 'Lihat versi HTML',
+      htmlTitle: 'Versi HTML email',
+      htmlFrameTitle: 'Isi email versi HTML (tanpa skrip)',
+      htmlNote:
+        'Ditampilkan dalam mode aman: skrip, gambar luar, dan formulir dimatikan. Jangan masukkan password dari tautan di email.',
+      htmlMissing: 'Versi HTML email ini tidak tersedia.',
+      skippedAttachments: (count: number) =>
+        `${count} lampiran tidak disimpan (terlalu besar, terlalu banyak, atau jenisnya berbahaya).`,
     },
     chat: {
       label: 'Ruang chat',
@@ -248,6 +264,8 @@ export const t = {
       windowClosedTitle: 'Sesi 24 jam sudah habis',
       windowClosedBody:
         'Pesan biasa hanya bisa dikirim dalam 24 jam sejak pesan terakhir pelanggan. Sapa lagi dengan template yang sudah disetujui Meta.',
+      windowClosedNoTemplateBody:
+        'Channel ini tidak punya template untuk membuka sesi lagi. Balasan bisa dikirim lagi setelah pelanggan mengirim pesan.',
       windowNoneTitle: 'Pelanggan belum pernah membalas',
       windowNoneBody:
         'Pesan biasa baru bisa dikirim setelah pelanggan mengirim pesan. Mulai dengan template yang sudah disetujui Meta.',
@@ -444,6 +462,7 @@ export const t = {
       logAssignee: (name: string) => `ke ${name}`,
       logFrom: (name: string) => `dari ${name}`,
       logReassigned: 'mengalihkan percakapan',
+      automatic: 'Otomatis (round-robin)',
       logFromTo: (from: string, to: string) => `dari ${from} ke ${to}`,
       audioFrom: (kind: string, sender: string) =>
         `${kind} · dari ${sender.toLocaleLowerCase('id-ID')}`,
@@ -622,6 +641,8 @@ export const t = {
     sectionTickets: 'Tiket',
     noAttributes: 'Belum ada atribut.',
     requiredMissing: 'Belum diisi (wajib)',
+    freeAttribute: 'atribut bebas',
+    nameFromProfile: (channel: string) => `Nama dari profil ${channel}`,
     ticketsEmpty: 'Belum ada tiket untuk kontak ini.',
     ticketsFailed: 'Tiket belum bisa dimuat.',
     deletedFlash: 'Kontak dihapus permanen.',
@@ -641,7 +662,8 @@ export const t = {
     mergeKeepLabel: 'Kontak yang dipertahankan',
     mergeRecommended: 'Disarankan (lebih lama)',
     mergeMoves:
-      'Ikut pindah: percakapan, pesan, tag, tiket, dan riwayat. Data kontak yang dipertahankan menang; isian kosongnya diisi dari kontak lain.',
+      'Ikut pindah: percakapan, pesan, tag, tiket, dan riwayat. Bila isian berbeda, data kontak yang dipertahankan dipakai. Isian yang kosong diisi dari kontak lain.',
+    noIdentifier: (channel: string) => `${channel}, tanpa nomor atau email`,
     mergeContinue: 'Lanjutkan',
     mergeCancel: 'Batal',
     mergeConfirmTitle: 'Gabungkan kontak?',
@@ -1246,6 +1268,9 @@ export const t = {
     searchPlaceholder: 'Cari judul atau #nomor',
     clearSearch: 'Hapus pencarian',
     filtersLabel: 'Saringan tiket',
+    filter: 'Saring',
+    filterCount: (count: number) => `Saring (${count})`,
+    boardMenu: 'Menu board',
     resetFilters: 'Hapus saringan',
     mineOnlyNote: 'Kamu melihat tiket yang kamu pegang.',
 
@@ -1257,6 +1282,9 @@ export const t = {
     columnMore: (rest: number) => `${rest} tiket lain ada di tampilan Daftar.`,
     columnEmpty: 'Belum ada tiket',
     doneColumn: 'Kolom selesai',
+    doneColumnShort: 'kolom selesai',
+    doneShort: 'Selesai',
+    currentColumn: (name: string) => `${name} · sekarang`,
     columnPickerLabel: 'Pilih kolom',
     addColumn: 'Tambah kolom',
     columnMenu: (name: string) => `Menu kolom ${name}`,
@@ -1285,6 +1313,7 @@ export const t = {
     moveMenu: (number: number) => `Pindahkan tiket #${number} ke kolom lain`,
     grabLabel: (number: number) => `Angkat tiket #${number} untuk dipindah`,
     moveToColumn: (name: string) => `Pindah ke ${name}`,
+    grabHintVisible: '← → pindah kolom · ↑ ↓ ubah urutan · Spasi letakkan · Esc batal',
     dragHint:
       'Tekan spasi untuk mengangkat tiket, panah untuk memindah, spasi lagi untuk meletakkan, Escape untuk batal.',
     grabbed: (number: number, column: string, position: number, total: number) =>
@@ -1419,7 +1448,7 @@ export const t = {
     boardDepartment: 'Departemen',
     boardDepartmentNone: 'Tanpa departemen',
     boardDepartmentHint:
-      'Pengguna bertanda "hanya departemen sendiri" hanya melihat board departemennya.',
+      'Anggota yang dibatasi ke departemennya hanya melihat board departemen itu.',
     boardColumnsHint: 'Board baru memakai kolom Baru, Dikerjakan, dan Selesai. Bisa diubah nanti.',
     createBoard: 'Buat board',
     creatingBoard: 'Membuat…',
@@ -1440,13 +1469,96 @@ export const t = {
     backToBoard: 'Kembali ke board',
   },
 
+  /** Pengaturan → Jam kerja & alokasi (docs/KONTRAK-API-INBOX.md "Jam kerja, pesan otomatis, alokasi"). */
+  workspace: {
+    title: 'Jam kerja & alokasi',
+    menuHint: 'Jam kerja tim, hari libur, pesan otomatis, pembagian chat',
+    menuOpen: 'Sedang jam kerja',
+    menuClosed: 'Di luar jam kerja',
+    loadFailedTitle: 'Pengaturan jam kerja belum bisa dimuat',
+    timezone: (zone: string) => `Zona waktu ${zone}`,
+    nowOpen: 'Sekarang dalam jam kerja',
+    nowClosed: 'Sekarang di luar jam kerja',
+    save: 'Simpan',
+    saving: 'Menyimpan…',
+    saved: 'Tersimpan.',
+
+    hoursTitle: 'Jam kerja tim',
+    hoursHint:
+      'Dipakai alokasi otomatis dan pesan di luar jam kerja. Terpisah dari jam kerja bot. Departemen bisa punya jam sendiri.',
+    hoursAlways: 'Setiap saat (24 jam)',
+    hoursSchedule: 'Sesuai jadwal',
+    holidaysTitle: 'Hari libur',
+    holidaysHint: 'Di hari libur tim dianggap di luar jam kerja seharian.',
+    holidaysEmpty: 'Belum ada hari libur.',
+    holidayDate: 'Tanggal',
+    holidayName: 'Nama hari libur',
+    holidayNamePlaceholder: 'mis. Nyepi',
+    addHoliday: 'Tambah hari libur',
+    removeHoliday: (name: string) => `Hapus hari libur ${name}`,
+    holidaysLimit: (max: number) => `Maksimal ${max} hari libur.`,
+
+    allocationTitle: 'Pembagian chat',
+    allocationHint: 'Cara chat baru yang belum ditangani sampai ke agen.',
+    allocationModes: {
+      manual: 'Ambil sendiri dari antrian',
+      round_robin: 'Bagi otomatis bergiliran',
+    } as Record<string, string>,
+    allocationModeHints: {
+      manual: 'Agen mengambil chat dari tab "Belum dilayani". Cocok untuk tim kecil.',
+      round_robin:
+        'Chat baru dalam jam kerja dibagikan ke agen yang tersedia, mulai dari yang paling lama tidak mendapat chat.',
+    } as Record<string, string>,
+    capacity: 'Kapasitas per agen',
+    capacityHint:
+      'Maksimal chat terbuka yang dibagikan otomatis ke satu agen. Kosongkan = tanpa batas.',
+
+    autoTitle: 'Pesan otomatis',
+    autoHint:
+      'Dikirim sekali per percakapan baru dari pelanggan, selama sesi 24 jam terbuka. Mengaktifkan atau mengubah teks butuh konfirmasi password.',
+    autoLabels: {
+      greeting: 'Sapaan (dalam jam kerja)',
+      away: 'Di luar jam kerja',
+      assigned: 'Saat ditangani agen',
+    } as Record<string, string>,
+    autoEnabled: (label: string) => `Kirim pesan "${label}"`,
+    autoText: 'Isi pesan',
+    autoVariables: (variables: string) => `Variabel: ${variables}`,
+    autoConfirmTitle: 'Simpan pesan otomatis?',
+    autoConfirmBody:
+      'Pesan ini dikirim otomatis ke semua pelanggan baru dari nomor resmi. Masukkan password dan kode verifikasi untuk melanjutkan.',
+    autoConfirm: 'Simpan pesan',
+
+    agentsTitle: 'Agen untuk pembagian otomatis',
+    agentsHint:
+      'Agen bisa menyalakan/mematikan "Tersedia" sendiri dari inbox. Owner dan Admin bawaannya dikecualikan.',
+    agentsEmpty: 'Belum ada agen yang bisa menerima pembagian otomatis.',
+    agentsFailed: 'Daftar agen belum bisa dimuat.',
+    agentsLabel: 'Daftar agen',
+    available: 'Tersedia',
+    excluded: 'Jangan beri chat otomatis',
+    load: (count: number) => `${count} chat terbuka`,
+    lastAssigned: (when: string) => `Terakhir dapat chat ${when}`,
+    neverAssigned: 'Belum pernah dapat chat otomatis',
+    manualNote: 'Pembagian otomatis sedang mati (mode ambil sendiri).',
+
+    // Saklar ketersediaan agen di inbox
+    availabilityLabel: 'Tersedia untuk chat baru',
+    availabilityOn: 'Tersedia',
+    availabilityOff: 'Tidak tersedia',
+    availabilityHintOn: 'Kamu ikut pembagian chat otomatis.',
+    availabilityHintOff: 'Kamu tidak menerima chat otomatis.',
+    availabilityExcluded: 'Owner atau Admin mengecualikanmu dari pembagian otomatis.',
+    availabilityFailed: 'Status ketersediaan belum bisa diubah.',
+  },
+
   /** Departemen (Fase 5, docs/KONTRAK-API-CRM-TIKET.md "Departemen"). */
   departments: {
     title: 'Departemen',
     menuHint: 'Kelompok tim, channel bawaan, dan jam kerja per departemen',
     menuCount: (count: number) => (count === 0 ? 'Belum ada' : `${count} departemen`),
     intro:
-      'Departemen mengelompokkan tim, misalnya CS dan Teknisi. Chat baru dari channel bawaan langsung masuk departemennya, dan anggota bertanda "hanya departemen sendiri" hanya melihat chat & tiket departemennya.',
+      'Departemen mengelompokkan tim, misalnya CS dan Teknisi. Chat baru dari channel bawaan langsung masuk departemennya, dan anggota yang dibatasi ke departemennya hanya melihat chat & tiket departemen itu.',
     add: 'Tambah departemen',
     listLabel: 'Daftar departemen',
     emptyTitle: 'Belum ada departemen',
@@ -1454,7 +1566,7 @@ export const t = {
       'Tanpa departemen, semua chat bisa dilihat tim sesuai perannya. Buat departemen bila tim mulai dibagi per bagian.',
     loadFailedTitle: 'Departemen belum bisa dimuat',
     members: (count: number) => (count === 0 ? 'Belum ada anggota' : `${count} anggota`),
-    restrictedBadge: 'Hanya departemen ini',
+    restrictedBadge: 'Terbatas ke departemen',
     defaultChannels: 'Channel bawaan',
     noDefaultChannels: 'Tidak ada',
     hours: 'Jam kerja',
@@ -1468,7 +1580,7 @@ export const t = {
     name: 'Nama departemen',
     description: 'Deskripsi',
     channelsLegend: 'Channel bawaan',
-    channelsHint: 'Chat BARU dari pelanggan di channel ini langsung masuk departemen ini.',
+    channelsHint: 'Chat baru dari pelanggan di channel ini langsung masuk departemen ini.',
     channelsEmpty: 'Belum ada channel.',
     hoursLegend: 'Jam kerja tim',
     hoursHint: 'Dipakai alokasi otomatis dan pesan di luar jam kerja untuk chat departemen ini.',
@@ -1483,7 +1595,7 @@ export const t = {
     cancel: 'Batal',
     removeTitle: (name: string) => `Hapus departemen ${name}?`,
     removeBody:
-      'Chat, board tiket, dan channel dilepas dari departemen ini, dan keanggotaannya dihapus. Anggota bertanda "hanya departemen sendiri" bisa kehilangan akses ke chat.',
+      'Chat, board tiket, dan channel dilepas dari departemen ini, dan keanggotaannya dihapus. Anggota yang dibatasi ke departemennya bisa kehilangan akses ke chat.',
     removeConfirm: 'Hapus departemen',
     saved: 'Departemen tersimpan.',
     removed: 'Departemen dihapus.',
@@ -1496,7 +1608,8 @@ export const t = {
     restrictedLabel: 'Hanya lihat chat & tiket departemennya',
     restrictedHint:
       'Chat tanpa departemen tidak terlihat. Atur departemen bawaan channel supaya chat baru tidak terlewat.',
-    restrictedRoleNote: 'Pembatasan departemen hanya untuk Supervisor dan CS.',
+    restrictedRoleNote: 'Pembatasan ke departemen hanya untuk Supervisor dan CS.',
+    accessLimitTitle: 'Batas akses',
     accessSave: 'Simpan departemen',
     accessSaved: 'Departemen anggota tersimpan.',
     loosenTitle: 'Perluas akses anggota?',
@@ -1513,7 +1626,7 @@ export const t = {
     moveTitle: 'Pindahkan ke departemen',
     moveBody: (current: string | null) =>
       current
-        ? `Sekarang di ${current}. Anggota bertanda "hanya departemen sendiri" di departemen lama bisa kehilangan akses.`
+        ? `Sekarang di ${current}. Anggota yang dibatasi ke departemen lama bisa kehilangan akses.`
         : 'Chat ini belum punya departemen.',
     moveNone: 'Tanpa departemen',
     moveConfirm: 'Pindahkan',
@@ -1570,6 +1683,8 @@ export const t = {
 90% di bawah ${p90}`,
     noDuration: 'Belum ada data',
     botOnly: 'Selesai oleh bot saja',
+    botTile: 'Bot',
+    botTileDetail: (handoffs: string) => `Diserahkan ke tim: ${handoffs}`,
     humanHandled: 'Dibalas tim',
     handoffs: 'Diserahkan bot ke tim',
     csatTitle: 'Kepuasan pelanggan (CSAT)',
@@ -1632,14 +1747,14 @@ export const t = {
     costsIntro: 'Perkiraan biaya pesan WhatsApp per nomor. Angka akhir mengikuti tagihan Meta.',
     estimateBadge: 'Perkiraan',
     monthLabel: 'Bulan',
-    rateSource: (source: string) => `Sumber tarif: ${source}`,
+    rateSourceLabel: 'Sumber tarif',
     rateSettingsLink: 'Ubah tarif di Pengaturan → Batas kirim',
     unknownRate: (count: number) =>
       `${count.toLocaleString('id-ID')} pesan ditagih belum punya tarif negara tujuannya, jadi belum dihitung.`,
     costsTotal: 'Total perkiraan',
     costsEmpty: 'Belum ada channel WhatsApp.',
     serviceTitle: 'Percakapan layanan',
-    serviceConversations: 'Percakapan',
+    serviceConversations: 'Percakapan layanan',
     freeQuota: (quota: string, left: string) => `Kuota gratis ${quota}, sisa ${left}`,
     billableService: 'Ditagih',
     serviceCost: 'Biaya layanan',
@@ -1652,8 +1767,8 @@ export const t = {
     channelTotal: 'Total channel',
     computedAt: (when: string) => `Dihitung ${when}`,
     categories: {
-      MARKETING: 'Marketing',
-      UTILITY: 'Utility',
+      MARKETING: 'Pemasaran',
+      UTILITY: 'Utilitas',
       AUTHENTICATION: 'Autentikasi',
     } as Record<string, string>,
     money: (currency: string, amount: number) =>
@@ -2801,10 +2916,175 @@ export const t = {
    * Pengaturan → Channel: daftar nomor, wizard tambah nomor (docs/SETUP-META.md), halaman nomor,
    * dan profil bisnis. "WhatsApp" di sini nama layanan/channel Meta, bukan nama produk.
    */
+  /** Pengaturan → Channel: Telegram, Email, Messenger, Instagram (Fase 6, KONTRAK-API-CHANNEL-LAIN). */
+  connections: {
+    sectionTitle: 'Channel lain',
+    sectionHint:
+      'Telegram, email, Messenger, dan Instagram masuk ke inbox yang sama dengan WhatsApp.',
+    listLabel: 'Daftar channel lain',
+    addTitle: 'Tambah channel',
+    addLabel: (type: string) => `Hubungkan ${type}`,
+    typeHints: {
+      telegram: 'Bot Telegram dari @BotFather. Pelanggan chat ke bot, balasan dari inbox.',
+      email: 'Kotak masuk email (IMAP) dibalas dari inbox lewat SMTP.',
+      messenger: 'Pesan Halaman Facebook.',
+      instagram: 'DM akun Instagram profesional.',
+    } as Record<string, string>,
+    loadFailed: 'Channel lain belum bisa dimuat.',
+    emptyList: 'Belum ada channel lain.',
+    limitReached: (max: number) => `Sudah ${max} channel, batas maksimalnya.`,
+    noMasterKey: 'Kunci enkripsi server belum diatur, jadi kredensial channel belum bisa disimpan.',
+    reviewBadge: 'Butuh App Review Meta',
+    disabledBadge: 'Nonaktif',
+    open: (name: string) => `Buka channel ${name}`,
+
+    // Wizard
+    newTitle: (type: string) => `Hubungkan ${type}`,
+    name: 'Nama channel',
+    nameHint: 'Nama yang tampil di inbox dan saringan, mis. "Bot Telegram CS".',
+    create: 'Hubungkan',
+    creating: 'Menghubungkan…',
+    cancel: 'Batal',
+    confirmTitle: (type: string) => `Hubungkan ${type}?`,
+    confirmBody:
+      'Kredensial disimpan terenkripsi di server dan tidak pernah ditampilkan lagi. Masukkan password dan kode verifikasi untuk melanjutkan.',
+    unknownType: 'Jenis channel ini tidak dikenal.',
+    created: 'Channel terhubung. Tes koneksi untuk memastikan pesan bisa masuk dan keluar.',
+    createdDisabled:
+      'Channel tersimpan dalam keadaan nonaktif. Aktifkan setelah App Review Meta disetujui dan tes koneksi berhasil.',
+    telegramSteps: [
+      'Buka @BotFather di Telegram, kirim /newbot, lalu ikuti petunjuknya.',
+      'Salin token bot yang diberikan (bentuknya 123456789:AAH…).',
+      'Tempel di bawah. Webhook dipasang otomatis bila alamat server https publik.',
+    ],
+    botToken: 'Token bot',
+    botTokenHint:
+      'Dari @BotFather → /mybots → API Token. Satu bot hanya bisa dipakai satu aplikasi.',
+    emailIntro:
+      'Email pelanggan diambil berkala dari kotak masuk (IMAP), lalu dibalas lewat SMTP. Untuk Gmail dan Microsoft 365, aktifkan IMAP dan pakai app password.',
+    emailAddress: 'Alamat email channel',
+    fromName: 'Nama pengirim',
+    fromNameHint: 'Tampil di kotak masuk pelanggan, mis. "CS Maju Jaya".',
+    imapTitle: 'Email masuk (IMAP)',
+    imapHost: 'Host IMAP',
+    port: 'Port',
+    security: 'Keamanan',
+    securityLabels: {
+      ssl: 'SSL/TLS',
+      starttls: 'STARTTLS',
+      none: 'Tanpa enkripsi (khusus uji)',
+    } as Record<string, string>,
+    username: 'Username',
+    password: 'Password',
+    passwordKeep: 'Kosongkan bila tidak berubah.',
+    folder: 'Folder',
+    pollInterval: 'Cek email tiap (menit)',
+    pollHint: '1–60 menit.',
+    markAsRead: 'Tandai email sudah dibaca di server setelah diambil',
+    smtpTitle: 'Email keluar (SMTP)',
+    smtpSystem: 'Pakai email pengirim sistem',
+    smtpSystemHint:
+      'Dikirim dari alamat Pengaturan → Email pengirim; balasan pelanggan tetap ke alamat channel ini.',
+    smtpCustom: 'Akun SMTP sendiri',
+    smtpCustomHint: 'Dikirim langsung dari alamat channel ini.',
+    smtpHost: 'Host SMTP',
+    trustedTitle: 'Server verifikasi tepercaya',
+    trustedHint:
+      'Opsional. Nama server yang hasil cek SPF/DKIM/DMARC-nya dipercaya, satu per baris, mis. mx.google.com atau .perusahaan.co.id. Kosongkan untuk memakai bawaan dari host IMAP.',
+    metaReviewTitle: 'Butuh App Review Meta',
+    pageId: 'ID Halaman Facebook',
+    instagramAccountId: 'ID akun Instagram',
+    pageAccessToken: 'Page Access Token',
+    pageAccessTokenHint:
+      'Token Pengguna Sistem dengan akses ke Halaman ini (jangan token pribadi).',
+    appSecret: 'App Secret',
+    appSecretHint: 'Aplikasi → Pengaturan → Dasar → App Secret.',
+
+    // Detail
+    detailTitle: 'Channel',
+    notFoundTitle: 'Channel tidak ditemukan',
+    notFoundBody: 'Channel ini mungkin sudah dihapus.',
+    backToChannels: 'Kembali ke Channel',
+    connectionTitle: 'Koneksi',
+    bot: 'Bot',
+    botId: 'ID bot',
+    webhookTitle: 'Webhook',
+    webhookUrl: 'Alamat webhook',
+    webhookRegistered: 'Terpasang',
+    webhookNotRegistered: 'Belum terpasang',
+    registerWebhook: 'Pasang webhook',
+    registeringWebhook: 'Memasang…',
+    webhookRegisteredDone: 'Webhook terpasang. Pesan baru ke bot akan masuk ke inbox.',
+    rotateVerifyToken: 'Buat ulang verify token',
+    rotatingVerifyToken: 'Membuat…',
+    verifyToken: 'Verify token',
+    verifyTokenRotated:
+      'Verify token baru dibuat. Perbarui juga di pengaturan webhook aplikasi Meta.',
+    subscribeFields: 'Field yang dilanggan',
+    mailboxTitle: 'Kotak masuk',
+    lastPolled: 'Terakhir dicek',
+    neverPolled: 'Belum pernah dicek',
+    pollOk: 'Berhasil',
+    pollFailed: 'Gagal',
+    skipped: 'Email dilewati',
+    skippedHint: 'Terlalu besar, balasan otomatis, atau pantulan.',
+    senderVerificationTitle: 'Verifikasi pengirim',
+    senderVerificationDefault: 'Bawaan dari host IMAP',
+    senderVerificationCustom: 'Diatur manual',
+    credentialsUpdated: 'Kredensial diganti',
+    stored: 'Tersimpan',
+    lastTest: 'Tes terakhir',
+    neverTested: 'Belum pernah dites',
+    testTitle: 'Tes koneksi',
+    testHint: 'Memakai kredensial tersimpan. Maksimal 10 tes per 5 menit.',
+    test: 'Tes koneksi',
+    testing: 'Mengetes…',
+    testLockedTitle: 'Tes koneksi dibatasi sementara',
+    checkLabels: {
+      bot: 'Bot',
+      webhook: 'Webhook',
+      incoming: 'Email masuk',
+      outgoing: 'Email keluar',
+      page: 'Halaman Facebook',
+      instagram: 'Akun Instagram',
+    } as Record<string, string>,
+    settingsTitle: 'Pengaturan',
+    edit: 'Ubah pengaturan',
+    editTitle: 'Ubah pengaturan channel',
+    save: 'Simpan',
+    saving: 'Menyimpan…',
+    saved: 'Perubahan tersimpan. Tes koneksi lagi bila kredensial diganti.',
+    editConfirmTitle: 'Simpan kredensial baru?',
+    editConfirmBody:
+      'Kredensial atau tujuan koneksi berubah. Status channel kembali "Belum dites". Masukkan password dan kode verifikasi.',
+    newSecretHint: 'Kosongkan bila tidak diganti.',
+    reenterPassword: 'Isi ulang password karena host, port, keamanan, atau username berubah.',
+    statusTitle: 'Status',
+    enable: 'Aktifkan',
+    disable: 'Nonaktifkan',
+    enableBlocked: 'Aktifkan setelah tes koneksi terakhir berhasil.',
+    disableTitle: 'Nonaktifkan channel ini?',
+    disableBody: 'Pesan masuk tidak diproses dan balasan tidak terkirim sampai diaktifkan lagi.',
+    enabledDone: 'Channel aktif lagi.',
+    disabledDone: 'Channel dinonaktifkan.',
+    deleteTitle: 'Hapus channel ini?',
+    deleteBody:
+      'Kredensial dimusnahkan dan channel tidak bisa dipakai lagi. Percakapan lama tetap ada di inbox.',
+    delete: 'Hapus channel',
+    deleteConfirm: 'Hapus permanen',
+    deleting: 'Menghapus…',
+    deleted: (name: string) => `Channel ${name} dihapus.`,
+    dangerTitle: 'Hapus',
+    copy: 'Salin',
+    copyLabel: (what: string) => `Salin ${what.toLocaleLowerCase('id-ID')}`,
+    copied: 'Tersalin',
+    copiedAnnouncement: (what: string) => `${what} tersalin.`,
+  },
+
   channels: {
     title: 'Channel',
     // Pendek: status di kanan tidak boleh membuat petunjuk patah baris saat dimuat (CLS).
-    menuHint: 'Nomor WhatsApp untuk inbox',
+    menuHint: 'WhatsApp, Telegram, email, dan lainnya',
     menuCount: (count: number) => `${count} nomor`,
     /** "1 koneksi gagal", "2 belum dites": hanya sebagian channel aktif yang berstatus itu. */
     menuWorst: (count: number, label: string) => `${count} ${label.toLocaleLowerCase('id-ID')}`,

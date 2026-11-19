@@ -22,6 +22,7 @@ import { addBlockedReason } from './channel-status';
 import { MasterKeyCommand } from './MasterKeyCommand';
 import styles from './Channels.module.css';
 import { ChannelListSkeleton } from './ChannelsSkeleton';
+import { ConnectionsSection } from './connections/ConnectionsSection';
 import './route-state';
 
 const copy = t.channels.list;
@@ -30,7 +31,7 @@ const BLOCKED_NOTICE_ID = 'channel-tambah-alasan';
 /**
  * Pengaturan → Channel (izin `channels.manage`: Owner, Admin): daftar nomor WhatsApp dengan
  * status koneksi dan kualitas, tombol tambah nomor, dan keadaan kosong yang mengajak menghubungkan
- * nomor pertama.
+ * nomor pertama; di bawahnya channel lain (Telegram, Email, Messenger, Instagram).
  */
 export function ChannelsPage() {
   const list = useQuery(channelSettingsQuery);
@@ -45,7 +46,10 @@ export function ChannelsPage() {
           </Notice>
         ) : null}
         {list.data ? (
-          <ChannelList data={list.data} />
+          <>
+            <ChannelList data={list.data} />
+            <ConnectionsSection />
+          </>
         ) : list.isPending ? (
           <SkeletonRegion>
             <ChannelListSkeleton />

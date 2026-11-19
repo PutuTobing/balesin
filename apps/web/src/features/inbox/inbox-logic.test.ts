@@ -115,6 +115,7 @@ describe('identitas kontak', () => {
       name: 'Budi',
       handle: '+62 812-3456-7890',
       fromWhatsApp: false,
+      fromChannel: false,
     });
     // Nama kiriman pelanggan: penanda "dari WhatsApp".
     expect(summaryIdentity({ ...summary, nameSource: 'whatsapp' }).fromWhatsApp).toBe(true);
@@ -130,7 +131,7 @@ describe('identitas kontak', () => {
         phone: null,
         waUsername: 'budi.s',
       }),
-    ).toEqual({ name: '@budi.s', handle: null, fromWhatsApp: false });
+    ).toEqual({ name: '@budi.s', handle: null, fromWhatsApp: false, fromChannel: false });
     // Nama tampilan = nomor: tidak diulang dua kali.
     expect(
       summaryIdentity({ ...summary, nameSource: 'none', displayName: '+6281234567890' }),
@@ -138,7 +139,17 @@ describe('identitas kontak', () => {
       name: '+62 812-3456-7890',
       handle: null,
       fromWhatsApp: false,
+      fromChannel: false,
     });
+    // Channel lain: nama profil tidak tepercaya + @username/alamat di sampingnya.
+    expect(
+      summaryIdentity({
+        ...summary,
+        nameSource: 'channel',
+        phone: null,
+        channelHandle: '@andi_dps',
+      }),
+    ).toEqual({ name: 'Budi', handle: '@andi_dps', fromWhatsApp: false, fromChannel: true });
     // Nama profil yang MENIRU nomor lain tetap disandingkan dengan nomor aslinya.
     expect(summaryIdentity({ ...summary, displayName: '+62 811-1111-1111' }).handle).toBe(
       '+62 812-3456-7890',

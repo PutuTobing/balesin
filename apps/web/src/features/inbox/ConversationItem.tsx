@@ -3,7 +3,9 @@ import { Check, CheckCheck, CircleAlert, Clock, type LucideIcon } from 'lucide-r
 import { memo } from 'react';
 import { Icon } from '../../components/ui/Icon';
 import { t } from '../../i18n/id';
-import { summaryIdentity } from './contact-identity';
+import { CHANNEL_TYPE_LABELS } from '@balesin/shared';
+import { CHANNEL_TYPE_ICONS } from '../channels/channel-type';
+import { summaryIdentity, untrustedNameLabel } from './contact-identity';
 import { formatListTime } from './inbox-time';
 import { ContactAvatar, WindowCountdown } from './InboxBits';
 import styles from './ConversationList.module.css';
@@ -58,6 +60,9 @@ export const ConversationItem = memo(function ConversationItem({
   onOpen,
 }: ConversationItemProps) {
   const identity = summaryIdentity(conversation.contact);
+  const channelType = conversation.channel.type;
+  const untrusted = untrustedNameLabel(identity, channelType);
+  const ChannelIcon = CHANNEL_TYPE_ICONS[channelType];
   const preview = previewContent(conversation.lastMessage);
   const unread = conversation.unreadCount;
   const last = conversation.lastMessage;
@@ -90,12 +95,16 @@ export const ConversationItem = memo(function ConversationItem({
         <span className={styles.lines}>
           <span className={styles.line}>
             <span className={styles.nameWrap}>
-              {identity.fromWhatsApp ? (
+              {untrusted ? (
                 // Seperti WhatsApp: "~" = nama dari profil pelanggan, belum diberi nama oleh tim.
                 <span
                   className={styles.fromWa}
                   aria-hidden="true"
-                  title={t.inbox.item.fromWhatsAppHint}
+                  title={
+                    identity.fromWhatsApp
+                      ? t.inbox.item.fromWhatsAppHint
+                      : t.inbox.item.fromChannelHint(CHANNEL_TYPE_LABELS[channelType])
+                  }
                 >
                   ~
                 </span>
@@ -103,9 +112,7 @@ export const ConversationItem = memo(function ConversationItem({
               <span className={styles.name} dir="auto">
                 {identity.name}
               </span>
-              {identity.fromWhatsApp ? (
-                <span className="sr-only"> ({t.inbox.item.fromWhatsApp})</span>
-              ) : null}
+              {untrusted ? <span className="sr-only"> ({untrusted})</span> : null}
             </span>
             <time className={styles.time} dateTime={conversation.lastMessageAt}>
               {formatListTime(conversation.lastMessageAt, new Date(now))}
@@ -125,7 +132,7 @@ export const ConversationItem = memo(function ConversationItem({
             </span>
             {/* Sesi 24 jam di baris cuplikan: baris meta utuh untuk nomor + agen/status. */}
             <WindowCountdown
-              expiresAt={conversation.windowExpiresAt}
+              expiresAt={conversation.windowApplies === false ? null : conversation.windowExpiresAt}
               now={now}
               className={styles.countdown}
             />
@@ -147,6 +154,12 @@ export const ConversationItem = memo(function ConversationItem({
               ) : null}
               <span className={styles.metaRest}>
                 {parts.length > 0 ? ' · ' : ''}
+                {channelType !== 'whatsapp' ? (
+                  <Icon icon={ChannelIcon} size={16} className={styles.metaChannelIcon} />
+                ) : null}
+                <span className="sr-only">
+                  {t.inbox.item.channelType(CHANNEL_TYPE_LABELS[channelType])}:{' '}
+                </span>
                 {conversation.channel.name}
               </span>
             </span>

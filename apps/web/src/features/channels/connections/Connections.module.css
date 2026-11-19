@@ -1,0 +1,407 @@
+/* Channel selain WhatsApp: kartu tambah per jenis, wizard, halaman channel. */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  width: 100%;
+  max-width: 48rem;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  min-width: 0;
+  padding: var(--space-24);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.cardTitle {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.subTitle {
+  margin-top: var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.hint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.dangerText {
+  color: var(--danger-ink);
+}
+
+/* ---------- Tambah channel ---------- */
+
+.addBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.addTitle {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+ul.typeGrid,
+.typeGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-12);
+}
+
+.typeCard {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-12);
+  height: 100%;
+  min-height: var(--size-touch);
+  padding: var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--ink);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
+}
+
+a.typeCard:hover {
+  border-color: var(--primary);
+  background: var(--surface-2);
+  text-decoration: none;
+}
+
+a.typeCard:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.typeCardOff {
+  color: var(--ink-2);
+  cursor: not-allowed;
+}
+
+.typeIcon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-card);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.typeCardOff .typeIcon {
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.typeText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.typeName {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.typeHint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.typeNote,
+.reviewBadge {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  height: 1.375rem;
+  padding: 0 var(--space-8);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-pill);
+  color: var(--warning-ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.typeSkeleton {
+  width: 100%;
+  height: 5.5rem;
+  border-radius: var(--radius-card);
+}
+
+/* ---------- Wizard & form ---------- */
+
+.wizardHead,
+.summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+}
+
+.summaryText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.summaryName {
+  overflow-wrap: anywhere;
+  font-size: var(--text-20);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+ol.steps,
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin: 0;
+  padding-left: var(--space-24);
+  font-size: var(--text-14);
+  list-style: decimal;
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-12) var(--space-16);
+}
+
+.rowHost {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 10rem 6rem;
+  gap: var(--space-12);
+}
+
+.fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.legend {
+  padding: 0 var(--space-4);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.modes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.mode {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-12);
+  min-height: var(--size-touch);
+  padding: var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+}
+
+.mode[data-state='checked'] {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.mode:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.radio {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-top: 1px;
+  border: 1.5px solid var(--ink-2);
+  border-radius: var(--radius-pill);
+}
+
+.mode[data-state='checked'] .radio {
+  border-color: var(--primary);
+}
+
+.radioDot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+}
+
+.modeText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.modeLabel {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-8);
+}
+
+.actionsStart {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.actionsSplit {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.dialogForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  margin-top: var(--space-16);
+}
+
+/* ---------- Halaman channel ---------- */
+
+.urlRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-8);
+  min-width: 0;
+}
+
+.url {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-12);
+  overflow-wrap: anywhere;
+}
+
+.ok,
+.bad {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-weight: var(--weight-semibold);
+}
+
+.ok {
+  color: var(--success-ink);
+}
+
+.bad {
+  color: var(--danger-ink);
+}
+
+.factNote {
+  display: block;
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+ul.checks,
+.checks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.check {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  font-size: var(--text-13);
+}
+
+.checkMessage {
+  padding-left: var(--space-24);
+  color: var(--ink-2);
+}
+
+.skeletonTitle {
+  width: 40%;
+  height: 1rem;
+}
+
+.skeletonLine {
+  width: 70%;
+  height: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .card,
+  .fieldset {
+    padding: var(--space-16);
+  }
+
+  ul.typeGrid,
+  .typeGrid,
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rowHost {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 6rem);
+  }
+
+  .rowHost > :first-child {
+    grid-column: 1 / -1;
+  }
+
+  .actions > *,
+  .actionsStart > *,
+  .actionsSplit > * {
+    flex: 1 1 100%;
+    min-height: var(--size-touch);
+  }
+}

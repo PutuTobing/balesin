@@ -18,8 +18,11 @@ import { BASE_URL, VIEWPORTS, webServer } from './viewports';
  * masing berjalan sendiri di sela proyek paralel, tidak bersamaan dengannya.
  */
 const sharedEmailSpecs = /(tim-tanpa|tim-dengan|keamanan-dengan)-email\.spec\.ts$/;
-/** Spec yang mengubah keadaan seluruh organisasi (ambang broadcast) dan peka rem darurat. */
-const serialSpecs = /broadcast\.spec\.ts$/;
+/**
+ * Spec yang mengubah keadaan seluruh organisasi (ambang broadcast, pesan otomatis & pembagian chat)
+ * dan peka rem darurat — dijalankan setelah proyek paralel, satu per satu.
+ */
+const serialSpecs = /(broadcast|jam-kerja)\.spec\.ts$/;
 const desktop = { ...devices['Desktop Chrome'], viewport: VIEWPORTS.desktop };
 const hp = {
   ...devices['Desktop Chrome'],
