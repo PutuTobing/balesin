@@ -137,4 +137,5 @@ export const SECURITY_EVENT_FILTERS: Readonly<
   bot_enabled: { action: 'channel.bot_updated' },
   auto_message_risky: { action: 'settings.workspace.updated' },
   owner_password_reset_server: { action: 'auth.password_reset.completed' },
+  branding_changed: { action: 'settings.branding.updated' },
 };

@@ -193,12 +193,32 @@ describe('review keamanan — ikon & manifest merek', () => {
     const icons = { ...iconsWith([]), favicon: hostile, appleTouchIcon: hostile };
     const hook = renderHook(() => useBrandIcons(icons));
     const icon = document.head.querySelector<HTMLLinkElement>('link[rel="icon"][data-brand]');
-    expect(icon?.getAttribute('href')).toBe(hostile);
+    // Dijadikan alamat absolut sama origin (W1), tetap sebagai atribut saja.
+    expect(icon?.getAttribute('href')).toBe(new URL(hostile, window.location.origin).href);
     expect(document.getElementById('disuntik')).toBeNull();
     expect(document.head.contains(original)).toBe(false);
     hook.unmount();
     expect(document.head.querySelector('link[data-brand]')).toBeNull();
     expect(document.head.contains(original)).toBe(true);
+    original.remove();
+  });
+
+  it('favicon/apple-touch dari origin lain → tidak dipasang; ikon bawaan tetap (W1)', () => {
+    const original = document.createElement('link');
+    original.rel = 'icon';
+    original.href = '/favicon.svg';
+    document.head.append(original);
+    for (const evil of [
+      'https://evil.example/f.png',
+      '//evil.example/f.png',
+      'javascript:alert(1)',
+    ]) {
+      const icons = { ...iconsWith([]), favicon: evil, appleTouchIcon: evil };
+      const hook = renderHook(() => useBrandIcons(icons));
+      expect(document.head.querySelector('link[data-brand]'), evil).toBeNull();
+      expect(document.head.contains(original), evil).toBe(true);
+      hook.unmount();
+    }
     original.remove();
   });
 });

@@ -5,7 +5,8 @@ import { BRAND_THEME_PROPERTIES, brandThemeVariables } from './brand-theme';
 
 /**
  * Warna utama organisasi → token aksen (`--primary` dkk.) untuk tema yang sedang tampil, lewat
- * CSSOM pada `<html>` (bukan `<style>` sisipan: CSP `style-src 'self'`). Warna yang tidak lolos
+ * CSSOM pada `<html>` (properti satu per satu, tidak menyisipkan elemen `<style>` berisi teks dari
+ * server — CSP aplikasi `style-src-elem 'self' 'unsafe-inline'`). Warna yang tidak lolos
  * kontras di tema itu tidak dipakai (lihat `brandThemeVariables`).
  */
 export function BrandTheme() {

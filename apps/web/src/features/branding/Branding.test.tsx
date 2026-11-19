@@ -221,9 +221,11 @@ describe('merek diterapkan di aplikasi', () => {
       expect(document.documentElement.style.getPropertyValue('--primary')).toBe('#1b3557'),
     );
     const icon = document.head.querySelector<HTMLLinkElement>('link[rel="icon"][data-brand]');
-    expect(icon?.getAttribute('href')).toBe('/api/v1/branding/icons/favicon-32.png?v=2');
+    expect(icon?.getAttribute('href')).toBe(
+      `${window.location.origin}/api/v1/branding/icons/favicon-32.png?v=2`,
+    );
     expect(
       document.head.querySelector('link[rel="apple-touch-icon"][data-brand]')?.getAttribute('href'),
-    ).toBe('/api/v1/branding/icons/apple-touch-icon.png?v=2');
+    ).toBe(`${window.location.origin}/api/v1/branding/icons/apple-touch-icon.png?v=2`);
   });
 });

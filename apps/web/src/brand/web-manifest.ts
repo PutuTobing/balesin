@@ -113,9 +113,13 @@ export function useBrandManifest(brand: Brand): void {
  * dihapus.
  */
 export function useBrandIcons(icons: BrandIcons | null): void {
-  const favicon = icons?.favicon ?? null;
-  const appleTouchIcon = icons?.appleTouchIcon ?? null;
+  const faviconPath = icons?.favicon ?? null;
+  const appleTouchPath = icons?.appleTouchIcon ?? null;
   useEffect(() => {
+    // Hanya alamat sama origin (seperti ikon manifest); selain itu ikon bawaan tetap dipakai.
+    const origin = window.location.origin;
+    const favicon = faviconPath ? absolute(faviconPath, origin) : undefined;
+    const appleTouchIcon = appleTouchPath ? absolute(appleTouchPath, origin) : undefined;
     if (!favicon || !appleTouchIcon) return;
     const head = document.head;
     const originals = Array.from(
@@ -138,5 +142,5 @@ export function useBrandIcons(icons: BrandIcons | null): void {
       apple.remove();
       head.append(...originals);
     };
-  }, [favicon, appleTouchIcon]);
+  }, [faviconPath, appleTouchPath]);
 }

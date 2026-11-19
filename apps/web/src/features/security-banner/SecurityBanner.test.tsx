@@ -76,6 +76,13 @@ describe('status "sudah dilihat"', () => {
     );
     expect(mixed.action).toBeUndefined();
   });
+
+  it('merek diubah → tautan Audit log tersaring aksi settings.branding.updated', () => {
+    const changed = event({ kind: 'branding_changed', severity: 'info' });
+    expect(auditSearchFor([changed], emptySecuritySummary.since)).toMatchObject({
+      action: 'settings.branding.updated',
+    });
+  });
 });
 
 describe('banner peringatan keamanan', () => {
