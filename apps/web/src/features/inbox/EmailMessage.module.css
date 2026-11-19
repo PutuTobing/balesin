@@ -85,7 +85,12 @@
 }
 
 .frameLabel {
-  margin-bottom: var(--space-4);
+  margin-top: var(--space-16);
   color: var(--ink-2);
   font-size: var(--text-12);
+}
+
+/* Label sudah memberi jarak dari deskripsi; bingkai cukup 8 px di bawahnya. */
+.frameWrapLabelled {
+  margin-top: var(--space-8);
 }

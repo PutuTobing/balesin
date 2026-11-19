@@ -226,10 +226,12 @@ function ChatHeader({
   // HP: subjudul cukup nomor/@username (penanda "dari WhatsApp" ada di layar detail).
   const channelType = conversation.channel.type;
   const untrusted = untrustedNameLabel(identity, channelType);
+  // Penanda "dari <channel>" sudah menyebut jenis channel: jangan tulis dua kali (K10).
+  const showUntrusted = untrusted !== null && !onOpenDetail;
   const sub = [
-    channelType !== 'whatsapp' ? CHANNEL_TYPE_LABELS[channelType] : null,
+    channelType !== 'whatsapp' && !showUntrusted ? CHANNEL_TYPE_LABELS[channelType] : null,
     identity.handle,
-    untrusted && !onOpenDetail ? untrusted : null,
+    showUntrusted ? untrusted : null,
   ].filter(Boolean);
   const titleRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {

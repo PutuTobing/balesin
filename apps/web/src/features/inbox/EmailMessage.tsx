@@ -7,6 +7,7 @@ import { Dialog, DialogActions } from '../../components/ui/Dialog';
 import { Icon } from '../../components/ui/Icon';
 import { Skeleton, SkeletonRegion } from '../../components/ui/Skeleton';
 import { t } from '../../i18n/id';
+import { cx } from '../../lib/cx';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
 import styles from './EmailMessage.module.css';
@@ -91,7 +92,10 @@ function EmailHtmlDialog({
   });
   return (
     <Dialog open title={e.htmlTitle} description={subject ?? undefined} onRequestClose={onClose}>
-      <div className={styles.frameWrap}>
+      {/* Label di atas bingkai (sejajar tepi dialog), bukan menempel di dalamnya (K11). Dokumen
+          email selalu berlatar terang (dirancang begitu), juga di mode gelap. */}
+      {html.isSuccess ? <p className={styles.frameLabel}>{e.htmlOriginal}</p> : null}
+      <div className={cx(styles.frameWrap, html.isSuccess && styles.frameWrapLabelled)}>
         {html.isPending ? (
           <SkeletonRegion className={styles.frameSkeleton}>
             <Skeleton className={styles.skeletonLine} />
@@ -106,17 +110,13 @@ function EmailHtmlDialog({
                 : t.api.network}
           </p>
         ) : (
-          <>
-            {/* Dokumen email selalu berlatar terang (dirancang begitu), juga di mode gelap. */}
-            <p className={styles.frameLabel}>{e.htmlOriginal}</p>
-            <iframe
-              title={e.htmlFrameTitle}
-              className={styles.frame}
-              sandbox=""
-              referrerPolicy="no-referrer"
-              srcDoc={html.data.html}
-            />
-          </>
+          <iframe
+            title={e.htmlFrameTitle}
+            className={styles.frame}
+            sandbox=""
+            referrerPolicy="no-referrer"
+            srcDoc={html.data.html}
+          />
         )}
       </div>
       <p className={styles.note}>{e.htmlNote}</p>

@@ -153,7 +153,10 @@ describe('inbox multi-channel', () => {
     expect(chat().getByRole('textbox', { name: k.label })).toBeVisible();
     expect(chat().queryByRole('button', { name: k.template })).toBeNull();
     expect(chat().getByRole('button', { name: k.interactive })).toBeVisible();
-    expect(await chat().findByText(/Telegram · @andi_dps/)).toBeVisible();
+    // Desktop: penanda "dari Telegram" sudah menyebut jenis channel — tidak ditulis dua kali (K10).
+    const sub = await chat().findByText(/@andi_dps · dari Telegram/);
+    expect(sub).toBeVisible();
+    expect(sub.textContent?.match(/Telegram/g)).toHaveLength(1);
   });
 
   it('Email: subjek, peringatan verifikasi gagal, HTML hanya di iframe sandbox', async () => {

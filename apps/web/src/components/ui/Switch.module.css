@@ -42,12 +42,9 @@
 }
 
 .row[aria-checked='true'] .track {
+  justify-content: flex-end;
   border-color: var(--primary);
   background: var(--primary);
-}
-
-.row[aria-checked='true'] .track {
-  justify-content: flex-end;
 }
 
 .row[aria-checked='true'] .thumb {

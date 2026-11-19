@@ -547,16 +547,20 @@ function AgentRow({ agent }: { agent: AllocationAgent }) {
     : agent.available
       ? { text: w.availabilityOn, className: styles.agentStatusOn }
       : { text: w.availabilityOff, className: styles.agentStatusOff };
+  const metaRest = [
+    USER_ROLE_LABELS[agent.role],
+    w.load(agent.openConversations),
+    agent.lastAssignedAt
+      ? w.lastAssigned(formatDateTimeInline(agent.lastAssignedAt))
+      : w.neverAssigned,
+  ];
   return (
     <li className={styles.agent}>
       <div className={styles.agentText}>
         <span className={styles.agentName}>{agent.name}</span>
-        <span className={styles.agentMeta}>
-          <span className={status.className}>{status.text}</span> · {USER_ROLE_LABELS[agent.role]} ·{' '}
-          {w.load(agent.openConversations)} ·{' '}
-          {agent.lastAssignedAt
-            ? w.lastAssigned(formatDateTimeInline(agent.lastAssignedAt))
-            : w.neverAssigned}
+        {/* Satu baris berelipsis; teks lengkap di `title` (K-S9). */}
+        <span className={styles.agentMeta} title={[status.text, ...metaRest].join(' · ')}>
+          <span className={status.className}>{status.text}</span> · {metaRest.join(' · ')}
         </span>
         {update.isError ? (
           <span className={styles.fieldError} role="alert">

@@ -324,10 +324,11 @@ ol.steps,
 /* ---------- Halaman channel ---------- */
 
 .urlRow {
+  /* Nilai lalu "Salin" di bawahnya, rata kiri — sama untuk alamat webhook dan verify token. */
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-4) var(--space-8);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
   min-width: 0;
 }
 
@@ -435,16 +436,25 @@ ul.checks,
     grid-column: 1 / -1;
   }
 
-  .actions > *,
   .actionsStart > *,
   .actionsSplit > * {
     flex: 1 1 100%;
     min-height: var(--size-touch);
   }
 
-  /* Sama dengan pola dialog (§4): tombol berwarna di atas, "Batal" di bawahnya. */
+  /*
+   * Sama dengan pola dialog (§4): tombol berwarna di atas, "Batal" di bawahnya. Arah kolom tanpa
+   * wrap; `flex: none` + lebar penuh (dengan `flex-basis: 100%` tombol jadi setinggi kolom, K9).
+   */
   .actions {
     flex-direction: column-reverse;
+    flex-wrap: nowrap;
+  }
+
+  .actions > * {
+    flex: none;
+    width: 100%;
+    min-height: var(--size-touch);
   }
 }
 
