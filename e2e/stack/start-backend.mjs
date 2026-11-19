@@ -3,7 +3,8 @@
  * Menyalakan backend E2E dari keadaan bersih (dipanggil `webServer` Playwright):
  *   1. database `E2E_DATABASE_NAME` dihapus lalu dibuat ulang, dimigrasi dari nol;
  *   2. Redis E2E (database nomor 14) dikosongkan — batas percobaan & penguncian akun hilang;
- *   3. server Meta TIRUAN dijalankan (`fake-meta-server.ts`, 127.0.0.1 port acak);
+ *   3. server Meta TIRUAN dijalankan (`fake-meta-server.ts`, 127.0.0.1 port acak), lalu server channel
+ *      TIRUAN (`fake-channels-server.ts`: Bot API Telegram + IMAP TLS; kendali di port tetap);
  *   4. API dan worker dijalankan (tsx, tanpa watch) dengan env dari `stack/env.ts` ditambah
  *      `META_GRAPH_BASE_URL` = alamat server tiruan. Tes E2E tidak pernah memanggil Meta sungguhan.
  *
@@ -118,12 +119,15 @@ function run(name, args, { wait }) {
 }
 
 /**
- * Server Meta tiruan (TypeScript, lewat tsx paket api). Menunggu baris `FAKE_META_URL=…` di
- * stdout-nya lalu mengembalikan alamat itu; keluaran lain diteruskan apa adanya.
+ * Server tiruan (TypeScript, lewat tsx paket api). Menunggu baris `<prefix>…` di stdout-nya lalu
+ * mengembalikan sisa baris itu; keluaran lain diteruskan apa adanya.
+ * @param {string} file nama berkas di `e2e/stack`
+ * @param {string} prefix awalan baris "siap"
+ * @param {string} label nama untuk pesan log
  * @returns {Promise<string>}
  */
-function startFakeMeta() {
-  const script = path.join(root, 'e2e', 'stack', 'fake-meta-server.ts');
+function startFakeServer(file, prefix, label) {
+  const script = path.join(root, 'e2e', 'stack', file);
   const args = ['--filter', '@balesin/api', 'exec', 'tsx', script];
   const options = {
     cwd: root,
@@ -137,10 +141,7 @@ function startFakeMeta() {
   return new Promise((resolve, reject) => {
     let buffer = '';
     let ready = false;
-    const timer = setTimeout(
-      () => reject(new Error('server Meta tiruan tidak kunjung siap')),
-      60_000,
-    );
+    const timer = setTimeout(() => reject(new Error(`${label} tidak kunjung siap`)), 60_000);
     child.stdout?.setEncoding('utf8');
     child.stdout?.on('data', (chunk) => {
       buffer += chunk;
@@ -148,10 +149,10 @@ function startFakeMeta() {
       buffer = lines.pop() ?? '';
       for (const raw of lines) {
         const line = raw.trim();
-        if (!ready && line.startsWith('FAKE_META_URL=')) {
+        if (!ready && line.startsWith(prefix)) {
           ready = true;
           clearTimeout(timer);
-          resolve(line.slice('FAKE_META_URL='.length));
+          resolve(line.slice(prefix.length));
         } else if (line) {
           process.stdout.write(`${line}${EOL}`);
         }
@@ -159,9 +160,9 @@ function startFakeMeta() {
     });
     child.on('exit', (code) => {
       clearTimeout(timer);
-      if (!ready) reject(new Error(`server Meta tiruan berhenti (kode ${code})`));
+      if (!ready) reject(new Error(`${label} berhenti (kode ${code})`));
       else {
-        log(`server Meta tiruan berhenti (kode ${code}); backend E2E dimatikan`);
+        log(`${label} berhenti (kode ${code}); backend E2E dimatikan`);
         shutdown(code ?? 1);
       }
     });
@@ -196,9 +197,24 @@ try {
   await run('migrasi', ['--filter', '@balesin/db', 'exec', 'tsx', 'src/migrate.ts'], {
     wait: true,
   });
-  const fakeMetaUrl = await startFakeMeta();
+  const fakeMetaUrl = await startFakeServer(
+    'fake-meta-server.ts',
+    'FAKE_META_URL=',
+    'server Meta tiruan',
+  );
   process.env.META_GRAPH_BASE_URL = fakeMetaUrl;
   log(`server Meta tiruan di ${fakeMetaUrl}`);
+  // Fase 6: Bot API Telegram + IMAP (TLS sertifikat tes) tiruan; SMTP channel Email = Mailpit lokal.
+  // Variabel BALESIN_TEST_* hanya diterima api/worker non-produksi (`channelTestOverridesFromEnv`).
+  const fakeChannels = JSON.parse(
+    await startFakeServer('fake-channels-server.ts', 'FAKE_CHANNELS=', 'server channel tiruan'),
+  );
+  process.env.BALESIN_TEST_TELEGRAM_BASE_URL = fakeChannels.telegramUrl;
+  process.env.BALESIN_TEST_IMAP_PORTS = String(fakeChannels.imapPort);
+  process.env.BALESIN_TEST_IMAP_CA_FILE = fakeChannels.caFile;
+  log(
+    `server channel tiruan: Telegram ${fakeChannels.telegramUrl}, IMAP localhost:${fakeChannels.imapPort}`,
+  );
   children.push(
     run('api', ['--filter', '@balesin/api', 'exec', 'tsx', 'src/index.ts'], { wait: false }),
     run('worker', ['--filter', '@balesin/worker', 'exec', 'tsx', 'src/index.ts'], {

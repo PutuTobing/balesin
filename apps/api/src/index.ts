@@ -1,4 +1,5 @@
 import {
+  channelTestOverridesFromEnv,
   closeRedis,
   createLogger,
   createRedis,
@@ -76,6 +77,8 @@ async function main(config: ApiConfig): Promise<void> {
     webhookQueue: webhookQueue.enqueuer,
     messageQueue: messageQueue.enqueuer,
     notificationQueue: notificationQueue.enqueuer,
+    // Non-produksi saja (stack E2E): Telegram/IMAP tiruan. Produksi dengan variabel ini = gagal start.
+    overrides: channelTestOverridesFromEnv(process.env),
   });
 
   const shutdown = createShutdown({

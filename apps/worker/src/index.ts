@@ -1,4 +1,5 @@
 import {
+  channelTestOverridesFromEnv,
   closeRedis,
   createInboxEventPublisher,
   createLogger,
@@ -55,7 +56,11 @@ function main(config: WorkerConfig): void {
   });
   const notificationProducer = createNotificationProducer({ connection: redis }, logger);
   // Fase 6: klien Bot API Telegram (host tetap) + media store bersama api (lampiran email).
-  const telegram = createTelegramBotClient();
+  // Non-produksi saja (stack E2E): Telegram/IMAP tiruan. Produksi dengan variabel ini = gagal start.
+  const testOverrides = channelTestOverridesFromEnv(process.env);
+  const telegram = createTelegramBotClient(
+    testOverrides.telegramBaseUrl ? { baseUrl: testOverrides.telegramBaseUrl } : {},
+  );
   const mediaStore = createMediaStore(config.mediaDir);
   const ownerNotifier = createOwnerNotifier({ connection: redis });
   const runtime = startWorkers({ connection: redis }, logger, {
@@ -89,7 +94,10 @@ function main(config: WorkerConfig): void {
       db,
       secretBox,
       store: mediaStore,
-      imapPolicy: { allowedPorts: [...IMAP_ALLOWED_PORTS] },
+      imapPolicy: {
+        allowedPorts: [...IMAP_ALLOWED_PORTS, ...(testOverrides.imap?.allowedPorts ?? [])],
+        ...(testOverrides.imap?.testCa ? { testCa: testOverrides.imap.testCa } : {}),
+      },
     },
     notifications: { db, secretBox, appUrl: config.appUrl, throttle: redisThrottle(redis) },
     webhooksOut: { db, secretBox, appUrl: config.appUrl, notifyOwner: ownerNotifier.notify },

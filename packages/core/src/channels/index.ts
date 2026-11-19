@@ -6,3 +6,4 @@ export * from './meta-social';
 export * from './secrets';
 export * from './telegram-bot';
 export * from './telegram-update';
+export * from './test-overrides';

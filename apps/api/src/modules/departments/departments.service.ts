@@ -235,6 +235,7 @@ export function createDepartmentsService(deps: {
               organizationId: org,
               name: input.name,
               description: input.description ?? null,
+              teamHours: input.teamHours ?? null,
             })
             .returning();
           if (!row) throw new Error('Departemen tidak tersimpan');

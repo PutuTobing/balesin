@@ -174,8 +174,8 @@ bila API key). Dibangun saat dispatch; tiket yang sudah dihapus tidak dikirim. O
 |---|---|---|
 | `GET /api/v1/departments` | `inbox.view` | `{ departments: [{ id, name, description, memberCount }] }` |
 | `GET /api/v1/settings/departments` | workspace | + `members [{ id, name, role, restricted }]`, `defaultChannelIds`, waktu |
-| `POST /api/v1/settings/departments` | workspace | `{ name ≤ 60 (unik tanpa beda huruf), description?, defaultChannelIds? }` → **201** `{ department }`. Maks. 50 |
-| `PATCH /api/v1/settings/departments/:departmentId` | workspace | `{ name?, description?, defaultChannelIds? (mengganti) }` |
+| `POST /api/v1/settings/departments` | workspace | `{ name ≤ 60 (unik tanpa beda huruf), description?, defaultChannelIds?, teamHours? (jam kerja departemen; kosong/`null` = ikut organisasi) }` → **201** `{ department }`. Maks. 50 |
+| `PATCH /api/v1/settings/departments/:departmentId` | workspace | `{ name?, description?, defaultChannelIds? (mengganti), teamHours? }` |
 | `DELETE /api/v1/settings/departments/:departmentId` | workspace | Percakapan/board/channel dilepas dari departemen ini; keanggotaan terhapus |
 | `GET`/`PUT /api/v1/settings/department-access/:userId` | workspace | `{ departmentIds, restricted, confirmation? }` → `{ access: { userId, departmentIds, restricted } }` |
 | `POST /api/v1/conversations/:conversationId/department` | `inbox.assign` | `{ departmentId \| null }` → `{ conversation \| null }` (null = pelaku tak lagi melihatnya). Log `department_changed` |

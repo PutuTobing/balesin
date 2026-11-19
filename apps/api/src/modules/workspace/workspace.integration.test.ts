@@ -204,6 +204,16 @@ describe('pengaturan kerja tim', () => {
     });
     const department = departmentResponseSchema.parse(created.json()).department;
     expect(department.teamHours).toBeNull();
+    // Langsung saat membuat (tanpa POST lalu PATCH).
+    const withHours = await send(world, world.owner, 'POST', API_ROUTES.departments.settings, {
+      name: 'Lapangan',
+      teamHours: { mode: 'schedule', windows: [{ day: 1, start: '07:00', end: '15:00' }] },
+    });
+    expect(withHours.statusCode, withHours.body).toBe(201);
+    expect(departmentResponseSchema.parse(withHours.json()).department.teamHours).toEqual({
+      mode: 'schedule',
+      windows: [{ day: 1, start: '07:00', end: '15:00' }],
+    });
     const url = apiPath(API_ROUTES.departments.department, { departmentId: department.id });
     const hours = { mode: 'schedule', windows: [{ day: 6, start: '08:00', end: '12:00' }] };
     const updated = await send(world, world.owner, 'PATCH', url, { teamHours: hours });

@@ -82,6 +82,8 @@ export const createDepartmentRequestSchema = z.object({
   name: departmentNameSchema,
   description: departmentDescriptionSchema.nullable().default(null),
   defaultChannelIds: z.array(z.uuid()).max(50).default([]),
+  /** Jam kerja khusus departemen; kosong/`null` = ikut jam kerja organisasi. */
+  teamHours: botHoursSchema.nullable().default(null),
 });
 export type CreateDepartmentRequest = z.input<typeof createDepartmentRequestSchema>;
 

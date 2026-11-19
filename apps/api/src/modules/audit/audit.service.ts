@@ -79,7 +79,7 @@ const SECURITY_EVENT_CONDITIONS: Readonly<Record<SecurityEventKind, SQL>> = {
   two_factor_reset: sql`${auditLogs.action} = ${AUDIT_ACTIONS.userTwoFactorReset}`,
   two_factor_enrollment_reopened: sql`${auditLogs.action} = ${AUDIT_ACTIONS.userTwoFactorEnrollmentReopened}`,
   // Juga reset akun tanpa 2FA ≤ 72 jam setelah email pengirim diubah (sisa R5 review akhir Fase 1).
-  password_reset_without_two_factor: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.passwordResetCompleted} and (${auditLogs.metadata} ->> 'twoFactorEnrollmentPending' = 'true' or ${auditLogs.metadata} ->> 'afterEmailSenderChange' = 'true'))`,
+  password_reset_without_two_factor: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.passwordResetCompleted} and coalesce(${auditLogs.metadata} ->> 'serverRecovery', 'false') <> 'true' and (${auditLogs.metadata} ->> 'twoFactorEnrollmentPending' = 'true' or ${auditLogs.metadata} ->> 'afterEmailSenderChange' = 'true'))`,
   account_locked: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.accountLocked} and ${auditLogs.targetType} = 'user')`,
   role_changed: sql`${auditLogs.action} = ${AUDIT_ACTIONS.userRoleChanged}`,
   user_disabled: sql`${auditLogs.action} = ${AUDIT_ACTIONS.userDisabled}`,
@@ -97,6 +97,7 @@ const SECURITY_EVENT_CONDITIONS: Readonly<Record<SecurityEventKind, SQL>> = {
   api_key_changed: sql`${auditLogs.action} in (${AUDIT_ACTIONS.apiKeyCreated}, ${AUDIT_ACTIONS.apiKeyRevoked})`,
   bot_enabled: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.channelBotUpdated} and ${auditLogs.metadata} ->> 'enabled' = 'true' and ${auditLogs.metadata} ->> 'previousEnabled' = 'false' and ${auditLogs.metadata} ->> 'actorRole' <> 'owner')`,
   quick_reply_risky: sql`(${auditLogs.action} in (${AUDIT_ACTIONS.quickReplyCreated}, ${AUDIT_ACTIONS.quickReplyUpdated}) and ${auditLogs.metadata} ->> 'risky' = 'true')`,
+  owner_password_reset_server: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.passwordResetCompleted} and ${auditLogs.metadata} ->> 'serverRecovery' = 'true')`,
   auto_message_risky: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.workspaceSettingsUpdated} and ${auditLogs.metadata} ->> 'risky' = 'true')`,
   // Juga dilanjutkan setelah rem darurat (perubahan rem pengiriman oleh siapa pun tercatat).
   sending_limits_changed: sql`${auditLogs.action} in (${AUDIT_ACTIONS.sendingLimitsUpdated}, ${AUDIT_ACTIONS.sendingResumed})`,
@@ -174,6 +175,7 @@ function kindOf(row: AuditRow): SecurityEventKind | undefined {
     case AUDIT_ACTIONS.userTwoFactorEnrollmentReopened:
       return 'two_factor_enrollment_reopened';
     case AUDIT_ACTIONS.passwordResetCompleted:
+      if (row.metadata.serverRecovery === true) return 'owner_password_reset_server';
       return row.metadata.twoFactorEnrollmentPending === true ||
         row.metadata.afterEmailSenderChange === true
         ? 'password_reset_without_two_factor'
@@ -253,6 +255,7 @@ const DETAIL_KEYS: Readonly<Record<SecurityEventKind, readonly string[]>> = {
   sending_limit_reached: ['scope', 'limit', 'sent'],
   inbox_bulk_action: ['actions', 'windowMinutes', 'kinds', 'actorRole'],
   quick_reply_risky: ['shortcut', 'addedLinks', 'addedNumbers', 'actorRole'],
+  owner_password_reset_server: ['via', 'revokedSessions'],
   auto_message_risky: ['changedFields', 'addedLinks', 'addedNumbers', 'actorRole'],
   api_key_changed: ['change', 'name', 'displayPrefix', 'scopes', 'actorRole'],
   webhook_changed: ['change', 'host', 'previousHost', 'events', 'cidrs', 'actorRole'],

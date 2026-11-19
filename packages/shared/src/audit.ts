@@ -569,6 +569,11 @@ export const SECURITY_EVENT_KINDS = [
    * diberi tautan/angka panjang baru (review jam kerja S1).
    */
   'auto_message_risky',
+  /**
+   * Password Owner diatur ulang dari SERVER (`balesin reset-owner-password`, Fase 7) — pelaku operator
+   * server, bukan sesi aplikasi. Audit `auth.password_reset.completed` ber-`metadata.serverRecovery`.
+   */
+  'owner_password_reset_server',
 ] as const;
 export const securityEventKindSchema = z.enum(SECURITY_EVENT_KINDS);
 export type SecurityEventKind = z.infer<typeof securityEventKindSchema>;
@@ -601,6 +606,7 @@ export const SECURITY_EVENT_SEVERITY: Readonly<Record<SecurityEventKind, 'warnin
   bot_enabled: 'warning',
   webhook_disabled: 'warning',
   auto_message_risky: 'warning',
+  owner_password_reset_server: 'warning',
 };
 
 export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> = {
@@ -626,6 +632,7 @@ export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> 
   bot_enabled: 'Bot channel dinyalakan oleh selain Owner',
   webhook_disabled: 'Webhook keluar dinonaktifkan karena gagal beruntun',
   auto_message_risky: 'Pesan otomatis diberi tautan/angka baru',
+  owner_password_reset_server: 'Password Owner diatur ulang dari server',
 };
 
 export const securityEventSchema = z.object({
