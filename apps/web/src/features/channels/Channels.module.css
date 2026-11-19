@@ -1130,3 +1130,8 @@ ul.botDays,
   font-size: var(--text-14);
   font-weight: var(--weight-regular);
 }
+
+/* Petunjuk kedua di kepala kartu (mis. catatan sesi di kartu Bot): fakta terpisah, jarak 8 px. */
+.cardHead > .hint + .hint {
+  margin-top: var(--space-4);
+}

@@ -175,4 +175,26 @@ describe('kartu Bot di halaman nomor', () => {
     await card.findByRole('checkbox', { name: b.enable(b.placeNumber) });
     expect(card.queryByText(b.receiverMissingTitle)).toBeNull();
   });
+
+  it('aktif tanpa penerima: lencana "Belum ada penerima" (bukan "Memegang chat baru")', async () => {
+    await renderApp(path, {
+      routes: routes({ enabled: true, timeoutMinutes: 10, activeNow: true, receiverReady: false }),
+    });
+    const card = within(
+      (await screen.findByRole('heading', { level: 2, name: b.title })).closest('section')!,
+    );
+    expect(await card.findByText(b.statusNoReceiver)).toBeVisible();
+    expect(card.queryByText(b.statusOn)).toBeNull();
+  });
+
+  it('penerima siap: kalimat positif, bukan syarat umum', async () => {
+    await renderApp(path, {
+      routes: routes({ enabled: true, timeoutMinutes: 10, activeNow: true, receiverReady: true }),
+    });
+    const card = within(
+      (await screen.findByRole('heading', { level: 2, name: b.title })).closest('section')!,
+    );
+    expect(await card.findByText(b.receiverReady)).toBeVisible();
+    expect(card.queryByText(b.noReceiver)).toBeNull();
+  });
 });

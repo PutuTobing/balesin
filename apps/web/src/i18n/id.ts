@@ -494,6 +494,8 @@ export const t = {
       botTakeOver: 'Ambil alih dari bot',
       botHandoff: 'Serahkan ke tim',
       botResume: 'Kembalikan ke bot',
+      botResumeOff: 'Bot belum aktif di channel ini.',
+      botResumeNoReceiver: 'Belum ada penerima bot aktif untuk channel ini (Pengaturan → Webhook).',
       nothing: 'Tidak ada tindakan lain',
       working: 'Memproses…',
       cancel: 'Batal',
@@ -3493,27 +3495,31 @@ export const t = {
     bot: {
       title: 'Bot',
       hint: (place: string) =>
-        `Saat aktif, chat baru di ${place} dipegang bot lebih dulu (lewat webhook ke n8n atau bot lain). Chat pindah ke tim saat bot menyerahkannya, saat agen mengambil alih, atau bila bot tidak membalas dalam batas waktu.`,
+        `Saat aktif, chat baru di ${place} dipegang bot dulu lewat webhook (n8n atau bot lain). Chat pindah ke tim saat bot menyerahkannya, agen mengambil alih, atau bot tidak membalas dalam batas waktu.`,
       placeNumber: 'nomor ini',
       placeChannel: 'channel ini',
       windowNote:
         'Balasan bot ikut aturan sesi 24 jam: di luar 24 jam sejak pesan terakhir pelanggan, bot hanya bisa mengirim template.',
+      windowNoteNoTemplate: (channel: string) =>
+        `${channel} punya batas sesi 24 jam: di luar 24 jam sejak pesan terakhir pelanggan, bot belum bisa membalas sampai pelanggan mengirim pesan lagi.`,
       noWindowNote: (channel: string) =>
         `${channel} tidak punya batas sesi 24 jam, jadi bot bisa membalas kapan saja.`,
       receiverMissingTitle: 'Belum ada penerima bot',
       receiverMissingWhatsApp:
-        'Chat baru tetap langsung masuk antrian tim sampai ada webhook aktif yang menerima "Pesan masuk dari pelanggan" (format native atau MobiChat).',
+        'Chat baru tetap langsung masuk antrian tim sampai ada webhook aktif yang menerima "Pesan masuk dari pelanggan" (format Standar atau MobiChat).',
       receiverMissingOther:
-        'Chat baru tetap langsung masuk antrian tim sampai ada webhook aktif format native yang menerima "Pesan masuk dari pelanggan". Format MobiChat hanya untuk WhatsApp.',
-      openWebhooks: 'Buka Pengaturan → Webhook',
+        'Chat baru tetap langsung masuk antrian tim sampai ada webhook aktif format Standar yang menerima "Pesan masuk dari pelanggan". Format MobiChat hanya untuk WhatsApp.',
+      openWebhooks: 'Buka pengaturan webhook',
       statusOn: 'Memegang chat baru',
       statusOutside: 'Di luar jam kerja bot',
       statusOff: 'Mati',
+      statusNoReceiver: 'Belum ada penerima',
       enable: (place: string) => `Aktifkan bot untuk ${place}`,
       noReceiver:
         'Bot hanya memegang chat bila ada webhook aktif yang menerima "Pesan masuk dari pelanggan". Tanpa itu chat baru langsung masuk antrian tim.',
+      receiverReady: 'Ada webhook aktif yang menerima chat baru untuk bot.',
       hoursLabel: 'Jam kerja bot',
-      always: '24 jam',
+      always: 'Sepanjang hari',
       schedule: 'Jadwal',
       timezone: (zone: string) =>
         `Zona waktu organisasi: ${zone}. Isi sampai 23.59 untuk tengah malam.`,

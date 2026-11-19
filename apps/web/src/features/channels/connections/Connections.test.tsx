@@ -10,7 +10,7 @@ import {
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { t } from '../../../i18n/id';
-import { json, type FakeHandler } from '../../../test/fake-api';
+import { apiError, json, type FakeHandler } from '../../../test/fake-api';
 import { confirmIdentity, TEST_CODE, TEST_PASSWORD } from '../../../test/identity';
 import { renderApp } from '../../../test/render-app';
 
@@ -278,6 +278,38 @@ describe('Pengaturan → Channel lain', () => {
     expect(await card.findByText(bot.noWindowNote('Telegram'))).toBeVisible();
     expect(card.getByText(bot.receiverMissingOther)).toBeVisible();
     expect(card.getByRole('checkbox', { name: bot.enable(bot.placeChannel) })).toBeChecked();
+  });
+
+  it('halaman Messenger: kartu Bot menyebut sesi 24 jam tanpa kata "template"', async () => {
+    const bot = t.channels.bot;
+    await renderApp(
+      `/pengaturan/channel/lain/${MESSENGER.id}`,
+      routes([MESSENGER], {
+        [`GET ${apiPath(R.channel, { channelId: MESSENGER.id })}`]: () =>
+          json({ channel: MESSENGER }),
+        [`GET ${apiPath(R.webhook, { channelId: MESSENGER.id })}`]: () =>
+          apiError(404, 'NOT_FOUND', 'Tidak ada.'),
+        [`GET ${apiPath(API_ROUTES.channels.bot, { channelId: MESSENGER.id })}`]: () =>
+          json({
+            settings: {
+              enabled: false,
+              hours: { mode: 'always' },
+              timeoutMinutes: null,
+              channelType: 'messenger',
+              timezone: 'Asia/Jakarta',
+              activeNow: false,
+              receiverReady: true,
+              updatedAt: null,
+            },
+          }),
+      }),
+    );
+    const card = within(
+      (await screen.findByRole('heading', { level: 2, name: bot.title })).closest('section')!,
+    );
+    const note = await card.findByText(bot.windowNoteNoTemplate('Messenger'));
+    expect(note).toBeVisible();
+    expect(note.textContent).not.toMatch(/template/i);
   });
 
   it('halaman Messenger: App Review + aktifkan menunggu tes berhasil', async () => {

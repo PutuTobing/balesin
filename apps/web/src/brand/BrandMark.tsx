@@ -1,7 +1,7 @@
 import { cx } from '../lib/cx';
 import { symbol } from './brand-mark-shape';
 import styles from './BrandMark.module.css';
-import { useBrand } from './brand';
+import { monogramLetter, useBrand } from './brand';
 
 interface SymbolProps {
   className?: string;
@@ -31,7 +31,7 @@ export function DefaultSymbol({ className, fit = 'square' }: SymbolProps) {
  * Memakai logo organisasi bila tersedia, kalau tidak simbol logo bawaan.
  */
 export function BrandMark({ className, fit = 'square' }: BrandMarkProps) {
-  const { logoUrl, icons, productName } = useBrand();
+  const { logoUrl, icons, productName, organizationName } = useBrand();
   // Tempat persegi (rail, dll.): ikon persegi yang dibuat server dari logo (latar transparan)
   // lebih terbaca daripada logo melebar yang diperkecil.
   const square = icons?.manifest.find(
@@ -46,7 +46,7 @@ export function BrandMark({ className, fit = 'square' }: BrandMarkProps) {
     // terbaca di kotak 32 px, jadi monogram huruf pertama nama aplikasi.
     return (
       <span className={cx(styles.mark, styles.monogram, className)} aria-hidden="true">
-        {Array.from(productName.trim())[0]?.toLocaleUpperCase('id-ID') ?? ''}
+        {monogramLetter(organizationName, productName)}
       </span>
     );
   }

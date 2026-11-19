@@ -56,6 +56,18 @@ describe('BrandMark (white-label)', () => {
     expect(container.querySelector('img')).toBeNull();
     expect(container.textContent).toBe('H');
   });
+
+  it('monogram memakai nama organisasi tanpa awalan badan usaha', () => {
+    const { container } = withBrand(
+      {
+        logoUrl: '/media/logo-organisasi.png',
+        productName: 'Layanan Maju Jaya',
+        organizationName: 'PT. Maju Jaya',
+      },
+      <BrandMark />,
+    );
+    expect(container.textContent).toBe('M');
+  });
 });
 
 describe('BrandLogo (white-label)', () => {

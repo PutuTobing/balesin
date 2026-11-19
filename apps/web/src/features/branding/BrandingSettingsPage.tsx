@@ -436,6 +436,11 @@ function ColorSection({
           actions={
             suggestion ? (
               <Button onClick={() => onChange(suggestion)} disabled={disabled}>
+                <span
+                  className={styles.suggestionDot}
+                  style={{ background: suggestion }}
+                  aria-hidden="true"
+                />
                 {b.colorUseSuggestion(suggestion)}
               </Button>
             ) : undefined

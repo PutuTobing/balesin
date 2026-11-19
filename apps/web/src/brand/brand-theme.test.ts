@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { brandThemeVariables, darkerUsableColor } from './brand-theme';
+import { color } from '@balesin/shared/design-tokens';
+import { BRAND_THEME_PROPERTIES, brandThemeVariables, darkerUsableColor } from './brand-theme';
 
 describe('warna merek → token tema', () => {
   it('gelembung keluar ikut warna merek (= isian lembut) untuk navy dan magenta', () => {
@@ -17,5 +18,12 @@ describe('warna merek → token tema', () => {
     expect(brandThemeVariables(darker, 'light')).not.toBeNull();
     // Warna yang sudah terpakai tidak perlu usulan, tetapi fungsinya tetap mengembalikan versi sah.
     expect(darkerUsableColor('bukan warna')).toBeNull();
+  });
+
+  it('warna tag "Biru" token sendiri, tidak pernah ikut warna merek', () => {
+    expect(BRAND_THEME_PROPERTIES).not.toContain('--tag-blue');
+    expect(Object.keys(brandThemeVariables('#c2185b', 'light') ?? {})).not.toContain('--tag-blue');
+    expect(color.light.tagBlue).toBe(color.light.primary);
+    expect(color.dark.tagBlue).toBe(color.dark.primary);
   });
 });

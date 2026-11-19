@@ -25,7 +25,7 @@
  * tema (tanpa lompatan saat ganti tema). Tanda bawaan (SVG) mengikuti token, tanpa pelat.
  */
 img.mark {
-  padding: 1px;
+  /* Ikon persegi server sudah berlatar; pelat hanya mengisi sudut transparan (tanpa bingkai). */
   border-radius: var(--radius-card);
   background: var(--logo-plate);
 }

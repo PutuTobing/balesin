@@ -189,6 +189,18 @@
   object-position: left center;
 }
 
+/* Tema terang: pelat transparan → logo sejajar label ubin (padding pelat tidak terlihat). */
+[data-theme='light'] .orgLogo {
+  margin-inline-start: calc(var(--space-8) * -1);
+}
+
+/* Titik warna usulan di tombol "Pakai #…" (dekoratif). */
+.suggestionDot {
+  width: var(--space-12);
+  height: var(--space-12);
+  border-radius: var(--radius-pill);
+}
+
 .previewGroup {
   display: flex;
   flex-direction: column;

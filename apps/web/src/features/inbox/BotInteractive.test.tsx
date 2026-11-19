@@ -7,6 +7,7 @@ import { apiError, json } from '../../test/fake-api';
 import { fakeChannelSummary, fakeConversation, fakeMessage } from '../../test/fake-inbox';
 import { setMediaQuery } from '../../test/match-media';
 import { renderApp } from '../../test/render-app';
+import { channelBotKey } from '../channels/bot-form';
 
 const h = t.inbox.handling;
 const k = t.inbox.compose;
@@ -72,6 +73,42 @@ describe('bot per percakapan', () => {
       }),
     );
     expect(await chat().findByText(/Bot di channel ini sedang mati/)).toBeVisible();
+  });
+
+  it('409 "belum ada penerima bot": pesan server tampil apa adanya', async () => {
+    const path = apiPath(API_ROUTES.inbox.bot, { conversationId: served.id });
+    const message =
+      'Belum ada penerima bot aktif untuk channel ini. Tambahkan webhook bot di Pengaturan → Webhook, lalu coba lagi.';
+    await open(served, { [`POST ${path}`]: () => apiError(409, 'CONFLICT', message) });
+    fireEvent.keyDown(chat().getByRole('button', { name: h.menu }), { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('menuitem', { name: h.botResume }));
+    expect(await chat().findByText(message)).toBeVisible();
+  });
+
+  it('pengaturan bot channel sudah di cache dengan receiverReady false → tombol nonaktif + alasan terbaca', async () => {
+    const view = await open(served);
+    view.queryClient.setQueryData(channelBotKey(served.channel.id), {
+      settings: {
+        enabled: true,
+        hours: { mode: 'always' },
+        timeoutMinutes: 15,
+        channelType: 'whatsapp',
+        timezone: 'Asia/Jakarta',
+        activeNow: true,
+        receiverReady: false,
+        updatedAt: null,
+      },
+    });
+    fireEvent.keyDown(chat().getByRole('button', { name: h.menu }), { key: 'Enter' });
+    const item = await screen.findByRole('menuitem', { name: new RegExp(h.botResume) });
+    expect(item).toHaveAttribute('aria-disabled', 'true');
+    expect(within(item).getByText(h.botResumeNoReceiver)).toBeVisible();
+    fireEvent.click(item);
+    expect(
+      view.api.requests.some(
+        (request) => request.path === apiPath(API_ROUTES.inbox.bot, { conversationId: served.id }),
+      ),
+    ).toBe(false);
   });
 });
 

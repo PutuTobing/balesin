@@ -22,7 +22,7 @@ Warna dasar sementara; disesuaikan dengan logo final di `assets/brand/` (tugas
 | `--success` | `#1F9D6B` | `#3CC48D` | terkirim, selesai |
 | `--warning` | `#D99413` | `#F2B544` | jendela 24 jam hampir habis |
 | `--danger` | `#D64545` | `#F07070` | gagal, hapus |
-| bubble keluar | `#E3EEFF` | `#1A3354` | pesan dari tim |
+| `--bubble-out` (bubble keluar) | `#E3EEFF` | `#1A3354` | pesan dari tim |
 | bubble masuk | `--surface` | `--surface` | pesan pelanggan |
 
 Kontras teks minimal **4.5:1** (cek otomatis: tes kontras di `apps/web` memeriksa setiap
@@ -40,11 +40,18 @@ pasangan teks/latar yang terdaftar di `contrastPairs`).
 | `--primary-soft` | `#E3EEFF` | `#1A3354` | latar item aktif (sama dengan bubble keluar) |
 | `--tag-purple` | `#7A52CC` | `#A98BF0` | warna tag "Ungu" (titik/chip, non-teks ≥ 3:1) |
 | `--tag-teal` | `#0B8A9E` | `#3CC4D6` | warna tag "Toska" (titik/chip, non-teks ≥ 3:1) |
+| `--tag-blue` | `#1167D8` | `#4D9BFF` | warna tag "Biru" (titik/chip). Tidak ikut warna merek. |
 | `--logo-plate` | `transparent` | `#F6F4EF` | pelat di balik `<img>` logo organisasi (raster) supaya logo gelap terbaca di mode gelap; tanda bawaan SVG tidak memakainya |
 
 Aturan pakai: `--success`/`--warning`/`--danger` untuk latar, titik, dan garis; untuk **teks**
 pakai varian `-ink`. `--accent` bukan untuk teks. `--primary` di atas `--surface-2` (terang)
 tepat di ambang 4,5:1, jadi jangan dipakai untuk teks kecil di sana.
+
+**Warna merek (white-label):** bila Owner mengisi warna utama, `--primary`, `--on-primary`,
+`--primary-soft`, dan `--bubble-out` ditimpa per tema oleh `brandThemeVariables` (isian lembut =
+10% warna merek di terang, 22% di gelap). Hanya dipakai bila semua pasangan kontras tetap lolos;
+selain itu tema itu memakai nilai bawaan. Token lain (status, tag, `--accent`, `--logo-plate`) tidak
+pernah ikut warna merek.
 
 **Tipografi**: *Plus Jakarta Sans* (UI, dirancang di Indonesia), *JetBrains Mono*
 (ID pelanggan, kode, token terpotong). Self-host font (bukan CDN).

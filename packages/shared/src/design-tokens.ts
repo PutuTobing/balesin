@@ -56,8 +56,19 @@ export interface ThemeColors {
   tagPurple: string;
   /** Titik warna tag "Toska" (grafis non-teks, ≥ 3:1). */
   tagTeal: string;
+  /**
+   * Titik warna tag "Biru" (grafis non-teks, ≥ 3:1). Nilainya = biru bawaan `primary`, tetapi token
+   * sendiri: arti warna tag tidak boleh ikut warna merek organisasi (white-label).
+   */
+  tagBlue: string;
+  /**
+   * Pelat di balik `<img>` logo ORGANISASI (raster, warnanya tidak bisa diubah) supaya logo gelap
+   * tetap terbaca di mode gelap; transparan di tema terang. Tanda bawaan (SVG) tidak memakainya.
+   */
+  logoPlate: string;
 }
 
+const lightBg = '#F6F4EF';
 const lightSurface = '#FFFFFF';
 const lightInk = '#14202E';
 const lightBubbleOut = '#E3EEFF';
@@ -70,7 +81,7 @@ const darkBubbleOut = '#1A3354';
 
 export const color: Record<ThemeName, ThemeColors> = {
   light: {
-    bg: '#F6F4EF',
+    bg: lightBg,
     surface: lightSurface,
     surface2: '#EFECE5',
     ink: lightInk,
@@ -91,6 +102,8 @@ export const color: Record<ThemeName, ThemeColors> = {
     dangerInk: '#C03535',
     tagPurple: '#7A52CC',
     tagTeal: '#0B8A9E',
+    tagBlue: '#1167D8',
+    logoPlate: 'transparent',
   },
   dark: {
     bg: darkBg,
@@ -115,6 +128,8 @@ export const color: Record<ThemeName, ThemeColors> = {
     dangerInk: '#F07070',
     tagPurple: '#A98BF0',
     tagTeal: '#3CC4D6',
+    tagBlue: '#4D9BFF',
+    logoPlate: lightBg,
   },
 };
 
@@ -312,4 +327,5 @@ export const contrastPairs: readonly ContrastPair[] = [
   // Titik warna tag (palet TAG_COLORS yang tidak punya token status).
   ...pairs(MIN_GRAPHIC_CONTRAST, 'tagPurple', ['bg', 'surface', 'surface2']),
   ...pairs(MIN_GRAPHIC_CONTRAST, 'tagTeal', ['bg', 'surface', 'surface2']),
+  ...pairs(MIN_GRAPHIC_CONTRAST, 'tagBlue', ['bg', 'surface', 'surface2']),
 ];

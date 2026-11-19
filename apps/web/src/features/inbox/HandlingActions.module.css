@@ -156,3 +156,18 @@
     min-height: var(--size-touch);
   }
 }
+
+/* Tindakan yang belum bisa dipakai: alasannya terbaca di bawah labelnya. */
+.itemText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.itemReason {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-regular);
+  white-space: normal;
+}

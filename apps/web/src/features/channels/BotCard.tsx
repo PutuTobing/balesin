@@ -1,5 +1,6 @@
 import {
   BOT_DAY_LABELS,
+  CHANNEL_CAPABILITIES,
   CHANNEL_TYPE_LABELS,
   channelBotSettingsSchema,
   channelHasCustomerWindow,
@@ -48,9 +49,12 @@ export function BotCard({ channelId }: { channelId: string }) {
     ? null
     : !data.enabled
       ? { tone: 'neutral' as const, label: copy.statusOff }
-      : data.activeNow
-        ? { tone: 'success' as const, label: copy.statusOn }
-        : { tone: 'warning' as const, label: copy.statusOutside };
+      : data.receiverReady === false
+        ? // Tanpa penerima, bot tidak memegang chat apa pun (B1).
+          { tone: 'warning' as const, label: copy.statusNoReceiver }
+        : data.activeNow
+          ? { tone: 'success' as const, label: copy.statusOn }
+          : { tone: 'warning' as const, label: copy.statusOutside };
 
   return (
     <section id="bot" className={styles.card} aria-labelledby="channel-bot">
@@ -62,9 +66,13 @@ export function BotCard({ channelId }: { channelId: string }) {
           <p className={styles.hint}>{copy.hint(place)}</p>
           {data ? (
             <p className={styles.hint}>
-              {channelHasCustomerWindow(channelType)
-                ? copy.windowNote
-                : copy.noWindowNote(CHANNEL_TYPE_LABELS[channelType])}
+              {/* Template hanya ada di channel yang mendukungnya (WhatsApp); Messenger/IG berjendela
+                  tanpa template, Telegram/Email tanpa jendela. */}
+              {!channelHasCustomerWindow(channelType)
+                ? copy.noWindowNote(CHANNEL_TYPE_LABELS[channelType])
+                : CHANNEL_CAPABILITIES[channelType].templates
+                  ? copy.windowNote
+                  : copy.windowNoteNoTemplate(CHANNEL_TYPE_LABELS[channelType])}
             </p>
           ) : null}
         </div>
@@ -88,6 +96,7 @@ export function BotCard({ channelId }: { channelId: string }) {
         <BotForm
           place={place}
           receiverWarned={data.enabled && data.receiverReady === false}
+          receiverReady={data.receiverReady === true}
           channelId={channelId}
           initial={botFormFrom(data)}
           timezone={data.timezone}
@@ -116,6 +125,7 @@ export function BotCard({ channelId }: { channelId: string }) {
 function BotForm({
   place,
   receiverWarned,
+  receiverReady,
   channelId,
   initial,
   timezone,
@@ -124,6 +134,8 @@ function BotForm({
   place: string;
   /** Peringatan "belum ada penerima" sudah tampil di atas: petunjuk umumnya tidak diulang. */
   receiverWarned: boolean;
+  /** Penerima bot sudah siap: kalimat positif singkat, bukan syarat umum (BS2). */
+  receiverReady: boolean;
   channelId: string;
   initial: BotForm;
   timezone: string;
@@ -215,7 +227,9 @@ function BotForm({
       </Checkbox>
       {form.enabled ? (
         <>
-          {receiverWarned ? null : <p className={styles.hint}>{copy.noReceiver}</p>}
+          {receiverWarned ? null : (
+            <p className={styles.hint}>{receiverReady ? copy.receiverReady : copy.noReceiver}</p>
+          )}
           <fieldset className={styles.botFieldset}>
             <legend className={styles.botLegend}>{copy.hoursLabel}</legend>
             <div className={styles.botModes} role="radiogroup" aria-label={copy.hoursLabel}>

@@ -24,6 +24,7 @@ import { useCan, useSession } from '../auth/session';
 import { DepartmentDialog } from '../departments/DepartmentDialog';
 import { departmentsQuery } from '../departments/department-queries';
 import styles from './HandlingActions.module.css';
+import { channelBotKey } from '../channels/bot-form';
 import { agentsQuery, forgetConversation, inboxKeys, storeConversation } from './inbox-queries';
 
 const h = t.inbox.handling;
@@ -53,6 +54,22 @@ export function HandlingActions({
   const [departmentOpen, setDepartmentOpen] = useState(false);
   const departments = useQuery({ ...departmentsQuery, enabled: canAssign }).data?.departments;
   const canMoveDepartment = canAssign && (departments?.length ?? 0) > 0;
+  // Pengaturan bot channel HANYA bila sudah ada di cache (mis. habis membuka Pengaturan → Channel):
+  // tidak ada permintaan tambahan per percakapan. Tanpa data → tombol tetap ada; server menjawab 409
+  // dengan penjelasannya.
+  const botSettings = useQuery({
+    queryKey: channelBotKey(conversation.channel.id),
+    queryFn: ({ signal }) => endpoints.channels.bot(conversation.channel.id, signal),
+    // Hanya membaca cache (dan ikut berubah bila cache diperbarui) — tidak pernah memuat sendiri.
+    enabled: false,
+  }).data?.settings;
+  const botBlocked = !botSettings
+    ? null
+    : !botSettings.enabled
+      ? h.botResumeOff
+      : botSettings.receiverReady === false
+        ? h.botResumeNoReceiver
+        : null;
 
   const mutation = useMutation({
     mutationFn: ({ action, userId }: { action: Action; userId?: string }) => {
@@ -190,10 +207,21 @@ export function HandlingActions({
             {!withBot && !resolved && (canAssign || mine) ? (
               // Hanya pemegang chat atau yang boleh menugaskan (chat orang lain tidak dioper ke bot
               // diam-diam). Bot channel mati → server menjawab 409 dengan penjelasannya.
-              <DropdownMenu.Item className={styles.item} onSelect={() => run('botOn')}>
-                <Icon icon={Bot} size={16} />
-                {h.botResume}
-              </DropdownMenu.Item>
+              botBlocked ? (
+                // Alasan TERBACA di menu (bukan hanya tooltip): bot belum bisa memegang chat.
+                <DropdownMenu.Item className={styles.item} disabled>
+                  <Icon icon={Bot} size={16} />
+                  <span className={styles.itemText}>
+                    {h.botResume}
+                    <span className={styles.itemReason}>{botBlocked}</span>
+                  </span>
+                </DropdownMenu.Item>
+              ) : (
+                <DropdownMenu.Item className={styles.item} onSelect={() => run('botOn')}>
+                  <Icon icon={Bot} size={16} />
+                  {h.botResume}
+                </DropdownMenu.Item>
+              )
             ) : null}
             {isDesktop && resolved ? (
               <DropdownMenu.Item className={styles.item} disabled>

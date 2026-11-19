@@ -40,9 +40,10 @@ ul.list {
 }
 
 /* Kunci palet tag (TAG_COLORS) → token desain (abu-abu = --ink-2 bawaan `.dot`). */
+/* Token sendiri (bukan --primary): arti warna tag tidak ikut warna merek organisasi. */
 [data-color='blue'] > .dot,
 [data-color='blue'] > .colorDot {
-  background: var(--primary);
+  background: var(--tag-blue);
 }
 
 [data-color='green'] > .dot,

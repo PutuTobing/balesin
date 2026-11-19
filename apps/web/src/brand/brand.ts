@@ -35,3 +35,13 @@ export const BrandContext = createContext<Brand>(defaultBrand);
 export function useBrand(): Brand {
   return useContext(BrandContext);
 }
+
+/**
+ * Huruf monogram: dari nama organisasi tanpa awalan badan usaha ("PT Maju Jaya" → "M"), selain itu
+ * huruf pertama nama aplikasi.
+ */
+export function monogramLetter(organizationName: string | null, productName: string): string {
+  const source =
+    organizationName?.trim().replace(/^(PT|CV|UD|Koperasi)\.?\s+/i, '') || productName.trim();
+  return Array.from(source)[0]?.toLocaleUpperCase('id-ID') ?? '';
+}
