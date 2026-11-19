@@ -1,6 +1,6 @@
 # Review keamanan: bot untuk semua jenis channel
 
-- Commit: `f493358` (`feat(bot): bot untuk semua jenis channel — jenis channel di event bot, MobiChat hanya WhatsApp, receiverReady`) — putaran 1; perbaikan `d612b29` — putaran 2 (bagian akhir dokumen)
+- Commit: `f493358` (`feat(bot): bot untuk semua jenis channel — jenis channel di event bot, MobiChat hanya WhatsApp, receiverReady`) — putaran 1; perbaikan `d612b29` — putaran 2; fitur P2-1/P2-3 `d9766b3` — putaran 3 (bagian akhir dokumen)
 - Lingkup: `packages/db/src/outgoing-events.ts` (`hasActiveBotReceiver`), `packages/shared/src/bot.ts`,
   `apps/api/src/modules/bot/bot.service.ts`, `apps/worker/src/inbound/handlers.ts`,
   `apps/worker/src/queues/webhooks-out.ts`, `bot-channel-lain.integration.test.ts`, dan kontrak di docs
@@ -237,3 +237,112 @@ Penjaga baru:
 - B2: 9 rute MobiChat menjawab 404 yang byte-identik dengan nomor yang tidak ada, tanpa efek samping.
 - B3: Teknisi di luar cakupan mendapat 404 (cakupan diperiksa sebelum penerima), dan Owner tanpa
   penerima mendapat 409.
+
+---
+
+## Putaran 3 — opsi `requireVerifiedSender` & event `conversation.bot_resumed` (`d9766b3`)
+
+Commit: `d9766b3` (`feat(bot): opsi Email "bot hanya pengirim terverifikasi" & event webhook
+conversation.bot_resumed`). Lingkup: migrasi `0032`, `packages/db/src/schema/channels.ts`,
+`packages/shared/src/bot.ts`, `packages/shared/src/outgoing-webhooks.ts`,
+`apps/api/src/modules/bot/bot.service.ts`, `apps/api/src/modules/inbox/assignment.service.ts`
+(`setBot`), `apps/worker/src/inbound/channel-inbound.ts`, `apps/worker/src/queues/webhooks-out.ts`,
+serta kontrak INBOX, WEBHOOK-KELUAR, CHANNEL-LAIN, dan DECISIONS.
+
+### Putusan putaran 3: **AMAN** (dengan 1 Sedang yang dikunci `it.fails`)
+
+Tidak ada temuan Kritis atau Tinggi. Ada 1 temuan **Sedang** (P3-1), 1 **Rendah** (P3-2), dan 2 Info.
+P3-1 dikunci dengan dua `it.fails`. Salinan sementara tanpa `.fails` gagal tepat di asersi temuan
+(`expected [ 'Isolir layanan saya sekarang' ] to not include …` dan `expected [ 'Ganti paket saya' ]
+to not include …`), lalu salinan itu dihapus. P2-1 dan P2-3 dari putaran 2 **tertutup** oleh commit
+ini; P3-1 adalah celah yang muncul dari gabungan keduanya.
+
+### Yang diperiksa dan lolos
+
+| Area | Bukti | Hasil |
+|---|---|---|
+| Izin, CSRF, cek ulang aktor | `bot.routes.ts:71-95` (`MANAGE` = `integrations.manage`, batas laju 30/menit), `bot.service.ts:116` (`assertActorStillAuthorized` di transaksi), `:132` (`FOR UPDATE` baris channel milik organisasi, `deleted_at is null`) | Opsi baru lewat rute yang sama, jadi tidak ada jalur baru. Tes baru: CS dan Supervisor 403, tanpa CSRF 403, dan nilai di DB tetap `false` |
+| Validasi hanya Email | `bot.service.ts:134-145` (`true` di non-email → 400 `VALIDATION_ERROR`, `field = requireVerifiedSender`), migrasi `0032` + `schema/channels.ts` CHECK `channels_bot_verified_sender_email_only` | Dua lapis. `false` di non-email diterima dan tetap `false`, tidak berbahaya. Tes baru: `UPDATE` langsung ke channel Telegram dengan `true` ditolak DB |
+| Bawaan aman & "tidak diisi = tetap" | Migrasi `DEFAULT false NOT NULL`, `bot.service.ts:146` (`raw.requireVerifiedSender ?? current…`) | Klien lama yang tidak mengirim isian ini tidak mematikan perlindungan tanpa sengaja. Bawaan mati sesuai alasan P2-1 (IMAP tanpa `Authentication-Results` tepercaya) |
+| Audit | `bot.service.ts:170-175` | `requireVerifiedSender` + `previousRequireVerifiedSender` hanya untuk channel Email, tanpa data pelanggan. Tes backend memastikan isinya |
+| Worker: filter organisasi & N1 | `channel-inbound.ts:137-148` (`organization_id` + `id`), `:208-211` | Hanya `SELECT` biasa tanpa kunci baris, jadi tidak menaikkan kunci channel (N1 review webhook tetap dipatuhi) dan tidak menambah urutan kunci baru. Query hanya berjalan bila email `unverified`. Perubahan pengaturan yang bersamaan paling banyak memengaruhi satu pesan yang sedang diproses, dan itu bisa diterima. Tes baru: dua channel Email di organisasi yang sama dengan opsi hanya hidup di satu channel; `unverified` di channel yang opsinya hidup → `unserved`, di channel lain → `bot` |
+| Perilaku opsi hidup | `channel-inbound.ts:208-221` | `unverified` sama dengan `fail`: percakapan baru `unserved`, percakapan bot terbuka diserahkan lewat `handOffFromBot` (bersyarat `status = 'bot'`, pelaku sistem, webhook `conversation.handoff`) |
+| `bot_resumed`: minimisasi data | `webhooks-out.ts:329-332` memakai `messageData` yang sama dengan `message.received` (filter `organization_id`); `conversationData`/`contactData`/`userRef` tidak berubah | Kunci `data` dikunci persis `{actor, contact, conversation, message}`, dan `actor` hanya `{id, name}` (tanpa email agen). Tes baru: tanpa rahasia channel, host/username IMAP, `mobichat_api_key`, header email mentah (`inReplyTo`, `references`, `hasHtml`), ID media Meta, `external_user_id`, `wa_bsuid`, dan email agen. Catatan internal ada di tabel terpisah (`conversation_notes`), jadi tidak mungkin ikut sebagai "pesan tertunda" |
+| `bot_resumed`: pesan yang dibawa | `assignment.service.ts:665-684` | `pendingMessageId` hanya diisi bila pesan terakhir (selain reaksi) dari percakapan itu sendiri adalah `inbound`. Query difilter `organization_id` + `conversation_id` di transaksi yang sama, setelah cakupan, izin `inbox.assign` untuk chat agen lain, dan `hasActiveBotReceiver`. Body dibangun saat dispatch, sehingga pesan yang sudah dihapus menjadi `null` |
+| MobiChat tidak bisa melanggan | Buat: `packages/shared/src/outgoing-webhooks.ts:156` (`MOBICHAT_WEBHOOK_EVENTS`); ubah: `outgoing-webhooks.service.ts:422-430`; body: `buildMobichatBody` → `null` untuk selain `message.received` | Tiga lapis. Tes backend: buat 400. Tes baru: PATCH `events` endpoint MobiChat dengan `conversation.bot_resumed` → 400. `mobichat_api_key` tidak pernah ikut di event ini |
+| Dorongan berulang oleh akun CS curian | `assignment.routes.ts:43,145` (120/menit per pengguna), `setBot` | Bolak-balik matikan/kembalikan bisa mengirim pesan tertunda yang sama berkali-kali. Tetapi setelah bot membalas, pesan terakhir menjadi `outbound` dan `message` menjadi `null`. Balasan bot tetap terkena batas per key, per percakapan per menit, dan rem darurat. Setiap aksi tercatat `bot_resumed`/`handoff` |
+| Dependensi | `pnpm audit` | `--prod`: **0 kerentanan**. Total ada 2 moderate dev-only, sama dengan putaran sebelumnya |
+
+### P3-1 (Sedang) — "Kembalikan ke bot" meneruskan email palsu/tak terverifikasi ke bot
+
+- **Bukti.** `apps/api/src/modules/inbox/assignment.service.ts:614-685` (`setBot(true)`) tidak memeriksa
+  `extras.email.senderVerification` pesan tertunda; `:679-684` mengisi `pendingMessageId` dengan pesan
+  `inbound` terakhir apa pun. `apps/worker/src/queues/webhooks-out.ts:329-332` mengirim pesan itu utuh
+  di `conversation.bot_resumed`. `dispatchOne` (`:629`) juga hanya menerapkan saringan bot untuk
+  `message.received`.
+- **Dampak.** Jaminan B1 di worker ("email `fail` tidak pernah dilayani bot") dan opsi P2-1 (alasan di
+  DECISIONS: "perlindungan tidak hanya bergantung pada kepatuhan bot ke kontrak") bisa dilewati dengan
+  satu klik agen. Skenarionya begini. Pihak luar mengirim email ber-`From` pelanggan X ("isolir layanan
+  saya", "ganti paket"). Email itu benar masuk antrian. Lalu agen yang lalai, atau akun CS curian yang
+  sengaja memalsukan email lalu mengembalikannya ke bot, menekan "Kembalikan ke bot". Bot menerima
+  pesan palsu itu sebagai pesan tertunda X dan menjalankan aksi akun lewat API/n8n, padahal aksi itu
+  mungkin tidak bisa dilakukan CS sendiri. Sebelum commit ini, bot tidak pernah menerima pesan lama
+  tersebut. Label `sender_verification` memang ikut di body, tetapi itu kembali ke perlindungan yang
+  bergantung pada kepatuhan bot, dan itulah yang mau dihindari oleh B1/P2-1. Levelnya Sedang (bukan
+  Tinggi) karena butuh tindakan manusia ber-izin `inbox.reply`, label peringatan terlihat di inbox,
+  dan kontrak sudah mewajibkan bot mengabaikan selain `pass`.
+- **Perbaikan yang disarankan** (pilih salah satu; yang pertama paling sederhana):
+  1. Di `setBot(true)`, ambil juga `extras` pesan terakhir. Bila pesan itu email `inbound` dengan
+     verifikasi `fail` (data lama tanpa verifikasi + `authWarning` = `fail`), atau `unverified` saat
+     channel `bot_require_verified_sender = true`, maka `pendingMessageId = null`. Event tetap dikirim
+     tanpa `message`, dan `bot_awaiting_since` tetap diisi supaya batas waktu mengembalikan pelanggan ke
+     tim. Pakai penafsiran yang sama dengan `emailDataOf` / `inbox-view.ts:235` supaya data lama
+     ditafsirkan seragam.
+  2. Atau tolak 409 `CONFLICT` dengan pesan "Pesan terakhir dari pengirim email yang tidak terverifikasi
+     — balas manual". Ini paling ketat dan konsisten dengan "email `fail` tidak pernah dipegang bot".
+  Tambahkan satu kalimat di KONTRAK-WEBHOOK-KELUAR/INBOX. Setelah itu ubah kedua `it.fails` P3-1 menjadi
+  `it` tanpa mengubah asersi (asersinya menerima 409 maupun `message: null`).
+
+### P3-2 (Rendah) — `conversation.bot_resumed` tidak dinilai ulang saat dispatch untuk endpoint "hanya saat bot"
+
+- **Bukti.** `webhooks-out.ts:629`: pemeriksaan `botHolds` hanya untuk `message.received`. Body dibangun
+  saat dispatch (`conversation.status` terbaru), tetapi `data.message` tetap ikut walaupun saat itu
+  agen sudah mengambil alih lagi atau pesan `fail` baru sudah menyerahkannya ke tim.
+- **Dampak.** Endpoint `botOnly` bisa menerima paling banyak satu pesan pelanggan untuk percakapan yang
+  sudah tidak dipegang bot. Kebocorannya kecil, karena endpoint itu buatan admin dan memang
+  berlangganan event ini. Bot yang tidak memeriksa `conversation.status` juga bisa membalas chat yang
+  sudah dipegang agen.
+- **Perbaikan.** Untuk `endpoint.botOnly && event.type === 'conversation.bot_resumed'`, pakai pemeriksaan
+  `botHolds` yang sama (lewati bila status bukan `bot`). Tambahkan ke kontrak: bot wajib mengabaikan
+  event bila `data.conversation.status !== 'bot'`.
+
+### Info
+
+- **P3-I1 — Mematikan `requireVerifiedSender` tidak muncul di ringkasan keamanan Owner.** Admin yang
+  mematikan perlindungan hanya tercatat di audit `channel.bot_updated`, bukan sebagai kejadian
+  `warning` seperti `bot_enabled` (`audit.service.ts`). Pertimbangkan deteksi
+  `previousRequireVerifiedSender = true → false` oleh non-Owner.
+- **P3-I2 — Idempotensi di sisi bot.** Pesan tertunda yang sama bisa muncul di beberapa
+  `conversation.bot_resumed` (siklus matikan/kembalikan). Sarankan di kontrak agar bot menghapus
+  duplikat berdasarkan `data.message.id`.
+
+### Tes putaran 3
+
+| Perintah | Hasil |
+|---|---|
+| `security-review-bot-semua-channel.integration.test.ts` | **20 lulus + 2 expected fail** (15 lama + 5 penjaga baru + 2 `it.fails` P3-1) |
+| Salinan sementara tanpa `.fails` (`-t "P3-1"`) | 2 gagal tepat di asersi temuan, lalu salinannya dihapus |
+| `vitest run src/modules/bot src/modules/inbox/assignment.integration.test.ts src/modules/outgoing-webhooks` (apps/api) | 8 berkas, 76 lulus + 2 expected fail |
+| `vitest run src/inbound src/queues/webhooks-out` (apps/worker) | 3 berkas, 33 lulus |
+| `eslint` (berkas tes) + `tsc --noEmit` (apps/api) | bersih |
+| `pnpm audit --prod` / `pnpm audit` | 0 / 2 moderate dev-only (tidak berubah) |
+
+Penjaga baru (`describe('putaran 3 …')`, `security-review-bot-semua-channel.integration.test.ts:600`):
+
+- Opsi baru: CS/Supervisor 403, tanpa CSRF 403, nilai tetap.
+- CHECK DB: non-email `true` ditolak.
+- Worker membaca pengaturan per channel (channel Email lain tidak terpengaruh).
+- Minimisasi body `conversation.bot_resumed` (kunci `data` & `actor` dikunci, tanpa rahasia/ID mentah/
+  header email/email agen).
+- Endpoint MobiChat tidak bisa melanggan `conversation.bot_resumed` lewat PATCH.
+- `it.fails` P3-1 ×2 (`:763` email `fail`; `:787` `unverified` + `requireVerifiedSender`).

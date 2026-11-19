@@ -596,3 +596,217 @@ describe('putaran 2 — penjaga perbaikan B1–B3', () => {
     expect((await latestConversation(channelId)).status).toBe('unserved');
   });
 });
+
+describe('putaran 3 — requireVerifiedSender & conversation.bot_resumed (d9766b3)', () => {
+  type ResumedBody = {
+    event: string;
+    data: {
+      conversation: Record<string, unknown> & { id: string; status: string };
+      contact: Record<string, unknown>;
+      actor: Record<string, unknown> | null;
+      message:
+        | (Record<string, unknown> & {
+            text: string | null;
+            email: { sender_verification: string | null } | null;
+          })
+        | null;
+    };
+  };
+  const resumedBodies = () =>
+    received
+      .map((item) => JSON.parse(item.body) as ResumedBody)
+      .filter((body) => body.event === 'conversation.bot_resumed');
+  const resume = (conversationId: string, active = true) =>
+    call(
+      harness.app,
+      'POST',
+      apiPath(API_ROUTES.inbox.bot, { conversationId }),
+      { active },
+      { cookie: owner.cookie, csrf: owner.csrf },
+    );
+
+  it('opsi baru: CS & Supervisor 403, tanpa CSRF 403, nilai tidak berubah', async () => {
+    const channelId = await addChannel('email');
+    const body = { ...ON, requireVerifiedSender: true };
+    for (const role of ['cs', 'supervisor'] as const) {
+      const user = await insertUser(harness.db, organizationId, {
+        role,
+        email: `${role}.p3@review.test`,
+        passwordHash: await hasher.hash(PASSWORD),
+      });
+      const session = await login(harness.app, { email: user.email, password: PASSWORD });
+      const denied = await call(harness.app, 'PUT', botUrl(channelId), body, {
+        cookie: session.cookie,
+        csrf: session.csrf,
+      });
+      expect(denied.statusCode, denied.body).toBe(403);
+    }
+    const noCsrf = await call(harness.app, 'PUT', botUrl(channelId), body, {
+      cookie: owner.cookie,
+    });
+    expect(noCsrf.statusCode, noCsrf.body).toBe(403);
+    const [row] = await harness.db
+      .select({ value: channels.botRequireVerifiedSender })
+      .from(channels)
+      .where(eq(channels.id, channelId));
+    expect(row?.value).toBe(false);
+  });
+
+  it('CHECK DB: bot_require_verified_sender = true ditolak di channel selain email', async () => {
+    const channelId = await addChannel('telegram');
+    await expect(
+      harness.db
+        .update(channels)
+        .set({ botRequireVerifiedSender: true })
+        .where(eq(channels.id, channelId)),
+    ).rejects.toThrow();
+  });
+
+  it('worker membaca pengaturan per channel: channel email lain (opsi mati) tetap ke bot', async () => {
+    const strict = await addChannel('email');
+    const loose = newId();
+    await harness.db
+      .insert(channels)
+      .values({ ...channelValues('email', loose), emailAddress: 'cs2@majujaya.test' });
+    await addWebhook({ events: ['message.received'] });
+    for (const id of [strict, loose]) {
+      const response = await call(harness.app, 'PUT', botUrl(id), ON, {
+        cookie: owner.cookie,
+        csrf: owner.csrf,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+    }
+    const on = await call(
+      harness.app,
+      'PUT',
+      botUrl(strict),
+      { ...ON, requireVerifiedSender: true },
+      { cookie: owner.cookie, csrf: owner.csrf },
+    );
+    expect(on.statusCode, on.body).toBe(200);
+    await receive('email', strict, 'Halo', 'unverified');
+    await receive('email', loose, 'Halo', 'unverified');
+    expect((await latestConversation(strict)).status).toBe('unserved');
+    expect((await latestConversation(loose)).status).toBe('bot');
+  });
+
+  it('bot_resumed: minimisasi data — kunci tetap, tanpa ID platform/rahasia/header email mentah', async () => {
+    const channelId = await addChannel('email');
+    await addWebhook({ events: ['message.received', 'conversation.bot_resumed'] });
+    await call(harness.app, 'PUT', botUrl(channelId), ON, {
+      cookie: owner.cookie,
+      csrf: owner.csrf,
+    });
+    await receive('email', channelId, 'Internet mati', 'unverified');
+    const conversation = await latestConversation(channelId);
+    expect(conversation.status).toBe('bot');
+    // Ke antrian (agen mematikan bot), lalu dikembalikan.
+    expect((await resume(conversation.id, false)).statusCode).toBe(200);
+    expect((await resume(conversation.id)).statusCode).toBe(200);
+    await tick();
+    const [body] = resumedBodies();
+    expect(body).toBeDefined();
+    const raw = JSON.stringify(body);
+    for (const forbidden of [
+      FAKE_SECRET,
+      'imap.majujaya.test',
+      'cs-imap-user',
+      'mobichat_api_key',
+      'inReplyTo',
+      'references',
+      'hasHtml',
+      'metaMediaId',
+      'meta_media_id',
+      'external_user_id',
+      'wa_bsuid',
+      owner.session.user.email,
+    ]) {
+      expect(raw, forbidden).not.toContain(forbidden);
+    }
+    expect(Object.keys(body!.data).sort()).toEqual(['actor', 'contact', 'conversation', 'message']);
+    expect(Object.keys(body!.data.actor ?? {}).sort()).toEqual(['id', 'name']);
+    expect(body!.data.message?.text).toBe('Internet mati');
+    expect(body!.data.message?.email?.sender_verification).toBe('unverified');
+  });
+
+  it('bot_resumed: endpoint MobiChat juga tidak bisa melanggan lewat UBAH (PATCH events)', async () => {
+    const { secret } = await createKey();
+    const created = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.outgoingWebhooks.list,
+      {
+        url: `${receiverOrigin}/mobichat`,
+        events: ['message.received'],
+        format: 'mobichat',
+        mobichat: { apiKey: secret },
+        confirmation: await confirmationFor(),
+      },
+      { cookie: owner.cookie, csrf: owner.csrf },
+    );
+    expect(created.statusCode, created.body).toBe(201);
+    const id = created.json<{ webhook: { id: string } }>().webhook.id;
+    const patched = await call(
+      harness.app,
+      'PATCH',
+      apiPath(API_ROUTES.outgoingWebhooks.webhook, { webhookId: id }),
+      { events: ['message.received', 'conversation.bot_resumed'] },
+      { cookie: owner.cookie, csrf: owner.csrf },
+    );
+    expect(patched.statusCode, patched.body).toBe(400);
+  });
+
+  // P3-1 (Sedang): "Kembalikan ke bot" meneruskan email PALSU (`fail`) yang belum dibalas ke bot
+  // lewat `conversation.bot_resumed`. Ini melewati jaminan worker B1 ("email `fail` tidak pernah
+  // dilayani bot"), yang sengaja tidak bergantung pada kepatuhan bot ke kontrak. Diharapkan: ditolak
+  // 409, ATAU `data.message` tidak memuat pesan itu (`null`).
+  it.fails(
+    'P3-1: email `fail` yang belum dibalas tidak diteruskan ke bot saat dikembalikan',
+    async () => {
+      const channelId = await addChannel('email');
+      await addWebhook({
+        events: ['message.received', 'conversation.bot_resumed'],
+        botOnly: true,
+      });
+      await call(harness.app, 'PUT', botUrl(channelId), ON, {
+        cookie: owner.cookie,
+        csrf: owner.csrf,
+      });
+      await receive('email', channelId, 'Isolir layanan saya sekarang', 'fail');
+      const conversation = await latestConversation(channelId);
+      expect(conversation.status).toBe('unserved');
+      await resume(conversation.id);
+      await tick();
+      const texts = resumedBodies().map((body) => body.data.message?.text ?? null);
+      expect(texts).not.toContain('Isolir layanan saya sekarang');
+    },
+  );
+
+  // P3-1 (Sedang), varian P2-1: channel Email dengan `requireVerifiedSender` — `unverified` yang
+  // belum dibalas juga diteruskan ke bot lewat `conversation.bot_resumed`.
+  it.fails(
+    'P3-1: requireVerifiedSender — email `unverified` yang belum dibalas tidak diteruskan ke bot',
+    async () => {
+      const channelId = await addChannel('email');
+      await addWebhook({
+        events: ['message.received', 'conversation.bot_resumed'],
+        botOnly: true,
+      });
+      const on = await call(
+        harness.app,
+        'PUT',
+        botUrl(channelId),
+        { ...ON, requireVerifiedSender: true },
+        { cookie: owner.cookie, csrf: owner.csrf },
+      );
+      expect(on.statusCode, on.body).toBe(200);
+      await receive('email', channelId, 'Ganti paket saya', 'unverified');
+      const conversation = await latestConversation(channelId);
+      expect(conversation.status).toBe('unserved');
+      await resume(conversation.id);
+      await tick();
+      const texts = resumedBodies().map((body) => body.data.message?.text ?? null);
+      expect(texts).not.toContain('Ganti paket saya');
+    },
+  );
+});
