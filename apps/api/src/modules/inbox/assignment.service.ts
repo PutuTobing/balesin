@@ -28,6 +28,8 @@ import {
   type ConversationRecordKind,
   type InboxAgent,
   type Permission,
+  emailSenderTrustedForBot,
+  storedEmailSenderVerification,
 } from '@balesin/shared';
 import { and, asc, desc, eq, gte, inArray, isNull, ne, sql, type Column } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -145,13 +147,9 @@ const NOT_FOUND = 'Percakapan tidak ditemukan.';
  * (termasuk data lama tanpa peringatan) hanya bila channel tidak mewajibkan pengirim terverifikasi.
  */
 function trustedForBot(extras: MessageExtras, requireVerifiedSender: boolean): boolean {
-  const email = extras.email;
-  if (!email) return true;
-  const verification =
-    email.senderVerification ?? (email.authWarning === true ? 'fail' : 'unverified');
-  if (verification === 'pass') return true;
-  if (verification === 'fail') return false;
-  return !requireVerifiedSender;
+  const email = extras.email as { senderVerification?: unknown; authWarning?: unknown } | undefined;
+  if (!email || typeof email !== 'object') return true;
+  return emailSenderTrustedForBot(storedEmailSenderVerification(email), requireVerifiedSender);
 }
 
 interface Change {

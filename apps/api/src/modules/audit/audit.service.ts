@@ -274,7 +274,15 @@ const DETAIL_KEYS: Readonly<Record<SecurityEventKind, readonly string[]>> = {
   api_key_changed: ['change', 'name', 'displayPrefix', 'scopes', 'actorRole'],
   webhook_changed: ['change', 'host', 'previousHost', 'events', 'cidrs', 'actorRole'],
   webhook_disabled: ['host', 'failures'],
-  bot_enabled: ['channelType', 'hoursMode', 'timeoutMinutes', 'actorRole'],
+  // P4-I1: Owner melihat bila perlindungan Email "hanya pengirim terverifikasi" ikut dimatikan.
+  bot_enabled: [
+    'channelType',
+    'hoursMode',
+    'timeoutMinutes',
+    'requireVerifiedSender',
+    'previousRequireVerifiedSender',
+    'actorRole',
+  ],
   bot_verified_sender_disabled: ['channelType', 'enabled', 'actorRole'],
   sending_limits_changed: [
     'change',

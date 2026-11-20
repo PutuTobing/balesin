@@ -874,8 +874,9 @@ describe('putaran 4 — penjaga perbaikan P3-1, P3-2, P3-I1 (e611a65)', () => {
   }
 
   it('P3-1: fail → message null (event tetap terkirim, juga ke endpoint botOnly)', async () => {
-    expect((await resumedMessage({ verification: 'fail', requireVerifiedSender: false })).message)
-      .toBeNull();
+    expect(
+      (await resumedMessage({ verification: 'fail', requireVerifiedSender: false })).message,
+    ).toBeNull();
     await harness.reset();
     owner = await completeSetup(harness.app);
     organizationId = owner.session.organization.id;
@@ -903,7 +904,10 @@ describe('putaran 4 — penjaga perbaikan P3-1, P3-2, P3-I1 (e611a65)', () => {
     owner = await completeSetup(harness.app);
     organizationId = owner.session.organization.id;
     received.length = 0;
-    const loose = await resumedMessage({ verification: 'unverified', requireVerifiedSender: false });
+    const loose = await resumedMessage({
+      verification: 'unverified',
+      requireVerifiedSender: false,
+    });
     expect(loose.message?.id).toBe(loose.pendingId);
     await harness.reset();
     owner = await completeSetup(harness.app);

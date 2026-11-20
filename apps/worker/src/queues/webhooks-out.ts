@@ -41,6 +41,7 @@ import {
 import {
   OUTGOING_WEBHOOK_AUTO_DISABLE_FAILURES,
   OUTGOING_WEBHOOK_PAYLOAD_RETENTION_DAYS,
+  storedEmailSenderVerification,
 } from '@balesin/shared';
 import { Queue, UnrecoverableError, Worker } from 'bullmq';
 import { and, asc, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
@@ -241,17 +242,10 @@ function emailDataOf(row: typeof messages.$inferSelect) {
   if (row.direction !== 'inbound') {
     return { subject, sender_verification: null, auth_warning: false };
   }
-  const authWarning = email.authWarning === true;
-  const verification = email.senderVerification;
   return {
     subject,
-    sender_verification:
-      verification === 'pass' || verification === 'fail' || verification === 'unverified'
-        ? verification
-        : authWarning
-          ? 'fail'
-          : 'unverified',
-    auth_warning: authWarning,
+    sender_verification: storedEmailSenderVerification(email),
+    auth_warning: email.authWarning === true,
   };
 }
 

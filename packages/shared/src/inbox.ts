@@ -157,6 +157,38 @@ export const EMAIL_SENDER_VERIFICATION_LABELS: Readonly<
   unverified: 'Pengirim tidak diverifikasi server email',
 };
 
+/**
+ * SATU-SATUNYA penafsiran hasil verifikasi pengirim yang TERSIMPAN (`messages.extras.email`, jsonb =
+ * tidak tepercaya) — dipakai inbox, webhook ke bot, dan "kembalikan ke bot" (review bot P4-I2):
+ * - tidak ada / `null` (data lama sebelum review Fase 6 R1) → `fail` bila dulu diperingatkan
+ *   (`authWarning`), selain itu `unverified` (tidak pernah dianggap lolos);
+ * - `pass` / `unverified` / `fail` → apa adanya;
+ * - nilai lain apa pun → `fail` (gagal ke arah aman).
+ */
+export function storedEmailSenderVerification(email: {
+  senderVerification?: unknown;
+  authWarning?: unknown;
+}): EmailSenderVerificationValue {
+  const value = email.senderVerification;
+  if (value === undefined || value === null) {
+    return email.authWarning === true ? 'fail' : 'unverified';
+  }
+  return value === 'pass' || value === 'unverified' ? value : 'fail';
+}
+
+/**
+ * Pesan email dengan hasil verifikasi ini boleh dilayani/diteruskan ke bot? `pass` selalu, `fail`
+ * tidak pernah, `unverified` hanya bila channel tidak mewajibkan pengirim terverifikasi.
+ */
+export function emailSenderTrustedForBot(
+  verification: EmailSenderVerificationValue,
+  requireVerifiedSender: boolean,
+): boolean {
+  if (verification === 'pass') return true;
+  if (verification === 'fail') return false;
+  return !requireVerifiedSender;
+}
+
 export const MESSAGE_TYPES = [
   'text',
   'image',

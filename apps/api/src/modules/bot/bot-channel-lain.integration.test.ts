@@ -894,3 +894,42 @@ describe('putaran 3 review bot semua channel', () => {
     expect(events[0]?.severity).toBe('warning');
   });
 });
+
+describe('putaran 4 review bot semua channel', () => {
+  it('P4-I1: rincian banner bot_enabled memuat perubahan "hanya pengirim terverifikasi"', async () => {
+    const email = await addChannel('email');
+    const off: ChannelBotSettings = {
+      enabled: false,
+      hours: { mode: 'always' },
+      timeoutMinutes: 10,
+    };
+    const set = (signed: SignedIn, enabled: boolean, requireVerifiedSender: boolean) =>
+      call(
+        harness.app,
+        'PUT',
+        botUrl(email),
+        { ...off, enabled, requireVerifiedSender },
+        { cookie: signed.cookie, csrf: signed.csrf },
+      );
+    expect((await set(owner, false, true)).statusCode).toBe(200);
+    const user = await insertUser(harness.db, organizationId, {
+      role: 'admin',
+      email: 'admin.p4i1@majujaya.test',
+      passwordHash: await hasher.hash(PASSWORD),
+    });
+    const admin = await login(harness.app, { email: user.email, password: PASSWORD });
+    expect((await set(admin, true, false)).statusCode).toBe(200);
+    const response = await call(harness.app, 'GET', API_ROUTES.audit.securitySummary, undefined, {
+      cookie: owner.cookie,
+    });
+    const [event] = securitySummaryResponseSchema
+      .parse(response.json())
+      .events.filter((item) => item.kind === 'bot_enabled');
+    expect(event?.details).toMatchObject({
+      channelType: 'email',
+      requireVerifiedSender: false,
+      previousRequireVerifiedSender: true,
+      actorRole: 'admin',
+    });
+  });
+});

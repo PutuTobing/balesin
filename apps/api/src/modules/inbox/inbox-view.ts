@@ -15,6 +15,7 @@ import {
   type Message,
   type MessagePreview,
   type TagRef,
+  storedEmailSenderVerification,
 } from '@balesin/shared';
 import { z } from 'zod';
 
@@ -232,7 +233,10 @@ function emailOf(value: unknown): Message['email'] {
   if (!email) return null;
   return {
     ...email,
-    senderVerification: email.senderVerification ?? (email.authWarning ? 'fail' : 'unverified'),
+    // Nilai asing = `fail` (penafsiran bersama, review bot P4-I2).
+    senderVerification: storedEmailSenderVerification(
+      value as { senderVerification?: unknown; authWarning?: unknown },
+    ),
   };
 }
 
