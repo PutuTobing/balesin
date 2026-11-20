@@ -142,3 +142,17 @@ atau meminta Owner/Admin. Bila ponselnya hilang, Owner atau Admin menekan **Atur
   **Audit log** serta banner peringatan keamanan secara berkala.
 - Bila banner menyebut "password Owner diatur ulang dari server" padahal bukan tim TI Anda,
   segera ganti password server dan periksa siapa yang punya akses `sudo`.
+
+## 8.8 Lisensi perangkat lunak pihak ketiga
+
+Balesin memakai pustaka sumber terbuka. Daftar lengkap beserta teks lisensinya ada di berkas
+`THIRD-PARTY-NOTICES.txt` pada halaman rilis, dan di dalam setiap image:
+
+```bash
+sudo docker compose --project-directory /opt/balesin -f /opt/balesin/docker-compose.yml \
+  --env-file /opt/balesin/.env exec api cat /app/THIRD-PARTY-NOTICES | less
+```
+
+Pengolahan gambar memakai libvips (lewat sharp) yang berlisensi GNU LGPL v3. Pustaka itu ditaut
+dinamis dan boleh Anda ganti dengan versi lain yang kompatibel. Kode sumbernya tersedia di
+github.com/lovell/sharp-libvips (versi persisnya tercantum di berkas di atas).

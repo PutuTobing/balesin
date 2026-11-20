@@ -33,6 +33,11 @@ internet ─HTTPS─► [proxy depan]                         ─► web:8080 (g
 | `caddy` | `caddy:2.11.9-alpine` | Hanya mode B |
 | `cloudflared` | `cloudflare/cloudflared:2026.11.0` | Hanya mode C |
 
+Image pihak ketiga di compose dan base image di Dockerfile dipin `tag@sha256:<digest>` (indeks
+multi-arsitektur amd64 + arm64); Dependabot (`docker-compose` di `/deploy`, `docker` di
+`/deploy/docker`) mengusulkan tag + digest baru. Daftar lisensi pihak ketiga ada di
+`/app/THIRD-PARTY-NOTICES` setiap image dan aset rilis `THIRD-PARTY-NOTICES.txt`.
+
 Semua container aplikasi berjalan **non-root**, filesystem **hanya-baca** (+ `/tmp` tmpfs), tanpa
 capability Linux, `no-new-privileges`. Postgres dan Redis hanya di jaringan Docker `data`
 (`internal: true`): tidak bisa dijangkau dari host, LAN, maupun internet.
@@ -327,11 +332,37 @@ sudo docker compose -p balesin-uji down -v
 
 - Windows: jalankan skrip dari container Linux (`docker:cli` + `bash`) dengan socket Docker
   di-mount — Git Bash mengubah path berawalan `/`.
-- CI (`.github/workflows/ci.yml` job `deploy`): shellcheck, build 3 image, `nginx -t`, install.sh
+- CI (`.github/workflows/ci.yml` job `deploy`): shellcheck, build 3 image, `THIRD-PARTY-NOTICES` ada
+  dan sama di ketiga image, pindai CVE Trivy (informasi, tidak menggagalkan), `nginx -t`, install.sh
   sungguhan, cek header/kesehatan/wizard, backup → restore.
 - **Rilis**: tag `vX.Y.Z` di `main` → `.github/workflows/rilis.yml` membangun & mendorong image ke
   GHCR dan membuat GitHub Release berisi `install.sh`, `docker-compose.yml`, `Caddyfile`, `balesin`,
-  `balesin-nginx.conf`, `VERSION`, `SHA256SUMS`.
+  `balesin-nginx.conf`, `VERSION`, `THIRD-PARTY-NOTICES.txt`, `SHA256SUMS` (+ tanda tangan). Sebelum
+  login registry, Trivy memindai image api/worker/web kedua arsitektur: **CVE kritis yang sudah ada
+  perbaikannya menggagalkan rilis**; HIGH/CRITICAL lain dan image pihak ketiga hanya dilaporkan.
+- **Pemberitahuan lisensi**: stage `notices` di Dockerfile membangkitkan `THIRD-PARTY-NOTICES` dari
+  `pnpm licenses list --prod` (api + worker + web, amd64 + arm64) lewat
+  `deploy/docker/third-party-notices.mjs`, termasuk teks GNU LGPL v3 + GPL v3
+  (`deploy/docker/licenses/`) dan sumber libvips (github.com/lovell/sharp-libvips). Build gagal bila
+  muncul lisensi copyleft kuat/proprietary/tidak diketahui tanpa alternatif permisif.
+
+### Checklist rilis
+
+Dijalankan Tobing (atau di-approve) setiap membuat tag `vX.Y.Z`:
+
+1. Commit tag sudah ada di `main` lewat PR yang di-review; CI hijau (termasuk job `deploy`).
+2. Lihat peringatan Trivy di job `deploy` CI terbaru: CVE kritis dengan perbaikan di image Balesin
+   akan menggagalkan rilis — perbarui base image (PR Dependabot) dulu.
+3. Digest image pihak ketiga di `deploy/docker-compose.yml` dan base image di Dockerfile mutakhir
+   (PR Dependabot `docker`/`docker-compose` sudah digabung). Image alat di workflow (Trivy,
+   shellcheck) tidak dipantau Dependabot: cek versi baru tiap rilis, pin `tag@sha256` yang berumur
+   ≥ 2 minggu.
+4. **Rilis bertanda tangan pertama** (audit akhir A4, BUTUH-TOBING #18): bersamaan dengan tag itu,
+   ubah bawaan `BALESIN_REQUIRE_SIGNATURE` dari `0` menjadi `1` di `deploy/install.sh` dan buat
+   `balesin update` menyetel `BALESIN_REQUIRE_SIGNATURE=1` di `.env` bila belum ada. Sesudah itu
+   update tanpa tanda tangan cosign yang valid ditolak, bukan hanya diberi peringatan.
+5. Setelah workflow selesai: GitHub Release memuat `THIRD-PARTY-NOTICES.txt` dan `SHA256SUMS`
+   mencantumkannya; `cosign verify-blob` atas `SHA256SUMS` berhasil.
 
 ## 11. Catatan rilis
 

@@ -25,7 +25,7 @@ jobs:
   rilis:
     name: Image + berkas rilis
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     environment: rilis
     env:
       PLATFORMS: linux/amd64,linux/arm64
@@ -87,6 +87,11 @@ jobs:
             node_arch="${arch/amd64/x64}" # nama arsitektur versi Node (process.arch)
             docker buildx build -f deploy/docker/Dockerfile --target api --platform "$platform" \
               --provenance=false --sbom=false --load -t "balesin-uji-api:$arch" .
+            # Pemberitahuan lisensi (audit akhir A5): identik di setiap arsitektur, jadi satu aset rilis.
+            docker run --rm --platform "$platform" --entrypoint cat "balesin-uji-api:$arch" \
+              /app/THIRD-PARTY-NOTICES > "$RUNNER_TEMP/notices-$arch.txt"
+            grep -q 'GNU LESSER GENERAL PUBLIC LICENSE' "$RUNNER_TEMP/notices-$arch.txt" ||
+              { echo "::error::THIRD-PARTY-NOTICES $arch tidak memuat teks LGPL"; exit 1; }
             docker run --rm --platform "$platform" --entrypoint node "balesin-uji-api:$arch" \
               --input-type=module -e "
                 import sharp from 'sharp';
@@ -100,6 +105,74 @@ jobs:
               "
             docker image rm "balesin-uji-api:$arch" >/dev/null
           done
+          cmp "$RUNNER_TEMP/notices-amd64.txt" "$RUNNER_TEMP/notices-arm64.txt" ||
+            { echo "::error::THIRD-PARTY-NOTICES berbeda antar-arsitektur"; exit 1; }
+      # Pemindaian CVE (audit akhir A3) SEBELUM login registry dan push. Trivy dijalankan dari image
+      # resminya yang dipin digest (bukan aksi pihak ketiga ber-tag), tanpa socket Docker: image
+      # Balesin tiap arsitektur diekspor sebagai arsip docker dari cache build lalu dibaca read-only.
+      #  - GAGAL: CVE KRITIS yang sudah punya versi perbaikan di image api/worker/web.
+      #  - LAPORAN (tidak menggagalkan): semua HIGH/CRITICAL termasuk yang belum ada perbaikannya, dan
+      #    image pihak ketiga di compose (postgres, redis, caddy, cloudflared) — perbaikannya datang
+      #    dari upstream lewat PR Dependabot `docker-compose`.
+      # Trivy tidak mengenali pustaka di dalam biner prebuilt sharp-libvips; versinya dicetak ke
+      # ringkasan job dari THIRD-PARTY-NOTICES untuk dicek manual (pembaruan lewat Dependabot npm).
+      - name: Pindai CVE image (Trivy)
+        env:
+          TRIVY_IMAGE: docker.io/aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
+        run: |
+          scan="$RUNNER_TEMP/pindai"
+          mkdir -p "$scan"
+          trivy() {
+            docker run --rm -v "$scan:/pindai:ro" -v balesin-trivy-cache:/root/.cache "$TRIVY_IMAGE" "$@"
+          }
+          trivy image --download-db-only --quiet
+          {
+            echo '### Pemindaian CVE (Trivy)'
+            echo 'Versi pustaka native sharp-libvips (tidak terbaca Trivy):'
+            echo '```'
+            sed -n '/^Versi pustaka yang dibundel/,/^$/p' "$RUNNER_TEMP/notices-amd64.txt" | sort -u
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          gagal=0
+          for platform in ${PLATFORMS//,/ }; do
+            arch="${platform#linux/}"
+            for target in api worker web; do
+              docker buildx build -f deploy/docker/Dockerfile --target "$target" \
+                --platform "$platform" --provenance=false --sbom=false \
+                --output "type=docker,dest=$scan/$target-$arch.tar" .
+              echo "::group::Laporan $target ($arch): HIGH/CRITICAL"
+              trivy image --input "/pindai/$target-$arch.tar" --scanners vuln --skip-db-update \
+                --severity HIGH,CRITICAL --exit-code 0 --quiet ||
+                echo "::warning::Laporan $target ($arch) tidak selesai."
+              echo "::endgroup::"
+              if ! trivy image --input "/pindai/$target-$arch.tar" --scanners vuln --skip-db-update \
+                --severity CRITICAL --ignore-unfixed --exit-code 1 --quiet; then
+                echo "::error::Image $target ($arch) memuat CVE KRITIS yang sudah ada perbaikannya."
+                echo "- GAGAL $target ($arch): CVE kritis dengan perbaikan" >> "$GITHUB_STEP_SUMMARY"
+                gagal=1
+              fi
+              rm -f "$scan/$target-$arch.tar"
+            done
+          done
+          mapfile -t pihak_ketiga < <(sed -nE \
+            's/^ +image: ([a-z0-9./-]+:[^ @]+@sha256:[0-9a-f]{64})$/\1/p' deploy/docker-compose.yml)
+          [ "${#pihak_ketiga[@]}" -ge 4 ] ||
+            { echo "::error::Image pihak ketiga compose tidak terbaca (${#pihak_ketiga[@]})"; exit 1; }
+          for ref in "${pihak_ketiga[@]}"; do
+            for platform in ${PLATFORMS//,/ }; do
+              echo "::group::Laporan $ref ($platform)"
+              trivy image --platform "$platform" --scanners vuln --skip-db-update \
+                --severity HIGH,CRITICAL --exit-code 0 --quiet "$ref" ||
+                echo "::warning::Pemindaian $ref ($platform) tidak selesai."
+              echo "::endgroup::"
+              if ! trivy image --platform "$platform" --scanners vuln --skip-db-update \
+                --severity CRITICAL --ignore-unfixed --exit-code 1 --quiet --format json "$ref" >/dev/null; then
+                echo "::warning::$ref ($platform): CVE kritis dengan perbaikan di upstream — perbarui lewat Dependabot."
+                echo "- PERINGATAN $ref ($platform): CVE kritis dengan perbaikan (laporan)" >> "$GITHUB_STEP_SUMMARY"
+              fi
+            done
+          done
+          exit "$gagal"
       # sigstore/cosign-installer v4.1.3
       - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532
       - name: Masuk ke GHCR
@@ -159,15 +232,23 @@ jobs:
             printf 's#%s#image: %s#\n' "$pattern" "${!var}"
           done > "$RUNNER_TEMP/digest.sed"
           sed -E -f "$RUNNER_TEMP/digest.sed" deploy/docker-compose.yml > rilis/docker-compose.yml
-          [ "$(grep -c '@sha256:' rilis/docker-compose.yml)" -eq 4 ] ||
-            { echo "::error::Tidak semua image compose terkunci digest"; exit 1; }
+          # SETIAP baris image (Balesin + pihak ketiga, audit akhir A3) wajib tag@sha256:<digest>.
+          total="$(grep -cE '^ +image: ' rilis/docker-compose.yml)"
+          pinned="$(grep -cE '^ +image: [^ $]+@sha256:[0-9a-f]{64}$' rilis/docker-compose.yml)"
+          if [ "$total" -lt 8 ] || [ "$pinned" -ne "$total" ]; then
+            echo "::error::Tidak semua image compose terkunci digest ($pinned dari $total)"
+            exit 1
+          fi
           cp deploy/Caddyfile deploy/balesin rilis/
           cp deploy/nginx/balesin.conf rilis/balesin-nginx.conf
           sed -e "s/^readonly DEFAULT_VERSION=.*/readonly DEFAULT_VERSION=\"$VERSI\"/" \
               -e "s#^readonly DEFAULT_IMAGE_PREFIX=.*#readonly DEFAULT_IMAGE_PREFIX=\"$PREFIX\"#" \
               deploy/install.sh > rilis/install.sh
           printf '%s\n' "$VERSI" > rilis/VERSION
-          (cd rilis && sha256sum docker-compose.yml Caddyfile balesin balesin-nginx.conf install.sh VERSION > SHA256SUMS)
+          # Pemberitahuan lisensi pihak ketiga (audit akhir A5), sama persis dengan /app/THIRD-PARTY-NOTICES.
+          cp "$RUNNER_TEMP/notices-amd64.txt" rilis/THIRD-PARTY-NOTICES.txt
+          (cd rilis && sha256sum docker-compose.yml Caddyfile balesin balesin-nginx.conf install.sh VERSION \
+            THIRD-PARTY-NOTICES.txt > SHA256SUMS)
           cosign sign-blob --yes --bundle rilis/SHA256SUMS.sigstore.json rilis/SHA256SUMS
       - name: Buat GitHub Release
         env:

@@ -7,6 +7,9 @@ import { defineConfig } from 'vitest/config';
  */
 export default defineConfig({
   test: {
-    include: ['src/cli/security-review-fase7-deploy.test.ts'],
+    include: [
+      'src/cli/security-review-fase7-deploy.test.ts',
+      'src/cli/security-review-audit-akhir-deploy.test.ts',
+    ],
   },
 });

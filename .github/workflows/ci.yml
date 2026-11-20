@@ -120,11 +120,47 @@ jobs:
         with:
           persist-credentials: false
       - name: Shellcheck install.sh dan CLI balesin
-        run: docker run --rm -v "$PWD/deploy:/mnt:ro" -w /mnt koalaman/shellcheck:v0.11.0 -x install.sh balesin
+        run: >-
+          docker run --rm -v "$PWD/deploy:/mnt:ro" -w /mnt
+          koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
+          -x install.sh balesin
       - name: Build image api, worker, web
         run: |
           for target in api worker web; do
             docker build -f deploy/docker/Dockerfile --target "$target" -t "balesin-ci/balesin-$target:0.0.0-ci" .
+          done
+      # Audit akhir A5: pemberitahuan lisensi (termasuk teks LGPL libvips) ada & sama di ketiga image.
+      - name: THIRD-PARTY-NOTICES ada di setiap image
+        run: |
+          for target in api worker web; do
+            docker run --rm --entrypoint cat "balesin-ci/balesin-$target:0.0.0-ci" /app/THIRD-PARTY-NOTICES \
+              > "$RUNNER_TEMP/notices-$target.txt"
+            grep -q 'GNU LESSER GENERAL PUBLIC LICENSE' "$RUNNER_TEMP/notices-$target.txt"
+            grep -q '^@img/sharp-libvips-linuxmusl-arm64@' "$RUNNER_TEMP/notices-$target.txt"
+            cmp "$RUNNER_TEMP/notices-api.txt" "$RUNNER_TEMP/notices-$target.txt"
+          done
+      # Audit akhir A3: pemindaian CVE (INFORMASI, tidak menggagalkan CI — gerbang gagal ada di rilis.yml).
+      # Trivy dari image resmi dipin digest, image dibaca dari arsip `docker save` (tanpa socket Docker).
+      - name: Pindai CVE image (Trivy, informasi)
+        env:
+          TRIVY_IMAGE: docker.io/aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
+        run: |
+          scan="$RUNNER_TEMP/pindai"
+          mkdir -p "$scan"
+          trivy() {
+            docker run --rm -v "$scan:/pindai:ro" -v balesin-trivy-cache:/root/.cache "$TRIVY_IMAGE" "$@"
+          }
+          trivy image --download-db-only --quiet || { echo "::warning::Basis data Trivy gagal diunduh."; exit 0; }
+          for target in api worker web; do
+            docker save -o "$scan/$target.tar" "balesin-ci/balesin-$target:0.0.0-ci"
+            echo "::group::Laporan $target: HIGH/CRITICAL"
+            trivy image --input "/pindai/$target.tar" --scanners vuln --skip-db-update \
+              --severity HIGH,CRITICAL --exit-code 0 --quiet || true
+            echo "::endgroup::"
+            trivy image --input "/pindai/$target.tar" --scanners vuln --skip-db-update \
+              --severity CRITICAL --ignore-unfixed --exit-code 1 --quiet --format json >/dev/null ||
+              echo "::warning::Image $target memuat CVE KRITIS yang sudah ada perbaikannya — rilis akan GAGAL sampai diperbarui."
+            rm -f "$scan/$target.tar"
           done
       - name: Konfigurasi gateway nginx valid
         run: docker run --rm --read-only --tmpfs /tmp:uid=101,gid=101 --add-host api:127.0.0.1 balesin-ci/balesin-web:0.0.0-ci nginx -t

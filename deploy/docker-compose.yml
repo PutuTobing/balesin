@@ -14,6 +14,11 @@
 # menambah caddy di 80/443. Postgres dan Redis tidak pernah terekspos.
 #
 # Nilai ${…} dibaca dari .env di folder yang sama. Variabel bertanda :? wajib ada.
+#
+# Image pihak ketiga dipin `tag@sha256:<digest indeks multi-arsitektur amd64+arm64>` (audit akhir
+# A3): Docker menarik berdasarkan digest, jadi tag yang ditimpa di registry tidak ikut terpasang.
+# Dependabot (`docker-compose`, /deploy) mengusulkan tag + digest baru; image Balesin dipin digest
+# oleh workflow rilis.yml di berkas compose rilis.
 
 name: balesin
 
@@ -53,7 +58,7 @@ x-app-env: &app-env
 
 services:
   postgres:
-    image: postgres:16.15-alpine3.24
+    image: postgres:16.15-alpine3.24@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139
     restart: unless-stopped
     # Entrypoint resmi mulai sebagai root hanya untuk menyiapkan folder data lalu turun ke pengguna
     # `postgres` (gosu): cukup capability berkas + ganti pengguna; sisanya dibuang.
@@ -86,7 +91,7 @@ services:
       start_period: 30s
 
   redis:
-    image: redis:7.4.12-alpine3.22
+    image: redis:7.4.12-alpine3.22@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe
     restart: unless-stopped
     # Pengguna `redis` (uid 999, pemilik /data di image) sejak awal: tanpa root, tanpa capability.
     user: redis
@@ -208,7 +213,7 @@ services:
 
   # Mode B: Caddy di depan gateway, HTTPS otomatis Let's Encrypt (port 80 & 443 publik).
   caddy:
-    image: caddy:2.11.9-alpine
+    image: caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
     profiles: [caddy]
     restart: unless-stopped
     read_only: true
@@ -237,7 +242,7 @@ services:
   # Mode C: Cloudflare Tunnel (tanpa port terbuka). Rute publik di dasbor Cloudflare →
   # http://web:8080. Token tunnel hanya di .env.
   cloudflared:
-    image: cloudflare/cloudflared:2026.11.0
+    image: cloudflare/cloudflared:2026.11.0@sha256:b94b96edf2c9c4360f8879c8580cfaa99077f19c849ec595ca2f711b27d4f344
     profiles: [tunnel]
     restart: unless-stopped
     read_only: true

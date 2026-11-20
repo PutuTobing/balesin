@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 #
 # Image produksi Balesin — satu Dockerfile, tiga target:
 #
@@ -16,7 +16,9 @@
 # Prinsip: multi-stage (alat build tidak ikut image akhir), berjalan sebagai pengguna non-root,
 # versi base image dikunci (diperbarui sengaja lewat Dependabot/PR), berkas aplikasi milik root
 # dan hanya-baca bagi proses. Tag base image ditulis langsung di FROM (bukan ARG) supaya Dependabot
-# bisa mengusulkan pembaruannya.
+# bisa mengusulkan pembaruannya. Base image dipin `tag@sha256:<digest indeks multi-arsitektur>`
+# (audit akhir A3): tag yang ditimpa di registry tidak ikut terpasang diam-diam; Dependabot
+# memperbarui tag + digest bersamaan. Ambil digest: `docker buildx imagetools inspect <image:tag>`.
 
 # ── Manifest workspace saja: lapisan dependency ter-cache selama lockfile tetap ────────────────
 FROM scratch AS manifests
@@ -31,14 +33,14 @@ COPY e2e/package.json /repo/e2e/
 
 # ── Dasar: Node + pnpm (versi sama dengan packageManager di package.json) ──────────────────────
 # Dua salinan identik: satu di platform mesin build, satu di platform target.
-FROM --platform=$BUILDPLATFORM node:22.23.5-alpine3.24 AS base-build
+FROM --platform=$BUILDPLATFORM node:22.23.5-alpine3.24@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a AS base-build
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
     CI=true
 RUN npm install --global --no-fund --no-audit pnpm@12.18.0
 WORKDIR /repo
 
-FROM node:22.23.5-alpine3.24 AS base-target
+FROM node:22.23.5-alpine3.24@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a AS base-target
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
     CI=true
@@ -78,8 +80,33 @@ RUN --mount=type=cache,id=balesin-pnpm,target=/pnpm/store,sharing=locked \
  && test -d "/out/api/node_modules/.pnpm/@img+sharp-linuxmusl-$arch@"* \
  && test -z "$(find /out -maxdepth 4 -name '@img+sharp-*' ! -name "@img+sharp-linuxmusl-$arch@*" ! -name "@img+sharp-libvips-linuxmusl-$arch@*" -print -quit)"
 
+# ── Pemberitahuan lisensi pihak ketiga (audit akhir A5) ──────────────────────────────────────
+# Dependensi produksi api + worker + web untuk SEMUA arsitektur rilis (linux, x64 + arm64, musl)
+# dipasang tanpa skrip install, hanya untuk dibaca lisensinya. Hasilnya satu berkas yang identik di
+# setiap image (/app/THIRD-PARTY-NOTICES) dan aset rilis THIRD-PARTY-NOTICES.txt — memuat teks
+# LGPL-3.0/GPL-3.0 dan sumber libvips (biner native sharp). Gagal bila ada lisensi terlarang.
+FROM base-build AS notices
+COPY --from=manifests /repo/ ./
+# supportedArchitectures (bukan flag --cpu install): `pnpm licenses list` juga membacanya, jadi paket
+# native kedua arsitektur ikut terdaftar. Hanya salinan pnpm-workspace.yaml di stage ini yang diubah.
+RUN --mount=type=cache,id=balesin-pnpm,target=/pnpm/store,sharing=locked \
+    printf '\nsupportedArchitectures:\n  os: [linux]\n  cpu: [x64, arm64]\n  libc: [musl]\n' \
+      >>pnpm-workspace.yaml \
+ && pnpm install --frozen-lockfile --prod --ignore-scripts \
+      --filter "@balesin/api..." --filter "@balesin/worker..." --filter "@balesin/web..."
+COPY deploy/docker/third-party-notices.mjs /notices/
+COPY deploy/docker/licenses /notices/licenses
+# Penjaga: teks LGPL ikut, dan biner libvips kedua arsitektur tercantum.
+RUN pnpm licenses list --prod --json \
+      --filter @balesin/api --filter @balesin/worker --filter @balesin/web >/tmp/licenses.json \
+ && mkdir -p /out \
+ && node /notices/third-party-notices.mjs /tmp/licenses.json /out/THIRD-PARTY-NOTICES \
+ && grep -q 'GNU LESSER GENERAL PUBLIC LICENSE' /out/THIRD-PARTY-NOTICES \
+ && grep -q '^@img/sharp-libvips-linuxmusl-x64@' /out/THIRD-PARTY-NOTICES \
+ && grep -q '^@img/sharp-libvips-linuxmusl-arm64@' /out/THIRD-PARTY-NOTICES
+
 # ── Runtime Node bersama ──────────────────────────────────────────────────────────────────────
-FROM node:22.23.5-alpine3.24 AS node-runtime
+FROM node:22.23.5-alpine3.24@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a AS node-runtime
 # tini: PID 1 yang meneruskan sinyal (SIGTERM → shutdown rapi) dan memanen proses zombie.
 RUN apk add --no-cache tini \
  && mkdir -p /data/media \
@@ -96,6 +123,7 @@ FROM node-runtime AS api
 COPY --from=prod-deps /out/api /app
 COPY --from=build /repo/apps/api/dist /app/dist
 COPY --from=build /repo/packages/db/drizzle /app/migrations
+COPY --from=notices /out/THIRD-PARTY-NOTICES /app/THIRD-PARTY-NOTICES
 ENV API_HOST=0.0.0.0 \
     API_PORT=3000 \
     MIGRATIONS_DIR=/app/migrations
@@ -109,12 +137,13 @@ FROM node-runtime AS worker
 COPY --from=prod-deps /out/worker /app
 COPY --from=build /repo/apps/worker/dist /app/dist
 COPY deploy/docker/worker-healthcheck.mjs /app/healthcheck.mjs
+COPY --from=notices /out/THIRD-PARTY-NOTICES /app/THIRD-PARTY-NOTICES
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   CMD ["node", "/app/healthcheck.mjs"]
 CMD ["node", "dist/index.js"]
 
 # ── web: berkas statis PWA + gateway (proxy ke api) ───────────────────────────────────────────
-FROM nginxinc/nginx-unprivileged:1.30.6-alpine3.24 AS web
+FROM nginxinc/nginx-unprivileged:1.30.6-alpine3.24@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03 AS web
 # Konfigurasi bawaan image dibuang: hanya nginx.conf Balesin yang berlaku.
 USER root
 RUN rm -f /etc/nginx/conf.d/default.conf
@@ -123,6 +152,8 @@ COPY deploy/docker/gateway/nginx.conf /etc/nginx/nginx.conf
 COPY deploy/docker/gateway/security-headers.conf /etc/nginx/balesin/security-headers.conf
 COPY deploy/docker/gateway/proxy-api.conf /etc/nginx/balesin/proxy-api.conf
 COPY --from=build /repo/apps/web/dist /usr/share/nginx/html
+# Di luar root web (tidak disajikan gateway), sama dengan image api/worker.
+COPY --from=notices /out/THIRD-PARTY-NOTICES /app/THIRD-PARTY-NOTICES
 EXPOSE 8080
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=4 \
   CMD ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/gateway-health"]
