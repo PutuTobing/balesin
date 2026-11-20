@@ -154,9 +154,40 @@ CMD ["node", "dist/index.js"]
 
 # ── web: berkas statis PWA + gateway (proxy ke api) ───────────────────────────────────────────
 FROM nginxinc/nginx-unprivileged:1.30.6-alpine3.24@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03 AS web
-# Konfigurasi bawaan image dibuang: hanya nginx.conf Balesin yang berlaku.
 USER root
-RUN rm -f /etc/nginx/conf.d/default.conf
+# Perbaikan keamanan sebelum image upstream dirilis ulang (gerbang CVE Trivy, audit akhir A3):
+#  - nginx (+ modul bawaan image) ≥ 1.30.7 (CVE-2026-113425, -121810, -123007, -123633) dari repo
+#    resmi nginx.org SAJA (--repositories-file /dev/null) supaya tidak tertukar dengan build nginx
+#    Alpine; tanda tangan paket diverifikasi kunci nginx_signing.rsa.pub bawaan image.
+#  - brotli-libs ≥ 1.2.1-r0 (CVE-2026-111497) dan paket Alpine lain yang tertinggal (curl, expat,
+#    libxml2, libxslt, musl, zlib — CVE HIGH) lewat `apk upgrade` dari Alpine main. Dijalankan
+#    SEBELUM langkah nginx.org: saat itu world masih mengunci `nginx=<versi base>`, jadi paket nginx
+#    tidak mungkin tertukar dengan build Alpine.
+# Versi terpasang dicetak dan build GAGAL bila masih di bawah versi perbaikan. Menjadi no-op saat
+# base image (PR Dependabot) sudah memuat versi tsb.; hapus langkah ini setelah itu.
+# Base image mengunci `nginx=<versi>` di /etc/apk/world, jadi nginx dinaikkan dengan
+# `apk add 'paket>=versi'` (`apk upgrade` diam-diam tidak menaikkan paket terkunci).
+RUN set -eu \
+ && nginx_fix=1.30.7 \
+ && brotli_fix=1.2.1-r0 \
+ && apk upgrade --no-cache \
+ && alpine="v$(cut -d. -f1,2 /etc/alpine-release)" \
+ && nginx_pkgs="$(apk info | grep -E '^nginx(-module-[a-z0-9-]+)?$' | grep -v -- '-dbg$' \
+      | sed "s/\$/>=$nginx_fix/" | tr '\n' ' ')" \
+ && apk add --no-cache --repositories-file /dev/null \
+      --repository "https://nginx.org/packages/alpine/$alpine/main" $nginx_pkgs \
+ && apk add --no-cache "brotli-libs>=$brotli_fix" \
+ && atleast() { v="$(apk info -e -v "$1" | sed "s/^$1-//")"; echo "terpasang: $1 $v (minimal $2)"; \
+      [ -n "$v" ] && [ "$(apk version -t "$v" "$2")" != "<" ]; } \
+ && atleast nginx "$nginx_fix" \
+ && atleast brotli-libs "$brotli_fix" \
+ && for pkg in $(apk info | grep -E '^nginx-module-' | grep -v -- '-dbg$'); do \
+      atleast "$pkg" "$nginx_fix"; done \
+ && nginx -v \
+ # Konfigurasi bawaan image (dan salinan .apk-new dari upgrade) dibuang: hanya nginx.conf
+ # Balesin yang berlaku.
+ && rm -f /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/*.apk-new /etc/nginx/*.apk-new \
+ && test -z "$(find /etc/nginx -name '*.apk-new' -print -quit)"
 USER 101
 COPY deploy/docker/gateway/nginx.conf /etc/nginx/nginx.conf
 COPY deploy/docker/gateway/security-headers.conf /etc/nginx/balesin/security-headers.conf

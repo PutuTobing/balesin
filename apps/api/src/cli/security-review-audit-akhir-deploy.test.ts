@@ -171,6 +171,55 @@ describe('A3 lanjutan: runtime api/worker tanpa npm/npx/corepack/yarn', () => {
   });
 });
 
+// Tindak lanjut A3: gerbang Trivy rilis menemukan CVE kritis nginx 1.30.6 & brotli 1.2.0 di image
+// web sebelum image upstream dirilis ulang. Paket perbaikan dipasang di stage web, terverifikasi.
+describe('A3 lanjutan: image web memasang paket perbaikan nginx/brotli dengan aman', () => {
+  const web = () => stage('web');
+  const run = () => {
+    const block = web();
+    const start = block.indexOf('RUN set -eu');
+    return block.slice(start, block.indexOf('\nUSER 101', start));
+  };
+
+  it('nginx hanya dari repo resmi nginx.org (HTTPS, tanda tangan diverifikasi), minimal versi perbaikan', () => {
+    const script = run();
+    expect(script).toMatch(
+      /apk add --no-cache --repositories-file \/dev\/null \\\n\s+--repository "https:\/\/nginx\.org\/packages\/alpine\/\$alpine\/main" \$nginx_pkgs/,
+    );
+    expect(script).not.toMatch(/--allow-untrusted|http:\/\//);
+    const fix = /nginx_fix=(\d+)\.(\d+)\.(\d+)/.exec(script);
+    expect(fix).not.toBeNull();
+    const [, major, minor, patch] = (fix ?? []).map(Number);
+    expect(major === 1 && (minor ?? 0) >= 30 && ((minor ?? 0) > 30 || (patch ?? 0) >= 7)).toBe(
+      true,
+    );
+    expect(script).toMatch(/sed "s\/\\\$\/>=\$nginx_fix\/"/);
+  });
+
+  it('paket Alpine dinaikkan SEBELUM nginx.org (world masih mengunci nginx), brotli ≥ perbaikan', () => {
+    const script = run();
+    expect(script.indexOf('apk upgrade --no-cache')).toBeGreaterThan(-1);
+    expect(script.indexOf('apk upgrade --no-cache')).toBeLessThan(script.indexOf('nginx.org'));
+    expect(script).toMatch(/brotli_fix=1\.2\.1-r0/);
+    expect(script).toMatch(/apk add --no-cache "brotli-libs>=\$brotli_fix"/);
+  });
+
+  it('build gagal bila versi terpasang di bawah perbaikan; versi dicetak; sisa konfigurasi dibuang', () => {
+    const script = run();
+    expect(script).toMatch(/apk version -t "\$v" "\$2"\)" != "<"/);
+    expect(script).toMatch(/atleast nginx "\$nginx_fix"/);
+    expect(script).toMatch(/atleast brotli-libs "\$brotli_fix"/);
+    expect(script).toMatch(/atleast "\$pkg" "\$nginx_fix"/);
+    expect(script).toMatch(/echo "terpasang: /);
+    expect(script).toMatch(/nginx -v/);
+    expect(script).toMatch(/rm -f \/etc\/nginx\/conf\.d\/default\.conf/);
+    expect(script).toMatch(/test -z "\$\(find \/etc\/nginx -name '\*\.apk-new'/);
+    // root hanya untuk langkah paket; kembali ke 101 sebelum berkas Balesin disalin.
+    expect(web()).toMatch(/^USER root\n(?:#.*\n)*RUN set -eu/m);
+    expect(web()).toMatch(/\nUSER 101\nCOPY deploy\/docker\/gateway\/nginx\.conf/);
+  });
+});
+
 describe('A4: verifikasi tanda tangan rilis di checklist', () => {
   it('checklist rilis DEPLOY.md mewajibkan BALESIN_REQUIRE_SIGNATURE=1 pada rilis bertanda tangan pertama', () => {
     const checklist = deployDoc.slice(deployDoc.indexOf('### Checklist rilis'));
