@@ -55,6 +55,7 @@ import {
 } from '@balesin/shared';
 import { and, asc, count, desc, eq, gt, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
 
+import { csvCell } from '../../http/csv';
 import type { ClientInfo } from '../../http/client-info';
 import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
 import { ACCESS_RULES, forbidByRule, type AccessDeniedRecorder } from '../auth/access-denied';
@@ -119,13 +120,8 @@ function decodeCursor(cursor: string | undefined): string[] | null {
   }
 }
 
-/** Sel CSV aman untuk spreadsheet (cegah injeksi rumus `=`, `+`, `-`, `@`). */
-export function csvCell(value: string | number | null): string {
-  if (value === null) return '';
-  let text = String(value);
-  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
-  return /[",\n\r;]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-}
+/** Sel CSV: pembuat bersama yang paling ketat (audit akhir A2). */
+export { csvCell };
 
 interface UsableTemplate {
   id: string;

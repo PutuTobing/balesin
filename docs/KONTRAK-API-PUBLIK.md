@@ -49,6 +49,10 @@ semua key (harus dibuat ulang). Log menyensor `blsn_live_…` dan header `Author
 | `contacts:write`     | Buat & ubah kontak, pasang/lepas tag                                          | `contacts:read`                       |
 
 `messages:initiate` (Fase 4, tidak mencakup scope lain): kirim template ke nomor (boleh memulai percakapan).
+Juga WAJIB (bersama `messages:send`) untuk `POST /public/conversations/:id/messages` ke percakapan
+`resolved` bila pesannya template atau channelnya Email/Telegram (audit akhir A1/A6) — selain itu 403
+`FORBIDDEN` "… butuh scope messages:initiate.". Balasan ke percakapan `resolved` di channel berjendela
+selama jendela terbuka tetap cukup `messages:send`.
 `tickets:read` / `tickets:write` (Fase 5; `write` mencakup `read`): API tiket untuk bot —
 `docs/KONTRAK-API-CRM-TIKET.md`. Menyusul bersama fiturnya: `broadcasts:write`, `reports:read`,
 `webhooks:manage`. Sesuai SECURITY §5, key tanpa `messages:initiate` tidak bisa

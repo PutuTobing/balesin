@@ -144,38 +144,35 @@ describe('audit akhir — A1: template dari CS ke percakapan yang sudah selesai 
     expect(view.statusCode).toBe(200);
   });
 
-  it.fails(
-    'A1: CS (tanpa inbox.initiate) tidak bisa mengirim template MARKETING ke percakapan resolved (= nomor tanpa percakapan terbuka)',
-    async () => {
-      const conversationId = await billingNotification('+6281300009002');
-      const cs = await signIn('cs');
-      const templateId = await approvedTemplate('MARKETING');
-      const response = await call(
-        harness.app,
-        'POST',
-        apiPath(API_ROUTES.inbox.messages, { conversationId }),
-        {
-          type: 'template',
-          clientMessageId: randomUUID(),
-          templateId,
-          parameters: { body: { '1': 'Budi. Klaim hadiah di https://contoh-phishing.test' } },
-        },
-        { cookie: cs.cookie, csrf: cs.csrf },
+  it('A1: CS (tanpa inbox.initiate) tidak bisa mengirim template MARKETING ke percakapan resolved (= nomor tanpa percakapan terbuka)', async () => {
+    const conversationId = await billingNotification('+6281300009002');
+    const cs = await signIn('cs');
+    const templateId = await approvedTemplate('MARKETING');
+    const response = await call(
+      harness.app,
+      'POST',
+      apiPath(API_ROUTES.inbox.messages, { conversationId }),
+      {
+        type: 'template',
+        clientMessageId: randomUUID(),
+        templateId,
+        parameters: { body: { '1': 'Budi. Klaim hadiah di https://contoh-phishing.test' } },
+      },
+      { cookie: cs.cookie, csrf: cs.csrf },
+    );
+    // 403 (butuh `inbox.initiate`, seperti POST /conversations/start) — A1 diperbaiki.
+    expect(response.statusCode, response.body).toBe(403);
+    const sent = await harness.db
+      .select({ id: messages.id })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.conversationId, conversationId),
+          eq(messages.templateCategory, 'MARKETING'),
+        ),
       );
-      // Diharapkan: 403 (butuh `inbox.initiate`, seperti POST /conversations/start). Sekarang: 202.
-      expect(response.statusCode, response.body).toBe(403);
-      const sent = await harness.db
-        .select({ id: messages.id })
-        .from(messages)
-        .where(
-          and(
-            eq(messages.conversationId, conversationId),
-            eq(messages.templateCategory, 'MARKETING'),
-          ),
-        );
-      expect(sent).toHaveLength(0);
-    },
-  );
+    expect(sent).toHaveLength(0);
+  });
 
   it('regresi: Owner (memegang inbox.initiate) tetap boleh mengirim template ke percakapan resolved', async () => {
     const conversationId = await billingNotification('+6281300009003');

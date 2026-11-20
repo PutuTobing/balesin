@@ -94,6 +94,9 @@ polos (n8n / penyedia AI) — header `nosniff`, CSP sandbox, `Cache-Control: pri
   ganti nama kontak berlaku untuk semua percakapan WhatsApp organisasi (cakupan data API publik =
   seluruh organisasi), termasuk yang sedang dipegang agen — batas harian per key, rem darurat, dan
   audit tetap berlaku.
+- **Kirim ke percakapan `resolved`** (audit akhir A1): teks/media/tombol dalam jendela 24 jam tetap
+  cukup `messages:send` (perilaku lama). Lapisan MobiChat tidak mengirim template, jadi aturan
+  "template ke percakapan selesai butuh `messages:initiate`" tidak memengaruhinya.
 - **Hanya percakapan WhatsApp** (review bot semua channel B2): `conversation_id` milik percakapan
   Telegram/Email/Messenger/Instagram dijawab **404** yang sama dengan percakapan yang tidak ada, di
   semua rute `/api/public/*` dan `/api/bot/*`.

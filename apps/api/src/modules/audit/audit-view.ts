@@ -7,6 +7,7 @@ import {
   type AuditTargetType,
 } from '@balesin/shared';
 
+import { csvCell, csvRow } from '../../http/csv';
 import type { AuditRow } from './audit.repo';
 
 /**
@@ -60,24 +61,8 @@ export function toAuditEntry(row: AuditRow): AuditLogEntry {
 
 // ── CSV ─────────────────────────────────────────────────────────────────────
 
-/**
- * Satu sel CSV (RFC 4180) yang aman dibuka di Excel/Google Sheets/LibreOffice:
- *  - Formula injection (OWASP "CSV Injection"): teks yang diawali `=`, `+`, `-`, `@`, tab, atau CR
- *    — juga setelah spasi/kutip di depannya — diberi awalan `'` sehingga dibaca sebagai teks, bukan
- *    rumus. Data audit memuat isian pengguna (nama, email, user agent).
- *  - Selalu dikutip; `"` digandakan; karakter kendali selain baris baru dibuang.
- */
-export function csvCell(value: string | number | boolean | null | undefined): string {
-  if (value === null || value === undefined) return '""';
-  // eslint-disable-next-line no-control-regex
-  let text = String(value).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '');
-  if (/^[\s"']*[=+\-@\t\r]/.test(text)) text = `'${text}`;
-  return `"${text.replace(/"/g, '""')}"`;
-}
-
-export function csvRow(values: ReadonlyArray<string | number | boolean | null | undefined>) {
-  return `${values.map(csvCell).join(',')}\r\n`;
-}
+/** Pembuat CSV bersama (audit akhir A2) — diekspor ulang untuk pemakai lama. */
+export { csvCell, csvRow };
 
 export const AUDIT_CSV_HEADER = [
   'Waktu (UTC)',

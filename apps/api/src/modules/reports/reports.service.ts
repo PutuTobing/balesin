@@ -34,7 +34,7 @@ import type { ClientInfo } from '../../http/client-info';
 import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
 import { ACCESS_RULES, forbidByRule, type AccessDeniedRecorder } from '../auth/access-denied';
 import { assertActorStillAuthorized } from '../auth/actor-check';
-import { csvCell } from '../broadcasts/broadcasts.service';
+import { csvCell } from '../../http/csv';
 import type { AuthContext } from '../auth/session.service';
 import { addDays, uuidV7Floor, zonedMonth, zonedRange } from './report-time';
 

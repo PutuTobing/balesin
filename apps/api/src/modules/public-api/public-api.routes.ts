@@ -401,6 +401,7 @@ export const publicApiRoutes: FastifyPluginAsyncZod<PublicApiRoutesOptions> = as
           organizationId: key.organizationId,
           apiKeyId: key.id,
           dailySendLimit: key.dailySendLimit,
+          scopes: key.scopes,
         },
         id,
         input,

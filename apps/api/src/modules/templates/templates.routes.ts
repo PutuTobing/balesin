@@ -28,7 +28,11 @@ import { permissionGrant } from '../auth/permission-grant';
 import { normalizeWhatsappNumber } from '../compat-mobichat/mobichat.service';
 import type { ContactsService } from '../contacts/contacts.service';
 import { toMessage } from '../inbox/inbox-view';
-import { SEND_ORGANIZATION_RULE, SEND_USER_RULE } from '../messages/outbound.routes';
+import {
+  INITIATE_USER_RULE,
+  SEND_ORGANIZATION_RULE,
+  SEND_USER_RULE,
+} from '../messages/outbound.routes';
 import type { OutboundService } from '../messages/outbound.service';
 import type { TemplatesService } from './templates.service';
 
@@ -46,12 +50,8 @@ export interface TemplatesRoutesOptions {
  */
 const WRITE_RULE: RateLimitRule = { name: 'template-tulis', limit: 60, windowSeconds: 60 };
 const SYNC_RULE: RateLimitRule = { name: 'template-sinkron', limit: 6, windowSeconds: 60 };
-/** Mulai percakapan baru: maks. 200 per pengguna per 24 jam (selain batas kirim harian biasa). */
-export const INITIATE_USER_RULE: RateLimitRule = {
-  name: 'mulai-percakapan',
-  limit: 200,
-  windowSeconds: 24 * 60 * 60,
-};
+/** Mulai percakapan baru: jatah yang SAMA dengan kirim ke percakapan selesai (audit akhir A1). */
+export { INITIATE_USER_RULE };
 const MANAGE = requirePermission('templates.manage');
 const VIEW = requirePermission('inbox.reply');
 const UUID = z.uuid();

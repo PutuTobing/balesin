@@ -58,6 +58,7 @@ import {
   type SendMessageRequest,
   type TemplateSendParameters,
   type UploadedMedia,
+  apiKeyHasScope,
 } from '@balesin/shared';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
@@ -159,7 +160,46 @@ export interface ApiKeySender {
   organizationId: string;
   apiKeyId: string;
   dailySendLimit: number;
+  /**
+   * Scope key (audit akhir A1): kirim ke percakapan `resolved` yang berarti MEMULAI percakapan
+   * (template, atau channel tanpa jendela 24 jam) butuh `messages:initiate`. Tidak diisi = tidak punya.
+   */
+  scopes?: readonly string[];
 }
+
+/**
+ * Izin "mulai percakapan" untuk pengiriman dari sesi pengguna (audit akhir A1/A6): dihitung rute dari
+ * peran (`inbox.initiate`) + jatah harian `mulai-percakapan`. Tidak diisi = tidak punya izin.
+ */
+export interface InitiationGrant {
+  allowed: boolean;
+  /** Potong jatah harian mulai-percakapan (dipanggil setelah semua pemeriksaan lolos). */
+  consume?: () => Promise<void>;
+}
+
+type InitiationPolicy =
+  { kind: 'preauthorized' } | ({ kind: 'check'; actor: 'user' | 'apiKey' } & InitiationGrant);
+
+/**
+ * Pesan ini MEMULAI percakapan lagi (bukan balasan)? Percakapan `resolved` + template (WhatsApp), atau
+ * percakapan `resolved` di channel tanpa jendela 24 jam (Email/Telegram — teks bebas kapan saja).
+ * Membalas percakapan `resolved` di channel berjendela selama jendela terbuka tetap = balasan
+ * (DECISIONS 2026-11-16).
+ */
+export function isConversationInitiation(
+  status: string,
+  channelType: Parameters<typeof channelHasCustomerWindow>[0],
+  messageType: string,
+): boolean {
+  if (status !== 'resolved') return false;
+  return messageType === 'template' || !channelHasCustomerWindow(channelType);
+}
+
+const INITIATION_DENIED = {
+  user: 'Percakapan ini sudah selesai. Mengirim pesan baru ke percakapan yang sudah selesai butuh izin memulai percakapan.',
+  apiKey:
+    'Percakapan ini sudah selesai. Mengirim template atau pesan baru ke percakapan yang sudah selesai butuh scope messages:initiate.',
+} as const;
 
 /** Pengirim internal: agen (sesi web) atau API key. `grant` = organisasi + cakupan. */
 interface Sender {
@@ -216,6 +256,8 @@ export interface OutboundService {
     conversationId: string,
     input: SendMessageRequest,
     client: ClientInfo,
+    /** Audit akhir A1/A6: `inbox.initiate` + jatah harian. Tidak diisi = tanpa izin mulai-percakapan. */
+    initiation?: InitiationGrant,
   ): Promise<{ message: MessageRowView; created: boolean }>;
   retry(grant: PermissionGrant, messageId: string, client: ClientInfo): Promise<MessageRowView>;
   upload(
@@ -709,6 +751,7 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
     conversationId: string,
     input: SendMessageRequest,
     client: ClientInfo,
+    initiation: InitiationPolicy,
   ): Promise<{ message: MessageRowView; created: boolean }> {
     const { grant } = sender;
     const existing = await byIdempotencyKey(sender, input.clientMessageId);
@@ -751,6 +794,14 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
     // Di luar jendela 24 jam hanya template Meta yang disetujui yang boleh (Fase 4). Telegram & Email
     // tidak punya jendela (Fase 6).
     assertWindowOpen(channel, conversation, input.type, at);
+    // Audit akhir A1/A6: kirim ke percakapan `resolved` yang berarti memulai percakapan lagi = izin
+    // mulai-percakapan (`inbox.initiate` / scope `messages:initiate`), bukan sekadar `inbox.reply`.
+    const initiates =
+      initiation.kind === 'check' &&
+      isConversationInitiation(conversation.status, channel.type, input.type);
+    if (initiates && !initiation.allowed) {
+      throw new AppError('FORBIDDEN', { message: INITIATION_DENIED[initiation.actor] });
+    }
     // Rem pengiriman: rem darurat, batas harian pengguna/organisasi, batas per percakapan.
     await sendingLimits.assertCanSend({
       organizationId: grant.organizationId,
@@ -922,6 +973,9 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
       }
     }
 
+    // Jatah harian mulai-percakapan dipotong hanya untuk pesan BARU yang lolos semua pemeriksaan.
+    if (initiates) await initiation.consume?.();
+
     let row: MessageRow;
     try {
       row = await db.transaction(async (tx) => {
@@ -1091,10 +1145,19 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
   }
 
   return {
-    send: (grant, conversationId, input, client) =>
-      sendAs(userSender(grant), conversationId, input, client),
+    send: (grant, conversationId, input, client, initiation) =>
+      sendAs(userSender(grant), conversationId, input, client, {
+        kind: 'check',
+        actor: 'user',
+        allowed: initiation?.allowed ?? false,
+        ...(initiation?.consume ? { consume: initiation.consume } : {}),
+      }),
     sendAsApiKey: (key, conversationId, input, client) =>
-      sendAs(apiKeySender(key), conversationId, input, client),
+      sendAs(apiKeySender(key), conversationId, input, client, {
+        kind: 'check',
+        actor: 'apiKey',
+        allowed: apiKeyHasScope(key.scopes ?? [], 'messages:initiate'),
+      }),
 
     async startWithTemplate(who, input, client, ensureContact, beforeCreate) {
       const sender = who.kind === 'user' ? userSender(who.grant) : apiKeySender(who.key);
@@ -1205,6 +1268,8 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
           parameters: input.parameters,
         },
         client,
+        // Rute "mulai percakapan" sudah mewajibkan `inbox.initiate` / `messages:initiate` + jatahnya.
+        { kind: 'preauthorized' },
       );
       return { ...result, conversationId };
     },

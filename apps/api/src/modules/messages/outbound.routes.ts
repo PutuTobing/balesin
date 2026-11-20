@@ -10,6 +10,7 @@ import {
   messageResponseSchema,
   sendMessageRequestSchema,
   uploadMediaResponseSchema,
+  hasPermission,
 } from '@balesin/shared';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -17,6 +18,7 @@ import { z } from 'zod';
 import { clientInfo } from '../../http/client-info';
 import { enforceRateLimit, type RateLimitRule, type RateLimiter } from '../../http/rate-limit';
 import { requirePermission } from '../../http/route-access';
+import { requireAuth } from '../auth/auth.hook';
 import { permissionGrant } from '../auth/permission-grant';
 import { toMessage } from '../inbox/inbox-view';
 import { contentDisposition } from './media-store';
@@ -49,6 +51,15 @@ export const SEND_ORGANIZATION_RULE: RateLimitRule = {
   name: 'kirim-organisasi',
   limit: 600,
   windowSeconds: 60,
+};
+/**
+ * Mulai percakapan (template ke nomor baru, atau pesan baru ke percakapan yang sudah selesai — audit
+ * akhir A1/A6): maks. 200 per pengguna per 24 jam (selain batas kirim harian biasa).
+ */
+export const INITIATE_USER_RULE: RateLimitRule = {
+  name: 'mulai-percakapan',
+  limit: 200,
+  windowSeconds: 24 * 60 * 60,
 };
 export const UPLOAD_USER_RULE: RateLimitRule = {
   name: 'unggah-media',
@@ -117,11 +128,22 @@ export const outboundRoutes: FastifyPluginAsyncZod<OutboundRoutesOptions> = asyn
       const id = requireUuid(request.params.conversationId, 'Percakapan tidak ditemukan.');
       await enforceRateLimit(limiter, SEND_USER_RULE, grant.userId, sendLimit);
       await enforceRateLimit(limiter, SEND_ORGANIZATION_RULE, grant.organizationId, orgLimit);
+      const auth = requireAuth(request);
       const { message, created } = await outbound.send(
         grant,
         id,
         request.body,
         clientInfo(request),
+        {
+          allowed: hasPermission(auth.user.role, 'inbox.initiate'),
+          consume: () =>
+            enforceRateLimit(
+              limiter,
+              INITIATE_USER_RULE,
+              auth.user.id,
+              (wait) => `Batas harian memulai percakapan baru tercapai. Coba lagi dalam ${wait}.`,
+            ).then(() => undefined),
+        },
       );
       void reply.code(created ? 202 : 200);
       return { message: toMessage(message) };

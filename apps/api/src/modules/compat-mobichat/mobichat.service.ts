@@ -319,6 +319,7 @@ export function createMobichatService(deps: MobichatServiceDeps) {
         organizationId: key.organizationId,
         apiKeyId: key.id,
         dailySendLimit: key.dailySendLimit,
+        scopes: key.scopes,
       };
       const sent: SentSummary['messages'] = [];
       for (const [index, item] of items.entries()) {

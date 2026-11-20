@@ -536,6 +536,18 @@ supaya bot bisa langsung bertindak; agen tidak dihalangi. Tab Log: `handoff` "Me
 
 ## Template (Fase 4)
 
+**Kirim ke percakapan yang sudah selesai = mulai percakapan** (audit akhir A1/A6, DECISIONS
+2026-11-21): bila percakapan berstatus `resolved` DAN pesannya `template` (WhatsApp) ATAU channelnya
+tanpa jendela 24 jam (Email/Telegram — pesan apa pun), pengiriman diperlakukan sama dengan "Percakapan
+baru": sesi pengguna wajib **`inbox.initiate`** (CS/Teknisi tidak punya) dan memotong jatah harian
+**`mulai-percakapan`** (200/pengguna/24 jam, ember yang sama dengan `POST /conversations/start`; 429
+bila habis); API key wajib scope **`messages:initiate`** selain `messages:send`. Ditolak → **403
+`FORBIDDEN`** "Percakapan ini sudah selesai. Mengirim pesan baru ke percakapan yang sudah selesai butuh
+izin memulai percakapan." (key: "… butuh scope messages:initiate."), tanpa pesan tersimpan. Membalas
+percakapan `resolved` di WhatsApp/Messenger/Instagram selama jendela 24 jam masih terbuka (teks, media,
+dll. — bukan template) tetap balasan biasa (`inbox.reply`). `POST /conversations/start` dan
+`POST /api/v1/public/messages/template` tidak berubah (sudah = mulai percakapan).
+
 `type: "template"` di `POST /conversations/:id/messages` = satu-satunya pesan yang boleh di luar jendela
 24 jam; mulai percakapan ke nomor baru = `POST /conversations/start` (`inbox.initiate`). `Message.type`
 bisa `template` dengan `Message.template { templateId, name, language, category }`. Rincian:

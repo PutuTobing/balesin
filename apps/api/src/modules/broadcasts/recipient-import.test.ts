@@ -205,11 +205,19 @@ describe('konektor & CSV keluar', () => {
 
   it('sel CSV kebal injeksi rumus', () => {
     expect(csvCell('=HYPERLINK("x")')).toBe(`"'=HYPERLINK(""x"")"`);
-    expect(csvCell('+6281234')).toBe("'+6281234");
-    expect(csvCell('-1')).toBe("'-1");
-    expect(csvCell('@a')).toBe("'@a");
-    expect(csvCell('biasa')).toBe('biasa');
-    expect(csvCell(null)).toBe('');
+    expect(csvCell('+6281234')).toBe(`"'+6281234"`);
+    expect(csvCell('-1')).toBe(`"'-1"`);
+    expect(csvCell('@a')).toBe(`"'@a"`);
+    expect(csvCell('biasa')).toBe('"biasa"');
+    expect(csvCell(null)).toBe('""');
+    // Audit akhir A2: setelah spasi/kutip di depan, karakter kendali dibuang, angka tetap angka.
+    expect(csvCell(' =1+1')).toBe(`"' =1+1"`);
+    expect(csvCell('\u0000=1')).toBe(`"'=1"`);
+    expect(csvCell('"=1')).toBe(`"'""=1"`);
+    expect(csvCell('\t=1')).toBe(`"'\t=1"`);
+    expect(csvCell('\r=1')).toBe(`"'\r=1"`);
+    expect(csvCell(-5)).toBe('"-5"');
+    expect(csvCell(12)).toBe('"12"');
   });
 });
 
