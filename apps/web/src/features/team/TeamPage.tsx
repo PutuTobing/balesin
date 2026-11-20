@@ -22,6 +22,7 @@ import { Notice } from '../../components/ui/Notice';
 import { Page } from '../../components/ui/Page';
 import { StatusBadge, type StatusTone } from '../../components/ui/StatusBadge';
 import { SubmitButton } from '../../components/ui/SubmitButton';
+import { FormActions } from '../../components/ui/FormActions';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
@@ -289,7 +290,7 @@ function InviteCard({
             disabled={pending}
           />
         </div>
-        <div className={styles.formFooter}>
+        <FormActions>
           <SubmitButton
             ref={submitRef}
             size="md"
@@ -300,7 +301,7 @@ function InviteCard({
           >
             {viaEmail ? copy.invite.submitEmail : copy.invite.submitLink}
           </SubmitButton>
-        </div>
+        </FormActions>
         {/* Pesan hasil di bawah tombol: isian dan tombol tidak bergeser. */}
         {error ? (
           <FormErrorNotice error={error} lock={lock} lockedTitle={copy.invite.lockedTitle} />

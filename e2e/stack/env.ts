@@ -19,7 +19,8 @@ export const E2E_API_URL = `http://127.0.0.1:${E2E_API_PORT}`;
 /** Postgres tempat database E2E dibuat (database `balesin` hanya dipakai untuk terhubung). */
 export const E2E_ADMIN_DATABASE_URL =
   process.env.E2E_ADMIN_DATABASE_URL ?? 'postgres://balesin:balesin@localhost:5432/balesin';
-export const E2E_DATABASE_NAME = 'balesin_e2e';
+/** Bisa diganti untuk stack kedua yang berjalan berdampingan (mis. foto kritikus/frontend). */
+export const E2E_DATABASE_NAME = process.env.E2E_DATABASE_NAME ?? 'balesin_e2e';
 export const E2E_REDIS_URL = process.env.E2E_REDIS_URL ?? 'redis://:balesin@localhost:6379/14';
 
 export const E2E_SETUP_TOKEN = '6oQXFl6twGPArbJ9AQBAo1326SDiDalQaJzLXbAic34';
@@ -51,11 +52,16 @@ export const E2E_OWNER = {
   organization: 'PT Maju Jaya',
 } as const;
 
-/** Berkas status sesi Owner untuk proyek tes yang butuh sudah masuk. */
-export const OWNER_STATE_PATH = new URL('../.auth/owner.json', import.meta.url).pathname.replace(
-  /^\/([A-Za-z]:)/,
-  '$1',
-);
+/**
+ * Berkas status sesi Owner untuk proyek tes yang butuh sudah masuk. Per stack (port API selain
+ * bawaan) supaya stack kedua tidak menimpa sesi stack QA yang sedang berjalan.
+ */
+const OWNER_STATE_FILE =
+  E2E_API_PORT === 3100 ? 'owner.json' : `owner-${String(E2E_API_PORT)}.json`;
+export const OWNER_STATE_PATH = new URL(
+  `../.auth/${OWNER_STATE_FILE}`,
+  import.meta.url,
+).pathname.replace(/^\/([A-Za-z]:)/, '$1');
 
 /** Variabel lingkungan untuk proses API dan worker E2E. */
 export function backendEnv(): Record<string, string> {

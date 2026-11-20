@@ -40,8 +40,8 @@ test('kontak: atribut → impor CSV → detail & ubah → ekspor', async () => {
 
   // Pengaturan → Atribut kontak: definisi "Pilihan" (tidak wajib: kontak lain di suite tetap bisa disimpan).
   await page.goto('/pengaturan/atribut-kontak');
-  await page.getByRole('button', { name: 'Tambah atribut' }).click();
-  const create = page.getByRole('dialog', { name: 'Tambah atribut' });
+  await page.getByRole('button', { name: 'Buat atribut' }).click();
+  const create = page.getByRole('dialog', { name: 'Buat atribut' });
   await create.getByLabel('Label').fill(label);
   await create.getByLabel('Kunci').fill(key);
   await create.getByLabel('Jenis').selectOption('select');
@@ -89,9 +89,9 @@ test('kontak: atribut → impor CSV → detail & ubah → ekspor', async () => {
   // Ekspor dengan saringan aktif (konfirmasi identitas) → berkas CSV.
   await page.goto(`/kontak?cari=${encodeURIComponent(name)}`);
   await expect(page.getByRole('link', { name: `Buka kontak ${name}` })).toBeVisible();
-  await page.getByRole('button', { name: 'Ekspor' }).click();
+  await page.getByRole('button', { name: 'Ekspor CSV' }).click();
   const download = page.waitForEvent('download');
-  await confirmAsSecondOwner(page, owner, 'Ekspor kontak ke CSV', 'Unduh CSV');
+  await confirmAsSecondOwner(page, owner, 'Ekspor kontak ke CSV', 'Ekspor CSV');
   expect((await download).suggestedFilename()).toMatch(/\.csv$/);
   await expect(page.getByText('1 kontak diunduh.')).toBeVisible();
 
@@ -109,29 +109,23 @@ test('tiket: board → tiket baru → pindah kolom → komentar', async () => {
   const title = `Internet putus ${suffix}`;
 
   await page.goto('/tiket');
-  // Board pertama: tombol "Buat board". Sudah ada board: "Board baru" (desktop) / menu ⋯ (HP).
+  // Board pertama (keadaan kosong) dan board berikutnya di desktop: tombol "Buat board". Sudah ada
+  // board di HP: menu ⋯ → "Buat board".
   const first = page.getByRole('button', { name: 'Buat board' });
   const menu = page.getByRole('button', { name: 'Menu board' });
-  await expect(
-    first
-      .or(menu)
-      .or(page.getByRole('button', { name: 'Board baru' }))
-      .first(),
-  ).toBeVisible();
+  await expect(first.or(menu).first()).toBeVisible();
   if (await first.isVisible()) {
     await first.click();
-  } else if (await menu.isVisible()) {
-    await menu.click();
-    await page.getByRole('menuitem', { name: 'Board baru' }).click();
   } else {
-    await page.getByRole('button', { name: 'Board baru' }).click();
+    await menu.click();
+    await page.getByRole('menuitem', { name: 'Buat board' }).click();
   }
   const dialog = page.getByRole('dialog', { name: 'Board baru' });
   await dialog.getByLabel('Nama board').fill(board);
   await dialog.getByRole('button', { name: 'Buat board' }).click();
   await expect(page.getByRole('list', { name: `Kanban ${board}` })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Tiket baru' }).click();
+  await page.getByRole('button', { name: 'Buat tiket' }).click();
   const form = page.getByRole('dialog', { name: 'Tiket baru' });
   await form.getByLabel('Judul').fill(title);
   await form.getByLabel('Prioritas').selectOption('urgent');
@@ -179,8 +173,8 @@ test('departemen, CSAT, dan laporan', async () => {
   const department = `Teknisi ${suffix}`;
 
   await page.goto('/pengaturan/departemen');
-  await page.getByRole('button', { name: 'Tambah departemen' }).first().click();
-  const dialog = page.getByRole('dialog', { name: 'Tambah departemen' });
+  await page.getByRole('button', { name: 'Buat departemen' }).first().click();
+  const dialog = page.getByRole('dialog', { name: 'Buat departemen' });
   await dialog.getByLabel('Nama departemen').fill(department);
   await dialog.getByRole('radio', { name: 'Jam kerja khusus' }).click();
   await dialog.getByRole('button', { name: 'Simpan' }).click();

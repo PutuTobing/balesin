@@ -13,6 +13,7 @@ import {
   LoadFailedIllustration,
 } from '../../components/illustrations/illustrations';
 import { Button } from '../../components/ui/Button';
+import { CreateButton } from '../../components/ui/CreateButton';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { SelectField } from '../../components/ui/Field';
 import { Icon } from '../../components/ui/Icon';
@@ -49,9 +50,15 @@ export function BroadcastPage() {
       </Link>
     </Button>
   );
+  // Ajakan di kepala halaman hanya bila ada kampanye; saat kosong ajakannya di `EmptyState`.
+  // Saringan status hanya tampil bila daftar pernah terisi: tombol tetap di tempat saat menyaring.
+  const firstEmpty = list.isSuccess && items.length === 0 && !status;
+  const showCreate = Boolean(status) || (list.isSuccess && items.length > 0);
 
   return (
-    <Page>
+    <Page
+      actions={showCreate ? <CreateButton label={b.newCampaign} to="/broadcast/baru" /> : undefined}
+    >
       <div className={styles.content}>
         <p className={styles.intro}>{b.intro}</p>
         {done ? (
@@ -72,7 +79,7 @@ export function BroadcastPage() {
               </Button>
             }
           />
-        ) : items.length === 0 && !status ? (
+        ) : firstEmpty ? (
           <EmptyState
             illustration={<BroadcastIllustration />}
             title={b.emptyTitle}
@@ -95,7 +102,6 @@ export function BroadcastPage() {
                 ]}
                 className={styles.statusFilter}
               />
-              {add}
             </div>
             {items.length === 0 ? (
               <div className={styles.noMatch}>

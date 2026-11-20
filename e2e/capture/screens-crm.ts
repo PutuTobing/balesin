@@ -719,8 +719,8 @@ export const crmScreens: Screen[] = [
     before: (page) => crmMocks(page),
     waitFor: 'text=Paket langganan',
     prepare: async (page) => {
-      await page.getByRole('button', { name: 'Tambah atribut' }).click();
-      const dialog = page.getByRole('dialog', { name: 'Tambah atribut' });
+      await page.getByRole('button', { name: 'Buat atribut' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Buat atribut' });
       await dialog.getByLabel('Label').fill('Area layanan');
       await dialog.getByLabel('Jenis').selectOption('select');
       await dialog.getByLabel('Pilihan').fill('Denpasar\nBadung\nGianyar');
@@ -772,7 +772,7 @@ export const crmScreens: Screen[] = [
     before: (page) => ticketMocks(page),
     waitFor: 'text=Internet putus sejak pagi, lampu LOS merah',
     prepare: async (page) => {
-      await page.getByRole('button', { name: 'Tiket baru' }).click();
+      await page.getByRole('button', { name: 'Buat tiket' }).click();
       const dialog = page.getByRole('dialog', { name: 'Tiket baru' });
       await dialog.getByLabel('Judul').fill('Kabel drop putus tertimpa dahan');
       await settle(page);

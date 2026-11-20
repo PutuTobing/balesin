@@ -16,6 +16,7 @@ import {
   LoadFailedIllustration,
 } from '../../components/illustrations/illustrations';
 import { Button } from '../../components/ui/Button';
+import { CreateButton } from '../../components/ui/CreateButton';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { SelectField } from '../../components/ui/Field';
 import { Icon } from '../../components/ui/Icon';
@@ -105,14 +106,8 @@ export function TemplatesPage() {
   );
 
   const noChannel = channels.isSuccess && whatsapp.length === 0;
-  const actions = (
-    <div className={styles.actions}>
-      <Button variant="primary" asChild>
-        <Link to="/pengaturan/template/baru">
-          <Icon icon={Plus} size={16} />
-          {c.add}
-        </Link>
-      </Button>
+  const secondary = (
+    <>
       <Button onClick={() => setPresetsOpen(true)}>
         <Icon icon={Sparkles} size={16} />
         {c.fromPreset}
@@ -121,11 +116,18 @@ export function TemplatesPage() {
         {sync.isPending ? null : <Icon icon={RefreshCw} size={16} />}
         {sync.isPending ? c.syncing : c.sync}
       </Button>
-    </div>
+    </>
   );
+  // "Buat template" di kepala halaman (audit akhir D1) hanya bila daftar terisi; saat kosong
+  // ketiga ajakan ada di `EmptyState`. Preset & sinkron tetap di isi sebagai tombol sekunder.
+  const hasTemplates = list.isSuccess && channels.isSuccess && list.data.templates.length > 0;
 
   return (
-    <Page>
+    <Page
+      actions={
+        hasTemplates ? <CreateButton label={c.add} to="/pengaturan/template/baru" /> : undefined
+      }
+    >
       <div className={styles.content}>
         <p className={styles.intro}>{c.intro}</p>
         {done ? (
@@ -186,11 +188,21 @@ export function TemplatesPage() {
             illustration={<ChatIllustration />}
             title={c.emptyTitle}
             body={c.emptyBody}
-            actions={actions}
+            actions={
+              <div className={styles.actions}>
+                <Button variant="primary" asChild>
+                  <Link to="/pengaturan/template/baru">
+                    <Icon icon={Plus} size={16} />
+                    {c.add}
+                  </Link>
+                </Button>
+                {secondary}
+              </div>
+            }
           />
         ) : (
           <>
-            {actions}
+            <div className={styles.secondaryActions}>{secondary}</div>
             <div className={styles.filters}>
               <div className={styles.searchBox}>
                 <SearchField

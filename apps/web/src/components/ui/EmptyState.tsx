@@ -16,6 +16,12 @@ interface EmptyStateProps {
   compact?: boolean;
   /** `top`: menempel di atas seperti isi daftar, bukan di tengah area. */
   align?: 'center' | 'top';
+  /**
+   * Keadaan kosong seluruh halaman di halaman yang isinya lebar (Kontak, Tiket): dibatasi selebar
+   * kolom isi standar (48rem, sama dengan Broadcast/Template) dan rata kiri, supaya ilustrasinya
+   * tidak meloncat saat berpindah halaman di rail (audit akhir D4).
+   */
+  column?: boolean;
   /** 1 hanya bila layar tidak punya judul halaman sendiri (404, gagal dimuat). */
   headingLevel?: 1 | 2 | 3;
   className?: string;
@@ -29,6 +35,7 @@ export function EmptyState({
   actions,
   compact = false,
   align = 'center',
+  column = false,
   headingLevel = 2,
   className,
 }: EmptyStateProps) {
@@ -39,6 +46,7 @@ export function EmptyState({
         styles.empty,
         compact && styles.compact,
         align === 'top' && styles.top,
+        column && styles.column,
         className,
       )}
     >

@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { BellRing, Send } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Button } from '../../components/ui/Button';
+import { FormActions } from '../../components/ui/FormActions';
 import { Checkbox } from '../../components/ui/Checkbox';
 import { TextField } from '../../components/ui/Field';
 import { Icon } from '../../components/ui/Icon';
@@ -172,15 +173,15 @@ function DeviceCard({ devices }: { devices: number | null }) {
       ) : null}
 
       {device.support === 'supported' && device.permission !== 'denied' ? (
-        <div className={styles.actions}>
+        <FormActions>
           {device.subscribed ? (
             <>
+              <Button loading={busy === 'disable'} onClick={() => void disable()}>
+                {busy === 'disable' ? copy.disabling : copy.disable}
+              </Button>
               <Button variant="primary" loading={busy === 'test'} onClick={() => void test()}>
                 {busy === 'test' ? null : <Icon icon={Send} size={16} />}
                 {busy === 'test' ? copy.testing : copy.test}
-              </Button>
-              <Button loading={busy === 'disable'} onClick={() => void disable()}>
-                {busy === 'disable' ? copy.disabling : copy.disable}
               </Button>
             </>
           ) : device.subscribed === false ? (
@@ -191,7 +192,7 @@ function DeviceCard({ devices }: { devices: number | null }) {
           ) : (
             <Skeleton className={styles.skeletonButton} />
           )}
-        </div>
+        </FormActions>
       ) : null}
     </section>
   );
@@ -322,11 +323,11 @@ function PreferencesCard({ data }: { data: NotificationPreferencesResponse }) {
             {errorMessage(failure)}
           </Notice>
         ) : null}
-        <div className={styles.actions}>
+        <FormActions>
           <Button type="submit" variant="primary" loading={saving}>
             {saving ? copy.saving : copy.savePrefs}
           </Button>
-        </div>
+        </FormActions>
       </form>
     </section>
   );
@@ -436,11 +437,11 @@ function OrganizationForm({ settings }: { settings: NotificationSettings }) {
           {errorMessage(failure)}
         </Notice>
       ) : null}
-      <div className={styles.actions}>
+      <FormActions>
         <Button type="submit" variant="primary" loading={saving}>
           {saving ? copy.saving : copy.saveOrg}
         </Button>
-      </div>
+      </FormActions>
     </form>
   );
 }

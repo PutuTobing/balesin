@@ -153,6 +153,13 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+/* Ringkasan kinerja (7 ubin): 4 + 3 di desktop, "Bot" tidak sendirian di baris ketiga (R5). */
+@media (min-width: 1024px) {
+  .summaryTiles {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
 .tiles dd {
   margin: 0;
 }
@@ -460,14 +467,6 @@ ul.distribution,
 
 .intervalField {
   max-width: 12rem;
-}
-
-.formFoot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-12);
 }
 
 .previewChat {

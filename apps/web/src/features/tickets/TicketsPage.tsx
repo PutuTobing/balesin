@@ -9,6 +9,7 @@ import {
   TicketsIllustration,
 } from '../../components/illustrations/illustrations';
 import { Button } from '../../components/ui/Button';
+import { CreateButton } from '../../components/ui/CreateButton';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { SelectField } from '../../components/ui/Field';
 import { Icon } from '../../components/ui/Icon';
@@ -35,7 +36,7 @@ const k = t.tickets;
 const routeApi = getRouteApi('/_app/tiket');
 
 /**
- * Tiket (`tickets.manage`): pilih board, Kanban atau Daftar, saringan, "Tiket baru". Board/kolom =
+ * Tiket (`tickets.manage`): pilih board, Kanban atau Daftar, saringan, "Buat tiket". Board/kolom =
  * `tickets.configure`. Teknisi (`own`) hanya melihat tiket yang ia pegang (server menyaring).
  */
 export function TicketsPage() {
@@ -72,17 +73,9 @@ export function TicketsPage() {
     void navigate({ search: (previous) => ({ ...previous, ...patch }), replace: true });
   };
 
-  const actions =
-    board || canConfigure ? (
-      <div className={styles.pageActions}>
-        {board ? (
-          <Button variant="primary" onClick={() => setCreatingTicket(true)}>
-            <Icon icon={Plus} size={16} />
-            {k.newTicket}
-          </Button>
-        ) : null}
-      </div>
-    ) : undefined;
+  const actions = board ? (
+    <CreateButton label={k.newTicket} onClick={() => setCreatingTicket(true)} />
+  ) : undefined;
 
   return (
     <Page actions={list.length > 0 ? actions : undefined}>
@@ -96,6 +89,7 @@ export function TicketsPage() {
           <BoardSkeleton />
         ) : boards.isError ? (
           <EmptyState
+            column
             illustration={<LoadFailedIllustration />}
             title={k.loadFailedTitle}
             body={isApiError(boards.error) ? boards.error.message : t.api.network}
@@ -107,6 +101,7 @@ export function TicketsPage() {
           />
         ) : !board ? (
           <EmptyState
+            column
             illustration={<TicketsIllustration />}
             title={k.noBoardsTitle}
             body={canConfigure ? k.noBoardsBody : k.noBoardsBodyNoConfigure}
@@ -406,7 +401,7 @@ function BoardSkeleton({ columnsOnly = false }: { columnsOnly?: boolean }) {
   );
 }
 
-/** HP: "Atur board" + "Board baru" dalam satu menu ⋯ di samping pemilih board. */
+/** HP: "Atur board" + "Buat board" dalam satu menu ⋯ di samping pemilih board. */
 function BoardMenu({ boardId, onCreate }: { boardId: string; onCreate: () => void }) {
   const navigate = useNavigate();
   return (

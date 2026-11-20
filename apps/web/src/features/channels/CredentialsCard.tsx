@@ -9,6 +9,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Button } from '../../components/ui/Button';
 import { SecretField, TextField } from '../../components/ui/Field';
 import { Notice } from '../../components/ui/Notice';
+import { FormActions } from '../../components/ui/FormActions';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
@@ -290,14 +291,14 @@ function CredentialsForm({
             {failure}
           </Notice>
         ) : null}
-        <div className={styles.formFooter}>
+        <FormActions>
           <Button variant="ghost" onClick={onCancel}>
             {copy.cancel}
           </Button>
           <Button ref={submitRef} type="submit" variant="primary">
             {copy.save}
           </Button>
-        </div>
+        </FormActions>
       </form>
       <IdentityDialog
         open={confirming !== null}

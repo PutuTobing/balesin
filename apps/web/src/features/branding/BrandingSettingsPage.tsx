@@ -17,6 +17,7 @@ import { Icon } from '../../components/ui/Icon';
 import { Notice } from '../../components/ui/Notice';
 import { Page } from '../../components/ui/Page';
 import { Skeleton, SkeletonRegion } from '../../components/ui/Skeleton';
+import { FormActions } from '../../components/ui/FormActions';
 import { BrandLogo } from '../../brand/BrandLogo';
 import { BrandContext, defaultBrand } from '../../brand/brand';
 import { brandThemeVariables, darkerUsableColor } from '../../brand/brand-theme';
@@ -219,11 +220,11 @@ function BrandingForm({ settings }: { settings: BrandingSettings }) {
           {b.noChanges}
         </p>
       ) : null}
-      <div className={styles.actions}>
+      <FormActions>
         <Button type="submit" variant="primary" loading={pending} disabled={lock.locked}>
           {pending ? b.saving : b.save}
         </Button>
-      </div>
+      </FormActions>
     </form>
   );
 }

@@ -91,6 +91,7 @@ export function ContactsPage() {
         ) : null}
         {firstEmpty ? (
           <EmptyState
+            column
             illustration={<ContactsIllustration />}
             title={c.emptyTitle}
             body={canBulk ? c.emptyBody : c.emptyBodyNoImport}
@@ -118,6 +119,7 @@ export function ContactsPage() {
               <ListSkeleton />
             ) : list.isError ? (
               <EmptyState
+                column
                 illustration={<LoadFailedIllustration />}
                 title={c.loadFailedTitle}
                 body={isApiError(list.error) ? list.error.message : t.api.network}

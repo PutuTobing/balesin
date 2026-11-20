@@ -152,40 +152,7 @@ ul.list,
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- Baris cari + tambah ---------- */
-
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
-}
-
-.searchBox {
-  flex: 1;
-  min-width: 0;
-}
-
-.add {
-  flex: none;
-}
-
 @media (max-width: 640px) {
-  /* HP: tombol tambah jadi ikon 44×44 berlabel. */
-  .add {
-    width: var(--size-touch);
-    height: var(--size-touch);
-    padding: 0;
-  }
-
-  .addLabel {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-
   .variable {
     min-height: var(--size-touch);
   }

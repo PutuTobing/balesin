@@ -138,8 +138,9 @@ export async function sendOutboxItem(queryClient: QueryClient, item: OutboxItem)
 export function noteSendError(queryClient: QueryClient, conversationId: string, error: unknown) {
   if (!isApiError(error)) return;
   if (error.status === 423) queryClient.setQueryData(inboxKeys.sendingPaused, true);
-  if (error.code === 'WINDOW_CLOSED' || error.status === 404) {
-    // Keadaan jendela/cakupan di layar sudah basi: ambil ulang percakapannya.
+  if (error.code === 'WINDOW_CLOSED' || error.status === 403 || error.status === 404) {
+    // Keadaan jendela/cakupan di layar sudah basi (403: mis. chat baru saja diselesaikan orang lain
+    // dan mengirim ke chat selesai butuh `inbox.initiate`): ambil ulang percakapannya.
     void queryClient.invalidateQueries({ queryKey: inboxKeys.conversation(conversationId) });
   }
 }

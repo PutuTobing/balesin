@@ -10,6 +10,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { OctagonPause, Play } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';
 import { Button } from '../../components/ui/Button';
+import { FormActions } from '../../components/ui/FormActions';
 import { Dialog, DialogActions } from '../../components/ui/Dialog';
 import { TextAreaField, TextField } from '../../components/ui/Field';
 import { Icon } from '../../components/ui/Icon';
@@ -165,7 +166,7 @@ function BrakeCard({ limits }: { limits: SendingLimits }) {
           {isApiError(failure) ? failure.message : t.api.network}
         </Notice>
       ) : null}
-      <div className={styles.actions}>
+      <FormActions meta={paused && !canResume ? copy.resumeNotAllowed : undefined}>
         {paused ? (
           canResume ? (
             <Button
@@ -178,9 +179,7 @@ function BrakeCard({ limits }: { limits: SendingLimits }) {
             >
               {copy.resume}
             </Button>
-          ) : (
-            <p className={styles.hint}>{copy.resumeNotAllowed}</p>
-          )
+          ) : null
         ) : (
           <Button
             ref={buttonRef}
@@ -194,7 +193,7 @@ function BrakeCard({ limits }: { limits: SendingLimits }) {
             {copy.pause}
           </Button>
         )}
-      </div>
+      </FormActions>
       {asking === 'pause' ? (
         <PauseDialog
           onClose={() => {
@@ -400,11 +399,11 @@ function LimitsCard({ limits }: { limits: SendingLimits }) {
             {isApiError(failure) ? failure.message : t.api.network}
           </Notice>
         ) : null}
-        <div className={styles.actions}>
+        <FormActions>
           <Button ref={submitRef} type="submit" variant="primary">
             {copy.save}
           </Button>
-        </div>
+        </FormActions>
       </form>
       <IdentityDialog
         open={confirming !== null}

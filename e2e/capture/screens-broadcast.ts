@@ -549,8 +549,8 @@ export const broadcastScreens: Screen[] = [
     },
     waitFor: 'text=Billing: pelanggan menunggak',
     prepare: async (page) => {
-      await page.getByRole('button', { name: 'Tambah konektor' }).click();
-      const dialog = page.getByRole('dialog', { name: 'Tambah konektor data' });
+      await page.getByRole('button', { name: 'Buat konektor' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Buat konektor data' });
       await dialog.getByLabel('Nama', { exact: true }).fill('CRM: pelanggan aktif');
       await dialog
         .getByLabel('Alamat (GET, JSON)')

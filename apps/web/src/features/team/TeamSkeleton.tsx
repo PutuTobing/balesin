@@ -4,6 +4,7 @@ import { t } from '../../i18n/id';
 import { usePageTitle } from '../../lib/use-page-title';
 import { useCan } from '../auth/session';
 import pageStyles from '../../components/ui/Page.module.css';
+import { FormActions } from '../../components/ui/FormActions';
 import styles from './Team.module.css';
 
 /**
@@ -84,9 +85,9 @@ function InvitationCardsSkeleton() {
               <p className={styles.skeletonFieldHint}>{t.team.invite.roleHints.cs}</p>
             </div>
           </div>
-          <div className={styles.formFooter}>
+          <FormActions>
             <Skeleton className={styles.skeletonButtons} />
-          </div>
+          </FormActions>
         </div>
       </div>
       <div className={styles.card}>

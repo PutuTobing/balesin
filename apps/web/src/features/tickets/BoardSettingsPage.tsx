@@ -23,6 +23,7 @@ import { IconButton } from '../../components/ui/IconButton';
 import { Notice } from '../../components/ui/Notice';
 import { Page } from '../../components/ui/Page';
 import { Skeleton, SkeletonRegion } from '../../components/ui/Skeleton';
+import { FormActions } from '../../components/ui/FormActions';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
@@ -198,7 +199,7 @@ function BoardInfo({ board }: { board: TicketBoard }) {
             {done}
           </Notice>
         ) : null}
-        <div className={styles.formActions}>
+        <FormActions>
           {board.archivedAt ? (
             <Button onClick={() => save.mutate({ archived: false })} disabled={save.isPending}>
               {k.unarchive}
@@ -211,7 +212,7 @@ function BoardInfo({ board }: { board: TicketBoard }) {
           <Button type="submit" variant="primary" loading={save.isPending}>
             {save.isPending ? k.saving : k.save}
           </Button>
-        </div>
+        </FormActions>
       </form>
       <ConfirmDialog
         open={archiving}

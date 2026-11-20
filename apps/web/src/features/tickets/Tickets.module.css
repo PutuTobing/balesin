@@ -45,11 +45,6 @@
   align-self: flex-start;
 }
 
-.pageActions {
-  display: flex;
-  gap: var(--space-8);
-}
-
 .number {
   flex: none;
   color: var(--ink-2);
@@ -761,6 +756,12 @@ ul.list,
   align-self: flex-start;
 }
 
+/* "Hapus tenggat" (ghost): teksnya sejajar dengan label isian di atasnya, bukan menjorok
+   selebar padding tombol (saran F-S12). */
+.dueClear {
+  margin-left: calc(var(--space-16) * -1);
+}
+
 .facts {
   margin: 0;
   display: grid;
@@ -942,13 +943,6 @@ ol.history,
   margin-bottom: var(--space-4);
   font-size: var(--text-14);
   font-weight: var(--weight-semibold);
-}
-
-.formActions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: var(--space-8);
 }
 
 ol.columnList,

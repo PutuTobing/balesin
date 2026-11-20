@@ -178,14 +178,21 @@ function OrganizationReport({
     report.agents.length === 0
   ) {
     return (
-      <EmptyState illustration={<ReportsIllustration />} title={r.emptyTitle} body={r.emptyBody} />
+      // Di dalam kartu, rata dengan saringan dan kartu KPI saat terisi (audit akhir D4).
+      <div className={styles.card}>
+        <EmptyState
+          illustration={<ReportsIllustration />}
+          title={r.emptyTitle}
+          body={r.emptyBody}
+        />
+      </div>
     );
   }
   return (
     <>
       {summary ? (
         <section aria-label={r.summaryLabel}>
-          <dl className={styles.tiles}>
+          <dl className={`${styles.tiles} ${styles.summaryTiles}`}>
             <StatTile
               label={r.conversations}
               value={formatCount(summary.conversations)}

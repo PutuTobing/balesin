@@ -13,10 +13,14 @@ import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { RadioGroup } from 'radix-ui';
 import { useState, type FormEvent } from 'react';
 import { ZodError } from 'zod';
-import { LoadFailedIllustration } from '../../components/illustrations/illustrations';
+import {
+  ContactsIllustration,
+  LoadFailedIllustration,
+} from '../../components/illustrations/illustrations';
 import { Button } from '../../components/ui/Button';
 import { Checkbox } from '../../components/ui/Checkbox';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { CreateButton } from '../../components/ui/CreateButton';
 import { Dialog, DialogActions } from '../../components/ui/Dialog';
 import { TextAreaField, TextField } from '../../components/ui/Field';
 import { Icon } from '../../components/ui/Icon';
@@ -75,8 +79,15 @@ export function DepartmentsPage() {
     </Button>
   );
 
+  // "Buat departemen" di kepala halaman (audit akhir D1); saat kosong ajakannya di `EmptyState`.
+  const canAdd = departments.length > 0 && departments.length < DEPARTMENTS_PER_ORGANIZATION_MAX;
+
   return (
-    <Page>
+    <Page
+      actions={
+        canAdd ? <CreateButton label={d.add} onClick={() => setEditing('new')} /> : undefined
+      }
+    >
       <div className={styles.page}>
         <p className={styles.intro}>{d.intro}</p>
         {notice ? (
@@ -110,7 +121,12 @@ export function DepartmentsPage() {
             }
           />
         ) : departments.length === 0 ? (
-          <EmptyState title={d.emptyTitle} body={d.emptyBody} actions={add} />
+          <EmptyState
+            illustration={<ContactsIllustration />}
+            title={d.emptyTitle}
+            body={d.emptyBody}
+            actions={add}
+          />
         ) : (
           <>
             <ul className={styles.list} aria-label={d.listLabel}>
@@ -136,7 +152,6 @@ export function DepartmentsPage() {
                         <IconButton
                           label={d.remove(department.name)}
                           icon={Trash2}
-                          className={styles.danger}
                           onClick={() => setRemoving(department)}
                         />
                       </div>
@@ -184,9 +199,6 @@ export function DepartmentsPage() {
               })}
             </ul>
             <p className={styles.hint}>{d.membersNote}</p>
-            {departments.length < DEPARTMENTS_PER_ORGANIZATION_MAX ? (
-              <div className={styles.footer}>{add}</div>
-            ) : null}
           </>
         )}
       </div>

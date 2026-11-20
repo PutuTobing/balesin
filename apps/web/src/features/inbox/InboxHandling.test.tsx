@@ -97,6 +97,80 @@ describe('penanganan percakapan', () => {
     );
   });
 
+  it('chat selesai, CS tanpa inbox.initiate: tanpa composer & template, ada penjelasan izin', async () => {
+    const resolved = { ...served, status: 'resolved' as const };
+    act(() => setMediaQuery(media.desktop, true));
+    await renderApp(`/inbox?chat=${served.id}`, {
+      inbox: { ...inbox, conversations: [resolved] },
+      session: fakeSession('cs'),
+    });
+    await chat().findByText('Halo kak');
+    expect(await chat().findByText(k.resolvedNoInitiate)).toBeVisible();
+    expect(chat().queryByRole('textbox', { name: k.label })).toBeNull();
+    expect(chat().queryByRole('button', { name: k.sendTemplate })).toBeNull();
+    expect(chat().queryByRole('button', { name: k.template })).toBeNull();
+    // Jalur yang ada tetap tersedia: buka lagi chatnya.
+    expect(chat().getByRole('button', { name: h.reopen })).toBeEnabled();
+  });
+
+  it('chat selesai, Owner (punya inbox.initiate): catatan biasa tanpa penjelasan izin', async () => {
+    const resolved = { ...served, status: 'resolved' as const };
+    act(() => setMediaQuery(media.desktop, true));
+    await renderApp(`/inbox?chat=${served.id}`, {
+      inbox: { ...inbox, conversations: [resolved] },
+    });
+    expect(await chat().findByText(k.resolved)).toBeVisible();
+    expect(chat().queryByText(k.resolvedNoInitiate)).toBeNull();
+    expect(chat().queryByRole('textbox', { name: k.label })).toBeNull();
+  });
+
+  it('403 saat kirim (chat baru saja diselesaikan): pesan server apa adanya + chat diambil ulang', async () => {
+    const message =
+      'Percakapan ini sudah selesai. Mengirim pesan baru ke percakapan yang sudah selesai butuh izin memulai percakapan.';
+    let resolvedNow = false;
+    const { api } = await openChat({
+      session: fakeSession('cs'),
+      routes: {
+        [`POST ${apiPath(API_ROUTES.inbox.messages, { conversationId: served.id })}`]: () => {
+          resolvedNow = true;
+          return apiError(403, 'FORBIDDEN', message);
+        },
+        [`GET ${apiPath(API_ROUTES.inbox.conversation, { conversationId: served.id })}`]: () =>
+          json({ conversation: resolvedNow ? { ...served, status: 'resolved' } : served }),
+      },
+    });
+    const box = chat().getByRole('textbox', { name: k.label });
+    fireEvent.change(box, { target: { value: 'Halo lagi' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    expect(await chat().findByText(message)).toBeVisible();
+    expect(await chat().findByText(k.resolvedNoInitiate)).toBeVisible();
+    expect(chat().queryByRole('textbox', { name: k.label })).toBeNull();
+    expect(
+      api.requests.filter((request) => request.path.endsWith(`/conversations/${served.id}`)).length,
+    ).toBeGreaterThan(1);
+  });
+
+  it('429 jatah harian di chat yang kemudian selesai: kotak batas tetap tampil di atas catatan', async () => {
+    let resolvedNow = false;
+    await openChat({
+      routes: {
+        [`POST ${apiPath(API_ROUTES.inbox.messages, { conversationId: served.id })}`]: () => {
+          resolvedNow = true;
+          return apiError(429, 'RATE_LIMITED', 'Jatah memulai percakapan hari ini sudah habis.', {
+            retryAfter: 60,
+          });
+        },
+        [`GET ${apiPath(API_ROUTES.inbox.conversation, { conversationId: served.id })}`]: () =>
+          json({ conversation: resolvedNow ? { ...served, status: 'resolved' } : served }),
+      },
+    });
+    const box = chat().getByRole('textbox', { name: k.label });
+    fireEvent.change(box, { target: { value: 'Halo lagi' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    const alert = await chat().findByText(k.limitedTitle);
+    expect(alert.closest('[role="alert"]')).toHaveTextContent('Jatah memulai percakapan');
+  });
+
   it('alihkan: dialog agen aktif dengan bebannya → assign userId', async () => {
     const { api } = await openChat();
     const menu = await openMenu();

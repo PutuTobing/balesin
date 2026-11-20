@@ -711,18 +711,6 @@ button.stepButton:hover {
   flex: 1;
 }
 
-.formFooter {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-8) var(--space-16);
-}
-
-.formFooterStart {
-  justify-content: flex-start;
-}
-
 .dangerZone {
   display: flex;
   flex-direction: column;

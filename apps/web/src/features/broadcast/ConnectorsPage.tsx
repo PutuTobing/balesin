@@ -9,9 +9,13 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Database, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';
-import { LoadFailedIllustration } from '../../components/illustrations/illustrations';
+import {
+  BroadcastIllustration,
+  LoadFailedIllustration,
+} from '../../components/illustrations/illustrations';
 import { Button } from '../../components/ui/Button';
 import { Checkbox } from '../../components/ui/Checkbox';
+import { CreateButton } from '../../components/ui/CreateButton';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Dialog, DialogActions } from '../../components/ui/Dialog';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -91,8 +95,14 @@ export function ConnectorsPage() {
     </Button>
   );
 
+  const hasItems = list.isSuccess && list.data.connectors.length > 0;
+
   return (
-    <Page>
+    <Page
+      actions={
+        hasItems ? <CreateButton label={c.add} onClick={() => setEditing('new')} /> : undefined
+      }
+    >
       <div className={styles.content}>
         <p className={styles.intro}>{c.intro}</p>
         {done ? (
@@ -123,10 +133,14 @@ export function ConnectorsPage() {
             }
           />
         ) : list.data.connectors.length === 0 ? (
-          <EmptyState title={c.emptyTitle} body={c.emptyBody} actions={add} />
+          <EmptyState
+            illustration={<BroadcastIllustration />}
+            title={c.emptyTitle}
+            body={c.emptyBody}
+            actions={add}
+          />
         ) : (
           <>
-            <div className={styles.toolbarEnd}>{add}</div>
             <ul className={styles.list} aria-label={c.listLabel}>
               {list.data.connectors.map((connector) => {
                 const result = tests[connector.id];

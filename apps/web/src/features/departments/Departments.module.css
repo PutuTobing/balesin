@@ -23,10 +23,6 @@
   color: var(--ink-2);
 }
 
-.danger {
-  color: var(--danger-ink);
-}
-
 .fieldError {
   color: var(--danger-ink);
   font-size: var(--text-12);
@@ -140,10 +136,6 @@ ul.members,
 .restricted {
   color: var(--warning-ink);
   font-size: var(--text-12);
-}
-
-.footer {
-  display: flex;
 }
 
 .form {
@@ -360,7 +352,6 @@ ul.members,
     height: var(--size-touch);
   }
 
-  .footer > *,
   .accessActions > * {
     flex: 1;
     min-height: var(--size-touch);

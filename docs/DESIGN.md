@@ -74,6 +74,14 @@ untuk isi pesan. Line-height 1.45 untuk teks, 1.2 untuk judul.
 - Tablet: dua kolom.
 - Status kosong, loading (skeleton, bukan spinner di tengah), error: semua dirancang,
   memakai ilustrasi Kak Sky bila tersedia.
+- **Tombol buat utama** (audit akhir D1): halaman yang isinya satu daftar (Broadcast, Template,
+  Konektor, Balasan cepat, Departemen, Tiket) menaruh "Buat …" di kepala halaman, kanan
+  (`CreateButton` lewat `Page actions`), hanya bila daftarnya terisi — saat kosong ajakannya di
+  `EmptyState`. Di HP labelnya "Buat" + ikon `Plus` (nama aksesibel tetap lengkap), tidak pernah
+  ikon saja. Halaman berisi beberapa kartu (API key, Webhook, Channel): di kepala kartu daftar, kanan.
+- **Keadaan kosong halaman** (D4): di dalam kolom isi yang sama dengan konten saat terisi dan
+  dipusatkan di kolom itu (halaman lebar seperti Kontak/Tiket: `EmptyState column`, 48rem; Laporan:
+  di dalam kartu di bawah saringan). Halaman daftar selalu berilustrasi; kosong di dalam kartu tidak.
 
 ## 3. Larangan (ciri "kodingan AI" yang harus dihindari)
 - Gradien ungu-biru generik, glassmorphism berlebihan, emoji sebagai ikon.
@@ -100,6 +108,12 @@ error API; hindari kata ganti bila kalimatnya tetap wajar.
   `m:ss` tampil di tombol nonaktif (`FormErrorNotice`).
 - Waktu ke depan memakai "pukul 02.04"; waktu lampau "Hari ini, 03.47" / "Kemarin, …" / tanggal.
 - Di dialog, tombol berwarna selalu terakhir (kanan di desktop, atas di HP); tombol batal berbingkai.
+- Tombol simpan form: kanan di desktop, selebar penuh di atas pada HP (`FormActions`; tombol
+  berwarna terakhir di DOM, keterangan "Terakhir diubah …" di slot `meta`).
+- Kata kerja tombol: **"Buat …"** untuk objek baru ("Buat kampanye", "Buat tiket", "Buat webhook");
+  **"Tambah …"** hanya untuk menempelkan sesuatu ke objek yang ada ("Tambah tag", "Tambah kolom");
+  **"Hubungkan nomor"** untuk channel. Membuat berkas dari data = **"Ekspor CSV"**; "Unduh" hanya
+  untuk berkas yang sudah ada (media, kode cadangan).
 - Nama produk tidak pernah ditulis langsung di teks UI — selalu dari pengaturan merek (white-label).
 - "Balasan cepat" = teks siap pakai lewat `/` di composer (fitur `quick_replies`); "template" HANYA untuk template pesan WhatsApp yang disetujui Meta.
 

@@ -55,11 +55,6 @@
   font-weight: var(--weight-semibold);
 }
 
-.actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
 /* ---------- Logo ---------- */
 
 .logoBox {
@@ -270,10 +265,5 @@
   .logoTile {
     flex: 1 1 0;
     width: auto;
-  }
-
-  .actions > * {
-    flex: 1 1 100%;
-    min-height: var(--size-touch);
   }
 }

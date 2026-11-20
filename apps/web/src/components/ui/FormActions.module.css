@@ -1,0 +1,27 @@
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-8);
+}
+
+.meta {
+  min-width: 0;
+  margin-right: auto;
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+@media (max-width: 640px) {
+  /* Seperti dialog di HP: tombol berwarna (terakhir di DOM) di atas, semua selebar penuh. */
+  .actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .meta {
+    margin-right: 0;
+  }
+}

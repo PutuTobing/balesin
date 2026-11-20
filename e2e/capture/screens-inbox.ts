@@ -63,6 +63,21 @@ async function settle(page: Page): Promise<void> {
   await page.mouse.move(1, 1);
 }
 
+/**
+ * Buka dialog "Pesan dengan pilihan". Desktop: tombol di composer. HP (≤ 640 px): tombolnya ada di
+ * menu "+" ("Tambah lampiran atau pesan khusus") → item "Pesan dengan pilihan" (audit akhir R7).
+ */
+async function openInteractiveDialog(page: Page): Promise<void> {
+  const direct = page.getByRole('button', { name: 'Kirim tombol atau daftar pilihan' });
+  if (await direct.isVisible()) {
+    await direct.click();
+  } else {
+    await page.getByRole('button', { name: 'Tambah lampiran atau pesan khusus' }).click();
+    await page.getByRole('menuitem', { name: /^Pesan dengan pilihan/ }).click();
+  }
+  await page.getByRole('dialog', { name: 'Pesan dengan pilihan' }).waitFor();
+}
+
 /** Panel detail (desktop: kolom kanan; HP: layar bertumpuk `&detail=1`). */
 function detailPanel(page: Page) {
   return page.getByRole('complementary', { name: 'Detail kontak' });
@@ -638,7 +653,7 @@ export const inboxScreens: Screen[] = [
     },
     waitFor: 'text=Info dari grup RT',
     prepare: async (page) => {
-      await page.getByRole('button', { name: 'Kirim tombol atau daftar pilihan' }).click();
+      await openInteractiveDialog(page);
       const dialog = page.getByRole('dialog', { name: 'Pesan dengan pilihan' });
       await dialog.getByLabel('Isi pesan', { exact: true }).fill('Mau dibantu soal apa kak?');
       await dialog.getByLabel('Tombol 1', { exact: true }).fill('Cek tagihan');
@@ -655,7 +670,7 @@ export const inboxScreens: Screen[] = [
     },
     waitFor: 'text=Info dari grup RT',
     prepare: async (page) => {
-      await page.getByRole('button', { name: 'Kirim tombol atau daftar pilihan' }).click();
+      await openInteractiveDialog(page);
       const dialog = page.getByRole('dialog', { name: 'Pesan dengan pilihan' });
       await dialog.getByRole('radio', { name: 'Daftar pilihan' }).click();
       await dialog.getByLabel('Isi pesan', { exact: true }).fill('Pilih paket internet:');

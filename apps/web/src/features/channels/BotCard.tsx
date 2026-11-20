@@ -19,6 +19,7 @@ import { Icon } from '../../components/ui/Icon';
 import { Notice } from '../../components/ui/Notice';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { StatusBadge } from '../../components/ui/StatusBadge';
+import { FormActions } from '../../components/ui/FormActions';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
@@ -351,11 +352,11 @@ function BotForm({
           {isApiError(failure) ? failure.message : t.api.network}
         </Notice>
       ) : null}
-      <div className={styles.actions}>
+      <FormActions>
         <Button type="submit" variant="primary" loading={saving}>
           {saving ? copy.saving : copy.save}
         </Button>
-      </div>
+      </FormActions>
       <ConfirmDialog
         open={confirmOff !== null}
         title={copy.disableTitle(place)}

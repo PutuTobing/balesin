@@ -85,11 +85,25 @@
     color: var(--ink);
   }
 
+  /* Mengalahkan geseran desktop `.backAlways` (−8px) dan jaraknya: panah selalu di garis 16px,
+     judul selalu di 52px, di semua sub-halaman (audit akhir D2). */
+  .back {
+    margin-left: 0;
+  }
+
+  .header:has(.back) {
+    gap: var(--space-4);
+  }
+
   .back:focus-visible {
     outline-offset: -2px;
   }
 
   .body {
     padding: var(--space-16);
+    /* Isian yang difokus (keyboard/skrip) berhenti dengan ruang di bawahnya: petunjuk di bawah
+       isian terakhir tidak menempel ke navigasi bawah (saran S5 Merek). Hanya memengaruhi gulir
+       otomatis ke elemen, bukan tata letak. */
+    scroll-padding-bottom: var(--size-touch);
   }
 }

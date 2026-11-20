@@ -92,12 +92,6 @@
   overflow-wrap: break-word;
 }
 
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-8);
-}
-
 /* Tombol sekunder untuk aksi berbahaya: merah penuh hanya di dialog. */
 .dangerText {
   color: var(--danger-ink);

@@ -41,11 +41,6 @@
   gap: var(--space-12);
 }
 
-.toolbarEnd {
-  display: flex;
-  justify-content: flex-end;
-}
-
 .statusFilter {
   flex: 0 1 14rem;
   min-width: 10rem;

@@ -149,10 +149,10 @@ test('balasan cepat: dibuat di Pengaturan, dipakai dengan "/" di composer', asyn
   const shortcut = `salam${Date.now().toString(36)}`;
   await openApp(page, '/pengaturan/balasan-cepat');
   await page
-    .getByRole('button', { name: /Tambah balasan cepat|Buat balasan cepat pertama/ })
+    .getByRole('button', { name: /^(Buat balasan cepat|Buat balasan cepat pertama)$/ })
     .first()
     .click();
-  const dialog = page.getByRole('dialog', { name: 'Tambah balasan cepat' });
+  const dialog = page.getByRole('dialog', { name: 'Buat balasan cepat' });
   await dialog.getByLabel('Shortcut').fill(shortcut);
   await dialog.getByLabel('Judul').fill('Salam pembuka');
   await dialog

@@ -267,8 +267,8 @@ export const integrationScreens: Screen[] = [
   screen('webhook-kosong', '/pengaturan/webhook', 'text=Belum ada webhook', { webhooks: [] }),
   screen('webhook-tambah', '/pengaturan/webhook', 'text=Bot tagihan & lapor gangguan', {
     prepare: async (page) => {
-      await page.getByRole('button', { name: 'Tambah webhook' }).click();
-      await page.getByRole('dialog', { name: 'Tambah webhook' }).waitFor();
+      await page.getByRole('button', { name: 'Buat webhook' }).click();
+      await page.getByRole('dialog', { name: 'Buat webhook' }).waitFor();
       await settle(page);
     },
   }),
@@ -290,8 +290,8 @@ export const integrationScreens: Screen[] = [
   }),
   screen('webhook-mobichat-tambah', '/pengaturan/webhook', 'text=Bot tagihan & lapor gangguan', {
     prepare: async (page) => {
-      await page.getByRole('button', { name: 'Tambah webhook' }).click();
-      const dialog = page.getByRole('dialog', { name: 'Tambah webhook' });
+      await page.getByRole('button', { name: 'Buat webhook' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Buat webhook' });
       await dialog.getByRole('radio', { name: 'MobiChat' }).click();
       await dialog.getByLabel('URL penerima').fill('http://192.168.10.5:5678/webhook/ulan');
       await settle(page);

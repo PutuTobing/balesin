@@ -53,6 +53,7 @@ export function ChatFooter({
 }: ChatFooterProps) {
   const canReply = useCan('inbox.reply');
   const canAssign = useCan('inbox.assign');
+  const canInitiate = useCan('inbox.initiate');
   const now = useMinuteClock();
   const { paused, reason } = useSendingPaused();
   const selfId = useSession()?.user.id ?? null;
@@ -107,12 +108,19 @@ export function ChatFooter({
     return <FooterNote>{k.readOnly}</FooterNote>;
   }
   if (conversation.status === 'resolved') {
+    // Chat selesai: tanpa composer & tanpa pemilih template. Mengirim pesan baru ke chat selesai =
+    // memulai percakapan (izin `inbox.initiate`, audit akhir A1/A6) — yang tidak punya izin itu
+    // diberi tahu jalurnya. Error kirim yang baru terjadi (mis. 403/429 dari server saat chat
+    // diselesaikan orang lain) tetap tampil apa adanya.
     return (
-      <FooterNote
-        action={isHp ? <ReopenButton conversation={conversation} onError={onError} /> : null}
-      >
-        {k.resolved}
-      </FooterNote>
+      <>
+        {hasNotices ? <div className={styles.notices}>{notices}</div> : null}
+        <FooterNote
+          action={isHp ? <ReopenButton conversation={conversation} onError={onError} /> : null}
+        >
+          {canInitiate ? k.resolved : k.resolvedNoInitiate}
+        </FooterNote>
+      </>
     );
   }
   if (!windowOpen) {

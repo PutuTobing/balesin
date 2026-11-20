@@ -9,9 +9,13 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useMemo, useRef, useState, type FormEvent } from 'react';
-import { LoadFailedIllustration } from '../../components/illustrations/illustrations';
+import {
+  ChatIllustration,
+  LoadFailedIllustration,
+} from '../../components/illustrations/illustrations';
 import { Button } from '../../components/ui/Button';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { CreateButton } from '../../components/ui/CreateButton';
 import { Dialog, DialogActions } from '../../components/ui/Dialog';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { TextAreaField, TextField } from '../../components/ui/Field';
@@ -64,21 +68,14 @@ export function QuickRepliesPage() {
     );
   }, [list.data, search]);
 
-  // Tombol tambah di baris pencarian (bukan kepala halaman): judul tidak terpotong di HP.
-  const addButton = (
-    <Button
-      variant="primary"
-      className={styles.add}
-      aria-label={q.add}
-      onClick={() => setEditing('new')}
-    >
-      <Icon icon={Plus} size={16} />
-      <span className={styles.addLabel}>{q.add}</span>
-    </Button>
-  );
+  const hasItems = list.isSuccess && list.data.quickReplies.length > 0;
 
   return (
-    <Page>
+    <Page
+      actions={
+        hasItems ? <CreateButton label={q.add} onClick={() => setEditing('new')} /> : undefined
+      }
+    >
       <div className={styles.content}>
         <p className={styles.intro}>{q.intro}</p>
         {done ? (
@@ -107,6 +104,7 @@ export function QuickRepliesPage() {
           />
         ) : list.data.quickReplies.length === 0 ? (
           <EmptyState
+            illustration={<ChatIllustration />}
             title={q.emptyTitle}
             body={q.emptyBody}
             actions={
@@ -118,18 +116,13 @@ export function QuickRepliesPage() {
           />
         ) : (
           <>
-            <div className={styles.toolbar}>
-              <div className={styles.searchBox}>
-                <SearchField
-                  value={search}
-                  onChange={setSearch}
-                  label={q.searchLabel}
-                  placeholder={q.searchPlaceholder}
-                  clearLabel={q.clearSearch}
-                />
-              </div>
-              {addButton}
-            </div>
+            <SearchField
+              value={search}
+              onChange={setSearch}
+              label={q.searchLabel}
+              placeholder={q.searchPlaceholder}
+              clearLabel={q.clearSearch}
+            />
             {items.length === 0 ? (
               <p className={styles.note}>{q.notFound(search.trim())}</p>
             ) : (

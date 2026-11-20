@@ -60,12 +60,12 @@ test('Webhook: tambah → rahasia sekali → kejadian tes di riwayat → hapus',
   const watched = await signInSecondOwner(browser, owner);
   const { page } = watched;
   await page.goto('/pengaturan/webhook');
-  await page.getByRole('button', { name: 'Tambah webhook' }).click();
-  const form = page.getByRole('dialog', { name: 'Tambah webhook' });
+  await page.getByRole('button', { name: 'Buat webhook' }).click();
+  const form = page.getByRole('dialog', { name: 'Buat webhook' });
   await form.getByLabel('URL penerima').fill(url);
   await form.getByLabel('Keterangan').fill('Uji E2E');
   await form.getByRole('button', { name: 'Simpan' }).click();
-  await confirmAsSecondOwner(page, owner, 'Tambah webhook baru?', 'Simpan');
+  await confirmAsSecondOwner(page, owner, 'Buat webhook baru?', 'Simpan');
 
   const secretDialog = page.getByRole('dialog', { name: 'Salin rahasia webhook sekarang' });
   await expect(secretDialog.locator('code')).toHaveText(/^whsec_/);
@@ -114,8 +114,8 @@ test('Webhook MobiChat: key ditempel utuh → kartu ••••akhir, key tidak
   // Webhook format MobiChat dengan key itu.
   const url = `https://n8n-${String(randomInt(10_000, 99_999))}.contoh.test/webhook/ulan`;
   await page.goto('/pengaturan/webhook');
-  await page.getByRole('button', { name: 'Tambah webhook' }).click();
-  const hookForm = page.getByRole('dialog', { name: 'Tambah webhook' });
+  await page.getByRole('button', { name: 'Buat webhook' }).click();
+  const hookForm = page.getByRole('dialog', { name: 'Buat webhook' });
   await hookForm.getByRole('radio', { name: 'MobiChat' }).click();
   await expect(
     hookForm.getByText('Mode MobiChat hanya mengirim pesan masuk dari pelanggan.'),
@@ -123,7 +123,7 @@ test('Webhook MobiChat: key ditempel utuh → kartu ••••akhir, key tidak
   await hookForm.getByLabel('URL penerima').fill(url);
   await hookForm.getByLabel(/^API key untuk alur n8n/).fill(key);
   await hookForm.getByRole('button', { name: 'Simpan' }).click();
-  await confirmAsSecondOwner(page, owner, 'Tambah webhook baru?', 'Simpan');
+  await confirmAsSecondOwner(page, owner, 'Buat webhook baru?', 'Simpan');
   await page
     .getByRole('dialog', { name: 'Salin rahasia webhook sekarang' })
     .getByRole('button', { name: 'Sudah saya simpan' })

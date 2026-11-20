@@ -9,6 +9,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Send, Trash2 } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';
 import { Button } from '../../components/ui/Button';
+import { FormActions } from '../../components/ui/FormActions';
 import { Checkbox } from '../../components/ui/Checkbox';
 import { SecretField, TextField } from '../../components/ui/Field';
 import { Icon } from '../../components/ui/Icon';
@@ -211,16 +212,9 @@ function TelegramCard({ settings }: { settings: TelegramAlarmSettings }) {
             {isApiError(failure) ? failure.message : t.api.network}
           </Notice>
         ) : null}
-        <div className={styles.actionsRow}>
-          <Button ref={saveRef} type="submit" variant="primary">
-            {a.save}
-          </Button>
+        <FormActions>
           {settings.configured ? (
             <>
-              <Button loading={testing} onClick={() => void sendTest()}>
-                {testing ? null : <Icon icon={Send} size={16} />}
-                {testing ? a.testing : a.test}
-              </Button>
               <Button
                 variant="ghost"
                 className={styles.dangerButton}
@@ -229,9 +223,16 @@ function TelegramCard({ settings }: { settings: TelegramAlarmSettings }) {
                 <Icon icon={Trash2} size={16} />
                 {a.remove}
               </Button>
+              <Button loading={testing} onClick={() => void sendTest()}>
+                {testing ? null : <Icon icon={Send} size={16} />}
+                {testing ? a.testing : a.test}
+              </Button>
             </>
           ) : null}
-        </div>
+          <Button ref={saveRef} type="submit" variant="primary">
+            {a.save}
+          </Button>
+        </FormActions>
       </form>
       <IdentityDialog
         open={confirming === 'save'}

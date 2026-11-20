@@ -13,6 +13,8 @@ export const t = {
     close: 'Tutup',
     backToInbox: 'Kembali ke Inbox',
     backTo: (page: string) => `Kembali ke ${page}`,
+    /** Label pendek tombol "Buat …" di kepala halaman HP (nama aksesibel tetap label lengkap). */
+    createShort: 'Buat',
     documentTitle: (page: string, product: string) => `${page} · ${product}`,
     version: (product: string, version: string) => `${product} versi ${version}`,
   },
@@ -263,6 +265,8 @@ export const t = {
       discard: 'Hapus',
       readOnly: 'Kamu hanya bisa membaca chat ini.',
       resolved: 'Chat ini sudah selesai. Pesan baru dari pelanggan akan membuka chat baru.',
+      resolvedNoInitiate:
+        'Chat ini sudah selesai. Pesan baru dari pelanggan akan membuka chat baru. Menyapa pelanggan lebih dulu butuh izin memulai percakapan dari Owner atau Admin di tempatmu.',
       windowClosedTitle: 'Sesi 24 jam sudah habis',
       windowClosedBody:
         'Pesan biasa hanya bisa dikirim dalam 24 jam sejak pesan terakhir pelanggan. Sapa lagi dengan template yang sudah disetujui Meta.',
@@ -610,7 +614,7 @@ export const t = {
     filtersLabel: 'Saringan kontak',
     resetFilters: 'Hapus saringan',
     importAction: 'Impor',
-    exportAction: 'Ekspor',
+    exportAction: 'Ekspor CSV',
     emptyTitle: 'Belum ada kontak',
     emptyBody:
       'Kontak tersimpan otomatis begitu pelanggan mengirim chat. Punya daftar pelanggan di Excel? Impor sekaligus.',
@@ -693,7 +697,7 @@ export const t = {
       filtered
         ? 'Kontak yang cocok dengan saringan saat ini diunduh sebagai CSV. Berkas ini berisi data pribadi pelanggan, jadi simpan dengan aman.'
         : 'Semua kontak diunduh sebagai CSV. Berkas ini berisi data pribadi pelanggan, jadi simpan dengan aman.',
-    exportConfirm: 'Unduh CSV',
+    exportConfirm: 'Ekspor CSV',
     exporting: 'Menyiapkan berkas…',
     exportDone: (rows: number) => `${rows.toLocaleString('id-ID')} kontak diunduh.`,
     exportFileName: (date: string) => `kontak-${date}.csv`,
@@ -782,7 +786,7 @@ export const t = {
       'Isian tambahan untuk setiap tiket di board ini. Atribut wajib harus diisi saat tiket dibuat atau diubah.',
     boardTitle: 'Atribut tiket',
     listLabel: 'Daftar atribut',
-    add: 'Tambah atribut',
+    add: 'Buat atribut',
     emptyTitle: 'Belum ada atribut',
     emptyBody: 'Tambahkan atribut seperti Paket, ID pelanggan, atau Tanggal pasang.',
     loadFailedTitle: 'Atribut belum bisa dimuat',
@@ -799,7 +803,7 @@ export const t = {
     options: 'Pilihan',
     optionsHint: 'Satu pilihan per baris (maks. 50).',
     optionsCount: (count: number) => `${count} pilihan`,
-    createTitle: 'Tambah atribut',
+    createTitle: 'Buat atribut',
     editTitle: (label: string) => `Ubah atribut ${label}`,
     save: 'Simpan',
     saving: 'Menyimpan…',
@@ -1144,7 +1148,7 @@ export const t = {
     menuCount: (count: number) => (count === 0 ? 'Belum ada konektor' : `${count} konektor`),
     intro:
       'Konektor membaca daftar pelanggan dari alamat REST (JSON) aplikasi lain saat kampanye dibuat. Rahasia disimpan di header autentikasi, terenkripsi, dan tidak pernah ditampilkan lagi.',
-    add: 'Tambah konektor',
+    add: 'Buat konektor',
     listLabel: 'Daftar konektor',
     emptyTitle: 'Belum ada konektor data',
     emptyBody:
@@ -1160,7 +1164,7 @@ export const t = {
     testing: 'Menguji…',
     edit: (name: string) => `Ubah ${name}`,
     remove: (name: string) => `Hapus ${name}`,
-    formTitleCreate: 'Tambah konektor data',
+    formTitleCreate: 'Buat konektor data',
     formTitleEdit: 'Ubah konektor data',
     nameLabel: 'Nama',
     nameHint: 'Contoh: Pelanggan menunggak (billing).',
@@ -1235,9 +1239,9 @@ export const t = {
   /** Tiket multi-board (Fase 5, docs/KONTRAK-API-CRM-TIKET.md "Tiket"). */
   tickets: {
     boardLabel: 'Board',
-    newBoard: 'Board baru',
+    newBoard: 'Buat board',
     boardSettings: 'Atur board',
-    newTicket: 'Tiket baru',
+    newTicket: 'Buat tiket',
     viewLabel: 'Tampilan',
     views: { kanban: 'Kanban', daftar: 'Daftar' } as Record<'kanban' | 'daftar', string>,
     noBoardsTitle: 'Belum ada board tiket',
@@ -1620,7 +1624,7 @@ export const t = {
     menuCount: (count: number) => (count === 0 ? 'Belum ada' : `${count} departemen`),
     intro:
       'Departemen mengelompokkan tim, misalnya CS dan Teknisi. Chat baru dari channel bawaan langsung masuk departemennya, dan anggota yang dibatasi ke departemennya hanya melihat chat & tiket departemen itu.',
-    add: 'Tambah departemen',
+    add: 'Buat departemen',
     listLabel: 'Daftar departemen',
     emptyTitle: 'Belum ada departemen',
     emptyBody:
@@ -1636,7 +1640,7 @@ export const t = {
     hoursSummary: (days: string) => `Khusus: ${days}`,
     edit: (name: string) => `Ubah ${name}`,
     remove: (name: string) => `Hapus ${name}`,
-    createTitle: 'Tambah departemen',
+    createTitle: 'Buat departemen',
     editTitle: (name: string) => `Ubah departemen ${name}`,
     name: 'Nama departemen',
     description: 'Deskripsi',
@@ -1796,8 +1800,8 @@ export const t = {
     colHandoffs: 'Diserahkan',
     colTag: 'Tag',
     colResolution: 'Penyelesaian (median)',
-    exportCsv: 'Unduh CSV',
-    exportLabel: (what: string) => `Unduh CSV ${what}`,
+    exportCsv: 'Ekspor CSV',
+    exportLabel: (what: string) => `Ekspor CSV ${what}`,
     exporting: 'Menyiapkan…',
     exported: 'Berkas CSV diunduh.',
     exportFileName: (kind: string, period: string) => `laporan-${kind}-${period}.csv`,
@@ -3186,7 +3190,7 @@ export const t = {
       sectionTitle: 'WhatsApp',
       sectionHint: 'Lewat WhatsApp Cloud API resmi Meta. Satu channel untuk satu nomor.',
       listLabel: 'Daftar nomor WhatsApp',
-      add: 'Tambah nomor',
+      add: 'Hubungkan nomor',
       noNumber: 'Nomor belum diketahui',
       noNumberHint: 'Tes koneksi untuk mengambil data nomor dari Meta.',
       quality: (label: string) => `Kualitas ${label}`,
@@ -3315,7 +3319,7 @@ export const t = {
     },
 
     wizard: {
-      title: 'Tambah nomor WhatsApp',
+      title: 'Hubungkan nomor WhatsApp',
       stepsLabel: 'Langkah menghubungkan nomor',
       stepOf: (step: number, total: number) => `Langkah ${step} dari ${total}`,
       stepCurrent: 'langkah sekarang',
@@ -3668,8 +3672,7 @@ export const t = {
     menuCount: (count: number) => (count === 0 ? 'Belum ada balasan' : `${count} balasan`),
     intro:
       'Ketik "/" di kolom chat untuk memakai balasan cepat. {nama} diisi nama kontak, {agen} diisi nama agen yang mengirim.',
-    add: 'Tambah balasan cepat',
-    addShort: 'Tambah',
+    add: 'Buat balasan cepat',
     addFirst: 'Buat balasan cepat pertama',
     emptyTitle: 'Belum ada balasan cepat',
     emptyBody:
@@ -3685,7 +3688,7 @@ export const t = {
     used: (count: number) => (count === 0 ? 'Belum pernah dipakai' : `Dipakai ${count} kali`),
     updatedBy: (name: string, when: string) => `Diubah ${name}, ${when}`,
     updatedAt: (when: string) => `Diubah ${when}`,
-    addTitle: 'Tambah balasan cepat',
+    addTitle: 'Buat balasan cepat',
     editTitle: 'Ubah balasan cepat',
     shortcutLabel: 'Shortcut',
     shortcutHint: 'Huruf kecil, angka, - atau _. Contoh: salam, jam-buka.',
@@ -3991,7 +3994,7 @@ export const t = {
     intro:
       'Setiap kejadian dikirim sebagai POST JSON bertanda tangan (header X-Balesin-Signature). Periksa tanda tangannya dengan rahasia webhook sebelum memproses isinya.',
     listTitle: 'Daftar webhook',
-    create: 'Tambah webhook',
+    create: 'Buat webhook',
     emptyTitle: 'Belum ada webhook',
     emptyBody:
       'Tambahkan alamat penerima, mis. webhook n8n, untuk menerima pesan masuk dan kejadian lain secara langsung.',
@@ -4058,7 +4061,7 @@ export const t = {
     revokePrevious: 'Cabut rahasia lama sekarang (bila rahasia lama bocor)',
     revokePreviousHint: 'Penerima yang masih memakai rahasia lama langsung menolak pengiriman.',
     next: 'Buat rahasia baru',
-    formTitleCreate: 'Tambah webhook',
+    formTitleCreate: 'Buat webhook',
     formTitleEdit: 'Ubah webhook',
     urlLabel: 'URL penerima',
     urlHint:
@@ -4073,7 +4076,7 @@ export const t = {
     cancel: 'Batal',
     saved: 'Webhook disimpan.',
     created: 'Webhook ditambahkan.',
-    confirmCreateTitle: 'Tambah webhook baru?',
+    confirmCreateTitle: 'Buat webhook baru?',
     confirmCreateBody: 'Data pelanggan (isi pesan, nomor) akan dikirim ke alamat ini.',
     confirmUrlTitle: 'Ganti alamat webhook?',
     confirmUrlBody: 'Data pelanggan akan dikirim ke alamat baru ini.',

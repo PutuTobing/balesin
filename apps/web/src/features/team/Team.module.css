@@ -87,11 +87,6 @@
   gap: var(--space-16);
 }
 
-.formFooter {
-  display: flex;
-  justify-content: flex-end;
-}
-
 /* ---------- Daftar undangan ---------- */
 
 /* Baris merapat ke tepi kartu seperti menu Pengaturan. `.card .list` mengalahkan reset `ul`. */
@@ -438,10 +433,6 @@
 
   .inviteRow {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .formFooter > * {
-    flex: 1;
   }
 
   .card .list {

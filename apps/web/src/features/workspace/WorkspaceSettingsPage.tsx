@@ -20,6 +20,7 @@ import { RadioGroup } from 'radix-ui';
 import { useRef, useState, type FormEvent } from 'react';
 import { LoadFailedIllustration } from '../../components/illustrations/illustrations';
 import { Button } from '../../components/ui/Button';
+import { FormActions } from '../../components/ui/FormActions';
 import { Checkbox } from '../../components/ui/Checkbox';
 import { Switch } from '../../components/ui/Switch';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -113,11 +114,11 @@ function SaveRow({ pending, saved, error }: { pending: boolean; saved: boolean; 
           {w.saved}
         </p>
       ) : null}
-      <div className={styles.actions}>
+      <FormActions>
         <Button type="submit" variant="primary" loading={pending}>
           {pending ? w.saving : w.save}
         </Button>
-      </div>
+      </FormActions>
     </>
   );
 }
@@ -470,11 +471,11 @@ function AutoMessagesSection({ settings }: { settings: WorkspaceSettings }) {
             {w.saved}
           </p>
         ) : null}
-        <div className={styles.actions}>
+        <FormActions>
           <Button ref={submitRef} type="submit" variant="primary" loading={pending && !confirming}>
             {pending && !confirming ? w.saving : w.save}
           </Button>
-        </div>
+        </FormActions>
       </form>
       <IdentityDialog
         open={confirming}

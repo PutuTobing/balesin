@@ -54,12 +54,6 @@
   text-wrap: pretty;
 }
 
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-8);
-}
-
 .form {
   display: flex;
   flex-direction: column;

@@ -97,11 +97,11 @@ test('Owner: tambah nomor lewat wizard, tes gagal → ganti token → berhasil, 
     await page.getByRole('link', { name: /^Channel/ }).click();
     await expect(page).toHaveURL(/\/pengaturan\/channel$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Channel' })).toBeVisible();
-    await page.getByRole('link', { name: /^(Tambah nomor|Hubungkan nomor pertama)$/ }).click();
+    await page.getByRole('link', { name: /^(Hubungkan nomor|Hubungkan nomor pertama)$/ }).click();
 
     // Wizard: langkah 1–3 teks, 4–6 isian.
     await expect(
-      page.getByRole('heading', { level: 1, name: 'Tambah nomor WhatsApp' }),
+      page.getByRole('heading', { level: 1, name: 'Hubungkan nomor WhatsApp' }),
     ).toBeVisible();
     await expect(heading2(page, 'Siapkan Meta Business')).toBeVisible();
     await expect(

@@ -10,6 +10,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2 } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';
 import { Button } from '../../components/ui/Button';
+import { FormActions } from '../../components/ui/FormActions';
 import { Checkbox } from '../../components/ui/Checkbox';
 import { TextAreaField, TextField } from '../../components/ui/Field';
 import { Icon } from '../../components/ui/Icon';
@@ -355,11 +356,11 @@ function SettingsForm({ settings }: { settings: BroadcastSettings }) {
             {isApiError(failure) ? failure.message : t.api.network}
           </Notice>
         ) : null}
-        <div className={styles.actionsRow}>
+        <FormActions>
           <Button ref={saveRef} type="submit" variant="primary">
             {s.save}
           </Button>
-        </div>
+        </FormActions>
       </form>
       <IdentityDialog
         open={pending !== null}

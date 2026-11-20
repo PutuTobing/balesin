@@ -12,6 +12,7 @@ import { Icon } from '../../components/ui/Icon';
 import { Notice } from '../../components/ui/Notice';
 import { RichText } from '../../components/ui/RichText';
 import { Page } from '../../components/ui/Page';
+import { FormActions } from '../../components/ui/FormActions';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
@@ -215,13 +216,17 @@ function EmailSettingsScreen({ data }: { data: EmailSettingsResponse }) {
               {t.form.fixErrors(errorCount)}
             </p>
           ) : null}
-          <div className={styles.formFooter}>
-            {justSaved ? (
-              <span className={styles.savedNote} role="status">
-                <Icon icon={CircleCheck} size={16} />
-                {t.emailSettings.saved}
-              </span>
-            ) : null}
+          <FormActions
+            className={styles.formFooter}
+            meta={
+              justSaved ? (
+                <span className={styles.savedNote} role="status">
+                  <Icon icon={CircleCheck} size={16} />
+                  {t.emailSettings.saved}
+                </span>
+              ) : undefined
+            }
+          >
             <Button
               ref={submitRef}
               type="submit"
@@ -231,7 +236,7 @@ function EmailSettingsScreen({ data }: { data: EmailSettingsResponse }) {
             >
               {saving ? t.emailSettings.saving : t.emailSettings.save}
             </Button>
-          </div>
+          </FormActions>
         </form>
         <IdentityDialog
           open={confirming !== null}

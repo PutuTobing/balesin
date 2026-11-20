@@ -15,6 +15,7 @@ import { Icon } from '../../components/ui/Icon';
 import { Notice } from '../../components/ui/Notice';
 import { Skeleton, SkeletonRegion } from '../../components/ui/Skeleton';
 import { SubmitButton } from '../../components/ui/SubmitButton';
+import { FormActions } from '../../components/ui/FormActions';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
@@ -353,13 +354,16 @@ function ProfileForm({
             {t.form.fixErrors(errorCount)}
           </p>
         ) : null}
-        <div className={styles.formFooter}>
-          {saved === 'saved' ? (
-            <span className={styles.savedNote} role="status">
-              <Icon icon={CircleCheck} size={16} />
-              {copy.saved}
-            </span>
-          ) : null}
+        <FormActions
+          meta={
+            saved === 'saved' ? (
+              <span className={styles.savedNote} role="status">
+                <Icon icon={CircleCheck} size={16} />
+                {copy.saved}
+              </span>
+            ) : undefined
+          }
+        >
           <SubmitButton
             ref={submitRef}
             size="md"
@@ -370,7 +374,7 @@ function ProfileForm({
           >
             {copy.save}
           </SubmitButton>
-        </div>
+        </FormActions>
       </form>
       {/* Di luar form: dialog punya form sendiri (form tidak boleh bersarang). */}
       <IdentityDialog

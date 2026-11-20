@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { LoadFailedIllustration } from '../../components/illustrations/illustrations';
 import { Button } from '../../components/ui/Button';
+import { FormActions } from '../../components/ui/FormActions';
 import { Checkbox } from '../../components/ui/Checkbox';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { TextAreaField, TextField } from '../../components/ui/Field';
@@ -138,16 +139,13 @@ function CsatForm({ settings }: { settings: CsatSettings }) {
             {c.saved}
           </Notice>
         ) : null}
-        <div className={styles.formFoot}>
-          {settings.updatedAt ? (
-            <p className={styles.hint}>{c.lastUpdated(formatDateTime(settings.updatedAt))}</p>
-          ) : (
-            <span />
-          )}
+        <FormActions
+          meta={settings.updatedAt ? c.lastUpdated(formatDateTime(settings.updatedAt)) : undefined}
+        >
           <Button type="submit" variant="primary" loading={save.isPending}>
             {save.isPending ? c.saving : c.save}
           </Button>
-        </div>
+        </FormActions>
       </form>
       <section className={styles.card} aria-labelledby="csat-pratinjau">
         <h2 id="csat-pratinjau" className={styles.cardTitle}>

@@ -380,6 +380,7 @@ function DueField({
       ) : ticket.dueAt ? (
         <Button
           variant="ghost"
+          className={styles.dueClear}
           disabled={disabled}
           onClick={() => {
             setValue('');
