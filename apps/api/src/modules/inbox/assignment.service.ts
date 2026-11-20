@@ -19,6 +19,8 @@ import {
 } from '@balesin/db';
 import {
   CONTACT_EDITABLE_FIELDS,
+  CUSTOMER_SERVICE_WINDOW_MS,
+  channelHasCustomerWindow,
   hasPermission,
   tagColorSchema,
   type ContactEditableField,
@@ -527,8 +529,38 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
       }),
 
     reopen: (context, conversationId) =>
-      mutate(asUser(context, 'inbox.reply'), conversationId, async (tx, conversation) => {
+      mutate(asUser(context, 'inbox.reply'), conversationId, async (tx, conversation, role) => {
         if (conversation.status !== 'resolved') return { kind: null };
+        // Audit akhir A1 (sisa): membuka lagi percakapan "dingin" lalu mengirim template = memulai
+        // percakapan. Tanpa `inbox.initiate`, buka lagi hanya bila pelanggan menghubungi dalam 24 jam
+        // terakhir (channel Meta: jendela 24 jam masih terbuka; Email/Telegram: pesan masuk terakhir
+        // < 24 jam). Penolakan diaudit (aturan `inbox.reopen.stale`).
+        if (!hasPermission(role as Parameters<typeof hasPermission>[0], 'inbox.initiate')) {
+          const [channel] = await tx
+            .select({ type: channels.type })
+            .from(channels)
+            .where(
+              and(
+                eq(channels.organizationId, conversation.organizationId),
+                eq(channels.id, conversation.channelId),
+              ),
+            );
+          const at = now().getTime();
+          const recent =
+            channel && channelHasCustomerWindow(channel.type)
+              ? conversation.windowExpiresAt !== null && conversation.windowExpiresAt.getTime() > at
+              : conversation.lastInboundAt !== null &&
+                conversation.lastInboundAt.getTime() > at - CUSTOMER_SERVICE_WINDOW_MS;
+          if (!recent) {
+            await forbidByRule(accessDenied, {
+              auth: context.auth,
+              rule: ACCESS_RULES.inboxReopenStale,
+              client: context.client,
+              message:
+                'Percakapan ini sudah selesai dan pelanggan tidak mengirim pesan dalam 24 jam terakhir. Membuka lagi butuh izin memulai percakapan.',
+            });
+          }
+        }
         // Percakapan = satu sesi: hanya sesi TERAKHIR kontak × channel yang boleh dibuka lagi, dan
         // hanya bila belum ada sesi terbuka yang lebih baru (indeks unik juga menjaganya).
         const [newer] = await tx

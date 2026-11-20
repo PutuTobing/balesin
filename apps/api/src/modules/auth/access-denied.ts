@@ -48,6 +48,11 @@ export const ACCESS_RULES = {
   teamAssignRole: 'team.manage.assign_role',
   /** Mengembalikan ke antrian percakapan yang dipegang orang lain tanpa izin `inbox.assign`. */
   inboxUnassignOthers: 'inbox.unassign.others',
+  /**
+   * Membuka lagi percakapan selesai yang pelanggannya tidak menghubungi dalam 24 jam tanpa
+   * `inbox.initiate` (audit akhir A1 sisa: buka lagi lalu kirim template = mulai percakapan).
+   */
+  inboxReopenStale: 'inbox.reopen.stale',
   /** Mengubah catatan sesi milik orang lain (isi catatan hanya bisa diubah penulisnya). */
   noteEditOthers: 'inbox.note.edit_others',
   /** Menghapus catatan sesi milik orang lain tanpa izin `inbox.notes.moderate`. */

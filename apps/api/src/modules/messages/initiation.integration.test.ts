@@ -8,6 +8,7 @@
 import { randomUUID } from 'node:crypto';
 
 import {
+  auditLogs,
   channels,
   contacts,
   conversations,
@@ -24,7 +25,7 @@ import {
   type ApiKeyScope,
   type ChannelType,
 } from '@balesin/shared';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createRateLimiter } from '../../http/rate-limit';
@@ -334,4 +335,78 @@ describe('API key — messages:send vs messages:initiate', () => {
       first.json<{ conversationId: string }>().conversationId,
     );
   });
+});
+
+describe('A1 (sisa) — buka lagi percakapan selesai', () => {
+  const reopen = (signed: SignedIn, conversationId: string) =>
+    call(harness.app, 'POST', apiPath(API_ROUTES.inbox.reopen, { conversationId }), undefined, {
+      cookie: signed.cookie,
+      csrf: signed.csrf,
+    });
+  const statusOf = async (id: string) =>
+    (
+      await harness.db
+        .select({ status: conversations.status })
+        .from(conversations)
+        .where(eq(conversations.id, id))
+    )[0]?.status;
+
+  it('CS: buka lagi di luar jendela 24 jam → 403 (diaudit), tetap selesai, template tetap ditolak', async () => {
+    const id = await conversation('whatsapp', 'resolved', false);
+    const denied = await reopen(cs, id);
+    expect(denied.statusCode, denied.body).toBe(403);
+    expect(denied.json<{ error: { code: string; message: string } }>().error).toMatchObject({
+      code: 'FORBIDDEN',
+      message:
+        'Percakapan ini sudah selesai dan pelanggan tidak mengirim pesan dalam 24 jam terakhir. Membuka lagi butuh izin memulai percakapan.',
+    });
+    expect(await statusOf(id)).toBe('resolved');
+    const audits = await harness.db
+      .select()
+      .from(auditLogs)
+      .where(
+        and(
+          eq(auditLogs.action, 'auth.access.denied'),
+          eq(auditLogs.targetId, 'inbox.reopen.stale'),
+          eq(auditLogs.actorUserId, cs.session.user.id),
+        ),
+      );
+    expect(audits).toHaveLength(1);
+    expect((await sendAs(cs, id, await templateBody())).statusCode).toBe(403);
+    expect(await outboundCount(id)).toBe(0);
+  });
+
+  it('Owner (inbox.initiate): buka lagi di luar jendela → 200, lalu template → 202', async () => {
+    const id = await conversation('whatsapp', 'resolved', false);
+    const reopened = await reopen(owner, id);
+    expect(reopened.statusCode, reopened.body).toBe(200);
+    expect(await statusOf(id)).not.toBe('resolved');
+    expect((await sendAs(owner, id, await templateBody())).statusCode).toBe(202);
+  });
+
+  it('CS: buka lagi dalam jendela 24 jam tetap boleh (kerja normal), lalu membalas', async () => {
+    const id = await conversation('whatsapp', 'resolved', true);
+    const reopened = await reopen(cs, id);
+    expect(reopened.statusCode, reopened.body).toBe(200);
+    expect(await statusOf(id)).not.toBe('resolved');
+    expect((await sendAs(cs, id, text())).statusCode).toBe(202);
+  });
+
+  it.each(['telegram', 'email'] as const)(
+    '%s: CS buka lagi hanya bila pesan pelanggan terakhir < 24 jam',
+    async (type) => {
+      const stale = await conversation(type, 'resolved');
+      await harness.db
+        .update(conversations)
+        .set({ lastInboundAt: new Date(Date.now() - 25 * 3600_000) })
+        .where(eq(conversations.id, stale));
+      expect((await reopen(cs, stale)).statusCode).toBe(403);
+      expect(await statusOf(stale)).toBe('resolved');
+      expect((await reopen(owner, stale)).statusCode).toBe(200);
+
+      const recent = await conversation(type, 'resolved');
+      expect((await reopen(cs, recent)).statusCode).toBe(200);
+      expect((await sendAs(cs, recent, text())).statusCode).toBe(202);
+    },
+  );
 });
