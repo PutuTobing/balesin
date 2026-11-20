@@ -122,6 +122,55 @@ describe('A3: image dipin digest, dipantau, dan dipindai CVE', () => {
   });
 });
 
+// Tindak lanjut A3: semua CVE HIGH image api/worker berasal dari npm bawaan image node yang tidak
+// dipakai saat berjalan. Manajer paket dibuang dari stage runtime; tidak ada yang memanggilnya.
+describe('A3 lanjutan: runtime api/worker tanpa npm/npx/corepack/yarn', () => {
+  const packageManager = /\b(npm|npx|corepack|yarn|yarnpkg)\b/;
+
+  it('stage node-runtime menghapus manajer paket dan memastikan sudah hilang', () => {
+    const runtime = stage('node-runtime');
+    expect(runtime).toMatch(
+      /rm -rf \/usr\/local\/lib\/node_modules\/npm \/usr\/local\/lib\/node_modules\/corepack \/opt\/yarn-v\*/,
+    );
+    for (const bin of ['npm', 'npx', 'corepack', 'yarn', 'yarnpkg']) {
+      expect(runtime, bin).toMatch(new RegExp(`/usr/local/bin/${bin}\\b`));
+    }
+    for (const bin of ['npm', 'npx', 'corepack', 'yarn']) {
+      expect(runtime, bin).toMatch(new RegExp(`! command -v ${bin}\\b`));
+    }
+    // api & worker mewarisi node-runtime (bukan image node mentah).
+    expect(dockerfile).toMatch(/^FROM node-runtime AS api$/m);
+    expect(dockerfile).toMatch(/^FROM node-runtime AS worker$/m);
+  });
+
+  it('CMD/HEALTHCHECK/ENTRYPOINT api & worker hanya memanggil node/tini', () => {
+    for (const name of ['node-runtime', 'api', 'worker']) {
+      const instructions = stage(name)
+        .split('\n')
+        .filter(
+          (line) => /^\s*(CMD|ENTRYPOINT)\b|^\s+CMD \[/.test(line) || /^HEALTHCHECK/.test(line),
+        );
+      for (const line of instructions) expect(line, `${name}: ${line}`).not.toMatch(packageManager);
+    }
+  });
+
+  it('compose, CLI balesin, installer, dan healthcheck worker tidak memanggil manajer paket', () => {
+    const sources: Record<string, string> = {
+      'deploy/docker-compose.yml': compose,
+      'deploy/balesin': read('deploy/balesin'),
+      'deploy/install.sh': read('deploy/install.sh'),
+      'deploy/docker/worker-healthcheck.mjs': read('deploy/docker/worker-healthcheck.mjs'),
+    };
+    for (const [path, text] of Object.entries(sources)) {
+      const lines = text.split('\n').filter((line) => !/^\s*(#|\/\/)/.test(line));
+      const hits = lines.filter((line) => packageManager.test(line));
+      expect(hits, path).toEqual([]);
+    }
+    // Perintah compose untuk image Balesin: migrate = node dist/migrate.js.
+    expect(compose).toMatch(/command: \['node', 'dist\/migrate\.js'\]/);
+  });
+});
+
 describe('A4: verifikasi tanda tangan rilis di checklist', () => {
   it('checklist rilis DEPLOY.md mewajibkan BALESIN_REQUIRE_SIGNATURE=1 pada rilis bertanda tangan pertama', () => {
     const checklist = deployDoc.slice(deployDoc.indexOf('### Checklist rilis'));

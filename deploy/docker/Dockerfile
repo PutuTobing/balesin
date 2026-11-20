@@ -108,7 +108,17 @@ RUN pnpm licenses list --prod --json \
 # ── Runtime Node bersama ──────────────────────────────────────────────────────────────────────
 FROM node:22.23.5-alpine3.24@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a AS node-runtime
 # tini: PID 1 yang meneruskan sinyal (SIGTERM → shutdown rapi) dan memanen proses zombie.
+# Manajer paket bawaan image node (npm/npx, corepack, yarn) dibuang: runtime, healthcheck, migrasi,
+# dan CLI `balesin` hanya memanggil `node`/`sh`/`tar`. Mengurangi permukaan serangan dan CVE npm
+# bawaan image yang dilaporkan Trivy (audit akhir A3, tindak lanjut).
 RUN apk add --no-cache tini \
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn-v* \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+           /usr/local/bin/yarn /usr/local/bin/yarnpkg \
+ && ! command -v npm \
+ && ! command -v npx \
+ && ! command -v corepack \
+ && ! command -v yarn \
  && mkdir -p /data/media \
  && chown node:node /data/media \
  && chmod 0700 /data/media
