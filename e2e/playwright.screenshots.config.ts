@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 import { OWNER_STATE_PATH } from './stack/env';
-import { BASE_URL, VIEWPORTS, webServer } from './viewports';
+import { BASE_URL, VIEWPORTS, webServer, workers } from './viewports';
 
 /**
  * Skrip screenshot untuk `kritikus-desain`: setiap layar di capture/screens.ts
@@ -21,6 +21,7 @@ export default defineConfig({
   testDir: './capture',
   outputDir: './test-results',
   fullyParallel: true,
+  workers,
   retries: 1,
   reporter: [['list']],
   use: { baseURL: BASE_URL, locale: 'id-ID', timezoneId: 'Asia/Jakarta' },

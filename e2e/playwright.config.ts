@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 import { OWNER_STATE_PATH } from './stack/env';
-import { BASE_URL, VIEWPORTS, webServer } from './viewports';
+import { BASE_URL, VIEWPORTS, webServer, workers } from './viewports';
 
 /**
  * E2E melawan API sungguhan (lihat `stack/`). Urutan:
@@ -38,6 +38,7 @@ export default defineConfig({
   testDir: './tests',
   outputDir: './test-results',
   fullyParallel: true,
+  workers,
   forbidOnly: !!process.env.CI,
   // Tidak diulang otomatis: alur awal tidak bisa diulang tanpa mereset database, dan tes
   // lain memakai hasilnya. Tes yang gagal harus diperbaiki, bukan dicoba ulang.
