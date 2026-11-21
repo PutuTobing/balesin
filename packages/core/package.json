@@ -16,7 +16,7 @@
     "imapflow": "2.12.1",
     "ioredis": "catalog:",
     "mailparser": "3.14.5",
-    "nodemailer": "10.5.0",
+    "nodemailer": "10.6.0",
     "pino": "catalog:",
     "sanitize-html": "2.18.2",
     "zod": "catalog:"
