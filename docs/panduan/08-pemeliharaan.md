@@ -24,12 +24,14 @@ waktu, jadi backup harian tidak bertabrakan dengan update.
 
 ```bash
 sudo balesin update          # versi terbaru
-sudo balesin update 0.2.0    # versi tertentu
+sudo balesin update 1.0.1    # versi tertentu
 ```
 
 Yang terjadi (6 langkah, tampil di layar):
 
-1. Pemeriksaan awal (disk minimal 2 GB, database berjalan), unduh berkas rilis + checksum.
+1. Pemeriksaan awal (disk minimal 2 GB, database berjalan), unduh berkas rilis, lalu periksa
+   checksum dan **tanda tangan digital** rilis. Tanda tangan tidak valid atau berkas rilis tidak
+   bisa diunduh = update dibatalkan tanpa mengubah apa pun.
 2. **Backup penuh** otomatis (berkas `…-sebelum-update-v<versi>.tar.enc`).
 3. Tarik image versi baru. Bila gagal, berhenti tanpa mengubah apa pun.
 4. Perbarui struktur database dalam satu transaksi. Bila gagal, dibatalkan seluruhnya dan versi

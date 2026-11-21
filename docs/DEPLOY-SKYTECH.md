@@ -25,7 +25,7 @@ Deploy produksi dijalankan/di-approve Tobing — antrian di `docs/BUTUH-TOBING.m
 
 Ganti `<IP-VM>` dengan IP privat VM Balesin dan `<IP-privat-vm-nginx>` dengan IP privat vm-nginx.
 
-1. **VM Balesin**: `curl -fsSL <URL-rilis>/install.sh | sudo bash` → mode **A**, domain
+1. **VM Balesin**: `curl -fsSL https://github.com/PutuTobing/balesin/releases/download/v1.0.0/install.sh | sudo bash` → mode **A**, domain
    `balesin.skytech.net.id`, IP reverse proxy = `<IP-privat-vm-nginx>`, IP VM = `<IP-VM>`,
    port 8080. Installer menolak bind `0.0.0.0`/IP publik.
 2. **Firewall VM Balesin**: ufw TIDAK berlaku untuk port container Docker. Pasang skrip

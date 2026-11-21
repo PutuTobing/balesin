@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Installer Balesin self-hosted.
 #
-#   curl -fsSL <URL-rilis>/install.sh | sudo bash
+#   curl -fsSL https://github.com/PutuTobing/balesin/releases/latest/download/install.sh | sudo bash
+#   curl -fsSL https://github.com/PutuTobing/balesin/releases/download/v1.0.0/install.sh | sudo bash
+#                                        (versi tertentu; install.sh rilis membawa nomor versinya)
 #   sudo bash install.sh                 (dari folder deploy/ repo atau rilis yang sudah diunduh)
 #   sudo bash install.sh --ubah-jaringan (ulangi pertanyaan mode jaringan; rahasia tetap)
 #
@@ -13,7 +15,9 @@
 #   BALESIN_ASSUME_YES=1 sudo -E bash install.sh
 # Variabel lain: BALESIN_HOME, BALESIN_VERSION, BALESIN_BIND_ADDRESS, BALESIN_HTTP_PORT,
 # BALESIN_ACME_EMAIL, CLOUDFLARE_TUNNEL_TOKEN, BALESIN_IMAGE_PREFIX, BALESIN_RELEASE_BASE,
-# BALESIN_NO_PULL=1 (pakai image lokal), BALESIN_SKIP_COSIGN=1 (jangan pasang cosign).
+# BALESIN_NO_PULL=1 (pakai image lokal), BALESIN_SKIP_COSIGN=1 (jangan pasang cosign; cosign harus
+# sudah ada di PATH karena tanda tangan rilis wajib),
+# BALESIN_REQUIRE_SIGNATURE=0 (tanda tangan cosign rilis tidak wajib — hanya untuk uji/rilis lokal).
 # Panduan: panduan pengguna bab 1 "Instalasi" (docs/panduan/01-instalasi.md).
 
 set -Eeuo pipefail
@@ -24,6 +28,9 @@ readonly DEFAULT_IMAGE_PREFIX="ghcr.io/pututobing/balesin"
 # Kanal distribusi rilis ({VERSI} diganti nomor versi). Bisa diganti lewat BALESIN_RELEASE_BASE.
 readonly DEFAULT_RELEASE_BASE="https://github.com/PutuTobing/balesin/releases/download/v{VERSI}"
 readonly DEFAULT_RELEASE_LATEST="https://github.com/PutuTobing/balesin/releases/latest/download/VERSION"
+# Tanda tangan cosign rilis WAJIB terverifikasi (audit akhir A4; sejak rilis bertanda tangan pertama
+# v1.0.0). Instalasi lama memakai nilai di .env-nya; BALESIN_REQUIRE_SIGNATURE=0 hanya untuk uji.
+readonly DEFAULT_REQUIRE_SIGNATURE=1
 # cosign untuk verifikasi tanda tangan rilis (review Fase 7 P2-R2): versi dipin + SHA-256 resmi dari
 # cosign_checksums.txt rilis Sigstore. Diperbarui sengaja (ubah versi DAN kedua checksum bersamaan).
 readonly COSIGN_VERSION="v3.1.4"
@@ -443,7 +450,7 @@ BALESIN_IMAGE_PREFIX=$(keep_or BALESIN_IMAGE_PREFIX "${BALESIN_IMAGE_PREFIX:-$DE
 BALESIN_RELEASE_BASE=$(keep_or BALESIN_RELEASE_BASE "${BALESIN_RELEASE_BASE:-$DEFAULT_RELEASE_BASE}")
 BALESIN_RELEASE_LATEST=$(keep_or BALESIN_RELEASE_LATEST "${BALESIN_RELEASE_LATEST:-$DEFAULT_RELEASE_LATEST}")
 # 1 = tanda tangan cosign rilis WAJIB terverifikasi (pasang cosign di server).
-BALESIN_REQUIRE_SIGNATURE=$(keep_or BALESIN_REQUIRE_SIGNATURE "${BALESIN_REQUIRE_SIGNATURE:-0}")
+BALESIN_REQUIRE_SIGNATURE=$(keep_or BALESIN_REQUIRE_SIGNATURE "${BALESIN_REQUIRE_SIGNATURE:-$DEFAULT_REQUIRE_SIGNATURE}")
 
 # ── Jaringan (mode A/B/C, docs/ARCHITECTURE.md §5) ──
 BALESIN_NETWORK_MODE=$MODE
@@ -704,7 +711,7 @@ main() {
       --ubah-jaringan | --reconfigure) RECONFIGURE=1 ;;
       --yes | -y) ASSUME_YES=1 ;;
       -h | --help)
-        sed -n '2,17p' "${BASH_SOURCE[0]:-/dev/null}" 2>/dev/null | sed 's/^# \{0,1\}//'
+        sed -n '2,21p' "${BASH_SOURCE[0]:-/dev/null}" 2>/dev/null | sed 's/^# \{0,1\}//'
         exit 0
         ;;
       *) die "Opsi tidak dikenal: $arg" ;;

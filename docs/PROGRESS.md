@@ -105,9 +105,12 @@
 - **CI GitHub hijau penuh** di `0efafe4` (run 44881249404): kualitas, tes unit+integrasi, E2E 285 lulus, image + installer, audit. Merah CI #9–#11 karena tiruan media di tes web (Blob jsdom tidak terbaca undici Node 22), bukan bug produk.
 - **Kode siap kandidat rilis 1.0.** Tidak ada tugas ROADMAP Fase 0–7 yang terbuka kecuali Fase 3 mode
   tangkap (terblokir #10).
-- Menunggu Tobing untuk produksi: #6 VM, #7 DNS, #3 kredensial Meta, #4 SMTP, #18 distribusi rilis
-  (kanal, environment `rilis`, ruleset tag, cosign; `BALESIN_REQUIRE_SIGNATURE=1` saat rilis bertanda
-  tangan pertama), #19 deploy produksi. Opsional: #5, #8, #10, #14–#17.
+- **#18 diputuskan** (repo & paket GHCR publik, cosign keyless): rilis bertanda tangan pertama siap —
+  tanda tangan wajib bawaan, versi dari tag, URL `curl` GitHub Release di panduan. Sisa langkah klik
+  Tobing di BUTUH-TOBING #18 (environment `rilis`, ruleset tag, merge PR #1, tag `v1.0.0`, approve,
+  paket GHCR → Public).
+- Menunggu Tobing untuk produksi: #6 VM, #7 DNS, #3 kredensial Meta, #4 SMTP, #19 deploy produksi.
+  Opsional: #5, #8, #10, #14–#17.
 - Kandidat 1.0.1 (tidak menahan rilis): kirim ulang per kampanye broadcast; QA-R2 tes peka beban;
   info gerbang laporan (batal saat klien putus).
 

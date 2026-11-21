@@ -27,12 +27,23 @@ Siapkan juga:
 
 ## 1.2 Menjalankan installer
 
-Tim Balesin memberi Anda **alamat rilis** (tempat berkas `install.sh` berada). Jalankan di
-server:
+Jalankan di server untuk memasang **versi terbaru**:
 
 ```bash
-curl -fsSL https://<alamat-rilis>/install.sh | sudo bash
+curl -fsSL https://github.com/PutuTobing/balesin/releases/latest/download/install.sh | sudo bash
 ```
+
+Untuk memasang **versi tertentu**, ganti `latest/download` dengan `download/v<versi>`, misalnya:
+
+```bash
+curl -fsSL https://github.com/PutuTobing/balesin/releases/download/v1.0.0/install.sh | sudo bash
+```
+
+Daftar versi beserta catatan rilisnya ada di halaman
+[Releases](https://github.com/PutuTobing/balesin/releases). Setiap rilis ditandatangani secara
+digital. Installer memasang alat pemeriksa tanda tangan (cosign) dan **menolak** berkas rilis yang
+tanda tangannya tidak valid, jadi server butuh akses keluar ke `github.com`, `ghcr.io`, dan layanan
+Sigstore.
 
 Installer berbahasa Indonesia dan berjalan dalam 8 langkah:
 
@@ -41,7 +52,7 @@ Installer berbahasa Indonesia dan berjalan dalam 8 langkah:
 3. Menanyakan **mode jaringan** (A, B, atau C).
 4. Membuat semua rahasia secara acak (kunci enkripsi, password database, token setup,
    passphrase backup). Anda tidak perlu mengarang password apa pun.
-5. Mengunduh berkas rilis dan memeriksa keasliannya (checksum, dan tanda tangan bila tersedia).
+5. Mengunduh berkas rilis dan memeriksa keasliannya (checksum dan tanda tangan digital).
 6. Menarik image aplikasi.
 7. Menyalakan layanan (database diperbarui otomatis).
 8. Memasang **backup harian otomatis pukul 02.30**, lalu menampilkan **alamat wizard setup
