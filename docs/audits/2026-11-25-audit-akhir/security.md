@@ -416,3 +416,56 @@ Tidak ada temuan Kritis, Tinggi, atau Sedang baru. Ada 2 Rendah baru (P2-R1, P2-
 | `pnpm audit --prod` | 0 kerentanan |
 
 Putaran 2 tidak mengubah kode produk dan tidak membuat commit.
+
+---
+
+# Putaran 3: verifikasi P2-R1, P2-R2, dan gerbang laporan (HEAD `448df8a`)
+
+Commit yang dinilai: `33a5302` (api) dan `448df8a` (web, hanya tampilan; penegakan aturan tetap di server).
+
+## Putusan putaran 3: **AMAN**. P2-R1 dan P2-R2 tertutup
+
+Tidak ada temuan Kritis, Tinggi, atau Sedang baru, dan tidak ada `it.fails` baru. Ada 2 Info.
+
+| Temuan | Bukti | Hasil |
+|---|---|---|
+| **P2-R1** kirim ulang | `outbound.service.ts:1306-1330`: pesan ber-`broadcast_id` → 409; `isConversationInitiation` + izin pengirim ulang (`inbox.initiate` + jatah `mulai-percakapan`) lewat `initiationGrant` di `outbound.routes.ts` | tes baru `initiation.integration.test.ts` lulus. **Tertutup** |
+| **P2-R2** percakapan dingin | `outbound.service.ts:193`: template, atau pesan apa pun di channel tanpa jendela, ke percakapan terbuka yang pesan masuk terakhirnya > 7 hari (`CONVERSATION_STALE_AFTER_MS`, `packages/shared/src/channel-capabilities.ts:94`) atau belum pernah ada = memulai. Berlaku untuk sesi (CS) dan API key (`messages:initiate`) | gagal ke arah aman: percakapan tanpa pesan masuk sama sekali dianggap dingin. **Tertutup** |
+| Gerbang laporan | `apps/api/src/modules/reports/report-gate.ts`: 6 per proses, 4 per organisasi, 3 per pengguna, antrean ≤ 50 per proses, tunggu ≤ 6 dtk; `reports.routes.ts:64-81` melepas slot di `finally` | lihat di bawah |
+
+**Kebocoran slot: tidak ditemukan.**
+- Pelepas slot idempoten (`released`).
+- Timeout menghapus penunggu sebelum `resolve(null)`. `pump` memanggil `clearTimeout` sebelum memberi
+  slot, jadi satu penunggu tidak mungkin mendapat slot sekaligus `null`.
+- Galat di query tetap melepas slot lewat `finally`.
+- `pump` FIFO melewati penunggu yang masih terhalang batasnya sendiri, sehingga satu pengguna tidak
+  memblokir antrean (tidak ada head-of-line blocking).
+
+**DoS: Info, bukan temuan.**
+- Satu akun (batas baca 30/menit) bisa terus memegang 3 dari 4 slot organisasi. Di instalasi satu
+  organisasi, sisa pengguna jadi hanya punya 1 laporan berjalan bersamaan. Permintaan mereka menunggu
+  ≤ 6 dtk, tidak langsung ditolak.
+- Satu akun hanya bisa mengisi ≤ 27 dari 50 tempat antrean. Antrean penuh butuh ≥ 2 akun yang sengaja
+  membanjiri.
+- Dampaknya hanya laporan lambat. Pengiriman pesan tidak terpengaruh karena pool koneksi dilindungi
+  batas proses.
+
+## Info putaran 3
+
+1. **P3-1** Penunggu yang kliennya sudah memutus koneksi tetap menjalankan query saat mendapat slot,
+   jadi slot terpakai untuk hasil yang dibuang. Pertimbangkan membatalkan penunggu saat `request.raw`
+   `close`. Bila penyalahgunaan muncul, turunkan batas per pengguna untuk cakupan `own` (CS/Teknisi)
+   menjadi 1.
+2. **P3-2** Di `retry`, jatah `mulai-percakapan` dipotong sebelum `UPDATE … status = 'failed'`. Bila dua
+   kirim ulang bersamaan, yang kalah (409) tetap kehilangan satu jatah. Dampaknya kecil karena jatah
+   berkurang ke arah aman.
+
+## Tes & perintah putaran 3
+
+| Perintah (HEAD `448df8a`) | Hasil |
+|---|---|
+| `vitest run src/modules/messages/initiation src/modules/reports src/security-review-audit-akhir src/rbac-matrix src/modules/public-api src/modules/compat-mobichat` | 10 berkas, 85 tes lulus |
+| `vitest run security-review messages` (api) | 336 tes lulus |
+| grep `it.fails(`/`test.fails(` | 0 |
+
+Putaran 3 tidak mengubah kode produk dan tidak membuat commit.
