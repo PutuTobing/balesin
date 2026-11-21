@@ -27,6 +27,7 @@ import {
   formatListTime,
   formatRemaining,
   msUntilNextMinute,
+  reopenIsStale,
   windowState,
 } from './inbox-time';
 import { linkHost, messageBody, previewContent } from './message-content';
@@ -607,5 +608,31 @@ describe('sambungan WebSocket inbox', () => {
     stream.reconnectNow();
     expect(FakeSocket.instances).toHaveLength(2);
     stream.stop();
+  });
+});
+
+describe('reopenIsStale (buka lagi chat selesai tanpa inbox.initiate, audit akhir A1)', () => {
+  const now = Date.parse('2026-11-21T12:00:00.000Z');
+  const hour = 3_600_000;
+  const at = (offset: number) => new Date(now + offset).toISOString();
+
+  it('channel Meta: mengikuti jendela 24 jam', () => {
+    const wa = fakeConversation({ status: 'resolved' });
+    expect(reopenIsStale({ ...wa, windowExpiresAt: at(hour) }, now)).toBe(false);
+    expect(reopenIsStale({ ...wa, windowExpiresAt: at(0) }, now)).toBe(true);
+    expect(reopenIsStale({ ...wa, windowExpiresAt: at(-hour) }, now)).toBe(true);
+    // Belum pernah ada pesan masuk (mis. dari broadcast).
+    expect(reopenIsStale({ ...wa, windowExpiresAt: null }, now)).toBe(true);
+  });
+
+  it('Email/Telegram: pesan masuk terakhir < 24 jam', () => {
+    const email = fakeConversation({
+      status: 'resolved',
+      channel: { id: 'e0000000-0000-4000-8000-000000000001', name: 'Email', type: 'email' },
+      windowExpiresAt: null,
+    });
+    expect(reopenIsStale({ ...email, lastInboundAt: at(-23 * hour) }, now)).toBe(false);
+    expect(reopenIsStale({ ...email, lastInboundAt: at(-24 * hour) }, now)).toBe(true);
+    expect(reopenIsStale({ ...email, lastInboundAt: null }, now)).toBe(true);
   });
 });

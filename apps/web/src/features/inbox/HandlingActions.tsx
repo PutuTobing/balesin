@@ -26,6 +26,7 @@ import { departmentsQuery } from '../departments/department-queries';
 import styles from './HandlingActions.module.css';
 import { channelBotKey } from '../channels/bot-form';
 import { agentsQuery, forgetConversation, inboxKeys, storeConversation } from './inbox-queries';
+import { RESOLVED_NOTE_ID, useReopenBlocked } from './use-reopen-blocked';
 
 const h = t.inbox.handling;
 
@@ -50,6 +51,7 @@ export function HandlingActions({
   const isDesktop = useMediaQuery(media.desktop);
   const canReply = useCan('inbox.reply');
   const canAssign = useCan('inbox.assign');
+  const reopenBlocked = useReopenBlocked(conversation);
   const [assignOpen, setAssignOpen] = useState(false);
   const [departmentOpen, setDepartmentOpen] = useState(false);
   const departments = useQuery({ ...departmentsQuery, enabled: canAssign }).data?.departments;
@@ -130,7 +132,14 @@ export function HandlingActions({
         </Button>
       ) : isDesktop ? (
         resolved ? (
-          <Button onClick={() => run('reopen')} loading={busy === 'reopen'}>
+          // Tanpa izin memulai percakapan & pelanggan diam ≥ 24 jam: nonaktif; alasannya terbaca di
+          // catatan dasar ruang chat (`aria-describedby`).
+          <Button
+            onClick={() => run('reopen')}
+            loading={busy === 'reopen'}
+            disabled={reopenBlocked}
+            aria-describedby={reopenBlocked ? RESOLVED_NOTE_ID : undefined}
+          >
             {busy === 'reopen' ? null : <Icon icon={RotateCcw} size={16} />}
             {busy === 'reopen' ? h.working : h.reopen}
           </Button>
@@ -177,7 +186,16 @@ export function HandlingActions({
                 ) : null}
               </>
             ) : null}
-            {!isDesktop || withBot ? (
+            {(!isDesktop || withBot) && resolved && reopenBlocked ? (
+              // Alasan TERBACA di menu: buka lagi chat "dingin" butuh izin memulai percakapan.
+              <DropdownMenu.Item className={styles.item} disabled>
+                <Icon icon={RotateCcw} size={16} />
+                <span className={styles.itemText}>
+                  {h.reopen}
+                  <span className={styles.itemReason}>{h.reopenStale}</span>
+                </span>
+              </DropdownMenu.Item>
+            ) : !isDesktop || withBot ? (
               <DropdownMenu.Item
                 className={styles.item}
                 onSelect={() => run(resolved ? 'reopen' : 'resolve')}

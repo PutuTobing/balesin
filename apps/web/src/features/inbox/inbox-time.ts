@@ -1,4 +1,9 @@
-import { WINDOW_EXPIRING_SOON_MS } from '@balesin/shared';
+import {
+  CUSTOMER_SERVICE_WINDOW_MS,
+  WINDOW_EXPIRING_SOON_MS,
+  channelHasCustomerWindow,
+  type ChannelType,
+} from '@balesin/shared';
 import { t } from '../../i18n/id';
 
 /**
@@ -26,6 +31,28 @@ export function replyWindowOpen(
   if (conversation.windowApplies === false) return true;
   const state = windowState(conversation.windowExpiresAt, now);
   return state.kind === 'open' || state.kind === 'expiring';
+}
+
+/**
+ * Chat selesai yang "dingin": pelanggan tidak menghubungi dalam 24 jam terakhir (channel Meta:
+ * jendela 24 jam sudah tertutup; Email/Telegram: pesan masuk terakhir ≥ 24 jam). Membukanya lagi =
+ * memulai percakapan, jadi tanpa `inbox.initiate` server menolak (403, audit akhir A1). Sama dengan
+ * aturan `reopen` di server; bila jam berbeda sedikit, pesan server tetap tampil apa adanya.
+ */
+export function reopenIsStale(
+  conversation: {
+    channel: { type: ChannelType };
+    windowExpiresAt: string | null;
+    lastInboundAt: string | null;
+  },
+  now: number,
+): boolean {
+  if (channelHasCustomerWindow(conversation.channel.type)) {
+    const end = conversation.windowExpiresAt ? Date.parse(conversation.windowExpiresAt) : NaN;
+    return Number.isNaN(end) || end <= now;
+  }
+  const last = conversation.lastInboundAt ? Date.parse(conversation.lastInboundAt) : NaN;
+  return Number.isNaN(last) || last <= now - CUSTOMER_SERVICE_WINDOW_MS;
 }
 
 /** Hitung mundur hanya untuk channel berjendela 24 jam. */

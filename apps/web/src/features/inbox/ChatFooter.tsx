@@ -20,6 +20,7 @@ import { forgetConversation, inboxKeys, storeConversation } from './inbox-querie
 import { useSendingPaused } from './use-sending-paused';
 import { replyWindowOpen, windowExpiry, windowState } from './inbox-time';
 import { useMinuteClock } from './use-minute-clock';
+import { RESOLVED_NOTE_ID, useReopenBlocked } from './use-reopen-blocked';
 
 const k = t.inbox.compose;
 const PAUSED_NOTICE_ID = 'rem-darurat-ditarik';
@@ -54,6 +55,7 @@ export function ChatFooter({
   const canReply = useCan('inbox.reply');
   const canAssign = useCan('inbox.assign');
   const canInitiate = useCan('inbox.initiate');
+  const reopenBlocked = useReopenBlocked(conversation);
   const now = useMinuteClock();
   const { paused, reason } = useSendingPaused();
   const selfId = useSession()?.user.id ?? null;
@@ -116,9 +118,14 @@ export function ChatFooter({
       <>
         {hasNotices ? <div className={styles.notices}>{notices}</div> : null}
         <FooterNote
-          action={isHp ? <ReopenButton conversation={conversation} onError={onError} /> : null}
+          id={RESOLVED_NOTE_ID}
+          action={
+            isHp ? (
+              <ReopenButton conversation={conversation} onError={onError} blocked={reopenBlocked} />
+            ) : null
+          }
         >
-          {canInitiate ? k.resolved : k.resolvedNoInitiate}
+          {canInitiate ? k.resolved : reopenBlocked ? k.resolvedStale : k.resolvedNoInitiate}
         </FooterNote>
       </>
     );
@@ -183,10 +190,18 @@ export function ChatFooter({
   );
 }
 
-function FooterNote({ children, action }: { children: string; action?: ReactNode }) {
+function FooterNote({
+  children,
+  action,
+  id,
+}: {
+  children: string;
+  action?: ReactNode;
+  id?: string;
+}) {
   return (
     <div className={styles.closed}>
-      <p className={styles.closedBody} role="status">
+      <p id={id} className={styles.closedBody} role="status">
         {children}
       </p>
       {action}
@@ -198,9 +213,12 @@ function FooterNote({ children, action }: { children: string; action?: ReactNode
 function ReopenButton({
   conversation,
   onError,
+  blocked,
 }: {
   conversation: Conversation;
   onError: (error: unknown) => void;
+  /** Tanpa izin memulai percakapan & pelanggan diam ≥ 24 jam: nonaktif, alasannya di catatan. */
+  blocked: boolean;
 }) {
   const queryClient = useQueryClient();
   const reopen = useMutation({
@@ -215,7 +233,13 @@ function ReopenButton({
     onError,
   });
   return (
-    <Button variant="secondary" loading={reopen.isPending} onClick={() => reopen.mutate()}>
+    <Button
+      variant="secondary"
+      loading={reopen.isPending}
+      disabled={blocked}
+      aria-describedby={blocked ? RESOLVED_NOTE_ID : undefined}
+      onClick={() => reopen.mutate()}
+    >
       {reopen.isPending ? t.inbox.handling.working : t.inbox.handling.reopen}
     </Button>
   );

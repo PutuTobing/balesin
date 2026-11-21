@@ -113,6 +113,80 @@ describe('penanganan percakapan', () => {
     expect(chat().getByRole('button', { name: h.reopen })).toBeEnabled();
   });
 
+  it('chat selesai "dingin", CS tanpa inbox.initiate: "Buka lagi" nonaktif dengan alasan terbaca', async () => {
+    const cold = {
+      ...served,
+      status: 'resolved' as const,
+      windowExpiresAt: inFuture(-HOUR),
+      windowOpen: false,
+    };
+    act(() => setMediaQuery(media.desktop, true));
+    const { api } = await renderApp(`/inbox?chat=${served.id}`, {
+      inbox: { ...inbox, conversations: [cold] },
+      session: fakeSession('cs'),
+    });
+    const note = await chat().findByText(k.resolvedStale);
+    const reopen = chat().getByRole('button', { name: h.reopen });
+    expect(reopen).toBeDisabled();
+    expect(reopen).toHaveAttribute('aria-describedby', note.id);
+    fireEvent.click(reopen);
+    expect(api.requests.some((request) => request.path.endsWith('/reopen'))).toBe(false);
+  });
+
+  it('HP: chat "dingin" tanpa inbox.initiate — tombol dasar & item menu nonaktif berlasan', async () => {
+    const cold = {
+      ...served,
+      status: 'resolved' as const,
+      windowExpiresAt: inFuture(-HOUR),
+      windowOpen: false,
+    };
+    act(() => setMediaQuery(media.hp, true));
+    await renderApp(`/inbox?chat=${served.id}`, {
+      inbox: { ...inbox, conversations: [cold] },
+      session: fakeSession('cs'),
+    });
+    const note = await chat().findByText(k.resolvedStale);
+    const footer = within(note.parentElement!);
+    expect(footer.getByRole('button', { name: h.reopen })).toBeDisabled();
+    const menu = await openMenu();
+    const item = menu.getByRole('menuitem', { name: new RegExp(h.reopen) });
+    expect(item).toHaveAttribute('data-disabled');
+    expect(item).toHaveTextContent(h.reopenStale);
+  });
+
+  it('chat "dingin", Owner (punya inbox.initiate): "Buka lagi" tetap aktif', async () => {
+    const cold = {
+      ...served,
+      status: 'resolved' as const,
+      windowExpiresAt: inFuture(-HOUR),
+      windowOpen: false,
+    };
+    act(() => setMediaQuery(media.desktop, true));
+    await renderApp(`/inbox?chat=${served.id}`, {
+      inbox: { ...inbox, conversations: [cold] },
+    });
+    expect(await chat().findByText(k.resolved)).toBeVisible();
+    expect(chat().getByRole('button', { name: h.reopen })).toBeEnabled();
+  });
+
+  it('buka lagi ditolak server (403): pesan server tampil apa adanya', async () => {
+    const message =
+      'Percakapan ini sudah selesai dan pelanggan tidak mengirim pesan dalam 24 jam terakhir. Membuka lagi butuh izin memulai percakapan.';
+    const resolved = { ...served, status: 'resolved' as const };
+    act(() => setMediaQuery(media.desktop, true));
+    await renderApp(`/inbox?chat=${served.id}`, {
+      inbox: { ...inbox, conversations: [resolved] },
+      session: fakeSession('cs'),
+      routes: {
+        [`POST ${apiPath(API_ROUTES.inbox.reopen, { conversationId: served.id })}`]: () =>
+          apiError(403, 'FORBIDDEN', message),
+      },
+    });
+    await chat().findByText(k.resolvedNoInitiate);
+    fireEvent.click(chat().getByRole('button', { name: h.reopen }));
+    expect(await screen.findByText(message)).toBeVisible();
+  });
+
   it('chat selesai, Owner (punya inbox.initiate): catatan biasa tanpa penjelasan izin', async () => {
     const resolved = { ...served, status: 'resolved' as const };
     act(() => setMediaQuery(media.desktop, true));
