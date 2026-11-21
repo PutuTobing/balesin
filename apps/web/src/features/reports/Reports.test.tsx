@@ -85,7 +85,8 @@ describe('logika laporan', () => {
     const limited = (seconds: number) =>
       new ApiError({ status: 429, code: 'RATE_LIMITED', message: 'x', retryAfterSeconds: seconds });
     expect(retryReport(0, limited(5))).toBe(true);
-    expect(retryReport(2, limited(5))).toBe(false);
+    expect(retryReport(2, limited(5))).toBe(true);
+    expect(retryReport(3, limited(5))).toBe(false);
     expect(retryReport(0, limited(40))).toBe(false);
     expect(
       retryReport(0, new ApiError({ status: 503, code: 'SERVICE_UNAVAILABLE', message: 'x' })),

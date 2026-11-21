@@ -187,7 +187,23 @@ export function photoSessions(device = 'Chrome di Windows') {
   ];
 }
 
-/** Detail anggota + sesinya + riwayatnya (audit `?userId=`). */
+/** Departemen contoh untuk kartu "Departemen" di detail anggota (audit akhir QA R5). */
+const PHOTO_DEPARTMENTS = [
+  {
+    id: '0d0e2d8c-6d3f-4b8a-9d55-5e2f8a1c0d01',
+    name: 'Customer Service',
+    description: 'Pertanyaan tagihan, paket, dan administrasi.',
+    memberCount: 3,
+  },
+  {
+    id: '0d0e2d8c-6d3f-4b8a-9d55-5e2f8a1c0d02',
+    name: 'Teknisi',
+    description: 'Gangguan jaringan dan kunjungan lapangan.',
+    memberCount: 1,
+  },
+];
+
+/** Detail anggota + sesinya + riwayatnya (audit `?userId=`) + departemennya. */
 export async function teamUserDetail(
   page: Page,
   user: PhotoUser,
@@ -202,6 +218,19 @@ export async function teamUserDetail(
     (entry) => entry.actor?.id === user.id || entry.target.id === user.id,
   );
   await auditList(page, options.entries ?? related, null);
+  await page.route(`${API}/departments`, (route) =>
+    json(route, { departments: PHOTO_DEPARTMENTS }),
+  );
+  const department = user.role === 'teknisi' ? PHOTO_DEPARTMENTS[1] : PHOTO_DEPARTMENTS[0];
+  await page.route(`${API}/settings/department-access/${user.id}`, (route) =>
+    json(route, {
+      access: {
+        userId: user.id,
+        departmentIds: user.role === 'owner' || !department ? [] : [department.id],
+        restricted: user.role === 'cs' || user.role === 'teknisi',
+      },
+    }),
+  );
 }
 
 /** Sesi aktif milik sendiri (Keamanan akun). */

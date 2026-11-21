@@ -5,7 +5,7 @@
   flex-direction: column;
   gap: var(--space-16);
   width: 100%;
-  max-width: 48rem;
+  max-width: var(--size-column);
 }
 
 .form {

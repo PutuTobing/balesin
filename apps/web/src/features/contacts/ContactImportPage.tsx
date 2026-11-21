@@ -80,8 +80,15 @@ export function ContactImportPage() {
     setRead({ kind: 'reading' });
     try {
       const found = await readImportColumns(picked);
+      // Tebakan kolom atribut butuh daftar atribut. Bila berkas dipilih sebelum daftar itu termuat,
+      // tunggu dulu (audit akhir QA S2: dulu kolom atribut terbuang diam-diam). Gagal memuat
+      // atribut → tebak tanpa atribut; pengguna masih bisa memetakannya sendiri.
+      const known = await queryClient
+        .ensureQueryData(contactAttributesQuery)
+        .then((data) => contactAttributesQuery.select?.(data) ?? definitions)
+        .catch(() => definitions);
       setRead({ kind: 'ready', columns: found });
-      setFields(guessImportMapping(found, definitions));
+      setFields(guessImportMapping(found, known));
     } catch (caught) {
       const reason = caught instanceof ColumnReadFailure ? caught.reason : 'unreadable';
       setRead({

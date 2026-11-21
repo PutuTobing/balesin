@@ -29,4 +29,16 @@ describe('FormActions', () => {
     const children = Array.from(container.children).map((node) => node.textContent);
     expect(children).toEqual(['Terakhir diubah kemarin', 'Kirim uji', 'Simpan']);
   });
+
+  it('aksi destruktif dirender pertama (kiri desktop, paling bawah HP), terpisah dari gugus simpan', () => {
+    render(
+      <FormActions danger={<button type="button">Hapus alarm</button>}>
+        <button type="submit">Simpan</button>
+      </FormActions>,
+    );
+    const danger = screen.getByRole('button', { name: 'Hapus alarm' }).parentElement!;
+    const container = danger.parentElement!;
+    expect(container.firstElementChild).toBe(danger);
+    expect(container.lastElementChild).toHaveTextContent('Simpan');
+  });
 });

@@ -118,6 +118,17 @@ export const teamScreens: Screen[] = [
     prepare: (page) => scrollTo(page, 'Sesi aktif'),
   },
   {
+    // Kartu "Departemen" (departemen & akses ditiru — QA R5: dulu 404 → bingkai galat).
+    name: 'anggota-departemen',
+    path: detailPath(CS.id),
+    before: async (page) => {
+      await quietSecurity(page);
+      await teamUserDetail(page, CS);
+    },
+    waitFor: 'text=Customer Service',
+    prepare: (page) => scrollTo(page, 'Departemen'),
+  },
+  {
     name: 'anggota-terkunci',
     path: detailPath(TEKNISI.id),
     before: async (page) => {

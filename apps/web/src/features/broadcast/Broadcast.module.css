@@ -7,7 +7,7 @@
   flex-direction: column;
   gap: var(--space-16);
   width: 100%;
-  max-width: 48rem;
+  max-width: var(--size-column);
 }
 
 .intro {
@@ -867,6 +867,7 @@ ul.recipients,
 }
 
 /* Judul sejajar dengan isian saringan di sebelahnya (bukan dengan labelnya). */
+/* Judul kartu sejajar GARIS DASAR teks di dalam saringan (bukan tepi bawah kotak) — BC-S13. */
 .cardHeadRowEnd {
-  align-items: flex-end;
+  align-items: last baseline;
 }

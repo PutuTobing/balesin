@@ -407,6 +407,50 @@ describe('impor kontak', () => {
     });
   });
 
+  it('berkas dipilih SEBELUM daftar atribut termuat: kolom atribut tetap ditebak (QA S2)', async () => {
+    let release: () => void = () => undefined;
+    const attributesReady = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const mappings: Record<string, unknown>[] = [];
+    await renderApp('/kontak/impor', {
+      routes: {
+        [`GET ${R.attributes}`]: async () => {
+          await attributesReady;
+          return json({ attributes: [fakeAttribute()] });
+        },
+        [`POST ${R.importContacts}`]: (request) => {
+          const mapping = JSON.parse(mappingText(request.raw as FormData)) as Record<
+            string,
+            unknown
+          >;
+          mappings.push(mapping);
+          return json({ ...RESULT, dryRun: true });
+        },
+      },
+    });
+    const input = await screen.findByTestId('impor-kontak-berkas');
+    const file = new File(['nomor,nama,paket\n08123,Budi,Gold\n'], 'pelanggan.csv', {
+      type: 'text/csv',
+    });
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [file] } });
+      await Promise.resolve();
+    });
+    // Pemetaan belum tampil selama daftar atribut belum ada.
+    expect(screen.queryByLabelText(c.phoneColumn)).toBeNull();
+    await act(async () => {
+      release();
+      await attributesReady;
+    });
+    await screen.findByText(c.fileColumns(3));
+    fireEvent.click(screen.getByRole('button', { name: c.check }));
+    await screen.findByRole('heading', { name: c.resultDryTitle });
+    expect(mappings[0]).toMatchObject({
+      attributes: [{ column: 'paket', key: 'paket' }],
+    });
+  });
+
   it('hanya kontak baru: tanpa konfirmasi identitas', async () => {
     const mappings: Record<string, unknown>[] = [];
     await renderApp('/kontak/impor', {

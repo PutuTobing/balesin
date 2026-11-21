@@ -266,9 +266,9 @@ export const t = {
       readOnly: 'Kamu hanya bisa membaca chat ini.',
       resolved: 'Chat ini sudah selesai. Pesan baru dari pelanggan akan membuka chat baru.',
       resolvedNoInitiate:
-        'Chat ini sudah selesai. Pesan baru dari pelanggan akan membuka chat baru. Buka lagi bila perlu membalas; menyapa pelanggan lebih dulu butuh izin memulai percakapan dari Owner atau Admin di tempatmu.',
+        'Chat ini sudah selesai. Pesan baru dari pelanggan akan membuka chat baru. Untuk menyapa pelanggan lebih dulu, minta izin memulai percakapan ke Owner atau Admin di tempatmu.',
       resolvedStale:
-        'Chat ini sudah selesai dan pelanggan tidak mengirim pesan dalam 24 jam terakhir. Membuka lagi atau menyapa lebih dulu butuh izin memulai percakapan dari Owner atau Admin di tempatmu. Pesan baru dari pelanggan akan membuka chat baru.',
+        'Chat ini sudah selesai dan pelanggan tidak mengirim pesan dalam 24 jam terakhir. Pesan baru dari pelanggan akan membuka chat baru. Untuk membuka lagi atau menyapa pelanggan lebih dulu, minta izin memulai percakapan ke Owner atau Admin di tempatmu.',
       windowClosedTitle: 'Sesi 24 jam sudah habis',
       windowClosedBody:
         'Pesan biasa hanya bisa dikirim dalam 24 jam sejak pesan terakhir pelanggan. Sapa lagi dengan template yang sudah disetujui Meta.',

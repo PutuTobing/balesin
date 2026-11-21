@@ -8,14 +8,14 @@
   flex-direction: column;
   gap: var(--space-16);
   width: 100%;
-  /* Sama dengan halaman Pengaturan lain (42rem). */
-  max-width: 42rem;
+  /* Kolom isi satu kolom, sama dengan halaman Pengaturan lain (`--size-column`). */
+  max-width: var(--size-column);
 }
 
 /* Halaman nomor: kolom isi + daftar bagian menempel di kanan (desktop). */
 .detailLayout {
   display: grid;
-  grid-template-columns: minmax(0, 42rem);
+  grid-template-columns: minmax(0, var(--size-column));
   align-items: start;
   gap: var(--space-24);
 }
@@ -937,7 +937,7 @@ button.stepButton:hover {
 
 @media (min-width: 1024px) {
   .detailLayout {
-    grid-template-columns: minmax(0, 42rem) 12rem;
+    grid-template-columns: minmax(0, var(--size-column)) 12rem;
   }
 
   .sectionNav {

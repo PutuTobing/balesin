@@ -199,16 +199,20 @@ function BoardInfo({ board }: { board: TicketBoard }) {
             {done}
           </Notice>
         ) : null}
-        <FormActions>
+        <FormActions
+          danger={
+            board.archivedAt ? undefined : (
+              <Button className={styles.dangerText} onClick={() => setArchiving(true)}>
+                {k.archive}
+              </Button>
+            )
+          }
+        >
           {board.archivedAt ? (
             <Button onClick={() => save.mutate({ archived: false })} disabled={save.isPending}>
               {k.unarchive}
             </Button>
-          ) : (
-            <Button className={styles.dangerText} onClick={() => setArchiving(true)}>
-              {k.archive}
-            </Button>
-          )}
+          ) : null}
           <Button type="submit" variant="primary" loading={save.isPending}>
             {save.isPending ? k.saving : k.save}
           </Button>

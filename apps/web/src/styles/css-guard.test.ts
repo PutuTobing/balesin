@@ -72,6 +72,7 @@ describe('CSS variables dari token', () => {
       '--size-list: 360px;',
       '--size-detail: 340px;',
       '--size-touch: 44px;',
+      '--size-column: 768px;',
       '--duration-fast: 120ms;',
       '--duration-slow: 200ms;',
     ]) {

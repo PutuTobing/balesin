@@ -10,6 +10,11 @@ interface FormActionsProps {
   children: ReactNode;
   /** Keterangan opsional di kiri (desktop) / di bawah tombol (HP), mis. "Terakhir diubah …". */
   meta?: ReactNode;
+  /**
+   * Aksi destruktif (hapus/arsipkan): dipisah dari gugus simpan — paling kiri di desktop, paling
+   * bawah dengan jarak ekstra di HP. Tetap wajib dialog konfirmasi.
+   */
+  danger?: ReactNode;
   className?: string;
 }
 
@@ -17,9 +22,10 @@ interface FormActionsProps {
  * Baris tombol simpan form halaman (audit akhir D3): kanan di desktop, selebar penuh di atas pada
  * HP. Satu pola untuk semua form Pengaturan supaya tombol simpan tidak berpindah-pindah tempat.
  */
-export function FormActions({ children, meta, className }: FormActionsProps) {
+export function FormActions({ children, meta, danger, className }: FormActionsProps) {
   return (
     <div className={cx(styles.actions, className)}>
+      {danger ? <div className={styles.danger}>{danger}</div> : null}
       {meta ? <div className={styles.meta}>{meta}</div> : null}
       {children}
     </div>

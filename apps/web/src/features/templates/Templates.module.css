@@ -6,7 +6,7 @@
   gap: var(--space-16);
   width: 100%;
   /* Daftar sedikit lebih lebar dari halaman Pengaturan lain: isi template + lencana sebaris. */
-  max-width: 48rem;
+  max-width: var(--size-column);
 }
 
 .intro {

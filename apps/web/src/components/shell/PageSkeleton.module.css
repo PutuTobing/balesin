@@ -14,7 +14,7 @@
 
 /* Selebar isi halaman satu kolom (Pengaturan, Lainnya). */
 .card {
-  max-width: 42rem;
+  max-width: var(--size-column);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--surface);

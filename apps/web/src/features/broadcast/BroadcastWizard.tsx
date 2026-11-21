@@ -8,7 +8,7 @@ import {
   type BroadcastSourceKind,
   type IdentityConfirmation,
 } from '@balesin/shared';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Check, Plus, Trash2, Upload } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
@@ -155,7 +155,18 @@ function StepBasics({
   );
   const [name, setName] = useState(campaign?.name ?? '');
   const [channelId, setChannelId] = useState(campaign?.channel.id ?? '');
-  const sender = channelId || senders[0]?.id || '';
+  // Nomor bawaan = nomor pertama yang PUNYA template siap broadcast (audit akhir QA R3), bukan
+  // sekadar nomor pertama — supaya pengguna tidak langsung disambut "belum ada template".
+  const candidates = useQueries({
+    queries: channelId ? [] : senders.map((channel) => approvedTemplatesQuery(channel.id)),
+  });
+  const choosingDefault = !channelId && candidates.some((query) => query.isPending);
+  const defaultSender =
+    senders.find((_, index) => (candidates[index]?.data?.templates ?? []).some(usableForBroadcast))
+      ?.id ??
+    senders[0]?.id ??
+    '';
+  const sender = channelId || (choosingDefault ? '' : defaultSender);
   const templates = useQuery({ ...approvedTemplatesQuery(sender), enabled: sender !== '' });
   const usable = (templates.data?.templates ?? []).filter(usableForBroadcast);
   const [templateId, setTemplateId] = useState(campaign?.template?.id ?? '');
@@ -225,6 +236,8 @@ function StepBasics({
         <Notice tone="warning" role="status">
           {b.noChannel}
         </Notice>
+      ) : choosingDefault || channels.isPending ? (
+        <Skeleton className={styles.skeletonField} />
       ) : campaign ? (
         <p className={styles.fact}>
           <span className={styles.factLabel}>{b.channelLabel}</span>
@@ -246,7 +259,7 @@ function StepBasics({
           }))}
         />
       )}
-      {templates.isPending && sender ? (
+      {(templates.isPending && sender) || choosingDefault || channels.isPending ? (
         <Skeleton className={styles.skeletonField} />
       ) : usable.length === 0 ? (
         <Notice

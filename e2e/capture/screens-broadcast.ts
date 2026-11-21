@@ -513,6 +513,17 @@ export const broadcastScreens: Screen[] = [
     prepare: settle,
   },
   {
+    // Kepala kartu "Penerima": judul sejajar garis dasar teks saringan (BC-S13).
+    name: 'broadcast-berjalan-penerima',
+    path: `/broadcast/${RUNNING.id}`,
+    before: (page) => broadcastMocks(page),
+    waitFor: 'text=Hasil kampanye',
+    prepare: async (page) => {
+      await page.getByRole('heading', { name: 'Penerima', exact: true }).scrollIntoViewIfNeeded();
+      await settle(page);
+    },
+  },
+  {
     name: 'broadcast-persetujuan',
     path: `/broadcast/${PENDING.id}`,
     before: (page) => broadcastMocks(page),

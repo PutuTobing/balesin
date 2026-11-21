@@ -149,6 +149,26 @@ describe('wizard kampanye', () => {
     expect(await screen.findByRole('heading', { name: b.sourceTitle })).toBeVisible();
   });
 
+  it('nomor pengirim bawaan = nomor pertama yang punya template siap broadcast (QA R3)', async () => {
+    const empty = fakeChannelSummary({
+      id: 'ca000000-0000-4000-8000-000000000001',
+      name: 'Inbox Bot',
+      displayPhoneNumber: null,
+    });
+    const ready = fakeChannelSummary();
+    await renderApp('/broadcast/baru', {
+      ...base({
+        [`GET ${API_ROUTES.templates.list}`]: ({ query }) =>
+          json({ templates: query.get('channelId') === ready.id ? [TEMPLATE] : [] }),
+      }),
+      inbox: { channels: [empty, ready] },
+    });
+    const sender = await screen.findByLabelText(b.channelLabel);
+    expect(sender).toHaveValue(ready.id);
+    expect(await screen.findByLabelText(b.templateLabel)).toHaveValue(TEMPLATE.id);
+    expect(screen.queryByText(b.noTemplates)).toBeNull();
+  });
+
   it('unggah berkas → laporan baris tidak valid; isi variabel → pratinjau; ajukan dengan konfirmasi identitas', async () => {
     act(() => setMediaQuery(media.desktop, true));
     let campaign: BroadcastCampaign = fakeBroadcast({ name: 'Tagihan Desember' });

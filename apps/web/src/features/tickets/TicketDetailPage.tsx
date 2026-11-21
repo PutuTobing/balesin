@@ -8,7 +8,7 @@ import {
 } from '@balesin/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, getRouteApi, useNavigate } from '@tanstack/react-router';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2, X } from 'lucide-react';
 import { Tabs } from 'radix-ui';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import {
@@ -387,6 +387,7 @@ function DueField({
             onSave(null);
           }}
         >
+          <Icon icon={X} size={16} />
           {k.clearDue}
         </Button>
       ) : null}

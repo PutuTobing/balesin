@@ -2,6 +2,7 @@ import { REPORT_MAX_DAYS } from '@balesin/shared';
 import { isApiError } from '../../lib/api/client';
 import { t } from '../../i18n/id';
 import { retryTransient } from '../inbox/inbox-queries';
+import { retryQuery, retryQueryDelay } from '../../app/query-client';
 
 export type RangePreset = '7' | '30' | 'bulan' | 'bulan-lalu' | 'kustom';
 export const RANGE_PRESETS: readonly RangePreset[] = ['7', '30', 'bulan', 'bulan-lalu', 'kustom'];
@@ -155,15 +156,12 @@ export function niceScale(max: number, ticks = 4): { top: number; step: number }
  * "persempit rentang" tidak diulang: pengguna yang memutuskan.
  */
 export function retryReport(failureCount: number, error: unknown): boolean {
-  if (isApiError(error) && error.status === 429) {
-    return failureCount < 2 && (error.retryAfterSeconds ?? 60) <= 10;
-  }
+  // 429 (gerbang laporan penuh): aturan bersama — tunggu `Retry-After` hingga 3× (audit QA S1).
+  if (isApiError(error) && error.status === 429) return retryQuery(failureCount, error);
   return retryTransient(failureCount, error);
 }
 
 export function reportRetryDelay(failureCount: number, error: unknown): number {
-  if (isApiError(error) && error.status === 429 && error.retryAfterSeconds) {
-    return error.retryAfterSeconds * 1000;
-  }
+  if (isApiError(error) && error.status === 429) return retryQueryDelay(failureCount, error);
   return Math.min(1000 * 2 ** failureCount, 8000);
 }

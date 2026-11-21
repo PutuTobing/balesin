@@ -80,8 +80,11 @@ untuk isi pesan. Line-height 1.45 untuk teks, 1.2 untuk judul.
   `EmptyState`. Di HP labelnya "Buat" + ikon `Plus` (nama aksesibel tetap lengkap), tidak pernah
   ikon saja. Halaman berisi beberapa kartu (API key, Webhook, Channel): di kepala kartu daftar, kanan.
 - **Keadaan kosong halaman** (D4): di dalam kolom isi yang sama dengan konten saat terisi dan
-  dipusatkan di kolom itu (halaman lebar seperti Kontak/Tiket: `EmptyState column`, 48rem; Laporan:
+  dipusatkan di kolom itu (halaman lebar seperti Kontak/Tiket: `EmptyState column`; Laporan:
   di dalam kartu di bawah saringan). Halaman daftar selalu berilustrasi; kosong di dalam kartu tidak.
+- **Lebar kolom isi** (N3): halaman satu kolom (Pengaturan, Broadcast, Template, …) memakai satu
+  token `--size-column` (48rem) — bukan angka rem sendiri. Halaman dua kolom (Email pengirim, CSAT
+  dengan pratinjau, wizard Channel) dan halaman lebar (Kontak, Tiket, Laporan) punya lebarnya sendiri.
 
 ## 3. Larangan (ciri "kodingan AI" yang harus dihindari)
 - Gradien ungu-biru generik, glassmorphism berlebihan, emoji sebagai ikon.
@@ -110,6 +113,8 @@ error API; hindari kata ganti bila kalimatnya tetap wajar.
 - Di dialog, tombol berwarna selalu terakhir (kanan di desktop, atas di HP); tombol batal berbingkai.
 - Tombol simpan form: kanan di desktop, selebar penuh di atas pada HP (`FormActions`; tombol
   berwarna terakhir di DOM, keterangan "Terakhir diubah …" di slot `meta`).
+- Aksi destruktif di form (hapus/arsipkan): kiri di desktop, paling bawah dengan jarak ekstra di HP
+  (`FormActions danger`), terpisah dari gugus simpan; tetap lewat dialog konfirmasi.
 - Kata kerja tombol: **"Buat …"** untuk objek baru ("Buat kampanye", "Buat tiket", "Buat webhook");
   **"Tambah …"** hanya untuk menempelkan sesuatu ke objek yang ada ("Tambah tag", "Tambah kolom");
   **"Hubungkan nomor"** untuk channel. Membuat berkas dari data = **"Ekspor CSV"**; "Unduh" hanya

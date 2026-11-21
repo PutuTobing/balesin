@@ -183,6 +183,11 @@ export const size = {
   bar: 56,
   /** Tinggi tombol dan input di desktop. */
   control: 36,
+  /**
+   * Lebar maksimal kolom isi halaman satu kolom (Pengaturan, Broadcast, Template, keadaan kosong
+   * halaman lebar) = 48rem. Satu lebar supaya tepi kartu tidak meloncat antar-halaman (audit N3).
+   */
+  column: 768,
   iconSm: 16,
   iconMd: 20,
 } as const;
