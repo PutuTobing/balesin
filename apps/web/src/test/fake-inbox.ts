@@ -390,7 +390,9 @@ export function fakeInboxRoutes(
       );
       routes[`GET ${apiPath(API_ROUTES.inbox.media, { messageId })}`] = guard(
         () =>
-          new Response(new Blob(['gambar'], { type: 'image/png' }), {
+          // Byte biasa, bukan `Blob` jsdom: `fetch`/undici Node 22 memperlakukan Blob jsdom sebagai
+          // Blob asli lalu memanggil `stream()` yang tidak ada → `response.blob()` gagal (hanya di CI).
+          new Response(new TextEncoder().encode('gambar'), {
             status: 200,
             headers: {
               'content-type': 'image/png',
