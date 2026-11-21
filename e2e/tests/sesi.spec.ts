@@ -17,12 +17,12 @@ test.describe.configure({ timeout: 120_000 });
 
 const ME = '/api/v1/auth/me';
 
-async function signInFresh(page: Page, owner: SecondOwner, path: string) {
+async function signInFresh(page: Page, owner: SecondOwner, path: string, heading = 'Pengaturan') {
   await page.goto(path);
   await expect(page).toHaveURL(/\/masuk\?redirect=/);
   await submitLogin(page, owner.email, owner.password);
   await completeSecondOwnerCode(page, owner);
-  await expect(page.getByRole('heading', { level: 1, name: 'Pengaturan' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
 }
 
 /** Cabut sesi browser ini dari luar (seperti keluar di perangkat lain / dicabut admin). */
@@ -52,7 +52,15 @@ test('sesi dicabut di tengah pemakaian → halaman masuk dengan pesan, tanpa lay
   // Pratinjau template di halaman yang sama ikut dimuat (dan ikut ditolak) setelah sesi dicabut.
   expectHttpError('/api/v1/settings/email/templates/invitation/preview', 401);
   const owner = await createSecondOwner('sesi');
-  await signInFresh(page, owner, '/pengaturan');
+  // Langsung di halaman Email pengirim, lalu tunggu semua datanya selesai dimuat: setelah sesi
+  // dicabut, permintaan API berikutnya dipicu tes sendiri (bukan cache yang kebetulan basi —
+  // dulu goyah di mesin lambat, audit akhir QA R1).
+  await signInFresh(page, owner, '/pengaturan/email', 'Email pengirim');
+  const sender = page.getByLabel('Alamat email pengirim');
+  await expect(sender).toBeVisible();
+  // Data halaman terakhir yang dimuat: pratinjau template email (bukan `networkidle`, yang di HP
+  // bisa tidak pernah tercapai).
+  await expect(page.locator('iframe[title^="Pratinjau email"]')).toBeVisible();
   // Catat setiap judul halaman yang sempat tampil, untuk menangkap kedipan layar error.
   await page.evaluate(() => {
     const seen: string[] = [];
@@ -63,14 +71,9 @@ test('sesi dicabut di tengah pemakaian → halaman masuk dengan pesan, tanpa lay
   });
 
   await revokeFromElsewhere(context, baseURL ?? '');
-  // Data yang masih segar (< 30 detik) boleh tampil dari cache; permintaan berikutnya ke API
-  // yang menemukan sesi berakhir: pratinjau template email yang dimuat halaman itu, atau deteksi
-  // server email saat alamat pengirim diketik (mana yang lebih dulu).
-  await page.getByRole('link', { name: /Email pengirim/ }).click();
-  const sender = page.getByLabel('Alamat email pengirim');
-  await sender
-    .fill(`sesi-${Date.now()}@contoh-sesi.test`, { timeout: 3_000 })
-    .catch(() => undefined);
+  // Domain baru → deteksi server email (setelah jeda ketik) adalah permintaan API berikutnya; ia
+  // menemukan sesi sudah berakhir → halaman masuk dengan pesan.
+  await sender.fill(`sesi-${Date.now()}@contoh-sesi-${Date.now().toString(36)}.test`);
 
   await expect(page).toHaveURL(/\/masuk\?redirect=%2Fpengaturan%2Femail$/);
   await expect(page.getByRole('status')).toContainText(
