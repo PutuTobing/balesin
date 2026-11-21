@@ -20,7 +20,12 @@ import { forgetConversation, inboxKeys, storeConversation } from './inbox-querie
 import { useSendingPaused } from './use-sending-paused';
 import { replyWindowOpen, windowExpiry, windowState } from './inbox-time';
 import { useMinuteClock } from './use-minute-clock';
-import { RESOLVED_NOTE_ID, useReopenBlocked } from './use-reopen-blocked';
+import {
+  COLD_NOTE_ID,
+  RESOLVED_NOTE_ID,
+  useColdBlocked,
+  useReopenBlocked,
+} from './use-reopen-blocked';
 
 const k = t.inbox.compose;
 const PAUSED_NOTICE_ID = 'rem-darurat-ditarik';
@@ -56,6 +61,7 @@ export function ChatFooter({
   const canAssign = useCan('inbox.assign');
   const canInitiate = useCan('inbox.initiate');
   const reopenBlocked = useReopenBlocked(conversation);
+  const coldBlocked = useColdBlocked(conversation);
   const now = useMinuteClock();
   const { paused, reason } = useSendingPaused();
   const selfId = useSession()?.user.id ?? null;
@@ -140,19 +146,26 @@ export function ChatFooter({
         <div className={styles.closed}>
           <div className={styles.closedText} role="status">
             <p className={styles.closedTitle}>{none ? k.windowNoneTitle : k.windowClosedTitle}</p>
-            <p className={styles.closedBody}>
+            <p className={styles.closedBody} id={coldBlocked ? COLD_NOTE_ID : undefined}>
               {!templates
                 ? k.windowClosedNoTemplateBody
-                : none
-                  ? k.windowNoneBody
-                  : k.windowClosedBody}
+                : coldBlocked
+                  ? // Pelanggan diam > 7 hari & tanpa `inbox.initiate`: template = mulai percakapan.
+                    k.coldNoInitiate
+                  : none
+                    ? k.windowNoneBody
+                    : k.windowClosedBody}
             </p>
           </div>
           {templates ? (
             <Button
               variant="primary"
-              disabled={paused || lock.locked}
-              aria-describedby={paused ? PAUSED_NOTICE_ID : undefined}
+              disabled={paused || lock.locked || coldBlocked}
+              aria-describedby={
+                [paused ? PAUSED_NOTICE_ID : null, coldBlocked ? COLD_NOTE_ID : null]
+                  .filter(Boolean)
+                  .join(' ') || undefined
+              }
               onClick={() => setTemplateOpen(true)}
             >
               <Icon icon={LayoutTemplate} size={16} />
@@ -163,6 +176,17 @@ export function ChatFooter({
         {templateOpen ? (
           <TemplateSendDialog conversation={conversation} onClose={() => setTemplateOpen(false)} />
         ) : null}
+      </>
+    );
+  }
+
+  if (coldBlocked && !CHANNEL_CAPABILITIES[conversation.channel.type].customerWindow) {
+    // Email/Telegram (tanpa jendela 24 jam) yang pelanggannya diam > 7 hari: pesan apa pun = mulai
+    // percakapan (audit akhir P2-R2). Tanpa `inbox.initiate` kotak tulis diganti penjelasan.
+    return (
+      <>
+        {hasNotices ? <div className={styles.notices}>{notices}</div> : null}
+        <FooterNote id={COLD_NOTE_ID}>{k.coldNoInitiate}</FooterNote>
       </>
     );
   }

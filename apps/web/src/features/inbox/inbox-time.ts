@@ -1,4 +1,5 @@
 import {
+  CONVERSATION_STALE_AFTER_MS,
   CUSTOMER_SERVICE_WINDOW_MS,
   WINDOW_EXPIRING_SOON_MS,
   channelHasCustomerWindow,
@@ -53,6 +54,20 @@ export function reopenIsStale(
   }
   const last = conversation.lastInboundAt ? Date.parse(conversation.lastInboundAt) : NaN;
   return Number.isNaN(last) || last <= now - CUSTOMER_SERVICE_WINDOW_MS;
+}
+
+/**
+ * Percakapan TERBUKA yang "dingin": pelanggan tidak mengirim pesan selama
+ * `CONVERSATION_STALE_AFTER_MS` (7 hari; termasuk belum pernah). Template, atau pesan apa pun di
+ * Email/Telegram, ke percakapan ini = memulai percakapan (`inbox.initiate`, audit akhir P2-R2) —
+ * sama dengan aturan server; bila jam berbeda sedikit, pesan server tetap tampil apa adanya.
+ */
+export function conversationIsCold(
+  conversation: { lastInboundAt: string | null },
+  now: number,
+): boolean {
+  const last = conversation.lastInboundAt ? Date.parse(conversation.lastInboundAt) : NaN;
+  return Number.isNaN(last) || last <= now - CONVERSATION_STALE_AFTER_MS;
 }
 
 /** Hitung mundur hanya untuk channel berjendela 24 jam. */

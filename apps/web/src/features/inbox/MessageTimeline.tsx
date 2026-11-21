@@ -255,6 +255,11 @@ function MessageRow({
               {message.template?.category === 'AUTHENTICATION' ? (
                 // Kode OTP tidak disimpan (review template S1): kirim ulang ditolak server (409).
                 <p className={styles.failedHint}>{t.inbox.compose.otpNoResend}</p>
+              ) : message.senderKind === 'broadcast' ? (
+                // Pesan broadcast dikirim ulang lewat kampanyenya (server 409, audit akhir P2-R1).
+                actions.canRetry && message.failure?.retryable ? (
+                  <p className={styles.failedHint}>{t.inbox.compose.broadcastNoResend}</p>
+                ) : null
               ) : message.failure?.retryable && actions.canRetry ? (
                 <Button
                   size="md"

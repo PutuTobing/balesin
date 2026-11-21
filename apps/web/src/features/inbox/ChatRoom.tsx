@@ -51,6 +51,7 @@ import {
 import { ContactAvatar, WindowCountdown } from './InboxBits';
 import { MessageTimeline } from './MessageTimeline';
 import { useMinuteClock } from './use-minute-clock';
+import { useColdBlocked } from './use-reopen-blocked';
 
 /** Jarak dari dasar riwayat yang masih dianggap "sedang di pesan terbaru". */
 const NEAR_BOTTOM_PX = 96;
@@ -331,8 +332,15 @@ function ChatBody({
     [onError, queryClient, conversation.id],
   );
 
+  // Email/Telegram yang pelanggannya diam > 7 hari & tanpa `inbox.initiate`: tidak ada kotak tulis,
+  // jadi "Balas" (kutip) di menu pesan juga tidak ditawarkan (audit akhir P2-R2).
+  const coldBlocked =
+    useColdBlocked(conversation) && !CHANNEL_CAPABILITIES[conversation.channel.type].customerWindow;
   const replyable =
-    canReply && conversation.status !== 'resolved' && replyWindowOpen(conversation, now);
+    canReply &&
+    conversation.status !== 'resolved' &&
+    !coldBlocked &&
+    replyWindowOpen(conversation, now);
 
   const actions = useMemo<ChatActions>(
     () => ({

@@ -267,6 +267,10 @@ export const t = {
       resolved: 'Chat ini sudah selesai. Pesan baru dari pelanggan akan membuka chat baru.',
       resolvedNoInitiate:
         'Chat ini sudah selesai. Pesan baru dari pelanggan akan membuka chat baru. Untuk menyapa pelanggan lebih dulu, minta izin memulai percakapan ke Owner atau Admin di tempatmu.',
+      coldNoInitiate:
+        'Pelanggan tidak mengirim pesan dalam 7 hari terakhir. Balasan bisa dikirim lagi setelah pelanggan mengirim pesan. Untuk menyapa pelanggan lebih dulu, minta izin memulai percakapan ke Owner atau Admin di tempatmu.',
+      broadcastNoResend:
+        'Pesan broadcast tidak dikirim ulang dari chat. Kirim ulang lewat kampanye broadcast-nya.',
       resolvedStale:
         'Chat ini sudah selesai dan pelanggan tidak mengirim pesan dalam 24 jam terakhir. Pesan baru dari pelanggan akan membuka chat baru. Untuk membuka lagi atau menyapa pelanggan lebih dulu, minta izin memulai percakapan ke Owner atau Admin di tempatmu.',
       windowClosedTitle: 'Sesi 24 jam sudah habis',
