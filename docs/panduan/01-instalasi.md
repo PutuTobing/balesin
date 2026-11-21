@@ -31,7 +31,7 @@ Tim Balesin memberi Anda **alamat rilis** (tempat berkas `install.sh` berada). J
 server:
 
 ```bash
-curl -fsSL https://<alamat-rilis>/install.sh | sudo bash
+curl -fsSL https://github.com/PutuTobing/balesin/releases/latest/download/install.sh | sudo bash
 ```
 
 Installer berbahasa Indonesia dan berjalan dalam 8 langkah:
