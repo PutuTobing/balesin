@@ -77,7 +77,7 @@ Orkestrator mengerjakan dari atas ke bawah. Tandai `[x]` saat Definition of Done
 - [x] CLI `balesin` (update dengan backup + migrasi, backup, restore, status, logs)
 - [x] `deploy/nginx/balesin.conf` untuk vm-nginx Sky Tech
 - [x] White-label lengkap + dokumentasi pengguna (bahasa Indonesia)
-- [ ] Audit akhir penuh (`/audit`) sebelum rilis 1.0
+- [x] Audit akhir penuh (`/audit`) sebelum rilis 1.0
 
 ## Fase 8 — NANTI
 - [ ] Meta Tech Provider → Embedded Signup + Coexistence QR

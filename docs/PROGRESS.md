@@ -76,7 +76,7 @@
   Security web AMAN putaran 2 (W1/W2 tertutup, 4df2953); kritikus kanal **LOLOS** putaran 3. E2E
   channel-lain dengan server Telegram & IMAP tiruan.
 
-### Fase 7 — butir 1–5 SELESAI; tinggal butir 6 (audit akhir)
+### Fase 7 — SELESAI (audit akhir ditutup, de2a8ee)
 - Compose produksi + image non-root, gateway nginx, install.sh (mode A/B/C), CLI `balesin`, nginx
   contoh netral, rilis bertanda tangan (cosign) **multi-arsitektur amd64+arm64** (b0a3468). Security
   AMAN putaran 2. Suite tes API stabil (15d977b).
@@ -91,11 +91,24 @@
 - Web: kartu Bot di Telegram/Email/Messenger/IG + menu "Kembalikan ke bot" berasalan — kritikus
   **LOLOS** putaran 4 (7ed5871). Security putaran 3: P3-1 Sedang dikunci `it.fails` (2fc1f27).
 
-## Sedang dikerjakan (posisi 7ed5871)
-- **Backend** — P3-1 (kembalikan ke bot tidak meneruskan email palsu), P3-2, P3-I1, P3-I2.
-- Berikutnya: commit → security verifikasi → **`/audit` penuh (Fase 7 butir 6)** → E2E penuh.
-- Terblokir: Fase 3 mode tangkap (#10); kredensial nyata (#3, #4, #8, #15, #16, #17); distribusi (#18);
-  deploy produksi (#19, menunggu #6/#7).
+### Audit akhir 1.0 (Fase 7 butir 6) — SELESAI
+- Gabungan: `docs/audits/2026-11-25-audit-akhir.md` (rincian QA/desain/keamanan di folder sejenis).
+  0 Kritis; 3 Tinggi, 9 Sedang — semua diperbaiki. Perbaikan utama: kirim ke percakapan selesai/dingin
+  (>7 hari) = mulai percakapan (izin `inbox.initiate`/scope `messages:initiate`, diaudit), "Buka lagi"
+  di luar 24 jam butuh izin yang sama, gerbang laporan antre, CSV satu pembersih, keseragaman UI
+  (`CreateButton`, `FormActions`, keadaan kosong, `--size-column`), image dipin digest + Trivy
+  (0 temuan semua image), npm dibuang dari runtime, nginx 1.30.7, THIRD-PARTY-NOTICES (LGPL).
+- Penutupan: E2E penuh hijau 2× berturut-turut (285 lulus, 0 goyah) dari worktree cache dingin;
+  suite api 1.163 lulus; keamanan AMAN putaran 3; desain LOLOS putaran 2.
+
+## Sedang dikerjakan (posisi de2a8ee)
+- **Kode siap kandidat rilis 1.0.** Tidak ada tugas ROADMAP Fase 0–7 yang terbuka kecuali Fase 3 mode
+  tangkap (terblokir #10).
+- Menunggu Tobing untuk produksi: #6 VM, #7 DNS, #3 kredensial Meta, #4 SMTP, #18 distribusi rilis
+  (kanal, environment `rilis`, ruleset tag, cosign; `BALESIN_REQUIRE_SIGNATURE=1` saat rilis bertanda
+  tangan pertama), #19 deploy produksi. Opsional: #5, #8, #10, #14–#17.
+- Kandidat 1.0.1 (tidak menahan rilis): kirim ulang per kampanye broadcast; QA-R2 tes peka beban;
+  info gerbang laporan (batal saat klien putus).
 
 ## Catatan untuk sesi berikutnya
 
