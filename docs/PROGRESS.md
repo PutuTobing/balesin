@@ -101,7 +101,8 @@
 - Penutupan: E2E penuh hijau 2× berturut-turut (285 lulus, 0 goyah) dari worktree cache dingin;
   suite api 1.163 lulus; keamanan AMAN putaran 3; desain LOLOS putaran 2.
 
-## Sedang dikerjakan (posisi de2a8ee)
+## Sedang dikerjakan (posisi 0efafe4)
+- **CI GitHub hijau penuh** di `0efafe4` (run 44881249404): kualitas, tes unit+integrasi, E2E 285 lulus, image + installer, audit. Merah CI #9–#11 karena tiruan media di tes web (Blob jsdom tidak terbaca undici Node 22), bukan bug produk.
 - **Kode siap kandidat rilis 1.0.** Tidak ada tugas ROADMAP Fase 0–7 yang terbuka kecuali Fase 3 mode
   tangkap (terblokir #10).
 - Menunggu Tobing untuk produksi: #6 VM, #7 DNS, #3 kredensial Meta, #4 SMTP, #18 distribusi rilis
