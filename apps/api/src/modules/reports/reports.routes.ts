@@ -16,13 +16,15 @@ import { clientInfo } from '../../http/client-info';
 import { enforceRateLimit, type RateLimitRule, type RateLimiter } from '../../http/rate-limit';
 import { requirePermission } from '../../http/route-access';
 import { requireAuth } from '../auth/auth.hook';
-import { createConcurrencyGate } from '../messages/concurrency';
 import { permissionGrant } from '../auth/permission-grant';
+import { createReportGate, type ReportGate } from './report-gate';
 import type { ReportsService } from './reports.service';
 
 export interface ReportsRoutesOptions {
   reports: ReportsService;
   limiter: RateLimiter;
+  /** Pengganti gerbang laporan (tes). */
+  gate?: ReportGate;
 }
 
 /**
@@ -46,20 +48,28 @@ const limitMessage = (wait: string) =>
   `Terlalu banyak permintaan laporan. Coba lagi dalam ${wait}.`;
 
 /**
- * Review Fase 5 Info 5: laporan yang BERJALAN bersamaan dibatasi per organisasi (2) dan per proses
- * api (6) — tiap query bisa memegang koneksi pool hingga batas waktu 8 dtk. Penuh → 429 segera.
+ * Laporan yang BERJALAN bersamaan (review Fase 5 Info 5; audit akhir QA S1): per proses api 6 (pool
+ * koneksi; tiap query ≤ `statement_timeout` 8 dtk), per organisasi 4, per pengguna 3. Belum dapat slot
+ * → MENUNGGU hingga 6 dtk (antrean ≤ 50 per proses) — pemakaian normal tidak pernah 429. Antrean penuh /
+ * waktu tunggu habis → 429 + `Retry-After`.
  */
-export const REPORT_CONCURRENCY = { perOrganization: 2, global: 6 } as const;
+export const REPORT_CONCURRENCY = {
+  global: 6,
+  perOrganization: 4,
+  perUser: 3,
+  maxWaiting: 50,
+  waitMs: 6_000,
+} as const;
 
 async function gated<T>(
-  gate: ReturnType<typeof createConcurrencyGate>,
-  organizationId: string,
+  gate: ReportGate,
+  grant: { organizationId: string; userId: string },
   run: () => Promise<T>,
 ): Promise<T> {
-  const release = gate.tryAcquire(organizationId);
+  const release = await gate.acquire(grant.organizationId, grant.userId);
   if (!release) {
     throw new AppError('RATE_LIMITED', {
-      message: 'Laporan lain sedang diproses untuk organisasi ini. Coba lagi beberapa detik lagi.',
+      message: 'Laporan sedang ramai diproses. Coba lagi beberapa detik lagi.',
       retryAfterSeconds: 5,
     });
   }
@@ -76,10 +86,7 @@ export const reportsRoutes: FastifyPluginCallbackZod<ReportsRoutesOptions> = (
   done,
 ) => {
   const { reports, limiter } = options;
-  const gate = createConcurrencyGate({
-    global: REPORT_CONCURRENCY.global,
-    perUser: REPORT_CONCURRENCY.perOrganization,
-  });
+  const gate = options.gate ?? createReportGate(REPORT_CONCURRENCY);
 
   app.get(
     REPORT_ROUTES.performance,
@@ -94,7 +101,7 @@ export const reportsRoutes: FastifyPluginCallbackZod<ReportsRoutesOptions> = (
       const grant = await permissionGrant(request, 'reports.view');
       await enforceRateLimit(limiter, READ_RULE, grant.userId, limitMessage);
       return {
-        report: await gated(gate, grant.organizationId, () =>
+        report: await gated(gate, grant, () =>
           reports.performance(grant.organizationId, grant.userId, grant.scope, request.query),
         ),
       };
@@ -114,7 +121,7 @@ export const reportsRoutes: FastifyPluginCallbackZod<ReportsRoutesOptions> = (
       const grant = await permissionGrant(request, 'reports.view');
       await enforceRateLimit(limiter, READ_RULE, grant.userId, limitMessage);
       return {
-        costs: await gated(gate, grant.organizationId, () =>
+        costs: await gated(gate, grant, () =>
           reports.costs(requireAuth(request), grant.scope, request.query, clientInfo(request)),
         ),
       };
@@ -131,7 +138,7 @@ export const reportsRoutes: FastifyPluginCallbackZod<ReportsRoutesOptions> = (
     async (request, reply) => {
       const grant = await permissionGrant(request, 'reports.view');
       await enforceRateLimit(limiter, EXPORT_RULE, grant.userId, limitMessage);
-      const { csv, rows, filename } = await gated(gate, grant.organizationId, () =>
+      const { csv, rows, filename } = await gated(gate, grant, () =>
         reports.exportCsv(requireAuth(request), grant.scope, request.query, clientInfo(request)),
       );
       void reply.headers({

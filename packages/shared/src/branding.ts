@@ -1,7 +1,9 @@
 import { z } from 'zod';
 
-import { MIN_TEXT_CONTRAST, color, contrastRatio } from './design-tokens';
-import { isoDateTimeSchema, singleLineText } from './fields';
+// Ekstensi `.ts` eksplisit (audit akhir QA R4): berkas ini juga dimuat konfigurasi Vite web
+// (`service-worker-plugin.ts`) lewat pemuat native Node, yang tidak menebak ekstensi.
+import { MIN_TEXT_CONTRAST, color, contrastRatio } from './design-tokens.ts';
+import { isoDateTimeSchema, singleLineText } from './fields.ts';
 
 /**
  * Branding white-label (PRD §3.8): nama produk, warna utama, logo, dan nama maskot milik organisasi

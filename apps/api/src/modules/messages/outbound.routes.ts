@@ -12,6 +12,7 @@ import {
   uploadMediaResponseSchema,
   hasPermission,
 } from '@balesin/shared';
+import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 
@@ -22,7 +23,7 @@ import { requireAuth } from '../auth/auth.hook';
 import { permissionGrant } from '../auth/permission-grant';
 import { toMessage } from '../inbox/inbox-view';
 import { contentDisposition } from './media-store';
-import type { OutboundService } from './outbound.service';
+import type { InitiationGrant, OutboundService } from './outbound.service';
 
 export interface OutboundRoutesOptions {
   outbound: OutboundService;
@@ -71,6 +72,24 @@ export const MEDIA_USER_RULE: RateLimitRule = {
   limit: 120,
   windowSeconds: 60,
 };
+
+/**
+ * Izin "mulai percakapan" pengirim (audit akhir A1/A6/P2): `inbox.initiate` + jatah harian
+ * `mulai-percakapan` (dipotong service hanya bila pesannya benar-benar memulai).
+ */
+function initiationGrant(request: FastifyRequest, limiter: RateLimiter): InitiationGrant {
+  const auth = requireAuth(request);
+  return {
+    allowed: hasPermission(auth.user.role, 'inbox.initiate'),
+    consume: () =>
+      enforceRateLimit(
+        limiter,
+        INITIATE_USER_RULE,
+        auth.user.id,
+        (wait) => `Batas harian memulai percakapan baru tercapai. Coba lagi dalam ${wait}.`,
+      ).then(() => undefined),
+  };
+}
 
 const REPLY = requirePermission('inbox.reply');
 const VIEW = requirePermission('inbox.view');
@@ -128,22 +147,12 @@ export const outboundRoutes: FastifyPluginAsyncZod<OutboundRoutesOptions> = asyn
       const id = requireUuid(request.params.conversationId, 'Percakapan tidak ditemukan.');
       await enforceRateLimit(limiter, SEND_USER_RULE, grant.userId, sendLimit);
       await enforceRateLimit(limiter, SEND_ORGANIZATION_RULE, grant.organizationId, orgLimit);
-      const auth = requireAuth(request);
       const { message, created } = await outbound.send(
         grant,
         id,
         request.body,
         clientInfo(request),
-        {
-          allowed: hasPermission(auth.user.role, 'inbox.initiate'),
-          consume: () =>
-            enforceRateLimit(
-              limiter,
-              INITIATE_USER_RULE,
-              auth.user.id,
-              (wait) => `Batas harian memulai percakapan baru tercapai. Coba lagi dalam ${wait}.`,
-            ).then(() => undefined),
-        },
+        initiationGrant(request, limiter),
       );
       void reply.code(created ? 202 : 200);
       return { message: toMessage(message) };
@@ -164,7 +173,12 @@ export const outboundRoutes: FastifyPluginAsyncZod<OutboundRoutesOptions> = asyn
       const id = requireUuid(request.params.messageId, 'Pesan tidak ditemukan.');
       await enforceRateLimit(limiter, SEND_USER_RULE, grant.userId, sendLimit);
       await enforceRateLimit(limiter, SEND_ORGANIZATION_RULE, grant.organizationId, orgLimit);
-      const message = await outbound.retry(grant, id, clientInfo(request));
+      const message = await outbound.retry(
+        grant,
+        id,
+        clientInfo(request),
+        initiationGrant(request, limiter),
+      );
       void reply.code(202);
       return { message: toMessage(message) };
     },

@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 
 import {
   auditLogs,
+  broadcastCampaigns,
   channels,
   contacts,
   conversations,
@@ -409,4 +410,153 @@ describe('A1 (sisa) — buka lagi percakapan selesai', () => {
       expect((await sendAs(cs, recent, text())).statusCode).toBe(202);
     },
   );
+});
+
+const DAY = 24 * 3600_000;
+
+async function setLastInbound(conversationId: string, daysAgo: number | null) {
+  const at = daysAgo === null ? null : new Date(Date.now() - daysAgo * DAY);
+  await harness.db
+    .update(conversations)
+    .set({
+      lastInboundAt: at,
+      windowExpiresAt: at ? new Date(at.getTime() + DAY) : null,
+    })
+    .where(eq(conversations.id, conversationId));
+}
+
+describe('P2-R2 — percakapan terbuka yang dingin (> 7 hari tanpa pesan pelanggan)', () => {
+  const STALE =
+    'Pelanggan tidak mengirim pesan dalam 7 hari terakhir. Mengirim template atau pesan baru ke percakapan ini butuh izin memulai percakapan.';
+
+  it('WhatsApp: template oleh CS ditolak bila > 7 hari / belum pernah; ≤ 7 hari tetap boleh; Owner boleh', async () => {
+    const cold = await conversation('whatsapp', 'served');
+    await setLastInbound(cold, 8);
+    const denied = await sendAs(cs, cold, await templateBody());
+    expect(denied.statusCode, denied.body).toBe(403);
+    expect(denied.json<{ error: { code: string; message: string } }>().error).toMatchObject({
+      code: 'FORBIDDEN',
+      message: STALE,
+    });
+    expect((await sendAs(owner, cold, await templateBody())).statusCode).toBe(202);
+
+    const never = await conversation('whatsapp', 'served');
+    await setLastInbound(never, null);
+    expect((await sendAs(cs, never, await templateBody())).statusCode).toBe(403);
+
+    const warm = await conversation('whatsapp', 'served');
+    await setLastInbound(warm, 3);
+    expect((await sendAs(cs, warm, await templateBody())).statusCode).toBe(202);
+  });
+
+  it.each(['email', 'telegram'] as const)(
+    '%s: teks bebas oleh CS ke percakapan terbuka > 7 hari → 403; ≤ 7 hari → 202',
+    async (type) => {
+      const cold = await conversation(type, 'unserved');
+      await setLastInbound(cold, 8);
+      expect((await sendAs(cs, cold, text())).statusCode).toBe(403);
+      expect(await outboundCount(cold)).toBe(0);
+      const warm = await conversation(type, 'unserved');
+      await setLastInbound(warm, 6);
+      expect((await sendAs(cs, warm, text())).statusCode).toBe(202);
+    },
+  );
+
+  it('API key messages:send saja → 403 (scope messages:initiate); dengan messages:initiate → 202', async () => {
+    const cold = await conversation('whatsapp', 'served');
+    await setLastInbound(cold, 30);
+    const sendOnly = await key(['messages:send']);
+    const denied = await sendAsKey(sendOnly, cold, await templateBody());
+    expect(denied.statusCode, denied.body).toBe(403);
+    expect(denied.json<{ error: { message: string } }>().error.message).toContain(
+      'messages:initiate',
+    );
+    const both = await key(['messages:send', 'messages:initiate']);
+    expect((await sendAsKey(both, cold, await templateBody())).statusCode).toBe(202);
+  });
+});
+
+describe('P2-R1 — kirim ulang pesan gagal', () => {
+  async function failedTemplate(conversationId: string, broadcastId: string | null = null) {
+    const [conversationRow] = await harness.db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, conversationId));
+    const at = new Date();
+    const [row] = await harness.db
+      .insert(messages)
+      .values({
+        organizationId,
+        conversationId,
+        contactId: conversationRow!.contactId,
+        channelId: conversationRow!.channelId,
+        direction: 'outbound',
+        senderKind: broadcastId ? 'broadcast' : 'agent',
+        senderUserId: broadcastId ? null : owner.session.user.id,
+        broadcastId,
+        type: 'template',
+        text: 'Halo Budi, tagihan Anda sudah terbit.',
+        status: 'failed',
+        failureReason: 'meta_rejected',
+        statusUpdatedAt: at,
+        sendAttempts: 1,
+        occurredAt: at,
+      })
+      .returning({ id: messages.id });
+    return row!.id;
+  }
+  const retry = (signed: SignedIn, messageId: string) =>
+    call(harness.app, 'POST', apiPath(API_ROUTES.inbox.retry, { messageId }), undefined, {
+      cookie: signed.cookie,
+      csrf: signed.csrf,
+    });
+  const statusOf = async (messageId: string) =>
+    (
+      await harness.db
+        .select({ status: messages.status })
+        .from(messages)
+        .where(eq(messages.id, messageId))
+    )[0]?.status;
+
+  it('template gagal di percakapan selesai: CS 403 (tetap gagal), Owner 202 + jatah terpotong', async () => {
+    const id = await conversation('whatsapp', 'resolved', false);
+    const messageId = await failedTemplate(id);
+    const denied = await retry(cs, messageId);
+    expect(denied.statusCode, denied.body).toBe(403);
+    expect(denied.json<{ error: { code: string } }>().error.code).toBe('FORBIDDEN');
+    expect(await statusOf(messageId)).toBe('failed');
+    const limiter = createRateLimiter(harness.redis, { prefix: harness.redisPrefix });
+    const ok = await retry(owner, messageId);
+    expect(ok.statusCode, ok.body).toBe(202);
+    expect(await statusOf(messageId)).toBe('pending');
+    expect((await limiter.peek(INITIATE_USER_RULE, owner.session.user.id)).count).toBe(1);
+  });
+
+  it('template gagal di percakapan terbuka yang hangat: CS tetap boleh kirim ulang', async () => {
+    const id = await conversation('whatsapp', 'served', false);
+    await setLastInbound(id, 2);
+    const messageId = await failedTemplate(id);
+    expect((await retry(cs, messageId)).statusCode).toBe(202);
+  });
+
+  it('pesan broadcast tidak bisa dikirim ulang dari percakapan (Owner pun 409)', async () => {
+    const id = await conversation('whatsapp', 'served');
+    const [campaign] = await harness.db
+      .insert(broadcastCampaigns)
+      .values({
+        organizationId,
+        name: 'Tagihan November',
+        status: 'cancelled',
+        channelId: channelIds.get('whatsapp')!,
+        templateId: await template(),
+      })
+      .returning({ id: broadcastCampaigns.id });
+    const messageId = await failedTemplate(id, campaign!.id);
+    const response = await retry(owner, messageId);
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json<{ error: { message: string } }>().error.message).toBe(
+      'Pesan broadcast tidak bisa dikirim ulang dari percakapan. Kirim ulang lewat kampanye broadcast-nya.',
+    );
+    expect(await statusOf(messageId)).toBe('failed');
+  });
 });

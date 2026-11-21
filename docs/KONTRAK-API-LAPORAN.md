@@ -16,6 +16,11 @@ pemeliharaan `csat-dispatch` tiap 15 dtk), `apps/worker/src/inbound/csat-replies
 
 Tanggal = zona waktu organisasi; `from`/`to` termasuk; rentang maks. 92 hari (400). Query berjalan di
 transaksi baca dengan `statement_timeout` 8 dtk → terlalu berat = **503** "Persempit rentang".
+Laporan yang berjalan bersamaan (kinerja, biaya, ekspor) dibatasi per proses api 6, per organisasi 4,
+per pengguna 3; yang belum dapat slot **menunggu** hingga 6 dtk (antrean ≤ 50 per proses) — beberapa
+supervisor/kartu bersamaan tidak pernah ditolak (audit akhir QA S1). Antrean penuh / waktu tunggu habis
+→ **429** "Laporan sedang ramai diproses. Coba lagi beberapa detik lagi." + `Retry-After: 5` (setiap 429
+membawa `Retry-After`).
 
 ## Laporan kinerja (`report`)
 

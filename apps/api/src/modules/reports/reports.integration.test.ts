@@ -379,6 +379,35 @@ describe('laporan kinerja', () => {
   });
 });
 
+describe('laporan dibuka bersamaan (audit akhir QA S1)', () => {
+  it('3 supervisor × 3 kartu serentak: semua 200, tidak ada 429', async () => {
+    const supervisors: SignedIn[] = [];
+    for (const index of [1, 2, 3]) {
+      const email = `supervisor${String(index)}.laporan@majujaya.test`;
+      await insertUser(harness.db, organizationId, {
+        role: 'supervisor',
+        email,
+        passwordHash: await hasher.hash(PASSWORD),
+      });
+      supervisors.push(await login(harness.app, { email, password: PASSWORD }));
+    }
+    const range = `from=${today()}&to=${today()}`;
+    const urls = [
+      `${REPORT_ROUTES.performance}?${range}`,
+      `${REPORT_ROUTES.costs}?month=${today().slice(0, 7)}`,
+      `${REPORT_ROUTES.performance}?${range}`,
+    ];
+    const responses = await Promise.all(
+      supervisors.flatMap((signed) =>
+        urls.map((url) => call(harness.app, 'GET', url, undefined, as(signed))),
+      ),
+    );
+    expect(responses.map((response) => response.statusCode)).toEqual(
+      Array.from({ length: 9 }, () => 200),
+    );
+  });
+});
+
 describe('CSAT otomatis', () => {
   it('pengaturan: tautan ditolak, hanya Owner/Admin, bawaan mati', async () => {
     const initial = csatSettingsResponseSchema.parse(

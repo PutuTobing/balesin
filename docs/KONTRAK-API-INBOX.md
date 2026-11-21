@@ -162,7 +162,7 @@ detik). Dev server web perlu `ws: true` pada proxy `/api`.
 |---|---|---|
 | `POST /api/v1/conversations/:conversationId/messages` | `inbox.reply` (cakupan) | CSRF. Body `sendMessageRequestSchema` (`type`: `text` / `media` / `location` / `reaction`, `clientMessageId` UUID wajib). → **202** `{ message }` (status `pending`) atau **200** bila `clientMessageId` yang sama sudah pernah dikirim (idempoten, per pengirim) |
 | `POST /api/v1/conversations/:conversationId/media` | `inbox.reply` (cakupan) | CSRF, `multipart/form-data` isian `file` (satu berkas). → **201** `{ media: { id, kind, mimeType, filename, sizeBytes } }`; lalu kirim `{ type: 'media', mediaId: id, caption? }` |
-| `POST /api/v1/messages/:messageId/retry` | `inbox.reply` (cakupan) | CSRF. Hanya pesan keluar `failed` yang `failure.retryable` (maks. 5 percobaan). → **202** `{ message }` (`pending`). `senderUserId` tetap penulis asli (pemilik kunci idempotensi); penekan "Kirim ulang" dicatat di `last_sent_by_user_id` dan dialah yang diperiksa ulang worker (review R2) |
+| `POST /api/v1/messages/:messageId/retry` | `inbox.reply` (cakupan) | CSRF. Hanya pesan keluar `failed` yang `failure.retryable` (maks. 5 percobaan). → **202** `{ message }` (`pending`). `senderUserId` tetap penulis asli (pemilik kunci idempotensi); penekan "Kirim ulang" dicatat di `last_sent_by_user_id` dan dialah yang diperiksa ulang worker (review R2). Aturan mulai-percakapan yang sama dengan kirim (audit akhir P2-R1): kirim ulang template/pesan Email-Telegram ke percakapan selesai atau dingin butuh `inbox.initiate` milik PENEKAN + jatah `mulai-percakapan` (403 `FORBIDDEN` / 429). Pesan broadcast (`broadcast_id`) → **409** "Pesan broadcast tidak bisa dikirim ulang dari percakapan. Kirim ulang lewat kampanye broadcast-nya." |
 | `GET /api/v1/messages/:messageId/media` | `inbox.view` (cakupan) | **Wajib `X-CSRF-Token`** walau GET (memakai jatah Meta + menulis cache) — web memanggil lewat `fetch` lalu `Blob`/`URL.createObjectURL`, bukan `<img src>`. Berkas biner (lihat Header) |
 
 **Jendela 24 jam ditegakkan server**: di luar jendela → **409 `WINDOW_CLOSED`** (pesan: tunggu
@@ -547,6 +547,14 @@ izin memulai percakapan." (key: "… butuh scope messages:initiate."), tanpa pes
 percakapan `resolved` di WhatsApp/Messenger/Instagram selama jendela 24 jam masih terbuka (teks, media,
 dll. — bukan template) tetap balasan biasa (`inbox.reply`). `POST /conversations/start` dan
 `POST /api/v1/public/messages/template` tidak berubah (sudah = mulai percakapan).
+
+**Percakapan terbuka yang dingin juga = mulai percakapan** (audit akhir P2-R2): template, atau pesan apa
+pun di Email/Telegram, ke percakapan TERBUKA yang pelanggannya tidak mengirim pesan selama
+`CONVERSATION_STALE_AFTER_MS` (7 hari, `packages/shared` — termasuk belum pernah mengirim) butuh izin &
+jatah yang sama. Ditolak → **403 `FORBIDDEN`** "Pelanggan tidak mengirim pesan dalam 7 hari terakhir.
+Mengirim template atau pesan baru ke percakapan ini butuh izin memulai percakapan." (key: "… butuh scope
+messages:initiate."). ≤ 7 hari = balasan/susulan biasa (`inbox.reply`). "Buka lagi" memakai ambang 24 jam
+(lebih ketat, percakapannya sudah selesai).
 
 `type: "template"` di `POST /conversations/:id/messages` = satu-satunya pesan yang boleh di luar jendela
 24 jam; mulai percakapan ke nomor baru = `POST /conversations/start` (`inbox.initiate`). `Message.type`

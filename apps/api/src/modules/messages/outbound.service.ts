@@ -59,6 +59,7 @@ import {
   type TemplateSendParameters,
   type UploadedMedia,
   apiKeyHasScope,
+  CONVERSATION_STALE_AFTER_MS,
 } from '@balesin/shared';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
@@ -181,24 +182,39 @@ type InitiationPolicy =
   { kind: 'preauthorized' } | ({ kind: 'check'; actor: 'user' | 'apiKey' } & InitiationGrant);
 
 /**
- * Pesan ini MEMULAI percakapan lagi (bukan balasan)? Percakapan `resolved` + template (WhatsApp), atau
- * percakapan `resolved` di channel tanpa jendela 24 jam (Email/Telegram — teks bebas kapan saja).
+ * Pesan ini MEMULAI percakapan (bukan balasan)? Hanya template, atau pesan apa pun di channel tanpa
+ * jendela 24 jam (Email/Telegram), yang bisa memulai — dan hanya bila percakapannya:
+ *  - `resolved` (audit akhir A1/A6) → `'resolved'`, atau
+ *  - masih terbuka tetapi pelanggan tidak mengirim pesan selama `CONVERSATION_STALE_AFTER_MS` (7 hari;
+ *    termasuk belum pernah) (audit akhir P2-R2) → `'stale'`.
  * Membalas percakapan `resolved` di channel berjendela selama jendela terbuka tetap = balasan
- * (DECISIONS 2026-11-16).
+ * (DECISIONS 2026-11-16). `null` = balasan biasa.
  */
 export function isConversationInitiation(
-  status: string,
+  conversation: { status: string; lastInboundAt: Date | null },
   channelType: Parameters<typeof channelHasCustomerWindow>[0],
   messageType: string,
-): boolean {
-  if (status !== 'resolved') return false;
-  return messageType === 'template' || !channelHasCustomerWindow(channelType);
+  at: Date,
+): 'resolved' | 'stale' | null {
+  if (messageType !== 'template' && channelHasCustomerWindow(channelType)) return null;
+  if (conversation.status === 'resolved') return 'resolved';
+  const lastInbound = conversation.lastInboundAt?.getTime() ?? null;
+  return lastInbound === null || at.getTime() - lastInbound > CONVERSATION_STALE_AFTER_MS
+    ? 'stale'
+    : null;
 }
 
 const INITIATION_DENIED = {
-  user: 'Percakapan ini sudah selesai. Mengirim pesan baru ke percakapan yang sudah selesai butuh izin memulai percakapan.',
-  apiKey:
-    'Percakapan ini sudah selesai. Mengirim template atau pesan baru ke percakapan yang sudah selesai butuh scope messages:initiate.',
+  resolved: {
+    user: 'Percakapan ini sudah selesai. Mengirim pesan baru ke percakapan yang sudah selesai butuh izin memulai percakapan.',
+    apiKey:
+      'Percakapan ini sudah selesai. Mengirim template atau pesan baru ke percakapan yang sudah selesai butuh scope messages:initiate.',
+  },
+  stale: {
+    user: 'Pelanggan tidak mengirim pesan dalam 7 hari terakhir. Mengirim template atau pesan baru ke percakapan ini butuh izin memulai percakapan.',
+    apiKey:
+      'Pelanggan tidak mengirim pesan dalam 7 hari terakhir. Mengirim template atau pesan baru ke percakapan ini butuh scope messages:initiate.',
+  },
 } as const;
 
 /** Pengirim internal: agen (sesi web) atau API key. `grant` = organisasi + cakupan. */
@@ -259,7 +275,16 @@ export interface OutboundService {
     /** Audit akhir A1/A6: `inbox.initiate` + jatah harian. Tidak diisi = tanpa izin mulai-percakapan. */
     initiation?: InitiationGrant,
   ): Promise<{ message: MessageRowView; created: boolean }>;
-  retry(grant: PermissionGrant, messageId: string, client: ClientInfo): Promise<MessageRowView>;
+  /**
+   * Kirim ulang pesan gagal. Aturan mulai-percakapan yang sama dengan `send` (audit akhir P2-R1);
+   * pesan broadcast ditolak (kirim ulang broadcast hanya lewat kampanyenya).
+   */
+  retry(
+    grant: PermissionGrant,
+    messageId: string,
+    client: ClientInfo,
+    initiation?: InitiationGrant,
+  ): Promise<MessageRowView>;
   upload(
     grant: PermissionGrant,
     conversationId: string,
@@ -797,10 +822,11 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
     // Audit akhir A1/A6: kirim ke percakapan `resolved` yang berarti memulai percakapan lagi = izin
     // mulai-percakapan (`inbox.initiate` / scope `messages:initiate`), bukan sekadar `inbox.reply`.
     const initiates =
-      initiation.kind === 'check' &&
-      isConversationInitiation(conversation.status, channel.type, input.type);
-    if (initiates && !initiation.allowed) {
-      throw new AppError('FORBIDDEN', { message: INITIATION_DENIED[initiation.actor] });
+      initiation.kind === 'check'
+        ? isConversationInitiation(conversation, channel.type, input.type, at)
+        : null;
+    if (initiates && initiation.kind === 'check' && !initiation.allowed) {
+      throw new AppError('FORBIDDEN', { message: INITIATION_DENIED[initiates][initiation.actor] });
     }
     // Rem pengiriman: rem darurat, batas harian pengguna/organisasi, batas per percakapan.
     await sendingLimits.assertCanSend({
@@ -974,7 +1000,7 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
     }
 
     // Jatah harian mulai-percakapan dipotong hanya untuk pesan BARU yang lolos semua pemeriksaan.
-    if (initiates) await initiation.consume?.();
+    if (initiates && initiation.kind === 'check') await initiation.consume?.();
 
     let row: MessageRow;
     try {
@@ -1277,8 +1303,15 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
     uploadAsApiKey: (key, conversationId, file) =>
       uploadAs(apiKeySender(key), conversationId, file),
 
-    async retry(grant, messageId, client) {
+    async retry(grant, messageId, client, initiation) {
       const message = await scopedMessage(grant, messageId);
+      // P2-R1: pesan kampanye tidak dikirim ulang dari percakapan (kampanye bisa sudah dibatalkan).
+      if (message.broadcastId !== null) {
+        throw new AppError('CONFLICT', {
+          message:
+            'Pesan broadcast tidak bisa dikirim ulang dari percakapan. Kirim ulang lewat kampanye broadcast-nya.',
+        });
+      }
       if (message.type === 'template' && message.extras.template?.sensitive) {
         throw new AppError('CONFLICT', {
           message:
@@ -1297,7 +1330,13 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
       }
       const conversation = await scopedConversation(grant, message.conversationId);
       const channel = await liveChannel(grant.organizationId, message.channelId);
-      assertWindowOpen(channel, conversation, message.type, now());
+      const at = now();
+      assertWindowOpen(channel, conversation, message.type, at);
+      // P2-R1: kirim ulang ke percakapan selesai/dingin = memulai percakapan (izin pengirim ulang).
+      const initiates = isConversationInitiation(conversation, channel.type, message.type, at);
+      if (initiates && !initiation?.allowed) {
+        throw new AppError('FORBIDDEN', { message: INITIATION_DENIED[initiates].user });
+      }
       await sendingLimits.assertCanSend({
         organizationId: grant.organizationId,
         userId: grant.userId,
@@ -1327,6 +1366,7 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
         )
         .returning();
       if (!updated) throw new AppError('CONFLICT', { message: 'Pesan ini sedang dikirim ulang.' });
+      if (initiates) await initiation?.consume?.();
       const row = await enqueue(updated, updated.sendAttempts);
       await publishFor(row, false);
       logger.info({ messageId: row.id, attempt: row.sendAttempts }, 'Pesan keluar dikirim ulang');

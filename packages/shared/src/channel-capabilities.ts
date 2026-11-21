@@ -85,6 +85,14 @@ export const CHANNEL_CAPABILITIES: Readonly<Record<ChannelType, ChannelCapabilit
   },
 };
 
+/**
+ * Percakapan TERBUKA yang pelanggannya tidak mengirim pesan selama ini dianggap "dingin" (audit akhir
+ * P2-R2): template, atau pesan apa pun di channel tanpa jendela (Email/Telegram), ke percakapan itu =
+ * memulai percakapan (`inbox.initiate` / scope `messages:initiate`). Selaras dengan "Buka lagi" (yang
+ * lebih ketat: 24 jam, karena percakapannya sudah selesai).
+ */
+export const CONVERSATION_STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
+
 /** Jendela 24 jam berlaku untuk channel ini. */
 export function channelHasCustomerWindow(type: ChannelType): boolean {
   return CHANNEL_CAPABILITIES[type].customerWindow;
