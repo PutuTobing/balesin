@@ -53,6 +53,10 @@ export const ACCESS_RULES = {
    * `inbox.initiate` (audit akhir A1 sisa: buka lagi lalu kirim template = mulai percakapan).
    */
   inboxReopenStale: 'inbox.reopen.stale',
+  /** Kirim/kirim ulang yang memulai percakapan ke percakapan SELESAI tanpa `inbox.initiate` (A1/A6). */
+  inboxInitiateResolved: 'inbox.initiate.resolved',
+  /** Kirim/kirim ulang yang memulai percakapan ke percakapan terbuka DINGIN (> 7 hari) (P2-R2). */
+  inboxInitiateStale: 'inbox.initiate.stale',
   /** Mengubah catatan sesi milik orang lain (isi catatan hanya bisa diubah penulisnya). */
   noteEditOthers: 'inbox.note.edit_others',
   /** Menghapus catatan sesi milik orang lain tanpa izin `inbox.notes.moderate`. */

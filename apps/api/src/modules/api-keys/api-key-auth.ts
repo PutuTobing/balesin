@@ -173,6 +173,15 @@ export function createApiKeyAuthenticator(deps: {
 }
 
 /** Pemanggil API publik di handler rute `requireApiKeyScope`. */
+/**
+ * 403 untuk API key yang tidak memegang scope yang dibutuhkan aturan di service (mis. mulai percakapan
+ * butuh `messages:initiate`, audit akhir A1/QA P2-T1). Pelaku = key tanpa sesi, jadi tidak lewat
+ * `forbidByRule` — sama dengan penolakan scope di rute.
+ */
+export function apiKeyScopeDenied(message: string): AppError {
+  return new AppError('FORBIDDEN', { message });
+}
+
 export function requireApiKey(request: FastifyRequest): ApiKeyPrincipal {
   if (!request.apiKey) throw new AppError('UNAUTHENTICATED', { message: MISSING });
   return request.apiKey;

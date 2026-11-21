@@ -560,3 +560,49 @@ describe('P2-R1 — kirim ulang pesan gagal', () => {
     expect(await statusOf(messageId)).toBe('failed');
   });
 });
+
+describe('QA P2-T1 — penolakan mulai-percakapan diaudit (forbidByRule)', () => {
+  const deniedRules = async () =>
+    (
+      await harness.db
+        .select({ targetId: auditLogs.targetId })
+        .from(auditLogs)
+        .where(
+          and(
+            eq(auditLogs.action, 'auth.access.denied'),
+            eq(auditLogs.actorUserId, cs.session.user.id),
+          ),
+        )
+    )
+      .map((row) => row.targetId)
+      .sort();
+
+  it('kirim ke selesai → inbox.initiate.resolved; ke terbuka dingin → inbox.initiate.stale; pesan tetap sama', async () => {
+    const resolved = await conversation('whatsapp', 'resolved');
+    const first = await sendAs(cs, resolved, await templateBody());
+    expect(first.statusCode).toBe(403);
+    expect(first.json<{ error: { message: string } }>().error.message).toBe(
+      'Percakapan ini sudah selesai. Mengirim pesan baru ke percakapan yang sudah selesai butuh izin memulai percakapan.',
+    );
+    const cold = await conversation('telegram', 'unserved');
+    await setLastInbound(cold, 9);
+    const second = await sendAs(cs, cold, text());
+    expect(second.statusCode).toBe(403);
+    expect(second.json<{ error: { message: string } }>().error.message).toBe(
+      'Pelanggan tidak mengirim pesan dalam 7 hari terakhir. Mengirim template atau pesan baru ke percakapan ini butuh izin memulai percakapan.',
+    );
+    expect(await deniedRules()).toEqual(['inbox.initiate.resolved', 'inbox.initiate.stale']);
+  });
+
+  it('API key tanpa messages:initiate tetap 403 dengan pesan scope (tanpa sesi, tidak lewat forbidByRule)', async () => {
+    const secret = await key(['messages:send']);
+    const resolved = await conversation('whatsapp', 'resolved');
+    const response = await sendAsKey(secret, resolved, await templateBody());
+    expect(response.statusCode).toBe(403);
+    expect(response.json<{ error: { code: string; message: string } }>().error).toMatchObject({
+      code: 'FORBIDDEN',
+      message:
+        'Percakapan ini sudah selesai. Mengirim template atau pesan baru ke percakapan yang sudah selesai butuh scope messages:initiate.',
+    });
+  });
+});

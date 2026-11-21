@@ -543,7 +543,9 @@ baru": sesi pengguna wajib **`inbox.initiate`** (CS/Teknisi tidak punya) dan mem
 **`mulai-percakapan`** (200/pengguna/24 jam, ember yang sama dengan `POST /conversations/start`; 429
 bila habis); API key wajib scope **`messages:initiate`** selain `messages:send`. Ditolak → **403
 `FORBIDDEN`** "Percakapan ini sudah selesai. Mengirim pesan baru ke percakapan yang sudah selesai butuh
-izin memulai percakapan." (key: "… butuh scope messages:initiate."), tanpa pesan tersimpan. Membalas
+izin memulai percakapan." (key: "… butuh scope messages:initiate."), tanpa pesan tersimpan. Penolakan
+sesi pengguna diaudit `auth.access.denied` (aturan `inbox.initiate.resolved`; percakapan dingin:
+`inbox.initiate.stale`). Membalas
 percakapan `resolved` di WhatsApp/Messenger/Instagram selama jendela 24 jam masih terbuka (teks, media,
 dll. — bukan template) tetap balasan biasa (`inbox.reply`). `POST /conversations/start` dan
 `POST /api/v1/public/messages/template` tidak berubah (sudah = mulai percakapan).

@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { clientInfo } from '../../http/client-info';
 import { enforceRateLimit, type RateLimitRule, type RateLimiter } from '../../http/rate-limit';
 import { requirePermission } from '../../http/route-access';
+import { ACCESS_RULES, forbidByRule, type AccessDeniedRecorder } from '../auth/access-denied';
 import { requireAuth } from '../auth/auth.hook';
 import { permissionGrant } from '../auth/permission-grant';
 import { toMessage } from '../inbox/inbox-view';
@@ -28,6 +29,8 @@ import type { InitiationGrant, OutboundService } from './outbound.service';
 export interface OutboundRoutesOptions {
   outbound: OutboundService;
   limiter: RateLimiter;
+  /** Pencatat penolakan wewenang (mulai percakapan tanpa izin, QA P2-T1). */
+  accessDenied: AccessDeniedRecorder;
 }
 
 /**
@@ -77,9 +80,23 @@ export const MEDIA_USER_RULE: RateLimitRule = {
  * Izin "mulai percakapan" pengirim (audit akhir A1/A6/P2): `inbox.initiate` + jatah harian
  * `mulai-percakapan` (dipotong service hanya bila pesannya benar-benar memulai).
  */
-function initiationGrant(request: FastifyRequest, limiter: RateLimiter): InitiationGrant {
+function initiationGrant(
+  request: FastifyRequest,
+  limiter: RateLimiter,
+  accessDenied: AccessDeniedRecorder,
+): InitiationGrant {
   const auth = requireAuth(request);
   return {
+    deny: (reason, message) =>
+      forbidByRule(accessDenied, {
+        auth,
+        rule:
+          reason === 'resolved'
+            ? ACCESS_RULES.inboxInitiateResolved
+            : ACCESS_RULES.inboxInitiateStale,
+        client: clientInfo(request),
+        message,
+      }),
     allowed: hasPermission(auth.user.role, 'inbox.initiate'),
     consume: () =>
       enforceRateLimit(
@@ -124,7 +141,7 @@ export const outboundRoutes: FastifyPluginAsyncZod<OutboundRoutesOptions> = asyn
   app,
   options,
 ) => {
-  const { outbound, limiter } = options;
+  const { outbound, limiter, accessDenied } = options;
   const routes = API_ROUTES.inbox;
 
   // Parser multipart HANYA di dalam plugin ini (rute lain tetap menolak multipart).
@@ -152,7 +169,7 @@ export const outboundRoutes: FastifyPluginAsyncZod<OutboundRoutesOptions> = asyn
         id,
         request.body,
         clientInfo(request),
-        initiationGrant(request, limiter),
+        initiationGrant(request, limiter, accessDenied),
       );
       void reply.code(created ? 202 : 200);
       return { message: toMessage(message) };
@@ -177,7 +194,7 @@ export const outboundRoutes: FastifyPluginAsyncZod<OutboundRoutesOptions> = asyn
         grant,
         id,
         clientInfo(request),
-        initiationGrant(request, limiter),
+        initiationGrant(request, limiter, accessDenied),
       );
       void reply.code(202);
       return { message: toMessage(message) };

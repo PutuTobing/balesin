@@ -65,6 +65,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import type { ClientInfo } from '../../http/client-info';
 import type { OutboundMessageEnqueuer } from '../../queues/message-queue';
+import { apiKeyScopeDenied } from '../api-keys/api-key-auth';
 import type { PermissionGrant } from '../auth/permission-grant';
 import {
   conversationScope,
@@ -168,14 +169,22 @@ export interface ApiKeySender {
   scopes?: readonly string[];
 }
 
+/** Alasan pesan dianggap memulai percakapan (`isConversationInitiation`). */
+export type InitiationReason = 'resolved' | 'stale';
+
 /**
- * Izin "mulai percakapan" untuk pengiriman dari sesi pengguna (audit akhir A1/A6): dihitung rute dari
- * peran (`inbox.initiate`) + jatah harian `mulai-percakapan`. Tidak diisi = tidak punya izin.
+ * Izin "mulai percakapan" untuk pengiriman dari sesi pengguna (audit akhir A1/A6/P2): dihitung rute dari
+ * peran (`inbox.initiate`) + jatah harian `mulai-percakapan`.
  */
 export interface InitiationGrant {
   allowed: boolean;
   /** Potong jatah harian mulai-percakapan (dipanggil setelah semua pemeriksaan lolos). */
   consume?: () => Promise<void>;
+  /**
+   * Tolak + audit (rute: `forbidByRule` aturan `inbox.initiate.resolved`/`.stale`, QA P2-T1). Selalu
+   * melempar.
+   */
+  deny: (reason: InitiationReason, message: string) => Promise<never>;
 }
 
 type InitiationPolicy =
@@ -195,7 +204,7 @@ export function isConversationInitiation(
   channelType: Parameters<typeof channelHasCustomerWindow>[0],
   messageType: string,
   at: Date,
-): 'resolved' | 'stale' | null {
+): InitiationReason | null {
   if (messageType !== 'template' && channelHasCustomerWindow(channelType)) return null;
   if (conversation.status === 'resolved') return 'resolved';
   const lastInbound = conversation.lastInboundAt?.getTime() ?? null;
@@ -272,8 +281,8 @@ export interface OutboundService {
     conversationId: string,
     input: SendMessageRequest,
     client: ClientInfo,
-    /** Audit akhir A1/A6: `inbox.initiate` + jatah harian. Tidak diisi = tanpa izin mulai-percakapan. */
-    initiation?: InitiationGrant,
+    /** Audit akhir A1/A6/P2: `inbox.initiate` + jatah harian + penolakan teraudit. */
+    initiation: InitiationGrant,
   ): Promise<{ message: MessageRowView; created: boolean }>;
   /**
    * Kirim ulang pesan gagal. Aturan mulai-percakapan yang sama dengan `send` (audit akhir P2-R1);
@@ -283,7 +292,7 @@ export interface OutboundService {
     grant: PermissionGrant,
     messageId: string,
     client: ClientInfo,
-    initiation?: InitiationGrant,
+    initiation: InitiationGrant,
   ): Promise<MessageRowView>;
   upload(
     grant: PermissionGrant,
@@ -826,7 +835,7 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
         ? isConversationInitiation(conversation, channel.type, input.type, at)
         : null;
     if (initiates && initiation.kind === 'check' && !initiation.allowed) {
-      throw new AppError('FORBIDDEN', { message: INITIATION_DENIED[initiates][initiation.actor] });
+      await initiation.deny(initiates, INITIATION_DENIED[initiates][initiation.actor]);
     }
     // Rem pengiriman: rem darurat, batas harian pengguna/organisasi, batas per percakapan.
     await sendingLimits.assertCanSend({
@@ -1175,14 +1184,15 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
       sendAs(userSender(grant), conversationId, input, client, {
         kind: 'check',
         actor: 'user',
-        allowed: initiation?.allowed ?? false,
-        ...(initiation?.consume ? { consume: initiation.consume } : {}),
+        ...initiation,
       }),
     sendAsApiKey: (key, conversationId, input, client) =>
       sendAs(apiKeySender(key), conversationId, input, client, {
         kind: 'check',
         actor: 'apiKey',
         allowed: apiKeyHasScope(key.scopes ?? [], 'messages:initiate'),
+        // Pelaku = key (tanpa sesi): ditolak seperti scope key lainnya (`api-key-auth.ts`).
+        deny: (_reason, message) => Promise.reject(apiKeyScopeDenied(message)),
       }),
 
     async startWithTemplate(who, input, client, ensureContact, beforeCreate) {
@@ -1334,8 +1344,8 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
       assertWindowOpen(channel, conversation, message.type, at);
       // P2-R1: kirim ulang ke percakapan selesai/dingin = memulai percakapan (izin pengirim ulang).
       const initiates = isConversationInitiation(conversation, channel.type, message.type, at);
-      if (initiates && !initiation?.allowed) {
-        throw new AppError('FORBIDDEN', { message: INITIATION_DENIED[initiates].user });
+      if (initiates && !initiation.allowed) {
+        await initiation.deny(initiates, INITIATION_DENIED[initiates].user);
       }
       await sendingLimits.assertCanSend({
         organizationId: grant.organizationId,
@@ -1366,7 +1376,7 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
         )
         .returning();
       if (!updated) throw new AppError('CONFLICT', { message: 'Pesan ini sedang dikirim ulang.' });
-      if (initiates) await initiation?.consume?.();
+      if (initiates) await initiation.consume?.();
       const row = await enqueue(updated, updated.sendAttempts);
       await publishFor(row, false);
       logger.info({ messageId: row.id, attempt: row.sendAttempts }, 'Pesan keluar dikirim ulang');

@@ -604,7 +604,7 @@ export async function buildApp(deps: AppDeps) {
   });
   await app.register(inboxRoutes, { db, limiter, publisher: inboxEvents });
   await app.register(inboxStreamRoutes, { hub: inboxStream, appOrigin: config.appOrigin });
-  await app.register(outboundRoutes, { outbound, limiter });
+  await app.register(outboundRoutes, { outbound, limiter, accessDenied });
   await app.register(sendingLimitsRoutes, { sendingLimits, cookieSecure: config.cookieSecure });
   const assignment = createAssignmentService({
     db,
