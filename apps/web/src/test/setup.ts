@@ -31,14 +31,13 @@ if (!('scrollIntoView' in Element.prototype)) {
   Object.defineProperty(Element.prototype, 'scrollIntoView', { value: () => undefined });
 }
 
-// jsdom tidak punya object URL (media pesan & pratinjau lampiran).
+// jsdom tidak punya object URL (media pesan & pratinjau lampiran). Selalu dipasang: object URL bawaan
+// Node menolak `Blob` milik jsdom di Node 22 (CI), sehingga media gagal tampil hanya di sana.
 let blobCounter = 0;
-if (!('createObjectURL' in URL)) {
-  Object.assign(URL, {
-    createObjectURL: () => `blob:tes/${String((blobCounter += 1))}`,
-    revokeObjectURL: () => undefined,
-  });
-}
+Object.assign(URL, {
+  createObjectURL: () => `blob:tes/${String((blobCounter += 1))}`,
+  revokeObjectURL: () => undefined,
+});
 
 beforeEach(() => {
   // jsdom tidak mengimplementasikan scrollTo; router memanggilnya saat pindah halaman.
