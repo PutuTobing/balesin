@@ -313,3 +313,106 @@ pesan Email masuk. Pertimbangkan memeriksa `channel.type === 'email'` secara eks
 Worktree uji di scratchpad bukan bagian repo. Berkas baru dari audit ini: dokumen ini dan
 `apps/api/src/security-review-audit-akhir.integration.test.ts`. Tidak ada kode produk yang diubah dan
 tidak ada commit.
+
+---
+
+# Putaran 2: verifikasi perbaikan (HEAD `9727cdb`)
+
+Commit yang dinilai: `584f040` (A1/A6/A2), `9727cdb` (sisa A1 lewat "Buka lagi"), `0486386` +
+`7e501f5` + `50dc195` (A3/A5), dan checklist A4 di `docs/DEPLOY.md` §10. Perubahan web yang belum
+di-commit di working tree tidak dinilai.
+
+## Putusan putaran 2: **AMAN**. A1, A2, A3, A5, A6 tertutup; A4 menjadi butir checklist rilis
+
+Tidak ada temuan Kritis, Tinggi, atau Sedang baru. Ada 2 Rendah baru (P2-R1, P2-R2) dan 3 Info.
+
+## A. Verifikasi per temuan
+
+| Temuan | Bukti | Hasil |
+|---|---|---|
+| **A1** template ke `resolved` | `apps/api/src/modules/messages/outbound.service.ts:189` `isConversationInitiation`, `:801` (403 bila tanpa izin; jatah `mulai-percakapan` dipotong hanya untuk pesan baru yang lolos); `outbound.routes.ts` (`hasPermission(role, 'inbox.initiate')` + `INITIATE_USER_RULE` 200/24 jam, sama dengan `/conversations/start`) | `it.fails` A1 → `it` tanpa perubahan asersi; tes baru `initiation.integration.test.ts` (9) lulus. **Tertutup** |
+| A1 lewat API key | `sendAsApiKey` → `apiKeyHasScope(scopes, 'messages:initiate')`; `scopes` diteruskan dari API v1 dan MobiChat | key `messages:send` saja → 403; key + `messages:initiate` → 202; billing `/public/messages/template` tetap 202. **Tertutup** |
+| A1 lewat "Buka lagi" | `apps/api/src/modules/inbox/assignment.service.ts:531-563`: tanpa `inbox.initiate` hanya bila jendela 24 jam terbuka (Meta) atau pesan masuk < 24 jam (Email/Telegram); penolakan diaudit `inbox.reopen.stale` | CS → 403, tetap `resolved`, template tetap ditolak; Owner → 200; CS dalam jendela tetap boleh. **Tertutup** |
+| A1 lewat perubahan status lain | `assignment.service.ts`: `claim` hanya `unserved`/`bot`; `assign`/`unassign`/transfer/`setBot` pada `resolved` → 409 (`heldBy`); MobiChat `POST conversation-status` hanya `bot→unserved` atau `→resolved`; `handoff` API v1 tidak membuka `resolved` | tidak ada jalur lain yang membuat `resolved` kembali terbuka. **Tertutup** |
+| **A6** Email/Telegram | `isConversationInitiation`: `resolved` + channel tanpa jendela = memulai, jenis pesan apa pun | teks Telegram ke `resolved` → 403 (CS dan key). **Tertutup** |
+| **A2** CSV | `apps/api/src/http/csv.ts` satu-satunya `csvCell`/`csvRow` (grep: tidak ada salinan lain), dipakai audit, kontak, broadcast, laporan | tes `recipient-import`/`audit` lulus. **Tertutup** |
+| **A3** image & CVE | compose: postgres/redis/caddy/cloudflared `tag@sha256` (`deploy/docker-compose.yml:61,94,216,245`); base image Dockerfile ber-digest; Dependabot `docker-compose` untuk `/deploy`; Trivy 0.76.2 ber-digest di `ci.yml` (informasi) dan `rilis.yml` (CRITICAL yang sudah ada perbaikannya → gagal, sebelum login registry); npm/npx/corepack/yarn dibuang dari runtime api/worker; image web: `apk upgrade` + nginx ≥ 1.30.7 hanya dari repo nginx.org (`--repositories-file /dev/null`, tanda tangan paket diverifikasi), build gagal bila versi kurang | **Tertutup** (Info P2-1, P2-2) |
+| **A4** tanda tangan wajib | `docs/DEPLOY.md` §10 "Checklist rilis" butir 4; `deploy/install.sh:446` masih `0` | Diterima sebagai butir checklist rilis bertanda tangan pertama (BUTUH-TOBING #18). **Tetap terbuka sampai tag `v1.0.0`** |
+| **A5** lisensi | stage `notices` + `deploy/docker/third-party-notices.mjs` (gagal pada lisensi copyleft kuat atau tidak dikenal), teks LGPL/GPL v3, sumber sharp-libvips; `/app/THIRD-PARTY-NOTICES` di ketiga image + aset rilis, dicek sama antar-arsitektur | **Tertutup** |
+
+## B. Jalur lain yang dicari
+
+| Jalur | Hasil |
+|---|---|
+| Broadcast oleh CS | `broadcast.send` = Owner/Admin/Supervisor (`packages/shared/src/permissions.ts:202`); matriks lulus. Aman |
+| Bot / API v1 / MobiChat | semua pengiriman lewat `sendAsApiKey` (`public-api.routes.ts:399`, `mobichat.service.ts:349`); mulai percakapan lewat `startWithTemplate` (`messages:initiate`). Aman |
+| Tiket | modul tiket tidak mengirim pesan ke pelanggan (tidak ada pemanggil outbound). Aman |
+| Balasan cepat | hanya teks yang diisikan ke composer, lalu tetap lewat `sendAs`. Aman |
+| Pesan otomatis jam kerja / CSAT | worker `workspace.ts`/`csat.ts`, isinya diatur Owner/Admin. Bukan jalur CS |
+| Kunci idempotensi | `byIdempotencyKey` mengembalikan pesan lama tanpa membuat pesan baru. Aman |
+| **Kirim ulang pesan gagal** | lihat P2-R1 |
+| **Percakapan terbuka yang sudah lama** | lihat P2-R2 |
+
+## C. Temuan putaran 2
+
+### P2-R1 (Rendah): "Kirim ulang" tidak memeriksa aturan mulai-percakapan
+
+- Bukti: `outbound.service.ts:1280-1333` (`retry`) hanya memeriksa cakupan, jendela (`:1300`, template
+  lolos), dan batas kirim. Tidak ada `isConversationInitiation`, tidak ada pengecualian untuk pesan
+  broadcast, dan status kampanye tidak dicek (worker `messages.ts` juga tidak). Probe lokal: Owner
+  mengirim template ke percakapan `resolved` dengan jendela tertutup, pesan diubah jadi
+  `failed`/`meta_rejected`, lalu CS memanggil `POST /messages/:id/retry` → **202**.
+- Dampak: CS bisa mengirim ulang (maks. 5 percobaan per pesan) template gagal milik
+  Owner/Supervisor/API key ke percakapan selesai. Kemungkinan besar juga pesan broadcast yang gagal
+  dari kampanye yang sudah dibatalkan Admin. Isi dan penerimanya sudah diotorisasi pihak lain, jadi
+  jalur ini tidak bisa dipakai untuk phishing baru maupun nomor baru. Karena itu Rendah.
+- Perbaikan (backend): di `retry`, terapkan `isConversationInitiation(conversation.status,
+  channel.type, message.type)` dengan izin yang sama seperti `send`. Tolak pesan ber-`broadcast_id`:
+  kirim ulang hanya lewat kampanye, dan hanya bila kampanye belum `cancelled`.
+
+### P2-R2 (Rendah): Percakapan terbuka yang lama tidak dianggap "memulai"
+
+- Bukti: predikat A1 berbasis status (`isConversationInitiation` hanya untuk `resolved`). Probe lokal:
+  - percakapan `unserved` dengan pesan masuk terakhir 60 hari lalu dan jendela tertutup: CS mengirim
+    template → **202**;
+  - percakapan Email `unserved` dengan pesan masuk terakhir 60 hari lalu: CS mengirim teks bebas →
+    **202**.
+
+  Tidak ada penyelesaian otomatis untuk percakapan yang menganggur. Bandingkan dengan `reopen` di
+  `9727cdb`, yang sudah memakai aturan "pelanggan menghubungi < 24 jam".
+- Dampak: sasarannya hanya percakapan yang tidak pernah diselesaikan. Percakapan itu terlihat di tab
+  "Belum dilayani"/"Bot", dan batas harian tetap berlaku. Template susulan di percakapan terbuka juga
+  alur kerja yang sah. Risikonya membesar bila organisasi membiarkan banyak percakapan terbuka, misalnya
+  bot yang tidak pernah menyelesaikan percakapan.
+- Perbaikan (backend, pilih salah satu dan catat di DECISIONS):
+  1. Samakan dengan aturan `reopen`. Tanpa `inbox.initiate`, template di luar jendela (atau pesan
+     Email/Telegram) hanya boleh bila pelanggan menghubungi dalam N hari (mis. 7) ATAU percakapan
+     dipegang pengirim sendiri.
+  2. Tambahkan penyelesaian otomatis untuk percakapan yang menganggur (mis. 30 hari tanpa aktivitas,
+     bisa diatur Owner).
+
+## D. Info putaran 2
+
+1. **P2-1 Gerbang Trivy** menggagalkan rilis hanya untuk CRITICAL yang sudah ada perbaikannya. HIGH
+   dan image pihak ketiga hanya dilaporkan (`.github/workflows/rilis.yml:144-172`). Ini kompromi wajar
+   supaya rilis tidak terblokir CVE tanpa perbaikan, dan checklist §10 butir 2–3 meminta peninjauan
+   manual. Pertimbangkan `.trivyignore` bertanggal untuk HIGH yang dinilai tidak relevan, lalu naikkan
+   gerbang ke HIGH.
+2. **P2-2 Langkah nginx.org di image web** mengunduh paket saat build dengan `>=`. Pin versi persis
+   supaya build ulang dari tag yang sama menghasilkan isi yang sama. Hapus langkah ini setelah base
+   image upstream memuat perbaikan (sudah dicatat di komentar Dockerfile).
+3. **P2-3** `csvCell` memberi awalan `'` pada teks nomor seperti `+62812…` di ekspor. Itu kosmetik dan
+   memang aman. Pastikan impor kontak menerima kembali nilai `'+62…` bila CSV ekspor diimpor ulang.
+
+## E. Tes & perintah putaran 2
+
+| Perintah (HEAD `9727cdb`) | Hasil |
+|---|---|
+| `vitest run src/security-review-audit-akhir src/modules/messages/initiation src/rbac-matrix src/modules/broadcasts/recipient-import src/modules/audit` | 7 berkas, 60 tes lulus |
+| `vitest run security-review initiation rbac` (seluruh tes keamanan api) | 346 tes lulus |
+| `vitest run --config vitest.deploy.config.ts` (termasuk `security-review-audit-akhir-deploy.test.ts`) | 55/55 lulus |
+| Probe sementara P2-R1/P2-R2 (berkas uji dihapus setelah dijalankan) | kirim ulang 202; template ke `unserved` 60 hari 202; teks Email 60 hari 202 |
+| grep `it.fails(`/`test.fails(` | **0**: tidak ada temuan Sedang+ yang terbuka |
+| `pnpm audit --prod` | 0 kerentanan |
+
+Putaran 2 tidak mengubah kode produk dan tidak membuat commit.

@@ -358,3 +358,150 @@ T/G = terang/gelap sama kecuali disebut. Nilai lintas layar memperhitungkan D1�
 - Worktree `C:/APP-CODDING/balesin-kd-audit` dihapus (`git worktree remove --force`).
 - Berkas yang ditambahkan ke working tree utama: laporan ini + 23 foto di `desain/`. Tidak ada kode yang diubah
   dan tidak ada commit.
+
+---
+
+# Putaran 2 — verifikasi revisi `acf65e4`
+
+- **Penilai:** `kritikus-desain` · 2026-11-21 · kode branch `dev` commit **`acf65e4`** (CreateButton, FormActions, D1–D4,
+  R1–R8, penjelasan chat selesai tanpa `inbox.initiate`).
+- **Cara:** worktree sementara `C:/APP-CODDING/balesin-kd-audit2` (detached `acf65e4`), stack terpisah API **3191** / web
+  **5191**, DB **`balesin_kd_e2e`**, Redis **db 11**, timeout `webServer` 400 detik. Stack QA 3100/5180 tidak disentuh.
+  Hanya salinan worktree yang diubah: `e2e/viewports.ts` (timeout), `e2e/capture/kd-measure.ts` + kait di
+  `capture.spec.ts` (ukur DOM setiap foto), dua layar penilai `kd-penerima` (daftar penerima kampanye, digulir) dan
+  `kd-selesai-cs` (chat selesai dilihat CS tanpa `inbox.initiate`).
+- **Foto:** `pnpm screenshots` penuh, **1.417 tes: 1.407 lulus, 10 flaky lulus saat diulang, 0 gagal** (14,8 menit). Flaky
+  hanya 10 layar Inbox 390-terang di awal run (Vite masih kompilasi dingin); semuanya lulus di percobaan kedua.
+  `inbox-chat-interaktif(-daftar)` di HP kini lulus (R7). Ditambah 8 foto layar penilai.
+- **Ukur DOM:** semua **1.416 foto (4 proyek)**, bukan sampel seperti putaran 1: **0** scroll horizontal, **0** elemen
+  keluar viewport, **0** ukuran font di luar skala 12/13/14/16/20/24/32. Target sentuh < 44 di 390 hanya kasus lama yang
+  sudah diterima (`<input>`/`<select>` 42 px di dalam kotak 44, "Tampilkan password" 44×42, checkbox asli 20×20 di dalam
+  baris label 44, input file 1×1 tersembunyi). Tidak ada yang baru.
+- **Foto bukti:** `desain/p2-*.png` (19 berkas, montase dari foto asli 2×).
+
+## Putusan putaran 2: **LOLOS** — D1–D4 beres, tanpa Kritis/Tinggi/Sedang
+
+Keempat temuan Sedang sudah diperbaiki dengan benar dan **tidak ada regresi** di layar lain yang memakai `Page` /
+`EmptyState` (404, gagal dimuat, Inbox kosong, Channel kosong, API key, Webhook, Audit, menu Pengaturan, Tim; dicek lewat
+foto dan ukur DOM). Semua nilai rubrik ≥ 4. Sisa: **5 butir Rendah** (1 sisa lama BC-S13 + 4 baru N1–N4), boleh ikut
+1.0.1.
+
+| ID | Putaran 1 | Putaran 2 | Bukti |
+|---|---|---|---|
+| D1 | Sedang | **LOLOS.** `CreateButton` di `Page actions` kanan pada Broadcast, Template, Konektor, Balasan cepat, Departemen, Tiket. HP: "+ Buat" berlabel (bukan ikon saja), nama aksesibel = label lengkap (memenuhi WCAG 2.5.3 label-in-name). Tampil hanya bila daftar terisi; saat kosong ajakannya di `EmptyState`. Template: "Pakai preset"/"Sinkron dari Meta" jadi tombol sekunder rata kanan di atas saringan | `p2-d1-buat-390.png`, `p2-d1-buat-1440-*.png` |
+| D2 | Sedang | **LOLOS.** Ukur DOM di 390: **410 dari 410** kepala sub-halaman punya ikon panah di **x = 16** dan judul di **x = 52** (Tiket, Laporan, Pengaturan, API key, Keamanan, Tim, Detail kontak, kampanye, Detail tiket, Alarm, dst.). Tidak ada lagi tautan "Kembali" di x = −4 | `p2-d2-panah-kembali-390.png` |
+| D3 | Sedang | **LOLOS.** 1440: semua tombol simpan rata kanan kartu (`justify-content: flex-end`) di Alarm, Batas kirim, Notifikasi, Jam kerja, CSAT ("Terakhir diubah" di kiri), Tim, Merek, Email pengirim, Nomor (bot/profil), Atur board. 390: semua selebar penuh, tombol berwarna di atas (`column-reverse`). Catatan aksi destruktif: lihat **N1** | `p2-d3-form-390.png`, `p2-d3-aksi-destruktif-1440.png` |
+| D4 | Sedang | **LOLOS.** Pusat keadaan kosong di 1440 kini sama, **x = 472 px**, di Kontak, Broadcast, Tiket, Template (dulu ±750 vs ±470). Laporan: kosong di dalam kartu, rata kiri dengan saringan. Balasan cepat, Konektor, Departemen kini berilustrasi. Sisa kecil: Balasan cepat & Channel di x = 424 karena kolomnya 42rem (lihat **N3**) | `p2-d4-kosong-1440-a.png`, `p2-d4-kosong-1440-b.png` |
+| R1 | Rendah | **LOLOS.** "Buat …" untuk objek baru; "Tambah …" hanya untuk menempel (tag, kolom, tombol, hari libur, baris atribut saringan). `createShort: 'Buat'` (`id.ts:17`) | foto D1 |
+| R2 | Rendah | **LOLOS.** "Ekspor CSV" di Laporan, Kontak, Audit; "Unduh" hanya untuk media | `p2-r5-laporan-kinerja-1440.png` |
+| R3 | Rendah | **LOLOS.** "Ubah kontak" ghost `--ink` di panel inbox sama dengan Detail kontak. Efek samping di panel 1440: tombol 14 px semibold kini sedikit lebih berat dari judul bagian "Kontak" 13 px. Diterima (konsisten, tinggi 32 px), nilai Hierarki panel 4 | `p2-r3-ubah-kontak-panel-1440.png` |
+| R4 | Rendah | **LOLOS.** Ikon hapus Departemen `--ink-2` | `p2-d1-buat-390.png` |
+| R5 | Rendah | **LOLOS.** Ringkasan kinerja 4 + 3 mulai 1024 px, kartu "Bot" tidak sendirian | `p2-r5-laporan-kinerja-1440.png` |
+| R6 | Rendah | **LOLOS.** Label di atas nilai (12 px `--ink-2`, jarak 4 px), email utuh, "Nama profil WhatsApp" satu baris, terang & gelap | `p2-r6-panel-detail.png` |
+| R7 | Rendah | **LOLOS.** Cabang menu "+" → "Pesan dengan pilihan" di `screens-inbox.ts`; 4 foto HP lulus | `p2-inbox-390.png` |
+| R8 F-S12 | Rendah | **LOLOS, dengan efek samping (N2):** "Hapus tenggat" kini sejajar, tetapi terbaca seperti judul | `p2-hapus-tenggat-390.png` |
+| R8 BC-S12 | Rendah | **LOLOS.** Nomor penerima tampil "+62 812-3456-7890" | `p2-bc-penerima-390.png` |
+| R8 BC-S13 | Rendah | **REVISI (Rendah, masih terbuka).** Teks "Penerima" masih **12 px** di bawah garis tengah teks "Semua" di 390 (±7 px di 1440). `align-items: flex-end` menyejajarkan *tepi bawah kotak* h2 dengan tepi bawah select, bukan garis dasar teksnya | `p2-bc-penerima-390.png` |
+| R8 S5 | Rendah | **LOLOS sebagian.** `scroll-padding-bottom` membuat isian "Kode warna" utuh terlihat di atas navigasi bawah setelah difokus. Baris ke-2 pesan galat yang muncul sesudah blur ada di bawah lipatan (bisa digulir). Diterima | `p2-keamanan-merek-kontak-390.png` |
+| Chat selesai tanpa izin | — | **LOLOS, teks diperbaiki di N4.** CS melihat kalimat tambahan; terang/gelap, 390 (5 baris di samping "Buka lagi") & 1440 rapi | `p2-chat-selesai-cs-390.png` |
+
+### Temuan Rendah putaran 2 (untuk `frontend`, tidak menahan rilis)
+
+- **BC-S13 (sisa).** `apps/web/src/features/broadcast/Broadcast.module.css:870-872`: ganti
+  `.cardHeadRowEnd { align-items: flex-end; }` menjadi `align-items: last baseline;`. Dengan begitu garis dasar
+  "Penerima" sama dengan garis dasar teks di dalam select (`BroadcastCampaignPage.tsx:612-625`). Bila `last baseline`
+  tidak mengenai teks select di Chromium, alternatifnya: sembunyikan label visual saringan (tetap
+  `aria-label="Tampilkan"`) dan pakai `align-items: center`, satu baris setinggi 44 px.
+
+- **N1 — Aksi destruktif menempel pada tombol simpan** (pertanyaan orkestrator). Penilaian: **sebaiknya dipisah**.
+  - Alarm 1440: `[Hapus alarm Telegram] [Kirim pesan tes] [Simpan]` jadi satu gugus kanan. Atur board 1440:
+    `[Arsipkan board] [Simpan]` bersebelahan 8 px, dua tombol sama besar. Di 390, "Arsipkan board" persis di bawah
+    "Simpan" (8 px).
+  - Keduanya memang dilindungi dialog konfirmasi (`TelegramAlarmPage.tsx:252`, `BoardSettingsPage.tsx:218`), jadi
+    tidak ada risiko data dan levelnya Rendah. Tetapi produk profesional memisahkan aksi destruktif dari gugus simpan,
+    supaya tidak terbaca sebagai "langkah berikutnya".
+  - **Perbaikan:** di `apps/web/src/components/ui/FormActions.tsx`, tambah prop `danger?: ReactNode` yang dirender
+    **pertama** di DOM dalam `<div className={styles.danger}>`. CSS `FormActions.module.css`:
+    ```css
+    .danger { display: flex; margin-right: auto; }           /* desktop: paling kiri */
+    @media (max-width: 640px) {
+      .danger { margin-top: var(--space-8); }                /* HP: paling bawah, jarak 16 dari tombol di atasnya */
+      .danger > * { flex: 1; }
+    }
+    ```
+    `danger` dan `meta` belum pernah dipakai bersamaan; bila nanti perlu, posisi `meta` di bawah gugus pada HP sudah
+    benar.
+  - Pakai di `TelegramAlarmPage.tsx:216-226` (`danger={<Button variant="ghost" …>Hapus alarm Telegram</Button>}`) dan
+    `BoardSettingsPage.tsx:203-211`. Di Atur board, hanya "Arsipkan board" yang pindah; "Aktifkan lagi" tetap di gugus
+    kanan karena tidak destruktif.
+  - Tambahkan ke `docs/DESIGN.md` §4: "Aksi destruktif di form (hapus/arsipkan): kiri di desktop, paling bawah dengan
+    jarak ekstra di HP (`FormActions danger`)."
+
+- **N2 — "Hapus tenggat" terbaca seperti judul.** `TicketDetailPage.tsx:381-390` + `Tickets.module.css:761`.
+  - Setelah margin −16 px, teksnya tepat sejajar dengan label "Tenggat", sama tebal, sama warna, dan tanpa ikon.
+  - Akibatnya, di 390 dan 1440 tombol ini terlihat seperti judul bagian baru di antara isian tanggal dan daftar
+    "Board/Kontak…".
+  - **Perbaikan:** tambahkan ikon di depan teks, `<Icon icon={X} size={16} />` (Lucide `X` atau `CalendarX2`).
+    Pertahankan margin supaya ikon sejajar garis label. Teks tetap "Hapus tenggat".
+
+- **N3 — Dua lebar kolom isi di halaman Pengaturan satu kolom.**
+  - 42rem: `Channels.module.css:12`, `Integrations.module.css:7`, `Notifications.module.css:7`,
+    `QuickReplies.module.css:7`, `Security.module.css:8`, `SendingLimits.module.css:7`, `Settings.module.css:6`,
+    `Team.module.css:8`, `TeamUser.module.css:8`, `TwoFactor.module.css:68,489`, `PageSkeleton.module.css:17`.
+  - 48rem: Template, Konektor, Departemen, Atribut, Merek, Jam kerja, Alarm, `EmptyState column`.
+  - Akibatnya:
+    - tepi kanan kartu meloncat 96 px saat berpindah sub-menu Pengaturan;
+    - ilustrasi kosong Balasan cepat/Channel ada di x = 424, sedangkan Template di x = 472 (sisa kecil D4).
+  - **Perbaikan:** satu token lebar kolom `--size-column: 48rem` di token desain bersama (lewat penjaga CSS). Pakai di
+    semua wrapper di atas. Halaman dua kolom (Email pengirim 64rem, CSAT dengan pratinjau) tidak termasuk.
+
+- **N4 — Kalimat chat selesai tanpa izin agak ambigu.** `apps/web/src/i18n/id.ts:268-269`. Frasa "…butuh izin memulai
+  percakapan dari Owner atau Admin di tempatmu" bisa dibaca sebagai "percakapan dari Owner". Ganti dengan:
+  > Chat ini sudah selesai. Pesan baru dari pelanggan akan membuka chat baru. Untuk menyapa pelanggan lebih dulu, minta
+  > izin memulai percakapan ke Owner atau Admin di tempatmu.
+
+- **Catatan (tidak perlu diubah):** di 1440, pada halaman berkolom 48rem, `CreateButton` di kanan kepala halaman berjarak
+  ±560 px dari tepi kanan kolom isi. Ini konsekuensi aturan D1 (kepala halaman selebar penuh) dan seragam di semua
+  halaman, jadi diterima. Pertimbangkan lagi hanya bila N3 dikerjakan dan kepala halaman ikut dibatasi selebar kolom.
+
+## Rubrik putaran 2 (DESIGN §5): layar yang berubah
+
+T/G = terang dan gelap sama.
+
+| Area (layar) | Ukuran · tema | 1 Hier. | 2 Token | 3 Tipo | 4 Rapi | 5 Resp. | 6 Keadaan | 7 A11y | 8 Bahasa | 9 Prof. | 10 Cepat |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Broadcast daftar / kosong | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| Template daftar / kosong | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| Konektor, Departemen | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| Balasan cepat (+ kosong) | 390 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| | 1440 T/G | 5 | 5 | 5 | 4 (N3) | 5 | 5 | 5 | 5 | 5 | 5 |
+| Tiket kanban / daftar / kosong | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| Tiket detail | 390 · 1440 T/G | 4 (N2) | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| Kontak kosong, Laporan (kosong), Laporan kinerja | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| Form Pengaturan: Batas kirim, Notifikasi, Jam kerja, CSAT, Tim, Merek, Email pengirim, Nomor bot/profil | 390 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| | 1440 T/G | 5 | 5 | 5 | 4 (N3) | 5 | 5 | 5 | 5 | 5 | 5 |
+| Alarm Telegram (+ aktif), Atur board | 390 · 1440 T/G | 4 (N1) | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 4 (N1) | 5 |
+| Keamanan & semua sub-halaman (panah kembali) | 390 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| Inbox chat + panel detail | 1440 T/G | 4 (efek R3) | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| Inbox detail kontak, interaktif(-daftar) | 390 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 5 |
+| Inbox chat selesai (Owner & CS) | 390 · 1440 T/G | 5 | 5 | 5 | 5 | 5 | 5 | 5 | 4 (N4) | 5 | 5 |
+| Kampanye: daftar penerima | 390 · 1440 T/G | 5 | 5 | 5 | 4 (BC-S13) | 5 | 5 | 5 | 5 | 5 | 5 |
+
+Layar lain yang memakai `Page`/`EmptyState` tidak berubah dari putaran 1 (semua ≥ 4) dan tidak beregresi.
+
+**§3 larangan:** bersih semua:
+- gradien, glassmorphism, emoji sebagai ikon;
+- pill, bayangan tebal;
+- kartu berulang tanpa hierarki;
+- teks Inggris nyasar;
+- ukuran atau jarak acak;
+- warna di luar token.
+
+Larangan "tidak sejajar grid" yang dulu disentuh D2 kini bersih (diukur).
+
+## Pembersihan putaran 2
+
+- Stack 3191/5191 berhenti sendiri setelah Playwright selesai. Database `balesin_kd_e2e` di-drop, Redis db 11
+  dikosongkan, dan worktree `C:/APP-CODDING/balesin-kd-audit2` dihapus (`git worktree remove --force`).
+- Yang ditambahkan ke working tree utama: bagian ini + 19 foto `desain/p2-*.png`. Tidak ada kode yang diubah, tidak ada
+  commit.
