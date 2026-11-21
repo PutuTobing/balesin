@@ -1,0 +1,29 @@
+packages:
+  - apps/*
+  - packages/*
+  - e2e
+
+# Versi bersama dikunci di satu tempat (SECURITY.md §9: kunci versi dependency).
+catalog:
+  '@types/node': 22.20.5
+  drizzle-orm: 0.45.4
+  ioredis: 6.0.0
+  pg: 8.23.1
+  pino: 10.4.0
+  pino-pretty: 13.2.0
+  tsup: 9.0.0
+  tsx: 4.23.15
+  # TypeScript 7 belum didukung typescript-eslint (<6.1.0) — lihat docs/DECISIONS.md.
+  typescript: 6.0.3
+  uuid: 14.0.3
+  vitest: 5.1.0
+  zod: 4.6.7
+
+# Rantai pasok: versi yang terbit kurang dari 1 hari (1440 menit) ditolak — pilih versi
+# sebelumnya, jangan menambah pengecualian.
+minimumReleaseAge: 1440
+
+# Skrip install pihak ketiga diblokir kecuali yang disetujui di sini.
+allowBuilds:
+  esbuild: true
+  msgpackr-extract: false

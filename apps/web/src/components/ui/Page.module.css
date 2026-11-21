@@ -1,0 +1,109 @@
+.page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-16);
+  height: var(--size-bar);
+  padding: 0 var(--space-24);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.back {
+  display: none;
+}
+
+/* Sub-halaman Pengaturan: tombol kembali juga tampil di desktop. */
+.backAlways {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--size-control);
+  height: var(--size-control);
+  margin-left: calc(var(--space-8) * -1);
+  border-radius: var(--radius-input);
+  color: var(--ink);
+}
+
+.backAlways:hover {
+  background: var(--surface-2);
+}
+
+.header:has(.backAlways) {
+  gap: var(--space-8);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-20);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Judul belum diketahui (rute tanpa keterangan halaman). */
+.titleSkeleton {
+  width: 7rem;
+  height: var(--space-24);
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: var(--space-24);
+  overflow-y: auto;
+}
+
+@media (max-width: 640px) {
+  .header {
+    gap: var(--space-4);
+    padding: 0 var(--space-16);
+  }
+
+  /* Tombol kembali 44px; ikonnya jatuh tepat di garis tepi 16px. */
+  .header:has(.back) {
+    padding-left: var(--space-4);
+  }
+
+  .back {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: var(--size-touch);
+    height: var(--size-touch);
+    border-radius: var(--radius-input);
+    color: var(--ink);
+  }
+
+  /* Mengalahkan geseran desktop `.backAlways` (−8px) dan jaraknya: panah selalu di garis 16px,
+     judul selalu di 52px, di semua sub-halaman (audit akhir D2). */
+  .back {
+    margin-left: 0;
+  }
+
+  .header:has(.back) {
+    gap: var(--space-4);
+  }
+
+  .back:focus-visible {
+    outline-offset: -2px;
+  }
+
+  .body {
+    padding: var(--space-16);
+    /* Isian yang difokus (keyboard/skrip) berhenti dengan ruang di bawahnya: petunjuk di bawah
+       isian terakhir tidak menempel ke navigasi bawah (saran S5 Merek). Hanya memengaruhi gulir
+       otomatis ke elemen, bukan tata letak. */
+    scroll-padding-bottom: var(--size-touch);
+  }
+}

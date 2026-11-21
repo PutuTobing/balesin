@@ -1,0 +1,514 @@
+/*
+ * Pengaturan → Audit log. Lebih lebar dari halaman Pengaturan lain (64rem): lima kolom data.
+ * Desktop: daftar berbentuk tabel (kepala kolom visual + label kolom tersembunyi per sel untuk
+ * pembaca layar). HP: setiap entri kartu bertumpuk dengan label kecil yang terlihat.
+ */
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  width: 100%;
+  /* 80rem: saringan Aksi cukup lebar untuk label aksi terpanjang (kritikus butir 6 W5). */
+  max-width: 80rem;
+}
+
+.exportButton {
+  flex: none;
+}
+
+/* "Tutup" di kotak hasil ekspor: teks rata dengan tepi kiri teks kotak (padding ghost dikompensasi). */
+.noticeClose {
+  margin-left: calc(var(--space-16) * -1);
+}
+
+/* ---------- Saringan ---------- */
+
+.filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding: var(--space-16) var(--space-24);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+/* Tombol buka/tutup saringan hanya di HP. */
+.filterToggle {
+  display: none;
+}
+
+.filterBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.filterGrid {
+  display: grid;
+  /* Aksi dua kali lebih lebar: labelnya yang terpanjang. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--space-12) var(--space-16);
+}
+
+.filterFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  max-width: 100%;
+  min-height: var(--size-control);
+  padding: 0 var(--space-4) 0 var(--space-12);
+  border-radius: var(--radius-pill);
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.chipText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chipRemove {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--space-32);
+  height: var(--space-32);
+  border-radius: var(--radius-pill);
+  color: var(--ink);
+}
+
+@media (hover: hover) {
+  .chipRemove:hover {
+    background: var(--surface);
+  }
+}
+
+.clear {
+  margin-left: auto;
+}
+
+/* ---------- Daftar ---------- */
+
+.listCard {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.listHead,
+.entry {
+  display: grid;
+  grid-template-columns:
+    9.5rem minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr)
+    minmax(0, 1fr);
+  gap: var(--space-4) var(--space-16);
+  padding: var(--space-12) var(--space-24);
+}
+
+/* Baris kedua (Rincian) selalu ada: baris tanpa rincian setinggi yang punya (ritme rata). */
+.entry {
+  grid-template-rows: auto minmax(var(--space-24), auto);
+}
+
+/* Entri difokus terprogram setelah "Muat lagi": cincin di dalam kartu, tidak terpotong. */
+.entry:focus-visible {
+  outline-offset: -2px;
+}
+
+.listHead {
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.list {
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+/* Saringan baru sedang dimuat: hasil lama tetap tampil, diredupkan. */
+.stale {
+  opacity: 0.6;
+}
+
+.entry {
+  align-items: start;
+  font-size: var(--text-13);
+}
+
+.entry + .entry {
+  border-top: 1px solid var(--line);
+}
+
+.cellTime,
+.cellAction,
+.cellActor,
+.cellTarget,
+.cellOrigin {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.cellTime {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Label kolom per sel: hanya untuk pembaca layar di desktop (kepala kolom sudah terlihat). */
+.cellLabel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.actionLabel {
+  color: var(--ink);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+  overflow-wrap: anywhere;
+}
+
+/* Aksi yang belum dikenal versi web ini: kodenya tampil apa adanya. */
+.actionCode {
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+  overflow-wrap: anywhere;
+}
+
+.primaryText {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.secondaryText {
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+.mono {
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-12);
+  overflow-wrap: anywhere;
+}
+
+.details {
+  grid-column: 2 / -1;
+}
+
+/* Wadah nilai sel: tak terlihat di desktop (nilai tetap bertumpuk di kolomnya), baris di HP. */
+.values {
+  display: contents;
+}
+
+/* ID target (sesi, undangan): satu baris terpotong; nilai utuhnya ada di CSV dan atribut title. */
+.targetId {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--space-24);
+  color: var(--primary);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+
+.metadata {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-4) var(--space-16);
+  margin: var(--space-8) 0 0;
+  padding: var(--space-12) var(--space-16);
+  border-radius: var(--radius-input);
+  background: var(--bg);
+}
+
+.metadataRow {
+  display: contents;
+}
+
+.metadataKey {
+  color: var(--ink-2);
+  font-weight: var(--weight-semibold);
+}
+
+.metadataValue {
+  margin: 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.listFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8) var(--space-16);
+  min-height: calc(var(--size-control) + var(--space-24));
+  padding: var(--space-12) var(--space-24);
+  border-top: 1px solid var(--line);
+}
+
+.footerText {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.moreError {
+  margin: 0 var(--space-24) var(--space-12);
+}
+
+/* Keadaan kosong / gagal di dalam kartu, seperti daftar. */
+.state {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+/* ---------- Kerangka memuat ---------- */
+
+.skeletonField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.skeletonLabel {
+  color: var(--ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.skeletonControl {
+  display: block;
+  height: var(--size-control);
+  border-radius: var(--radius-input);
+}
+
+.skeletonShort,
+.skeletonMedium,
+.skeletonLong {
+  display: block;
+  height: calc(var(--text-13) * var(--leading-text));
+}
+
+.skeletonShort {
+  width: 5rem;
+}
+
+.skeletonMedium {
+  width: 7rem;
+  max-width: 100%;
+}
+
+.skeletonLong {
+  width: 12rem;
+  max-width: 100%;
+  height: calc(var(--text-14) * var(--leading-title));
+}
+
+/* Tablet: tiga saringan per baris. */
+@media (max-width: 1023px) {
+  .filterGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .filters {
+    padding: var(--space-4) var(--space-16);
+    gap: 0;
+  }
+
+  .filterToggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: var(--size-touch);
+    color: var(--ink);
+    font-size: var(--text-14);
+    font-weight: var(--weight-semibold);
+    text-align: left;
+  }
+
+  .toggleIcon {
+    color: var(--ink-2);
+    transition: transform var(--duration-fast) var(--ease-out);
+  }
+
+  .filterToggle[aria-expanded='true'] .toggleIcon {
+    transform: rotate(180deg);
+  }
+
+  .filterBody:not([data-open]) {
+    display: none;
+  }
+
+  .filterBody {
+    padding: var(--space-4) 0 var(--space-12);
+  }
+
+  .filterGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Tiga pilihan selebar layar; dua tanggal berdampingan. */
+  .filterGrid > :nth-child(-n + 3) {
+    grid-column: 1 / -1;
+  }
+
+  /* Tombol ghost di bawah isian: teksnya rata dengan tepi kiri isian (padding ghost dikompensasi). */
+  .clear {
+    margin-left: calc(var(--space-16) * -1);
+  }
+
+  /* Hapus chip: target sentuh 44 px, ikon tetap 16. Chip ikut setinggi itu. */
+  .chipRemove {
+    width: var(--size-touch);
+    height: var(--size-touch);
+  }
+
+  .chip {
+    min-height: var(--size-touch);
+  }
+
+  .listHead {
+    display: none;
+  }
+
+  .entry {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'action time'
+      'actor actor'
+      'target target'
+      'origin origin'
+      'details details';
+    grid-template-rows: none;
+    gap: var(--space-8) var(--space-12);
+    padding: var(--space-16);
+  }
+
+  .cellTime {
+    grid-area: time;
+    font-size: var(--text-12);
+    text-align: right;
+  }
+
+  .cellAction {
+    grid-area: action;
+  }
+
+  .cellActor {
+    grid-area: actor;
+  }
+
+  .cellTarget {
+    grid-area: target;
+  }
+
+  .cellOrigin {
+    grid-area: origin;
+  }
+
+  .details {
+    grid-area: details;
+  }
+
+  /* Target sentuh 44 px untuk "Rincian" di HP. */
+  .summary {
+    min-height: var(--size-touch);
+    margin: calc(var(--space-12) * -1) 0;
+  }
+
+  /*
+   * HP: "Pelaku  Rina Kartika  Owner" — label berlebar tetap, nilai di kolom kanannya. Nilai yang
+   * panjang (ID sesi) patah di dalam kolom nilai, tidak jatuh ke bawah label.
+   */
+  .cellActor,
+  .cellTarget,
+  .cellOrigin {
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--space-8);
+  }
+
+  .values {
+    display: flex;
+    flex: 1;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 var(--space-8);
+    min-width: 0;
+  }
+
+  /* Tanpa hover di HP: ID lengkap ditampilkan (patah di dalam kolom), bukan dipotong. */
+  .values .targetId {
+    white-space: normal;
+  }
+
+  .cellActor .cellLabel,
+  .cellTarget .cellLabel,
+  .cellOrigin .cellLabel {
+    position: static;
+    flex: none;
+    width: 4rem;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+    color: var(--ink-2);
+    font-size: var(--text-12);
+    font-weight: var(--weight-semibold);
+  }
+
+  .listFooter {
+    padding: var(--space-12) var(--space-16);
+  }
+
+  .listFooter > button {
+    width: 100%;
+  }
+
+  .moreError {
+    margin: 0 var(--space-16) var(--space-12);
+  }
+
+  .metadata {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .metadataValue + .metadataKey,
+  .metadataRow + .metadataRow .metadataKey {
+    margin-top: var(--space-8);
+  }
+}

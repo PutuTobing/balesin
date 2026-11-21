@@ -1,0 +1,250 @@
+.tags {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+ul.list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+/* ---------- Chip tag: titik berwarna + nama (teks selalu --ink: kontras terjamin) ---------- */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  max-width: 100%;
+  min-height: 1.75rem;
+  padding: 0 var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.chip:has(.chipRemove) {
+  padding-right: var(--space-4);
+}
+
+.dot {
+  flex: none;
+  width: var(--space-8);
+  height: var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--ink-2);
+}
+
+/* Kunci palet tag (TAG_COLORS) → token desain (abu-abu = --ink-2 bawaan `.dot`). */
+/* Token sendiri (bukan --primary): arti warna tag tidak ikut warna merek organisasi. */
+[data-color='blue'] > .dot,
+[data-color='blue'] > .colorDot {
+  background: var(--tag-blue);
+}
+
+[data-color='green'] > .dot,
+[data-color='green'] > .colorDot {
+  background: var(--success);
+}
+
+[data-color='yellow'] > .dot,
+[data-color='yellow'] > .colorDot {
+  background: var(--warning);
+}
+
+[data-color='orange'] > .dot,
+[data-color='orange'] > .colorDot {
+  background: var(--accent);
+}
+
+[data-color='red'] > .dot,
+[data-color='red'] > .colorDot {
+  background: var(--danger);
+}
+
+[data-color='purple'] > .dot,
+[data-color='purple'] > .colorDot {
+  background: var(--tag-purple);
+}
+
+[data-color='teal'] > .dot,
+[data-color='teal'] > .colorDot {
+  background: var(--tag-teal);
+}
+
+.chipName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chipRemove {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--radius-pill);
+  color: var(--ink-2);
+}
+
+.chipRemove:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.add {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 1.75rem;
+  padding: 0 var(--space-12) 0 var(--space-8);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-pill);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.add:hover {
+  border-color: var(--primary);
+  color: var(--ink);
+}
+
+.error {
+  color: var(--danger-ink);
+  font-size: var(--text-12);
+}
+
+.empty {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+/* ---------- Pemilih tag ---------- */
+
+.colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  padding: var(--space-4) 0;
+}
+
+.colorOption {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--size-control);
+  height: var(--size-control);
+  border-radius: var(--radius-pill);
+}
+
+.colorOption:hover {
+  background: var(--surface-2);
+}
+
+.colorOption[aria-checked='true'] {
+  box-shadow: inset 0 0 0 2px var(--ink);
+}
+
+.colorDot {
+  width: var(--space-16);
+  height: var(--space-16);
+  border-radius: var(--radius-pill);
+  background: var(--ink-2);
+}
+
+.popover {
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: min(18rem, calc(100vw - var(--space-32)));
+  max-height: min(22rem, 60dvh);
+  padding: var(--space-8);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+}
+
+.search {
+  height: var(--size-control);
+  padding: 0 var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: var(--text-14);
+}
+
+.search:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+
+ul.options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  overflow-y: auto;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  width: 100%;
+  min-height: var(--size-control);
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-input);
+  color: var(--ink);
+  font-size: var(--text-13);
+  text-align: left;
+}
+
+.option:hover {
+  background: var(--surface-2);
+}
+
+.check {
+  flex: none;
+  color: var(--primary);
+}
+
+.createText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .colorOption {
+    width: var(--size-touch);
+    height: var(--size-touch);
+  }
+
+  .add,
+  .option {
+    min-height: var(--size-touch);
+  }
+
+  .chipRemove {
+    width: var(--size-touch);
+    height: var(--size-touch);
+    margin: calc(var(--space-8) * -1) 0;
+  }
+
+  .search {
+    height: var(--size-touch);
+    font-size: var(--text-16);
+  }
+}

@@ -1,0 +1,72 @@
+/* Sakelar ber-token: lintasan `--line` (mati) / `--primary` (nyala), bulatan `--surface`. */
+.row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-height: var(--size-touch);
+  padding: 0 var(--space-4);
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-size: var(--text-14);
+  font-weight: var(--weight-medium);
+  text-align: start;
+  cursor: pointer;
+}
+
+.row:disabled {
+  color: var(--ink-2);
+  cursor: default;
+}
+
+.track {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  width: 2.5rem;
+  height: var(--space-24);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--ink-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.thumb {
+  width: var(--size-icon-sm);
+  height: var(--size-icon-sm);
+  border-radius: var(--radius-pill);
+  background: var(--ink-2);
+}
+
+.row[aria-checked='true'] .track {
+  justify-content: flex-end;
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.row[aria-checked='true'] .thumb {
+  background: var(--on-primary);
+}
+
+.row:disabled .track {
+  opacity: 0.5;
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-input);
+}
+
+.label {
+  min-width: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track {
+    transition: none;
+  }
+}

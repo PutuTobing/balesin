@@ -1,0 +1,427 @@
+/**
+ * Notifikasi webhook WhatsApp Cloud API TIRUAN + pengirim bertanda tangan, untuk tes integrasi dan
+ * E2E (simulasi pesan masuk). Bentuknya mengikuti contoh resmi Meta (dibaca 15 Nov 2026):
+ * developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/messages
+ * (text, image, status, errors, unsupported). Nilai contoh diganti data Indonesia fiktif.
+ *
+ * Tidak pernah memanggil Meta: notifikasi disusun di sini, ditandatangani dengan App Secret yang
+ * dipakai tes (`X-Hub-Signature-256` = HMAC-SHA256 body mentah), lalu dikirim ke penerima Balesin
+ * (lewat `app.inject` atau HTTP sungguhan ke stack E2E).
+ */
+import { createHmac, randomBytes } from 'node:crypto';
+
+export const FAKE_WEBHOOK_DEFAULTS = {
+  wabaId: '102290129340398',
+  phoneNumberId: '106540352242922',
+  displayPhoneNumber: '6281100001111',
+  customerWaId: '6281234567890',
+  customerUserId: 'ID.13491208655302741918',
+  customerName: 'Budi Santoso',
+} as const;
+
+export interface FakeWebhookTarget {
+  wabaId?: string;
+  phoneNumberId?: string;
+  displayPhoneNumber?: string;
+}
+
+/**
+ * Pelanggan pengirim. `waId: null` = pelanggan memakai username tanpa nomor (hanya BSUID);
+ * `userId: null` = payload tanpa BSUID (hanya nomor, bentuk lama).
+ */
+export interface FakeCustomer {
+  waId?: string | null;
+  userId?: string | null;
+  name?: string;
+  username?: string;
+}
+
+type Json = Record<string, unknown>;
+
+/** `wamid.` + acak (bentuk ID pesan Meta: base64). */
+export function fakeWamid(): string {
+  return `wamid.${randomBytes(30).toString('base64')}`;
+}
+
+/** Detik Unix sebagai string, seperti `timestamp` Meta. */
+export function unixTimestamp(date: Date = new Date()): string {
+  return String(Math.floor(date.getTime() / 1000));
+}
+
+function metadataOf(target: FakeWebhookTarget): Json {
+  return {
+    display_phone_number: target.displayPhoneNumber ?? FAKE_WEBHOOK_DEFAULTS.displayPhoneNumber,
+    phone_number_id: target.phoneNumberId ?? FAKE_WEBHOOK_DEFAULTS.phoneNumberId,
+  };
+}
+
+function contactOf(customer: FakeCustomer): Json {
+  const waId = customer.waId === undefined ? FAKE_WEBHOOK_DEFAULTS.customerWaId : customer.waId;
+  const userId =
+    customer.userId === undefined ? FAKE_WEBHOOK_DEFAULTS.customerUserId : customer.userId;
+  return {
+    profile: {
+      name: customer.name ?? FAKE_WEBHOOK_DEFAULTS.customerName,
+      ...(customer.username ? { username: customer.username } : {}),
+    },
+    ...(waId === null ? {} : { wa_id: waId }),
+    ...(userId === null ? {} : { user_id: userId }),
+  };
+}
+
+/** Satu `change` field `messages` → notifikasi lengkap. */
+export function whatsAppNotification(
+  value: Json,
+  options: { wabaId?: string; field?: string } = {},
+): Json {
+  return {
+    object: 'whatsapp_business_account',
+    entry: [
+      {
+        id: options.wabaId ?? FAKE_WEBHOOK_DEFAULTS.wabaId,
+        changes: [{ value, field: options.field ?? 'messages' }],
+      },
+    ],
+  };
+}
+
+/** Beberapa notifikasi digabung jadi satu (Meta bisa mengirim banyak entry sekaligus). */
+export function combinedNotification(...notifications: Json[]): Json {
+  return {
+    object: 'whatsapp_business_account',
+    entry: notifications.flatMap((notification) => notification.entry as unknown[]),
+  };
+}
+
+export interface FakeMessageOptions extends FakeWebhookTarget {
+  wamid?: string;
+  timestamp?: string;
+  customer?: FakeCustomer;
+  /** Pesan yang dibalas pelanggan (`context.id`). */
+  replyTo?: string;
+}
+
+function messageNotification(options: FakeMessageOptions, message: Json): Json {
+  const customer = options.customer ?? {};
+  const contact = contactOf(customer);
+  return whatsAppNotification(
+    {
+      messaging_product: 'whatsapp',
+      metadata: metadataOf(options),
+      contacts: [contact],
+      messages: [
+        {
+          ...(contact.wa_id === undefined ? {} : { from: contact.wa_id }),
+          ...(contact.user_id === undefined ? {} : { from_user_id: contact.user_id }),
+          id: options.wamid ?? fakeWamid(),
+          timestamp: options.timestamp ?? unixTimestamp(),
+          ...(options.replyTo
+            ? { context: { from: metadataOf(options).display_phone_number, id: options.replyTo } }
+            : {}),
+          ...message,
+        },
+      ],
+    },
+    { wabaId: options.wabaId },
+  );
+}
+
+/** Pesan teks masuk (`type: "text"`). */
+export function textMessageNotification(
+  options: FakeMessageOptions & { body?: string } = {},
+): Json {
+  return messageNotification(options, {
+    type: 'text',
+    text: { body: options.body ?? 'Halo kak, internet di rumah saya mati sejak pagi.' },
+  });
+}
+
+/** Gambar masuk (`type: "image"`) — media diunduh lewat Graph API (butir berikutnya). */
+export function imageMessageNotification(
+  options: FakeMessageOptions & { caption?: string; mediaId?: string } = {},
+): Json {
+  return messageNotification(options, {
+    type: 'image',
+    image: {
+      caption: options.caption ?? 'Bukti transfer bulan ini',
+      mime_type: 'image/jpeg',
+      sha256: 'f9TyJ/VLNWzIkPRS5tg1srKDa3w3SSFDP5XVLBGgbG4=',
+      id: options.mediaId ?? '1003383421387256',
+    },
+  });
+}
+
+export type FakeMediaKind = 'image' | 'audio' | 'video' | 'document' | 'sticker';
+
+/**
+ * Media masuk jenis apa pun (bentuk contoh resmi Meta: `id`, `mime_type`, `sha256`; dokumen +
+ * `filename`; audio `voice: true` untuk pesan suara; stiker `animated`). Hanya ID media Meta — tidak
+ * pernah URL.
+ */
+export function mediaMessageNotification(
+  kind: FakeMediaKind,
+  options: FakeMessageOptions & {
+    caption?: string;
+    mediaId?: string;
+    mimeType?: string;
+    filename?: string;
+    voice?: boolean;
+  } = {},
+): Json {
+  const defaults: Record<FakeMediaKind, string> = {
+    image: 'image/jpeg',
+    audio: 'audio/ogg; codecs=opus',
+    video: 'video/mp4',
+    document: 'application/pdf',
+    sticker: 'image/webp',
+  };
+  return messageNotification(options, {
+    type: kind,
+    [kind]: {
+      id: options.mediaId ?? '1003383421387256',
+      mime_type: options.mimeType ?? defaults[kind],
+      sha256: 'f9TyJ/VLNWzIkPRS5tg1srKDa3w3SSFDP5XVLBGgbG4=',
+      ...(options.caption && kind !== 'audio' && kind !== 'sticker'
+        ? { caption: options.caption }
+        : {}),
+      ...(kind === 'document' ? { filename: options.filename ?? 'tagihan-november.pdf' } : {}),
+      ...(kind === 'audio' ? { voice: options.voice ?? true } : {}),
+      ...(kind === 'sticker' ? { animated: false } : {}),
+    },
+  });
+}
+
+/** Lokasi yang dibagikan pelanggan (`type: "location"`). */
+export function locationMessageNotification(
+  options: FakeMessageOptions & { latitude?: number; longitude?: number; name?: string } = {},
+): Json {
+  return messageNotification(options, {
+    type: 'location',
+    location: {
+      latitude: options.latitude ?? -7.2575,
+      longitude: options.longitude ?? 112.7521,
+      name: options.name ?? 'Rumah pelanggan',
+      address: 'Jl. Contoh No. 1, Surabaya',
+    },
+  });
+}
+
+/** Reaksi pelanggan ke sebuah pesan (`type: "reaction"`); `emoji` kosong = reaksi dihapus. */
+export function reactionMessageNotification(
+  options: FakeMessageOptions & { targetWamid: string; emoji?: string },
+): Json {
+  return messageNotification(options, {
+    type: 'reaction',
+    reaction: {
+      message_id: options.targetWamid,
+      ...(options.emoji === '' ? {} : { emoji: options.emoji ?? '👍' }),
+    },
+  });
+}
+
+/** Balasan tombol/daftar pesan interaktif (`type: "interactive"`). */
+export function interactiveReplyNotification(
+  options: FakeMessageOptions & {
+    reply?: 'button_reply' | 'list_reply';
+    id?: string;
+    title?: string;
+    description?: string;
+  } = {},
+): Json {
+  const reply = options.reply ?? 'button_reply';
+  return messageNotification(options, {
+    type: 'interactive',
+    interactive: {
+      type: reply,
+      [reply]: {
+        id: options.id ?? 'SUDAH_BAYAR',
+        title: options.title ?? 'Sudah bayar',
+        ...(reply === 'list_reply' && options.description
+          ? { description: options.description }
+          : {}),
+      },
+    },
+  });
+}
+
+/** Tombol balasan cepat dari template (`type: "button"`). */
+export function buttonMessageNotification(
+  options: FakeMessageOptions & { text?: string; payload?: string } = {},
+): Json {
+  return messageNotification(options, {
+    type: 'button',
+    button: { text: options.text ?? 'Hubungi CS', payload: options.payload ?? 'HUBUNGI_CS' },
+  });
+}
+
+/** Pesan yang belum didukung Cloud API (`type: "unsupported"` + `errors[]` 131051). */
+export function unsupportedMessageNotification(options: FakeMessageOptions = {}): Json {
+  return messageNotification(options, {
+    type: 'unsupported',
+    unsupported: { type: 'edit' },
+    errors: [
+      {
+        code: 131051,
+        title: 'Message type unknown',
+        message: 'Message type unknown',
+        error_data: { details: 'Message type is currently not supported.' },
+      },
+    ],
+  });
+}
+
+export type FakeStatus = 'sent' | 'delivered' | 'read' | 'played' | 'failed';
+
+export interface FakeStatusOptions extends FakeWebhookTarget {
+  /** wamid pesan KELUAR yang statusnya dilaporkan. */
+  wamid: string;
+  status: FakeStatus;
+  timestamp?: string;
+  recipientWaId?: string;
+}
+
+/** Status pesan keluar (`value.statuses[]`). `failed` membawa `errors[]` (131049, contoh resmi). */
+export function statusNotification(options: FakeStatusOptions): Json {
+  const status: Json = {
+    id: options.wamid,
+    status: options.status,
+    timestamp: options.timestamp ?? unixTimestamp(),
+    recipient_id: options.recipientWaId ?? FAKE_WEBHOOK_DEFAULTS.customerWaId,
+  };
+  if (options.status === 'failed') {
+    status.errors = [
+      {
+        code: 131049,
+        title: 'This message was not delivered to maintain healthy ecosystem engagement.',
+        message: 'This message was not delivered to maintain healthy ecosystem engagement.',
+        error_data: {
+          details:
+            'In order to maintain a healthy ecosystem engagement, the message failed to be delivered.',
+        },
+        href: '/documentation/business-messaging/whatsapp/support/error-codes',
+      },
+    ];
+  } else {
+    status.conversation = { id: 'CONVERSATION_ID', origin: { type: 'service' } };
+    status.pricing = {
+      billable: false,
+      pricing_model: 'PMP',
+      type: 'free_customer_service',
+      category: 'service',
+    };
+  }
+  const value: Json = {
+    messaging_product: 'whatsapp',
+    metadata: metadataOf(options),
+    statuses: [status],
+  };
+  // Status `failed` tidak memuat `contacts` (dokumentasi status webhook).
+  if (options.status !== 'failed') value.contacts = [contactOf({})];
+  return whatsAppNotification(value, { wabaId: options.wabaId });
+}
+
+/** Error tingkat sistem/aplikasi/akun (`value.errors[]`, contoh resmi 130429). */
+export function errorNotification(options: FakeWebhookTarget = {}): Json {
+  return whatsAppNotification(
+    {
+      messaging_product: 'whatsapp',
+      metadata: metadataOf(options),
+      errors: [
+        {
+          code: 130429,
+          title: 'Rate limit hit',
+          message: 'Rate limit hit',
+          error_data: {
+            details:
+              'Message failed to send because there were too many messages sent from this phone number in a short period of time',
+          },
+          href: '/documentation/business-messaging/whatsapp/support/error-codes',
+        },
+      ],
+    },
+    { wabaId: options.wabaId },
+  );
+}
+
+/** Field tingkat WABA selain `messages`: perubahan status template (bawaan: disetujui). */
+export function templateStatusNotification(
+  options: {
+    wabaId?: string;
+    event?: string;
+    id?: string | number;
+    name?: string;
+    language?: string;
+    reason?: string;
+  } = {},
+): Json {
+  return whatsAppNotification(
+    {
+      event: options.event ?? 'APPROVED',
+      message_template_id: options.id ?? 1234567890,
+      message_template_name: options.name ?? 'tagihan_bulanan',
+      message_template_language: options.language ?? 'id',
+      reason: options.reason ?? 'NONE',
+    },
+    { wabaId: options.wabaId, field: 'message_template_status_update' },
+  );
+}
+
+// ── Tanda tangan & pengiriman ───────────────────────────────────────────────
+
+/** `sha256=<heks>` — sama persis dengan yang dikirim Meta. */
+export function signWebhookBody(rawBody: string | Buffer, appSecret: string): string {
+  return `sha256=${createHmac('sha256', appSecret).update(rawBody).digest('hex')}`;
+}
+
+export interface SignedWebhook {
+  /** Body mentah (string JSON) yang ditandatangani. */
+  body: string;
+  headers: Record<string, string>;
+}
+
+/**
+ * Body + header seperti kiriman Meta. `signature: null` = tanpa header; string = header itu apa
+ * adanya (tes tanda tangan salah).
+ */
+export function signedWebhook(
+  notification: unknown,
+  appSecret: string,
+  options: { signature?: string | null; rawBody?: string } = {},
+): SignedWebhook {
+  const body = options.rawBody ?? JSON.stringify(notification);
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    'user-agent': 'facebookexternalua',
+  };
+  const signature =
+    options.signature === undefined ? signWebhookBody(body, appSecret) : options.signature;
+  if (signature !== null) headers['x-hub-signature-256'] = signature;
+  return { body, headers };
+}
+
+/**
+ * Mengirim notifikasi bertanda tangan ke URL webhook SUNGGUHAN (stack E2E). Untuk tes `app.inject`,
+ * pakai `signedWebhook` langsung.
+ */
+export async function deliverWhatsAppWebhook(
+  callbackUrl: string,
+  notification: unknown,
+  appSecret: string,
+  options: { signature?: string | null } = {},
+): Promise<Response> {
+  const host = new URL(callbackUrl).hostname;
+  if (!['127.0.0.1', 'localhost', '[::1]'].includes(host)) {
+    throw new Error('Webhook tiruan hanya boleh dikirim ke server di mesin ini');
+  }
+  const { body, headers } = signedWebhook(notification, appSecret, options);
+  return fetch(callbackUrl, { method: 'POST', headers, body });
+}
+
+/** Jabat tangan verifikasi seperti yang dilakukan Meta saat tombol "Verifikasi dan simpan". */
+export function handshakeQuery(verifyToken: string, challenge = '1158201444'): string {
+  return new URLSearchParams({
+    'hub.mode': 'subscribe',
+    'hub.challenge': challenge,
+    'hub.verify_token': verifyToken,
+  }).toString();
+}

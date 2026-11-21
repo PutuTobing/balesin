@@ -1,0 +1,31 @@
+{
+  "name": "@balesin/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./migrator": "./src/migrator.ts",
+    "./testing": "./src/testing/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "generate": "drizzle-kit generate",
+    "migrate": "tsx --env-file-if-exists=../../.env src/migrate.ts"
+  },
+  "dependencies": {
+    "@balesin/shared": "workspace:*",
+    "drizzle-orm": "catalog:",
+    "pg": "catalog:",
+    "uuid": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/pg": "8.23.1",
+    "drizzle-kit": "0.31.11",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

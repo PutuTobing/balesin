@@ -1,0 +1,716 @@
+/* Pengaturan → Template WhatsApp: daftar, editor (formulir + pratinjau), galeri preset. */
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  width: 100%;
+  /* Daftar sedikit lebih lebar dari halaman Pengaturan lain: isi template + lencana sebaris. */
+  max-width: var(--size-column);
+}
+
+.intro {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  text-wrap: pretty;
+}
+
+.hint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+ul.plainList,
+.plainList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.actions,
+.secondaryActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+/* Empty state: tombol di tengah, seperti EmptyState lain. */
+.actions {
+  justify-content: center;
+}
+
+/* Preset & sinkron: aksi sekunder rata kanan di atas saringan (tombol buat di kepala halaman). */
+.secondaryActions {
+  justify-content: flex-end;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-12);
+}
+
+.searchBox {
+  flex: 2 1 14rem;
+  min-width: 0;
+}
+
+.filter {
+  flex: 1 1 9rem;
+  min-width: 0;
+}
+
+.noMatch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8) var(--space-12);
+  color: var(--ink-2);
+  font-size: var(--text-14);
+}
+
+/* ---------- Daftar ---------- */
+
+ul.list,
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-12) var(--space-12) var(--space-16) var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.itemHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8) var(--space-12);
+  min-width: 0;
+}
+
+.itemIcon {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.itemName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Seluruh kartu dapat diketuk (target besar di HP). */
+.itemLink {
+  color: inherit;
+  text-decoration: none;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.itemDetails {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+@media (hover: hover) {
+  .itemLink:hover {
+    border-color: var(--primary);
+  }
+
+  .itemLink:hover .itemName {
+    color: var(--primary);
+  }
+}
+
+.itemStatus {
+  flex: none;
+}
+
+.itemBody {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--text-14);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.itemDanger {
+  color: var(--danger-ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.itemMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-8);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.chip {
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.skeletonHead {
+  width: 60%;
+  height: var(--space-24);
+}
+
+.skeletonLine {
+  width: 100%;
+  height: var(--space-16);
+}
+
+.skeletonShort {
+  width: 40%;
+  height: var(--space-16);
+}
+
+/* ---------- Editor ---------- */
+
+.editor {
+  display: grid;
+  grid-template-areas:
+    'main aside'
+    'actions aside';
+  grid-template-columns: minmax(0, 1fr) 22rem;
+  grid-template-rows: auto 1fr;
+  align-items: start;
+  gap: var(--space-16) var(--space-24);
+  width: 100%;
+  max-width: 68rem;
+}
+
+.editorMain {
+  display: flex;
+  flex-direction: column;
+  grid-area: main;
+  gap: var(--space-16);
+  min-width: 0;
+}
+
+.editorAside {
+  position: sticky;
+  top: var(--space-16);
+  display: flex;
+  flex-direction: column;
+  grid-area: aside;
+  gap: var(--space-16);
+  min-width: 0;
+}
+
+.editorActions {
+  display: flex;
+  flex-direction: column;
+  grid-area: actions;
+  gap: var(--space-12);
+}
+
+.actionRow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-8);
+}
+
+.deleteButton {
+  margin-right: auto;
+  color: var(--danger-ink);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-24);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+/* `float` membuat legend jadi butir flex biasa (bukan di garis tepi fieldset). */
+legend.cardTitle {
+  float: left;
+  width: 100%;
+  padding: 0;
+}
+
+.cardTitle {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.fact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-12);
+  font-size: var(--text-14);
+}
+
+.factLabel {
+  color: var(--ink-2);
+}
+
+.twoCols {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--space-12) var(--space-16);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.groupLabel {
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.segments {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-self: flex-start;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+}
+
+.segment {
+  min-width: 6rem;
+  height: calc(var(--size-control) - 2px);
+  padding: 0 var(--space-16);
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.segment + .segment {
+  border-left: 1px solid var(--line);
+}
+
+.segment[aria-checked='true'] {
+  background: var(--primary-soft);
+  color: var(--ink);
+}
+
+.segment:disabled {
+  cursor: not-allowed;
+}
+
+.segment:focus-visible {
+  outline-offset: -3px;
+}
+
+.fieldError {
+  color: var(--danger-ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.short {
+  max-width: 16rem;
+}
+
+.bodyField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.bodyFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.count {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  font-variant-numeric: tabular-nums;
+}
+
+.examples {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr));
+  gap: var(--space-12) var(--space-16);
+}
+
+.buttonEditor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-16) var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--bg);
+}
+
+.buttonHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.buttonTitle {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.addButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.statusPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-16) var(--space-24);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.statusRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8) var(--space-12);
+}
+
+.previewCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.previewStage {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-4);
+  padding: var(--space-16) var(--space-12);
+  border-radius: var(--radius-input);
+  background: var(--bg);
+}
+
+.checkTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--warning-ink);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.checkReady .checkTitle {
+  color: var(--success-ink);
+}
+
+ul.issues,
+.issues {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-left: var(--space-16);
+  color: var(--ink);
+  font-size: var(--text-13);
+  list-style: disc;
+}
+
+.skeletonCard {
+  width: 100%;
+  height: calc(var(--space-48) * 5);
+  border-radius: var(--radius-card);
+}
+
+.skeletonPreview {
+  grid-area: aside;
+  width: 100%;
+  height: calc(var(--space-48) * 6);
+  border-radius: var(--radius-card);
+}
+
+/* ---------- Gelembung pratinjau ---------- */
+
+.bubbleFigure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 20rem;
+  margin: 0;
+}
+
+.bubble {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-bubble);
+  border-bottom-right-radius: var(--radius-input);
+  background: var(--bubble-out);
+  color: var(--ink);
+  font-size: var(--text-14);
+  line-height: var(--leading-text);
+  overflow-wrap: anywhere;
+}
+
+.bubbleHeader {
+  font-weight: var(--weight-bold);
+}
+
+/* Variabel belum diisi: contoh nilai redup, atau chip tempat isian (bukan `{{n}}` mentah). */
+.varExample {
+  /* Huruf miring menjorok keluar kotaknya: beri ruang 1px supaya tidak menempel tanda kurung. */
+  padding-inline-end: 1px;
+  color: var(--ink-2);
+  font-style: italic;
+}
+
+.varChip {
+  display: inline-flex;
+  vertical-align: baseline;
+  padding: 0 var(--space-4);
+  border: 1px dashed var(--warning);
+  border-radius: var(--radius-input);
+  color: var(--warning-ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.bubbleMedia {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  min-height: calc(var(--space-48) * 2);
+  border-radius: var(--radius-input);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.bubbleBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  white-space: pre-wrap;
+}
+
+/* Isi template = teks mengalir biasa: variabel/chip tetap sebaris dengan kata di sekitarnya. */
+.bubbleText {
+  white-space: pre-wrap;
+}
+
+.bubbleFooter {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+ul.bubbleButtons,
+.bubbleButtons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.bubbleButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+  min-height: var(--size-control);
+  padding: var(--space-4) var(--space-12);
+  border-radius: var(--radius-input);
+  background: var(--bubble-out);
+  color: var(--ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  text-align: center;
+}
+
+/* ---------- Galeri preset ---------- */
+
+.presets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.presetGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.presetIndustry {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+ul.presetList,
+.presetList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.preset {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+}
+
+.presetText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.presetTitle {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.presetMeta {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.presetBody {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--text-13);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.presetSkeleton {
+  width: 100%;
+  height: calc(var(--space-48) * 2);
+  border-radius: var(--radius-input);
+}
+
+@media (max-width: 1023px) {
+  .editor {
+    grid-template-areas:
+      'main'
+      'aside'
+      'actions';
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    max-width: 42rem;
+  }
+
+  .editorAside {
+    position: static;
+  }
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .segment {
+    height: var(--size-touch);
+  }
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: var(--space-16);
+  }
+
+  /* Nama template utuh: lencana status turun ke baris kedua, sejajar dengan nama. */
+  .itemHead {
+    flex-wrap: wrap;
+  }
+
+  .itemStatus {
+    order: 4;
+    width: 100%;
+    padding-left: calc(var(--size-icon-md) + var(--space-12));
+  }
+
+  .twoCols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .filter {
+    flex: 1 1 9rem;
+  }
+
+  .actions > *,
+  .secondaryActions > * {
+    flex: 1 1 auto;
+  }
+
+  .actionRow > * {
+    flex: 1 1 auto;
+  }
+
+  .deleteButton {
+    order: 1;
+    margin-right: 0;
+  }
+
+  .preset {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

@@ -1,0 +1,66 @@
+/* ---------- Avatar kontak ---------- */
+
+.avatar {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  user-select: none;
+}
+
+.sm {
+  width: 2rem;
+  height: 2rem;
+  font-size: var(--text-12);
+}
+
+.md {
+  width: 2.5rem;
+  height: 2.5rem;
+  font-size: var(--text-14);
+}
+
+.lg {
+  width: 3.5rem;
+  height: 3.5rem;
+  font-size: var(--text-20);
+}
+
+/* ---------- Hitung mundur sesi 24 jam ---------- */
+
+.countdown {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+  height: 1.375rem;
+  padding: 0 var(--space-8) 0 var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  /* Latar sendiri: teks status tetap kontras di baris terpilih/hover (kontras.test.ts). */
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.countdownIcon {
+  flex: none;
+}
+
+.countdown[data-tone='expiring'] {
+  border-color: var(--warning);
+  color: var(--warning-ink);
+}
+
+.countdown[data-tone='expired'] {
+  border-color: var(--danger);
+  color: var(--danger-ink);
+}

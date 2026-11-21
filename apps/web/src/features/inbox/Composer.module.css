@@ -1,0 +1,538 @@
+/* ---------- Composer: menempel di dasar ruang chat ---------- */
+
+.composer {
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12) var(--space-12);
+  /* HP: di atas indikator beranda; papan ketik mengecilkan tata letak (interactive-widget). */
+  padding-bottom: calc(var(--space-12) + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-8);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--size-touch);
+  max-height: 10rem;
+  padding: var(--space-12);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: var(--text-14);
+  line-height: var(--leading-text);
+  resize: none;
+}
+
+.input::placeholder {
+  color: var(--ink-2);
+  opacity: 1;
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+
+.input:disabled {
+  opacity: 0.6;
+}
+
+.send {
+  display: grid;
+  flex: none;
+  place-items: center;
+  min-width: var(--size-touch);
+  height: var(--size-touch);
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-card);
+  background: var(--primary);
+  color: var(--on-primary);
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.send:disabled {
+  background: var(--surface-2);
+  color: var(--ink-2);
+  cursor: not-allowed;
+}
+
+.sendLock {
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Kutipan balasan & lampiran ---------- */
+
+.reply,
+.attachment {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-12);
+  border-left: 2px solid var(--primary);
+  border-radius: var(--radius-input);
+  background: var(--surface-2);
+}
+
+.attachment {
+  padding-left: var(--space-4);
+  border-left-color: var(--line);
+}
+
+.replyIcon {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.replyText,
+.fileText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.replyWho {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.replySnippet,
+.fileName {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--text-13);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileSize {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-variant-numeric: tabular-nums;
+}
+
+.thumb,
+.fileIcon {
+  flex: none;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--radius-input);
+}
+
+.thumb {
+  object-fit: cover;
+}
+
+.fileIcon {
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  color: var(--ink-2);
+}
+
+.fileError {
+  color: var(--danger-ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.counter {
+  align-self: flex-end;
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-variant-numeric: tabular-nums;
+}
+
+.counter[data-over] {
+  color: var(--danger-ink);
+  font-weight: var(--weight-semibold);
+}
+
+/* ---------- Pengganti composer (jendela habis, selesai, baca saja) ---------- */
+
+.closed {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-16);
+  padding-bottom: calc(var(--space-12) + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.closedText {
+  display: flex;
+  flex: 1 1 18rem;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.closedTitle {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.closedBody {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.closed > .closedBody {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.closedAction {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-4);
+}
+
+.closedHint {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+/* ---------- Bilah penanganan & pemberitahuan di atas composer ---------- */
+
+.handling {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  padding: var(--space-8) var(--space-12) var(--space-8) var(--space-16);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.notices {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12) 0;
+}
+
+@media (max-width: 640px) {
+  .input {
+    /* 16px: iOS tidak memperbesar halaman saat kolom difokus. */
+    font-size: var(--text-16);
+  }
+
+  .closedAction {
+    align-items: stretch;
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .send {
+    transition: none;
+  }
+}
+
+/* Tautan di kotak rem darurat (pengelola batas kirim): target sentuh penuh. */
+.noticeLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--size-touch);
+  color: var(--primary);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.noticeLink:hover {
+  text-decoration: underline;
+}
+
+/*
+ * Kotak tulis terfokus (keyboard HP terbuka, ruang riwayat sempit): strip penanganan cukup satu
+ * baris ("Belum ditangani · Ambil chat"). Teks panjang tetap untuk pembaca layar.
+ */
+.handlingShort {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .handling:has(~ .composer textarea:focus) .handlingLong {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .handling:has(~ .composer textarea:focus) .handlingShort {
+    display: inline;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .handling:has(~ .composer textarea:focus) {
+    padding-block: var(--space-4);
+  }
+}
+
+/* ---------- Pesan interaktif (tombol / daftar) ---------- */
+
+.ivForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.ivKinds {
+  display: inline-flex;
+  align-self: flex-start;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+}
+
+.ivKind {
+  min-width: 7rem;
+  height: calc(var(--size-control) - 2px);
+  padding: 0 var(--space-16);
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.ivKind + .ivKind {
+  border-left: 1px solid var(--line);
+}
+
+.ivKind[aria-checked='true'] {
+  background: var(--primary-soft);
+  color: var(--ink);
+}
+
+.ivKind:focus-visible {
+  outline-offset: -3px;
+}
+
+.ivGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin: 0;
+  padding: var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.ivLegend {
+  padding: 0 var(--space-4);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.ivRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-8);
+}
+
+.ivRow > button {
+  margin-top: var(--space-24);
+}
+
+/* Pilihan & keterangan ditumpuk di semua ukuran: dialognya sempit, judul 24 karakter harus utuh. */
+.ivListRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-8);
+}
+
+.ivListRow > :nth-child(2) {
+  grid-row: 2;
+}
+
+.ivListRow > button {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  margin-top: var(--space-24);
+}
+
+/* Penghitung karakter hanya saat isian difokus atau hampir penuh (`counted` di InteractiveDialog). */
+.ivCounted:not(:focus-within, .ivNear) > p[id$='-petunjuk'] {
+  display: none;
+}
+
+.ivCount {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.ivError {
+  color: var(--danger-ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .ivKind {
+    height: var(--size-touch);
+  }
+}
+
+/* ---------- Kirim template (dialog) ---------- */
+
+.tplStep {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.tplName {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tplPick {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.tplLabel {
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.tplError {
+  color: var(--danger-ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.tplNote {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+/* ---------- HP: tombol "+" → menu berlabel (lampiran, pesan pilihan, template) ---------- */
+
+.moreTrigger {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--size-touch);
+  height: var(--size-touch);
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+}
+
+.moreTrigger[data-state='open'] {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.moreTrigger:disabled {
+  opacity: 0.5;
+}
+
+.moreMenu {
+  z-index: 40;
+  width: min(22rem, calc(100vw - var(--space-32)));
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+}
+
+.moreItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-height: var(--space-48);
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-input);
+  color: var(--ink);
+  cursor: pointer;
+  user-select: none;
+}
+
+.moreItem[data-highlighted] {
+  outline: none;
+  background: var(--surface-2);
+}
+
+.moreItem[data-disabled] {
+  color: var(--ink-2);
+  cursor: default;
+}
+
+.moreItem > svg {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.moreText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.moreLabel {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.moreHint {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+/* Dialog kirim template: nama template di bawah "← Pilih template lain" (satu kelompok). */
+.tplBack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+/* Percakapan baru: nama template + "Ganti template" sebaris. */
+.tplChosen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8) var(--space-12);
+}

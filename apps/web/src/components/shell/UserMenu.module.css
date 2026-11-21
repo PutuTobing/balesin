@@ -1,0 +1,135 @@
+.avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--space-32);
+  height: var(--space-32);
+  border-radius: var(--radius-pill);
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  letter-spacing: 0;
+  user-select: none;
+}
+
+.menu {
+  z-index: 40;
+  width: 18rem;
+  max-width: calc(100vw - var(--space-16));
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  animation: appear var(--duration-fast) var(--ease-out);
+}
+
+.heading {
+  padding: var(--space-8) var(--space-8) 0;
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-width: 0;
+  padding: var(--space-8);
+}
+
+.identityAvatar {
+  width: var(--size-control);
+  height: var(--size-control);
+  font-size: var(--text-13);
+}
+
+.identityText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.name,
+.email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.name {
+  color: var(--ink);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.email {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+/* Peran: teks polos seperti di daftar Tim dan detail anggota (pil hanya untuk "Kamu"/"Sesi ini"). */
+.role {
+  flex: none;
+  color: var(--ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.separator {
+  height: 1px;
+  margin: var(--space-4) 0;
+  background: var(--line);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: var(--size-control);
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-input);
+  color: var(--ink);
+  font-size: var(--text-14);
+  cursor: pointer;
+  user-select: none;
+}
+
+.item[data-highlighted] {
+  outline: none;
+  background: var(--surface-2);
+}
+
+.item[data-disabled] {
+  color: var(--ink-2);
+  cursor: progress;
+}
+
+.itemIcon {
+  color: var(--ink-2);
+}
+
+.error {
+  padding: var(--space-4) var(--space-8) var(--space-8);
+  color: var(--danger-ink);
+  font-size: var(--text-13);
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+    transform: translateX(calc(var(--space-4) * -1));
+  }
+}
+
+@media (pointer: coarse) {
+  .item {
+    height: var(--size-touch);
+  }
+}

@@ -1,0 +1,237 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1794521766945,
+      "tag": "0000_fondasi_akun",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794535684571,
+      "tag": "0001_setup_login_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794535689204,
+      "tag": "0002_audit_log_hanya_tambah",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794614598624,
+      "tag": "0003_2fa_totp_kode_cadangan",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794623077585,
+      "tag": "0004_undangan_reset_verifikasi_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794634072449,
+      "tag": "0005_pemberitahuan_ubah_email_pengirim",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794635462069,
+      "tag": "0006_manajemen_pengguna_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794635474574,
+      "tag": "0007_batas_daftar_2fa_isi_awal",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794640488944,
+      "tag": "0008_channel_whatsapp_cloud_api",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794691835060,
+      "tag": "0009_undangan_sesi_penerbit",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794711574305,
+      "tag": "0010_webhook_masuk_whatsapp",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794715849056,
+      "tag": "0011_channel_waktu_nonaktif",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794802549661,
+      "tag": "0012_kontak_percakapan_pesan",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794804240033,
+      "tag": "0013_pencarian_trigram_retensi_baris",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794807299087,
+      "tag": "0014_ruang_chat_media",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1794817059496,
+      "tag": "0015_penanganan_percakapan",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1794817809369,
+      "tag": "0016_rem_pengiriman",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794824229571,
+      "tag": "0017_panel_detail_quick_reply",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794840727386,
+      "tag": "0018_notifikasi_push",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794842752174,
+      "tag": "0019_notifikasi_nama_kontak",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794843995476,
+      "tag": "0020_api_key_publik",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794864443558,
+      "tag": "0021_webhook_keluar",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794866243360,
+      "tag": "0022_kompat_mobichat",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794869398093,
+      "tag": "0023_bot_eksternal",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794873604521,
+      "tag": "0024_template_meta",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794877331025,
+      "tag": "0025_broadcast_kampanye",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794879834229,
+      "tag": "0026_fase5_crm_tiket_departemen",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1794937609184,
+      "tag": "0027_laporan_csat",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794948726767,
+      "tag": "0028_jam_kerja_pesan_otomatis_alokasi",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794949520309,
+      "tag": "0029_channel_telegram_email_meta",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1794971259270,
+      "tag": "0030_email_verifikasi_pengirim",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1795066720602,
+      "tag": "0031_branding_merek_ikon",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1795073130102,
+      "tag": "0032_bot_pengirim_terverifikasi",
+      "breakpoints": true
+    }
+  ]
+}

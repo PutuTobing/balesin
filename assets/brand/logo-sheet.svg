@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="1536" height="1024" viewBox="0 0 1536 1024" role="img"
+     aria-labelledby="logo-title logo-description">
+  <title id="logo-title">Balesin logo</title>
+  <desc id="logo-description">A blue chat bubble curls into a reply arrow, forming a lowercase b with a coral dot. The same symbol appears to its right with the navy balesin wordmark.</desc>
+  <defs>
+    <g id="balesin-symbol">
+      <path fill="#1167D8" d="M47 0
+        C65 0 78 14 78 31 V60
+        C92 54 108 52 124 52
+        C180 52 222 94 222 149
+        C222 205 180 250 124 250 H68 V264
+        C68 273 58 278 51 272 L5 237
+        C-2 232 -2 223 5 218 L51 183
+        C58 178 68 182 68 191 V210 H124
+        C158 210 182 183 182 149
+        C182 117 158 92 124 92
+        C89 92 60 118 53 151
+        C50 165 49 177 38 177
+        C25 177 16 164 16 149 V31
+        C16 14 29 0 47 0 Z"/>
+      <circle cx="193" cy="39" r="23" fill="#FF7A59"/>
+    </g>
+  </defs>
+  <use xlink:href="#balesin-symbol" transform="translate(129 389) scale(.9)"/>
+  <use xlink:href="#balesin-symbol" transform="translate(483 389) scale(.9)"/>
+  <g transform="translate(721 433)" fill="none" stroke="#14202E"
+     stroke-width="29" stroke-linecap="round" stroke-linejoin="round" aria-label="balesin">
+    <path d="M15 15 V139"/>
+    <ellipse cx="59" cy="96" rx="44" ry="43"/>
+    <ellipse cx="183" cy="96" rx="44" ry="43"/>
+    <path d="M227 53 V139 M277 15 V139
+      M325 95 H411 C411 71 395 53 370 53
+      C343 53 325 72 325 96 C325 122 344 139 370 139
+      C385 139 397 135 405 128
+      M512 65 C502 57 490 53 476 53
+      C458 53 446 62 446 74 C446 87 457 92 479 97
+      C500 102 513 108 513 120 C513 132 500 140 479 140
+      C465 140 451 136 442 128
+      M554 56 V139 M603 54 V139 M603 89
+      C603 67 618 53 640 53 C662 53 675 68 675 90 V139"/>
+    <circle cx="554" cy="15" r="15" fill="#14202E" stroke="none"/>
+  </g>
+</svg>

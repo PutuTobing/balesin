@@ -107,7 +107,20 @@ Tugas BELUM selesai sampai semua ini benar:
 | `docs/ROADMAP.md` | Fase & tugas berurutan + kriteria selesai |
 | `docs/SECURITY.md` | Standar keamanan wajib |
 | `docs/DESIGN.md` | Design system + rubrik penilaian layar |
+| `docs/PENGATURAN-UI.md` | Aturan wajib: semua koneksi/konfigurasi diisi lewat UI, bukan kode/`.env` |
 | `docs/API-N8N.md` | API & webhook, termasuk mode kompatibel MobiChat |
+| `docs/KONTRAK-API-AUTH.md` | Kontrak API setup, login, branding, email pengirim (Fase 1) |
+| `docs/KONTRAK-API-CHANNEL.md` | Kontrak API channel WhatsApp (wizard, tes koneksi, profil bisnis) |
+| `docs/KONTRAK-API-INBOX.md` | Kontrak API inbox (percakapan, pesan, kontak; jendela 24 jam) |
+| `docs/KONTRAK-API-NOTIFIKASI.md` | Kontrak API notifikasi Web Push (langganan, preferensi, cuplikan) |
+| `docs/KONTRAK-API-PUBLIK.md` | Kontrak API publik v1 (API key ber-scope, OpenAPI `/api/docs`) |
+| `docs/KONTRAK-WEBHOOK-KELUAR.md` | Kontrak webhook keluar bertanda tangan (event, tanda tangan, SSRF, riwayat) |
+| `docs/KONTRAK-API-MOBICHAT.md` | Kontrak lapisan kompatibel MobiChat (`/api/public/*`, `/api/bot/*`, webhook format MobiChat) |
+| `docs/KONTRAK-API-TEMPLATE.md` | Kontrak template Meta (sinkron, ajukan, preset, kirim template, mulai percakapan) |
+| `docs/KONTRAK-API-BROADCAST.md` | Kontrak broadcast (impor penerima, persetujuan, jadwal, throttle, rem otomatis, laporan, alarm Telegram) |
+| `docs/KONTRAK-API-CRM-TIKET.md` | Kontrak CRM (atribut, impor/ekspor, gabung kontak), tiket multi-board, departemen |
+| `docs/KONTRAK-API-LAPORAN.md` | Kontrak laporan kinerja, biaya pesan Meta, ekspor CSV, CSAT |
+| `docs/KONTRAK-API-CHANNEL-LAIN.md` | Kontrak channel Telegram, Email (IMAP/SMTP), Messenger & Instagram |
 | `docs/SETUP-META.md` | Teks wizard koneksi WhatsApp (dipakai di UI) |
 | `docs/BRANDING-PROMPTS.md` | Prompt gambar Kak Sky & logo |
 | `docs/KONTEKS-SKYTECH.md` | Konteks operasional Sky Tech |

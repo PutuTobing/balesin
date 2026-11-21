@@ -1,0 +1,461 @@
+/* ---------- Kolom daftar chat ---------- */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.listInner {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.listHeader {
+  flex: none;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  height: var(--size-bar);
+  padding: 0 var(--space-12) 0 var(--space-16);
+}
+
+.title {
+  font-size: var(--text-20);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-title);
+  letter-spacing: var(--tracking-title);
+}
+
+.searchRow {
+  padding: 0 var(--space-16) var(--space-8);
+}
+
+/* ---------- Tab status + hitungan ---------- */
+
+.tabs {
+  display: flex;
+  /* 8px di sini + 8px padding tepi tab pertama/terakhir: teks sejajar gutter 16px. */
+  padding: 0 var(--space-8);
+  border-bottom: 1px solid var(--line);
+  /* Kelima tab muat di kolom 360px; bila tetap meluap (angka besar) bisa digeser + tepi pudar. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tabs[data-fade-end] {
+  mask-image: linear-gradient(to right, var(--ink) calc(100% - var(--space-24)), transparent);
+}
+
+.tabs[data-fade-start] {
+  mask-image: linear-gradient(to left, var(--ink) calc(100% - var(--space-24)), transparent);
+}
+
+.tabs[data-fade-start][data-fade-end] {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    var(--ink) var(--space-24),
+    var(--ink) calc(100% - var(--space-24)),
+    transparent
+  );
+}
+
+/*
+ * Sisa lebar dibagi rata ke semua tab sebagai ruang kosong. Tab tengah tumbuh penuh
+ * dengan teks di tengah; tab pertama dan terakhir tumbuh separuh dengan teks menempel
+ * ke tepi luar. Hasilnya jarak antar teks sama rata, teks tepi sejajar gutter, dan kotak
+ * tab pendek ("Bot") ikut melebar jadi target sentuh.
+ */
+.tab {
+  display: flex;
+  flex: 1 0 auto;
+  justify-content: center;
+  min-width: var(--size-touch);
+  height: var(--size-touch);
+  /* 4px di kiri-kanan teks (cincin fokus di dalam kotak, tidak menabrak huruf). */
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.tab:first-child {
+  flex-grow: 0.5;
+  justify-content: flex-start;
+  padding-left: var(--space-8);
+}
+
+.tab:last-child {
+  flex-grow: 0.5;
+  justify-content: flex-end;
+  /* 4px (bukan 8): kelima tab muat di kolom 360px tanpa pudar tepi yang menutupi "Selesai". */
+  padding-right: var(--space-4);
+}
+
+.tab:hover,
+.tab[data-state='active'] {
+  color: var(--ink);
+}
+
+.tab:focus-visible {
+  outline-offset: -2px;
+}
+
+/* Garis aktif selebar teks, di dasar tab. Garis atas transparan menjaga teks di tengah. */
+.tabLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  border-top: 2px solid transparent;
+  border-bottom: 2px solid transparent;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.tab[data-state='active'] .tabLabel {
+  border-bottom-color: var(--primary);
+}
+
+/* Hitungan: angka biasa, tanpa latar (hemat ruang supaya kelima tab muat). */
+.tabCount {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab,
+  .tabLabel {
+    transition: none;
+  }
+}
+
+/* ---------- Isi daftar ---------- */
+
+.listBody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.listBody:focus-visible {
+  outline-offset: -2px;
+}
+
+/* `ul.` : mengalahkan reset `ul[class]` di styles/base.css. */
+.searchHint {
+  padding: var(--space-12) var(--space-16) var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+ul.items {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4) 0;
+}
+
+.itemWrap {
+  display: flex;
+}
+
+.item {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  gap: var(--space-12);
+  min-width: 0;
+  padding: var(--space-12) var(--space-16);
+  color: var(--ink);
+  text-align: left;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.item:hover {
+  background: var(--surface-2);
+}
+
+.item[aria-current='true'] {
+  background: var(--primary-soft);
+}
+
+.item:focus-visible {
+  outline-offset: -2px;
+}
+
+.lines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.nameWrap {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: baseline;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.fromWa {
+  flex: none;
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item[data-unread] .name {
+  font-weight: var(--weight-bold);
+}
+
+/* Nomor/@username tidak pernah terpotong: channel & agen sesudahnya yang mengalah. */
+.handle {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.time {
+  flex: none;
+  margin-left: auto;
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-title);
+  white-space: nowrap;
+}
+
+.item[data-unread] .time {
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+}
+
+.snippet {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.item[data-unread] .snippet {
+  color: var(--ink);
+}
+
+.snippetIcon,
+.snippetStatus {
+  display: inline-flex;
+  flex: none;
+  color: var(--ink-2);
+}
+
+.snippetStatus[data-status='read'],
+.snippetStatus[data-status='played'] {
+  color: var(--primary);
+}
+
+.snippetStatus[data-status='failed'] {
+  color: var(--danger-ink);
+}
+
+.snippetText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.unread {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--text-12);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.meta {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  line-height: var(--leading-title);
+  white-space: pre;
+}
+
+.metaWho {
+  /* Agen/status utuh; hanya nama yang sangat panjang dibatasi. Channel yang mengalah. */
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.metaRest {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  /* `pre`: spasi di depan " · " tetap ada. */
+  white-space: pre;
+}
+
+.countdown {
+  margin-left: auto;
+}
+
+.listEnd {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-height: var(--space-8);
+  padding: 0 0 var(--space-16);
+}
+
+.listEnd > button {
+  align-self: center;
+}
+
+.listEnd > [role='alert'] {
+  margin: 0 var(--space-16);
+}
+
+.endText {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  text-align: center;
+}
+
+.notice {
+  padding: var(--space-16);
+}
+
+/* ---------- Kerangka memuat ---------- */
+
+.skeletonRows {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4) 0;
+}
+
+.skeletonRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-16);
+}
+
+.skeletonAvatar {
+  flex: none;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-pill);
+}
+
+.skeletonLines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-12);
+  min-width: 0;
+  padding-top: var(--space-4);
+}
+
+.skeletonName {
+  width: 46%;
+  height: var(--space-12);
+}
+
+.skeletonSnippet {
+  width: 82%;
+  height: var(--space-8);
+}
+
+.skeletonMeta {
+  width: 58%;
+  height: var(--space-16);
+  border-radius: var(--radius-pill);
+}
+
+.skeletonTime {
+  flex: none;
+  width: 2rem;
+  height: var(--space-8);
+  margin-top: var(--space-4);
+}
+
+@media (max-width: 640px) {
+  .list {
+    border-right: 0;
+  }
+}
+
+/* Ikon jenis channel (Telegram, email, …) di depan nama channel; WhatsApp tanpa ikon. */
+.metaChannel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.metaChannelIcon {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.metaChannelName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

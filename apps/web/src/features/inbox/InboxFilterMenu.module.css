@@ -1,0 +1,188 @@
+/* ---------- Tombol saring ---------- */
+
+.trigger {
+  position: relative;
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--size-control);
+  height: var(--size-control);
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.trigger:hover,
+.trigger[data-state='open'] {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.triggerCount {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: grid;
+  place-items: center;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: var(--text-12);
+  font-weight: var(--weight-bold);
+  line-height: 1;
+}
+
+/* ---------- Menu ---------- */
+
+.menu {
+  z-index: 40;
+  width: 16rem;
+  max-height: min(32rem, calc(100dvh - var(--space-48) * 2));
+  padding: var(--space-4);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  animation: appear var(--duration-fast) var(--ease-out);
+}
+
+.group + .group {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+.heading {
+  padding: var(--space-8) var(--space-8) var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: var(--size-control);
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-input);
+  color: var(--ink);
+  font-size: var(--text-14);
+  cursor: pointer;
+  user-select: none;
+}
+
+.option[data-highlighted] {
+  outline: none;
+  background: var(--surface-2);
+}
+
+.option[data-state='checked'] {
+  font-weight: var(--weight-semibold);
+}
+
+.optionLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.check {
+  display: inline-flex;
+  color: var(--primary);
+}
+
+.separator {
+  height: 1px;
+  margin: var(--space-4) 0;
+  background: var(--line);
+}
+
+/* ---------- Saringan aktif ---------- */
+
+/* `ul.` : mengalahkan reset `ul[class]` di styles/base.css (gutter 16px). */
+ul.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  padding: 0 var(--space-16) var(--space-8);
+}
+
+.chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  max-width: 100%;
+  height: 1.75rem;
+  padding: 0 var(--space-8) 0 var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.chip:hover {
+  border-color: var(--primary);
+}
+
+/* Area tekan setinggi 44px tanpa memperbesar label. */
+.chip::after {
+  content: '';
+  position: absolute;
+  inset: calc((var(--size-touch) - 1.75rem) / -2) 0;
+}
+
+.chipLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--space-4) * -1));
+  }
+}
+
+/* Masih ada pilihan di bawah: tepi bawah memudar (tanda bisa digulir). */
+.menu[data-fade-end] {
+  mask-image: linear-gradient(to bottom, var(--ink) calc(100% - var(--space-32)), transparent);
+}
+
+@media (max-width: 640px) {
+  /* Menu dibuka dari baris judul (tinggi 56px): sisa tinggi layar dipakai seluruhnya. */
+  .menu {
+    width: min(20rem, calc(100vw - var(--space-32)));
+    max-height: calc(100dvh - var(--size-bar) - var(--space-24));
+  }
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .trigger {
+    width: var(--size-touch);
+    height: var(--size-touch);
+  }
+
+  .option {
+    min-height: var(--size-touch);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu {
+    animation: none;
+  }
+}

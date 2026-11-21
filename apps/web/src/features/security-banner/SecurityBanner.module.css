@@ -1,0 +1,110 @@
+/*
+ * Banner peringatan keamanan di atas konten (semua halaman aplikasi, Owner/Admin). Pola kotak
+ * pesan: garis tepi kiri `--warning`, teks `--ink`, ikon `--warning-ink`. Tanpa bayangan.
+ */
+.banner {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-24);
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid var(--warning);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.icon {
+  flex: none;
+  color: var(--warning-ink);
+}
+
+.text {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-8);
+  min-width: 0;
+}
+
+.title {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-text);
+}
+
+.body {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+  /* Tombol 36 px di baris teks 20 px: rata tengah dengan baris pertama. */
+  margin-top: calc(var(--space-8) * -1);
+  margin-bottom: calc(var(--space-8) * -1);
+}
+
+.review {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--size-control);
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-input);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.dismiss {
+  display: grid;
+  place-items: center;
+  width: var(--size-control);
+  height: var(--size-control);
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+}
+
+@media (hover: hover) {
+  .dismiss:hover {
+    background: var(--surface-2);
+    color: var(--ink);
+  }
+}
+
+@media (max-width: 640px) {
+  .banner {
+    flex-wrap: wrap;
+    padding: var(--space-12) var(--space-4) var(--space-8) var(--space-16);
+  }
+
+  .text {
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  /* HP: tutup tetap di kanan atas; tautan pindah ke bawah teks, sejajar teks. */
+  .actions {
+    display: contents;
+  }
+
+  .dismiss {
+    order: 2;
+    width: var(--size-touch);
+    height: var(--size-touch);
+    margin: calc(var(--space-12) * -1) 0 0;
+  }
+
+  .review {
+    order: 3;
+    flex-basis: 100%;
+    min-height: var(--size-touch);
+    margin-left: var(--space-24);
+    padding: 0 var(--space-8);
+  }
+}

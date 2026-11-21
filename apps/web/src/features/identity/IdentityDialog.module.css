@@ -1,0 +1,42 @@
+/* Dialog konfirmasi identitas: isian bertumpuk di lebar dialog (28rem), aksi di kanan bawah. */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.why {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-8);
+}
+
+/* Pesan error/kunci tidak menempel di tepi bawah layar (dialog bisa digulir di HP). */
+.notice {
+  scroll-margin-bottom: var(--space-16);
+}
+
+@media (max-width: 640px) {
+  /* HP: aksi utama di atas (dekat isian), Batal di bawahnya; keduanya selebar dialog. */
+  .actions {
+    flex-direction: column-reverse;
+  }
+
+  .actions > * {
+    width: 100%;
+  }
+}

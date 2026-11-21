@@ -29,7 +29,9 @@ balesin/
 │  ├─ worker/     Proses antrian BullMQ
 │  └─ web/        React + Vite PWA
 ├─ packages/
-│  └─ shared/     Skema Zod, tipe, konstanta (dipakai api & web)
+│  ├─ shared/     Skema Zod, tipe, konstanta, design token (dipakai api, worker & web)
+│  ├─ core/       Khusus server: logger + redaksi, env, AppError, util Redis/antrian
+│  └─ db/         Skema Drizzle, migrasi, klien Postgres (dipakai api & worker)
 ├─ deploy/
 │  ├─ docker-compose.yml
 │  ├─ Caddyfile           (mode Caddy bawaan)
@@ -89,8 +91,9 @@ nameserver. Maka:
 - VM Balesin: **IP privat saja**, akses internet keluar lewat NAT seperti VM lain.
 - `vm-nginx` (IP publik 198.15.25.13) menambah satu `server` block untuk
   `balesin.skytech.net.id` → proxy ke IP privat VM Balesin. Contoh konfigurasi di
-  `deploy/nginx/balesin.conf` (dibuat agent `devops`), termasuk WebSocket, batas
-  ukuran upload, rate limit, header keamanan.
+  `deploy/nginx/balesin.conf` (dibuat agent `devops`, ikut rilis sebagai `balesin-nginx.conf`
+  dengan nilai contoh netral), termasuk WebSocket, batas ukuran upload, rate limit, header
+  keamanan. Nilai & langkah khusus Sky Tech: `docs/DEPLOY-SKYTECH.md`.
 - DNS di IDCloudHost: **A record** `balesin` → `198.15.25.13`.
 - Sertifikat TLS: Let's Encrypt di vm-nginx (certbot).
 - Firewall VM Balesin: hanya terima port aplikasi dari IP privat vm-nginx; SSH hanya dari

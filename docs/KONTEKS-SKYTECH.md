@@ -26,4 +26,5 @@ kode produk — semuanya harus bisa diatur.
   agar pelanggan tidak bingung nomor resmi).
 - Email pengirim sistem: `balesin@skytech.net.id` (email hosting IDCloudHost).
 - Deploy: VM Balesin IP privat di Proxmox, dipublikasikan lewat `vm-nginx`
-  (198.15.25.13), DNS A record di IDCloudHost (lihat `ARCHITECTURE.md` §5).
+  (198.15.25.13), DNS A record di IDCloudHost (lihat `ARCHITECTURE.md` §5). Langkah dan nilai
+  instalasi produksi Sky Tech: **`docs/DEPLOY-SKYTECH.md`** (berkas rilis `deploy/` sengaja netral).

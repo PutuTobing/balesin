@@ -1,0 +1,1284 @@
+/* Tiket: board, Kanban, Daftar, detail, atur board, tiket terkait (panel chat & kontak). */
+
+.content,
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  width: 100%;
+  min-width: 0;
+}
+
+.detail {
+  max-width: 72rem;
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  width: 100%;
+  max-width: var(--size-column);
+}
+
+.hint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.muted {
+  color: var(--ink-2);
+}
+
+.missing {
+  color: var(--warning-ink);
+  font-weight: var(--weight-semibold);
+}
+
+.dangerText {
+  color: var(--danger-ink);
+}
+
+.alignStart,
+.loadMore {
+  align-self: flex-start;
+}
+
+.number {
+  flex: none;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-12);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Toolbar & saringan ---------- */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-12) var(--space-16);
+}
+
+.boardRow,
+.viewRow {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-8);
+}
+
+.boardSelect {
+  flex: 0 1 16rem;
+  min-width: 12rem;
+}
+
+.boardMenuButton {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--size-touch);
+  height: var(--size-touch);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  color: var(--ink-2);
+}
+
+.boardMenuButton:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.filterToggle {
+  flex: none;
+  min-height: var(--size-touch);
+}
+
+.viewSwitch {
+  display: inline-flex;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.viewOption {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: var(--size-control);
+  padding: 0 var(--space-12);
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.viewOption[aria-pressed='true'] {
+  background: var(--primary-soft);
+  color: var(--ink);
+}
+
+.viewOption:hover:not([aria-pressed='true']) {
+  background: var(--surface-2);
+}
+
+.viewOption:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.boardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-left: auto;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-12);
+}
+
+.filterSearch {
+  flex: 1 1 16rem;
+  min-width: 12rem;
+}
+
+.filterField {
+  flex: 0 1 12rem;
+  min-width: 10rem;
+}
+
+/* ---------- Kanban ---------- */
+
+.kanbanWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  min-width: 0;
+}
+
+.kanban {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-12);
+  min-width: 0;
+  padding-bottom: var(--space-8);
+  padding-inline-end: var(--space-16);
+  scroll-padding-inline: var(--space-16);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.column {
+  display: flex;
+  flex: 0 0 17rem;
+  flex-direction: column;
+  gap: var(--space-8);
+  max-height: calc(100dvh - 15rem);
+  min-height: 12rem;
+  padding: var(--space-8);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.columnOver {
+  border-color: var(--primary);
+}
+
+.columnHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: var(--size-control);
+  padding: 0 var(--space-4) 0 var(--space-8);
+}
+
+.columnHead .columnName {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doneIcon {
+  flex: none;
+  color: var(--success-ink);
+}
+
+.columnCount {
+  flex: none;
+  min-width: 1.5rem;
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5rem;
+  text-align: center;
+}
+
+.columnMenu,
+.cardMenu,
+.handle {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+}
+
+.columnMenu:hover,
+.cardMenu:hover,
+.handle:hover,
+.columnMenu[data-state='open'],
+.cardMenu[data-state='open'] {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.columnMenu:focus-visible,
+.cardMenu:focus-visible,
+.handle:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.handle {
+  margin-inline-end: var(--space-4);
+  cursor: grab;
+}
+
+/* Petunjuk keyboard yang terlihat selama kartu diangkat. */
+.grabHint {
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-input);
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-size: var(--text-13);
+}
+
+.handle[aria-pressed='true'] {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+ol.cards,
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-height: 4rem;
+  overflow-y: auto;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-width: 0;
+  padding: var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.cards > .card {
+  position: relative;
+  gap: var(--space-4);
+  padding: var(--space-8) var(--space-8) var(--space-12) var(--space-8);
+  box-shadow: var(--shadow-1);
+  transition:
+    box-shadow var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out);
+}
+
+.cards > .card:hover {
+  border-color: var(--ink-2);
+}
+
+.cardGrabbed {
+  border-color: var(--primary);
+  box-shadow: var(--shadow-2);
+}
+
+.cardDragging {
+  opacity: 0.5;
+}
+
+.dropBefore {
+  box-shadow:
+    0 -6px 0 -4px var(--primary),
+    var(--shadow-1);
+}
+
+.dropEnd {
+  height: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+}
+
+.cardTop {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+}
+
+.cardPriority {
+  margin-left: var(--space-4);
+}
+
+.cardTop .cardMenu {
+  margin-left: auto;
+}
+
+.cardTitle {
+  padding: 0 var(--space-4);
+  color: var(--ink);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-text);
+  overflow-wrap: anywhere;
+}
+
+.cardTitle:hover {
+  color: var(--primary);
+}
+
+/* Seluruh kartu = area ketuk ke detail; pegangan & menu tetap bisa ditekan terpisah. */
+.cards > .card .cardTitle::after {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-card);
+  content: '';
+}
+
+.cards > .card .handle,
+.cards > .card .cardMenu {
+  position: relative;
+  z-index: 1;
+}
+
+.cardTitle:focus-visible {
+  border-radius: var(--radius-input);
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.cardContact {
+  overflow: hidden;
+  padding: 0 var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  min-height: 1.75rem;
+  padding: 0 var(--space-4);
+}
+
+.due {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  white-space: nowrap;
+}
+
+.due[data-overdue] {
+  color: var(--danger-ink);
+  font-weight: var(--weight-semibold);
+}
+
+.assignee {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin-left: auto;
+  border-radius: var(--radius-pill);
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.assignee[data-empty] {
+  border: 1px dashed var(--line);
+  background: transparent;
+  color: var(--ink-2);
+}
+
+.columnEmpty {
+  padding: var(--space-16) var(--space-8);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-card);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-align: center;
+}
+
+.columnMore {
+  padding: 0 var(--space-8);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+.addColumn {
+  flex: 0 0 auto;
+  padding: var(--space-4) var(--space-16) 0 0;
+  white-space: nowrap;
+}
+
+.addColumnHp {
+  min-height: var(--size-touch);
+}
+
+.menu {
+  z-index: 40;
+  min-width: 13rem;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+}
+
+.menuLabel {
+  padding: var(--space-4) var(--space-8);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: var(--size-control);
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-input);
+  color: var(--ink);
+  font-size: var(--text-14);
+  cursor: pointer;
+  user-select: none;
+}
+
+.menuItem[data-highlighted] {
+  outline: none;
+  background: var(--surface-2);
+}
+
+.menuItem[data-disabled] {
+  color: var(--ink-2);
+  cursor: default;
+}
+
+.menuItem > svg {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.menuDanger,
+.menuDanger > svg {
+  color: var(--danger-ink);
+}
+
+/* Menu "Pindah ke…": bulatan kosong = kolom lain, bulatan terisi = kolom sekarang. */
+.menuDot {
+  flex: none;
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 1.5px solid var(--ink-2);
+  border-radius: var(--radius-pill);
+}
+
+.menuDot[data-current] {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.menuText {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4) var(--space-8);
+}
+
+.menuNote {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .menuItem {
+    min-height: var(--size-touch);
+  }
+}
+
+/* Sentuh: seret tidak berlaku — pindah lewat menu "Pindah ke…". */
+@media (pointer: coarse) {
+  .handle {
+    display: none;
+  }
+}
+
+.columnPicker {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-8);
+}
+
+.columnPickerField {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------- Daftar ---------- */
+
+ul.list,
+.list {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.listRow + .listRow,
+.listSkeleton + .listSkeleton {
+  border-top: 1px solid var(--line);
+}
+
+.listLink {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 7rem 13rem 2.5rem;
+  align-items: center;
+  gap: var(--space-16);
+  min-height: var(--size-touch);
+  padding: var(--space-12) var(--space-16);
+  color: var(--ink);
+}
+
+.listLink:hover {
+  background: var(--surface-2);
+}
+
+.listLink:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.listMain {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.listTitleLine {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.listTitle {
+  overflow: hidden;
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.listMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-12);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+.columnName {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.columnName[data-done] {
+  color: var(--success-ink);
+}
+
+.listCell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.listCellEnd {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.listCellEnd .assignee {
+  margin-left: 0;
+}
+
+.listSkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-16);
+}
+
+/* ---------- Detail ---------- */
+
+.detailHead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'meta actions'
+    'title actions';
+  align-items: center;
+  gap: var(--space-8) var(--space-16);
+}
+
+.detailTitleRow {
+  display: flex;
+  grid-area: meta;
+  align-items: center;
+  gap: var(--space-12);
+}
+
+.detailTitle {
+  grid-area: title;
+  font-size: var(--text-20);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+  overflow-wrap: anywhere;
+}
+
+.detailActions {
+  display: flex;
+  grid-area: actions;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.doneBadge {
+  display: inline-flex;
+  align-items: center;
+  height: 1.375rem;
+  padding: 0 var(--space-8);
+  border: 1px solid var(--success);
+  border-radius: var(--radius-pill);
+  color: var(--success-ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.savedNote {
+  color: var(--success-ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.detailGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 22rem;
+  align-items: start;
+  gap: var(--space-16);
+}
+
+.detailMain {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  min-width: 0;
+}
+
+.sectionTitle {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.description {
+  font-size: var(--text-14);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.propertyFields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.dueField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.dueField > button {
+  align-self: flex-start;
+}
+
+/* "Hapus tenggat" (ghost + ikon X): ikonnya sejajar dengan label isian di atasnya, bukan menjorok
+   selebar padding tombol (saran F-S12); ikon membuatnya terbaca sebagai aksi, bukan judul (N2). */
+.dueClear {
+  margin-left: calc(var(--space-16) * -1);
+}
+
+.facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(6rem, auto) minmax(0, 1fr);
+  gap: var(--space-8) var(--space-12);
+  padding-top: var(--space-12);
+  border-top: 1px solid var(--line);
+  font-size: var(--text-13);
+}
+
+.facts dt {
+  color: var(--ink-2);
+}
+
+.facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.inlineLink {
+  color: var(--primary);
+  font-weight: var(--weight-semibold);
+}
+
+.inlineLink:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .inlineLink {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--size-touch);
+  }
+}
+
+.tabs {
+  display: flex;
+  gap: var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  min-height: var(--size-touch);
+  margin-bottom: -1px;
+  padding: 0 var(--space-12);
+  border-bottom: 2px solid transparent;
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.tab[data-state='active'] {
+  border-bottom-color: var(--primary);
+  color: var(--ink);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.tabContent {
+  padding-top: var(--space-4);
+}
+
+.comments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+ol.commentList,
+.commentList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.comment {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-12);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+}
+
+.commentHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: 2rem;
+}
+
+.commentAuthor {
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.commentTime {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+.commentDelete {
+  margin-left: auto;
+}
+
+.commentBody {
+  font-size: var(--text-14);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.commentForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.commentSend {
+  align-self: flex-end;
+}
+
+ol.history,
+.history {
+  display: flex;
+  flex-direction: column;
+}
+
+.historyItem {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-4) var(--space-12);
+  padding: var(--space-8) 0;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--text-13);
+}
+
+.historyText {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Form & atur board ---------- */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  margin-top: var(--space-16);
+}
+
+.card > .form {
+  margin-top: 0;
+}
+
+.formRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-12);
+}
+
+.fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.legend {
+  padding: 0;
+  margin-bottom: var(--space-4);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+ol.columnList,
+.columnList {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.columnRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-height: var(--size-touch);
+  padding: var(--space-4) var(--space-8) var(--space-4) var(--space-16);
+}
+
+.columnRow + .columnRow {
+  border-top: 1px solid var(--line);
+}
+
+.columnRowName {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.columnRowActions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* Tombol ikon tidak ikut menyusut di 360 px (F11): yang mengalah kotak "Selesai". */
+.columnRowActions > button {
+  flex: none;
+  width: var(--size-touch);
+}
+
+/* ---------- Tiket terkait ---------- */
+
+.linked {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+ul.linkedList,
+.linkedList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.linkedItem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-8);
+  min-height: var(--size-touch);
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  color: var(--ink);
+}
+
+.linkedItem:hover {
+  background: var(--surface-2);
+}
+
+.linkedItem:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.linkedTitle {
+  display: -webkit-box;
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.linkedMeta {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-8);
+}
+
+.linkedCreate {
+  align-self: flex-start;
+}
+
+.linkedSkeleton {
+  width: 100%;
+  height: 2.75rem;
+  border-radius: var(--radius-card);
+}
+
+/* ---------- Kerangka ---------- */
+
+.skeletonBoard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.skeletonToolbar {
+  width: min(32rem, 100%);
+  height: 2.5rem;
+}
+
+.skeletonColumns {
+  display: flex;
+  gap: var(--space-12);
+  overflow: hidden;
+}
+
+.skeletonColumn {
+  display: flex;
+  flex: 0 0 18rem;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-12);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+}
+
+.skeletonCard {
+  width: 100%;
+  height: 5rem;
+  border-radius: var(--radius-card);
+}
+
+.skeletonTitle {
+  width: 60%;
+  height: 1rem;
+}
+
+.skeletonMeta {
+  width: 40%;
+  height: 0.75rem;
+}
+
+/* ---------- Responsif ---------- */
+
+@media (max-width: 1023px) {
+  .detailGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Rincian (kolom, penanggung jawab) di atas komentar, bukan di bawah semuanya. */
+  .detailMain {
+    display: contents;
+  }
+
+  .descriptionCard {
+    order: 1;
+  }
+
+  .propertiesCard {
+    order: 2;
+  }
+
+  .activityCard {
+    order: 3;
+  }
+
+  .listLink {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      'main main end'
+      'priority due end';
+    row-gap: var(--space-8);
+  }
+
+  .listMain {
+    grid-area: main;
+  }
+
+  .listPriority {
+    grid-area: priority;
+  }
+
+  .listDue {
+    grid-area: due;
+  }
+
+  .listCellEnd {
+    grid-area: end;
+    align-self: start;
+  }
+}
+
+@media (max-width: 640px) {
+  .toolbar,
+  .filters {
+    gap: var(--space-8);
+  }
+
+  .boardRow,
+  .viewRow {
+    flex: 1 1 100%;
+  }
+
+  .boardSelect {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .filterSearch {
+    flex: 1 1 100%;
+  }
+
+  /* Saringan berpasangan dua kolom supaya kartu tiket cepat terlihat. */
+  .filterField {
+    flex: 1 1 9rem;
+    min-width: 0;
+  }
+
+  .viewSwitch {
+    flex: 1 1 auto;
+  }
+
+  .viewOption {
+    flex: 1;
+    justify-content: center;
+    height: var(--size-touch);
+  }
+
+  .boardActions {
+    margin-left: 0;
+  }
+
+  .kanban {
+    padding-inline-end: 0;
+    overflow-x: visible;
+  }
+
+  .viewRow {
+    align-items: stretch;
+  }
+
+  /* Setinggi saklar Kanban/Daftar di sebelahnya (Button punya tinggi tetap). */
+  .viewRow .filterToggle {
+    height: auto;
+  }
+
+  .column {
+    flex: 1 1 100%;
+    max-height: none;
+  }
+
+  .columnMenu,
+  .cardMenu,
+  .handle {
+    width: var(--size-touch);
+    height: var(--size-touch);
+  }
+
+  /* Menu kolom di samping pemilih kolom: berbingkai seperti menu board di atasnya. */
+  .columnPicker .columnMenu {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-input);
+    background: var(--surface);
+  }
+
+  /* Judul tiket di daftar: dua baris, bukan satu baris berelipsis. */
+  .listTitle {
+    display: -webkit-box;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .card {
+    padding: var(--space-16);
+  }
+
+  .detailHead {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'meta'
+      'title'
+      'actions';
+  }
+
+  .detailTitle {
+    font-size: var(--text-16);
+  }
+
+  .detailActions > * {
+    flex: 1 1 auto;
+    min-height: var(--size-touch);
+  }
+
+  .formRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .listLink {
+    padding: var(--space-12);
+  }
+
+  .commentSend,
+  .linkedCreate,
+  .alignStart {
+    align-self: stretch;
+    min-height: var(--size-touch);
+  }
+
+  .columnRow {
+    flex-wrap: wrap;
+    padding: var(--space-8) var(--space-12);
+  }
+
+  .columnRowActions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+.columnHead[hidden] {
+  display: none;
+}

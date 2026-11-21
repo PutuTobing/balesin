@@ -1,0 +1,97 @@
+/* Pesan channel Email: subjek, verifikasi pengirim, versi HTML dalam iframe sandbox. */
+
+.email {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.subject {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.verification,
+.fail {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  font-size: var(--text-12);
+}
+
+.verification {
+  color: var(--ink-2);
+}
+
+.verification[data-state='pass'] {
+  color: var(--success-ink);
+}
+
+.verification > svg,
+.fail > svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.fail {
+  padding: var(--space-8);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  color: var(--danger-ink);
+  font-weight: var(--weight-semibold);
+}
+
+.note {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+.htmlButton {
+  align-self: flex-start;
+}
+
+.frameWrap {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+/*
+ * Dokumen email bertema terang (tanpa gaya). Di mode gelap skema warna iframe dan dokumennya
+ * berbeda, jadi browser melukis kanvas putih buram di baliknya — teks hitam tetap terbaca.
+ */
+.frame {
+  display: block;
+  width: 100%;
+  height: min(60dvh, 32rem);
+  border: 0;
+}
+
+.frameSkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-16);
+}
+
+.skeletonLine {
+  width: 80%;
+  height: 0.75rem;
+}
+
+.frameLabel {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+/* Label "Tampilan asli email" + bingkai iframe sebagai satu kesatuan (K-S13). */
+.figure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin: var(--space-16) 0 0;
+}

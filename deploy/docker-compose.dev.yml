@@ -1,0 +1,76 @@
+# Lingkungan pengembangan lokal: Postgres + Redis + penangkap email (Mailpit).
+# Aplikasi (api, worker, web) dijalankan di host dengan `pnpm dev`.
+#
+#   pnpm db:up     nyalakan      pnpm db:down   matikan (data tetap ada di volume)
+#
+# Port hanya dibuka ke 127.0.0.1 — tidak terlihat dari jaringan (SECURITY.md §9).
+#
+# Email: Mailpit MENANGKAP semua email (tidak ada yang benar-benar terkirim keluar).
+#   Lihat email   http://localhost:8025
+#   Isi di wizard setup / Pengaturan → Email pengirim:
+#     host localhost · port 1025 · keamanan "Tanpa enkripsi" · username balesin · password balesin
+name: balesin-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: balesin
+      POSTGRES_PASSWORD: balesin
+      POSTGRES_DB: balesin
+      TZ: UTC
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Membuat database balesin_test untuk tes integrasi (hanya saat volume baru).
+      - ./dev/init-test-db.sql:/docker-entrypoint-initdb.d/10-init-test-db.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U balesin -d balesin']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--requirepass', 'balesin', '--appendonly', 'yes']
+    ports:
+      - '127.0.0.1:6379:6379'
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', '-a', 'balesin', '--no-auth-warning', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Penangkap email untuk pengembangan dan tes integrasi (SMTP 1025, UI + API 8025).
+  # Login SMTP diwajibkan (balesin/balesin) supaya alur "password salah" bisa diuji.
+  # Kredensial ini hanya untuk dev/CI lokal, bukan rahasia produksi.
+  mailpit:
+    image: axllent/mailpit:v1.33.1
+    restart: unless-stopped
+    environment:
+      MP_SMTP_AUTH: 'balesin:balesin'
+      # Mailpit lokal tanpa TLS: izinkan login PLAIN/LOGIN lewat sambungan polos.
+      MP_SMTP_AUTH_ALLOW_INSECURE: 'true'
+      MP_MAX_MESSAGES: '500'
+      # Tanpa ini Mailpit menghubungi GitHub untuk mengecek versi terbaru.
+      MP_DISABLE_VERSION_CHECK: 'true'
+      # Tanpa ini setiap sambungan SMTP menunggu reverse DNS (±1,3 dtk) dan antrean email tersumbat.
+      MP_SMTP_DISABLE_RDNS: 'true'
+      TZ: UTC
+    ports:
+      - '127.0.0.1:1025:1025'
+      - '127.0.0.1:8025:8025'
+    healthcheck:
+      test: ['CMD', '/mailpit', 'readyz']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+  redisdata:

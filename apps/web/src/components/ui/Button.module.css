@@ -1,0 +1,102 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+  height: var(--size-control);
+  padding: 0 var(--space-16);
+  border: 1px solid transparent;
+  border-radius: var(--radius-input);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    filter var(--duration-fast) var(--ease-out);
+}
+
+.button:hover {
+  text-decoration: none;
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Sedang memproses: tetap jelas terbaca, hanya kursornya yang berubah. */
+.button[data-loading] {
+  opacity: 1;
+  cursor: progress;
+}
+
+.spinner {
+  animation: spin var(--duration-pulse) linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+.lg {
+  height: var(--size-touch);
+  padding: 0 var(--space-24);
+}
+
+.primary {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.primary:active:not(:disabled) {
+  filter: brightness(0.87);
+}
+
+.secondary {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.ghost {
+  color: var(--ink);
+}
+
+/* Destruktif (mis. menonaktifkan 2FA): latar `--danger-ink`, 5,5:1 terang / 6,3:1 gelap. */
+.danger {
+  background: var(--danger-ink);
+  color: var(--on-primary);
+}
+
+.danger:active:not(:disabled) {
+  filter: brightness(0.87);
+}
+
+/*
+ * Hover hanya untuk perangkat yang benar-benar punya hover: di layar sentuh, tombol yang baru
+ * diketuk tidak tertinggal dalam keadaan hover (sticky hover).
+ */
+@media (hover: hover) {
+  .primary:hover:not(:disabled),
+  .danger:hover:not(:disabled) {
+    filter: brightness(0.93);
+  }
+
+  .secondary:hover:not(:disabled),
+  .ghost:hover:not(:disabled) {
+    background: var(--surface-2);
+  }
+}
+
+/* Target sentuh ≥ 44px di HP dan layar sentuh. */
+@media (max-width: 640px), (pointer: coarse) {
+  .button {
+    height: var(--size-touch);
+  }
+}

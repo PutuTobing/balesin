@@ -46,7 +46,8 @@ self-hosted ke perusahaan lain.
 ### 3.2 Channel (Integrasi)
 | Fitur | Prioritas |
 |---|---|
-| **WhatsApp Cloud API — wizard manual** (Phone Number ID, WABA ID, token System User, App Secret; URL webhook & verify token dibuat Balesin, tinggal salin). Tes koneksi otomatis. | WAJIB |
+| **WhatsApp Cloud API — wizard manual** (Phone Number ID, WABA ID, token System User, App Secret; URL webhook & verify token dibuat Balesin, tinggal salin). Tes koneksi otomatis. Semua isian lewat UI (lihat `PENGATURAN-UI.md`). | WAJIB |
+| Halaman nomor WhatsApp: **quality rating**, status, batas pesan, edit profil bisnis (deskripsi, alamat, email, website, foto) dari UI | PENTING |
 | Beberapa nomor WhatsApp per instalasi (mis. CS utama, CS kedua) | PENTING |
 | Telegram Bot | PENTING |
 | Email (IMAP masuk + SMTP keluar) sebagai channel inbox | PENTING |
@@ -60,6 +61,7 @@ Diturunkan dari kebiasaan tim di MobiChat (lihat `docs/reference/mobichat/`).
 |---|---|
 | Daftar percakapan dengan tab: **Semua · Bot · Belum dilayani · Dilayani · Selesai** | WAJIB |
 | Pencarian percakapan/kontak, filter (channel, agen, tag, status) | WAJIB |
+| Filter **status sesi** (Broadcast · Terbuka · Hampir habis · Kedaluwarsa), belum dibaca, belum di-assign, departemen; hitung mundur sesi di item daftar | WAJIB |
 | Real-time (WebSocket): pesan baru, status terkirim/dibaca, siapa sedang mengetik/membuka | WAJIB |
 | Penanda & **hitung mundur jendela 24 jam** WhatsApp; di luar jendela hanya bisa kirim template | WAJIB |
 | Kirim/terima: teks, gambar, dokumen, **voice note/audio**, video, lokasi, stiker, reaksi, balas-kutip | WAJIB |
@@ -72,15 +74,19 @@ Diturunkan dari kebiasaan tim di MobiChat (lihat `docs/reference/mobichat/`).
 | Penanda pesan dari bot vs manusia vs broadcast | WAJIB |
 | Notifikasi browser/PWA + suara | WAJIB |
 | SLA: waktu respons pertama, peringatan chat menunggu terlalu lama | PENTING |
+| **Pesan interaktif** (tombol balasan ≤3, daftar pilihan ≤10) dikirim agen dan bot; balasan tombol diteruskan ke bot | PENTING |
+| **CSAT**: survei singkat (skor + komentar) otomatis setelah percakapan ditandai Selesai; bisa dimatikan; hasil masuk laporan | PENTING |
 | Panggilan suara WhatsApp (Calling API) | NANTI |
 
 ### 3.4 Bot & otomasi
 | Fitur | Prioritas |
 |---|---|
 | **Bot eksternal (n8n)** — mode kompatibel MobiChat agar workflow ULAN tinggal ganti URL (lihat `API-N8N.md`) | WAJIB |
+| **API pengiriman template untuk aplikasi billing** (SKY BILL dsb. mengirim template ke nomor pelanggan; mode kompatibel, lihat `API-MOBICHAT-MAPPING.md` §4) | WAJIB |
 | Aturan handoff: bot berhenti saat agen mengambil alih / bot minta handoff | WAJIB |
 | Saklar bot per channel & per percakapan | WAJIB |
-| Pesan otomatis: sapaan, di luar jam kerja (jam kerja per hari) | PENTING |
+| Pesan otomatis: sapaan, di luar jam kerja (jam kerja per hari), **saat di-assign ke manusia / dikembalikan ke bot** | PENTING |
+| **Jam kerja bot** terpisah dari jam kerja tim (mis. bot 24 jam, agen jam kantor) | PENTING |
 | Aturan otomasi sederhana (jika tag X → assign ke tim Y) | PENTING |
 | Builder alur visual (pengganti "Flow"/WhatsApp Flow) | NANTI |
 | AI agent bawaan dengan knowledge base | NANTI (Sky Tech pakai n8n) |
@@ -98,6 +104,8 @@ Diturunkan dari kebiasaan tim di MobiChat (lihat `docs/reference/mobichat/`).
 | Laporan per kampanye: terkirim, dibaca, gagal + alasan, balasan | WAJIB |
 | Cegah kirim dobel (penerima yang sama, template sama, dalam N jam) | WAJIB |
 | Tampilan tabel & kanban kampanye | PENTING |
+| **Tag percakapan otomatis** untuk semua penerima broadcast (opsional, dipilih saat membuat) | PENTING |
+| **Preset template industri** (paket draf siap ajukan: ISP — tagihan, isolir, pembayaran berhasil, tiket perbaikan, gangguan massal; kemudian klinik, sekolah). Hanya draf umum yang bisa diedit; tetap perlu persetujuan Meta | PENTING |
 
 ### 3.6 CRM
 | Fitur | Prioritas |
@@ -106,6 +114,10 @@ Diturunkan dari kebiasaan tim di MobiChat (lihat `docs/reference/mobichat/`).
 | Impor/ekspor kontak CSV/Excel | WAJIB |
 | Penggabungan kontak duplikat | PENTING |
 | **Tugas/Tiket** (mis. tiket perbaikan untuk teknisi): status, penanggung jawab, tenggat, terkait percakapan | PENTING |
+| Tiket: **beberapa board/proyek**, tampilan **Kanban + Daftar**, status (kolom) bisa ditambah, atribut kustom, tautan ke kontak & percakapan | PENTING |
+| Tiket: tampilan Kalender & Ringkasan | NANTI |
+| **API tiket** untuk bot/n8n (buat, ubah status, cari) lewat API native | PENTING |
+| **Departemen** (mis. CS, Teknisi) + akses "hanya departemen sendiri" untuk percakapan & tiket | PENTING |
 | Data pelanggan dari sistem luar (billing) ditampilkan di panel detail lewat konektor | PENTING |
 
 ### 3.7 Laporan & biaya
@@ -113,13 +125,19 @@ Diturunkan dari kebiasaan tim di MobiChat (lihat `docs/reference/mobichat/`).
 |---|---|
 | Dashboard: percakapan masuk, waktu respons, beban per agen, bot vs manusia | PENTING |
 | **Biaya pesan Meta**: jumlah pesan per kategori, sisa 1.000 pesan layanan gratis per nomor per bulan, perkiraan biaya bulan berjalan, ambang peringatan | WAJIB |
+| Laporan percakapan & kinerja: **waktu respons pertama, waktu tunggu, waktu resolusi**, kinerja per agen & per bot, tren per hari/jam, per tag, skor CSAT; ekspor CSV | PENTING |
 | Laporan template & kampanye | PENTING |
 | Ekspor CSV | PENTING |
 
 ### 3.8 Pengaturan
-Peran & akses, Organisasi (branding white-label), Alokasi agen (round-robin / manual),
-Jam kerja, Template percakapan, Tag, Channel, API key & webhook, Notifikasi Telegram
-untuk alarm sistem, Backup.
+Peran & akses, **Departemen**, Organisasi (branding white-label), Alokasi agen (ambil sendiri /
+round-robin + **kapasitas maksimal percakapan per agen**, agen bisa dikecualikan), Jam kerja, Template percakapan, Tag, Channel, API key & webhook, Notifikasi Telegram
+untuk alarm sistem, Backup. **Semua koneksi dan konfigurasi diisi lewat UI** (panduan, tes
+koneksi, rahasia terenkripsi); aturan lengkap di `PENGATURAN-UI.md`, wajib di semua fase.
+
+Ditunda/ditolak dari usulan MobiChat (lihat `DECISIONS.md`): batas channel per user dan tag
+default per user (NANTI); integrasi iklan, Customers B2B, target revenue, Threads/Google
+Reviews (tidak dibuat).
 
 ### 3.9 Aplikasi mobile
 | Fitur | Prioritas |
@@ -139,18 +157,28 @@ untuk alarm sistem, Backup.
 
 | Kemampuan | Owner | Admin | Supervisor | CS | Teknisi |
 |---|:-:|:-:|:-:|:-:|:-:|
-| Pengaturan organisasi, billing, lisensi | ✅ | – | – | – | – |
+| Pengaturan organisasi, billing, lisensi, backup/restore | ✅ | – | – | – | – |
 | Kelola channel & kredensial Meta | ✅ | ✅ | – | – | – |
 | Undang/nonaktifkan pengguna | ✅ | ✅ | – | – | – |
 | API key & webhook | ✅ | ✅ | – | – | – |
+| Email pengirim & template email (PENGATURAN-UI) | ✅ | ✅ | – | – | – |
+| Atur batas kirim, ambang persetujuan broadcast, rem darurat, alarm biaya (diaudit + Owner diberi tahu) | ✅ | ✅ | – | – | – |
 | Buat broadcast | ✅ | ✅ | ✅ | – | – |
 | Setujui broadcast > ambang | ✅ | ✅ | – | – | – |
-| Kelola template | ✅ | ✅ | ✅ | – | – |
+| Kelola template (template Meta & template percakapan/quick reply) | ✅ | ✅ | ✅ | – | – |
 | Lihat semua percakapan | ✅ | ✅ | ✅ | ✅ | – |
-| Balas percakapan | ✅ | ✅ | ✅ | ✅ | hanya yang di-assign / terkait tiketnya |
+| Balas percakapan yang sudah ada | ✅ | ✅ | ✅ | ✅ | hanya yang di-assign / terkait tiketnya |
+| Mulai percakapan / kirim template ke nomor baru (batas harian per pengguna) | ✅ | ✅ | ✅ | – | – |
+| Assign / alihkan / ambil chat | ✅ | ✅ | ✅ | ✅ | hanya mengembalikan chat miliknya ke antrian |
+| Lihat & ubah kontak | ✅ | ✅ | ✅ | ✅ | lihat kontak terkait tugasnya |
+| Impor/ekspor kontak massal | ✅ | ✅ | ✅ | – | – |
+| Hapus kontak (UU PDP) | ✅ | ✅ | – | – | – |
 | Kelola tiket | ✅ | ✅ | ✅ | ✅ | tiket miliknya |
-| Lihat laporan | ✅ | ✅ | ✅ | milik sendiri | milik sendiri |
+| Atur board/kolom/atribut tiket | ✅ | ✅ | ✅ | – | – |
+| Lihat laporan (termasuk biaya pesan Meta tingkat organisasi) | ✅ | ✅ | ✅ | milik sendiri | milik sendiri |
 | Audit log | ✅ | ✅ | – | – | – |
+
+Sumber kebenaran teknisnya: `packages/shared/src/permissions.ts` (izin bernama + cakupan all/assigned/own), ditegakkan di server untuk setiap rute. "Akses departemen sendiri" (§3.6) adalah penyempitan cakupan per pengguna, bukan peran baru. Admin boleh mengubah email pengirim, tetapi setiap perubahan jalur kirim oleh selain Owner selalu diberitahukan ke semua Owner lewat pengaturan lama.
 
 Teknisi membalas **dari nomor perusahaan yang sama**; pesan diberi penanda nama
 pengirim internal (opsional ditampilkan ke pelanggan sebagai "— Teknisi Arya").

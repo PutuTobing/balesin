@@ -4,7 +4,7 @@ Tujuan: aplikasi terlihat **dibuat oleh tim produk sungguhan**, bukan template A
 Nuansa: rapi, hangat, percaya diri, sedikit playful (Gen Z) tanpa norak. Maskot Kak Sky
 dipakai di momen tertentu, bukan di semua layar.
 
-## 1. Token (sumber kebenaran: `packages/shared/design-tokens.ts` → CSS variables)
+## 1. Token (sumber kebenaran: `packages/shared/src/design-tokens.ts` → CSS variables)
 
 Warna dasar sementara; disesuaikan dengan logo final di `assets/brand/` (tugas
 `kritikus-desain` setelah logo masuk).
@@ -22,10 +22,36 @@ Warna dasar sementara; disesuaikan dengan logo final di `assets/brand/` (tugas
 | `--success` | `#1F9D6B` | `#3CC48D` | terkirim, selesai |
 | `--warning` | `#D99413` | `#F2B544` | jendela 24 jam hampir habis |
 | `--danger` | `#D64545` | `#F07070` | gagal, hapus |
-| bubble keluar | `#E3EEFF` | `#1B3557` | pesan dari tim |
+| `--bubble-out` (bubble keluar) | `#E3EEFF` | `#1A3354` | pesan dari tim |
 | bubble masuk | `--surface` | `--surface` | pesan pelanggan |
 
-Kontras teks minimal **4.5:1** (cek otomatis).
+Kontras teks minimal **4.5:1** (cek otomatis: tes kontras di `apps/web` memeriksa setiap
+pasangan teks/latar yang terdaftar di `contrastPairs`).
+
+**Token turunan** (ditambahkan agar teks lolos kontras; warna dasar di atas tidak diubah):
+
+| Token | Terang | Gelap | Pemakaian |
+|---|---|---|---|
+| `--success-ink` | `#15784F` | `#3CC48D` | teks/ikon status sukses (`--success` sebagai teks hanya 3,45:1 di terang) |
+| `--warning-ink` | `#8F5F00` | `#F2B544` | teks/ikon peringatan (`--warning` hanya 2,56:1 di terang) |
+| `--danger-ink` | `#C03535` | `#F07070` | teks/ikon bahaya; latar tombol destruktif |
+| `--on-primary` | `#FFFFFF` | `#0F1620` | teks di atas `--primary` |
+| `--on-accent` | `#14202E` | `#0F1620` | teks di atas `--accent` |
+| `--primary-soft` | `#E3EEFF` | `#1A3354` | latar item aktif (sama dengan bubble keluar) |
+| `--tag-purple` | `#7A52CC` | `#A98BF0` | warna tag "Ungu" (titik/chip, non-teks ≥ 3:1) |
+| `--tag-teal` | `#0B8A9E` | `#3CC4D6` | warna tag "Toska" (titik/chip, non-teks ≥ 3:1) |
+| `--tag-blue` | `#1167D8` | `#4D9BFF` | warna tag "Biru" (titik/chip). Tidak ikut warna merek. |
+| `--logo-plate` | `transparent` | `#F6F4EF` | pelat di balik `<img>` logo organisasi (raster) supaya logo gelap terbaca di mode gelap; tanda bawaan SVG tidak memakainya |
+
+Aturan pakai: `--success`/`--warning`/`--danger` untuk latar, titik, dan garis; untuk **teks**
+pakai varian `-ink`. `--accent` bukan untuk teks. `--primary` di atas `--surface-2` (terang)
+tepat di ambang 4,5:1, jadi jangan dipakai untuk teks kecil di sana.
+
+**Warna merek (white-label):** bila Owner mengisi warna utama, `--primary`, `--on-primary`,
+`--primary-soft`, dan `--bubble-out` ditimpa per tema oleh `brandThemeVariables` (isian lembut =
+10% warna merek di terang, 22% di gelap). Hanya dipakai bila semua pasangan kontras tetap lolos;
+selain itu tema itu memakai nilai bawaan. Token lain (status, tag, `--accent`, `--logo-plate`) tidak
+pernah ikut warna merek.
 
 **Tipografi**: *Plus Jakarta Sans* (UI, dirancang di Indonesia), *JetBrains Mono*
 (ID pelanggan, kode, token terpotong). Self-host font (bukan CDN).
@@ -48,6 +74,17 @@ untuk isi pesan. Line-height 1.45 untuk teks, 1.2 untuk judul.
 - Tablet: dua kolom.
 - Status kosong, loading (skeleton, bukan spinner di tengah), error: semua dirancang,
   memakai ilustrasi Kak Sky bila tersedia.
+- **Tombol buat utama** (audit akhir D1): halaman yang isinya satu daftar (Broadcast, Template,
+  Konektor, Balasan cepat, Departemen, Tiket) menaruh "Buat …" di kepala halaman, kanan
+  (`CreateButton` lewat `Page actions`), hanya bila daftarnya terisi — saat kosong ajakannya di
+  `EmptyState`. Di HP labelnya "Buat" + ikon `Plus` (nama aksesibel tetap lengkap), tidak pernah
+  ikon saja. Halaman berisi beberapa kartu (API key, Webhook, Channel): di kepala kartu daftar, kanan.
+- **Keadaan kosong halaman** (D4): di dalam kolom isi yang sama dengan konten saat terisi dan
+  dipusatkan di kolom itu (halaman lebar seperti Kontak/Tiket: `EmptyState column`; Laporan:
+  di dalam kartu di bawah saringan). Halaman daftar selalu berilustrasi; kosong di dalam kartu tidak.
+- **Lebar kolom isi** (N3): halaman satu kolom (Pengaturan, Broadcast, Template, …) memakai satu
+  token `--size-column` (48rem) — bukan angka rem sendiri. Halaman dua kolom (Email pengirim, CSAT
+  dengan pratinjau, wizard Channel) dan halaman lebar (Kontak, Tiket, Laporan) punya lebarnya sendiri.
 
 ## 3. Larangan (ciri "kodingan AI" yang harus dihindari)
 - Gradien ungu-biru generik, glassmorphism berlebihan, emoji sebagai ikon.
@@ -61,7 +98,29 @@ untuk isi pesan. Line-height 1.45 untuk teks, 1.2 untuk judul.
 Bahasa Indonesia santai-profesional, singkat. "Belum ada chat. Tenang, Kak Sky jaga
 inbox-nya." Tombol: kata kerja jelas ("Kirim", "Ambil chat", "Tandai selesai").
 Pesan error menjelaskan solusi ("Token Meta kedaluwarsa. Buat token baru di Pengaturan →
-Channel").
+Channel"). Sapaan ke pengguna: **"kamu/-mu"**, bukan "Anda" — berlaku untuk UI web dan pesan
+error API; hindari kata ganti bila kalimatnya tetap wajar.
+
+**Istilah & pola tetap** (audit konsistensi akhir Fase 1, `docs/design-reviews/2026-11-15-fase1-akhir.md`):
+- "verifikasi dua langkah" di kalimat dan judul; "2FA" hanya di label ringkas (lencana, chip,
+  tombol ≤ 3 kata, label sesi, rincian audit).
+- "atur ulang", bukan "reset"; "masuk"/"keluar" (atau "proses masuk"), bukan "login"/"logout".
+- Rujukan ke pengelola: "Owner atau Admin di tempatmu" (hanya untuk rujukan ke pengelola; tim sendiri tetap "timmu").
+- Judul gagal: "… belum bisa dimuat". Judul batas: "… dikunci sementara" (tebakan kredensial) atau
+  "… dibatasi sementara" (batas permintaan). Pesan 429 tidak menyebut durasi — hitung mundur
+  `m:ss` tampil di tombol nonaktif (`FormErrorNotice`).
+- Waktu ke depan memakai "pukul 02.04"; waktu lampau "Hari ini, 03.47" / "Kemarin, …" / tanggal.
+- Di dialog, tombol berwarna selalu terakhir (kanan di desktop, atas di HP); tombol batal berbingkai.
+- Tombol simpan form: kanan di desktop, selebar penuh di atas pada HP (`FormActions`; tombol
+  berwarna terakhir di DOM, keterangan "Terakhir diubah …" di slot `meta`).
+- Aksi destruktif di form (hapus/arsipkan): kiri di desktop, paling bawah dengan jarak ekstra di HP
+  (`FormActions danger`), terpisah dari gugus simpan; tetap lewat dialog konfirmasi.
+- Kata kerja tombol: **"Buat …"** untuk objek baru ("Buat kampanye", "Buat tiket", "Buat webhook");
+  **"Tambah …"** hanya untuk menempelkan sesuatu ke objek yang ada ("Tambah tag", "Tambah kolom");
+  **"Hubungkan nomor"** untuk channel. Membuat berkas dari data = **"Ekspor CSV"**; "Unduh" hanya
+  untuk berkas yang sudah ada (media, kode cadangan).
+- Nama produk tidak pernah ditulis langsung di teks UI — selalu dari pengaturan merek (white-label).
+- "Balasan cepat" = teks siap pakai lewat `/` di composer (fitur `quick_replies`); "template" HANYA untuk template pesan WhatsApp yang disetujui Meta.
 
 ## 5. RUBRIK `kritikus-desain`
 

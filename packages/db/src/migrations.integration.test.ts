@@ -1,0 +1,215 @@
+import { Client } from 'pg';
+import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
+
+import { runMigrations } from './migrator';
+import { createTemporaryDatabase, resolveTestDatabaseUrl, type TemporaryDatabase } from './testing';
+
+describe('migrasi dari nol', () => {
+  let database: TemporaryDatabase;
+  let client: Client;
+
+  beforeAll(async () => {
+    // Database kosong sungguhan — belum dimigrasi.
+    database = await createTemporaryDatabase(inject('testDatabaseBaseUrl'), { migrate: false });
+    client = new Client({ connectionString: database.url });
+    await client.connect();
+  });
+
+  afterAll(async () => {
+    await client.end();
+    await database.drop();
+  });
+
+  async function publicTables(): Promise<string[]> {
+    const { rows } = await client.query<{ table_name: string }>(
+      `select table_name from information_schema.tables
+       where table_schema = 'public' order by table_name`,
+    );
+    return rows.map((row) => row.table_name);
+  }
+
+  it('database baru benar-benar kosong', async () => {
+    expect(await publicTables()).toEqual([]);
+  });
+
+  it('membuat semua tabel dan enum peran', async () => {
+    await runMigrations(database.url);
+
+    expect(await publicTables()).toEqual([
+      'account_tokens',
+      'agent_states',
+      'alarm_events',
+      'api_keys',
+      'attribute_definitions',
+      'audit_logs',
+      'broadcast_campaigns',
+      'broadcast_connectors',
+      'broadcast_recipients',
+      'broadcast_settings',
+      'channels',
+      'contact_events',
+      'contact_tags',
+      'contacts',
+      'conversation_auto_messages',
+      'conversation_events',
+      'conversation_notes',
+      'conversations',
+      'csat_settings',
+      'csat_surveys',
+      'department_members',
+      'departments',
+      'email_mailbox_states',
+      'email_settings',
+      'email_settings_change_notices',
+      'installation',
+      'media_files',
+      'message_email_bodies',
+      'message_templates',
+      'messages',
+      'notification_preferences',
+      'organization_logo_icons',
+      'organization_logos',
+      'organizations',
+      'outgoing_events',
+      'push_subscriptions',
+      'push_vapid_keys',
+      'quick_replies',
+      'tags',
+      'telegram_alarm_settings',
+      'ticket_boards',
+      'ticket_columns',
+      'ticket_comments',
+      'ticket_events',
+      'tickets',
+      'two_factor_challenges',
+      'user_backup_codes',
+      'user_invitations',
+      'user_sessions',
+      'users',
+      'webhook_deliveries',
+      'webhook_endpoints',
+      'webhook_events',
+      'workspace_settings',
+    ]);
+
+    const { rows: roles } = await client.query<{ enumlabel: string }>(
+      `select e.enumlabel from pg_enum e
+       join pg_type t on t.oid = e.enumtypid
+       where t.typname = 'user_role' order by e.enumsortorder`,
+    );
+    expect(roles.map((row) => row.enumlabel)).toEqual([
+      'owner',
+      'admin',
+      'supervisor',
+      'cs',
+      'teknisi',
+    ]);
+  });
+
+  it('setiap tabel punya organization_id dan created_at; updated_at kecuali audit_logs', async () => {
+    const { rows } = await client.query<{ table_name: string; column_name: string }>(
+      `select table_name, column_name from information_schema.columns
+       where table_schema = 'public'`,
+    );
+    const columnsOf = (table: string) =>
+      rows.filter((row) => row.table_name === table).map((row) => row.column_name);
+
+    // `organizations` adalah akar tenant: `id`-nya adalah organization_id tabel lain.
+    const tables = [...new Set(rows.map((row) => row.table_name))];
+    for (const table of tables.filter((name) => name !== 'organizations')) {
+      expect(columnsOf(table), table).toContain('organization_id');
+    }
+    for (const table of tables) {
+      expect(columnsOf(table), table).toContain('created_at');
+    }
+    for (const table of tables.filter((name) => name !== 'audit_logs')) {
+      expect(columnsOf(table), table).toContain('updated_at');
+    }
+    // Audit log hanya-tambah: tidak pernah diubah, jadi tidak punya updated_at.
+    expect(columnsOf('audit_logs')).not.toContain('updated_at');
+  });
+
+  // `external_id` = wamid pesan dari Meta (`webhook_events`); `waba_id`/`meta_template_id` = ID Meta
+  // template (`message_templates`).
+  const EXTERNAL_ID_COLUMNS = new Set([
+    'wa_phone_number_id',
+    'wa_business_account_id',
+    'external_id',
+    'waba_id',
+    'meta_template_id',
+    // Fase 6: ID bot Telegram, ID Halaman/akun Instagram Meta, identitas kontak per channel
+    // (ID pengguna Telegram, alamat email, PSID/IGSID).
+    'tg_bot_id',
+    'meta_page_id',
+    'meta_ig_account_id',
+    'external_user_id',
+  ]);
+
+  it('semua kolom waktu bertipe timestamptz dan semua id bertipe uuid', async () => {
+    const { rows } = await client.query<{ column_name: string; data_type: string }>(
+      `select column_name, data_type from information_schema.columns
+       where table_schema = 'public'`,
+    );
+    for (const row of rows) {
+      if (row.column_name.endsWith('_at')) {
+        expect(row.data_type, row.column_name).toBe('timestamp with time zone');
+      }
+      if (row.column_name === 'id' || row.column_name.endsWith('_id')) {
+        // target_id sengaja teks: target audit tidak selalu baris ber-UUID.
+        if (row.column_name === 'target_id') continue;
+        // ID objek Meta (Phone Number ID, WABA ID, wamid) berasal dari Meta, bukan UUID kita.
+        if (EXTERNAL_ID_COLUMNS.has(row.column_name)) continue;
+        expect(row.data_type, row.column_name).toBe('uuid');
+      }
+    }
+  });
+
+  it('aman dijalankan ulang (idempoten)', async () => {
+    const countApplied = async () => {
+      const { rows } = await client.query<{ count: string }>(
+        'select count(*) as count from drizzle.__drizzle_migrations',
+      );
+      return Number(rows[0]?.count);
+    };
+    const before = await countApplied();
+
+    await runMigrations(database.url);
+    await runMigrations(database.url);
+
+    expect(before).toBeGreaterThan(0);
+    expect(await countApplied()).toBe(before);
+  });
+});
+
+describe('pengaman database tes', () => {
+  it('menolak database yang namanya tidak berakhiran _test', () => {
+    expect(() =>
+      resolveTestDatabaseUrl({ DATABASE_URL_TEST: 'postgres://u:p@localhost:5432/balesin' }),
+    ).toThrow(/berakhiran "_test"/);
+    expect(() => resolveTestDatabaseUrl({ DATABASE_URL_TEST: 'bukan-url' })).toThrow(
+      /bukan URL Postgres/,
+    );
+  });
+
+  it('memakai Postgres dari `pnpm db:up` bila DATABASE_URL_TEST kosong', () => {
+    expect(resolveTestDatabaseUrl({})).toBe(
+      'postgres://balesin:balesin@localhost:5432/balesin_test',
+    );
+    expect(resolveTestDatabaseUrl({ DATABASE_URL_TEST: '  ' })).toBe(
+      'postgres://balesin:balesin@localhost:5432/balesin_test',
+    );
+  });
+
+  it('gagal dengan pesan jelas (tanpa password) bila Postgres tidak bisa dihubungi', async () => {
+    const unreachable = 'postgres://balesin:sandi-rahasia@127.0.0.1:1/balesin_test';
+
+    const error = await createTemporaryDatabase(unreachable).then(
+      () => undefined,
+      (reason: unknown) => reason as Error,
+    );
+
+    expect(error?.message).toContain('pnpm db:up');
+    expect(error?.message).toContain('127.0.0.1:1/balesin_test');
+    expect(error?.message).not.toContain('sandi-rahasia');
+  });
+});

@@ -1,0 +1,48 @@
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-8);
+}
+
+/* Aksi destruktif: paling kiri di desktop, terpisah dari gugus simpan. */
+.danger {
+  display: flex;
+  margin-right: auto;
+}
+
+/* Bila ada aksi destruktif, keterangan tidak ikut mendorong tombol simpan. */
+.danger + .meta {
+  margin-right: 0;
+}
+
+.meta {
+  min-width: 0;
+  margin-right: auto;
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+@media (max-width: 640px) {
+  /* Seperti dialog di HP: tombol berwarna (terakhir di DOM) di atas, semua selebar penuh. */
+  .actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .meta {
+    margin-right: 0;
+  }
+
+  /* Paling bawah (pertama di DOM, `column-reverse`) dengan jarak ekstra: 16px dari gugus simpan. */
+  .danger {
+    margin-top: var(--space-8);
+    margin-right: 0;
+  }
+
+  .danger > * {
+    flex: 1;
+  }
+}

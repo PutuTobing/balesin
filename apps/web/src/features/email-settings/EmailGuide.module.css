@@ -1,0 +1,144 @@
+.guide {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+/* Di wizard: menyatu dengan form, tanpa kartu berbayang. */
+.setup {
+  border-radius: var(--radius-input);
+  background: var(--bg);
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: var(--size-control);
+  padding: var(--space-8) var(--space-16);
+  border-radius: var(--radius-card);
+  color: var(--ink);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Penanda bawaan browser diganti chevron Lucide. */
+.summary::-webkit-details-marker {
+  display: none;
+}
+
+.summary:hover {
+  background: var(--surface-2);
+}
+
+.summary:focus-visible {
+  outline-offset: -2px;
+}
+
+.chevron {
+  color: var(--ink-2);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.guide[open] .chevron {
+  transform: rotate(90deg);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding: var(--space-4) var(--space-16) var(--space-16);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.item {
+  display: flex;
+  gap: var(--space-12);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  counter-increment: step;
+}
+
+.item::before {
+  content: counter(step);
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--space-24);
+  height: var(--space-24);
+  border-radius: var(--radius-pill);
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-bold);
+}
+
+.preset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--line);
+}
+
+.presetTitle {
+  color: var(--ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+/* Isi langkah (teks + tautan opsional) di samping lingkaran nomor. */
+.itemBody {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/*
+ * Tautan sebaris (bukan flex): bila labelnya patah dua baris di kolom sempit, ikon tetap
+ * menempel di kata terakhir. Padding atas-bawah membuat satu baris setinggi kontrol (36px,
+ * 44px di HP) sebagai target sentuh.
+ */
+.link {
+  display: inline-block;
+  padding-block: calc((var(--size-control) - var(--text-13) * var(--leading-text)) / 2);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-text);
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.linkIcon {
+  /* base.css membuat svg `display: block`; di sini ikon harus sebaris dengan kata terakhir. */
+  display: inline-block;
+  margin-left: var(--space-4);
+  vertical-align: text-bottom;
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .summary {
+    min-height: var(--size-touch);
+  }
+
+  .link {
+    padding-block: calc((var(--size-touch) - var(--text-13) * var(--leading-text)) / 2);
+  }
+}

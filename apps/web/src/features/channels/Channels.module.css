@@ -1,0 +1,1131 @@
+/*
+ * Pengaturan → Channel: daftar nomor, wizard tambah nomor, halaman nomor. Kartu mengikuti
+ * halaman Pengaturan lain (lebar, garis, jarak) supaya terasa satu produk.
+ */
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  width: 100%;
+  /* Kolom isi satu kolom, sama dengan halaman Pengaturan lain (`--size-column`). */
+  max-width: var(--size-column);
+}
+
+/* Halaman nomor: kolom isi + daftar bagian menempel di kanan (desktop). */
+.detailLayout {
+  display: grid;
+  grid-template-columns: minmax(0, var(--size-column));
+  align-items: start;
+  gap: var(--space-24);
+}
+
+.sectionNav {
+  display: none;
+}
+
+.sectionList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sectionLink {
+  display: flex;
+  align-items: center;
+  min-height: var(--size-control);
+  padding: var(--space-4) var(--space-12);
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+  font-size: var(--text-14);
+}
+
+.sectionLink:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.sectionLink[aria-current] {
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+}
+
+/* Kartu yang dituju dari daftar bagian: fokus terprogram tanpa cincin. */
+.card:focus {
+  outline: none;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding: var(--space-24);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.cardHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Judul kartu + aksi di kanan (desktop); aksi turun ke bawah judul di HP. */
+.cardHeadRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-12) var(--space-16);
+}
+
+.cardHeadRow > .cardHead {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.cardTitle {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.cardTitle:focus,
+.result:focus {
+  outline: none;
+}
+
+.hint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8) var(--space-12);
+}
+
+.note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.noteIcon {
+  flex: none;
+  margin-top: 1px;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+  overflow-wrap: anywhere;
+}
+
+/* Beberapa paragraf di dalam kotak pesan. */
+.paragraphs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Pesan berhasil kecil di samping tombol simpan. */
+.savedNote {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--success-ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+/* ---------- Fakta (label kecil + nilai) ---------- */
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-16) var(--space-24);
+  margin: 0;
+}
+
+.factsBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.factsSource {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.factsDivided {
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--line);
+}
+
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.factLabel {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.factValue {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--text-14);
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+
+.factSub {
+  display: block;
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+/* ---------- Daftar channel ---------- */
+
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12) var(--space-16);
+}
+
+.sectionHead > .cardHead {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+/* Baris merapat ke tepi kartu, dipisah garis (pola menu Pengaturan). */
+.card .channelList {
+  margin: 0 calc(var(--space-24) * -1) calc(var(--space-24) * -1);
+  border-top: 1px solid var(--line);
+}
+
+.channelList li + li {
+  border-top: 1px solid var(--line);
+}
+
+.channelLink {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-12) var(--space-16);
+  min-height: 4.5rem;
+  padding: var(--space-16) var(--space-24);
+  color: var(--ink);
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.channelList li:last-child .channelLink {
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+}
+
+.channelLink:hover {
+  background: var(--surface-2);
+  text-decoration: none;
+}
+
+.channelLink:focus-visible {
+  outline-offset: -2px;
+}
+
+.channelIcon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--size-control);
+  height: var(--size-control);
+  border-radius: var(--radius-input);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.channelIconOff {
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.channelText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.channelName {
+  overflow: hidden;
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channelMeta {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channelBadges {
+  display: flex;
+  flex-direction: column;
+  /* Rata kiri di kolomnya: titik status dan kualitas sejajar. */
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.smallBadge {
+  font-size: var(--text-13);
+}
+
+.chevron {
+  color: var(--ink-2);
+}
+
+/* ---------- Langkah panduan (lingkaran nomor, tautan resmi) ---------- */
+
+.guide {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.guideItem {
+  display: flex;
+  gap: var(--space-12);
+  color: var(--ink);
+  font-size: var(--text-14);
+  counter-increment: step;
+}
+
+.guideItem::before {
+  content: counter(step);
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--space-24);
+  height: var(--space-24);
+  border-radius: var(--radius-pill);
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-bold);
+}
+
+.guideBody {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  min-width: 0;
+  padding-top: 1px;
+  text-wrap: pretty;
+}
+
+/*
+ * Tautan sebaris: bila labelnya patah dua baris, ikon tetap menempel di kata terakhir.
+ * Padding atas-bawah membuat satu baris setinggi kontrol (36px, 44px di HP) sebagai target sentuh.
+ */
+.guideLink {
+  display: inline-block;
+  padding-block: calc((var(--size-control) - var(--text-14) * var(--leading-text)) / 2);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-text);
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.linkIcon {
+  display: inline-block;
+  margin-left: var(--space-4);
+  vertical-align: text-bottom;
+}
+
+/* ---------- Wizard ---------- */
+
+.wizard {
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 42rem);
+  align-items: start;
+  gap: var(--space-24);
+  width: 100%;
+}
+
+.stepNav {
+  position: sticky;
+  top: 0;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stepButton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  width: 100%;
+  min-height: var(--size-control);
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  text-align: left;
+}
+
+button.stepButton:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.stepItem[data-state='current'] .stepButton {
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+}
+
+.stepItem[data-state='done'] .stepButton {
+  color: var(--ink);
+}
+
+.stepMarker {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--space-24);
+  height: var(--space-24);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-bold);
+}
+
+.stepItem[data-state='current'] .stepMarker {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.stepItem[data-state='done'] .stepMarker {
+  border-color: var(--success);
+  background: var(--success);
+  color: var(--on-primary);
+}
+
+.stepPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-24);
+}
+
+.stepHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.stepCount {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.stepTitle {
+  font-size: var(--text-20);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-title);
+}
+
+.stepTitle:focus {
+  outline: none;
+}
+
+.stepIntro {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  text-wrap: pretty;
+}
+
+/* Nomor langkah selalu ada; bilah kemajuan hanya di HP/tablet (desktop punya daftar langkah). */
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.progressBars {
+  display: none;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.progressBar {
+  height: var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--line);
+}
+
+.progressBar[data-on] {
+  background: var(--primary);
+}
+
+.fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.wizardActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--line);
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* ---------- Webhook ---------- */
+
+.copyRows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.copyRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.copyLabel {
+  color: var(--ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.copyBox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.copyValue {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--size-control);
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+  line-height: var(--leading-text);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.copyMeta {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+.fieldChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fieldChip {
+  padding: var(--space-4) var(--space-8);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+}
+
+.subSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.subTitle {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.healthProblems {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding-left: var(--space-16);
+}
+
+/* ---------- Ringkasan nomor ---------- */
+
+.summaryHead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-16);
+}
+
+.summaryIcon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--space-48);
+  height: var(--space-48);
+  border-radius: var(--radius-card);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.summaryText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.summaryName {
+  font-size: var(--text-20);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-title);
+  overflow-wrap: anywhere;
+}
+
+.summaryNumber {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+}
+
+.summaryBadges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-16);
+  min-height: var(--space-24);
+}
+
+.warnings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ---------- Form di kartu ---------- */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-16);
+}
+
+.inlineForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding: var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--bg);
+}
+
+.renameRow {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-12);
+}
+
+.renameRow > :first-child {
+  flex: 1;
+}
+
+.dangerZone {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--line);
+}
+
+.dangerZone > .actions {
+  margin-top: var(--space-12);
+}
+
+/* Tombol sekunder untuk aksi berbahaya (pola Detail anggota): merah penuh hanya di dialog. */
+.dangerZone .dangerText {
+  color: var(--danger-ink);
+}
+
+.dangerTitle {
+  color: var(--danger-ink);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+/* Latar --surface (bukan --surface-2): tautan --primary di --surface-2 hanya 4,5:1 (DESIGN.md §1). */
+.photoNote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-12);
+  padding: var(--space-12) var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+/* Perintah siap salin (mis. pembuat BALESIN_MASTER_KEY). */
+.commandRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.command {
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+}
+
+.blockedBody {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-16);
+}
+
+/* Isian "Tentang": dua baris tetap, tanpa pegangan ubah ukuran. */
+.aboutField textarea {
+  min-height: 0;
+  resize: none;
+}
+
+/* Kerangka kepala halaman nomor: setinggi baris aslinya (nomor 14px, lencana 24px). */
+.skeletonNumber {
+  width: 8rem;
+  height: calc(var(--text-14) * var(--leading-text));
+}
+
+.skeletonBadges {
+  width: 6rem;
+  height: var(--space-24);
+}
+
+/* ---------- Kerangka memuat ---------- */
+
+.skeletonTitle {
+  width: 9rem;
+  height: var(--space-16);
+}
+
+.skeletonHint {
+  width: 16rem;
+  max-width: 100%;
+  height: var(--space-12);
+}
+
+.skeletonIcon {
+  width: var(--size-control);
+  height: var(--size-control);
+}
+
+.skeletonBigIcon {
+  width: var(--space-48);
+  height: var(--space-48);
+  border-radius: var(--radius-card);
+}
+
+.skeletonName {
+  width: 10rem;
+  height: var(--space-16);
+}
+
+.skeletonBigName {
+  width: 12rem;
+  height: var(--space-24);
+}
+
+.skeletonMeta {
+  width: 8rem;
+  height: var(--space-12);
+}
+
+.skeletonBadge {
+  width: 6rem;
+  height: var(--space-16);
+}
+
+.skeletonValue {
+  width: 7rem;
+  height: var(--space-16);
+}
+
+.skeletonButton {
+  width: 8rem;
+  height: var(--size-control);
+}
+
+.skeletonInput {
+  width: 100%;
+  height: var(--size-control);
+}
+
+.skeletonLabel {
+  width: 5rem;
+  height: var(--space-12);
+}
+
+.skeletonText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+@media (max-width: 1023px) {
+  .wizard {
+    grid-template-columns: minmax(0, 42rem);
+  }
+
+  .stepNav {
+    display: none;
+  }
+
+  .progressBars {
+    display: grid;
+  }
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: var(--space-16);
+  }
+
+  .card .channelList {
+    margin: 0 calc(var(--space-16) * -1) calc(var(--space-16) * -1);
+  }
+
+  /* HP: status turun ke bawah nama, supaya nomor tidak terpotong; chevron tetap di kanan. */
+  .channelLink {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: var(--space-8) var(--space-12);
+    padding: var(--space-12) var(--space-16);
+  }
+
+  .channelBadges {
+    grid-column: 2;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-4) var(--space-16);
+  }
+
+  /* Chevron tetap ada di HP (seperti baris menu Pengaturan), di kanan setinggi dua baris. */
+  .chevron {
+    grid-row: 1 / span 2;
+    grid-column: 3;
+    align-self: center;
+  }
+
+  .photoNote a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--size-touch);
+  }
+
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .renameRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .guideLink {
+    padding-block: calc((var(--size-touch) - var(--text-14) * var(--leading-text)) / 2);
+  }
+
+  .copyBox {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .summaryHead {
+    gap: var(--space-12);
+  }
+}
+
+@media (min-width: 1024px) {
+  .detailLayout {
+    grid-template-columns: minmax(0, var(--size-column)) 12rem;
+  }
+
+  .sectionNav {
+    position: sticky;
+    top: 0;
+    display: block;
+  }
+}
+
+/* ---------- Bot (saklar, jam kerja, batas waktu) ---------- */
+
+.botFieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.botLegend {
+  margin-bottom: var(--space-4);
+  padding: 0;
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.botModes {
+  display: inline-flex;
+  align-self: flex-start;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+}
+
+.botMode {
+  min-width: 6rem;
+  height: calc(var(--size-control) - 2px);
+  padding: 0 var(--space-16);
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.botMode + .botMode {
+  border-left: 1px solid var(--line);
+}
+
+.botMode[aria-checked='true'] {
+  background: var(--primary-soft);
+  color: var(--ink);
+}
+
+.botMode:focus-visible {
+  outline-offset: -3px;
+}
+
+/* Jadwal: judul kolom sekali, lalu satu baris per hari (centang · mulai – selesai). */
+.botSchedule {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.botScheduleHead,
+.botDay {
+  display: grid;
+  grid-template-columns: minmax(7rem, 9rem) minmax(0, 8rem) auto minmax(0, 8rem);
+  justify-content: start;
+  align-items: center;
+  column-gap: var(--space-8);
+}
+
+.botScheduleHead {
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+ul.botDays,
+.botDays {
+  display: flex;
+  flex-direction: column;
+}
+
+.botDay {
+  min-height: var(--size-touch);
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Centang hari tanpa bingkai kotak (baris tabel, bukan pilihan berdiri sendiri). */
+.botDay .botDayCheck,
+.botDay .botDayCheck:has(input:checked) {
+  padding: var(--space-4) 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+.botTime {
+  width: 100%;
+  min-width: 0;
+  height: var(--size-control);
+  padding: 0 var(--space-8);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--text-14);
+  font-variant-numeric: tabular-nums;
+}
+
+.botTime:focus-visible {
+  border-color: var(--primary);
+}
+
+.botDash {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+}
+
+.botOff {
+  grid-column: 2 / -1;
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.botCopy {
+  align-self: flex-start;
+  margin-top: var(--space-4);
+}
+
+.botTimeout {
+  max-width: 20rem;
+}
+
+.fieldError {
+  color: var(--danger-ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .botMode,
+  .botTime {
+    height: var(--size-touch);
+  }
+}
+
+@media (max-width: 640px) {
+  .botScheduleHead,
+  .botDay {
+    grid-template-columns: 6.5rem minmax(0, 1fr) auto minmax(0, 1fr);
+    justify-content: stretch;
+  }
+
+  .botTimeout {
+    max-width: none;
+  }
+}
+
+/* WhatsApp belum terhubung, channel lain sudah ada: satu baris ringkas (bukan ilustrasi besar). */
+.compactRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-12) var(--space-16);
+}
+
+.compactText {
+  display: flex;
+  flex: 1 1 10rem;
+  flex-direction: column;
+  min-width: 0;
+  font-size: var(--text-14);
+  font-weight: var(--weight-regular);
+}
+
+/* Petunjuk kedua di kepala kartu (mis. catatan sesi di kartu Bot): fakta terpisah, jarak 8 px. */
+.cardHead > .hint + .hint {
+  margin-top: var(--space-4);
+}
+
+.botVerified {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}

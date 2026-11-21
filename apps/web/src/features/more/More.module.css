@@ -1,0 +1,128 @@
+.menu {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.menuItem + .menuItem {
+  border-top: 1px solid var(--line);
+}
+
+.menuLink {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  height: var(--size-bar);
+  padding: 0 var(--space-16);
+  color: var(--ink);
+  font-weight: var(--weight-medium);
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.menuLink:hover {
+  background: var(--surface-2);
+  text-decoration: none;
+}
+
+.menuLink:focus-visible {
+  outline-offset: -2px;
+}
+
+.menuIcon {
+  color: var(--ink-2);
+}
+
+.menuLabel {
+  flex: 1;
+  min-width: 0;
+}
+
+.chevron {
+  color: var(--ink-2);
+}
+
+.about {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  margin-top: auto;
+  /* Sejajar tepi kartu menu dan judul halaman. */
+  padding: var(--space-24) 0 var(--space-8);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+/* Kartu akun: identitas pengguna di atas menu, lalu tautan Keamanan akun. */
+.account {
+  overflow: hidden;
+  padding: var(--space-4) var(--space-8) 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+/* Merapat ke tepi kartu (menembus padding kartu), dipisah garis dari identitas. */
+.accountLink {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  height: var(--size-bar);
+  margin: var(--space-4) calc(var(--space-8) * -1) 0;
+  padding: 0 var(--space-16);
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  font-weight: var(--weight-medium);
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.accountLink:hover {
+  background: var(--surface-2);
+  text-decoration: none;
+}
+
+.accountLink:focus-visible {
+  outline-offset: -2px;
+}
+
+.nav {
+  margin-top: var(--space-16);
+}
+
+.logoutCard {
+  overflow: hidden;
+  margin-top: var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.logout {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  width: 100%;
+  height: var(--size-bar);
+  padding: 0 var(--space-16);
+  color: var(--danger-ink);
+  font-weight: var(--weight-medium);
+  text-align: left;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.logout:hover {
+  background: var(--surface-2);
+}
+
+.logout:focus-visible {
+  outline-offset: -2px;
+}
+
+.logout:disabled {
+  color: var(--ink-2);
+  cursor: progress;
+}
+
+.logoutError {
+  margin-top: var(--space-12);
+}

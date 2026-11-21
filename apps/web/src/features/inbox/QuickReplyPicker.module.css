@@ -1,0 +1,138 @@
+/* Daftar template di atas kolom tulis (menempel ke tepi atas composer). */
+.picker {
+  position: absolute;
+  right: var(--space-12);
+  bottom: calc(100% - var(--space-4));
+  left: var(--space-12);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  max-height: min(22rem, 50dvh);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+}
+
+.heading {
+  flex: none;
+  padding: var(--space-8) var(--space-12) var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+ul.list {
+  flex: 1;
+  min-height: 0;
+  padding: 0 var(--space-4) var(--space-4);
+  overflow-y: auto;
+}
+
+.option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-12);
+  min-height: var(--size-touch);
+  padding: var(--space-8);
+  border-radius: var(--radius-input);
+  cursor: pointer;
+}
+
+.option[aria-selected='true'] {
+  background: var(--primary-soft);
+}
+
+.shortcut {
+  flex: none;
+  min-width: 6rem;
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+  line-height: var(--leading-text);
+}
+
+.option[aria-selected='true'] .shortcut {
+  color: var(--ink);
+}
+
+.texts {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.titleText {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.body {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12) var(--space-12);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.manage {
+  font-weight: var(--weight-semibold);
+}
+
+/* HP: tautan "Kelola balasan cepat" punya area tekan penuh (≥ 44px). */
+@media (max-width: 640px), (pointer: coarse) {
+  .manage {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--size-touch);
+  }
+}
+
+.hint {
+  flex: none;
+  padding: var(--space-8) var(--space-12);
+  border-top: 1px solid var(--line);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+@media (max-width: 640px) {
+  /* HP: baris 1 = shortcut + judul, baris 2 = isi — mulai di x yang sama dengan shortcut. */
+  .option {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: var(--space-8);
+    row-gap: var(--space-4);
+  }
+
+  .texts {
+    display: contents;
+  }
+
+  .shortcut {
+    min-width: 0;
+  }
+
+  .body {
+    grid-column: 1 / -1;
+  }
+
+  .hint {
+    display: none;
+  }
+}

@@ -1,0 +1,91 @@
+/*
+ * Kotak centang yang digambar sendiri dengan token (bukan gaya bawaan browser, yang di mode gelap
+ * memakai abu-abu netral di luar palet). Centangnya ikon Lucide, bukan gambar `data:` di CSS.
+ */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-height: var(--size-touch);
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  color: var(--ink);
+  font-size: var(--text-14);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.row[data-invalid] {
+  border-color: var(--danger);
+}
+
+.row:has(.input:checked) {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+@media (hover: hover) {
+  .row:hover:not(:has(.input:checked)) {
+    background: var(--surface-2);
+  }
+}
+
+.box {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+}
+
+/* Tepi `--ink-2` di `--surface`: 7,3:1 (terang), 7,4:1 (gelap). */
+.input {
+  width: var(--size-icon-md);
+  height: var(--size-icon-md);
+  margin: 0;
+  border: 2px solid var(--ink-2);
+  border-radius: calc(var(--radius-input) / 2);
+  background: var(--surface);
+  cursor: pointer;
+  appearance: none;
+}
+
+.input:checked {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.tick {
+  position: absolute;
+  color: var(--on-primary);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.input:checked + .tick {
+  opacity: 1;
+}
+
+.error {
+  color: var(--danger-ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-medium);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}

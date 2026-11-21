@@ -1,0 +1,173 @@
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  width: 100%;
+  /* Kolom isi satu kolom, sama dengan halaman Pengaturan lain (`--size-column`). */
+  max-width: var(--size-column);
+}
+
+.intro {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  text-wrap: pretty;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding: var(--space-24);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+/* Rem ditarik: garis kiri merah supaya keadaan berbahaya terbaca sekilas. */
+.card[data-state='paused'] {
+  border-left: 4px solid var(--danger);
+}
+
+.cardHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.cardTitle {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.hint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.status {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-12);
+}
+
+.statusIcon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--size-control);
+  height: var(--size-control);
+  border-radius: var(--radius-pill);
+}
+
+.statusIcon[data-tone='success'] {
+  background: var(--surface-2);
+  color: var(--success-ink);
+}
+
+.statusIcon[data-tone='danger'] {
+  background: var(--surface-2);
+  color: var(--danger-ink);
+}
+
+.statusText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.statusTitle {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+}
+
+.statusBody {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  text-wrap: pretty;
+  overflow-wrap: break-word;
+}
+
+/* Tombol sekunder untuk aksi berbahaya: merah penuh hanya di dialog. */
+.dangerText {
+  color: var(--danger-ink);
+}
+
+.usage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.usageText {
+  font-size: var(--text-14);
+  font-variant-numeric: tabular-nums;
+}
+
+.meter {
+  overflow: hidden;
+  height: var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+}
+
+.meterFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+}
+
+.meter[data-tone='warning'] .meterFill {
+  background: var(--warning);
+}
+
+.meter[data-tone='danger'] .meterFill {
+  background: var(--danger);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+/* Angka pendek: kolom tidak perlu selebar kartu di desktop. */
+.numberField {
+  max-width: 20rem;
+}
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.skeletonTitle {
+  width: 10rem;
+  height: var(--space-24);
+}
+
+.skeletonLine {
+  width: 100%;
+  height: var(--space-16);
+}
+
+.skeletonButton {
+  width: 12rem;
+  height: var(--size-control);
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: var(--space-16);
+  }
+
+  .numberField {
+    max-width: none;
+  }
+}

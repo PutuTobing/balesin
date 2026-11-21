@@ -1,0 +1,344 @@
+/* Pengaturan → Jam kerja & alokasi; saklar ketersediaan agen di inbox. */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  width: 100%;
+  max-width: var(--size-column);
+}
+
+.intro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8) var(--space-12);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  min-width: 0;
+  padding: var(--space-24);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.cardTitle {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.subSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--line);
+}
+
+.subTitle {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.hint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.fieldError {
+  color: var(--danger-ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.saved {
+  color: var(--success-ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.mode,
+.modeBlock {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: var(--size-touch);
+  padding: 0 var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--text-14);
+  text-align: left;
+}
+
+.modeBlock {
+  display: flex;
+  flex: 1 1 100%;
+  align-items: flex-start;
+  padding: var(--space-12);
+}
+
+.mode[data-state='checked'],
+.modeBlock[data-state='checked'] {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.mode:focus-visible,
+.modeBlock:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.radio {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  border: 1.5px solid var(--ink-2);
+  border-radius: var(--radius-pill);
+}
+
+.modeBlock .radio {
+  margin-top: 1px;
+}
+
+[data-state='checked'] > .radio {
+  border-color: var(--primary);
+}
+
+.radioDot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+}
+
+.modeText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.modeLabel {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.capacity {
+  max-width: 16rem;
+}
+
+ul.holidays,
+.holidays {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.holiday {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-height: var(--size-touch);
+  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-12);
+  font-size: var(--text-14);
+}
+
+.holiday + .holiday {
+  border-top: 1px solid var(--line);
+}
+
+.holidayDate {
+  flex: none;
+  width: 7.5rem;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.holidayName {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.holidayForm {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-8);
+}
+
+.autoMessage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+ul.agents,
+.agents {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.agent {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-8) var(--space-16);
+  padding: var(--space-8) var(--space-12) var(--space-8) var(--space-16);
+}
+
+.agent + .agent {
+  border-top: 1px solid var(--line);
+}
+
+.agentText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.agentName {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.agentMeta {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentStatusOn {
+  color: var(--success-ink);
+  font-weight: var(--weight-medium);
+}
+
+.agentStatusOff {
+  color: var(--ink-2);
+}
+
+.agentToggles {
+  display: flex;
+  gap: var(--space-4) var(--space-16);
+}
+
+/* HP: kontrol selalu di baris kedua, untuk semua agen. */
+@media (max-width: 640px) {
+  .agent {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Lebar penuh di HP: meta boleh turun baris, tidak perlu terpotong (K-S15). */
+  .agentMeta {
+    white-space: normal;
+  }
+
+  .agentToggles {
+    flex-wrap: wrap;
+  }
+}
+
+/* Saklar "Tersedia" di kepala daftar chat: pil bertulisan + bulatan status. */
+.availability {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: var(--size-touch);
+  padding: 0 var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.availability:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.availability:disabled {
+  cursor: default;
+}
+
+.availabilityOn {
+  color: var(--success-ink);
+}
+
+.availabilityDot {
+  width: var(--space-8);
+  height: var(--space-8);
+  border: 1px solid var(--ink-2);
+  border-radius: var(--radius-pill);
+}
+
+.availabilityOn .availabilityDot {
+  border-color: var(--success);
+  background: var(--success);
+}
+
+.skeletonTitle {
+  width: 40%;
+  height: 1rem;
+}
+
+.skeletonLine {
+  width: 80%;
+  height: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .card,
+  .autoMessage {
+    padding: var(--space-16);
+  }
+
+  .mode {
+    flex: 1 1 100%;
+  }
+
+  .holidayForm {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .holidayAdd {
+    flex: 1;
+    min-height: var(--size-touch);
+  }
+
+  .capacity {
+    max-width: none;
+  }
+}

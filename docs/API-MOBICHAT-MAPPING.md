@@ -1,7 +1,7 @@
 # Mapping API MobiChat → Balesin
 
 Status: §1–2 dari dokumentasi resmi MobiChat (`app.mobichat.id/api-documentation`), §3 dari
-ekspor workflow n8n ULAN — **lengkap untuk bot**. §4 (aplikasi billing) menunggu pengecekan
+ekspor workflow n8n ULAN — **lengkap untuk bot**; implementasi §1 & §3: `docs/KONTRAK-API-MOBICHAT.md`. §4 (aplikasi billing) menunggu pengecekan
 (`BUTUH-TOBING.md` #9). Dibaca 13 Nov 2026.
 
 ## 1. Bot API versi lama (dokumentasi publik) — dukung juga, prioritas kedua

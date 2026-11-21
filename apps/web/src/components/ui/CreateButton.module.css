@@ -1,0 +1,17 @@
+.button {
+  flex: none;
+}
+
+.short {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .full {
+    display: none;
+  }
+
+  .short {
+    display: inline;
+  }
+}

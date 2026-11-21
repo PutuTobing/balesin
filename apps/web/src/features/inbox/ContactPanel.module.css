@@ -1,0 +1,538 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding-bottom: var(--space-24);
+  overflow-y: auto;
+}
+
+.identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-8) var(--space-16) var(--space-24);
+  text-align: center;
+}
+
+.identity > span:first-child {
+  margin-bottom: var(--space-8);
+}
+
+.name {
+  max-width: 100%;
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+  overflow-wrap: anywhere;
+}
+
+.handle {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  font-variant-numeric: tabular-nums;
+}
+
+.badge {
+  margin-top: var(--space-4);
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+}
+
+.section {
+  padding: var(--space-16);
+  border-top: 1px solid var(--line);
+}
+
+.sectionTitle {
+  margin-bottom: var(--space-12);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+/* Label di atas nilai (audit akhir R6): panel 340px tidak cukup untuk dua kolom — email tidak
+   patah dan label panjang tetap satu baris; sama dengan Detail kontak di layar sempit. */
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  font-size: var(--text-13);
+}
+
+.fact dt {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+.fact dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.muted {
+  color: var(--ink-2);
+}
+
+.note {
+  padding: var(--space-4) var(--space-16) var(--space-16);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.section .note {
+  padding: 0;
+}
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding: var(--space-8) var(--space-16);
+}
+
+.section .skeleton {
+  padding: 0;
+}
+
+.skeletonRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.skeletonTerm {
+  width: 6rem;
+  height: var(--space-12);
+}
+
+.skeletonValue {
+  width: 70%;
+  height: var(--space-12);
+}
+
+/* ---------- Tab panel detail ---------- */
+
+.root {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tabs {
+  display: flex;
+  flex: none;
+  gap: var(--space-4);
+  padding: 0 var(--space-12);
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  height: var(--size-touch);
+  border-bottom: 2px solid transparent;
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.tab:hover,
+.tab[data-state='active'] {
+  color: var(--ink);
+}
+
+.tab[data-state='active'] {
+  border-bottom-color: var(--primary);
+}
+
+.tab:focus-visible {
+  /* Cincin fokus di dalam tab supaya garis tab aktif tetap terlihat. */
+  border-radius: var(--radius-input);
+  outline-offset: -4px;
+}
+
+/* Diaktifkan dengan pointer: tanpa cincin (keyboard tetap mendapat cincin). */
+.tab[data-pointer]:focus-visible {
+  outline: none;
+}
+
+.content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.content:focus-visible {
+  outline-offset: -2px;
+}
+
+.content > .panel {
+  overflow: visible;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  margin-bottom: var(--space-8);
+}
+
+.sectionHead .sectionTitle {
+  margin-bottom: 0;
+}
+
+.multiline {
+  white-space: pre-wrap;
+}
+
+/* ---------- Form ubah kontak ---------- */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  margin-top: var(--space-16);
+}
+
+.nameField {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.nameField > :first-child {
+  align-self: stretch;
+}
+
+.attributes {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-12);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.legend {
+  margin-bottom: var(--space-8);
+  padding: 0;
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.attributeRow {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto;
+  align-items: end;
+  gap: var(--space-8);
+  width: 100%;
+}
+
+.attributeRemove {
+  margin-bottom: 0;
+}
+
+/* HP: nama atribut & nilai bertumpuk (lebar penuh), tombol hapus di kanan keduanya. */
+@media (max-width: 640px) {
+  .attributeRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    padding-bottom: var(--space-12);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .attributeRow > :nth-child(1) {
+    grid-area: 1 / 1;
+  }
+
+  .attributeRow > :nth-child(2) {
+    grid-area: 2 / 1;
+  }
+
+  .attributeRemove {
+    grid-area: 1 / 2 / 3 / 3;
+  }
+}
+
+.fieldError {
+  color: var(--danger-ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+/* ---------- Tab Catatan / Berkas / Log ---------- */
+
+.tabBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding: var(--space-16);
+}
+
+.hint {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+.tabBody .note {
+  padding: 0;
+}
+
+ol.notes,
+ol.log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.noteItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-8) var(--space-8) var(--space-12) var(--space-12);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.noteHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.noteAuthor {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.noteTime {
+  flex: none;
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+.noteActions {
+  display: flex;
+  margin-left: auto;
+}
+
+.noteBody {
+  color: var(--ink);
+  font-size: var(--text-13);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.noteForm {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-8);
+}
+
+.noteInput {
+  width: 100%;
+  min-height: 5rem;
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: var(--text-14);
+  line-height: var(--leading-text);
+  resize: vertical;
+}
+
+.noteInput:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+
+.noteEditActions {
+  display: flex;
+  gap: var(--space-8);
+}
+
+.segments {
+  display: flex;
+  padding: var(--space-4);
+  border-radius: var(--radius-input);
+  background: var(--surface-2);
+}
+
+.segment {
+  flex: 1;
+  min-height: var(--size-control);
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.segment[aria-checked='true'] {
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  color: var(--ink);
+}
+
+ul.mediaGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-8);
+}
+
+.mediaCell > * {
+  width: 100%;
+}
+
+ul.fileList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.fileRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-8) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.audioCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-8);
+  padding: var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.audioLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.fileMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+.fileText {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: var(--text-13);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.starIcon {
+  flex: none;
+  color: var(--warning-ink);
+  fill: currentColor;
+}
+
+.logItem {
+  display: flex;
+  gap: var(--space-12);
+}
+
+.logDot {
+  flex: none;
+  width: var(--space-8);
+  height: var(--space-8);
+  margin-top: var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--line);
+}
+
+.logText {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  min-width: 0;
+  font-size: var(--text-13);
+}
+
+.logText strong {
+  font-weight: var(--weight-semibold);
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .segment {
+    min-height: var(--size-touch);
+  }
+
+  .noteInput {
+    font-size: var(--text-16);
+  }
+}
+
+.privacyActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  margin: var(--space-12) 0;
+}
+
+/* Email: patah di "@" (<wbr>); bagian yang tetap terlalu panjang baru dipatah di mana saja. */
+.email {
+  overflow-wrap: break-word;
+}
+
+/* Tombol sekunder untuk aksi berbahaya: merah penuh hanya di dialog. */
+.dangerText {
+  color: var(--danger-ink);
+}
+
+/* Aksi di kepala bagian ("Ubah kontak"): tombol ghost standar seperti di Detail kontak (R3),
+   hanya lebih pendek supaya tidak lebih menonjol dari judul bagiannya. */
+.sectionHead .sectionAction {
+  height: var(--space-32);
+  padding: 0 var(--space-8);
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .sectionHead .sectionAction {
+    height: var(--size-touch);
+  }
+}

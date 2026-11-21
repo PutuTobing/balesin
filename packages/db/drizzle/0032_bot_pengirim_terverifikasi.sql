@@ -1,0 +1,2 @@
+ALTER TABLE "channels" ADD COLUMN "bot_require_verified_sender" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "channels" ADD CONSTRAINT "channels_bot_verified_sender_email_only" CHECK ("channels"."type" = 'email' or not "channels"."bot_require_verified_sender");

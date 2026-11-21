@@ -1,0 +1,136 @@
+/* ---------- Kerangka tiga panel ---------- */
+
+.inbox {
+  position: relative;
+  display: grid;
+  flex: 1;
+  grid-template-columns: var(--size-list) minmax(0, 1fr);
+  min-height: 0;
+}
+
+.inbox[data-detail='open'] {
+  grid-template-columns: var(--size-list) minmax(0, 1fr) var(--size-detail);
+}
+
+.listColumn {
+  min-height: 0;
+}
+
+/* ---------- Ruang chat ---------- */
+
+.chat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+}
+
+.showDetail {
+  position: absolute;
+  top: calc((var(--size-bar) - var(--size-control)) / 2);
+  right: var(--space-12);
+}
+
+/* ---------- Panel detail ---------- */
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.detailHeader {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  height: var(--size-bar);
+  padding: 0 var(--space-12) 0 var(--space-16);
+}
+
+.detailTitle {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+}
+
+.detailEmpty {
+  padding: var(--space-4) var(--space-16) var(--space-16);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+/* ---------- Tablet: dua kolom, detail melayang ---------- */
+
+@media (max-width: 1023px) {
+  .inbox,
+  .inbox[data-detail='open'] {
+    grid-template-columns: min(var(--size-list), 50%) minmax(0, 1fr);
+  }
+
+  .detail {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2;
+    width: min(var(--size-detail), 100%);
+    box-shadow: var(--shadow-2);
+  }
+}
+
+/* ---------- HP: daftar ATAU chat (layar bertumpuk) ---------- */
+
+@media (max-width: 640px) {
+  .inbox,
+  .inbox[data-detail='open'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chat,
+  .detail {
+    display: none;
+  }
+
+  .inbox[data-chat='open'] .listColumn {
+    display: none;
+  }
+
+  .inbox[data-chat='open'] .chat {
+    display: flex;
+    background: var(--bg);
+  }
+
+  /* Detail bertumpuk di atas chat (`&detail=1`). */
+  .inbox[data-hp-detail='open'] .chat {
+    display: none;
+  }
+
+  .inbox[data-hp-detail='open'] .detail {
+    position: static;
+    display: flex;
+    width: auto;
+    border-left: 0;
+    box-shadow: none;
+  }
+
+  .detailHeader[data-hp] {
+    justify-content: flex-start;
+    gap: var(--space-4);
+    padding: 0 var(--space-12) 0 var(--space-4);
+    border-bottom: 1px solid var(--line);
+  }
+}
+
+/* Kepala daftar: "Percakapan baru" + saringan. */
+.listTools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}

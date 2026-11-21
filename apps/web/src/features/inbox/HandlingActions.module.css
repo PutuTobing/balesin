@@ -1,0 +1,185 @@
+.trigger {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--size-control);
+  height: var(--size-control);
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.trigger:hover,
+.trigger[data-state='open'] {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.menu {
+  z-index: 40;
+  min-width: 14rem;
+  /* Tidak pernah melewati tepi layar (HP 390); alasan panjang dibungkus, bukan melebarkan menu. */
+  max-width: min(20rem, var(--radix-dropdown-menu-content-available-width));
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: var(--size-control);
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-input);
+  color: var(--ink);
+  font-size: var(--text-14);
+  cursor: pointer;
+  user-select: none;
+}
+
+.item[data-highlighted] {
+  outline: none;
+  background: var(--surface-2);
+}
+
+.item[data-disabled] {
+  color: var(--ink-2);
+  cursor: default;
+}
+
+.item > svg {
+  flex: none;
+  color: var(--ink-2);
+}
+
+/* ---------- Dialog pilih agen ---------- */
+
+.agents {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-height: min(22rem, 50dvh);
+  margin: var(--space-16) 0;
+  overflow-y: auto;
+}
+
+.agent {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-height: var(--size-touch);
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+}
+
+.agent:hover {
+  background: var(--surface-2);
+}
+
+.agent[data-state='checked'] {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.agent:focus-visible {
+  /* Di dalam kartu: cincin tidak terpotong wadah daftar yang bergulir. */
+  outline-offset: -2px;
+}
+
+.radio {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--space-16);
+  height: var(--space-16);
+  border: 2px solid var(--ink-2);
+  border-radius: var(--radius-pill);
+}
+
+.agent[data-state='checked'] .radio {
+  border-color: var(--primary);
+}
+
+.radioDot {
+  width: var(--space-8);
+  height: var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+}
+
+.agentText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.agentName {
+  overflow: hidden;
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentRole,
+.agentLoad {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+.agentLoad {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.note {
+  margin: var(--space-16) 0;
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .trigger {
+    width: var(--size-touch);
+    height: var(--size-touch);
+  }
+
+  .item {
+    min-height: var(--size-touch);
+  }
+}
+
+/* Tindakan yang belum bisa dipakai: alasannya terbaca di bawah labelnya. */
+.itemText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.itemReason {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-regular);
+  white-space: normal;
+}
+
+/* Item dua baris (label + alasan): ikon sejajar baris label, bukan di tengah. */
+.item:has(.itemText) {
+  align-items: flex-start;
+  padding-block: var(--space-8);
+}
+
+.item:has(.itemText) > svg {
+  margin-top: 1px;
+}

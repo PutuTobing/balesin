@@ -1,0 +1,174 @@
+/* Pengaturan → Keamanan akun. Kartu mengikuti halaman Pengaturan (lebar, garis, jarak). */
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  width: 100%;
+  max-width: var(--size-column);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding: var(--space-24);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.cardHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.titleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8) var(--space-16);
+}
+
+.cardTitle {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+}
+
+/* Pesan hasil yang difokus terprogram (tombol asalnya hilang): tanpa cincin. */
+.noticeFocus:focus {
+  outline: none;
+}
+
+.cardTitle:focus-visible {
+  outline-offset: var(--space-4);
+}
+
+.text {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  text-wrap: pretty;
+}
+
+.cardHead .text {
+  font-size: var(--text-13);
+}
+
+.meta {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+/* Paragraf penjelasan di badan kartu: sama dengan deskripsi kartu (13 px), bukan 14 px. */
+.description {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.emailAddress {
+  color: var(--ink);
+  font-size: var(--text-14);
+  overflow-wrap: anywhere;
+}
+
+.inlineLink {
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.explain {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-16);
+  border-radius: var(--radius-input);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: var(--text-14);
+  text-wrap: pretty;
+}
+
+.explainIcon {
+  flex: none;
+  color: var(--success-ink);
+}
+
+/* Aksi merusak yang bukan aksi utama kartu: tombol biasa berteks bahaya. */
+.dangerText {
+  color: var(--danger-ink);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.stat {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4) var(--space-12);
+}
+
+.statValue {
+  color: var(--ink);
+  font-size: var(--text-20);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-title);
+  font-variant-numeric: tabular-nums;
+}
+
+.statValue[data-low] {
+  color: var(--warning-ink);
+}
+
+/* ---------- Kerangka memuat (ukuran = elemen jadi) ---------- */
+
+/* Lencana "Aktif": teks 14px, tinggi baris 1.2. */
+.skeletonBadge {
+  display: block;
+  width: 4rem;
+  height: calc(var(--text-14) * var(--leading-title));
+}
+
+/* "Sejak …" / "Dibuat …": teks 13px, tinggi baris 1.45. */
+.skeletonMeta {
+  display: block;
+  width: 7rem;
+  height: calc(var(--text-13) * var(--leading-text));
+}
+
+/* "10 dari 10 kode tersisa": teks 20px tebal (±15rem), tinggi baris 1.2. */
+.skeletonStat {
+  display: block;
+  width: 15rem;
+  height: calc(var(--text-20) * var(--leading-title));
+}
+
+.skeletonButton {
+  display: block;
+  width: 8rem;
+  height: var(--size-control);
+  border-radius: var(--radius-input);
+}
+
+.skeletonButtonLg {
+  display: block;
+  width: 6.5rem;
+  height: var(--size-touch);
+  border-radius: var(--radius-input);
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: var(--space-16);
+  }
+
+  .skeletonButton {
+    height: var(--size-touch);
+  }
+}

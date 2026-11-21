@@ -1,0 +1,100 @@
+/*
+ * Garis tepi kiri berwarna status + latar kartu: warna status hanya dipakai sebagai garis dan
+ * ikon (DESIGN.md §1), teks memakai varian `-ink` atau `--ink`.
+ */
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-16);
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--text-14);
+}
+
+.icon {
+  /* Sejajar dengan baris pertama teks 14px (tinggi baris ≈ 20px). */
+  margin-top: 0;
+}
+
+.text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.title {
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-text);
+}
+
+.body {
+  color: var(--ink-2);
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+
+.title + .body {
+  font-size: var(--text-13);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  margin-top: var(--space-8);
+}
+
+.info {
+  border-left-color: var(--primary);
+}
+
+.info .icon {
+  color: var(--primary);
+}
+
+.success {
+  border-left-color: var(--success);
+}
+
+.success .icon {
+  color: var(--success);
+}
+
+.success .title {
+  color: var(--success-ink);
+}
+
+.warning {
+  border-left-color: var(--warning);
+}
+
+.warning .icon,
+.warning .title {
+  color: var(--warning-ink);
+}
+
+.danger {
+  border-left-color: var(--danger);
+}
+
+.danger .icon {
+  color: var(--danger);
+}
+
+.danger .title {
+  color: var(--danger-ink);
+}
+
+/* Tanpa judul, isi pesan adalah bagian utama: warna teks utama, bukan sekunder. */
+.danger .body:first-child,
+.success .body:first-child,
+.warning .body:first-child,
+.info .body:first-child {
+  color: var(--ink);
+}

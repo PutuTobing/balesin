@@ -1,0 +1,641 @@
+/* Laporan kinerja, biaya Meta, pengaturan CSAT. Warna grafik hanya dari token. */
+
+.page,
+.report,
+.results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  width: 100%;
+  min-width: 0;
+}
+
+.page {
+  max-width: 72rem;
+}
+
+.settingsPage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  width: 100%;
+  max-width: 64rem;
+}
+
+.intro,
+.hint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.intro {
+  font-size: var(--text-14);
+}
+
+.inlineLink {
+  color: var(--primary);
+  font-weight: var(--weight-semibold);
+}
+
+.inlineLink:hover {
+  text-decoration: underline;
+}
+
+.tabs {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.tab {
+  min-height: var(--size-control);
+  padding: 0 var(--space-16);
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.tab[aria-pressed='true'] {
+  background: var(--primary-soft);
+  color: var(--ink);
+}
+
+.tab:hover:not([aria-pressed='true']) {
+  background: var(--surface-2);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.controls,
+.customRange {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-12);
+}
+
+.control {
+  flex: 0 1 13rem;
+  min-width: 10rem;
+}
+
+.rangeNote {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+.results[aria-busy='true'] {
+  opacity: 0.6;
+  transition: opacity var(--duration-base) var(--ease-out);
+}
+
+/* ---------- Kartu & ubin ---------- */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  min-width: 0;
+  padding: var(--space-24);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-8) var(--space-16);
+}
+
+.cardHeadText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.cardTitle {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.subTitle {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.sectionActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.tiles {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-12);
+}
+
+.tilesFour {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* Ringkasan kinerja (7 ubin): 4 + 3 di desktop, "Bot" tidak sendirian di baris ketiga (R5). */
+@media (min-width: 1024px) {
+  .summaryTiles {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.tiles dd {
+  margin: 0;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.card .tile {
+  border: 0;
+  background: var(--surface-2);
+}
+
+.tileLabel {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.tileValue {
+  font-size: var(--text-24);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-title);
+  letter-spacing: var(--tracking-title);
+}
+
+.tileDetail {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  white-space: pre-line;
+  text-wrap: pretty;
+}
+
+/* ---------- Grafik ---------- */
+
+.chart {
+  width: 100%;
+  min-width: 0;
+}
+
+.svg {
+  display: block;
+  overflow: visible;
+}
+
+.grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.baseline {
+  stroke: var(--ink-2);
+  stroke-width: 1;
+}
+
+.axisY,
+.axisX {
+  fill: var(--ink-2);
+  font-size: var(--text-12);
+  font-variant-numeric: tabular-nums;
+}
+
+.axisY {
+  text-anchor: end;
+}
+
+.hit {
+  fill: transparent;
+}
+
+.barGroup:hover .hit {
+  fill: var(--surface-2);
+}
+
+.bar {
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.seriesPrimary {
+  fill: var(--primary);
+  background: var(--primary);
+}
+
+.seriesTeal {
+  fill: var(--tag-teal);
+  background: var(--tag-teal);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8) var(--space-16);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.swatch {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: calc(var(--radius-input) / 2);
+}
+
+/* ---------- Tabel ---------- */
+
+.tableScroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-13);
+  font-variant-numeric: tabular-nums;
+}
+
+.table th,
+.table td {
+  padding: var(--space-8) var(--space-12);
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.table th:first-child,
+.table td:first-child {
+  padding-left: 0;
+  text-align: left;
+}
+
+.table thead th {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.table tbody th {
+  font-weight: var(--weight-semibold);
+  white-space: normal;
+}
+
+.export {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-4);
+}
+
+.exportDone {
+  color: var(--success-ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+/* ---------- CSAT ---------- */
+
+.csat {
+  display: grid;
+  grid-template-columns: 12rem minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-24);
+}
+
+.csatScore {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.csatValue {
+  font-size: var(--text-32);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-title);
+}
+
+.csatOutOf {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  font-weight: var(--weight-regular);
+}
+
+ul.distribution,
+.distribution {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.distributionRow {
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 1fr) 3rem;
+  align-items: center;
+  gap: var(--space-12);
+  font-size: var(--text-13);
+}
+
+.distributionLabel {
+  color: var(--ink-2);
+}
+
+.distributionCount {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.meter {
+  height: 0.5rem;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+}
+
+.meterFill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+}
+
+/* ---------- Biaya ---------- */
+
+.totalRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-12);
+}
+
+.totalValue {
+  font-size: var(--text-32);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-title);
+}
+
+.estimate {
+  display: inline-flex;
+  align-items: center;
+  height: 1.5rem;
+  padding: 0 var(--space-8);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-pill);
+  color: var(--warning-ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.rateSource {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  font-size: var(--text-13);
+}
+
+.rateSource dt {
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+}
+
+.rateSource dd {
+  margin: 0;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+/* Tautan yang berdiri sendiri: target sentuh 44 px di HP. */
+.touchLink {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  color: var(--primary);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .touchLink {
+    min-height: var(--size-touch);
+  }
+}
+
+/* ---------- Pengaturan CSAT ---------- */
+
+.csatLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20rem;
+  align-items: start;
+  gap: var(--space-16);
+}
+
+.intervalField {
+  max-width: 12rem;
+}
+
+.previewChat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-16);
+  border-radius: var(--radius-card);
+  background: var(--bg);
+}
+
+.previewBubble,
+.previewList {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-bubble);
+  background: var(--bubble-out);
+  font-size: var(--text-14);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.previewList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 12rem;
+}
+
+.previewListTitle {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.previewOption {
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--line);
+  color: var(--primary);
+  font-size: var(--text-13);
+}
+
+/* ---------- Kerangka ---------- */
+
+.skeletonLabel {
+  width: 40%;
+  height: 0.75rem;
+}
+
+.skeletonValue {
+  width: 60%;
+  height: 1.5rem;
+}
+
+.skeletonChart {
+  width: 100%;
+  height: 12.5rem;
+}
+
+/*
+ * HP: setiap baris tabel jadi blok bertumpuk (label kolom dari `data-label`), tanpa gulir menyamping.
+ * Sel pertama (agen, tanggal, kategori, tag) menjadi judul blok.
+ */
+@media (max-width: 640px) {
+  .tableScroll {
+    overflow-x: visible;
+  }
+
+  .table thead {
+    display: none;
+  }
+
+  .table,
+  .table tbody,
+  .table tr {
+    display: block;
+    width: 100%;
+  }
+
+  .table tr {
+    padding: var(--space-8) 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .table tbody th,
+  .table td {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-12);
+    padding: var(--space-4) 0;
+    border-bottom: 0;
+    text-align: right;
+    white-space: normal;
+  }
+
+  .table tbody th {
+    padding-bottom: var(--space-8);
+    text-align: left;
+  }
+
+  .table td::before {
+    content: attr(data-label);
+    color: var(--ink-2);
+    text-align: left;
+  }
+}
+
+@media (max-width: 1023px) {
+  .csatLayout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: var(--space-16);
+  }
+
+  .tabs {
+    align-self: stretch;
+  }
+
+  .tab {
+    flex: 1;
+    min-height: var(--size-touch);
+  }
+
+  .control {
+    flex: 1 1 100%;
+  }
+
+  .customRange {
+    flex: 1 1 100%;
+  }
+
+  .customRange > button {
+    flex: 1 1 100%;
+    min-height: var(--size-touch);
+  }
+
+  .tiles,
+  .tilesFour {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-8);
+  }
+
+  .tile {
+    padding: var(--space-12);
+  }
+
+  .tileValue {
+    font-size: var(--text-20);
+  }
+
+  .csat {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-16);
+  }
+
+  .distributionRow {
+    grid-template-columns: 7.5rem minmax(0, 1fr) 2.5rem;
+  }
+
+  .export {
+    align-items: flex-start;
+  }
+
+  .cardHead > :last-child:not(:first-child) {
+    width: 100%;
+  }
+}

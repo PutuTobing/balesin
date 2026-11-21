@@ -1,0 +1,176 @@
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  width: 100%;
+  /* Kolom isi satu kolom, sama dengan halaman Pengaturan lain (`--size-column`). */
+  max-width: var(--size-column);
+}
+
+.intro {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  text-wrap: pretty;
+}
+
+ul.list,
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-12) var(--space-12) var(--space-16) var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.itemHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-width: 0;
+}
+
+.shortcut {
+  flex: none;
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-input);
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+  line-height: var(--leading-title);
+}
+
+.itemTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemActions {
+  display: flex;
+  flex: none;
+  gap: var(--space-4);
+}
+
+.itemBody {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--text-14);
+  white-space: pre-wrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.itemMeta,
+.note {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+.note {
+  font-size: var(--text-13);
+}
+
+/* ---------- Form ---------- */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  margin-top: var(--space-16);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.bodyField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.bodyField {
+  gap: var(--space-4);
+}
+
+.bodyFooter {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.variables {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.insertLabel {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+.variable {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--size-control);
+  padding: 0 var(--space-8);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+}
+
+.variable:hover {
+  background: var(--surface-2);
+}
+
+.count {
+  flex: none;
+  padding-top: var(--space-8);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .variable {
+    min-height: var(--size-touch);
+  }
+}
+
+/* ---------- Kerangka ---------- */
+
+.skeletonHead {
+  width: 40%;
+  height: var(--space-16);
+}
+
+.skeletonLine {
+  width: 90%;
+  height: var(--space-12);
+}
+
+.skeletonShort {
+  width: 30%;
+  height: var(--space-8);
+}

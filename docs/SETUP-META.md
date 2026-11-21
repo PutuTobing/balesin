@@ -20,9 +20,17 @@ dibuat otomatis (URL webhook & verify token).
    berlaku *Tidak pernah*. Tempel ke Balesin. (Token disimpan terenkripsi.)
 6. **App Secret** — Aplikasi → Pengaturan → Dasar → *App Secret* → tempel ke Balesin
    (untuk memverifikasi webhook).
-7. **Pasang webhook** — WhatsApp → Konfigurasi → Webhook → Edit → tempel **URL webhook**
-   dan **Verify token** dari Balesin → Verifikasi → langganan field `messages`
-   (dan `message_template_status_update`, `account_update`).
+7. **Pasang webhook** — WhatsApp → Konfigurasi → Webhook → Edit → tempel **Callback URL**
+   dan **Verify token** dari Balesin → tekan **Verifikasi dan simpan** → di daftar *Kolom
+   webhook* klik **Berlangganan** untuk `messages`, `message_template_status_update`, dan
+   `account_update`. Disarankan juga mengaktifkan **Require App Secret Proof** (Aplikasi →
+   Pengaturan → Lanjutan).
+   - *Beberapa nomor dalam satu aplikasi Meta*: Meta hanya punya satu Callback URL per
+     aplikasi. Pakai App Secret yang sama di semua channel nomor itu — Balesin mengarahkan
+     pesan ke channel yang benar. Nomor dari aplikasi berbeda memakai URL-nya sendiri.
+   - *Gejala App Secret salah*: verifikasi berhasil tetapi pesan tidak masuk, dan muncul
+     peringatan "Webhook WhatsApp ditolak berulang" di banner keamanan. Perbaikannya: ganti
+     App Secret di Pengaturan → Channel.
 8. **Tes** — klik "Tes koneksi" di Balesin, lalu kirim pesan dari HP ke nomor tersebut.
    Pesan harus muncul di Inbox.
 9. **Metode pembayaran** — tambahkan di WhatsApp Manager agar bisa mengirim template/

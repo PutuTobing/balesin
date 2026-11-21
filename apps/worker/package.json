@@ -1,0 +1,37 @@
+{
+  "name": "@balesin/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
+    "build": "tsup && node ../../packages/core/scripts/check-bundle-deps.mjs",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@balesin/core": "workspace:*",
+    "@balesin/db": "workspace:*",
+    "@balesin/shared": "workspace:*",
+    "bullmq": "6.7.2",
+    "drizzle-orm": "catalog:",
+    "imapflow": "2.12.1",
+    "ioredis": "catalog:",
+    "mailparser": "3.14.5",
+    "nodemailer": "10.5.0",
+    "pg": "catalog:",
+    "pino": "catalog:",
+    "sanitize-html": "2.18.2",
+    "uuid": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "pino-pretty": "catalog:",
+    "tsup": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

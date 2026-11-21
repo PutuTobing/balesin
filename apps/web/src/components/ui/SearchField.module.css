@@ -1,0 +1,77 @@
+.field {
+  display: flex;
+  align-items: center;
+  height: var(--size-control);
+  border-radius: var(--radius-input);
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+/* Cincin fokus di bingkai kolom, bukan di <input> di dalamnya. */
+.field:has(.input:focus-visible) {
+  outline: 2px solid var(--primary);
+  outline-offset: 0;
+}
+
+.icon {
+  margin-left: var(--space-12);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 var(--space-8);
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: var(--text-14);
+  appearance: none;
+}
+
+.input:focus-visible {
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--ink-2);
+  opacity: 1;
+}
+
+.input::-webkit-search-cancel-button,
+.input::-webkit-search-decoration {
+  appearance: none;
+}
+
+.clear {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--size-control);
+  height: 100%;
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+}
+
+.clear:hover {
+  color: var(--ink);
+}
+
+.clear:focus-visible {
+  outline-offset: -2px;
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .field {
+    height: var(--size-touch);
+  }
+
+  .clear {
+    width: var(--size-touch);
+  }
+
+  /* 16px: iOS tidak memperbesar halaman saat kolom difokus. */
+  .input {
+    font-size: var(--text-16);
+  }
+}
