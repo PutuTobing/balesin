@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { configureZodLocale } from '@balesin/shared';
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
 import { afterEach, beforeEach, vi } from 'vitest';
 import { clearHandoffEmail, clearLoginNotice } from '../features/auth/login-notice';
 import { api } from '../lib/api/client';
@@ -13,6 +13,9 @@ import { installMatchMedia, resetMatchMedia } from './match-media';
 
 installMatchMedia();
 configureZodLocale();
+// Bawaan `findBy*`/`waitFor` 1 dtk terlalu ketat untuk runner CI yang menjalankan tes web
+// bersamaan dengan tes API (media dimuat lewat fetch → object URL gagal ditemukan tepat waktu).
+configure({ asyncUtilTimeout: 5_000 });
 // Inbox real-time: tidak ada server WebSocket di jsdom.
 setInboxSocketFactory((url) => new FakeSocket(url));
 
