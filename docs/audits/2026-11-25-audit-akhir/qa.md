@@ -213,3 +213,62 @@ Belum memblokir, tetapi akan menjadi galat di Vite mayor berikutnya.
   Proses yatim dari run B yang dimatikan manual: server channel tiruan, worker, dan server Meta
   tiruan. Database `balesin_e2e` tetap ada; ia dibuat ulang setiap run.
 - Tidak ada commit. Hanya berkas ini yang ditulis di working tree utama.
+
+## Putaran 2 (penutupan) — HEAD `448df8a`
+
+- **Hasil:** **BELUM LULUS. Ada 1 temuan baru level Tinggi** (P2-T1, tes unit api merah).
+  Semua temuan putaran 1 tertutup: T1, T2, S1, S2, D1, R1, R3, R4, dan R5 (bagian foto interaktif).
+  E2E penuh hijau dua kali berturut-turut.
+- Dijalankan dari worktree baru di `448df8a` dengan cache Vite **dingin** (`apps/web/node_modules/.vite`
+  belum ada). Config E2E standar, tanpa tambalan sementara. Worktree dan stack sudah dibersihkan.
+
+### Ringkasan pemeriksaan
+
+| Pemeriksaan | Hasil | Durasi |
+|---|---|---|
+| `pnpm format:check` | lulus (T2 tertutup) | 16 dtk |
+| `pnpm lint` | lulus | 96 dtk |
+| `pnpm check:deps` | lulus | 1 dtk |
+| `pnpm typecheck` | lulus | 47 dtk |
+| `pnpm build` | lulus, **tanpa** peringatan `configLoader` (R4 tertutup) | 21 dtk |
+| Vitest shared / db / core / worker / web | 167 / 102 / 615 / 138 / 930, semua lulus | 2 / 21 / 7 / 17 / 51 dtk |
+| Vitest api (`--maxWorkers=3`) | **1160 lulus, 1 gagal** (P2-T1), 103 berkas | 1290 dtk |
+| **Total unit/integrasi** | **3112 tes, 1 gagal** | |
+| E2E penuh run 1 (cache Vite dingin) | **285 lulus, 64 dilewati, 0 gagal, 0 goyah** | 7,4 mnt |
+| E2E penuh run 2 (berturut-turut) | **285 lulus, 64 dilewati, 0 gagal, 0 goyah** | 6,5 mnt |
+
+- **D1 terbukti tertutup.** Dengan cache dingin, `e2e/stack/start-web.mjs` memanaskan 458 modul dan
+  15 dependensi dalam 2 × 2 dtk sebelum `BALESIN_E2E_WEB_SIAP`. Di putaran 1, dokumen pertama butuh
+  218 dtk. Playwright memakai 5 worker dari `viewports.ts`.
+- Log API/worker selama kedua run tidak berisi `level: error`/`fatal`.
+- Tes yang dulu goyah atau merah semuanya lulus di kedua run: `broadcast.spec.ts:156` (T1),
+  `aksesibilitas.spec.ts:73/83/207` (S1, laporan kini menunggu slot dan web mencoba ulang sesuai
+  Retry-After), `crm.spec.ts:34` (S2), dan `sesi.spec.ts:43` (R1).
+- Tes yang dilewati tetap 64 `test.skip`, semuanya beralasan.
+
+### Temuan baru
+
+**P2-T1 (Tinggi) — `forbidden-pattern.test.ts` merah: 403 langsung tanpa audit di
+`outbound.service.ts`** (**backend**, review **security**)
+- Penjaga pola `apps/api/src/modules/auth/forbidden-pattern.test.ts:47` (review RBAC R1) mewajibkan
+  setiap 403 karena wewenang dilempar lewat `forbidByRule` (`modules/auth/access-denied.ts:185`)
+  supaya penolakan akses selalu diaudit. Ada dua pelanggaran:
+  - `apps/api/src/modules/messages/outbound.service.ts:829` →
+    `throw new AppError('FORBIDDEN', { message: INITIATION_DENIED[initiates][initiation.actor] })`
+    (kirim ke percakapan selesai/dingin tanpa izin `inbox.initiate` / scope `messages:initiate`).
+  - `apps/api/src/modules/messages/outbound.service.ts:1338` →
+    `throw new AppError('FORBIDDEN', { message: INITIATION_DENIED[initiates].user })`
+    (kirim ulang).
+- Asal: diperkenalkan di `584f040` (A1) dan diperluas di `33a5302`. Sejak itu `apps/api` merah dan CI
+  ikut merah. Gagalnya deterministik karena tes ini memindai isi berkas.
+- Reproduksi: `cd apps/api && pnpm vitest run src/modules/auth/forbidden-pattern.test.ts`.
+- Usulan: ganti kedua `throw` dengan `forbidByRule(...)` memakai aturan baru di `ACCESS_RULES`
+  (mis. "mulai percakapan tanpa izin"), supaya penolakan masuk audit/jejak keamanan. Kalau memang
+  sengaja tidak diaudit, tambahkan berkas ke `ALLOWED` dengan alasan dan minta review `security`.
+  Pilihan pertama lebih sesuai `docs/SECURITY.md`.
+
+### Kebersihan putaran 2
+- Worktree `balesin-qa-tutup` sudah dihapus. Stack E2E (3100/5180/43100, Redis db 14) sudah mati
+  tanpa proses yatim.
+- Folder kosong `balesin-qa-audit/{apps/api,e2e}` dari putaran 1 masih terkunci (lihat §5).
+- Tidak ada commit dan tidak ada ubahan tes di putaran ini.
