@@ -113,6 +113,30 @@ describe('S1 (Tinggi) — ReDoS sanitasi HTML keluar lewat POST /public/email/se
   }, 120_000);
 });
 
+describe('Putaran 2 S3 (Tinggi) — sarang tag dalam lewat POST /public/email/send', () => {
+  // sanitize-html super-linear terhadap kedalaman tag: render (2×) + sanitasi profil masuk di
+  // `persist` (conversation: "create"). 40.000 `<div>` (~200 KB) ≈ 5–8 dtk event loop beku; 512 KB ≈
+  // ±40 dtk, dan bisa diulang beruntun. Perbaikan boleh menolak (400) atau memproses cepat.
+  it.fails(
+    'HTML 40.000 <div> bersarang dijawab < 2 dtk (202 atau 400)',
+    async () => {
+      const { secret } = await createKey();
+      const started = performance.now();
+      const response = await api(secret, API_ROUTES.publicEmail.send, {
+        senderId,
+        to: [{ email: 'sarang@contoh.example' }],
+        subject: 'Tagihan',
+        html: '<div>'.repeat(40_000),
+        conversation: 'create',
+      });
+      const took = performance.now() - started;
+      expect([202, 400]).toContain(response.statusCode);
+      expect(took).toBeLessThan(2_000);
+    },
+    180_000,
+  );
+});
+
 describe('S2 (Sedang) — batas kirim email API dihitung per email, bukan per penerima', () => {
   it('key dailySendLimit 3: satu email ke 3 penerima (Kepada+Cc+Bcc) menghabiskan jatah → kirim berikutnya 429', async () => {
     const { secret } = await createKey({ dailySendLimit: 3 });

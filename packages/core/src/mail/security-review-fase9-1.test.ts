@@ -12,7 +12,12 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { sanitizeOutboundEmailHtml, scanTemplateVariables } from './outbound-html';
+import { parseInboundEmail } from '../channels/email-message';
+import {
+  renderOutboundEmail,
+  sanitizeOutboundEmailHtml,
+  scanTemplateVariables,
+} from './outbound-html';
 
 /** Batas wajar untuk HTML puluhan KB (implementasi linear selesai dalam beberapa ms). */
 const BUDGET_MS = 300;
@@ -47,4 +52,57 @@ describe('review 9.1 S1 — ReDoS sanitasi HTML email keluar', () => {
       elapsed(() => scanTemplateVariables({ subject: 'Tagihan', html, text: null })),
     ).toBeLessThan(BUDGET_MS);
   }, 60_000);
+});
+
+/**
+ * Putaran 2 — temuan S3 (Tinggi): sanitize-html berwaktu super-linear terhadap KEDALAMAN tag
+ * (`<div>` bersarang tanpa penutup). Bukan regex — perbaikan S1 tidak menyentuhnya. Jalur: render
+ * email API (sanitasi 2× + sanitasi profil masuk di `persist`) dan email MASUK dari internet
+ * (`parseInboundEmail` menyanitasi HTML SEBELUM batas 512 KB diperiksa, mentah ≤ 25 MB).
+ * `it.fails` = mengunci temuan; ubah ke `it` setelah diperbaiki.
+ */
+describe('review 9.1 putaran 2 S3 — sarang tag dalam (sanitize-html super-linear)', () => {
+  it.fails(
+    'render email API dengan 40.000 <div> bersarang (~200 KB) selesai < 1 dtk',
+    () => {
+      const html = '<div>'.repeat(40_000);
+      expect(
+        elapsed(() =>
+          renderOutboundEmail({
+            subject: 'Tagihan',
+            html,
+            text: null,
+            values: {},
+            organizationName: 'Organisasi',
+            qrisImageSrc: null,
+            layout: 'brand',
+            brand: { primaryColor: '#112233', logoSrc: null, footerText: null },
+            substituteVariables: false,
+          }),
+        ),
+      ).toBeLessThan(1_000);
+    },
+    120_000,
+  );
+
+  it.fails(
+    'email MASUK 1 MB berisi 200.000 <div> bersarang diurai < 2 dtk (pengirim internet mana pun)',
+    async () => {
+      const head = [
+        'From: Luar <luar@contoh.example>',
+        'To: cs@perusahaan.example',
+        'Subject: Halo',
+        'Message-ID: <sarang@contoh.example>',
+        'Date: Mon, 23 Nov 2026 00:00:00 +0700',
+        'MIME-Version: 1.0',
+        'Content-Type: text/html; charset=utf-8',
+      ].join(String.fromCharCode(13, 10));
+      const crlf = String.fromCharCode(13, 10);
+      const raw = Buffer.from(head + crlf + crlf + '<div>'.repeat(200_000) + crlf);
+      const start = performance.now();
+      await parseInboundEmail(raw, ['cs@perusahaan.example'], []);
+      expect(performance.now() - start).toBeLessThan(2_000);
+    },
+    120_000,
+  );
 });
