@@ -228,7 +228,9 @@ describe('Pengaturan → Channel → Akses tim', () => {
     );
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(await view.findByText(a.savedTitle)).toBeVisible();
-    expect(view.getByText(`${a.saved} ${a.released(2)}`)).toBeVisible();
+    // Teks dinormalkan (NBSP → spasi) oleh pencocok.
+    expect(view.getByText(`${a.saved} ${a.released(2)}`.replace(/\u00a0/g, ' '))).toBeVisible();
+    expect(a.released(2)).toContain('2\u00a0percakapan');
     expect(view.getByRole('button', { name: a.save })).toBeDisabled();
   });
 

@@ -106,9 +106,11 @@ export function EmailTemplateTestCard({
             />
             {hasPublished ? (
               <div className={styles.group}>
-                <span className={styles.groupLabel}>{c.testWhichLabel}</span>
+                <span className={styles.groupLabel} id="isi-kirim-tes">
+                  {c.testWhichLabel}
+                </span>
                 <Segments
-                  label={c.testWhichLabel}
+                  labelledBy="isi-kirim-tes"
                   value={which}
                   options={[
                     { value: 'draft', label: c.testWhich.draft },

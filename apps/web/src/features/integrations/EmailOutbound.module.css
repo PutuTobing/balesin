@@ -119,6 +119,13 @@ ul.list,
   overflow-wrap: anywhere;
 }
 
+/* Satu fakta tidak dipecah di tengah ("Maks. 2.000 pesan/24 jam"); yang lebih panjang dari baris
+   tetap boleh terlipat di dalamnya. */
+.fact {
+  display: inline-block;
+  max-width: 100%;
+}
+
 .failure {
   color: var(--danger-ink);
   font-size: var(--text-13);
@@ -192,9 +199,9 @@ ul.metadata,
   }
 
   .status {
-    order: 4;
+    order: -1;
     width: 100%;
-    padding-left: calc(var(--size-icon-md) + var(--space-12));
+    padding-left: 0;
   }
 
   .itemBody {

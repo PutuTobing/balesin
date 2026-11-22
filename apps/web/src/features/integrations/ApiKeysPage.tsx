@@ -7,7 +7,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ChevronRight, ExternalLink, KeyRound, Mails, Plus } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { Fragment, useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Checkbox } from '../../components/ui/Checkbox';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
@@ -293,7 +293,14 @@ function ApiKeyRow({
           </li>
         ))}
       </ul>
-      <p className={styles.meta}>{facts.join(' · ')}</p>
+      <p className={styles.meta}>
+        {facts.map((fact, index) => (
+          <Fragment key={fact}>
+            {index > 0 ? ' · ' : null}
+            <span className={styles.fact}>{fact}</span>
+          </Fragment>
+        ))}
+      </p>
       {hasEmail ? <EmailAccess apiKey={apiKey} /> : null}
       {failure ? (
         <Notice tone="danger" role="alert">
@@ -302,8 +309,17 @@ function ApiKeyRow({
       ) : null}
       {apiKey.status === 'active' || hasEmail ? (
         <div className={styles.itemActions}>
+          {hasEmail && apiKey.status === 'active' ? (
+            <Button
+              ref={emailRef}
+              aria-label={copy.emailEditLabel(apiKey.name)}
+              onClick={() => setEditingEmail(true)}
+            >
+              {copy.emailEdit}
+            </Button>
+          ) : null}
           {hasEmail ? (
-            <Button variant="ghost" asChild>
+            <Button asChild>
               <Link
                 to="/pengaturan/api-key/email-terkirim"
                 search={{ apiKeyId: apiKey.id }}
@@ -312,15 +328,6 @@ function ApiKeyRow({
                 <Icon icon={Mails} size={16} />
                 {copy.emailHistory}
               </Link>
-            </Button>
-          ) : null}
-          {hasEmail && apiKey.status === 'active' ? (
-            <Button
-              ref={emailRef}
-              aria-label={copy.emailEditLabel(apiKey.name)}
-              onClick={() => setEditingEmail(true)}
-            >
-              {copy.emailEdit}
             </Button>
           ) : null}
           {apiKey.status === 'active' ? (

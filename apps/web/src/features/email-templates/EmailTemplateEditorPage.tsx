@@ -423,6 +423,18 @@ function TemplateEditor({
                   error={errors.description}
                   maxLength={200}
                 />
+                {archived ? null : (
+                  <div className={styles.archiveRow}>
+                    <Button
+                      variant="ghost"
+                      className={styles.dangerText}
+                      onClick={() => setArchiving(true)}
+                    >
+                      <Icon icon={Archive} size={16} />
+                      {c.archive}
+                    </Button>
+                  </div>
+                )}
               </fieldset>
 
               <fieldset className={styles.card} disabled={archived}>
@@ -441,7 +453,7 @@ function TemplateEditor({
                     {c.layoutLabel}
                   </span>
                   <Segments
-                    label={c.layoutLabel}
+                    labelledBy="tata-letak-email"
                     value={draft.layout}
                     options={(['brand', 'none'] as const).map((layout) => ({
                       value: layout,
@@ -503,33 +515,29 @@ function TemplateEditor({
               />
 
               {archived ? null : (
-                <FormActions
-                  meta={
-                    dirty
-                      ? c.unsaved
-                      : canPublish
-                        ? c.savedAt(formatDateTimeInline(template.updatedAt))
-                        : c.nothingToPublish
-                  }
-                  danger={
-                    <Button className={styles.dangerText} onClick={() => setArchiving(true)}>
-                      <Icon icon={Archive} size={16} />
-                      {c.archive}
-                    </Button>
-                  }
-                >
-                  <Button type="submit" loading={busy === 'save'} disabled={busy !== null}>
-                    {busy === 'save' ? c.saving : c.saveDraft}
-                  </Button>
-                  <Button
-                    ref={publishRef}
-                    variant="primary"
-                    disabled={busy !== null || !canPublish}
-                    onClick={() => void startPublish()}
+                <div className={styles.stickyActions}>
+                  <FormActions
+                    meta={
+                      dirty
+                        ? c.unsaved
+                        : canPublish
+                          ? c.savedAt(formatDateTimeInline(template.updatedAt))
+                          : c.nothingToPublish
+                    }
                   >
-                    {c.publish}
-                  </Button>
-                </FormActions>
+                    <Button type="submit" loading={busy === 'save'} disabled={busy !== null}>
+                      {busy === 'save' ? c.saving : c.saveDraft}
+                    </Button>
+                    <Button
+                      ref={publishRef}
+                      variant="primary"
+                      disabled={busy !== null || !canPublish}
+                      onClick={() => void startPublish()}
+                    >
+                      {c.publish}
+                    </Button>
+                  </FormActions>
+                </div>
               )}
             </form>
           </Tabs.Content>

@@ -1,6 +1,6 @@
 import { EMAIL_MAX_EXTRA_RECIPIENTS, type Conversation } from '@balesin/shared';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { ReplyAll } from 'lucide-react';
+import { ReplyAll, TriangleAlert } from 'lucide-react';
 import { useEffect, useId, useMemo, useState } from 'react';
 import { AddressChips } from '../../components/ui/AddressChips';
 import { Icon } from '../../components/ui/Icon';
@@ -114,12 +114,14 @@ export function EmailCopiesBar({
 
   const fieldsId = `${id}-isian`;
   const metaId = `${id}-keterangan`;
+  // HP: tanpa kotak Notice — satu baris berikon supaya tetap terlihat di luar area gulir (N1).
   const warning =
     fresh.length > 0 && !canInitiate ? (
       isHp ? (
-        <Notice tone="warning" className={styles.notice}>
-          {k.newNoInitiateShort}
-        </Notice>
+        <p className={styles.warnLine}>
+          <Icon icon={TriangleAlert} size={16} />
+          <span>{k.newNoInitiateShort}</span>
+        </p>
       ) : (
         <Notice tone="warning" title={k.newNoInitiateTitle} className={styles.notice}>
           {k.newNoInitiateBody(fresh.length)}
@@ -164,8 +166,8 @@ export function EmailCopiesBar({
         </div>
       </div>
       {open ? (
-        // Semua isi (kolom, keterangan, peringatan) dalam satu area gulir: di HP tingginya dibatasi
-        // supaya riwayat chat tetap terlihat saat keyboard terbuka (review 9.0 P1).
+        // Hanya kolom Cc/Bcc yang menggulir: di HP tingginya dibatasi supaya riwayat chat tetap
+        // terlihat saat keyboard terbuka (review 9.0 P1/N1).
         <div id={fieldsId} className={styles.fields}>
           {(['cc', 'bcc'] as const).map((field) => (
             <AddressChips
@@ -190,17 +192,22 @@ export function EmailCopiesBar({
               describedBy={metaId}
             />
           ))}
+        </div>
+      ) : null}
+      {open ? (
+        // Keterangan & peringatan DI LUAR area gulir: selalu terlihat, juga saat keyboard HP terbuka.
+        <>
           <p id={metaId} className={styles.meta}>
             <span className={styles.count} data-full={full ? '' : undefined}>
-              {full ? k.full(MAX) : k.count(total, MAX)}
+              {full ? k.full(MAX) : isHp ? k.countShort(total, MAX) : k.count(total, MAX)}
             </span>
-            <span>{k.bccNote}</span>
+            <span>{isHp ? k.bccNoteShort : k.bccNote}</span>
           </p>
           {warning}
           {fresh.length > 0 && canInitiate ? (
-            <p className={styles.meta}>{k.newInitiate(fresh.length)}</p>
+            <p className={styles.meta}>{isHp ? k.newInitiateShort : k.newInitiate(fresh.length)}</p>
           ) : null}
-        </div>
+        </>
       ) : (
         warning
       )}

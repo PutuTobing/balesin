@@ -229,6 +229,9 @@ export const t = {
       remove: (address: string) => `Hapus ${address}`,
       removed: (address: string) => `${address} dihapus.`,
       count: (count: number, max: number) => `${count} dari ${max} alamat tambahan`,
+      countShort: (count: number, max: number) => `${count}/${max} alamat`,
+      bccNoteShort: 'Bcc hanya terlihat tim',
+      newInitiateShort: 'Alamat baru memakai jatah memulai percakapan.',
       full: (max: number) => `Sudah ${max} alamat tambahan, batas per balasan.`,
       invalid: (address: string) =>
         `“${address}” bukan alamat email yang valid. Contoh: nama@perusahaan.co.id`,
@@ -247,7 +250,7 @@ export const t = {
         `${count === 1 ? 'Satu alamat' : `${count} alamat`} baru di utas ini. Mengirim ke alamat baru dihitung memulai percakapan dan memakai jatah harian.`,
       /** HP (ruang sempit, keyboard terbuka): satu kalimat, tanpa judul. */
       newNoInitiateShort:
-        'Alamat bertanda “baru” butuh izin memulai percakapan. Hapus alamatnya, atau minta izin ke Owner atau Admin di tempatmu.',
+        'Alamat “baru” butuh izin memulai percakapan. Hapus, atau minta izin ke Owner atau Admin di tempatmu.',
       pendingInvalid: (text: string) =>
         `“${text}” belum jadi alamat. Perbaiki atau hapus dulu sebelum mengirim.`,
     },
@@ -3745,8 +3748,9 @@ export const t = {
       saving: 'Menyimpan…',
       savedTitle: 'Akses tim disimpan',
       saved: 'Anggota yang tidak lagi berhak sudah tidak bisa melihat chat channel ini.',
+      // NBSP: angka tidak tertinggal sendirian di ujung baris (N5).
       released: (count: number) =>
-        `${count} percakapan yang mereka pegang dikembalikan ke antrian.`,
+        `${count}\u00a0percakapan yang mereka pegang dikembalikan ke antrian.`,
       confirmTitle: 'Perluas akses channel ini?',
       confirmBody:
         'Lebih banyak anggota tim akan bisa membaca chat channel ini, termasuk riwayat lamanya.',
@@ -4052,7 +4056,7 @@ export const t = {
     menuHint: 'Kunci untuk integrasi seperti n8n, bot, dan sistem lain',
     menuCount: (count: number) => (count === 0 ? 'Belum ada key aktif' : `${count} key aktif`),
     intro:
-      'Integrasi memakai API key untuk membaca percakapan, mengirim balasan, dan mengelola kontak lewat API publik.',
+      'Integrasi memakai API key untuk membaca percakapan, mengirim balasan, mengelola kontak, dan mengirim email lewat API publik.',
     scopeWarningTitle: 'Berikan hanya ke integrasi tepercaya',
     scopeWarning:
       'API key berlaku untuk seluruh organisasi. Key yang boleh mengirim pesan juga bisa membaca SEMUA percakapan dan pesan, bukan hanya chat milik satu agen.',
@@ -4081,7 +4085,7 @@ export const t = {
     revoked: (name: string) => `API key ${name} dicabut.`,
     formTitle: 'Buat API key',
     nameLabel: 'Nama',
-    nameHint: 'Untuk mengenali pemakainya, mis. "n8n produksi".',
+    nameHint: 'Untuk mengenali pemakainya, mis. “n8n produksi”.',
     scopesLabel: 'Izin',
     /** Label pendek di kartu (kalimat lengkap = API_KEY_SCOPE_LABELS di dialog). */
     scopeShort: {
@@ -4107,7 +4111,7 @@ export const t = {
     } as Record<string, string>,
     inactiveTitle: (count: number) => `Dicabut & kedaluwarsa (${count.toLocaleString('id-ID')})`,
     scopesHint: 'Pilih seperlunya. Izin yang lebih tinggi otomatis mencakup izin baca di bawahnya.',
-    implied: 'sudah termasuk',
+    implied: (by: string) => `termasuk dalam ${by}`,
     expiryLabel: 'Masa berlaku',
     expiryOptions: {
       never: 'Tanpa batas waktu',
@@ -4140,7 +4144,7 @@ export const t = {
     // Tahap 9.1 — akses email per key
     emailSendersLabel: 'Pengirim email yang boleh dipakai',
     emailSendersHint:
-      'Key ini hanya bisa mengirim dan melihat status email dari pengirim yang dicentang. Tidak ada pilihan "semua pengirim".',
+      'Key ini hanya bisa mengirim dan melihat status email dari pengirim yang dicentang. Tidak ada pilihan “semua pengirim”.',
     emailSendersRequired: 'Pilih minimal satu pengirim email.',
     emailSendersEmpty:
       'Belum ada channel Email. Hubungkan channel Email dulu di Pengaturan → Channel, lalu buat key ini.',
@@ -4540,9 +4544,9 @@ export const t = {
     emailDisabled:
       'Channel ini nonaktif, jadi email menunggu. Aktifkan lagi di pengaturan channel-nya.',
     emailOpenChannel: 'Buka pengaturan channel',
-    emailLimitLabel: 'Penerima per jam',
+    emailLimitLabel: 'Batas penerima per jam',
     emailLimitHint: (fallback: number, max: number) =>
-      `Bawaan ${fallback.toLocaleString('id-ID')}, paling banyak ${max.toLocaleString('id-ID')}.`,
+      `Bawaan ${fallback.toLocaleString('id-ID')}. Isi 1–${max.toLocaleString('id-ID')}.`,
     emailLimitSave: 'Simpan',
     emailLimitSaveFor: (name: string) => `Simpan batas penerima per jam ${name}`,
     emailLimitSaved: (name: string) => `Batas penerima per jam ${name} disimpan.`,
@@ -4563,7 +4567,7 @@ export const t = {
     emailResumeFor: (name: string) => `Lanjutkan pengiriman email ${name}`,
     emailResumeTitle: (name: string) => `Lanjutkan email dari ${name}?`,
     emailResumeBody:
-      'Email yang menunggu dikirim lagi mulai dari yang paling lama. Bila server email masih menolak login, pengirim kembali terblokir.',
+      'Email yang menunggu dikirim lagi mulai dari yang paling lama. Bila server email masih menolak username atau password SMTP, pengirim kembali terblokir.',
     emailResuming: 'Melanjutkan…',
     emailResumed: (name: string) => `Pengiriman email ${name} berjalan lagi.`,
     emailResumeNotAllowed: 'Hanya Owner atau Admin yang bisa melanjutkan pengiriman.',
@@ -4616,14 +4620,14 @@ export const t = {
     createTitle: 'Buat template email',
     createBody: 'Isi nama dan slug dulu. Isi email ditulis di halaman berikutnya.',
     nameLabel: 'Nama template',
-    nameHint: 'Untuk dikenali timmu, mis. "Tagihan bulanan".',
+    nameHint: 'Untuk dikenali timmu, mis. “Tagihan bulanan”.',
     slugLabel: 'Slug',
     slugHint:
       'Dipakai aplikasimu sebagai templateId. Huruf kecil, angka, dan tanda hubung. Terkunci setelah pertama kali terbit.',
     slugLocked:
       'Terkunci karena template sudah pernah terbit dan mungkin sudah dipakai aplikasi lain. Buat template baru bila butuh slug lain.',
     descriptionLabel: 'Keterangan',
-    descriptionHint: 'Kapan template ini dipakai, mis. "Dikirim billing tiap tanggal 20".',
+    descriptionHint: 'Kapan template ini dipakai, mis. “Dikirim billing tiap tanggal 20”.',
     creating: 'Membuat…',
     cancel: 'Batal',
     created: 'Template dibuat. Tulis isinya, lalu terbitkan supaya bisa dipakai API.',
@@ -4639,7 +4643,7 @@ export const t = {
     presetUseShort: 'Pakai',
     presetUsing: 'Membuat…',
     presetCreated: (name: string) =>
-      `Draf "${name}" dibuat dari preset. Periksa isinya, lalu terbitkan.`,
+      `Draf “${name}” dibuat dari preset. Periksa isinya, lalu terbitkan.`,
     // Editor
     notFoundTitle: 'Template email tidak ditemukan',
     notFoundBody: 'Mungkin sudah dihapus atau alamatnya salah.',
@@ -4663,7 +4667,7 @@ export const t = {
     identityTitle: 'Identitas',
     contentTitle: 'Isi email',
     subjectLabel: 'Subjek',
-    subjectHint: 'Boleh memuat variabel, mis. "Tagihan {{periode}} — {{id_pelanggan}}".',
+    subjectHint: 'Boleh memuat variabel, mis. “Tagihan {{periode}} — {{id_pelanggan}}”.',
     layoutLabel: 'Tampilan',
     layouts: { brand: 'Bingkai merek', none: 'HTML apa adanya' },
     layoutHints: {

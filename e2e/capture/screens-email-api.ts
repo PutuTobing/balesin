@@ -476,6 +476,13 @@ export const emailApiScreens: Screen[] = [
     },
   }),
   screen('template-email-editor', EDITOR, 'text=Slug untuk API'),
+  // Tab Isi digulir ke tengah (kartu variabel): Simpan draf/Terbitkan tetap terlihat (menempel).
+  screen('template-email-editor-gulir', EDITOR, 'text=Slug untuk API', {
+    tall: false,
+    prepare: async (page) => {
+      await page.getByText('{{periode}}', { exact: true }).first().scrollIntoViewIfNeeded();
+    },
+  }),
   screen('template-email-pratinjau', EDITOR, 'text=Slug untuk API', {
     prepare: async (page) => {
       await openTab(page, 'Pratinjau');

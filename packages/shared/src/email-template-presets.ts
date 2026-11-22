@@ -2,7 +2,8 @@
  * Preset template email ISP (Fase 9.1, docs/KONTRAK-API-EMAIL-KIRIM.md §7). Generik white-label:
  * tanpa nama perusahaan, URL, atau nomor — nama organisasi lewat variabel bawaan
  * `{{nama_organisasi}}`, gambar QRIS lewat slot `{{qris}}`. Semua `layout: 'brand'` (bingkai merek +
- * logo Branding). Versi teks dibuat otomatis dari HTML (`text: null`).
+ * logo Branding). Versi teks dibuat otomatis dari HTML (`text: null`). HTML ditulis satu blok per baris
+ * (bukan satu baris panjang) supaya rapi di editor Pengaturan → Template email.
  *
  * Variabel opsional tidak dipakai di `href` (nilai kosong = tautan rusak): `tautan_bayar` tampil
  * sebagai teks biasa.
@@ -41,16 +42,16 @@ const CELL = 'padding: 8px 0; border-bottom: 1px solid #e5e7eb;';
 
 const paragraph = (content: string) => `<p style="${P}">${content}</p>`;
 
-/** Tabel rincian dua kolom (label kiri, nilai kanan). */
+/** Tabel rincian dua kolom (label kiri, nilai kanan); satu `<tr>` per baris supaya mudah diedit. */
 function details(rows: readonly (readonly [string, string])[]): string {
   const body = rows
     .map(
       ([label, value]) =>
-        `<tr><td style="${CELL} color: #6b7280;">${label}</td>` +
+        `  <tr><td style="${CELL} color: #6b7280;">${label}</td>` +
         `<td align="right" style="${CELL} font-weight: bold; color: #111827;">${value}</td></tr>`,
     )
-    .join('');
-  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; ${P}">${body}</table>`;
+    .join('\n');
+  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; ${P}">\n${body}\n</table>`;
 }
 
 const QRIS_SLOT = `<div style="text-align: center; ${P}">{{qris}}</div>`;
@@ -103,7 +104,7 @@ export const EMAIL_TEMPLATE_PRESETS: readonly EmailTemplatePreset[] = [
       QRIS_SLOT,
       paragraph('Bayar sebelum tanggal jatuh tempo supaya layananmu tetap lancar, ya.'),
       THANKS,
-    ].join(''),
+    ].join('\n'),
     text: null,
     layout: 'brand',
     footerText: AUTO_FOOTER,
@@ -132,7 +133,7 @@ export const EMAIL_TEMPLATE_PRESETS: readonly EmailTemplatePreset[] = [
       ),
       QRIS_SLOT,
       THANKS,
-    ].join(''),
+    ].join('\n'),
     text: null,
     layout: 'brand',
     footerText: AUTO_FOOTER,
@@ -157,7 +158,7 @@ export const EMAIL_TEMPLATE_PRESETS: readonly EmailTemplatePreset[] = [
         'Bayar dengan nominal yang sama persis lewat ATM, mobile banking, atau internet banking. Pembayaran tercatat otomatis.',
       ),
       THANKS,
-    ].join(''),
+    ].join('\n'),
     text: null,
     layout: 'brand',
     footerText: AUTO_FOOTER,
@@ -188,7 +189,7 @@ export const EMAIL_TEMPLATE_PRESETS: readonly EmailTemplatePreset[] = [
       ]),
       paragraph('Simpan email ini sebagai bukti pembayaran.'),
       THANKS,
-    ].join(''),
+    ].join('\n'),
     text: null,
     layout: 'brand',
     footerText: 'Email ini dikirim otomatis. Ada pertanyaan? Balas email ini.',
@@ -223,7 +224,7 @@ export const EMAIL_TEMPLATE_PRESETS: readonly EmailTemplatePreset[] = [
       QRIS_SLOT,
       paragraph('Butuh bantuan? Hubungi layanan pelanggan kami: {{kontak_cs}}'),
       THANKS,
-    ].join(''),
+    ].join('\n'),
     text: null,
     layout: 'brand',
     footerText: AUTO_FOOTER,
@@ -251,7 +252,7 @@ export const EMAIL_TEMPLATE_PRESETS: readonly EmailTemplatePreset[] = [
         'Kalau internet belum tersambung dalam beberapa menit, coba matikan lalu nyalakan lagi modem atau router-mu.',
       ),
       THANKS,
-    ].join(''),
+    ].join('\n'),
     text: null,
     layout: 'brand',
     footerText: 'Email ini dikirim otomatis. Ada pertanyaan? Balas email ini.',

@@ -111,6 +111,20 @@
   font-weight: var(--weight-semibold);
 }
 
+.warnLine {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  color: var(--warning-ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.warnLine > svg {
+  flex: none;
+  margin-top: 1px;
+}
+
 .notice {
   font-size: var(--text-13);
 }
@@ -134,7 +148,9 @@
   }
 
   .to {
-    flex: 1 1 100%;
+    /* Tombol turun baris hanya bila memang tidak muat (N3). */
+    flex: 1 0 auto;
+    max-width: 100%;
     padding-top: var(--space-8);
   }
 
@@ -146,12 +162,20 @@
   .actions {
     margin-left: auto;
   }
+
+  /*
+   * Sedang mengetik (keyboard HP terbuka): baris "Kepada" disembunyikan — alamat pelanggan tetap
+   * terbaca di kepala chat — supaya riwayat chat tetap terlihat ≥ 120px (N1).
+   */
+  *:has(> .copies):has(:is(input, textarea):focus) .to {
+    display: none;
+  }
 }
 
 @media (max-width: 640px) {
   /* Keyboard HP terbuka: isian Cc/Bcc tidak menghabiskan ruang riwayat chat. */
   .fields {
-    max-height: min(26dvh, 40svh);
+    max-height: min(22dvh, 34svh);
     overflow-y: auto;
     overscroll-behavior: contain;
     scroll-padding-block: var(--space-8);

@@ -77,7 +77,7 @@ describe('Pengaturan → Batas kirim → Email per pengirim', () => {
     const { api } = await renderApp('/pengaturan/batas-kirim', { routes: routes() });
     const cs = await senderRow('CS');
     expect(cs.getByText(s.emailState.blocked)).toBeVisible();
-    expect(cs.getByText(/Server SMTP menolak login/)).toBeVisible();
+    expect(cs.getByText(/Username atau password SMTP ditolak/)).toBeVisible();
     expect(cs.getByRole('link', { name: s.emailOpenChannel })).toHaveAttribute(
       'href',
       '/pengaturan/channel/lain/6b1f2c3d-0000-4000-8000-000000000002',

@@ -42,7 +42,7 @@ export const EMAIL_SENDER_BLOCKED_REASONS = [
 export type EmailSenderBlockedReason = (typeof EMAIL_SENDER_BLOCKED_REASONS)[number];
 export const EMAIL_SENDER_BLOCKED_LABELS: Readonly<Record<EmailSenderBlockedReason, string>> = {
   smtp_auth_failed:
-    'Server SMTP menolak login. Periksa username & password SMTP di Pengaturan → Channel.',
+    'Username atau password SMTP ditolak server email. Perbaiki di Pengaturan → Channel.',
   credentials_unavailable:
     'Password SMTP tersimpan tidak bisa dibuka. Simpan ulang kredensial di Pengaturan → Channel.',
   smtp_config_invalid:

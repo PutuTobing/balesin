@@ -1,6 +1,7 @@
 import {
   API_KEY_DAILY_SEND_DEFAULT,
   API_KEY_SCOPES,
+  API_KEY_SCOPE_IMPLIES,
   API_KEY_SCOPE_LABELS,
   apiKeyHasEmailScope,
   createApiKeyRequestSchema,
@@ -52,6 +53,11 @@ export function ApiKeyCreateDialog({
   const [failure, setFailure] = useState<unknown>(null);
   const implied = impliedScopes(scopes);
   const hasEmail = apiKeyHasEmailScope([...scopes, ...implied]);
+  /** Scope terpilih yang membuat `scope` ikut tercakup (untuk teks "termasuk dalam …"). */
+  const impliedBy = (scope: ApiKeyScope) =>
+    API_KEY_SCOPES.find(
+      (item) => scopes.has(item) && API_KEY_SCOPE_IMPLIES[item].includes(scope),
+    ) ?? '';
   const canSendEmail = scopes.has('email:send');
 
   const toggle = (scope: ApiKeyScope, checked: boolean) => {
@@ -161,7 +167,7 @@ export function ApiKeyCreateDialog({
                           <span>{API_KEY_SCOPE_LABELS[scope]}</span>
                           <span className={styles.optionHint}>
                             <code className={styles.monoSmall}>{scope}</code>
-                            {isImplied ? ` · ${copy.implied}` : ''}
+                            {isImplied ? ` · ${copy.implied(impliedBy(scope))}` : ''}
                           </span>
                         </span>
                       </Checkbox>

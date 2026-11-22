@@ -6,6 +6,7 @@ import {
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Mail } from 'lucide-react';
+import { Fragment } from 'react';
 import {
   EmailSentIllustration,
   LoadFailedIllustration,
@@ -250,7 +251,14 @@ function EmailRow({ email }: { email: EmailOutboundEntry }) {
             <span className={styles.moreRecipients}>{copy.moreRecipients(hidden)}</span>
           ) : null}
         </p>
-        <p className={styles.meta}>{facts.join(' · ')}</p>
+        <p className={styles.meta}>
+          {facts.map((fact, index) => (
+            <Fragment key={fact}>
+              {index > 0 ? ' · ' : null}
+              <span className={styles.fact}>{fact}</span>
+            </Fragment>
+          ))}
+        </p>
         {email.failure ? (
           <p className={styles.failure}>
             {email.failure.message}

@@ -306,9 +306,10 @@ ul.senders,
     flex: 1 1 100%;
   }
 
+  /* Aksi status (Lanjutkan/Jeda) di atas, Simpan di bawah. */
   .senderActions {
     flex: 1 1 100%;
-    flex-direction: column-reverse;
+    flex-direction: column;
     margin-top: 0;
     margin-left: 0;
   }

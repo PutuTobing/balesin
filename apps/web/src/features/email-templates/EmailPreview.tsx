@@ -1,7 +1,7 @@
 import type { EmailMessageTemplatePreviewRequest, EmailTemplateContent } from '@balesin/shared';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { RadioGroup } from 'radix-ui';
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Checkbox } from '../../components/ui/Checkbox';
 import { Notice } from '../../components/ui/Notice';
@@ -49,7 +49,16 @@ export function EmailPreview({
   /** Isian tambahan di baris kontrol (mis. pilihan sumber isi). */
   controls?: ReactNode;
 }) {
-  const [width, setWidth] = useState<PreviewWidth>('desktop');
+  // HP: bawaan lebar HP (email 600 px yang diperkecil terlalu kecil untuk dibaca).
+  const [width, setWidth] = useState<PreviewWidth>(() =>
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(max-width: 640px)').matches
+      ? 'phone'
+      : 'desktop',
+  );
+  const widthLabelId = useId();
+  const themeLabelId = useId();
   const [theme, setTheme] = useState<PreviewTheme>('light');
   const [sampleQris, setSampleQris] = useState(true);
   const empty = !content.subject.trim() && !content.html.trim();
@@ -73,24 +82,34 @@ export function EmailPreview({
     <div className={styles.preview}>
       <div className={styles.previewControls}>
         {controls}
-        <Segments
-          label={c.previewWidthLabel}
-          value={width}
-          options={[
-            { value: 'desktop', label: c.previewWidth.desktop },
-            { value: 'phone', label: c.previewWidth.phone },
-          ]}
-          onChange={(value) => setWidth(value === 'phone' ? 'phone' : 'desktop')}
-        />
-        <Segments
-          label={c.previewThemeLabel}
-          value={theme}
-          options={[
-            { value: 'light', label: c.previewTheme.light },
-            { value: 'dark', label: c.previewTheme.dark },
-          ]}
-          onChange={(value) => setTheme(value === 'dark' ? 'dark' : 'light')}
-        />
+        <div className={styles.control}>
+          <span className={styles.controlLabel} id={widthLabelId}>
+            {c.previewWidthLabel}
+          </span>
+          <Segments
+            labelledBy={widthLabelId}
+            value={width}
+            options={[
+              { value: 'desktop', label: c.previewWidth.desktop },
+              { value: 'phone', label: c.previewWidth.phone },
+            ]}
+            onChange={(value) => setWidth(value === 'phone' ? 'phone' : 'desktop')}
+          />
+        </div>
+        <div className={styles.control}>
+          <span className={styles.controlLabel} id={themeLabelId}>
+            {c.previewThemeLabel}
+          </span>
+          <Segments
+            labelledBy={themeLabelId}
+            value={theme}
+            options={[
+              { value: 'light', label: c.previewTheme.light },
+              { value: 'dark', label: c.previewTheme.dark },
+            ]}
+            onChange={(value) => setTheme(value === 'dark' ? 'dark' : 'light')}
+          />
+        </div>
       </div>
       {usesQris ? (
         <Checkbox
@@ -206,11 +225,14 @@ function ScaledFrame({
 
 export function Segments({
   label,
+  labelledBy,
   value,
   options,
   onChange,
 }: {
-  label: string;
+  /** Nama aksesibel bila tidak ada label terlihat; selain itu pakai `labelledBy`. */
+  label?: string;
+  labelledBy?: string;
   value: string;
   options: { value: string; label: string }[];
   onChange: (value: string) => void;
@@ -220,7 +242,8 @@ export function Segments({
       className={styles.segments}
       value={value}
       onValueChange={onChange}
-      aria-label={label}
+      aria-label={labelledBy ? undefined : label}
+      aria-labelledby={labelledBy}
       orientation="horizontal"
     >
       {options.map((option) => (

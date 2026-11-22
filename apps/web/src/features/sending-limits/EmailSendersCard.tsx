@@ -208,9 +208,11 @@ function SenderRow({ sender }: { sender: EmailSenderSettings }) {
   const explanation = stateText(sender);
   const channelId = parseEmailSenderId(sender.id)?.id;
   const needsChannel = sender.state === 'blocked' || sender.state === 'disabled';
-  const resumable =
-    sender.state === 'paused' || sender.state === 'blocked' || sender.state === 'throttled';
+  // Ditahan server email: pengiriman lanjut sendiri setelah jeda dari server; "Lanjutkan" di sini
+  // hanya akan mengabaikan permintaan server (akun bisa diblokir penyedia), jadi tidak ditawarkan.
+  const resumable = sender.state === 'paused' || sender.state === 'blocked';
   const pausable = sender.state === 'ok' || sender.state === 'throttled';
+  const limitChanged = parseLimit(limit) !== sender.hourlyLimit;
 
   return (
     <li className={styles.sender} data-state={sender.state}>
@@ -295,6 +297,7 @@ function SenderRow({ sender }: { sender: EmailSenderSettings }) {
           {resumable && canResume ? (
             <Button
               ref={pausable ? undefined : actionRef}
+              variant="primary"
               aria-label={copy.emailResumeFor(sender.name)}
               onClick={() => {
                 setMessage(null);
@@ -308,7 +311,8 @@ function SenderRow({ sender }: { sender: EmailSenderSettings }) {
           <Button
             ref={saveRef}
             type="submit"
-            variant="primary"
+            variant={limitChanged ? 'primary' : 'secondary'}
+            disabled={!limitChanged && !saving}
             loading={saving}
             aria-label={copy.emailLimitSaveFor(sender.name)}
           >

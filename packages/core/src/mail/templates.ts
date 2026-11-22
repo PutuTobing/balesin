@@ -848,7 +848,7 @@ export function renderAdminAccountNoticeEmail(input: AdminAccountNoticeEmailInpu
       heading: 'Pengirim email API terblokir',
       paragraphs: [
         hello(input.recipientName),
-        `Server SMTP menolak login untuk pengirim ${address} (atau kredensialnya tidak bisa dibuka). Email yang dikirim lewat API dari pengirim ini ditahan di antrean; yang tertahan lebih dari 24 jam dibatalkan sebagai gagal.`,
+        `Server SMTP menolak username atau password pengirim ${address} (atau kredensialnya tidak bisa dibuka). Email yang dikirim lewat API dari pengirim ini ditahan di antrean; yang tertahan lebih dari 24 jam dibatalkan sebagai gagal.`,
         'Kamu menerima email ini karena kamu Owner.',
       ],
       details: [{ label: 'Waktu', value: when }],

@@ -186,6 +186,9 @@
   .input {
     /* 16px: iOS tidak memperbesar halaman saat kolom difokus. */
     font-size: var(--text-16);
+    /* Ruang ketik cukup lebar; bila sisa < 160px, turun ke baris sendiri (N4). */
+    flex-basis: 10rem;
+    min-width: 10rem;
   }
 }
 

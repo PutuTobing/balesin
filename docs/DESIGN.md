@@ -120,7 +120,9 @@ error API; hindari kata ganti bila kalimatnya tetap wajar.
   **"Hubungkan nomor"** untuk channel. Membuat berkas dari data = **"Ekspor CSV"**; "Unduh" hanya
   untuk berkas yang sudah ada (media, kode cadangan).
 - Nama produk tidak pernah ditulis langsung di teks UI — selalu dari pengaturan merek (white-label).
-- "Balasan cepat" = teks siap pakai lewat `/` di composer (fitur `quick_replies`); "template" HANYA untuk template pesan WhatsApp yang disetujui Meta.
+- "Template WhatsApp" = template pesan yang disetujui Meta. "Template email" = isi email yang dikirim aplikasi
+  lain lewat API (Pengaturan → Template email); di luar halamannya sendiri selalu ditulis lengkap "template
+  email". "Balasan cepat" = teks siap pakai lewat `/` di composer (fitur `quick_replies`).
 
 ## 5. RUBRIK `kritikus-desain`
 
