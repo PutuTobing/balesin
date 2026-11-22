@@ -220,7 +220,7 @@ async function holdRow(
 interface SenderContext {
   channel: Channel | undefined;
   settings: EmailSenderSettingsRow | undefined;
-  /** Terkirim/sedang dikirim 60 menit terakhir (dinaikkan saat baris diklaim di putaran ini). */
+  /** PENERIMA terkirim/sedang dikirim 60 menit terakhir (dinaikkan saat baris diklaim putaran ini). */
   sentLastHour: number;
   oldestInWindow: Date | null;
 }
@@ -247,7 +247,7 @@ async function senderContext(
   const hourAgo = new Date(at.getTime() - HOUR);
   const [window] = await tx
     .select({
-      total: sql<number>`count(*)::int`,
+      total: sql<number>`coalesce(sum(${emailOutbound.recipientCount}), 0)::int`,
       oldest: sql<Date | null>`min(coalesce(${emailOutbound.sentAt}, ${emailOutbound.sendingStartedAt}))`,
     })
     .from(emailOutbound)
@@ -380,14 +380,16 @@ async function claim(
         continue;
       }
       const limit = settings?.hourlyLimit ?? EMAIL_HOURLY_LIMIT_DEFAULT;
-      if (sender.sentLastHour >= limit) {
+      // Review 9.1 S2: batas per jam = PENERIMA. Email yang sendirian melebihi batas tetap boleh
+      // bila jendela kosong (tidak macet selamanya).
+      if (sender.sentLastHour > 0 && sender.sentLastHour + row.recipientCount > limit) {
         const until = sender.oldestInWindow
           ? new Date(sender.oldestInWindow.getTime() + HOUR)
           : new Date(at.getTime() + MINUTE);
         await hold(until, 'throttle_expired');
         continue;
       }
-      sender.sentLastHour += 1;
+      sender.sentLastHour += row.recipientCount;
       sender.oldestInWindow ??= at;
       await tx
         .update(emailOutbound)

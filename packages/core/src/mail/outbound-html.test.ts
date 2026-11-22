@@ -283,3 +283,57 @@ describe('preset template ISP', () => {
     });
   }
 });
+
+describe('kinerja kasus terburuk 512 KB (review 9.1 S1)', () => {
+  const SIZE = 512 * 1024;
+  const fill = (unit: string) => unit.repeat(Math.floor(SIZE / unit.length));
+  const cases: [string, string][] = [
+    ['href {{ + spasi', `<a href="{{${' '.repeat(SIZE - 20)}x">b</a>`],
+    ['teks {{ + spasi', `<p>{{${' '.repeat(SIZE - 10)}x</p>`],
+    ['<style> tanpa ; { }', `<style>${fill('a')}</style><p>x</p>`],
+    ['banyak <style> tanpa penutup', fill('<style>')],
+    ['<style> penuh @import tanpa ;', `<style>${fill('@import ')}</style>`],
+    ['<style> url( tanpa penutup', `<style>${fill('url ( ')}</style>`],
+    ['komentar CSS tak tertutup', `<style>${fill('/*')}</style>`],
+    ['banyak {{ tanpa }}', `<p>${fill('{{')}</p>`],
+    ['banyak < tanpa >', fill('<a ')],
+    ['banyak <!--', fill('<!--')],
+    ['banyak <a href tanpa penutup', fill('<a href="https://x.example">')],
+  ];
+  for (const [label, html] of cases) {
+    it(`${label}: sanitasi, pemindai, dan render masing-masing < 1 dtk`, () => {
+      const timed = (run: () => unknown) => {
+        const started = performance.now();
+        run();
+        return performance.now() - started;
+      };
+      const render = (substituteVariables: boolean) =>
+        renderOutboundEmail({
+          subject: 'Tagihan',
+          html,
+          text: null,
+          values: {},
+          organizationName: 'Organisasi',
+          qrisImageSrc: null,
+          layout: substituteVariables ? 'brand' : 'none',
+          brand: { primaryColor: '#2563eb', logoSrc: null, footerText: null },
+          substituteVariables,
+        });
+      expect(timed(() => sanitizeOutboundEmailHtml(html))).toBeLessThan(1_000);
+      expect(
+        timed(() => scanTemplateVariables({ subject: 'Tagihan', html, text: html })),
+      ).toBeLessThan(1_000);
+      expect(timed(() => render(true))).toBeLessThan(1_000);
+      expect(timed(() => render(false))).toBeLessThan(1_000);
+    }, 30_000);
+  }
+
+  it('CSS berbahaya tetap dibuang (url, image-set, @import, position: fixed)', () => {
+    const { html } = sanitizeOutboundEmailHtml(
+      '<style>a{color:red;background:url(https://x.example/a.png)}b{background-image:image-set("https://x.example/b.png" 1x)} @import "x.css"; c{position: fixed;top:0}</style><p>x</p>',
+    );
+    expect(html).toContain('color:red');
+    expect(html).not.toMatch(/url\s*\(|image-set|@import|position:\s*fixed/i);
+    expect(html).toContain('top:0');
+  });
+});

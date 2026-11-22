@@ -51,15 +51,16 @@ export async function processEmailBounce(
       if (row.status !== 'sent' && row.status !== 'bounced') continue;
       const recipients = [...row.to, ...row.cc, ...row.bcc].map((item) => item.email.toLowerCase());
       const known = new Set(row.bounces.map((bounce) => bounce.recipient));
-      // Laporan baku: hanya `Action: failed` + status 5.x.x. Cadangan tanpa rincian penerima: semua
-      // penerima email itu dianggap memantul (Message-ID-nya sudah cocok).
+      // Laporan baku: hanya `Action: failed` + status 5.x.x. Cadangan tanpa rincian penerima (review
+      // 9.1 R8): hanya bila email itu SATU penerima — penerima lain tidak bisa ditandai memantul
+      // lewat DSN palsu yang cukup tahu Message-ID.
       const failed =
         report.recipients.length > 0
           ? report.recipients.filter(
               (item) =>
                 item.action === 'failed' && (item.status === null || item.status.startsWith('5')),
             )
-          : report.standard
+          : report.standard || recipients.length !== 1
             ? []
             : recipients.map((recipient) => ({ recipient, action: 'failed', status: null }));
       const added: EmailBounce[] = failed

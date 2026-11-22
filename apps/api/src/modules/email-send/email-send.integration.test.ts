@@ -1102,3 +1102,67 @@ describe('hapus kontak (UU PDP) × email API', () => {
     expect(JSON.stringify(status.json())).not.toContain(address);
   });
 });
+
+describe('review 9.1 R1/R2', () => {
+  it('key lain berpengirim sama melihat status tanpa Bcc/metadata/Idempotency-Key', async () => {
+    const owner1 = await createKey();
+    const reader = await createKey({ scopes: ['email:read'], hosts: [] });
+    const sent = await api(
+      owner1.secret,
+      'POST',
+      API_ROUTES.publicEmail.send,
+      {
+        senderId,
+        to: [{ email: 'sari@contoh.example' }],
+        bcc: [{ email: 'arsip.r1@perusahaan.example' }],
+        subject: 'Tagihan',
+        text: 'Isi',
+        metadata: { invoice_id: 'INV-R1' },
+      },
+      { 'idempotency-key': `R1-${newId()}` },
+    );
+    const { id } = emailSendResponseSchema.parse(sent.json());
+    const path = apiPath(API_ROUTES.publicEmail.message, { emailId: id });
+    const mine = emailStatusResponseSchema.parse((await api(owner1.secret, 'GET', path)).json());
+    expect(mine.email.bcc).toEqual([{ email: 'arsip.r1@perusahaan.example' }]);
+    expect(mine.email.metadata).toEqual({ invoice_id: 'INV-R1' });
+    const other = await api(reader.secret, 'GET', path);
+    expect(other.statusCode).toBe(200);
+    const theirs = emailStatusResponseSchema.parse(other.json()).email;
+    expect(theirs).toMatchObject({ bcc: [], metadata: null, idempotencyKey: null });
+    expect(JSON.stringify(theirs)).not.toContain('arsip.r1');
+  });
+
+  it('lampiran di luar daftar izin ditolak; ekstensi menyesatkan diganti sesuai isi', async () => {
+    const { secret } = await createKey();
+    const unknown = await api(secret, 'POST', API_ROUTES.publicEmail.send, {
+      senderId,
+      to: [{ email: 'sari@contoh.example' }],
+      subject: 'Lampiran',
+      text: 'Isi',
+      attachments: [
+        {
+          filename: 'catatan.one',
+          contentBase64: Buffer.from([0xe4, 0x52, 0x5c, 0x7b, 0x8c, 0xd8, 0xa7, 0x4d]).toString(
+            'base64',
+          ),
+        },
+      ],
+    });
+    expect(reasonOf(unknown.body)?.reason).toBe('attachment_type_blocked');
+    const renamed = await api(secret, 'POST', API_ROUTES.publicEmail.send, {
+      senderId,
+      to: [{ email: 'sari@contoh.example' }],
+      subject: 'Lampiran',
+      text: 'Isi',
+      attachments: [{ filename: 'foto.jpg.scr2', contentBase64: PDF.toString('base64') }],
+    });
+    expect(renamed.statusCode, renamed.body).toBe(202);
+    const { id } = emailSendResponseSchema.parse(renamed.json());
+    const [part] = await harness.db
+      .select({ filename: emailOutboundAttachments.filename })
+      .from(emailOutboundAttachments)
+      .where(eq(emailOutboundAttachments.emailOutboundId, id));
+    expect(part?.filename).toBe('foto.jpg.pdf');
+  });
+});

@@ -39,8 +39,8 @@ import {
   type NewEmailOutboundRow,
 } from '@balesin/db';
 import { insertOrganization, insertUser } from '@balesin/db/testing';
-import { and, eq } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
+import { and, eq, inArray } from 'drizzle-orm';
+import { afterAll, afterEach, beforeAll, describe, expect, inject, it } from 'vitest';
 
 import { processEmailBounce, recordEmailApiReplies } from '../inbound/email-api-events';
 import { processEmailOutboundTick, type EmailOutboundDeps } from './email-outbound';
@@ -62,8 +62,12 @@ interface Fixture {
   ownerId: string;
 }
 
+/** Organisasi buatan tes ini — outbox-nya dibersihkan setelah tiap tes (DB tes dipakai bersama). */
+const createdOrganizations: string[] = [];
+
 async function fixture(smtp: 'mailpit' | 'dummy' = 'dummy'): Promise<Fixture> {
   const organization = await insertOrganization(db);
+  createdOrganizations.push(organization.id);
   const owner = await insertUser(db, organization.id, { role: 'owner' });
   const channelId = newId();
   const address = `billing-${channelId.slice(-8)}@perusahaan.example`;
@@ -182,6 +186,14 @@ const eventsOf = async (organizationId: string) =>
 beforeAll(() => {
   db = createDb(inject('testDatabaseUrl'), { applicationName: 'balesin-test-email-outbound' });
 }, 30_000);
+
+afterEach(async () => {
+  if (createdOrganizations.length === 0) return;
+  // Tes lain di DB bersama memeriksa outbox kosong: jangan tinggalkan kejadian `email.*`.
+  await db
+    .delete(outgoingEvents)
+    .where(inArray(outgoingEvents.organizationId, createdOrganizations.splice(0)));
+});
 
 afterAll(async () => {
   if (db) await closeDb(db);

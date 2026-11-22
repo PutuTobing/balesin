@@ -107,6 +107,11 @@ export interface SendingLimitsService {
     organizationId: string;
     apiKey: { id: string; dailySendLimit: number };
     client: ClientInfo;
+    /**
+     * Review 9.1 S2: jumlah penerima email baru (Kepada + Cc + Bcc setelah digabung). Ditolak bila
+     * hitungan 24 jam + penerima baru > batas harian key.
+     */
+    recipients: number;
   }): Promise<void>;
 }
 
@@ -147,9 +152,10 @@ async function countOutbound(
     );
   const messageCount = Number(row?.total ?? 0);
   if (apiKeyId === undefined) return messageCount;
-  // Batas harian per key = pesan + email lewat key yang sama (tahap 9.1).
+  // Batas harian per key = penerima pesan + penerima email lewat key yang sama (tahap 9.1,
+  // review 9.1 S2: email dihitung PER PENERIMA, bukan per email).
   const [emails] = await db
-    .select({ total: sql<number>`count(*)::int` })
+    .select({ total: sql<number>`coalesce(sum(${emailOutbound.recipientCount}), 0)::int` })
     .from(emailOutbound)
     .where(
       and(
@@ -431,7 +437,7 @@ export function createSendingLimitsService(deps: SendingLimitsServiceDeps): Send
       return Boolean(org?.pausedAt);
     },
 
-    async assertCanSendEmail({ organizationId, apiKey, client }) {
+    async assertCanSendEmail({ organizationId, apiKey, client, recipients }) {
       const [org] = await db
         .select({ pausedAt: organizations.sendingPausedAt })
         .from(organizations)
@@ -440,7 +446,7 @@ export function createSendingLimitsService(deps: SendingLimitsServiceDeps): Send
       if (org.pausedAt) throw new AppError('SENDING_PAUSED');
       const since = new Date(now().getTime() - SENDING_DAY_MS);
       const viaKey = await countOutbound(db, organizationId, since, undefined, apiKey.id);
-      if (viaKey >= apiKey.dailySendLimit) {
+      if (viaKey + Math.max(1, recipients) > apiKey.dailySendLimit) {
         await limitReached(
           organizationId,
           'api_key',

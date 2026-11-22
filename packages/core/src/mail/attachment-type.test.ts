@@ -34,27 +34,34 @@ describe('classifyOutboundEmailAttachment', () => {
   });
 
   it.each([
-    ['PDF', text('%PDF-1.7\n...'), 'invoice.pdf', 'application/pdf', false],
-    ['PNG', PNG, 'stempel.png', 'image/png', true],
-    ['JPEG', bytes(0xff, 0xd8, 0xff, 0xe0, 0, 0x10), 'foto.jpg', 'image/jpeg', true],
-    ['GIF', text('GIF89a\x01\x00\x01\x00'), 'animasi.gif', 'image/gif', true],
-    ['BMP', text('BM\x00\x00\x00\x00'), 'gambar.bmp', 'image/bmp', false],
-    ['TIFF', bytes(0x49, 0x49, 0x2a, 0x00, 8, 0), 'scan.tif', 'image/tiff', false],
-    ['CSV', text('id,total\nPLG-1,185000\n'), 'tagihan.csv', 'text/csv', false],
-    ['TXT', text('Terima kasih.\n'), 'catatan.txt', 'text/plain', false],
-    ['teks lain', text('nama: Budi\n'), 'catatan.log', 'text/plain', false],
-    [
-      'biner tak dikenal',
-      bytes(0x00, 0x01, 0x02, 0x03, 0xfe),
-      'data.bin',
-      'application/octet-stream',
-      false,
-    ],
-  ])('%s diizinkan', (_label, content, filename, mimeType, rasterImage) => {
+    ['PDF', text('%PDF-1.7\n...'), 'invoice.pdf', 'application/pdf', false, 'invoice.pdf'],
+    ['PNG', PNG, 'stempel.png', 'image/png', true, 'stempel.png'],
+    ['JPEG', bytes(0xff, 0xd8, 0xff, 0xe0, 0, 0x10), 'foto.jpg', 'image/jpeg', true, 'foto.jpg'],
+    ['GIF', text('GIF89a\x01\x00\x01\x00'), 'animasi.gif', 'image/gif', true, 'animasi.gif'],
+    ['BMP', text('BM\x00\x00\x00\x00'), 'gambar.bmp', 'image/bmp', false, 'gambar.bmp'],
+    ['TIFF', bytes(0x49, 0x49, 0x2a, 0x00, 8, 0), 'scan.tif', 'image/tiff', false, 'scan.tif'],
+    ['CSV', text('id,total\nPLG-1,185000\n'), 'tagihan.csv', 'text/csv', false, 'tagihan.csv'],
+    ['TXT', text('Terima kasih.\n'), 'catatan.txt', 'text/plain', false, 'catatan.txt'],
+    // Review 9.1 R2: ekstensi dipaksa sesuai jenis isi.
+    ['teks lain', text('nama: Budi\n'), 'catatan.log', 'text/plain', false, 'catatan.txt'],
+    ['tanpa ekstensi', text('%PDF-1.4'), 'invoice', 'application/pdf', false, 'invoice.pdf'],
+  ])('%s diizinkan', (_label, content, filename, mimeType, rasterImage, finalName) => {
     expect(classifyOutboundEmailAttachment(content, filename)).toEqual({
       ok: true,
       mimeType,
       rasterImage,
+      filename: finalName,
+    });
+  });
+
+  it.each([
+    ['biner tak dikenal', bytes(0x00, 0x01, 0x02, 0x03, 0xfe), 'data.bin'],
+    ['audio', text('ID3\x03\x00'), 'lagu.mp3'],
+    ['OneNote', bytes(0xe4, 0x52, 0x5c, 0x7b, 0x8c, 0xd8), 'tagihan.one'],
+  ])('review 9.1 R2: %s di luar daftar izin → ditolak', (_label, content, filename) => {
+    expect(classifyOutboundEmailAttachment(content, filename)).toEqual({
+      ok: false,
+      reason: 'blocked',
     });
   });
 
@@ -63,6 +70,7 @@ describe('classifyOutboundEmailAttachment', () => {
       ok: true,
       mimeType: 'application/pdf',
       rasterImage: false,
+      filename: 'gambar.pdf',
     });
   });
 

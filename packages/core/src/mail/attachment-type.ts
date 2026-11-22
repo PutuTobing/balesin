@@ -11,7 +11,38 @@ import { detectMedia } from '../meta/media-sniff';
  */
 
 export type OutboundAttachmentClass =
-  { ok: true; mimeType: string; rasterImage: boolean } | { ok: false; reason: 'blocked' | 'empty' };
+  | {
+      ok: true;
+      mimeType: string;
+      rasterImage: boolean;
+      /** Nama berkas dengan ekstensi yang SESUAI jenis hasil deteksi isi (review 9.1 R2). */
+      filename: string;
+    }
+  | { ok: false; reason: 'blocked' | 'empty' };
+
+/**
+ * Review 9.1 R2 — daftar IZIN jenis lampiran email keluar (bukan lagi "semua kecuali daftar tolak"):
+ * PDF, gambar umum, dokumen Office tanpa makro, CSV/TXT. Arsip (ZIP dsb.), audio/video, dan biner
+ * tak dikenal DITOLAK. Ekstensi nama berkas dipaksa sesuai jenis isi (ekstensi lain diganti), jadi
+ * berkas tidak bisa menyamar dengan ekstensi berbahaya/menyesatkan di aplikasi email penerima.
+ */
+const ALLOWED_EXTENSIONS_BY_TYPE: Readonly<Record<string, readonly string[]>> = {
+  'application/pdf': ['pdf'],
+  'image/png': ['png'],
+  'image/jpeg': ['jpg', 'jpeg'],
+  'image/gif': ['gif'],
+  'image/webp': ['webp'],
+  'image/bmp': ['bmp'],
+  'image/tiff': ['tif', 'tiff'],
+  'text/csv': ['csv'],
+  'text/plain': ['txt', 'csv'],
+  'application/msword': ['doc'],
+  'application/vnd.ms-excel': ['xls'],
+  'application/vnd.ms-powerpoint': ['ppt'],
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['docx'],
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['xlsx'],
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['pptx'],
+};
 
 const BLOCKED_EXTENSIONS: ReadonlySet<string> = new Set([
   // Sama dengan lampiran masuk channel Email (email-message.ts).
@@ -148,10 +179,26 @@ function looksLikeMarkup(bytes: Uint8Array): boolean {
   return head.startsWith('<?xml') && head.includes('<svg');
 }
 
+type SniffResult =
+  { ok: true; mimeType: string; rasterImage: boolean } | { ok: false; reason: 'blocked' | 'empty' };
+
 export function classifyOutboundEmailAttachment(
   content: Buffer,
   filename: string,
 ): OutboundAttachmentClass {
+  const verdict = sniffOutboundEmailAttachment(content, filename);
+  if (!verdict.ok) return verdict;
+  const allowed = ALLOWED_EXTENSIONS_BY_TYPE[verdict.mimeType];
+  if (!allowed) return { ok: false, reason: 'blocked' };
+  const extension = extensionOf(filename);
+  const base = extension ? filename.slice(0, -(extension.length + 1)) : filename;
+  const finalName = allowed.includes(extension)
+    ? filename
+    : `${(base.trim() || 'lampiran').slice(0, 190)}.${allowed[0] ?? 'bin'}`;
+  return { ...verdict, filename: finalName };
+}
+
+function sniffOutboundEmailAttachment(content: Buffer, filename: string): SniffResult {
   if (content.length === 0) return { ok: false, reason: 'empty' };
   const extension = extensionOf(filename);
   if (BLOCKED_EXTENSIONS.has(extension)) return { ok: false, reason: 'blocked' };

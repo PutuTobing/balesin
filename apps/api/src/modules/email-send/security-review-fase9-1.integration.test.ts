@@ -97,71 +97,61 @@ afterAll(async () => {
 });
 
 describe('S1 (Tinggi) — ReDoS sanitasi HTML keluar lewat POST /public/email/send', () => {
-  it.fails(
-    'HTML ~2,5 KB dengan href "{{" + spasi tidak menahan api > 1 dtk',
-    async () => {
-      const { secret } = await createKey();
-      const started = performance.now();
-      const response = await api(secret, API_ROUTES.publicEmail.send, {
-        senderId,
-        to: [{ email: 'pelanggan@contoh.example' }],
-        subject: 'Tagihan',
-        html: `<p>Halo</p><a href="{{${' '.repeat(2_500)}x">bayar</a>`,
-      });
-      const took = performance.now() - started;
-      // Selama celah ada, event loop api beku beberapa detik (dan berpuluh menit untuk 20 KB).
-      expect(response.statusCode).toBe(202);
-      expect(took).toBeLessThan(1_000);
-    },
-    120_000,
-  );
+  it('HTML ~2,5 KB dengan href "{{" + spasi tidak menahan api > 1 dtk', async () => {
+    const { secret } = await createKey();
+    const started = performance.now();
+    const response = await api(secret, API_ROUTES.publicEmail.send, {
+      senderId,
+      to: [{ email: 'pelanggan@contoh.example' }],
+      subject: 'Tagihan',
+      html: `<p>Halo</p><a href="{{${' '.repeat(2_500)}x">bayar</a>`,
+    });
+    const took = performance.now() - started;
+    // Selama celah ada, event loop api beku beberapa detik (dan berpuluh menit untuk 20 KB).
+    expect(response.statusCode).toBe(202);
+    expect(took).toBeLessThan(1_000);
+  }, 120_000);
 });
 
 describe('S2 (Sedang) — batas kirim email API dihitung per email, bukan per penerima', () => {
-  it.fails(
-    'key dailySendLimit 3: satu email ke 3 penerima (Kepada+Cc+Bcc) menghabiskan jatah → kirim berikutnya 429',
-    async () => {
-      const { secret } = await createKey({ dailySendLimit: 3 });
-      const first = await api(secret, API_ROUTES.publicEmail.send, {
-        senderId,
-        to: [{ email: 'a@contoh.example' }],
-        cc: [{ email: 'b@contoh.example' }],
-        bcc: [{ email: 'c@contoh.example' }],
-        subject: 'Tagihan',
-        text: 'Isi',
-      });
-      expect(first.statusCode, first.body).toBe(202);
-      const second = await api(secret, API_ROUTES.publicEmail.send, {
-        senderId,
-        to: [{ email: 'd@contoh.example' }],
-        subject: 'Tagihan',
-        text: 'Isi',
-      });
-      // Pola Review 9.0 S1 (Inbox): hitungan + penerima > batas → 429. Sekarang 202 (1 email = 1).
-      expect(second.statusCode).toBe(429);
-    },
-  );
+  it('key dailySendLimit 3: satu email ke 3 penerima (Kepada+Cc+Bcc) menghabiskan jatah → kirim berikutnya 429', async () => {
+    const { secret } = await createKey({ dailySendLimit: 3 });
+    const first = await api(secret, API_ROUTES.publicEmail.send, {
+      senderId,
+      to: [{ email: 'a@contoh.example' }],
+      cc: [{ email: 'b@contoh.example' }],
+      bcc: [{ email: 'c@contoh.example' }],
+      subject: 'Tagihan',
+      text: 'Isi',
+    });
+    expect(first.statusCode, first.body).toBe(202);
+    const second = await api(secret, API_ROUTES.publicEmail.send, {
+      senderId,
+      to: [{ email: 'd@contoh.example' }],
+      subject: 'Tagihan',
+      text: 'Isi',
+    });
+    // Pola Review 9.0 S1 (Inbox): hitungan + penerima > batas → 429. Sekarang 202 (1 email = 1).
+    expect(second.statusCode).toBe(429);
+  });
 
-  it.fails(
-    'satu email boleh 50 penerima tetapi email ke-2 dengan 50 penerima melewati dailySendLimit 60 → 429',
-    async () => {
-      const { secret } = await createKey({ dailySendLimit: 60 });
-      const fifty = (prefix: string) =>
-        Array.from({ length: 49 }, (_, index) => ({
-          email: `${prefix}${String(index)}@x.example`,
-        }));
-      const send = (prefix: string) =>
-        api(secret, API_ROUTES.publicEmail.send, {
-          senderId,
-          to: [{ email: `${prefix}to@x.example` }],
-          bcc: fifty(prefix),
-          subject: 'Promo',
-          text: 'Isi',
-        });
-      expect((await send('a')).statusCode).toBe(202);
-      expect((await send('b')).statusCode).toBe(429);
-    },
-  );
+  it('satu email boleh 50 penerima tetapi email ke-2 dengan 50 penerima melewati dailySendLimit 60 → 429', async () => {
+    const { secret } = await createKey({ dailySendLimit: 60 });
+    const fifty = (prefix: string) =>
+      Array.from({ length: 49 }, (_, index) => ({
+        email: `${prefix}${String(index)}@x.example`,
+      }));
+    const send = (prefix: string) =>
+      api(secret, API_ROUTES.publicEmail.send, {
+        senderId,
+        to: [{ email: `${prefix}to@x.example` }],
+        bcc: fifty(prefix),
+        subject: 'Promo',
+        text: 'Isi',
+      });
+    expect((await send('a')).statusCode).toBe(202);
+    expect((await send('b')).statusCode).toBe(429);
+  });
 });
 
 describe('regresi 9.1 (sudah benar)', () => {

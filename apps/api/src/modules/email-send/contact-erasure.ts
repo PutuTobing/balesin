@@ -1,7 +1,11 @@
+import { createHash } from 'node:crypto';
+import { domainToASCII } from 'node:url';
+
 import {
   contacts,
   emailOutbound,
   emailOutboundAttachments,
+  mediaFiles,
   outgoingEvents,
   webhookDeliveries,
   type DbExecutor,
@@ -46,8 +50,15 @@ export async function eraseContactEmails(
     contact.channelType === 'email' && contact.externalUserId
       ? contact.externalUserId.toLowerCase()
       : null;
+  // Review 9.1 R4: alamat ber-IDN dicocokkan dalam bentuk Unicode MAUPUN punycode (API menyimpan
+  // punycode).
+  const variants = address ? addressVariants(address) : [];
   const containing = (column: AnyPgColumn) =>
-    sql`${column} @> ${JSON.stringify([{ email: address }])}::jsonb`;
+    or(
+      ...variants.map(
+        (variant) => sql`${column} @> ${JSON.stringify([{ email: variant }])}::jsonb`,
+      ),
+    );
   const rows = await tx
     .select()
     .from(emailOutbound)
@@ -108,6 +119,14 @@ export async function eraseContactEmails(
           recipient: maskEmailAddress(bounce.recipient),
         })),
         contactId: null,
+        // Review 9.1 R4: kunci idempotensi (sering nomor invoice/ID pelanggan) di-hash; hash body,
+        // Message-ID utas pelanggan ikut dibuang. Kirim ulang dengan kunci lama = email baru.
+        idempotencyKey: row.idempotencyKey
+          ? `sha256:${createHash('sha256').update(row.idempotencyKey).digest('hex').slice(0, 64)}`
+          : null,
+        requestHash: null,
+        inReplyTo: null,
+        references: [],
         bodyPurgedAt: row.bodyPurgedAt ?? at,
         ...(pending ? { status: 'canceled', canceledAt: at } : {}),
       })
@@ -115,7 +134,11 @@ export async function eraseContactEmails(
   }
 
   const files = await tx
-    .select({ storageKey: emailOutboundAttachments.storageKey })
+    .select({
+      storageKey: emailOutboundAttachments.storageKey,
+      source: emailOutboundAttachments.source,
+      sha256: emailOutboundAttachments.sha256,
+    })
     .from(emailOutboundAttachments)
     .where(
       and(
@@ -132,6 +155,28 @@ export async function eraseContactEmails(
         inArray(emailOutboundAttachments.emailOutboundId, ids),
       ),
     );
+
+  // Review 9.1 R4: unggahan `POST /public/email/media` asal lampiran (berkas asli yang sama, key
+  // pembuat yang sama) dimajukan kedaluwarsanya → pembersih media menghapusnya dari disk.
+  const mediaHashes = [
+    ...new Set(files.filter((file) => file.source === 'media').map((file) => file.sha256)),
+  ];
+  const keyIds = [
+    ...new Set(all.map((row) => row.apiKeyId).filter((id): id is string => id !== null)),
+  ];
+  if (mediaHashes.length > 0 && keyIds.length > 0) {
+    await tx
+      .update(mediaFiles)
+      .set({ expiresAt: at })
+      .where(
+        and(
+          eq(mediaFiles.organizationId, organizationId),
+          inArray(mediaFiles.sha256, mediaHashes),
+          inArray(mediaFiles.uploadedByApiKeyId, keyIds),
+          isNull(mediaFiles.deletedAt),
+        ),
+      );
+  }
 
   await tx
     .delete(outgoingEvents)
@@ -159,4 +204,14 @@ export async function eraseContactEmails(
     emails: all.length,
     storageKeys: files.map((file) => file.storageKey).filter((key): key is string => key !== null),
   };
+}
+
+/** Alamat dalam bentuk aslinya + domain punycode (dan sebaliknya bila sudah punycode). */
+function addressVariants(address: string): string[] {
+  const at = address.lastIndexOf('@');
+  if (at <= 0) return [address];
+  const local = address.slice(0, at);
+  const domain = address.slice(at + 1);
+  const ascii = domainToASCII(domain);
+  return [...new Set([address, ...(ascii ? [`${local}@${ascii}`] : [])])];
 }

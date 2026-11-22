@@ -284,7 +284,7 @@ export async function resolveAttachments(
       );
     }
     return {
-      filename,
+      filename: verdict.filename,
       contentType: verdict.mimeType,
       content,
       source,

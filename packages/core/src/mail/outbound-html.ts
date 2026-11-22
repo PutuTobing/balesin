@@ -25,11 +25,43 @@ const DATA_IMAGE_MAX_BYTES = 100 * 1024;
 const FALLBACK_COLOR = '#2563eb';
 const QRIS_ALT = 'Kode QRIS';
 
-const PLACEHOLDER = /\{\{\s*([^{}]*?)\s*\}\}/g;
-const PLACEHOLDER_ONLY = /^\{\{\s*([^{}]*?)\s*\}\}$/;
-const STYLE_BLOCK = /<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi;
+// Review 9.1 S1 (ReDoS): pola linear — `[^{}]*` berhenti di kurung kurawal berikutnya, tanpa
+// kuantifier yang tumpang tindih. Spasi di sekitar nama dipangkas di kode (`.trim()`).
+const PLACEHOLDER = /\{\{([^{}]*)\}\}/g;
+const PLACEHOLDER_ONLY = /^\{\{([^{}]*)\}\}$/;
 
 const validName = (name: string) => EMAIL_TEMPLATE_VARIABLE_NAME.test(name);
+
+/**
+ * Blok `<style>` dipindai dengan `indexOf` (linear, review 9.1 S1): `<style …>` sampai `</style …>`
+ * berikutnya. Tanpa penutup → berhenti (sisanya diurus sanitize-html, yang membuang `<style>`).
+ */
+function extractStyleBlocks(html: string): { rest: string; blocks: string[] } {
+  const lower = html.toLowerCase();
+  const blocks: string[] = [];
+  let rest = '';
+  let position = 0;
+  for (;;) {
+    const open = lower.indexOf('<style', position);
+    if (open === -1) break;
+    const after = lower.charAt(open + 6);
+    if (after !== '>' && after !== '/' && !/\s/.test(after)) {
+      rest += html.slice(position, open + 6);
+      position = open + 6;
+      continue;
+    }
+    const openEnd = lower.indexOf('>', open + 6);
+    if (openEnd === -1) break;
+    const close = lower.indexOf('</style', openEnd + 1);
+    if (close === -1) break;
+    const closeEnd = lower.indexOf('>', close + 7);
+    if (closeEnd === -1) break;
+    rest += html.slice(position, open);
+    blocks.push(html.slice(openEnd + 1, close));
+    position = closeEnd + 1;
+  }
+  return { rest: rest + html.slice(position), blocks };
+}
 
 // ── Sanitasi ────────────────────────────────────────────────────────────────
 
@@ -223,20 +255,46 @@ function filterInlineStyle(value: string): { style: string; changed: boolean } {
   return { style: kept.join('; '), changed };
 }
 
-const UNSAFE_CSS_DECLARATION =
-  /[^;{}]*(?:url\s*\(|expression\s*\(|javascript:|vbscript:|behavior\s*:|-moz-binding)[^;{}]*;?/gi;
+/** Potongan CSS (di antara `;`, `{`, `}`) yang dibuang utuh. Diuji per potongan — tanpa awalan. */
+const UNSAFE_CSS_CHUNK =
+  /url\s*\(|image-set\s*\(|expression\s*\(|javascript:|vbscript:|behavior\s*:|-moz-binding|@import|position\s*:\s*fixed/i;
 
-/** Isi elemen `<style>`: tanpa `@import`, `url()`, ekspresi, `position: fixed`, `<`, `>`, `\`. */
-function sanitizeCssBlock(css: string): { css: string; changed: boolean } {
-  const base = css.replace(/\/\*[\s\S]*?\*\//g, '');
-  let out = base.replace(/[<>\\]/g, '');
-  out = out.replace(/@import[^;]*;?/gi, '');
-  for (let round = 0; round < 10; round += 1) {
-    const next = out.replace(UNSAFE_CSS_DECLARATION, '');
-    if (next === out) break;
-    out = next;
+/** Komentar `/* … *\/` dibuang dengan `indexOf` (linear). Komentar tak tertutup = sisanya dibuang. */
+function stripCssComments(css: string): string {
+  let out = '';
+  let position = 0;
+  for (;;) {
+    const open = css.indexOf('/*', position);
+    if (open === -1) return out + css.slice(position);
+    out += css.slice(position, open);
+    const close = css.indexOf('*/', open + 2);
+    if (close === -1) return out;
+    position = close + 2;
   }
-  out = out.replace(/position\s*:\s*fixed\s*(?:!important)?\s*;?/gi, '');
+}
+
+/**
+ * Isi elemen `<style>`: tanpa `@import`, `url()`, `image-set()`, ekspresi, `position: fixed`, `<`,
+ * `>`, `\`. Review 9.1 S1: dipindai per karakter pemisah (`;`, `{`, `}`) — linear; potongan yang tidak
+ * aman dibuang utuh (beserta `;` penutupnya).
+ */
+function sanitizeCssBlock(css: string): { css: string; changed: boolean } {
+  const base = stripCssComments(css);
+  const cleaned = base.replace(/[<>\\]/g, '');
+  let out = '';
+  let start = 0;
+  for (let index = 0; index <= cleaned.length; index += 1) {
+    const char = index < cleaned.length ? cleaned.charAt(index) : '';
+    if (char !== ';' && char !== '{' && char !== '}' && char !== '') continue;
+    const chunk = cleaned.slice(start, index);
+    if (UNSAFE_CSS_CHUNK.test(chunk)) {
+      // Deklarasi berbahaya + `;`-nya dibuang; `{`/`}` tetap supaya struktur blok utuh.
+      if (char === '{' || char === '}') out += char;
+    } else {
+      out += chunk + char;
+    }
+    start = index + 1;
+  }
   return { css: out.trim(), changed: out.trim() !== base.trim() };
 }
 
@@ -248,6 +306,8 @@ const isControlOrSpace = (char: string) => {
 const compact = (value: string) => [...value].filter((char) => !isControlOrSpace(char)).join('');
 
 function hrefAllowed(value: string): boolean {
+  // Review 9.1 S1: nilai kepanjangan ditolak SEBELUM regex apa pun.
+  if (value.length > HREF_URL_MAX) return false;
   const trimmed = value.trim();
   if (PLACEHOLDER_ONLY.test(trimmed)) return true;
   return /^(https?:\/\/|mailto:|tel:)/i.test(compact(trimmed));
@@ -297,12 +357,13 @@ export function sanitizeOutboundEmailHtml(html: string): SanitizedOutboundHtml {
   };
 
   const styles: string[] = [];
-  const withoutStyles = html.replace(STYLE_BLOCK, (_whole, css: string) => {
+  const extracted = extractStyleBlocks(html);
+  for (const css of extracted.blocks) {
     const clean = sanitizeCssBlock(css);
     if (clean.changed) note(WARNING.css);
     if (clean.css !== '') styles.push(clean.css);
-    return '';
-  });
+  }
+  const withoutStyles = extracted.rest;
 
   const inspect = (tagName: string, attribs: Record<string, string>) => {
     const tag = tagName.toLowerCase();
@@ -412,26 +473,43 @@ export interface TemplateVariableScan {
 }
 
 function placeholdersOf(value: string): string[] {
-  return [...value.matchAll(PLACEHOLDER)].map((match) => match[1] ?? '');
+  return [...value.matchAll(PLACEHOLDER)].map((match) => (match[1] ?? '').trim());
 }
 
 type HtmlSegment = { kind: 'style' | 'tag' | 'text'; value: string };
 
-/** Potong HTML hasil sanitasi (atribut selalu `"…"`, `<`/`>` dalam nilai di-escape). */
+/**
+ * Potong HTML hasil sanitasi (atribut selalu `"…"`, `<`/`>` dalam nilai di-escape) dengan pemindaian
+ * `indexOf` — linear (review 9.1 S1).
+ */
 function segmentsOf(html: string): HtmlSegment[] {
-  const pattern = /<style\b[^>]*>[\s\S]*?<\/style\s*>|<[^>]*>/gi;
+  const lower = html.toLowerCase();
   const segments: HtmlSegment[] = [];
-  let last = 0;
-  for (const match of html.matchAll(pattern)) {
-    const index = match.index;
-    if (index > last) segments.push({ kind: 'text', value: html.slice(last, index) });
-    segments.push({
-      kind: /^<style\b/i.test(match[0]) ? 'style' : 'tag',
-      value: match[0],
-    });
-    last = index + match[0].length;
+  let position = 0;
+  while (position < html.length) {
+    const open = html.indexOf('<', position);
+    if (open === -1) break;
+    if (open > position) segments.push({ kind: 'text', value: html.slice(position, open) });
+    const isStyle = lower.startsWith('<style', open) && /[\s>/]/.test(lower.charAt(open + 6));
+    if (isStyle) {
+      const close = lower.indexOf('</style', open + 6);
+      const end = close === -1 ? -1 : lower.indexOf('>', close + 7);
+      if (end !== -1) {
+        segments.push({ kind: 'style', value: html.slice(open, end + 1) });
+        position = end + 1;
+        continue;
+      }
+    }
+    const end = html.indexOf('>', open + 1);
+    if (end === -1) {
+      segments.push({ kind: 'text', value: html.slice(open) });
+      position = html.length;
+      break;
+    }
+    segments.push({ kind: 'tag', value: html.slice(open, end + 1) });
+    position = end + 1;
   }
-  if (last < html.length) segments.push({ kind: 'text', value: html.slice(last) });
+  if (position < html.length) segments.push({ kind: 'text', value: html.slice(position) });
   return segments;
 }
 
@@ -489,7 +567,7 @@ export function scanTemplateVariables(input: {
       const attribute = (match[2] ?? '').toLowerCase();
       const value = match[3] ?? '';
       if (!value.includes('{{')) continue;
-      const only = PLACEHOLDER_ONLY.exec(value.trim());
+      const only = value.length <= HREF_URL_MAX ? PLACEHOLDER_ONLY.exec(value.trim()) : null;
       for (const name of placeholdersOf(value)) {
         if (!validName(name)) continue;
         kept(name);
@@ -585,7 +663,8 @@ export function renderOutboundEmail(input: RenderOutboundEmailInput): RenderOutb
   };
   const plain = (template: string, qrisText: string) =>
     substitute
-      ? template.replace(PLACEHOLDER, (whole, name: string) => {
+      ? template.replace(PLACEHOLDER, (whole, raw: string) => {
+          const name = raw.trim();
           if (!validName(name)) return whole;
           return name === 'qris' ? qrisText : valueOf(name);
         })
@@ -613,7 +692,8 @@ export function renderOutboundEmail(input: RenderOutboundEmailInput): RenderOutb
           if (!segment.value.includes('{{')) return segment.value;
           if (segment.kind === 'style') return segment.value.replace(PLACEHOLDER, '');
           if (segment.kind === 'text') {
-            return segment.value.replace(PLACEHOLDER, (whole, name: string) => {
+            return segment.value.replace(PLACEHOLDER, (whole, raw: string) => {
+              const name = raw.trim();
               if (!validName(name)) return whole;
               return name === 'qris' ? qrisTag : withBreaks(valueOf(name));
             });
@@ -622,8 +702,9 @@ export function renderOutboundEmail(input: RenderOutboundEmailInput): RenderOutb
             ATTRIBUTE,
             (whole, space: string, attribute: string, value: string) => {
               if (!value.includes('{{')) return whole;
-              const only = PLACEHOLDER_ONLY.exec(value.trim());
-              const name = only?.[1] ?? '';
+              const only =
+                value.length <= HREF_URL_MAX ? PLACEHOLDER_ONLY.exec(value.trim()) : null;
+              const name = (only?.[1] ?? '').trim();
               if (attribute.toLowerCase() === 'href' && only && validName(name)) {
                 const url = name === 'qris' ? '' : valueOf(name);
                 if (!httpsUrl(url)) {

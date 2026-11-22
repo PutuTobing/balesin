@@ -90,7 +90,9 @@ camelCase; galat `{ error: { code, message, details?, requestId } }` (§10).
 | `POST /public/email/messages/:id/reply` | `email:send` | Balas **email masuk** (pesan Inbox) di utasnya |
 
 Cakupan data: key hanya melihat pengirim di daftarnya, dan hanya email (status) yang dikirim lewat
-pengirim itu. `GET /messages/:id` untuk email pengirim lain = 404.
+pengirim itu. `GET /messages/:id` untuk email pengirim lain = 404. Key lain yang berbagi pengirim
+melihat ringkasan TANPA `bcc` (kosong), `metadata`, dan `idempotencyKey` (`null`) — isian itu hanya
+untuk key pembuatnya (review 9.1 R1).
 
 ### 3.1 `GET /public/email/senders`
 
@@ -156,9 +158,10 @@ Respons **202**:
 3. **Idempotensi** (§3.8) → 200 ulangan / 409 bentrok. Sebelum mengambil URL apa pun.
 4. Pengirim ada di daftar key → 403; pengirim `disabled` → 409.
 5. Rem darurat organisasi → **423 `SENDING_PAUSED`**.
-6. Batas harian key (`dailySendLimit`, 24 jam bergulir, **email + pesan lewat key yang sama dijumlah**,
-   1 email = 1 berapa pun penerimanya) → 429 + audit `sending.limit_reached` target `api_key` (pola
-   lama). Antrean pengirim penuh (> 24 × `hourlyLimit` email menunggu) → 429.
+6. Batas harian key (`dailySendLimit`, 24 jam bergulir, **penerima email + penerima pesan lewat key
+   yang sama dijumlah**; 1 email = jumlah penerimanya Kepada+Cc+Bcc setelah digabung — review 9.1 S2):
+   hitungan + penerima email baru > batas → 429 + audit `sending.limit_reached` target `api_key` (pola
+   lama). Antrean pengirim penuh (penerima menunggu + penerima baru > 24 × `hourlyLimit`) → 429.
 7. Isi: template (ada, sudah terbit, tidak diarsip → 404/409) + variabel, ATAU subjek/HTML/teks luar.
 8. QRIS (§3.4), penerima/`replyTo`/alias (§3.6), `conversation` (§3.7), `metadata`.
 9. Lampiran (§3.5): base64 didekode & dicek isinya, `mediaId` dicari, URL dicek allowlist lalu diambil.
@@ -246,10 +249,11 @@ berkas `filename` (tidak dihitung dalam 10 lampiran). Merujuk `cid:` QRIS tanpa 
   maks. 3 berkas paralel, tenggat total permintaan 45 dtk. Gagal → 400 `attachment_fetch_failed`
   (`details[].message` menyebut sebabnya: tidak ditemukan, HTTP 4xx/5xx, terlalu lama, terlalu besar,
   alamat terlarang).
-- Jenis dari **isi** (magic bytes), bukan nama/`Content-Type`. Ditolak (400 `attachment_type_blocked`):
-  berkas eksekusi, makro Office, HTML/SVG, skrip, pintasan (`.lnk`), citra disk (`.iso`, `.img`), dan
-  arsip (`zip`, `rar`, `7z`) — v1 konservatif. Diizinkan: PDF, gambar raster, dokumen Office tanpa
-  makro, CSV/TXT, dan jenis tak dikenal yang bukan daftar tolak (dikirim `application/octet-stream`).
+- Jenis dari **isi** (magic bytes), bukan nama/`Content-Type`. **Daftar izin** (review 9.1 R2): PDF,
+  PNG/JPEG/GIF/WebP/BMP/TIFF, Word/Excel/PowerPoint (`doc`/`docx`/`xls`/`xlsx`/`ppt`/`pptx`) tanpa
+  makro, CSV/TXT. Selain itu (berkas eksekusi, makro, HTML/SVG, skrip, pintasan, citra disk, arsip
+  `zip`/`rar`/`7z`, audio/video, biner tak dikenal) → 400 `attachment_type_blocked`. Ekstensi nama berkas
+  dipaksa sesuai jenis isi (mis. PDF bernama `foto.jpg` → `foto.pdf`; tanpa ekstensi → ditambahkan).
 - Batas: ≤ 10 berkas (`attachments_too_many`), tiap berkas & total ≤ 20 MB setelah didekode
   (`attachment_too_large`). Gambar QRIS & logo tidak dihitung.
 - `inline: true` + `cid` hanya untuk gambar raster; `cid` unik dalam satu email.
@@ -258,7 +262,9 @@ berkas `filename` (tidak dihitung dalam 10 lampiran). Merujuk `cid:` QRIS tanpa 
 
 `POST /public/email/media` (multipart: isian `senderId` + `file` ≤ 20 MB) → **201**
 `{ media: { id, filename, mimeType, sizeBytes, expiresAt } }`. Aturan jenis sama dengan di atas.
-Disimpan di `media_files` (`channel_id` = channel pengirim, `uploaded_by_api_key_id`).
+Disimpan di `media_files` (`channel_id` = channel pengirim, `uploaded_by_api_key_id`), **berlaku 24
+jam** (isinya disalin ke `email-out/` saat email diterima). Kuota per key 500 MB / 24 jam → 429
+`upload_quota` (review 9.1 R3).
 
 ### 3.6 Penerima, `replyTo`, alias
 
@@ -404,10 +410,14 @@ Hanya template berstatus terbit dan tidak diarsip. Isi HTML tidak dikembalikan.
   itu `failed` `sender_not_allowed`); channel aktif; kredensial terbuka; rem darurat; status pengirim.
 - **Rem darurat** ditarik: baris tetap `queued` (ditahan, tidak gagal); > 24 jam tertahan → `failed`
   `sending_paused_expired`. Dilanjutkan → berjalan lagi.
-- **Batas per pengirim per jam** (`email_sender_settings.hourly_limit`, bawaan **100**, 1–5.000): dihitung
-  dari email `sent`/`sending` pengirim itu 60 menit bergulir (termasuk kirim tes). Penuh → baris
-  `next_attempt_at` = saat email tertua dalam jendela genap 1 jam. Urutan antre: `scheduledAt`/
-  `created_at` (FIFO per pengirim).
+- **Batas per pengirim per jam** (`email_sender_settings.hourly_limit`, bawaan **100**, 1–5.000) dihitung
+  **per PENERIMA** (review 9.1 S2): jumlah `recipient_count` email `sent`/`sending`/`bounced` pengirim
+  itu 60 menit bergulir (termasuk kirim tes). Email diklaim hanya bila jendela + penerimanya ≤ batas
+  (email yang sendirian melebihi batas tetap boleh saat jendela kosong). Penuh → `next_attempt_at` =
+  saat email tertua dalam jendela genap 1 jam. Urutan antre: `scheduledAt`/`created_at` (FIFO per
+  pengirim). Rem otomatis organisasi (lonjakan per menit) ikut menghitung penerima email API.
+- `fromName` pada pengirim SMTP **sistem** tidak bisa diganti (selain nama bawaan channel → 400
+  `from_name_not_allowed`), karena akun itu juga mengirim email keamanan (review 9.1 R9).
 - **Jeda otomatis saat SMTP menolak**: balasan sementara 421/450/451/452 atau sambungan ditolak/
   terlalu lama → email dicoba lagi (1, 5, 15, 30, 60 menit, lalu tiap jam, maks. 24 jam sejak dibuat →
   `throttle_expired`). Balasan yang menandakan pembatasan laju (421/451 dengan kode tambahan `4.7.x`,
@@ -725,8 +735,10 @@ tidak cocok — …" }`; tidak ada baris dibuat (cek tabel `email_outbound` & `c
    supaya key pemantau status tidak perlu hak kirim.
 3. **Pengirim wajib dipilih per key** (tanpa "semua pengirim"); allowlist host URL lampiran per key,
    kosong = URL ditolak. `PATCH /settings/api-keys/:id` baru, selalu dengan konfirmasi identitas.
-4. **Batas harian key dijumlah** dari pesan + email (1 email = 1); batas organisasi harian WhatsApp
-   TIDAK menghitung email (perlindungan email = batas per pengirim per jam). Rem darurat berlaku.
+4. **Batas harian key dijumlah PER PENERIMA** dari pesan + email (1 email = jumlah penerimanya; review
+   9.1 S2 mengganti "1 email = 1"); batas per pengirim per jam juga per penerima; rem otomatis
+   organisasi ikut menghitung penerima email API. Batas organisasi harian WhatsApp TIDAK menghitung
+   email. Rem darurat berlaku.
 5. **Penerimaan selalu antre** (202) walau pengirim sedang dibatasi/dijeda/terblokir; yang ditolak saat
    menerima hanya rem darurat, batas harian key, dan antrean penuh (> 24 × batas per jam). Tertahan
    > 24 jam → gagal final.

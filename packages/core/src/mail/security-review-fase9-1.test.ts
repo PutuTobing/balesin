@@ -24,43 +24,27 @@ function elapsed(run: () => unknown): number {
 }
 
 describe('review 9.1 S1 — ReDoS sanitasi HTML email keluar', () => {
-  it.fails(
-    'href berisi "{{" + spasi panjang (PLACEHOLDER_ONLY, kubik) selesai < 300 ms — jalur API email:send',
-    () => {
-      // ~2,5 KB saja sudah ±2–5 dtk; 20 KB ≈ puluhan menit.
-      const html = `<a href="{{${' '.repeat(2_500)}x">bayar</a>`;
-      expect(elapsed(() => sanitizeOutboundEmailHtml(html))).toBeLessThan(BUDGET_MS);
-    },
-    60_000,
-  );
+  it('href berisi "{{" + spasi panjang (PLACEHOLDER_ONLY, kubik) selesai < 300 ms — jalur API email:send', () => {
+    // ~2,5 KB saja sudah ±2–5 dtk; 20 KB ≈ puluhan menit.
+    const html = `<a href="{{${' '.repeat(2_500)}x">bayar</a>`;
+    expect(elapsed(() => sanitizeOutboundEmailHtml(html))).toBeLessThan(BUDGET_MS);
+  }, 60_000);
 
-  it.fails(
-    'blok <style> panjang tanpa ; { } (UNSAFE_CSS_DECLARATION, kuadratik) selesai < 300 ms',
-    () => {
-      // 50 KB ≈ 3 dtk; 500 KB ≈ 5 menit.
-      const html = `<style>${'a'.repeat(50_000)}</style><p>Tagihan</p>`;
-      expect(elapsed(() => sanitizeOutboundEmailHtml(html))).toBeLessThan(BUDGET_MS);
-    },
-    60_000,
-  );
+  it('blok <style> panjang tanpa ; { } (UNSAFE_CSS_DECLARATION, kuadratik) selesai < 300 ms', () => {
+    // 50 KB ≈ 3 dtk; 500 KB ≈ 5 menit.
+    const html = `<style>${'a'.repeat(50_000)}</style><p>Tagihan</p>`;
+    expect(elapsed(() => sanitizeOutboundEmailHtml(html))).toBeLessThan(BUDGET_MS);
+  }, 60_000);
 
-  it.fails(
-    'banyak "<style>" tanpa penutup (STYLE_BLOCK, kuadratik) selesai < 300 ms',
-    () => {
-      const html = '<style>'.repeat(40_000);
-      expect(elapsed(() => sanitizeOutboundEmailHtml(html))).toBeLessThan(BUDGET_MS);
-    },
-    60_000,
-  );
+  it('banyak "<style>" tanpa penutup (STYLE_BLOCK, kuadratik) selesai < 300 ms', () => {
+    const html = '<style>'.repeat(40_000);
+    expect(elapsed(() => sanitizeOutboundEmailHtml(html))).toBeLessThan(BUDGET_MS);
+  }, 60_000);
 
-  it.fails(
-    'pemindai variabel template: "{{" + spasi panjang (PLACEHOLDER, kubik) selesai < 300 ms — simpan/pratinjau/terbit',
-    () => {
-      const html = `<p>{{${' '.repeat(2_000)}x</p>`;
-      expect(
-        elapsed(() => scanTemplateVariables({ subject: 'Tagihan', html, text: null })),
-      ).toBeLessThan(BUDGET_MS);
-    },
-    60_000,
-  );
+  it('pemindai variabel template: "{{" + spasi panjang (PLACEHOLDER, kubik) selesai < 300 ms — simpan/pratinjau/terbit', () => {
+    const html = `<p>{{${' '.repeat(2_000)}x</p>`;
+    expect(
+      elapsed(() => scanTemplateVariables({ subject: 'Tagihan', html, text: null })),
+    ).toBeLessThan(BUDGET_MS);
+  }, 60_000);
 });

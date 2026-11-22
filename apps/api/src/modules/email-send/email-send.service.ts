@@ -119,6 +119,9 @@ const SENDER_NOT_ALLOWED = 'API key ini tidak boleh mengirim lewat pengirim ini.
 const EMAIL_NOT_FOUND = 'Email tidak ditemukan.';
 const MESSAGE_NOT_FOUND = 'Pesan email masuk tidak ditemukan.';
 const INBOX_TEXT_MAX = 65_536;
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Review 9.1 R3: total unggahan lampiran per API key per 24 jam. */
+export const EMAIL_UPLOAD_QUOTA_BYTES_PER_DAY = 500 * 1024 * 1024;
 
 export interface EmailPrincipal {
   organizationId: string;
@@ -563,12 +566,16 @@ export function createEmailSendService(deps: EmailSendServiceDeps): EmailSendSer
     return sender;
   }
 
-  /** Antrean pengirim penuh (> 24 × batas per jam email menunggu) → 429. */
-  async function assertQueueRoom(key: EmailPrincipal, sender: ChannelSender) {
+  /** Antrean pengirim penuh (> 24 × batas per jam PENERIMA menunggu) → 429. */
+  async function assertQueueRoom(key: EmailPrincipal, sender: ChannelSender, recipients: number) {
     const stats = (await senderStats(db, key.organizationId, [sender.channelId], now())).get(
       sender.channelId,
     );
-    if (stats && stats.queued >= stats.hourlyLimit * EMAIL_SENDER_QUEUE_FACTOR) {
+    if (
+      stats &&
+      stats.queued > 0 &&
+      stats.queued + recipients > stats.hourlyLimit * EMAIL_SENDER_QUEUE_FACTOR
+    ) {
       throw emailError(
         'RATE_LIMITED',
         [
@@ -990,16 +997,19 @@ export function createEmailSendService(deps: EmailSendServiceDeps): EmailSendSer
       defaultSubject: string | null;
       idempotencyKey: string | null;
       requestHash: string | null;
+      /** Perkiraan murah jumlah penerima (digabung tanpa beda huruf) — untuk batas sebelum validasi. */
+      recipientEstimate: number;
     },
   ): Promise<EmailOutboundRow> {
     const at = now();
-    // 5–6. Rem darurat → 423; batas harian key (pesan + email) → 429; antrean pengirim penuh → 429.
+    // 5–6. Rem darurat → 423; batas harian key (penerima pesan + email) → 429; antrean penuh → 429.
     await sendingLimits.assertCanSendEmail({
       organizationId: key.organizationId,
       apiKey: { id: key.apiKeyId, dailySendLimit: key.dailySendLimit },
       client: options.client,
+      recipients: options.recipientEstimate,
     });
-    await assertQueueRoom(key, sender);
+    await assertQueueRoom(key, sender, options.recipientEstimate);
     // 7. Isi.
     const content = await resolveContent(db, key.organizationId, body, options.defaultSubject);
     // 8. QRIS, alamat, metadata, jadwal.
@@ -1008,7 +1018,21 @@ export function createEmailSendService(deps: EmailSendServiceDeps): EmailSendSer
     const inboxBound = options.inbox.mode !== 'none';
     const replyTo = resolveReplyTo(body.replyTo, sender, inboxBound);
     const fromAddress = resolveFrom(body.fromAddress, sender);
-    const fromName = cleanFromName(body.fromName) ?? sender.fromName;
+    const requestedName = cleanFromName(body.fromName);
+    // Review 9.1 R9: SMTP sistem dipakai bersama email keamanan (reset password/2FA) — nama
+    // pengirim tidak bisa diganti lewat API supaya reputasinya tidak dipakai menyamar.
+    if (
+      sender.smtpMode === 'system' &&
+      requestedName !== null &&
+      requestedName !== sender.fromName
+    ) {
+      throw invalid(
+        'fromName',
+        'from_name_not_allowed',
+        'Pengirim ini memakai SMTP sistem, jadi nama pengirim tidak bisa diganti. Pakai SMTP sendiri di Pengaturan → Channel untuk nama lain.',
+      );
+    }
+    const fromName = requestedName ?? sender.fromName;
     const metadata = validateMetadata(body.metadata);
     const scheduledAt = parseSchedule(body.scheduledAt, at);
     // 9. Lampiran (URL diperiksa allowlist dulu, lalu diambil).
@@ -1130,6 +1154,7 @@ export function createEmailSendService(deps: EmailSendServiceDeps): EmailSendSer
         };
         return accept(key, sender, body, recipientsOf, {
           client,
+          recipientEstimate: estimateRecipients(body.to, body.cc, body.bcc),
           inbox: create ? { mode: 'create' } : { mode: 'none' },
           defaultSubject: null,
           idempotencyKey: idempotencyKey ?? null,
@@ -1222,6 +1247,7 @@ export function createEmailSendService(deps: EmailSendServiceDeps): EmailSendSer
         );
         return accept(key, sender, body, recipientsOf, {
           client,
+          recipientEstimate: estimateRecipients([{ email: contactAddress }], body.cc, body.bcc),
           inbox: {
             mode: 'reply',
             contactId: original.contactId,
@@ -1258,7 +1284,12 @@ export function createEmailSendService(deps: EmailSendServiceDeps): EmailSendSer
               )
               .limit(1);
       if (!row) throw emailError('NOT_FOUND', [detail('id', 'email_not_found', EMAIL_NOT_FOUND)]);
-      return toEmailStatus(db, row);
+      const status = await toEmailStatus(db, row);
+      // Review 9.1 R1: Bcc, metadata, dan Idempotency-Key hanya untuk key PEMBUAT; key lain yang
+      // berbagi pengirim melihat ringkasan tanpa itu.
+      return row.apiKeyId === key.apiKeyId
+        ? status
+        : { ...status, bcc: [], metadata: null, idempotencyKey: null };
     },
 
     async cancel(key, emailId) {
@@ -1366,12 +1397,33 @@ export function createEmailSendService(deps: EmailSendServiceDeps): EmailSendSer
             : 'Jenis berkas ini tidak boleh dilampirkan (program, makro, HTML, atau arsip).',
         );
       }
-      const [org] = await db
-        .select({ days: organizations.mediaRetentionDays })
-        .from(organizations)
-        .where(eq(organizations.id, key.organizationId));
       const at = now();
-      const expiresAt = new Date(at.getTime() + (org?.days ?? 30) * 24 * 60 * 60 * 1000);
+      // Review 9.1 R3: kuota unggah per key per 24 jam; unggahan API berumur pendek (24 jam — isi
+      // disalin ke `email-out/` saat email diterima, jadi email terjadwal tetap aman).
+      const [usage] = await db
+        .select({ total: sql<number>`coalesce(sum(${mediaFiles.sizeBytes}), 0)::bigint` })
+        .from(mediaFiles)
+        .where(
+          and(
+            eq(mediaFiles.organizationId, key.organizationId),
+            eq(mediaFiles.uploadedByApiKeyId, key.apiKeyId),
+            sql`${mediaFiles.createdAt} > ${new Date(at.getTime() - DAY_MS)}`,
+          ),
+        );
+      if (Number(usage?.total ?? 0) + file.buffer.length > EMAIL_UPLOAD_QUOTA_BYTES_PER_DAY) {
+        throw emailError(
+          'RATE_LIMITED',
+          [
+            detail(
+              'file',
+              'upload_quota',
+              'Kuota unggah lampiran API key ini (500 MB per 24 jam) sudah habis. Coba lagi nanti.',
+            ),
+          ],
+          { retryAfterSeconds: 3600 },
+        );
+      }
+      const expiresAt = new Date(at.getTime() + DAY_MS);
       const stored = await store.save('uploads', file.buffer);
       try {
         const [row] = await db
@@ -1384,7 +1436,7 @@ export function createEmailSendService(deps: EmailSendServiceDeps): EmailSendSer
             mimeType: verdict.mimeType,
             sizeBytes: stored.sizeBytes,
             sha256: stored.sha256,
-            filename,
+            filename: verdict.filename,
             storageKey: stored.storageKey,
             uploadedByApiKeyId: key.apiKeyId,
             expiresAt,
@@ -1393,7 +1445,7 @@ export function createEmailSendService(deps: EmailSendServiceDeps): EmailSendSer
         if (!row) throw new Error('INSERT media tidak mengembalikan baris');
         return {
           id: row.id,
-          filename,
+          filename: verdict.filename,
           mimeType: verdict.mimeType,
           sizeBytes: stored.sizeBytes,
           expiresAt: expiresAt.toISOString(),
@@ -1404,4 +1456,12 @@ export function createEmailSendService(deps: EmailSendServiceDeps): EmailSendSer
       }
     },
   };
+}
+
+/** Jumlah alamat unik (tanpa beda huruf) di daftar penerima — perkiraan murah sebelum validasi. */
+export function estimateRecipients(...lists: (readonly { email: string }[] | undefined)[]): number {
+  const unique = new Set<string>();
+  for (const list of lists)
+    for (const item of list ?? []) unique.add(item.email.trim().toLowerCase());
+  return Math.max(1, unique.size);
 }

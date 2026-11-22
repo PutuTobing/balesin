@@ -7,6 +7,7 @@ import {
   type MediaStore,
 } from '@balesin/core';
 import {
+  channelAccessOf,
   emailOutbound,
   emailOutboundAttachments,
   emailTemplateVersions,
@@ -948,9 +949,18 @@ export function createEmailMessageTemplatesService(deps: {
         );
       }
       const parsed = parseEmailSenderId(input.senderId);
-      const sender = parsed
+      const found = parsed
         ? await findChannelSender(db, auth.organizationId, input.senderId)
         : null;
+      // Review 9.1 R5: channel yang dibatasi dari pengguna ini (akses per channel 9.0) = tidak ada.
+      const sender =
+        found &&
+        (await channelAccessOf(db, auth.organizationId, [auth.user.id])).allows(
+          auth.user.id,
+          found.channelId,
+        )
+          ? found
+          : null;
       if (!sender) {
         throw emailError('NOT_FOUND', [
           detail('senderId', 'sender_not_found', 'Pengirim email tidak ditemukan.'),

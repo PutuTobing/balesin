@@ -167,7 +167,10 @@ export interface SenderStats {
   queued: number;
 }
 
-/** Batas, jumlah terkirim 60 menit bergulir (`sent`/`sending`), dan antrean per channel pengirim. */
+/**
+ * Batas, jumlah PENERIMA terkirim 60 menit bergulir (`sent`/`sending`/`bounced`), dan penerima yang
+ * menunggu di antrean per channel pengirim (review 9.1 S2: per penerima, bukan per email).
+ */
 export async function senderStats(
   db: DbExecutor,
   organizationId: string,
@@ -188,7 +191,11 @@ export async function senderStats(
     );
   const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
   const sent = await db
-    .select({ channelId: emailOutbound.channelId, total: sql<number>`count(*)::int` })
+    .select({
+      channelId: emailOutbound.channelId,
+      // Review 9.1 S2: dihitung PER PENERIMA.
+      total: sql<number>`coalesce(sum(${emailOutbound.recipientCount}), 0)::int`,
+    })
     .from(emailOutbound)
     .where(
       and(
@@ -200,7 +207,11 @@ export async function senderStats(
     )
     .groupBy(emailOutbound.channelId);
   const waiting = await db
-    .select({ channelId: emailOutbound.channelId, total: sql<number>`count(*)::int` })
+    .select({
+      channelId: emailOutbound.channelId,
+      // Review 9.1 S2: dihitung PER PENERIMA.
+      total: sql<number>`coalesce(sum(${emailOutbound.recipientCount}), 0)::int`,
+    })
     .from(emailOutbound)
     .where(
       and(
