@@ -107,24 +107,20 @@ describe('review 9.1 putaran 2 S3 — sarang tag dalam (sanitize-html super-line
  * atau membatasi ukuran hasil — asalkan cepat.
  */
 describe('review 9.1 putaran 3 S4 — amplifikasi variabel template', () => {
-  it.fails(
-    '3.000 {{a}} × nilai 1.000 "&" dirender (atau ditolak) < 1 dtk',
-    () => {
-      expect(
-        elapsed(() =>
-          renderOutboundEmail({
-            subject: 'Tagihan',
-            html: '<p>' + '{{a}}'.repeat(3_000) + '</p>',
-            text: null,
-            values: { a: '&'.repeat(1_000) },
-            organizationName: 'Organisasi',
-            qrisImageSrc: null,
-            layout: 'brand',
-            brand: { primaryColor: '#112233', logoSrc: null, footerText: null },
-          }),
-        ),
-      ).toBeLessThan(1_000);
-    },
-    120_000,
-  );
+  it('3.000 {{a}} × nilai 1.000 "&" dirender (atau ditolak) < 1 dtk', () => {
+    expect(
+      elapsed(() =>
+        renderOutboundEmail({
+          subject: 'Tagihan',
+          html: '<p>' + '{{a}}'.repeat(3_000) + '</p>',
+          text: null,
+          values: { a: '&'.repeat(1_000) },
+          organizationName: 'Organisasi',
+          qrisImageSrc: null,
+          layout: 'brand',
+          brand: { primaryColor: '#112233', logoSrc: null, footerText: null },
+        }),
+      ),
+    ).toBeLessThan(1_000);
+  }, 120_000);
 });

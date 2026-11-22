@@ -1,9 +1,11 @@
 import {
   AppError,
   EMAIL_HTML_TOO_COMPLEX_MESSAGE,
+  EMAIL_TEMPLATE_PLACEHOLDERS_MESSAGE,
   newOutboundMessageId,
   sanitizeOutboundEmailHtml,
   scanTemplateVariables,
+  templatePlaceholderOverflow,
   type Logger,
   type MediaStore,
 } from '@balesin/core';
@@ -181,7 +183,30 @@ function contentOf(row: EmailTemplateVersionRow): EmailTemplateContent {
   };
 }
 
+/**
+ * Review 9.1 putaran 3 S4: jumlah `{{…}}` (subjek + HTML + teks) ≤ 200 — dicek saat simpan draf,
+ * terbit, dan pratinjau (render juga memeriksanya untuk template lama & kirim tes).
+ */
+function assertPlaceholderLimit(
+  content: { subject: string; html: string | null; text?: string | null | undefined },
+  prefix: string,
+): void {
+  const overflow = templatePlaceholderOverflow({
+    subject: content.subject,
+    html: content.html,
+    text: content.text ?? null,
+  });
+  if (overflow) {
+    throw bodyInvalid(
+      `${prefix}${overflow}`,
+      EMAIL_TEMPLATE_PLACEHOLDERS_MESSAGE,
+      'template_placeholders_too_many',
+    );
+  }
+}
+
 function normalizeContent(input: EmailTemplateContentInput): EmailTemplateContent {
+  assertPlaceholderLimit(input, 'draft.');
   return {
     subject: input.subject,
     html: input.html,
@@ -221,6 +246,7 @@ export function validateForPublish(content: EmailTemplateContent): EmailTemplate
     );
   }
   if (content.html.trim() === '') throw bodyInvalid('draft.html', 'Isi HTML template wajib diisi.');
+  assertPlaceholderLimit(content, 'draft.');
   const sanitized = sanitizeOutboundEmailHtml(content.html);
   // Review 9.1 S3: HTML terlalu rumit tidak pernah disanitasi (sanitize-html super-linear).
   if (sanitized.tooComplex) {
@@ -894,6 +920,7 @@ export function createEmailMessageTemplatesService(deps: {
     },
 
     async preview(organizationId, input) {
+      assertPlaceholderLimit(input, '');
       const warnings = new Set<string>();
       const sanitized = sanitizeOutboundEmailHtml(input.html);
       if (sanitized.tooComplex) {

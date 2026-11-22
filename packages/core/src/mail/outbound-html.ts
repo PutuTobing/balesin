@@ -35,11 +35,89 @@ const PLACEHOLDER_ONLY = /^\{\{([^{}]*)\}\}$/;
 const validName = (name: string) => EMAIL_TEMPLATE_VARIABLE_NAME.test(name);
 
 /**
+ * Review 9.1 putaran 3 S4 (amplifikasi variabel): kemunculan `{{…}}` per template (subjek + HTML +
+ * teks digabung). Nilai variabel disisipkan di SETIAP kemunculan (di-escape, `&` → `&amp;`), jadi
+ * tanpa batas ini ukuran hasil = kemunculan × nilai. Dicek saat simpan draf, terbit, pratinjau, dan
+ * render (template lama yang sudah tersimpan). Ukuran hasil juga dibatasi saat render.
+ */
+export const EMAIL_TEMPLATE_PLACEHOLDERS_MAX = 200;
+export const EMAIL_TEMPLATE_PLACEHOLDERS_MESSAGE =
+  'Template memuat lebih dari 200 penanda variabel {{…}} (subjek, HTML, dan teks digabung). Kurangi pemakaiannya.';
+export const EMAIL_CONTENT_TOO_LARGE_MESSAGE = {
+  html: 'HTML email setelah variabel diisi melebihi 512 KB. Perpendek isi template atau nilai variabelnya.',
+  text: 'Versi teks email setelah variabel diisi melebihi 256 KB. Perpendek isi template atau nilai variabelnya.',
+} as const;
+
+/** Jumlah kemunculan `{{…}}`, berhenti setelah melewati `limit` (linear). */
+function placeholderCount(value: string, limit: number): number {
+  const pattern = new RegExp(PLACEHOLDER.source, 'g');
+  let count = 0;
+  while (count <= limit && pattern.exec(value) !== null) count += 1;
+  return count;
+}
+
+/**
+ * Bagian template yang membuat jumlah `{{…}}` melewati `EMAIL_TEMPLATE_PLACEHOLDERS_MAX`, atau
+ * `null` bila masih dalam batas. Urutan hitung: subjek → HTML → teks.
+ */
+export function templatePlaceholderOverflow(input: {
+  subject: string;
+  html: string | null;
+  text: string | null;
+}): 'subject' | 'html' | 'text' | null {
+  let total = 0;
+  for (const [field, value] of [
+    ['subject', input.subject],
+    ['html', input.html],
+    ['text', input.text],
+  ] as const) {
+    if (value === null) continue;
+    total += placeholderCount(value, EMAIL_TEMPLATE_PLACEHOLDERS_MAX - total);
+    if (total > EMAIL_TEMPLATE_PLACEHOLDERS_MAX) return field;
+  }
+  return null;
+}
+
+/**
+ * Isi `{{…}}` dengan batas ukuran hasil (byte UTF-8): berhenti SEGERA begitu hasil melewati
+ * `maxBytes` dan mengembalikan `null` (S4 — tidak pernah membangun string raksasa).
+ */
+function fillBounded(
+  template: string,
+  replace: (whole: string, raw: string) => string,
+  maxBytes: number,
+): string | null {
+  const pattern = new RegExp(PLACEHOLDER.source, 'g');
+  const parts: string[] = [];
+  let bytes = 0;
+  let position = 0;
+  const push = (piece: string) => {
+    bytes += Buffer.byteLength(piece, 'utf8');
+    parts.push(piece);
+    return bytes <= maxBytes;
+  };
+  for (let match = pattern.exec(template); match !== null; match = pattern.exec(template)) {
+    if (!push(template.slice(position, match.index))) return null;
+    if (!push(replace(match[0], match[1] ?? ''))) return null;
+    position = match.index + match[0].length;
+  }
+  if (!push(template.slice(position))) return null;
+  return parts.join('');
+}
+
+/**
+ * Review 9.1 putaran 3 R10: huruf kecil HANYA untuk A–Z. `String#toLowerCase()` bisa memperpanjang
+ * string (mis. "İ" U+0130 → 2 unit), sehingga indeks dari hasilnya tidak cocok lagi dengan `html`.
+ * Versi ini mempertahankan panjang, jadi indeksnya aman dipakai untuk memotong string asli.
+ */
+const asciiLower = (value: string) => value.replace(/[A-Z]+/g, (run) => run.toLowerCase());
+
+/**
  * Blok `<style>` dipindai dengan `indexOf` (linear, review 9.1 S1): `<style …>` sampai `</style …>`
  * berikutnya. Tanpa penutup → berhenti (sisanya diurus sanitize-html, yang membuang `<style>`).
  */
 function extractStyleBlocks(html: string): { rest: string; blocks: string[] } {
-  const lower = html.toLowerCase();
+  const lower = asciiLower(html);
   const blocks: string[] = [];
   let rest = '';
   let position = 0;
@@ -504,7 +582,7 @@ type HtmlSegment = { kind: 'style' | 'tag' | 'text'; value: string };
  * `indexOf` — linear (review 9.1 S1).
  */
 function segmentsOf(html: string): HtmlSegment[] {
-  const lower = html.toLowerCase();
+  const lower = asciiLower(html);
   const segments: HtmlSegment[] = [];
   let position = 0;
   while (position < html.length) {
@@ -661,7 +739,12 @@ export interface RenderOutboundEmailInput {
 
 export interface RenderOutboundEmailError {
   field: TemplateField;
-  reason: 'template_variable_invalid' | 'subject_invalid' | 'html_too_complex';
+  reason:
+    | 'template_variable_invalid'
+    | 'subject_invalid'
+    | 'html_too_complex'
+    | 'template_placeholders_too_many'
+    | 'content_too_large';
   name?: string;
   message: string;
 }
@@ -680,6 +763,8 @@ export type RenderOutboundEmailResult =
   | { ok: false; errors: RenderOutboundEmailError[] };
 
 const SUBJECT_INVALID = 'Subjek wajib diisi (maks. 200 karakter, satu baris).';
+/** Subjek sah ≤ 200 karakter (≤ 800 byte); isian di atas ini pasti `subject_invalid`. */
+const SUBJECT_FILL_MAX_BYTES = 4 * 1024;
 const tooComplexError: RenderOutboundEmailError = {
   field: 'html',
   reason: 'html_too_complex',
@@ -693,17 +778,39 @@ export function renderOutboundEmail(input: RenderOutboundEmailInput): RenderOutb
     if (name === 'nama_organisasi') return input.organizationName;
     return Object.hasOwn(input.values, name) ? (input.values[name] ?? '') : '';
   };
-  const plain = (template: string, qrisText: string) =>
+  /** Isi variabel teks polos (subjek & versi teks); `null` = hasil melewati `maxBytes` (S4). */
+  const plain = (template: string, qrisText: string, maxBytes: number): string | null =>
     substitute
-      ? template.replace(PLACEHOLDER, (whole, raw: string) => {
-          const name = raw.trim();
-          if (!validName(name)) return whole;
-          return name === 'qris' ? qrisText : valueOf(name);
-        })
+      ? fillBounded(
+          template,
+          (whole, raw) => {
+            const name = raw.trim();
+            if (!validName(name)) return whole;
+            return name === 'qris' ? qrisText : valueOf(name);
+          },
+          maxBytes,
+        )
       : template;
 
-  // Subjek: nilai mentah, satu baris, 1–200 karakter.
-  const subject = plain(input.subject, '').trim();
+  // S4: jumlah `{{…}}` dibatasi sebelum apa pun diisi (template lama yang tersimpan ikut dicek).
+  if (substitute) {
+    const overflow = templatePlaceholderOverflow(input);
+    if (overflow) {
+      return {
+        ok: false,
+        errors: [
+          {
+            field: overflow,
+            reason: 'template_placeholders_too_many',
+            message: EMAIL_TEMPLATE_PLACEHOLDERS_MESSAGE,
+          },
+        ],
+      };
+    }
+  }
+
+  // Subjek: nilai mentah, satu baris, 1–200 karakter (isian > 4 KB = pasti tidak sah).
+  const subject = (plain(input.subject, '', SUBJECT_FILL_MAX_BYTES) ?? '').trim();
   if (subject.length === 0 || subject.length > EMAIL_SUBJECT_MAX || /[\r\n]/.test(subject)) {
     errors.push({ field: 'subject', reason: 'subject_invalid', message: SUBJECT_INVALID });
   }
@@ -724,38 +831,68 @@ export function renderOutboundEmail(input: RenderOutboundEmailInput): RenderOutb
       const qrisTag = input.qrisImageSrc
         ? `<img src="${escapeHtml(input.qrisImageSrc)}" alt="${QRIS_ALT}" width="240" height="240" style="display:block;margin:0 auto">`
         : '';
-      filled = segmentsOf(first.html)
-        .map((segment) => {
-          if (!segment.value.includes('{{')) return segment.value;
-          if (segment.kind === 'style') return segment.value.replace(PLACEHOLDER, '');
-          if (segment.kind === 'text') {
-            return segment.value.replace(PLACEHOLDER, (whole, raw: string) => {
+      // S4: ukuran hasil dihitung bertahap dan berhenti di batas. Batas minimal = ukuran hasil
+      // sanitasi pertama, jadi isi yang sudah sah tanpa variabel tidak pernah ditolak di sini.
+      const maxBytes = Math.max(EMAIL_HTML_MAX_BYTES, Buffer.byteLength(first.html, 'utf8'));
+      const pieces: string[] = [];
+      let bytes = 0;
+      let tooLarge = false;
+      const fillSegment = (segment: HtmlSegment): string | null => {
+        if (!segment.value.includes('{{')) return segment.value;
+        if (segment.kind === 'style') return segment.value.replace(PLACEHOLDER, '');
+        if (segment.kind === 'text') {
+          return fillBounded(
+            segment.value,
+            (whole, raw) => {
               const name = raw.trim();
               if (!validName(name)) return whole;
               return name === 'qris' ? qrisTag : withBreaks(valueOf(name));
-            });
-          }
-          return segment.value.replace(
-            ATTRIBUTE,
-            (whole, space: string, attribute: string, value: string) => {
-              if (!value.includes('{{')) return whole;
-              const only =
-                value.length <= HREF_URL_MAX ? PLACEHOLDER_ONLY.exec(value.trim()) : null;
-              const name = (only?.[1] ?? '').trim();
-              if (attribute.toLowerCase() === 'href' && only && validName(name)) {
-                const url = name === 'qris' ? '' : valueOf(name);
-                if (!httpsUrl(url)) {
-                  invalidHref.add(name);
-                  return '';
-                }
-                return `${space}${attribute}="${escapeHtml(url)}"`;
-              }
-              // Variabel di atribut lain tidak didukung: dikosongkan.
-              return `${space}${attribute}="${value.replace(PLACEHOLDER, '')}"`;
             },
+            maxBytes - bytes,
           );
-        })
-        .join('');
+        }
+        // Atribut: hanya `href` yang diisi (URL https ≤ 2.000), lainnya dikosongkan — tidak membesar.
+        return segment.value.replace(
+          ATTRIBUTE,
+          (whole, space: string, attribute: string, value: string) => {
+            if (!value.includes('{{')) return whole;
+            const only = value.length <= HREF_URL_MAX ? PLACEHOLDER_ONLY.exec(value.trim()) : null;
+            const name = (only?.[1] ?? '').trim();
+            if (attribute.toLowerCase() === 'href' && only && validName(name)) {
+              const url = name === 'qris' ? '' : valueOf(name);
+              if (!httpsUrl(url)) {
+                invalidHref.add(name);
+                return '';
+              }
+              return `${space}${attribute}="${escapeHtml(url)}"`;
+            }
+            // Variabel di atribut lain tidak didukung: dikosongkan.
+            return `${space}${attribute}="${value.replace(PLACEHOLDER, '')}"`;
+          },
+        );
+      };
+      for (const segment of segmentsOf(first.html)) {
+        const piece = fillSegment(segment);
+        if (piece === null) {
+          tooLarge = true;
+          break;
+        }
+        bytes += Buffer.byteLength(piece, 'utf8');
+        if (bytes > maxBytes) {
+          tooLarge = true;
+          break;
+        }
+        pieces.push(piece);
+      }
+      if (tooLarge) {
+        errors.push({
+          field: 'html',
+          reason: 'content_too_large',
+          message: EMAIL_CONTENT_TOO_LARGE_MESSAGE.html,
+        });
+        return { ok: false, errors };
+      }
+      filled = pieces.join('');
       for (const name of invalidHref) {
         errors.push({
           field: 'html',
@@ -786,7 +923,24 @@ export function renderOutboundEmail(input: RenderOutboundEmailInput): RenderOutb
   ];
   let text: string;
   if (input.text !== null) {
-    text = plain(input.text, input.qrisImageSrc ? EMAIL_QRIS_SCAN_TEXT : '');
+    const filledText = plain(
+      input.text,
+      input.qrisImageSrc ? EMAIL_QRIS_SCAN_TEXT : '',
+      Math.max(EMAIL_TEXT_MAX_BYTES, Buffer.byteLength(input.text, 'utf8')),
+    );
+    if (filledText === null) {
+      return {
+        ok: false,
+        errors: [
+          {
+            field: 'text',
+            reason: 'content_too_large',
+            message: EMAIL_CONTENT_TOO_LARGE_MESSAGE.text,
+          },
+        ],
+      };
+    }
+    text = filledText;
   } else if (body !== null) {
     text = htmlToText(body);
     if (input.layout === 'brand') text = `${text}\n\n--\n${footerLines.join('\n')}`.trim();

@@ -235,27 +235,98 @@ describe('Putaran 3 S4 (Sedang) — amplifikasi variabel template lewat pratinja
   // Supervisor+ (templates.manage): pratinjau menerima `values` ≤ 1.000 karakter per variabel dan
   // menyisipkannya di setiap {{a}} tanpa batas ukuran hasil. 3.000 {{a}} × 1.000 "&" ≈ 15 juta
   // karakter; 50.000 {{a}} = api kehabisan heap. Perbaikan boleh menolak (400) atau membatasi.
-  it.fails(
-    'pratinjau 3.000 {{a}} × nilai 1.000 "&" dijawab < 2 dtk',
-    async () => {
-      const started = performance.now();
-      const response = await call(
-        harness.app,
-        'POST',
-        API_ROUTES.emailTemplates.preview,
-        {
-          subject: 'Tagihan',
-          html: '<p>' + '{{a}}'.repeat(3_000) + '</p>',
-          layout: 'brand',
-          values: { a: '&'.repeat(1_000) },
+  it('pratinjau 3.000 {{a}} × nilai 1.000 "&" dijawab < 2 dtk', async () => {
+    const started = performance.now();
+    const response = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.emailTemplates.preview,
+      {
+        subject: 'Tagihan',
+        html: '<p>' + '{{a}}'.repeat(3_000) + '</p>',
+        layout: 'brand',
+        values: { a: '&'.repeat(1_000) },
+      },
+      { cookie: owner.cookie, csrf: owner.csrf },
+    );
+    expect([200, 400]).toContain(response.statusCode);
+    expect(performance.now() - started).toBeLessThan(2_000);
+  }, 120_000);
+});
+
+describe('S4 diperbaiki — batas {{…}} dan ukuran hasil di jalur template', () => {
+  const session = () => ({ cookie: owner.cookie, csrf: owner.csrf });
+
+  it('pratinjau: 201 {{a}} → 400 template_placeholders_too_many; 200 × 1.000 "&" → 400 content_too_large', async () => {
+    const many = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.emailTemplates.preview,
+      { subject: 'Tagihan', html: `<p>${'{{a}}'.repeat(201)}</p>`, layout: 'brand' },
+      session(),
+    );
+    expect(many.statusCode).toBe(400);
+    expect(reasonOf(many.body)).toMatchObject({
+      field: 'html',
+      reason: 'template_placeholders_too_many',
+    });
+    const large = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.emailTemplates.preview,
+      {
+        subject: 'Tagihan',
+        html: `<p>${'{{a}}'.repeat(200)}</p>`,
+        layout: 'brand',
+        values: { a: '&'.repeat(1_000) },
+      },
+      session(),
+    );
+    expect(large.statusCode).toBe(400);
+    expect(reasonOf(large.body)).toMatchObject({ field: 'html', reason: 'content_too_large' });
+  });
+
+  it('simpan draf dengan 201 {{…}} (subjek + HTML + teks) → 400, draf wajar 201', async () => {
+    const tooMany = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.emailTemplates.list,
+      {
+        name: 'Banyak variabel',
+        slug: 'banyak-variabel-s4',
+        draft: {
+          subject: 'Halo {{a}}',
+          html: `<p>${'{{a}}'.repeat(199)}</p>`,
+          text: '{{a}}',
+          variables: [{ name: 'a', label: 'A', required: false }],
+          layout: 'none',
         },
-        { cookie: owner.cookie, csrf: owner.csrf },
-      );
-      expect([200, 400]).toContain(response.statusCode);
-      expect(performance.now() - started).toBeLessThan(2_000);
-    },
-    120_000,
-  );
+      },
+      session(),
+    );
+    expect(tooMany.statusCode).toBe(400);
+    expect(reasonOf(tooMany.body)).toMatchObject({
+      field: 'draft.text',
+      reason: 'template_placeholders_too_many',
+    });
+    const fine = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.emailTemplates.list,
+      {
+        name: 'Variabel wajar',
+        slug: 'variabel-wajar-s4',
+        draft: {
+          subject: 'Halo {{a}}',
+          html: `<p>${'{{a}}'.repeat(199)}</p>`,
+          variables: [{ name: 'a', label: 'A', required: false }],
+          layout: 'none',
+        },
+      },
+      session(),
+    );
+    expect(fine.statusCode, fine.body).toBe(201);
+  });
 });
 
 describe('R2b (Rendah) — lampiran Office format lama (CFB) ditolak', () => {

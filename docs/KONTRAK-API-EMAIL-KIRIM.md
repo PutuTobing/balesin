@@ -210,6 +210,15 @@ yang membuang gaya & gambar): berlaku untuk HTML template saat disimpan DAN HTML
   (kirim, balas, kirim tes, pratinjau & terbit template). Berlaku juga setelah variabel diisi (nilai
   bergaris baru menjadi `<br>`). Konstanta `EMAIL_HTML_MAX_TAGS`/`EMAIL_HTML_MAX_DEPTH`
   (`packages/core/src/mail/html-guard.ts`).
+- **Variabel template** (review 9.1 putaran 3 S4): maks. **200 kemunculan `{{…}}`** per template
+  (subjek + HTML + teks digabung; nama tidak sah ikut dihitung) — dicek saat simpan draf, terbit,
+  pratinjau, dan render (kirim API ber-`templateId`, kirim tes); lewat → 400
+  `template_placeholders_too_many`. Saat render, ukuran hasil isian dihitung bertahap dan berhenti
+  begitu HTML > 512 KB atau versi teks > 256 KB → 400 `content_too_large` (`details[].field` `html` /
+  `text`). Batas minimal = ukuran isi sebelum diisi, jadi isi sah tanpa variabel tidak ditolak. Subjek
+  hasil isian tetap 1–200 karakter (`subject_invalid`). HTML/teks **luar** (bukan template) tidak
+  diisi sehingga tidak dibatasi jumlah `{{…}}`-nya. Konstanta `EMAIL_TEMPLATE_PLACEHOLDERS_MAX`
+  (`packages/core/src/mail/outbound-html.ts`).
 - Bila ada yang dibuang dari HTML **luar**, email tetap dikirim dan respons/status memuat
   `sanitized: true` (supaya integrator tahu).
 
@@ -638,6 +647,8 @@ Amplop tetap `{ error: { code, message, details?, requestId } }`. **Tambahan kom
 | 400 | `VALIDATION_ERROR` | `subject_invalid` | "Subjek wajib diisi (maks. 200 karakter, satu baris)." |
 | 400 | `VALIDATION_ERROR` | `template_variable_missing` | "Variabel {{jatuh_tempo}} wajib diisi untuk template ini." |
 | 400 | `VALIDATION_ERROR` | `template_variable_invalid` | "Nilai {{tautan_bayar}} harus alamat https:// yang lengkap." |
+| 400 | `VALIDATION_ERROR` | `template_placeholders_too_many` | "Template memuat lebih dari 200 penanda variabel {{…}} (subjek, HTML, dan teks digabung). Kurangi pemakaiannya." |
+| 400 | `VALIDATION_ERROR` | `content_too_large` | "HTML email setelah variabel diisi melebihi 512 KB. Perpendek isi template atau nilai variabelnya." (versi teks: 256 KB) |
 | 400 | `VALIDATION_ERROR` | `html_too_complex` | "HTML terlalu rumit untuk diproses: maksimal 20.000 tag dan kedalaman sarang 200 tingkat. Sederhanakan susunan HTML-nya, lalu kirim lagi." |
 | 400 | `VALIDATION_ERROR` | `qris_invalid_format` · `qris_crc_mismatch` | "Teks QRIS tidak sesuai format standar." · "Kode cek (CRC) QRIS tidak cocok — teksnya rusak atau terpotong. Ambil ulang dari sistem pembayaran." |
 | 400 | `VALIDATION_ERROR` | `cid_missing` | "HTML merujuk gambar cid:qris, tetapi gambarnya tidak dikirim." |

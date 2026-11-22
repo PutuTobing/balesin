@@ -472,6 +472,11 @@ function extensionOf(filename: string | null): string {
   return /\.([A-Za-z0-9]{1,8})$/.exec(filename ?? '')?.[1]?.toLowerCase() ?? '';
 }
 
+const CFB_SIGNATURE = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+const isCfbContainer = (content: Buffer) =>
+  content.length >= CFB_SIGNATURE.length &&
+  CFB_SIGNATURE.every((value, index) => content[index] === value);
+
 /** Lampiran → jenis aman untuk disimpan, atau `null` (dilewati). */
 export function classifyEmailAttachment(
   content: Buffer,
@@ -480,6 +485,10 @@ export function classifyEmailAttachment(
   if (content.length === 0 || content.length > EMAIL_MAX_ATTACHMENT_BYTES) return null;
   const extension = extensionOf(filename);
   if (DANGEROUS_EXTENSIONS.has(extension)) return null;
+  // Review 9.1 putaran 3 (Info): wadah CFB/OLE (Office 97–2003 `.doc`/`.xls`/`.ppt`, `.msg`, …) selalu
+  // dilewati — apa pun nama berkasnya — sama dengan lampiran email keluar API (R2b). Makro `.ppt` dan
+  // objek OLE/DDE tidak terlihat dari nama aliran, jadi pemeriksaan penanda makro tidak cukup.
+  if (isCfbContainer(content)) return null;
   // Deteksi penuh (wadah Office diperiksa: makro → null).
   const detected = detectMedia(content, filename, { verifyContainer: true });
   if (detected) return { kind: detected.kind, mimeType: detected.mimeType };
