@@ -83,3 +83,15 @@ Orkestrator mengerjakan dari atas ke bawah. Tandai `[x]` saat Definition of Done
 - [ ] Meta Tech Provider → Embedded Signup + Coexistence QR
 - [ ] Aplikasi Expo (Play Store / App Store)
 - [ ] Builder alur visual, AI agent bawaan, Calling API, lisensi
+
+## Fase 9 — Modul Email (kotak surat multi-akun)
+Spesifikasi `docs/PRD-EMAIL.md`, desain acuan `docs/design/email/` (mockup + screenshot terang/gelap).
+Dikerjakan sebelum Fase 8 (NANTI). Menu **Email** terpisah dari Inbox; Channel Email Fase 6 tetap ada.
+- [ ] 9.0 Peningkatan Channel Email di Inbox (PRD-EMAIL §4.10): simpan & tampilkan Kepada/Cc/alamat tujuan email masuk; Cc/Bcc + Balas semua di composer channel Email; Cc/Bcc ke alamat baru = memulai percakapan (`inbox.initiate` + jatah harian), maks. 10 alamat tambahan, audit; **akses per channel** (semua jenis channel: "Semua tim" bawaan atau hanya departemen/pengguna tertentu, irisan dengan cakupan peran & departemen) — review `security`
+- [ ] 9.1 API kirim email untuk n8n/billing (PRD-EMAIL §4.8): `GET /public/email/senders`, `POST /public/email/send` (template Balesin atau HTML luar, variabel, QRIS → gambar inline, lampiran base64/mediaId/URL ber-allowlist, Cc/Bcc, `conversation: create`, `Idempotency-Key`), status + webhook `email.sent/failed/bounced/replied`, Pengaturan → Template email (+ preset ISP, kirim tes), batas per pengirim per jam, key dibatasi ke pengirim tertentu
+- [ ] 9A Fondasi: skema `mail_*` + migrasi; izin `mail.*` (DECISIONS + `permissions.test.ts` + review `security`); akun IMAP/SMTP (preset cPanel/IDCloudHost, IMAP lain, deteksi otomatis ber-penjaga SSRF) + wizard 4 langkah + tes koneksi; sinkron folder & header (IMAP IDLE + berkala); menu Email di rail & navigasi bawah HP; daftar + panel baca (HTML tersanitasi di iframe sandbox, gambar luar diblokir + proksi; asal email: akun + alamat tujuan/alias); hak akses per akun (bersama/pribadi) + tab "Akses email" di Pengaturan → Tim; foto/logo per akun & channel
+- [ ] 9B Tulis/balas/teruskan (jendela mengambang desktop, layar penuh HP), Kepada/Cc/Bcc + Balas semua + batas penerima, identitas & alias, tanda tangan, template email, draf otomatis ke server, lampiran, batalkan kirim, penanda "sedang membalas" + peringatan email baru di utas
+- [ ] 9C Utas, cari + panel Saring, label berwarna, aksi massal & pintasan keyboard, notifikasi real-time + PWA, panel Info pengirim (kontak CRM, chat, tiket, "Buat tiket"), tampilan HP lengkap (laci, geser arsip)
+- [ ] 9D Email banyak & kerja tim (PRD-EMAIL §4.7): Prioritas/Lainnya, aturan otomatis (+ uji ke 50 email terakhir), tugaskan + status, catatan internal & @sebut, tunda + pengingat tindak lanjut, balasan otomatis, tampilan tersimpan, blokir & berhenti langganan, bersihkan dari pengirim
+- [ ] 9E OAuth Microsoft 365/Outlook (Graph) & Google Workspace (XOAUTH2), POP3, jadwalkan kirim, API + webhook `mail.*` untuk akun Email, bot eksternal per akun (draf saja / kirim otomatis di luar jam kerja + pagar pengaman PRD-EMAIL §4.11), asisten foto pengirim (BIMI, §4.12)
+- [ ] NANTI: SLA belum dibalas di Laporan, AI agent bawaan untuk email & ringkasan/saran balasan (Fase 8), penyatuan akun Email dengan Inbox CS

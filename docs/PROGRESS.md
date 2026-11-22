@@ -1,6 +1,6 @@
 # Progress
 
-**Fase aktif:** 5–7 berjalan paralel (Fase 2 selesai, Fase 3 & 4 tinggal review/terblokir)
+**Fase aktif:** 9 — Modul Email (`docs/PRD-EMAIL.md`), mulai 9.0 → 9.1 → 9A. Rilis 1.0 menunggu langkah Tobing (BUTUH-TOBING #18)
 **Terakhir diperbarui:** 2026-11-23 (Fase 7 butir 1–4 selesai; revisi UI Fase 5, UI channel/jam kerja, stabilisasi tes berjalan)
 
 ## Selesai
@@ -102,6 +102,9 @@
   suite api 1.163 lulus; keamanan AMAN putaran 3; desain LOLOS putaran 2.
 
 ## Sedang dikerjakan (posisi 0efafe4)
+- **Berikutnya: Fase 9 — Modul Email** (ditambahkan 22 Nov atas permintaan Tobing): spesifikasi
+  `docs/PRD-EMAIL.md`, mockup & screenshot `docs/design/email/`. Urutan: 9.0 (Cc/Bcc + akses per channel di Inbox), 9.1 (API kirim email untuk n8n/billing), lalu 9A; OAuth (9E) menunggu
+  BUTUH-TOBING #20 (opsional).
 - **CI GitHub hijau penuh** di `0efafe4` (run 44881249404): kualitas, tes unit+integrasi, E2E 285 lulus, image + installer, audit. Merah CI #9–#11 karena tiruan media di tes web (Blob jsdom tidak terbaca undici Node 22), bukan bug produk.
 - **Kode siap kandidat rilis 1.0.** Tidak ada tugas ROADMAP Fase 0–7 yang terbuka kecuali Fase 3 mode
   tangkap (terblokir #10).

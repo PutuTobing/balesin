@@ -153,6 +153,11 @@ Reviews (tidak dibuat).
 | Mode jaringan: di belakang reverse proxy yang sudah ada / Caddy bawaan + IP publik / Cloudflare Tunnel | PENTING |
 | Lisensi (kunci aktivasi) | NANTI |
 
+### 3.11 Email (kotak surat multi-akun) — Fase 9
+Menu **Email** terpisah dari Inbox untuk menghubungkan beberapa akun email (cPanel/IMAP, POP3,
+Microsoft 365/Outlook, Google Workspace/Gmail) lalu membaca, membalas, menulis, dan mencari email ala
+Outlook. Spesifikasi lengkap, hak akses, dan tahapan: **`docs/PRD-EMAIL.md`**.
+
 ## 4. Peran & hak akses
 
 | Kemampuan | Owner | Admin | Supervisor | CS | Teknisi |

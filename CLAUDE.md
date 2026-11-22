@@ -103,6 +103,8 @@ Tugas BELUM selesai sampai semua ini benar:
 | File | Isi |
 |---|---|
 | `docs/PRD.md` | Daftar fitur lengkap & prioritas |
+| `docs/PRD-EMAIL.md` | Spesifikasi modul Email / kotak surat multi-akun (Fase 9) |
+| `docs/design/email/` | Mockup HTML + screenshot terang/gelap modul Email (acuan `frontend` & `kritikus-desain`) |
 | `docs/ARCHITECTURE.md` | Arsitektur, deploy, mode jaringan, struktur repo |
 | `docs/ROADMAP.md` | Fase & tugas berurutan + kriteria selesai |
 | `docs/SECURITY.md` | Standar keamanan wajib |
