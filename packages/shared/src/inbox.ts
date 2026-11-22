@@ -616,7 +616,7 @@ export const contactExportSchema = z.object({
 });
 export type ContactExport = z.infer<typeof contactExportSchema>;
 export const CONTACT_EXPORT_PARTIAL_REASON =
-  'Sebagian percakapan kontak ini ada di channel yang tidak boleh kamu lihat, jadi tidak ikut diekspor. Ekspor lengkap (permintaan data UU PDP) dilakukan Owner atau Admin.';
+  'Sebagian percakapan kontak ini ada di channel yang tidak bisa kamu lihat, jadi tidak ikut diekspor. Untuk permintaan data UU PDP, minta Owner atau Admin di tempatmu mengekspor data lengkapnya.';
 
 export const messagePreviewSchema = z.object({
   direction: messageDirectionSchema,
