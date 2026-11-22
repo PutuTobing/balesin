@@ -340,8 +340,11 @@ describe('deklarasi akses rute (bawaan tolak)', () => {
 
     // Semua rute lain menuntut sesi, dan rute pengaturan email (termasuk pelengkap 405-nya)
     // butuh izin `settings.email.manage`. Matriks lengkap rute × peran: rbac-matrix.integration.test.ts.
-    const emailRoutes = declarations.filter((route) =>
-      route.url.startsWith('/api/v1/settings/email'),
+    // Hanya Pengaturan → Email pengirim (`/settings/email` dan turunannya). Rute 9.1
+    // `/settings/email-templates|email-senders|email-outbound` punya izin sendiri (matriks RBAC).
+    const emailRoutes = declarations.filter(
+      (route) =>
+        route.url === '/api/v1/settings/email' || route.url.startsWith('/api/v1/settings/email/'),
     );
     expect(emailRoutes.length).toBeGreaterThanOrEqual(5);
     for (const route of emailRoutes) {

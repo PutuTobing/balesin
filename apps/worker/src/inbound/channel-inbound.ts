@@ -27,6 +27,7 @@ import { createHash } from 'node:crypto';
 import { and, eq, inArray, lte, sql } from 'drizzle-orm';
 
 import type { InboundEventContext } from '../queues/webhooks';
+import { recordEmailApiReplies } from './email-api-events';
 import {
   WINDOW_INTERVAL,
   botAwareInitialStatus,
@@ -237,6 +238,9 @@ export async function handleChannelMessage(
       senderVerification: message.email.senderVerification,
       skippedAttachments: message.email.skippedAttachments,
       hasHtml: message.email.html !== null,
+      to: message.email.to,
+      cc: message.email.cc,
+      replyAll: message.email.replyAll,
     };
   }
   const base = {
@@ -278,6 +282,8 @@ export async function handleChannelMessage(
       extras,
       replyToWamid: message.replyToExternalId ?? message.email?.inReplyTo ?? null,
       replyToMessageId,
+      // Tahap 9.0: saringan "Alamat tujuan" (hanya email utama, bukan baris lampirannya).
+      emailRecipient: message.email?.recipient ?? null,
       occurredAt,
     },
     ...(message.email?.attachments ?? []).map((attachment, index): NewMessageRow => ({
@@ -316,6 +322,19 @@ export async function handleChannelMessage(
     messageId: main.id,
     contactId: contact.id,
   });
+  // Tahap 9.1: balasan atas email lewat API → `replied_at` + webhook `email.replied`.
+  if (message.email) {
+    await recordEmailApiReplies(tx, {
+      organizationId,
+      channelId,
+      messageId: main.id,
+      conversationId: conversation.id,
+      contactId: contact.id,
+      inReplyTo: message.email.inReplyTo,
+      references: message.email.references,
+      at: receivedAt,
+    });
+  }
   for (const row of inserted) {
     context.emit({
       type: 'message.created',

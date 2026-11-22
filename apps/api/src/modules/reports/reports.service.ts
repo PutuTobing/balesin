@@ -1,6 +1,8 @@
 import { AppError } from '@balesin/core';
 import {
   PG_ERROR_CODES,
+  channelAccessSql,
+  userPrincipal,
   csatSettings,
   isPgError,
   loadBroadcastSettings,
@@ -48,6 +50,9 @@ import { addDays, uuidV7Floor, zonedMonth, zonedRange } from './report-time';
  * - Cakupan `own` (CS/Teknisi): hanya baris agennya sendiri + CSAT percakapannya; bagian organisasi
  *   `null`. Biaya & ekspor organisasi = cakupan `all` saja (`forbidByRule reports.organization`).
  * - Tanpa isi pesan / nomor pelanggan di hasil maupun log (komentar CSAT hanya di ekspor CSAT).
+ * - Tahap 9.0 "Akses per channel": SEMUA bagian (ringkasan, tren, agen, bot, tag, CSAT, biaya,
+ *   ekspor) hanya menghitung channel yang boleh dilihat pengguna pemanggil (`channelAccessSql`;
+ *   Owner/Admin: semua). Data channel terlarang tidak ikut — termasuk lewat saringan `channelId`.
  */
 
 export interface ReportsServiceDeps {
@@ -162,8 +167,13 @@ export function createReportsService(deps: ReportsServiceDeps) {
       const { start, end } = zonedRange(query.from, query.to, timezone);
       const lo = uuidV7Floor(new Date(start.getTime() - DAY_MS));
       const hi = uuidV7Floor(new Date(end.getTime() + DAY_MS));
-      const channel = query.channelId ? sql`and c.channel_id = ${query.channelId}` : sql``;
-      const messageChannel = query.channelId ? sql`and m.channel_id = ${query.channelId}` : sql``;
+      // Tahap 9.0: saringan channel + akses per channel pemanggil.
+      const allowed = (column: SQL) =>
+        channelAccessSql(organizationId, userPrincipal(userId), column);
+      const channel = sql`${query.channelId ? sql`and c.channel_id = ${query.channelId}` : sql``} and ${allowed(sql`c.channel_id`)}`;
+      const messageChannel = sql`${query.channelId ? sql`and m.channel_id = ${query.channelId}` : sql``} and ${allowed(sql`m.channel_id`)}`;
+      // Kejadian percakapan (selesai, serah ke tim): lewat channel percakapannya.
+      const eventChannel = sql`and exists (select 1 from conversations ec where ec.organization_id = ${organizationId} and ec.id = e.conversation_id ${query.channelId ? sql`and ec.channel_id = ${query.channelId}` : sql``} and ${allowed(sql`ec.channel_id`)})`;
       const own = scope !== 'all';
       // Percakapan dalam rentang + penanda yang dipakai beberapa bagian.
       const base = sql`
@@ -253,7 +263,7 @@ export function createReportsService(deps: ReportsServiceDeps) {
               (select count(*) from conversation_events e
                 where e.organization_id = m.organization_id and e.api_key_id = m.api_key_id
                   and e.kind = 'handoff' and e.id >= ${lo}::uuid and e.id < ${hi}::uuid
-                  and e.created_at >= ${start} and e.created_at < ${end}) as handoffs
+                  and e.created_at >= ${start} and e.created_at < ${end} ${eventChannel}) as handoffs
             from messages m
             join api_keys k on k.organization_id = m.organization_id and k.id = m.api_key_id
             where m.organization_id = ${organizationId} and m.direction = 'outbound'
@@ -313,7 +323,7 @@ export function createReportsService(deps: ReportsServiceDeps) {
             from conversation_events e
             where e.organization_id = ${organizationId} and e.kind = 'resolved'
               and e.actor_user_id is not null and e.id >= ${lo}::uuid and e.id < ${hi}::uuid
-              and e.created_at >= ${start} and e.created_at < ${end}
+              and e.created_at >= ${start} and e.created_at < ${end} ${eventChannel}
             group by e.actor_user_id
           ),
           first_reply as (
@@ -342,7 +352,7 @@ export function createReportsService(deps: ReportsServiceDeps) {
 
       // ── CSAT ──
       const csatAgent = own ? sql`and s.agent_user_id = ${userId}` : sql``;
-      const csatChannel = query.channelId ? sql`and s.channel_id = ${query.channelId}` : sql``;
+      const csatChannel = sql`${query.channelId ? sql`and s.channel_id = ${query.channelId}` : sql``} and ${allowed(sql`s.channel_id`)}`;
       const csatRows = (
         await tx.execute<Row>(sql`
           select s.agent_user_id, s.status, s.score, count(*) as total
@@ -378,13 +388,16 @@ export function createReportsService(deps: ReportsServiceDeps) {
 
   async function costs(
     organizationId: string,
+    userId: string,
     query: { month: string; channelId?: string | undefined },
   ): Promise<ReportCosts> {
     return readOnly(async (tx) => {
       const timezone = await timezoneOf(tx, organizationId);
       const { start, end } = zonedMonth(query.month, timezone);
       const settings = await loadBroadcastSettings(tx, organizationId);
-      const channelFilter = query.channelId ? sql`and m.channel_id = ${query.channelId}` : sql``;
+      const allowed = (column: SQL) =>
+        channelAccessSql(organizationId, userPrincipal(userId), column);
+      const channelFilter = sql`${query.channelId ? sql`and m.channel_id = ${query.channelId}` : sql``} and ${allowed(sql`m.channel_id`)}`;
       const channelRows = (
         await tx.execute<Row>(sql`
           select id, name from channels
@@ -392,6 +405,7 @@ export function createReportsService(deps: ReportsServiceDeps) {
             and (deleted_at is null or exists (select 1 from messages m where m.channel_id = channels.id
               and m.organization_id = ${organizationId} and m.created_at >= ${start} and m.created_at < ${end}))
             ${query.channelId ? sql`and id = ${query.channelId}` : sql``}
+            and ${allowed(sql`channels.id`)}
           order by name`)
       ).rows;
       // Template: ditagih saat DITERIMA (delivered/read/played); UTILITY dalam jendela layanan = gratis.
@@ -507,6 +521,7 @@ export function createReportsService(deps: ReportsServiceDeps) {
   async function csatRows(
     organizationId: string,
     userId: string | null,
+    viewerUserId: string,
     query: ReportRangeQuery,
   ): Promise<Row[]> {
     return readOnly(async (tx) => {
@@ -524,6 +539,7 @@ export function createReportsService(deps: ReportsServiceDeps) {
             and s.status <> 'skipped'
             ${userId ? sql`and s.agent_user_id = ${userId}` : sql``}
             ${query.channelId ? sql`and s.channel_id = ${query.channelId}` : sql``}
+            and ${channelAccessSql(organizationId, userPrincipal(viewerUserId), sql`s.channel_id`)}
           order by s.resolved_at
           limit 20000`)
       ).rows;
@@ -560,7 +576,7 @@ export function createReportsService(deps: ReportsServiceDeps) {
       client: ClientInfo,
     ) {
       await organizationOnly(auth, scope, client);
-      return costs(auth.organizationId, query);
+      return costs(auth.organizationId, auth.user.id, query);
     },
 
     async exportCsv(
@@ -581,7 +597,7 @@ export function createReportsService(deps: ReportsServiceDeps) {
             message: 'Pilih bulan (YYYY-MM) untuk ekspor biaya.',
           });
         }
-        const report = await costs(auth.organizationId, {
+        const report = await costs(auth.organizationId, auth.user.id, {
           month: query.month,
           channelId: query.channelId,
         });
@@ -629,6 +645,7 @@ export function createReportsService(deps: ReportsServiceDeps) {
           const list = await csatRows(
             auth.organizationId,
             scope === 'all' ? null : auth.user.id,
+            auth.user.id,
             range,
           );
           header = ['diselesaikan', 'percakapan', 'agen', 'status', 'skor', 'komentar', 'dinilai'];

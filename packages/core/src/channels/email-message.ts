@@ -60,6 +60,15 @@ export interface ParsedInboundEmail {
   authWarning: boolean;
   attachments: EmailAttachmentPart[];
   skippedAttachments: number;
+  /** Tahap 9.0 — header `To`/`Cc` (huruf kecil, tanpa duplikat, maks. `EMAIL_MAX_HEADER_ADDRESSES`). */
+  to: string[];
+  cc: string[];
+  /**
+   * Penerima amplop dari server penerima: `Delivered-To` lalu `X-Original-To`, urut dari atas
+   * (paling baru dulu). Bisa dipalsukan pengirim — hanya dipakai bila COCOK dengan alamat/alias
+   * channel (`emailDestination`).
+   */
+  envelopeTo: string[];
 }
 
 export type EmailParseResult =
@@ -453,6 +462,65 @@ function addressesOf(value: AddressObject | AddressObject[] | undefined): Addres
   return (Array.isArray(value) ? value : [value]).flatMap((item) => item.value);
 }
 
+/** Tahap 9.0: paling banyak sekian alamat per header yang disimpan (`To`, `Cc`). */
+export const EMAIL_MAX_HEADER_ADDRESSES = 50;
+
+/** Alamat sah, huruf kecil, tanpa duplikat, maks. `EMAIL_MAX_HEADER_ADDRESSES` (grup ikut diurai). */
+function addressListOf(value: AddressObject | AddressObject[] | undefined): string[] {
+  const out = new Set<string>();
+  const visit = (entries: AddressObject['value']) => {
+    for (const entry of entries) {
+      if (out.size >= EMAIL_MAX_HEADER_ADDRESSES) return;
+      if (entry.group) visit(entry.group);
+      const address = normalizeEmailAddress(entry.address);
+      if (address) out.add(address);
+    }
+  };
+  visit(addressesOf(value));
+  return [...out];
+}
+
+/** `Delivered-To` + `X-Original-To` dari baris header mentah, urut kemunculan (teratas dulu). */
+function envelopeRecipientsOf(lines: readonly { key: string; line: string }[]): string[] {
+  const out = new Set<string>();
+  for (const key of ['delivered-to', 'x-original-to']) {
+    for (const header of lines) {
+      if (header.key !== key || out.size >= 10) continue;
+      const value = header.line.slice(header.line.indexOf(':') + 1).trim();
+      const address = normalizeEmailAddress(/<([^<>]+)>/.exec(value)?.[1] ?? value);
+      if (address) out.add(address);
+    }
+  }
+  return [...out];
+}
+
+/**
+ * Tahap 9.0 — alamat tujuan email masuk: kandidat pertama (`Delivered-To`/`X-Original-To` → `To` →
+ * `Cc`) yang COCOK dengan alamat/alias channel. `null` = tidak ada yang cocok (Bcc, alias belum
+ * didaftarkan). Header amplop bisa dipalsukan, jadi tidak pernah dipakai bila tidak cocok.
+ */
+export function emailDestination(
+  email: Pick<ParsedInboundEmail, 'envelopeTo' | 'to' | 'cc'>,
+  channelAddresses: readonly string[],
+): string | null {
+  const own = new Set(channelAddresses.map((address) => address.toLowerCase()));
+  return (
+    [...email.envelopeTo, ...email.to, ...email.cc].find((address) => own.has(address)) ?? null
+  );
+}
+
+/**
+ * Tahap 9.0 — isi Cc "Balas semua": `To` + `Cc` tanpa alamat sendiri (`exclude`: alamat/alias
+ * channel, alamat SMTP sistem, pengirim).
+ */
+export function emailReplyAll(
+  email: Pick<ParsedInboundEmail, 'to' | 'cc'>,
+  exclude: readonly string[],
+): string[] {
+  const skip = new Set(exclude.map((address) => address.toLowerCase()));
+  return [...new Set([...email.to, ...email.cc])].filter((address) => !skip.has(address));
+}
+
 /**
  * Urai email mentah. `ownAddresses` = alamat channel (email darinya sendiri dilewati — loop).
  */
@@ -521,6 +589,9 @@ export async function parseInboundEmail(
       authWarning: verification === 'fail',
       attachments,
       skippedAttachments,
+      to: addressListOf(parsed.to),
+      cc: addressListOf(parsed.cc),
+      envelopeTo: envelopeRecipientsOf(parsed.headerLines),
     },
   };
 }

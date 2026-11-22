@@ -1,4 +1,11 @@
-import { channels, type Channel, type DbExecutor, type NewChannel } from '@balesin/db';
+import {
+  channelAccessSql,
+  userPrincipal,
+  channels,
+  type Channel,
+  type DbExecutor,
+  type NewChannel,
+} from '@balesin/db';
 import type { WhatsAppNumberSummary } from '@balesin/shared';
 import { and, asc, count, eq, isNull } from 'drizzle-orm';
 
@@ -10,11 +17,23 @@ import { and, asc, count, eq, isNull } from 'drizzle-orm';
 const live = (organizationId: string) =>
   and(eq(channels.organizationId, organizationId), isNull(channels.deletedAt));
 
-export async function listChannels(db: DbExecutor, organizationId: string): Promise<Channel[]> {
+/** `visibleTo` = hanya channel yang boleh dilihat pengguna itu (akses per channel, tahap 9.0). */
+export async function listChannels(
+  db: DbExecutor,
+  organizationId: string,
+  options: { visibleTo?: string } = {},
+): Promise<Channel[]> {
   return db
     .select()
     .from(channels)
-    .where(live(organizationId))
+    .where(
+      and(
+        live(organizationId),
+        options.visibleTo === undefined
+          ? undefined
+          : channelAccessSql(organizationId, userPrincipal(options.visibleTo), channels.id),
+      ),
+    )
     .orderBy(asc(channels.createdAt), asc(channels.id));
 }
 

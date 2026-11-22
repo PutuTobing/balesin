@@ -195,7 +195,7 @@ export function toMessage(row: MessageRowView): Message {
         ? parsed(interactiveMessageSchema, extras.interactiveMessage)
         : null,
     template: templateOf(row.type, extras.template),
-    email: emailOf(extras.email),
+    email: emailOf(extras.email, row.direction, row.emailRecipient),
     reaction:
       row.type === 'reaction'
         ? { emoji: row.reactionEmoji, messageId: row.reactionToMessageId }
@@ -216,27 +216,58 @@ export function toMessage(row: MessageRowView): Message {
   };
 }
 
+/** Daftar alamat tersimpan (jsonb): hanya string berbentuk alamat, maks. 100. */
+const addressList = z
+  .array(z.unknown())
+  .catch([])
+  .optional()
+  .transform((list) =>
+    (list ?? [])
+      .filter(
+        (item): item is string =>
+          typeof item === 'string' && item.length <= 254 && /^[^\s<>@]+@[^\s<>@]+$/.test(item),
+      )
+      .slice(0, 100),
+  );
+
 const storedEmailSchema = z.object({
   subject: nullableText,
   hasHtml: z.boolean().catch(false),
   authWarning: z.boolean().catch(false),
   senderVerification: emailSenderVerificationSchema.optional().catch(undefined),
   skippedAttachments: z.number().int().nonnegative().catch(0),
+  // Tahap 9.0 — data lama tidak punya: `[]`. Isian rusak dibuang (bukan dikirim apa adanya).
+  to: addressList,
+  cc: addressList,
+  bcc: addressList,
+  replyAll: addressList,
 });
 
 /**
  * Fase 6 — info email (tanpa header utas mentah). Data lama tanpa `senderVerification` (review R1):
  * `fail` bila dulu diperingatkan, selain itu `unverified` (tidak pernah dianggap lolos).
  */
-function emailOf(value: unknown): Message['email'] {
+function emailOf(
+  value: unknown,
+  direction: MessageRowView['direction'],
+  recipient: string | null,
+): Message['email'] {
   const email = parsed(storedEmailSchema, value);
   if (!email) return null;
+  const inbound = direction === 'inbound';
   return {
     ...email,
-    // Nilai asing = `fail` (penafsiran bersama, review bot P4-I2).
-    senderVerification: storedEmailSenderVerification(
-      value as { senderVerification?: unknown; authWarning?: unknown },
-    ),
+    // Tahap 9.0: Bcc hanya catatan pesan KELUAR; "Balas semua" & alamat tujuan hanya email MASUK.
+    bcc: inbound ? [] : email.bcc,
+    replyAll: inbound ? email.replyAll : [],
+    recipient: inbound ? recipient : null,
+    // Nilai asing = `fail` (penafsiran bersama, review bot P4-I2). Pesan KELUAR tidak punya pengirim
+    // yang perlu diverifikasi (Info 4 review 9.0) → isian tidak dikirim.
+    senderVerification: inbound
+      ? storedEmailSenderVerification(
+          value as { senderVerification?: unknown; authWarning?: unknown },
+        )
+      : undefined,
   };
 }
 

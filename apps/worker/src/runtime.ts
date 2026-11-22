@@ -17,6 +17,12 @@ import {
   type BroadcastJobDeps,
 } from './queues/broadcast';
 import { createEmailWorker, type EmailJobDeps } from './queues/email';
+import {
+  createEmailOutboundQueue,
+  createEmailOutboundWorker,
+  scheduleEmailOutbound,
+  type EmailOutboundDeps,
+} from './queues/email-outbound';
 import { createMessageWorker, type MessageJobDeps } from './queues/messages';
 import { createNotificationWorker, type NotificationJobDeps } from './queues/notifications';
 import {
@@ -68,6 +74,8 @@ export interface WorkerServices {
   broadcast?: Omit<BroadcastJobDeps, 'logger' | 'enqueueRun'>;
   /** Fase 6 — antrian `channels` (ambil kotak masuk email). Opsional untuk tes. */
   channels?: Omit<ChannelMailboxDeps, 'logger' | 'enqueuePoll' | 'enqueueEvents'>;
+  /** Tahap 9.1 — antrian `email-outbound` (email lewat API, job berkala tiap 5 dtk). Opsional. */
+  emailOutbound?: Omit<EmailOutboundDeps, 'logger'>;
 }
 
 const ERROR_LOG_INTERVAL_MS = 30_000;
@@ -94,6 +102,7 @@ export function startWorkers(
   }
   let maintenanceQueue: Queue | undefined;
   let webhooksOutQueue: Queue | undefined;
+  let emailOutboundQueue: Queue | undefined;
   let broadcastQueue: Queue | undefined;
   let channelsQueue: Queue | undefined;
   let webhookProducer: Queue | undefined;
@@ -150,6 +159,15 @@ export function startWorkers(
     webhooksOutQueue = queue;
     scheduleWebhooksOut(queue).catch((err: unknown) => {
       logger.error({ err }, 'Jadwal webhook keluar gagal didaftarkan');
+    });
+    queue.on('error', () => undefined);
+  }
+  if (services.emailOutbound) {
+    workers.push(createEmailOutboundWorker(options, { ...services.emailOutbound, logger }));
+    const queue = createEmailOutboundQueue(options);
+    emailOutboundQueue = queue;
+    scheduleEmailOutbound(queue).catch((err: unknown) => {
+      logger.error({ err }, 'Jadwal antrean email API gagal didaftarkan');
     });
     queue.on('error', () => undefined);
   }
@@ -211,7 +229,7 @@ export function startWorkers(
         if (force) await broadcastQueue.disconnect();
         else await broadcastQueue.close();
       }
-      for (const queue of [channelsQueue, webhookProducer]) {
+      for (const queue of [channelsQueue, webhookProducer, emailOutboundQueue]) {
         if (!queue) continue;
         if (force) await queue.disconnect();
         else await queue.close();

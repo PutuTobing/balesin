@@ -297,6 +297,17 @@ const conversationFilterFields = {
     })
     .optional(),
   window: conversationWindowFilterSchema.optional(),
+  /**
+   * Tahap 9.0 — "Alamat tujuan": hanya percakapan yang pernah menerima email masuk ke alamat/alias
+   * channel ini (pilihan dari `ChannelSummary.emailAddresses`).
+   */
+  emailRecipient: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .max(254, 'Alamat tujuan tidak valid.')
+    .pipe(z.email({ error: 'Alamat tujuan tidak valid.' }))
+    .optional(),
   /** `true` = hanya yang punya pesan belum dibaca. */
   unread: z
     .enum(['true', 'false'], { error: 'Nilai belum dibaca harus true atau false.' })
@@ -592,8 +603,20 @@ export const contactExportSchema = z.object({
   ),
   /** `true` = pesan lebih dari `CONTACT_EXPORT_MESSAGES_MAX` (yang terbaru dipotong). */
   truncated: z.boolean(),
+  /**
+   * Tahap 9.0 (review R6): `true` = ekspor TIDAK lengkap karena sebagian percakapan ada di channel
+   * yang tidak boleh dilihat pengekspor (akses per channel). Ekspor lengkap = Owner/Admin. Opsional di
+   * skema demi klien lama; server selalu mengirim.
+   */
+  partial: z.boolean().optional(),
+  /** Alasan bila `partial` (teks Indonesia untuk ditampilkan), selain itu `null`. */
+  partialReason: z.string().nullable().optional(),
+  /** Jumlah percakapan yang dikecualikan (tanpa isi/ID). */
+  excludedConversations: z.number().int().nonnegative().optional(),
 });
 export type ContactExport = z.infer<typeof contactExportSchema>;
+export const CONTACT_EXPORT_PARTIAL_REASON =
+  'Sebagian percakapan kontak ini ada di channel yang tidak boleh kamu lihat, jadi tidak ikut diekspor. Ekspor lengkap (permintaan data UU PDP) dilakukan Owner atau Admin.';
 
 export const messagePreviewSchema = z.object({
   direction: messageDirectionSchema,
@@ -843,6 +866,27 @@ export const messageSchema = z.object({
       senderVerification: emailSenderVerificationSchema.optional(),
       /** Lampiran yang dilewati (terlalu besar / terlalu banyak / jenis berbahaya). */
       skippedAttachments: z.number().int().nonnegative(),
+      /**
+       * Tahap 9.0 — header alamat (huruf kecil). Masuk: `To`/`Cc` apa adanya (maks. 50). Keluar:
+       * `to` = pelanggan, `cc`/`bcc` = alamat tambahan yang dipilih tim (`bcc` hanya catatan
+       * internal — tidak pernah ada di header yang diterima siapa pun). Data lama: `[]`. Server
+       * selalu mengisi; opsional hanya untuk data tiruan lama.
+       */
+      to: z.array(z.string()).optional(),
+      cc: z.array(z.string()).optional(),
+      bcc: z.array(z.string()).optional(),
+      /**
+       * Masuk: alamat tujuan = alamat/alias channel yang menerima email ini (`Delivered-To`/
+       * `X-Original-To`/`To`/`Cc` yang cocok). `null` = tidak cocok (mis. dikirim lewat Bcc atau
+       * alias belum didaftarkan) / data lama / pesan keluar.
+       */
+      recipient: z.string().nullable().optional(),
+      /**
+       * Masuk: isi Cc untuk "Balas semua" = `To` + `Cc` email ini TANPA alamat/alias channel sendiri
+       * dan tanpa pengirimnya (pengirim sudah jadi penerima utama). Pakai yang dari email MASUK
+       * TERAKHIR. Keluar: `[]`.
+       */
+      replyAll: z.array(z.string()).optional(),
     })
     .nullable()
     .optional(),

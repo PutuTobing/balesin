@@ -93,6 +93,11 @@ export function toChannelSummary(row: Channel): ChannelSummary {
     name: row.name,
     enabled: row.enabled,
     displayPhoneNumber: storedNumber(row)?.displayPhoneNumber ?? null,
+    // Tahap 9.0: pilihan saringan "Alamat tujuan" (alamat utama + alias channel Email).
+    emailAddresses:
+      row.type === 'email' && row.emailAddress
+        ? [row.emailAddress, ...row.emailAliases.filter((alias) => alias !== row.emailAddress)]
+        : [],
   };
 }
 

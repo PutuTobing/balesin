@@ -116,6 +116,15 @@ export const broadcastsRoutes: FastifyPluginAsyncZod<BroadcastsRoutesOptions> = 
   });
   const write = (userId: string) => enforceRateLimit(limiter, WRITE_RULE, userId, limitMessage);
 
+  // Tahap 9.0 "Akses per channel": SETIAP rute ber-`:broadcastId` di plugin ini menolak (404 sama
+  // dengan ID tak dikenal) broadcast dari channel yang tidak boleh dilihat pengguna. Setelah auth +
+  // validasi (preHandler), sebelum handler.
+  app.addHook('preHandler', async (request) => {
+    const params = request.params as { broadcastId?: unknown } | undefined;
+    if (typeof params?.broadcastId !== 'string' || !request.auth) return;
+    await broadcasts.assertVisible(requireAuth(request), idOf(params.broadcastId));
+  });
+
   // ── Kampanye ──────────────────────────────────────────────────────────────
 
   app.get(
@@ -127,7 +136,10 @@ export const broadcastsRoutes: FastifyPluginAsyncZod<BroadcastsRoutesOptions> = 
         response: { 200: broadcastListResponseSchema, ...errors },
       },
     },
-    async (request) => broadcasts.list(requireAuth(request).organizationId, request.query),
+    async (request) => {
+      const auth = requireAuth(request);
+      return broadcasts.list(auth.organizationId, request.query, auth.user.id);
+    },
   );
 
   app.post(

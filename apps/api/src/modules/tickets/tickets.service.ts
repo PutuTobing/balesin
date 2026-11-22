@@ -107,6 +107,7 @@ export function createTicketsService(deps: {
         scope: 'all' as const,
         userId: actor.apiKeyId,
         organizationId: actor.organizationId,
+        principal: 'apiKey' as const,
       };
       return {
         organizationId: actor.organizationId,
@@ -130,7 +131,11 @@ export function createTicketsService(deps: {
     const inboxScope = permissionScope(role, 'inbox.view');
     const contactsScope = permissionScope(role, 'contacts.view');
     if (!scope) throw authorityChanged();
-    const base = { userId: auth.user.id, organizationId: auth.organizationId };
+    const base = {
+      userId: auth.user.id,
+      organizationId: auth.organizationId,
+      principal: 'user' as const,
+    };
     return {
       organizationId: auth.organizationId,
       userId: auth.user.id,

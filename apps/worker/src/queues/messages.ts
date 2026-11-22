@@ -23,6 +23,7 @@ import {
 } from '@balesin/core';
 import {
   apiKeys,
+  channelAccessOf,
   channels,
   contacts,
   conversations,
@@ -218,6 +219,11 @@ async function prepare(
         : [];
     if (
       !scope ||
+      // Tahap 9.0: akses per channel pengirim (dibaca segar; Owner/Admin selalu lolos).
+      !(await channelAccessOf(tx, org, [actorUserId])).allows(
+        actorUserId,
+        conversation.channelId,
+      ) ||
       !isWithinScope(
         scope,
         actorUserId,
@@ -423,10 +429,18 @@ async function markFailed(
   reason: OutboundFailureReason,
   errorCode: number | null,
   now: Date,
+  /** Review 9.0 R8: `extras` baru dari channel (mis. tembusan email yang sudah terkirim). */
+  extras?: MessageExtras,
 ): Promise<boolean> {
   const updated = await db
     .update(messages)
-    .set({ status: 'failed', failureReason: reason, errorCode, statusUpdatedAt: now })
+    .set({
+      status: 'failed',
+      failureReason: reason,
+      errorCode,
+      statusUpdatedAt: now,
+      ...(extras ? { extras } : {}),
+    })
     .where(
       and(
         eq(messages.organizationId, message.organizationId),
@@ -616,7 +630,16 @@ export async function processSendMessageJob(
           retrying = true;
           throw new Error(`Kirim pesan ditunda (${outcome.kind})`);
         }
-        if (await markFailed(db, message, outcome.reason, outcome.errorCode, new Date())) {
+        if (
+          await markFailed(
+            db,
+            message,
+            outcome.reason,
+            outcome.errorCode,
+            new Date(),
+            outcome.extras,
+          )
+        ) {
           await publisher.publish(events);
         }
         logger.warn({ messageId, reason: outcome.reason, kind: outcome.kind }, 'Kirim pesan gagal');

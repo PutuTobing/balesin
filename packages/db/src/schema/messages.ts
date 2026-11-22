@@ -123,6 +123,22 @@ export interface MessageExtras {
     senderVerification?: 'pass' | 'fail' | 'unverified';
     skippedAttachments: number;
     hasHtml: boolean;
+    /**
+     * Tahap 9.0 (huruf kecil; data lama tidak ada). Masuk: header `To`/`Cc` (maks. 50 masing-masing)
+     * + `replyAll` (To + Cc tanpa alamat/alias channel & pengirim). Keluar: `to` = pelanggan,
+     * `cc`/`bcc` = alamat tambahan (diisi api saat membuat pesan; `bcc` TIDAK PERNAH jadi header),
+     * `rejectedCopies` = alamat Cc/Bcc yang ditolak server SMTP (pesan tetap terkirim ke lainnya).
+     */
+    to?: string[];
+    cc?: string[];
+    bcc?: string[];
+    replyAll?: string[];
+    rejectedCopies?: string[];
+    /**
+     * Review 9.0 R8: penerima utama ditolak SMTP tetapi tembusan ini sudah menerima email-nya —
+     * kirim ulang tidak mengirimi mereka lagi (tetap tertulis di header Cc).
+     */
+    deliveredCopies?: string[];
   };
   /** Fase 6 — Telegram: ID `callback_query` (tombol inline) yang sudah dijawab. */
   telegramCallback?: { data: string | null };
@@ -211,6 +227,12 @@ export const messages = pgTable(
     broadcastId: uuid('broadcast_id'),
     /** Salinan lokal media (unggahan untuk pesan keluar / cache unduhan pesan masuk). */
     mediaFileId: uuid('media_file_id'),
+    /**
+     * Tahap 9.0 — email MASUK: alamat tujuan (huruf kecil) = `Delivered-To`/`X-Original-To`/`To`/`Cc`
+     * pertama yang cocok dengan alamat/alias channel; `null` = tidak cocok / data lama. Saringan
+     * "Alamat tujuan" daftar percakapan. Kepada/Cc lengkap ada di `extras.email`.
+     */
+    emailRecipient: text('email_recipient'),
     occurredAt: timestamptz('occurred_at').notNull(),
     /** Pesan masuk: waktu kejadian webhook diterima server. */
     receivedAt: timestamptz('received_at'),
@@ -313,6 +335,14 @@ export const messages = pgTable(
     index('messages_outbound_api_key_created_at_idx')
       .on(table.organizationId, table.apiKeyId, table.createdAt)
       .where(sql`${table.direction} = 'outbound' and ${table.apiKeyId} is not null`),
+    // Saringan "Alamat tujuan" (tahap 9.0): percakapan yang pernah menerima email ke alias itu.
+    index('messages_email_recipient_idx')
+      .on(table.organizationId, table.emailRecipient, table.conversationId)
+      .where(sql`${table.emailRecipient} is not null`),
+    check(
+      'messages_email_recipient_valid',
+      sql`${table.emailRecipient} is null or (${table.direction} = 'inbound' and char_length(${table.emailRecipient}) between 3 and 254)`,
+    ),
     // Tab "Pesan ditandai" panel detail.
     index('messages_conversation_id_starred_idx')
       .on(table.conversationId, table.occurredAt)

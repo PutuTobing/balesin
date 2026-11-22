@@ -191,6 +191,12 @@ export const ticketSchema = z.object({
   conversation: z
     .object({ id: z.uuid(), number: z.number().int(), status: conversationStatusSchema })
     .nullable(),
+  /**
+   * Tahap 9.0 (review R5): tiket menaut percakapan di channel yang tidak boleh dilihat pengguna ini —
+   * `conversation` dikirim `null`; UI menulis "Percakapan terkait tidak tersedia". Opsional di skema
+   * demi klien lama; server selalu mengirim.
+   */
+  conversationUnavailable: z.boolean().optional(),
   attributes: z.array(z.object({ key: z.string(), value: z.string() })),
   /** Urutan di kolom Kanban (makin kecil makin atas). */
   position: z.number(),

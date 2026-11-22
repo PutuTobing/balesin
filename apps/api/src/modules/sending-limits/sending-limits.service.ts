@@ -6,6 +6,7 @@ import {
 } from '@balesin/core';
 import {
   apiKeys,
+  emailOutbound,
   messages,
   organizations,
   users,
@@ -92,8 +93,36 @@ export interface SendingLimitsService {
      */
     conversationId: string | null;
     client: ClientInfo;
+    /**
+     * Review 9.0 S1: jumlah penerima pesan BARU ini (1 + Cc + Bcc email; bawaan 1). Batas harian
+     * pengguna/organisasi/key ditolak bila hitungan + penerima melewati batas.
+     */
+    recipients?: number;
+  }): Promise<void>;
+  /**
+   * Tahap 9.1 — email lewat API: rem darurat (423) + batas harian KEY (pesan + email lewat key yang
+   * sama dijumlah, 1 email = 1). Batas harian organisasi (WhatsApp) & per percakapan tidak berlaku.
+   */
+  assertCanSendEmail(input: {
+    organizationId: string;
+    apiKey: { id: string; dailySendLimit: number };
+    client: ClientInfo;
   }): Promise<void>;
 }
+
+/**
+ * Pesan Inbox yang hanya CATATAN email lewat API (`conversation: "create"`/balasan API) tidak
+ * dihitung sebagai pesan keluar WhatsApp/channel: emailnya sendiri yang dihitung (batas key), dan
+ * batas harian organisasi tidak menghitung email (DECISIONS 9.1 #4).
+ */
+const NOT_EMAIL_API_RECORD = sql`not exists (select 1 from ${emailOutbound} where ${emailOutbound.messageId} = ${messages.id})`;
+
+/** Jumlah penerima satu pesan keluar: 1 + tembusan email (`extras.email.cc`/`bcc`). */
+const OUTBOUND_RECIPIENTS = sql`(1
+  + case when jsonb_typeof(${messages.extras} -> 'email' -> 'cc') = 'array'
+      then jsonb_array_length(${messages.extras} -> 'email' -> 'cc') else 0 end
+  + case when jsonb_typeof(${messages.extras} -> 'email' -> 'bcc') = 'array'
+      then jsonb_array_length(${messages.extras} -> 'email' -> 'bcc') else 0 end)`;
 
 async function countOutbound(
   db: DbExecutor,
@@ -102,8 +131,9 @@ async function countOutbound(
   senderUserId?: string,
   apiKeyId?: string,
 ): Promise<number> {
+  // Review 9.0 S1: email ber-Cc/Bcc dihitung per PENERIMA (1 + Cc + Bcc), bukan per baris pesan.
   const [row] = await db
-    .select({ total: sql<number>`count(*)::int` })
+    .select({ total: sql<number>`coalesce(sum(${OUTBOUND_RECIPIENTS}), 0)::int` })
     .from(messages)
     .where(
       and(
@@ -112,9 +142,24 @@ async function countOutbound(
         gt(messages.createdAt, since),
         senderUserId === undefined ? undefined : eq(messages.senderUserId, senderUserId),
         apiKeyId === undefined ? undefined : eq(messages.apiKeyId, apiKeyId),
+        senderUserId === undefined ? NOT_EMAIL_API_RECORD : undefined,
       ),
     );
-  return Number(row?.total ?? 0);
+  const messageCount = Number(row?.total ?? 0);
+  if (apiKeyId === undefined) return messageCount;
+  // Batas harian per key = pesan + email lewat key yang sama (tahap 9.1).
+  const [emails] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(emailOutbound)
+    .where(
+      and(
+        eq(emailOutbound.organizationId, organizationId),
+        eq(emailOutbound.apiKeyId, apiKeyId),
+        eq(emailOutbound.source, 'api'),
+        gt(emailOutbound.createdAt, since),
+      ),
+    );
+  return messageCount + Number(emails?.total ?? 0);
 }
 
 export function createSendingLimitsService(deps: SendingLimitsServiceDeps): SendingLimitsService {
@@ -386,7 +431,37 @@ export function createSendingLimitsService(deps: SendingLimitsServiceDeps): Send
       return Boolean(org?.pausedAt);
     },
 
-    async assertCanSend({ organizationId, userId, apiKey, conversationId, client }) {
+    async assertCanSendEmail({ organizationId, apiKey, client }) {
+      const [org] = await db
+        .select({ pausedAt: organizations.sendingPausedAt })
+        .from(organizations)
+        .where(eq(organizations.id, organizationId));
+      if (!org) throw new AppError('NOT_FOUND');
+      if (org.pausedAt) throw new AppError('SENDING_PAUSED');
+      const since = new Date(now().getTime() - SENDING_DAY_MS);
+      const viaKey = await countOutbound(db, organizationId, since, undefined, apiKey.id);
+      if (viaKey >= apiKey.dailySendLimit) {
+        await limitReached(
+          organizationId,
+          'api_key',
+          { userId: null, apiKeyId: apiKey.id },
+          apiKey.dailySendLimit,
+          viaKey,
+          client,
+        );
+      }
+    },
+
+    async assertCanSend({
+      organizationId,
+      userId,
+      apiKey,
+      conversationId,
+      client,
+      recipients = 1,
+    }) {
+      // `hitungan + penerima > batas` ⇔ `hitungan + (penerima - 1) >= batas` (penerima 1 = perilaku lama).
+      const extra = Math.max(0, recipients - 1);
       const sender = { userId, apiKeyId: apiKey?.id ?? null };
       const [org] = await db
         .select({
@@ -402,7 +477,7 @@ export function createSendingLimitsService(deps: SendingLimitsServiceDeps): Send
       const since = new Date(now().getTime() - SENDING_DAY_MS);
       if (apiKey) {
         const viaKey = await countOutbound(db, organizationId, since, undefined, apiKey.id);
-        if (viaKey >= apiKey.dailySendLimit) {
+        if (viaKey + extra >= apiKey.dailySendLimit) {
           await limitReached(
             organizationId,
             'api_key',
@@ -414,12 +489,12 @@ export function createSendingLimitsService(deps: SendingLimitsServiceDeps): Send
         }
       } else if (userId) {
         const mine = await countOutbound(db, organizationId, since, userId);
-        if (mine >= org.perUser) {
+        if (mine + extra >= org.perUser) {
           await limitReached(organizationId, 'user', sender, org.perUser, mine, client);
         }
       }
       const all = await countOutbound(db, organizationId, since);
-      if (all >= org.perOrganization) {
+      if (all + extra >= org.perOrganization) {
         await limitReached(
           organizationId,
           'organization',

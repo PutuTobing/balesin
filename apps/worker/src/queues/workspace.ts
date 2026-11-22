@@ -9,6 +9,8 @@ import {
 import {
   ALLOCATION_ROLES,
   agentStates,
+  channelAccessSql,
+  userPrincipal,
   contacts,
   conversationAutoMessages,
   conversationEvents,
@@ -47,7 +49,8 @@ import type { NotificationProducer } from './notifications';
  *    ditugaskan ke agen yang paling lama tidak mendapat tugas otomatis, yang: aktif, berperan alokasi
  *    (cakupan `inbox.reply` penuh — bukan Teknisi), 2FA aktif bila perannya wajib 2FA, `available`,
  *    tidak `excluded`, belum penuh kapasitas (`served` terbuka < `maxOpenPerAgent`), dan anggota
- *    departemen percakapan (percakapan tanpa departemen: bukan pengguna bertanda departemen).
+ *    departemen percakapan (percakapan tanpa departemen: bukan pengguna bertanda departemen), dan
+ *    berhak atas channel percakapan (akses per channel, tahap 9.0).
  *    ATOMIK: percakapan dikunci `FOR UPDATE SKIP LOCKED`, baris agen dikunci `FOR UPDATE SKIP LOCKED`
  *    lalu kapasitas dihitung ulang di transaksi yang sama → dua worker tidak pernah menugaskan dobel.
  *    Kejadian `assigned` dengan pelaku sistem (kosong), webhook `conversation.assigned`, push ke agen.
@@ -116,6 +119,7 @@ async function assignOne(
         id: conversations.id,
         contactId: conversations.contactId,
         departmentId: conversations.departmentId,
+        channelId: conversations.channelId,
       })
       .from(conversations)
       .where(
@@ -139,6 +143,12 @@ async function assignOne(
     const departmentCondition = conversation.departmentId
       ? sql`exists (select 1 from department_members m where m.organization_id = ${org} and m.user_id = u.id and m.department_id = ${conversation.departmentId})`
       : sql`not (u.department_restricted and u.role in ('supervisor', 'cs'))`;
+    // Tahap 9.0: agen tanpa akses ke channel percakapan dilewati.
+    const channelCondition = channelAccessSql(
+      org,
+      userPrincipal(sql`u.id`),
+      sql`${conversation.channelId}::uuid`,
+    );
     // Agen dikunci SKIP LOCKED: transaksi lain yang sedang menugaskan ke agen yang sama dilewati,
     // jadi hitungan kapasitas di bawah tidak bisa dilampaui oleh penugasan bersamaan.
     const candidates = await tx.execute<{ user_id: string; open: number }>(sql`
@@ -153,6 +163,7 @@ async function assignOne(
         and u.role in (${roles})
         and (u.role not in (${twoFactorRoles}) or u.totp_enabled_at is not null)
         and ${departmentCondition}
+        and ${channelCondition}
       order by s.last_assigned_at asc nulls first, s.user_id
       for update of s skip locked`);
     const agent = candidates.rows.find(

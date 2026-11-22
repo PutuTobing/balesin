@@ -35,6 +35,8 @@ const apiKey: ApiKey = {
   createdBy: { id: '0b0e2d8c-6d3f-4b8a-9d55-5e2f8a1c0001', name: `Admin ${HTML}` },
   createdAt: '2026-11-10T03:00:00.000Z',
   status: 'active',
+  emailSenders: [],
+  emailAttachmentHosts: [],
 };
 
 const webhook: OutgoingWebhook = {

@@ -469,3 +469,107 @@ pribadi, UU PDP).
 `combinedNotification`, `signedWebhook` (body + header seperti Meta), `deliverWhatsAppWebhook(url, …)`
 (HTTP sungguhan ke stack E2E, hanya ke loopback), `handshakeQuery(verifyToken)`. Bentuknya mengikuti
 contoh resmi Meta; tidak pernah memanggil Meta.
+
+## Akses per channel (tahap 9.0, semua jenis channel)
+
+PRD-EMAIL §4.10 baris "Akses per channel". Berlaku untuk **semua** channel — WhatsApp, Telegram,
+Email, Messenger, Instagram — dengan satu pasang rute yang sama. Sumber tipe:
+`packages/shared/src/channel-access.ts`; route `API_ROUTES.channels.access`.
+
+### Model
+
+- Per channel: `mode` **`all`** ("Semua tim", bawaan, = perilaku sebelum tahap 9.0) atau
+  **`restricted`** ("Hanya departemen/pengguna tertentu") + daftar departemen + daftar pengguna.
+- **Owner/Admin selalu melihat semua channel** (`CHANNEL_ACCESS_EXEMPT_ROLES`); merekalah juga
+  pengelolanya (`channels.manage`), jadi tidak ada yang bisa mengunci dirinya sendiri.
+- Supervisor/CS/Teknisi berhak atas channel `restricted` bila terdaftar **langsung** ATAU **anggota**
+  salah satu departemen yang terdaftar. Keanggotaan departemen dibaca segar (keluar dari departemen =
+  akses langsung hilang).
+- `restricted` dengan kedua daftar kosong = hanya Owner/Admin (juga hasilnya bila departemen satu-
+  satunya dihapus — gagal tertutup).
+- Penegakan = **IRISAN** dengan cakupan peran (Teknisi `assigned`) dan "akses hanya departemen
+  sendiri": channel boleh + departemen tidak boleh → tetap tersembunyi.
+- **Hanya pengguna bersesi.** API key / bot (n8n, lapisan MobiChat, API publik v1) tidak terpengaruh
+  (cakupan organisasi seperti sebelumnya).
+
+### Endpoint (`channels.manage`)
+
+| Metode & path | Request | Respons 200 |
+|---|---|---|
+| GET `/settings/channels/:channelId/access` | – | `channelAccessResponseSchema` |
+| PUT `/settings/channels/:channelId/access` | `updateChannelAccessRequestSchema` (CSRF; `confirmation` bila melonggarkan) | `updateChannelAccessResponseSchema` = `{ access, releasedConversations }` |
+
+```jsonc
+// PUT body — mengganti SELURUH aturan
+{ "mode": "restricted", "departmentIds": ["<uuid>"], "userIds": ["<uuid>"],
+  "confirmation": { "password": "…", "code": "123456" } }   // confirmation: hanya bila melonggarkan
+// atau
+{ "mode": "all", "confirmation": { … } }   // daftar wajib kosong/tidak dikirim (daftar + "all" → 400)
+
+// respons PUT (GET: tanpa releasedConversations)
+{
+  "releasedConversations": 2,
+  "access": {
+    "channelId": "<uuid>",
+    "mode": "restricted",
+    "departments": [{ "id": "<uuid>", "name": "Tagihan", "memberCount": 3 }],
+    "users": [{ "id": "<uuid>", "name": "Sinta", "role": "cs", "active": true }],
+    "exemptRoles": ["owner", "admin"]
+  }
+}
+```
+
+- Validasi: ID duplikat dibuang (huruf kecil); maks. 50 departemen, 500 pengguna; isian asing → 400.
+  Departemen harus milik organisasi; pengguna harus milik organisasi **dan aktif** → selain itu 400
+  `VALIDATION_ERROR` (`details[].field` = `departmentIds` / `userIds`). Owner/Admin boleh ada di daftar
+  (tidak berpengaruh selama perannya kebal).
+- Channel organisasi lain / terhapus / ID bukan UUID → 404 "Channel tidak ditemukan." (seragam).
+- Batas laju PUT 30/menit per pengguna. Pelaku diperiksa ulang di transaksi
+  (`assertActorStillAuthorized`); baris channel dikunci.
+- **Konfirmasi identitas (review 9.0 R3)** — wajib bila perubahan MELONGGARKAN
+  (`channelAccessLoosens`): `restricted → all`, atau menambah departemen/pengguna ke channel yang
+  SUDAH terbatas. Tanpa/keliru → 400 `VALIDATION_ERROR` (`details[].field` = `confirmation.password` /
+  `confirmation.code`, sama dengan konfirmasi lain). Mempersempit (`all → restricted` walau dengan
+  daftar, mencabut) tidak perlu. Aturan berubah di antara pemeriksaan dan penyimpanan sehingga kini
+  melonggarkan tanpa konfirmasi → 409 "Akses channel ini baru saja diubah…".
+- **Percakapan dilepas (review 9.0 R4)** — percakapan `served` channel itu yang pemegangnya kini tanpa
+  akses (bukan Owner/Admin) kembali ke antrian (`unserved`, kejadian `unassigned` dengan pelaku =
+  pengubah, webhook `conversation.unassigned`, event real-time, push "antrian"). Jumlahnya di
+  `releasedConversations` (UI: "N percakapan dikembalikan ke antrian"). Sama halnya saat pengguna
+  dikeluarkan dari departemen yang memberinya akses (`PUT /settings/department-access/:userId`).
+- Audit `channel.access_updated` (hanya bila ada perubahan): `previousMode`, `mode`,
+  `addedDepartments`/`removedDepartments`/`addedUsers`/`removedUsers` (`{id, name}`, maks. 50 per
+  daftar), jumlah akhir, `loosened`, `releasedConversations`, `actorRole`. Audit
+  `department.access_updated` kini juga memuat `restrictedChannelsGained` (`{id, name}` channel
+  terbatas yang terbuka lewat departemen yang baru ditambahkan) dan `releasedConversations`.
+- Setelah disimpan: event `access.changed` untuk setiap Supervisor/CS/Teknisi aktif → socket inbox
+  mereka menerima `resync` (daftar dimuat ulang tanpa percakapan yang kini terlarang).
+
+### Yang ditegakkan (pengguna tanpa akses)
+
+| Tempat | Perilaku |
+|---|---|
+| `GET /conversations`, `/conversations/counts`, cari `q`, saringan `channelId` | Percakapan channel itu tidak ikut (hitungan tab juga) |
+| Detail, pesan, catatan, log, unduh media, HTML email, tandai pesan, tandai dibaca | 404 seragam "Percakapan/Pesan tidak ditemukan." |
+| Kirim, kirim ulang, ambil, tugaskan, kembalikan, selesai, buka lagi, saklar bot, catatan, pindah departemen | 404 seragam (tidak ada perubahan) |
+| `GET /channels` (pemilih channel: saringan inbox, "Percakapan baru", kirim template) | Channel itu tidak tercantum |
+| `POST /conversations/start` (template) | Dijawab sama dengan channel yang tidak ada |
+| Broadcast: buat/ubah/ajukan dengan channel itu | 404 "Nomor WhatsApp pengirim tidak ditemukan." |
+| Broadcast: daftar; semua rute `/broadcasts/:broadcastId…` milik channel itu | Tidak tercantum; 404 seragam |
+| WebSocket inbox | Event percakapan channel itu tidak dikirim — termasuk `conversation.removed` (hapus kontak, pindah departemen, agen lama) |
+| Notifikasi Web Push | Tidak dikirim ke pengguna itu |
+| Laporan kinerja, biaya, ekspor CSV (semua jenis), CSAT | Data channel itu tidak dihitung (saringan `channelId` channel terlarang = kosong) |
+| Ekspor data kontak (`/contacts/:id/export`) | Percakapan & pesan channel itu tidak ikut; respons `partial: true`, `partialReason` (teks Indonesia), `excludedConversations` (jumlah) + sama di audit `contact.exported` — ekspor UU PDP lengkap = Owner/Admin |
+| Tiket (detail, daftar, Kanban) | `conversation: null` + `conversationUnavailable: true` ("Percakapan terkait tidak tersedia") |
+| Kontak (Teknisi, cakupan `assigned`) | Penugasan di channel terlarang tidak membuka kontaknya |
+| Penugasan `POST …/assign` (sasaran) | 400 "Agen ini tidak punya akses ke channel percakapan ini." (juga lewat API key) |
+| `GET /inbox/agents?channelId=` | Hanya agen yang berhak atas channel itu; channel yang tidak boleh dilihat pemanggil → 404 |
+| Round-robin | Agen tanpa akses dilewati (percakapan tetap di antrian bila tidak ada yang berhak) |
+| Buka lagi | Pemegang lama yang kini tanpa akses → percakapan kembali ke antrian |
+
+Tidak diubah: kontak/CRM tetap lintas channel (kontak terlihat, percakapan channel terlarangnya
+tidak); template Meta (`templates.manage`) tidak dibatasi per channel.
+
+Penegakan memakai principal EKSPLISIT (review 9.0 R2): `PermissionGrant.principal` = `'user'` |
+`'apiKey'`; `channelAccessSql(org, { kind: 'user', userId } | { kind: 'apiKey' }, channelId)` menolak ID
+yang bukan pengguna organisasi itu (gagal tertutup) dan hanya melewati API key yang dinyatakan.

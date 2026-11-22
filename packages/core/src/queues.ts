@@ -49,6 +49,11 @@ export const QUEUE_NAMES = {
    * dan `email-poll` per channel (payload hanya ID; ambil email baru lewat IMAP).
    */
   channels: 'channels',
+  /**
+   * Tahap 9.1 — email lewat API: job berkala `tick` (tiap 5 dtk) mengklaim baris `email_outbound`
+   * jatuh tempo (pola outbox, tanpa produsen di api), mengirim lewat SMTP pengirim, dan retensi.
+   */
+  emailOutbound: 'email-outbound',
 } as const;
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
@@ -187,6 +192,15 @@ export const WEBHOOKS_OUT_JOBS = {
 } as const;
 export const WEBHOOKS_OUT_TICK_INTERVAL_MS = 5_000;
 export const webhooksOutJobPayloadSchema = z.strictObject({});
+
+// ── Antrian `email-outbound` (email lewat API, tahap 9.1) ───────────────────
+
+export const EMAIL_OUTBOUND_JOBS = {
+  /** Satu putaran: klaim email jatuh tempo → kirim → retensi. Payload kosong. */
+  tick: 'tick',
+} as const;
+export const EMAIL_OUTBOUND_TICK_INTERVAL_MS = 5_000;
+export const emailOutboundJobPayloadSchema = z.strictObject({});
 
 // ── Antrian `broadcast` ─────────────────────────────────────────────────────
 
@@ -424,6 +438,12 @@ export const SECURITY_NOTICE_ADMIN_EVENTS = [
   // Webhook keluar dinonaktifkan otomatis setelah gagal beruntun (Fase 3): ke semua Owner aktif;
   // subjek = pembuat endpoint, rincian (host, jumlah gagal) dari baris audit.
   'webhook_disabled',
+  // Tahap 9.1 — email lewat API: template email diterbitkan dengan tautan/angka baru (subjek =
+  // penerbit), pengirim terblokir otomatis (subjek = penerima sendiri, tanpa pelaku), batas per jam
+  // pengirim dinaikkan oleh Admin (subjek = pelaku). Rincian dari baris audit.
+  'email_template_risky',
+  'email_sender_blocked',
+  'email_sender_limit_raised',
 ] as const;
 export type SecurityNoticeAdminEvent = (typeof SECURITY_NOTICE_ADMIN_EVENTS)[number];
 

@@ -2,6 +2,8 @@ import { AppError, type InboxEventPublisher, type Logger } from '@balesin/core';
 import {
   PG_ERROR_CODES,
   apiKeys,
+  channelAccessSql,
+  userPrincipal,
   channels,
   contactEvents,
   conversationEvents,
@@ -120,7 +122,14 @@ export interface AssignmentService {
   resolve(context: AssignmentContext, conversationId: string): Promise<boolean>;
   reopen(context: AssignmentContext, conversationId: string): Promise<boolean>;
   events(grant: PermissionGrant, conversationId: string): Promise<ConversationEvent[] | undefined>;
-  agents(organizationId: string): Promise<InboxAgent[]>;
+  /**
+   * Agen yang bisa ditugasi. `channelId` (tahap 9.0) = hanya yang berhak atas channel itu; channel
+   * yang tidak ada / tidak boleh dilihat `viewerUserId` → 404.
+   */
+  agents(
+    organizationId: string,
+    options?: { channelId?: string | undefined; viewerUserId?: string },
+  ): Promise<InboxAgent[]>;
   /**
    * Lapisan kompatibel MobiChat / API v1 (`conversations:write`, pelaku = API key): lepas BOT
    * (status `bot` → `unserved`, kejadian `handoff`). Key TIDAK PERNAH mengeluarkan agen manusia
@@ -142,6 +151,21 @@ export interface AssignmentService {
 }
 
 const NOT_FOUND = 'Percakapan tidak ditemukan.';
+
+/** Pengguna ini berhak atas channel itu (akses per channel, tahap 9.0)? */
+async function userCanAccessChannel(
+  tx: DbExecutor,
+  organizationId: string,
+  userId: string,
+  channelId: string,
+): Promise<boolean> {
+  const [row] = await tx
+    .select({
+      ok: sql<boolean>`${channelAccessSql(organizationId, userPrincipal(userId), sql`${channelId}::uuid`)}`,
+    })
+    .from(sql`(select 1) as acl_one`);
+  return row?.ok === true;
+}
 
 /**
  * Boleh diteruskan ke bot (review bot semua channel P3-1)? Pesan selain email selalu boleh. Email:
@@ -215,7 +239,13 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
         role = checked.role;
         const scope = permissionScope(checked.role, actor.permission);
         if (!scope) throw authorityChanged();
-        grant = { permission: actor.permission, scope, userId: auth.user.id, organizationId };
+        grant = {
+          permission: actor.permission,
+          scope,
+          userId: auth.user.id,
+          organizationId,
+          principal: 'user',
+        };
       } else {
         // API key: cek ulang di transaksi akhir (dicabut/kedaluwarsa/scope); cakupan organisasi.
         await assertApiKeyStillAuthorized(tx, actor.key, 'conversations:write', now());
@@ -225,6 +255,7 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
           scope: 'all',
           userId: actor.key.apiKeyId,
           organizationId,
+          principal: 'apiKey',
         };
       }
       const [conversation] = await tx
@@ -419,13 +450,17 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
     });
   }
 
-  /** Agen sasaran penugasan: aktif + boleh membalas (dikunci FOR SHARE), atau 400. */
+  /**
+   * Agen sasaran penugasan: aktif + boleh membalas (dikunci FOR SHARE) + berhak atas channel
+   * percakapan (akses per channel, tahap 9.0), atau 400.
+   */
   async function assignTarget(
     tx: DbExecutor,
-    organizationId: string,
+    conversation: Pick<ConversationRow, 'organizationId' | 'channelId'>,
     userId: string,
     field: string,
   ): Promise<{ id: string }> {
+    const { organizationId } = conversation;
     const valid = z.uuid().safeParse(userId).success;
     const [target] = valid
       ? await tx
@@ -446,6 +481,12 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
       throw new AppError('VALIDATION_ERROR', {
         message: 'Agen tidak ditemukan, sudah dinonaktifkan, atau tidak boleh membalas percakapan.',
         details: [{ location: 'body', field, message: 'Agen tidak valid.' }],
+      });
+    }
+    if (!(await userCanAccessChannel(tx, organizationId, target.id, conversation.channelId))) {
+      throw new AppError('VALIDATION_ERROR', {
+        message: 'Agen ini tidak punya akses ke channel percakapan ini.',
+        details: [{ location: 'body', field, message: 'Agen tidak punya akses ke channel ini.' }],
       });
     }
     return target;
@@ -481,7 +522,7 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
     assign: (context, conversationId, userId) =>
       mutate(asUser(context, 'inbox.assign'), conversationId, async (tx, conversation) => {
         if (conversation.status === 'resolved') throw await heldBy(tx, conversation);
-        const target = await assignTarget(tx, context.auth.organizationId, userId, 'userId');
+        const target = await assignTarget(tx, conversation, userId, 'userId');
         if (conversation.assigneeUserId === target.id && conversation.status === 'served') {
           return { kind: null };
         }
@@ -595,7 +636,19 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
                 isNull(users.disabledAt),
               ),
             );
-          if (!holder || !hasPermission(holder.role, 'inbox.reply')) assignee = null;
+          if (
+            !holder ||
+            !hasPermission(holder.role, 'inbox.reply') ||
+            // Tahap 9.0: pemegang lama yang kini tidak berhak atas channel-nya → kembali ke antrian.
+            !(await userCanAccessChannel(
+              tx,
+              conversation.organizationId,
+              assignee,
+              conversation.channelId,
+            ))
+          ) {
+            assignee = null;
+          }
         }
         return {
           kind: 'reopened',
@@ -622,7 +675,7 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
     async assignAsApiKey(actor, conversationId, userId) {
       await mutate({ kind: 'apiKey', key: actor }, conversationId, async (tx, conversation) => {
         if (conversation.status === 'resolved') throw await heldBy(tx, conversation);
-        const target = await assignTarget(tx, actor.organizationId, userId, 'agent_id');
+        const target = await assignTarget(tx, conversation, userId, 'agent_id');
         if (conversation.assigneeUserId === target.id && conversation.status === 'served') {
           return { kind: null };
         }
@@ -869,8 +922,26 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
       return merged.map(({ at: _at, ...event }) => event);
     },
 
-    async agents(organizationId) {
+    async agents(organizationId, options = {}) {
       const roles = rolesWithPermission('inbox.reply');
+      const { channelId, viewerUserId } = options;
+      if (channelId !== undefined) {
+        const [visible] = await db
+          .select({ id: channels.id })
+          .from(channels)
+          .where(
+            and(
+              eq(channels.organizationId, organizationId),
+              eq(channels.id, channelId),
+              isNull(channels.deletedAt),
+              viewerUserId === undefined
+                ? undefined
+                : channelAccessSql(organizationId, userPrincipal(viewerUserId), channels.id),
+            ),
+          )
+          .limit(1);
+        if (!visible) throw new AppError('NOT_FOUND', { message: 'Channel tidak ditemukan.' });
+      }
       const rows = await db
         .select({
           id: users.id,
@@ -879,7 +950,15 @@ export function createAssignmentService(deps: AssignmentServiceDeps): Assignment
           active: sql<boolean>`${users.disabledAt} is null`,
         })
         .from(users)
-        .where(and(eq(users.organizationId, organizationId), inArray(users.role, roles)))
+        .where(
+          and(
+            eq(users.organizationId, organizationId),
+            inArray(users.role, roles),
+            channelId === undefined
+              ? undefined
+              : channelAccessSql(organizationId, userPrincipal(users.id), sql`${channelId}::uuid`),
+          ),
+        )
         .orderBy(asc(users.name), desc(users.id));
       // Beban: percakapan `served` per agen (satu query berkelompok).
       const loads = await db

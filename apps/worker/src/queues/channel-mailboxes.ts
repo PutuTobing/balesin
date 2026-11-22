@@ -15,6 +15,8 @@ import {
   emailPollJobId,
   emailPollJobPayloadSchema,
   openChannelConnectionSecret,
+  emailDestination,
+  emailReplyAll,
   parseInboundEmail,
   pollImapMailbox,
   type ChannelInboundMessage,
@@ -38,6 +40,7 @@ import { MEDIA_RETENTION_DAYS } from '@balesin/shared';
 import { Queue, UnrecoverableError, Worker } from 'bullmq';
 import { and, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
 
+import { processEmailBounce } from '../inbound/email-api-events';
 import type { QueueConnectionOptions } from './system';
 
 /**
@@ -189,7 +192,8 @@ export async function runEmailPoll(
     return { status: 'skipped', reason: 'secret_unavailable' };
   }
 
-  const ownAddresses = [channel.emailAddress ?? ''];
+  // Tahap 9.0: alias channel juga alamat sendiri (email darinya = loop).
+  const ownAddresses = [channel.emailAddress ?? '', ...channel.emailAliases];
   const [system] = await db
     .select({ fromAddress: emailSettings.fromAddress })
     .from(emailSettings)
@@ -278,6 +282,12 @@ async function storeEmail(
   );
   if (!parsed.ok) {
     deps.logger.info({ channelId: channel.id, reason: parsed.reason }, 'Email masuk dilewati');
+    // Tahap 9.1: laporan bounce untuk email lewat API (tetap tidak masuk Inbox).
+    if (parsed.reason === 'bounce') {
+      await processEmailBounce(db, channel, raw, now, deps.logger).catch((err: unknown) => {
+        deps.logger.warn({ err, channelId: channel.id }, 'Laporan bounce email API gagal diproses');
+      });
+    }
     return 'skipped';
   }
   const email = parsed.email;
@@ -357,6 +367,11 @@ async function storeEmail(
         skippedAttachments,
         html: email.html,
         attachments,
+        to: email.to,
+        cc: email.cc,
+        // Tahap 9.0: hanya alamat/alias CHANNEL yang bisa jadi alamat tujuan (bukan alamat SMTP sistem).
+        recipient: emailDestination(email, [channel.emailAddress ?? '', ...channel.emailAliases]),
+        replyAll: emailReplyAll(email, [...ownAddresses, email.from.address]),
       },
     };
     const [event] = await db

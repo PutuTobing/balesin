@@ -35,6 +35,7 @@ function failureCode(
     case 'scheme':
     case 'port':
     case 'credentials':
+    case 'host_not_allowed':
       return 'invalid_url';
     case 'blocked_address':
       return 'blocked_address';

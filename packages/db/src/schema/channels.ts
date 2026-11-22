@@ -105,6 +105,14 @@ export const channels = pgTable(
      * (`defaultTrustedAuthServIds`). Entri berawalan `.` = domain itu beserta subdomainnya.
      */
     emailTrustedAuthServIds: text('email_trusted_auth_serv_ids').array(),
+    /**
+     * Tahap 9.0: alias lain yang masuk ke kotak surat channel ini (huruf kecil, maks. 20; selain
+     * `email_address`). Dipakai menentukan "alamat tujuan" email masuk dan dibuang dari "Balas semua".
+     */
+    emailAliases: text('email_aliases')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     emailMarkAsRead: boolean('email_mark_as_read'),
     /** `system` = pakai Pengaturan → Email pengirim; `custom` = akun SMTP di bawah. */
     emailSmtpMode: text('email_smtp_mode'),
@@ -165,6 +173,12 @@ export const channels = pgTable(
      * (diatur dari Pengaturan → Departemen). Kosong = tanpa departemen.
      */
     defaultDepartmentId: uuid('default_department_id'),
+    /**
+     * Tahap 9.0 "Akses per channel": `false` = semua tim (bawaan); `true` = hanya departemen/pengguna
+     * di `channel_access_departments`/`channel_access_users` (Owner/Admin selalu melihat semua).
+     * Ditegakkan `channelAccessSql` (packages/db `access.ts`) di semua query percakapan sesi.
+     */
+    accessRestricted: boolean('access_restricted').notNull().default(false),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
@@ -247,7 +261,7 @@ export const channels = pgTable(
     ),
     check(
       'channels_fase6_formats',
-      sql`(${table.tgBotId} is null or ${table.tgBotId} ~ '^[0-9]{5,16}$') and (${table.tgBotUsername} is null or ${table.tgBotUsername} ~ '^[A-Za-z0-9_]{1,64}$') and (${table.metaPageId} is null or ${table.metaPageId} ~ '^[0-9]{5,32}$') and (${table.metaIgAccountId} is null or ${table.metaIgAccountId} ~ '^[0-9]{5,32}$') and (${table.emailAddress} is null or char_length(${table.emailAddress}) between 3 and 254) and (${table.emailFromName} is null or char_length(${table.emailFromName}) between 1 and 100) and (${table.emailImapHost} is null or char_length(${table.emailImapHost}) between 1 and 253) and (${table.emailSmtpHost} is null or char_length(${table.emailSmtpHost}) between 1 and 253) and (${table.emailImapUsername} is null or char_length(${table.emailImapUsername}) between 1 and 255) and (${table.emailSmtpUsername} is null or char_length(${table.emailSmtpUsername}) between 1 and 255) and (${table.emailImapFolder} is null or char_length(${table.emailImapFolder}) between 1 and 200) and (${table.emailImapPort} is null or ${table.emailImapPort} between 1 and 65535) and (${table.emailSmtpPort} is null or ${table.emailSmtpPort} between 1 and 65535) and (${table.emailPollIntervalMinutes} is null or ${table.emailPollIntervalMinutes} between 1 and 60) and (${table.emailImapSecurity} is null or ${table.emailImapSecurity} in ('ssl', 'starttls')) and (${table.emailSmtpSecurity} is null or ${table.emailSmtpSecurity} in ('ssl', 'starttls', 'none')) and (${table.emailSmtpMode} is null or ${table.emailSmtpMode} in ('system', 'custom')) and (${table.emailTrustedAuthServIds} is null or (cardinality(${table.emailTrustedAuthServIds}) between 1 and 5 and array_to_string(${table.emailTrustedAuthServIds}, ',') ~ '^[a-z0-9.,-]{1,1300}$'))`,
+      sql`(${table.tgBotId} is null or ${table.tgBotId} ~ '^[0-9]{5,16}$') and (${table.tgBotUsername} is null or ${table.tgBotUsername} ~ '^[A-Za-z0-9_]{1,64}$') and (${table.metaPageId} is null or ${table.metaPageId} ~ '^[0-9]{5,32}$') and (${table.metaIgAccountId} is null or ${table.metaIgAccountId} ~ '^[0-9]{5,32}$') and (${table.emailAddress} is null or char_length(${table.emailAddress}) between 3 and 254) and (${table.emailFromName} is null or char_length(${table.emailFromName}) between 1 and 100) and (${table.emailImapHost} is null or char_length(${table.emailImapHost}) between 1 and 253) and (${table.emailSmtpHost} is null or char_length(${table.emailSmtpHost}) between 1 and 253) and (${table.emailImapUsername} is null or char_length(${table.emailImapUsername}) between 1 and 255) and (${table.emailSmtpUsername} is null or char_length(${table.emailSmtpUsername}) between 1 and 255) and (${table.emailImapFolder} is null or char_length(${table.emailImapFolder}) between 1 and 200) and (${table.emailImapPort} is null or ${table.emailImapPort} between 1 and 65535) and (${table.emailSmtpPort} is null or ${table.emailSmtpPort} between 1 and 65535) and (${table.emailPollIntervalMinutes} is null or ${table.emailPollIntervalMinutes} between 1 and 60) and (${table.emailImapSecurity} is null or ${table.emailImapSecurity} in ('ssl', 'starttls')) and (${table.emailSmtpSecurity} is null or ${table.emailSmtpSecurity} in ('ssl', 'starttls', 'none')) and (${table.emailSmtpMode} is null or ${table.emailSmtpMode} in ('system', 'custom')) and (${table.emailTrustedAuthServIds} is null or (cardinality(${table.emailTrustedAuthServIds}) between 1 and 5 and array_to_string(${table.emailTrustedAuthServIds}, ',') ~ '^[a-z0-9.,-]{1,1300}$')) and cardinality(${table.emailAliases}) <= 20`,
     ),
     check(
       'channels_last_test_complete',

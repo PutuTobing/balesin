@@ -34,6 +34,11 @@ export const apiKeys = pgTable(
     /** `null` = semua IP. Isi: IP tunggal atau CIDR. */
     allowedIps: text('allowed_ips').array(),
     dailySendLimit: integer('daily_send_limit').notNull().default(500),
+    /**
+     * Tahap 9.1: allowlist host URL lampiran email (`host` persis / `*.domain` / IP literal, ≤ 20).
+     * Kosong = lampiran `url` ditolak. Pengirim email yang diizinkan: `api_key_email_senders`.
+     */
+    emailAttachmentHosts: text('email_attachment_hosts').array().notNull().default([]),
     expiresAt: timestamptz('expires_at'),
     revokedAt: timestamptz('revoked_at'),
     revokedByUserId: uuid('revoked_by_user_id'),
@@ -64,6 +69,10 @@ export const apiKeys = pgTable(
       sql`cardinality(${table.scopes}) between 1 and 20 and (${table.allowedIps} is null or cardinality(${table.allowedIps}) <= 20)`,
     ),
     check('api_keys_daily_send_limit_range', sql`${table.dailySendLimit} between 1 and 100000`),
+    check(
+      'api_keys_email_attachment_hosts_count',
+      sql`cardinality(${table.emailAttachmentHosts}) <= 20`,
+    ),
   ],
 );
 

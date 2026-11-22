@@ -34,6 +34,7 @@ import {
 } from '@balesin/core';
 import {
   channels,
+  contacts,
   emailMailboxStates,
   emailSettings,
   isPgError,
@@ -172,6 +173,8 @@ const CONFIRM = {
   credentials:
     'Masukkan password-mu (dan kode verifikasi dua langkah) untuk mengganti kredensial channel.',
   delete: 'Masukkan password-mu (dan kode verifikasi dua langkah) untuk menghapus channel.',
+  aliases:
+    'Masukkan password-mu (dan kode verifikasi dua langkah) untuk menambah alias alamat email channel.',
 } as const;
 
 const CONFLICT_MESSAGES: Readonly<Record<string, { field: string; message: string }>> = {
@@ -257,6 +260,32 @@ export function createConnectionsService(deps: ConnectionsServiceDeps): Connecti
   function requireBox(): SecretBox {
     if (!secretBox) throw new AppError('SERVICE_UNAVAILABLE', { message: NO_MASTER_KEY_MESSAGE });
     return secretBox;
+  }
+
+  /**
+   * Review 9.0 R7: alias = "alamat sendiri" (email darinya dilewati) — alamat yang sudah menjadi
+   * kontak email di organisasi ini (pelanggan) tidak boleh dijadikan alias, supaya email pelanggan
+   * tidak bisa dibisukan diam-diam.
+   */
+  async function assertAliasesNotContacts(organizationId: string, aliases: readonly string[]) {
+    if (aliases.length === 0) return;
+    const [hit] = await db
+      .select({ address: contacts.externalUserId })
+      .from(contacts)
+      .where(
+        and(
+          eq(contacts.organizationId, organizationId),
+          eq(contacts.channelType, 'email'),
+          inArray(contacts.externalUserId, [...aliases]),
+        ),
+      )
+      .limit(1);
+    if (hit) {
+      throw validation(
+        'aliases',
+        `Alamat ${hit.address ?? ''} sudah tercatat sebagai kontak pelanggan, jadi tidak bisa dijadikan alias channel.`,
+      );
+    }
   }
 
   function confirm(
@@ -726,6 +755,10 @@ export function createConnectionsService(deps: ConnectionsServiceDeps): Connecti
           break;
         }
         case 'email': {
+          await assertAliasesNotContacts(
+            auth.organizationId,
+            (input.aliases ?? []).filter((alias) => alias !== input.emailAddress),
+          );
           if (input.smtp.mode === 'custom') {
             if (input.smtp.password === undefined) {
               throw validation('smtp.password', 'Password SMTP wajib diisi.');
@@ -750,6 +783,7 @@ export function createConnectionsService(deps: ConnectionsServiceDeps): Connecti
             emailPollIntervalMinutes: input.pollIntervalMinutes ?? 2,
             emailMarkAsRead: input.markAsRead ?? true,
             emailTrustedAuthServIds: input.trustedAuthServIds ?? null,
+            emailAliases: (input.aliases ?? []).filter((alias) => alias !== input.emailAddress),
             emailSmtpMode: input.smtp.mode,
             ...(input.smtp.mode === 'custom' && input.smtp.password !== undefined
               ? {
@@ -872,6 +906,8 @@ export function createConnectionsService(deps: ConnectionsServiceDeps): Connecti
       }
       const changes: Partial<NewChannel> = {};
       const credentialFields: string[] = [];
+      /** Review 9.0 R7: ada alias baru → konfirmasi identitas (sekali, bersama kredensial bila ada). */
+      let aliasesAdded = false;
       const plainFields: string[] = [];
       if (input.name !== undefined && input.name !== row.name) {
         changes.name = input.name;
@@ -953,6 +989,20 @@ export function createConnectionsService(deps: ConnectionsServiceDeps): Connecti
           if (input.emailAddress !== undefined && input.emailAddress !== row.emailAddress) {
             changes.emailAddress = input.emailAddress;
             credentialFields.push('emailAddress');
+          }
+          // Tahap 9.0: alias bukan kredensial (status tes tidak direset); alamat utama dibuang.
+          // Review 9.0 R7: MENAMBAH alias = konfirmasi identitas + alias bukan alamat kontak pelanggan.
+          const mainAddress = changes.emailAddress ?? row.emailAddress;
+          const aliases =
+            input.aliases !== undefined
+              ? input.aliases.filter((alias) => alias !== mainAddress)
+              : row.emailAliases.filter((alias) => alias !== mainAddress);
+          if (JSON.stringify(aliases) !== JSON.stringify(row.emailAliases)) {
+            const added = aliases.filter((alias) => !row.emailAliases.includes(alias));
+            await assertAliasesNotContacts(auth.organizationId, added);
+            if (added.length > 0) aliasesAdded = true;
+            changes.emailAliases = aliases;
+            plainFields.push('aliases');
           }
           if (input.imap) {
             const imap = input.imap;
@@ -1099,6 +1149,9 @@ export function createConnectionsService(deps: ConnectionsServiceDeps): Connecti
       }
 
       if (credentialFields.length === 0 && plainFields.length === 0) return view(row);
+      if (aliasesAdded && credentialFields.length === 0) {
+        await confirm(auth, input.confirmation, 'channel.aliases', CONFIRM.aliases, context);
+      }
       if (credentialFields.length > 0) {
         await confirm(
           auth,

@@ -1,14 +1,26 @@
 import { AppError } from '@balesin/core';
-import { apiKeys, organizations, users, type Database } from '@balesin/db';
+import {
+  apiKeyEmailSenders,
+  apiKeys,
+  channels,
+  organizations,
+  users,
+  type Database,
+  type DbExecutor,
+} from '@balesin/db';
 import {
   API_KEYS_PER_ORGANIZATION_MAX,
   API_KEY_DAILY_SEND_DEFAULT,
+  apiKeyHasEmailScope,
+  emailSenderId,
+  parseEmailSenderId,
   type ApiKey,
   type ApiKeyScope,
   type ApiSettings,
   type CreateApiKeyRequest,
+  type UpdateApiKeyRequest,
 } from '@balesin/shared';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import type { ClientInfo } from '../../http/client-info';
 import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
@@ -16,6 +28,7 @@ import { assertActorStillAuthorized } from '../auth/actor-check';
 import type { AuthContext } from '../auth/session.service';
 import { requireIdentityConfirmation } from '../two-factor/require-confirmation';
 import type { TwoFactorContext, TwoFactorService } from '../two-factor/two-factor.service';
+import { normalizeAttachmentHost } from '../email-send/attachment-hosts';
 import { displayPrefix, generateApiKey, normalizeIpRule } from './api-key-token';
 
 /**
@@ -38,6 +51,13 @@ export interface ApiKeysService {
     context: TwoFactorContext,
   ): Promise<{ apiKey: ApiKey; secret: string }>;
   revoke(auth: AuthContext, client: ClientInfo, id: string): Promise<ApiKey>;
+  /** Tahap 9.1: ubah pengirim email & host lampiran (SELALU konfirmasi identitas). */
+  update(
+    auth: AuthContext,
+    id: string,
+    input: UpdateApiKeyRequest,
+    context: TwoFactorContext,
+  ): Promise<ApiKey>;
   settings(organizationId: string): Promise<ApiSettings>;
   updateSettings(auth: AuthContext, client: ClientInfo, input: ApiSettings): Promise<ApiSettings>;
 }
@@ -70,6 +90,11 @@ export function createApiKeysService(deps: {
       )
       .orderBy(desc(apiKeys.createdAt), desc(apiKeys.id));
     const at = now().getTime();
+    const senders = await emailSendersOf(
+      db,
+      organizationId,
+      rows.map((row) => row.key.id),
+    );
     return rows.map(({ key, creatorName }) => ({
       id: key.id,
       name: key.name,
@@ -88,6 +113,8 @@ export function createApiKeysService(deps: {
         : key.expiresAt && key.expiresAt.getTime() <= at
           ? 'expired'
           : 'active',
+      emailSenders: senders.get(key.id) ?? [],
+      emailAttachmentHosts: key.emailAttachmentHosts,
     }));
   }
 
@@ -102,6 +129,110 @@ export function createApiKeysService(deps: {
       message,
       details: [{ location: 'body', field, message }],
     });
+  }
+
+  /**
+   * Pengirim email untuk key (§2): wajib ≥ 1 bila key memegang `email:*`, selain itu harus kosong.
+   * Hanya Channel Email yang hidup di organisasi ini (akun Email `acc_…` baru dibuka di 9B; akun
+   * pribadi tidak pernah). Mengembalikan ID channel.
+   */
+  async function resolveSenders(
+    executor: DbExecutor,
+    organizationId: string,
+    scopes: readonly string[],
+    senderIds: readonly string[] | undefined,
+  ): Promise<string[]> {
+    const ids = senderIds ?? [];
+    if (!apiKeyHasEmailScope(scopes)) {
+      if (ids.length > 0) {
+        throw invalid(
+          'emailSenderIds',
+          'Pengirim email hanya bisa dipilih untuk key dengan scope email:read atau email:send.',
+        );
+      }
+      return [];
+    }
+    if (ids.length === 0) {
+      throw invalid(
+        'emailSenderIds',
+        'Pilih minimal satu pengirim email untuk key dengan scope email.',
+      );
+    }
+    const channelIds: string[] = [];
+    for (const id of ids) {
+      const parsed = parseEmailSenderId(id);
+      if (!parsed) throw invalid('emailSenderIds', `Pengirim "${id.slice(0, 80)}" tidak dikenal.`);
+      if (parsed.kind !== 'channel') {
+        throw invalid(
+          'emailSenderIds',
+          'Akun Email belum bisa dipakai sebagai pengirim API. Pilih Channel Email.',
+        );
+      }
+      channelIds.push(parsed.id);
+    }
+    const unique = [...new Set(channelIds)];
+    const found = await executor
+      .select({ id: channels.id })
+      .from(channels)
+      .where(
+        and(
+          eq(channels.organizationId, organizationId),
+          eq(channels.type, 'email'),
+          isNull(channels.deletedAt),
+          inArray(channels.id, unique),
+        ),
+      );
+    if (found.length !== unique.length) {
+      throw invalid(
+        'emailSenderIds',
+        'Ada pengirim email yang tidak ditemukan atau sudah dihapus.',
+      );
+    }
+    return unique;
+  }
+
+  function resolveHosts(scopes: readonly string[], hosts: readonly string[] | undefined): string[] {
+    const values = hosts ?? [];
+    if (values.length > 0 && !apiKeyHasEmailScope(scopes)) {
+      throw invalid(
+        'emailAttachmentHosts',
+        'Host lampiran hanya untuk key dengan scope email:send.',
+      );
+    }
+    const normalized: string[] = [];
+    for (const value of values) {
+      const host = normalizeAttachmentHost(value);
+      if (!host) {
+        throw invalid('emailAttachmentHosts', `Host "${value.slice(0, 80)}" tidak valid.`);
+      }
+      normalized.push(host);
+    }
+    return [...new Set(normalized)];
+  }
+
+  async function replaceSenders(
+    tx: DbExecutor,
+    organizationId: string,
+    apiKeyId: string,
+    channelIds: readonly string[],
+  ) {
+    await tx
+      .delete(apiKeyEmailSenders)
+      .where(
+        and(
+          eq(apiKeyEmailSenders.organizationId, organizationId),
+          eq(apiKeyEmailSenders.apiKeyId, apiKeyId),
+        ),
+      );
+    if (channelIds.length === 0) return;
+    await tx.insert(apiKeyEmailSenders).values(
+      channelIds.map((channelId) => ({
+        organizationId,
+        apiKeyId,
+        senderKind: 'channel',
+        channelId,
+      })),
+    );
   }
 
   return {
@@ -137,9 +268,16 @@ export function createApiKeysService(deps: {
         }
         allowedIps = [...new Set(allowedIps)];
       }
+      const emailAttachmentHosts = resolveHosts(input.scopes, input.emailAttachmentHosts);
       const generated = generateApiKey(pepper);
       const id = await db.transaction(async (tx) => {
         const { role } = await assertActorStillAuthorized(tx, auth, 'api_keys.manage');
+        const senderChannelIds = await resolveSenders(
+          tx,
+          auth.organizationId,
+          input.scopes,
+          input.emailSenderIds,
+        );
         await tx.execute(
           sql`select pg_advisory_xact_lock(hashtextextended(${`api-keys:${auth.organizationId}`}, 0))`,
         );
@@ -162,11 +300,13 @@ export function createApiKeysService(deps: {
             scopes: [...input.scopes],
             allowedIps,
             dailySendLimit: input.dailySendLimit ?? API_KEY_DAILY_SEND_DEFAULT,
+            emailAttachmentHosts,
             expiresAt,
             createdByUserId: auth.user.id,
           })
           .returning({ id: apiKeys.id });
         if (!row) throw new Error('API key tidak tersimpan');
+        await replaceSenders(tx, auth.organizationId, row.id, senderChannelIds);
         await recordAudit(tx, {
           organizationId: auth.organizationId,
           actorUserId: auth.user.id,
@@ -182,6 +322,14 @@ export function createApiKeysService(deps: {
             expiresAt: expiresAt?.toISOString() ?? null,
             allowedIps: allowedIps?.join(',') ?? null,
             dailySendLimit: input.dailySendLimit ?? API_KEY_DAILY_SEND_DEFAULT,
+            ...(senderChannelIds.length > 0
+              ? {
+                  emailSenders: senderChannelIds
+                    .map((channelId) => emailSenderId('channel', channelId))
+                    .join(','),
+                  emailAttachmentHosts: emailAttachmentHosts.join(','),
+                }
+              : {}),
             actorRole: role,
           },
           client: context.client,
@@ -227,6 +375,77 @@ export function createApiKeysService(deps: {
       return one(auth.organizationId, id);
     },
 
+    async update(auth, id, input, context) {
+      await requireIdentityConfirmation(
+        twoFactor,
+        auth,
+        input.confirmation,
+        'api_key.update',
+        context,
+        'Masukkan password (dan kode verifikasi) untuk mengubah API key.',
+      );
+      await db.transaction(async (tx) => {
+        const { role } = await assertActorStillAuthorized(tx, auth, 'api_keys.manage');
+        const [current] = await tx
+          .select({
+            name: apiKeys.name,
+            lookupKey: apiKeys.lookupKey,
+            scopes: apiKeys.scopes,
+            revokedAt: apiKeys.revokedAt,
+            hosts: apiKeys.emailAttachmentHosts,
+          })
+          .from(apiKeys)
+          .where(and(eq(apiKeys.organizationId, auth.organizationId), eq(apiKeys.id, id)))
+          .for('update');
+        if (!current) throw new AppError('NOT_FOUND', { message: NOT_FOUND });
+        if (current.revokedAt) {
+          throw new AppError('CONFLICT', { message: 'API key ini sudah dicabut.' });
+        }
+        const changedFields: string[] = [];
+        const metadata: Record<string, string> = {};
+        if (input.emailSenderIds !== undefined) {
+          const channelIds = await resolveSenders(
+            tx,
+            auth.organizationId,
+            current.scopes,
+            input.emailSenderIds,
+          );
+          await replaceSenders(tx, auth.organizationId, id, channelIds);
+          changedFields.push('emailSenders');
+          metadata.emailSenders = channelIds
+            .map((channelId) => emailSenderId('channel', channelId))
+            .join(',');
+        }
+        if (input.emailAttachmentHosts !== undefined) {
+          const hosts = resolveHosts(current.scopes, input.emailAttachmentHosts);
+          await tx
+            .update(apiKeys)
+            .set({ emailAttachmentHosts: hosts })
+            .where(and(eq(apiKeys.organizationId, auth.organizationId), eq(apiKeys.id, id)));
+          changedFields.push('emailAttachmentHosts');
+          metadata.previousEmailAttachmentHosts = current.hosts.join(',');
+          metadata.emailAttachmentHosts = hosts.join(',');
+        }
+        await recordAudit(tx, {
+          organizationId: auth.organizationId,
+          actorUserId: auth.user.id,
+          action: AUDIT_ACTIONS.apiKeyUpdated,
+          targetType: 'api_key',
+          targetId: id,
+          metadata: {
+            change: 'updated',
+            name: current.name,
+            displayPrefix: displayPrefix(current.lookupKey),
+            changedFields: changedFields.join(','),
+            ...metadata,
+            actorRole: role,
+          },
+          client: context.client,
+        });
+      });
+      return one(auth.organizationId, id);
+    },
+
     async settings(organizationId) {
       const [row] = await db
         .select({ docsEnabled: organizations.apiDocsEnabled })
@@ -264,4 +483,48 @@ export function createApiKeysService(deps: {
       return { docsEnabled: input.docsEnabled };
     },
   };
+}
+
+/** Pengirim email per key (channel yang dihapus otomatis tidak ikut). */
+async function emailSendersOf(
+  db: DbExecutor,
+  organizationId: string,
+  apiKeyIds: readonly string[],
+): Promise<Map<string, ApiKey['emailSenders']>> {
+  const result = new Map<string, ApiKey['emailSenders']>();
+  if (apiKeyIds.length === 0) return result;
+  const rows = await db
+    .select({
+      apiKeyId: apiKeyEmailSenders.apiKeyId,
+      channelId: channels.id,
+      name: channels.name,
+      address: channels.emailAddress,
+    })
+    .from(apiKeyEmailSenders)
+    .innerJoin(
+      channels,
+      and(
+        eq(channels.organizationId, apiKeyEmailSenders.organizationId),
+        eq(channels.id, apiKeyEmailSenders.channelId),
+        isNull(channels.deletedAt),
+      ),
+    )
+    .where(
+      and(
+        eq(apiKeyEmailSenders.organizationId, organizationId),
+        inArray(apiKeyEmailSenders.apiKeyId, [...apiKeyIds]),
+      ),
+    )
+    .orderBy(channels.name);
+  for (const row of rows) {
+    const list = result.get(row.apiKeyId) ?? [];
+    list.push({
+      id: emailSenderId('channel', row.channelId),
+      kind: 'channel',
+      name: row.name,
+      address: row.address ?? '',
+    });
+    result.set(row.apiKeyId, list);
+  }
+  return result;
 }

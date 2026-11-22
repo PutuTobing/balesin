@@ -242,7 +242,7 @@ describe('review fase 2 — penjaga regresi', () => {
     expect(response.body).not.toContain(APP_SECRET);
   });
 
-  it('GET /channels (CS): hanya id, jenis, nama, aktif, nomor tampilan', async () => {
+  it('GET /channels (CS): hanya id, jenis, nama, aktif, nomor tampilan, alamat email channel', async () => {
     const owner = await completeSetup(harness.app);
     const { channel } = await createChannel(owner);
     const cs = await member(owner, 'cs');
@@ -250,7 +250,8 @@ describe('review fase 2 — penjaga regresi', () => {
     expect(response.statusCode).toBe(200);
     const raw = response.json<{ channels: Array<Record<string, unknown>> }>();
     expect(Object.keys(raw.channels[0] ?? {}).sort()).toEqual(
-      ['displayPhoneNumber', 'enabled', 'id', 'name', 'type'].sort(),
+      // Tahap 9.0: `emailAddresses` = alamat/alias channel Email milik organisasi (bukan rahasia).
+      ['displayPhoneNumber', 'emailAddresses', 'enabled', 'id', 'name', 'type'].sort(),
     );
     expect(channelSummaryListResponseSchema.parse(raw).channels[0]?.id).toBe(channel.id);
     for (const leaked of [PHONE_ID, WABA_ID, 'webhooks/whatsapp', '••••']) {

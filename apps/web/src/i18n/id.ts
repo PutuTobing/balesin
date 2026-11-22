@@ -134,6 +134,10 @@ export const t = {
       unknownTag: 'Tag lain',
       chipAssignee: (name: string) => `Agen: ${name}`,
       chipUnread: 'Belum dibaca',
+      /** Tahap 9.0 — alamat/alias tujuan email masuk. */
+      emailRecipient: 'Alamat tujuan',
+      anyEmailRecipient: 'Semua alamat',
+      chipEmailRecipient: (address: string) => `Ke: ${address}`,
       unknownChannel: 'Channel lain',
       unknownAgent: 'Agen lain',
     },
@@ -190,6 +194,56 @@ export const t = {
       htmlMissing: 'Versi HTML email ini tidak tersedia.',
       skippedAttachments: (count: number) =>
         `${count} lampiran tidak disimpan (terlalu besar, terlalu banyak, atau jenisnya berbahaya).`,
+      /** Tahap 9.0 — kepala alamat email (Kepada/Cc/Bcc, alamat tujuan). */
+      to: 'Kepada',
+      cc: 'Cc',
+      bcc: 'Bcc',
+      bccTeamOnly: 'Hanya terlihat oleh tim. Penerima lain tidak melihat alamat Bcc.',
+      recipients: 'Penerima email',
+      sentTo: 'Dikirim ke',
+      sentToAlias: 'alamat alias channel ini',
+      more: (count: number) => `+${count} lainnya`,
+      showAll: (count: number) => `Lihat semua ${count} penerima`,
+      showLess: 'Ringkas penerima',
+    },
+    /** Tahap 9.0 — composer channel Email: Cc/Bcc & "Balas semua". */
+    emailCopies: {
+      to: 'Kepada',
+      cc: 'Cc',
+      bcc: 'Bcc',
+      toggle: 'Cc/Bcc',
+      toggleCount: (count: number) => `Cc/Bcc · ${count}`,
+      toggleLabel: 'Tambah Cc atau Bcc',
+      toggleLabelCount: (count: number) => `Cc dan Bcc, ${count} alamat`,
+      replyAll: 'Balas semua',
+      replyAllLabel: (count: number) =>
+        `Balas semua: tambahkan ${count} penerima email terakhir ke Cc`,
+      replyAllDone: (count: number) =>
+        count === 0
+          ? 'Semua penerima email terakhir sudah ada di Cc.'
+          : `${count} penerima email terakhir ditambahkan ke Cc.`,
+      fieldLabel: (field: string) => `Alamat ${field}`,
+      placeholder: 'Ketik alamat, pisahkan dengan koma',
+      placeholderShort: 'Tambah alamat',
+      remove: (address: string) => `Hapus ${address}`,
+      removed: (address: string) => `${address} dihapus.`,
+      count: (count: number, max: number) => `${count} dari ${max} alamat tambahan`,
+      full: (max: number) => `Sudah ${max} alamat tambahan, batas per balasan.`,
+      invalid: (address: string) =>
+        `“${address}” bukan alamat email yang valid. Contoh: nama@perusahaan.co.id`,
+      customer: 'Alamat pelanggan sudah jadi penerima utama, jadi tidak perlu ditambahkan.',
+      self: 'Alamat channel ini sendiri tidak perlu dimasukkan ke Cc/Bcc.',
+      otherChannel:
+        'Alamat itu milik channel Email lain di tempatmu. Teruskan lewat channel itu, bukan lewat Cc/Bcc.',
+      limit: (max: number) => `Paling banyak ${max} alamat tambahan (Cc + Bcc) per balasan.`,
+      bccNote: 'Bcc hanya terlihat oleh tim. Penerima lain tidak melihatnya.',
+      newBadge: 'baru',
+      newBadgeLabel: 'belum pernah ada di utas ini',
+      newNoInitiateTitle: 'Alamat baru butuh izin memulai percakapan',
+      newNoInitiateBody: (count: number) =>
+        `${count === 1 ? 'Alamat' : `${count} alamat`} bertanda “baru” belum pernah ada di utas ini, jadi balasan bisa ditolak. Hapus alamatnya atau minta izin ke Owner atau Admin di tempatmu.`,
+      newInitiate: (count: number) =>
+        `${count === 1 ? 'Satu alamat' : `${count} alamat`} baru di utas ini. Mengirim ke alamat baru dihitung memulai percakapan dan memakai jatah harian.`,
     },
     chat: {
       label: 'Ruang chat',
@@ -486,6 +540,7 @@ export const t = {
       exporting: 'Menyiapkan…',
       exported:
         'Data kontak diunduh (JSON). Hapus berkasnya dari folder Unduhan setelah dikirim ke pelanggan.',
+      exportedPartial: 'Data terunduh, tapi tidak lengkap',
       deleteContact: 'Hapus kontak',
       deleteContactTitle: 'Hapus kontak ini beserta datanya?',
       deleteContactBody:
@@ -1415,6 +1470,7 @@ export const t = {
     openConversation: (number: number) => `Buka percakapan #${number}`,
     conversationStatus: (number: number, status: string) => `#${number} · ${status}`,
     notLinked: 'Tidak ditautkan',
+    conversationUnavailable: 'Percakapan terkait tidak tersedia',
     unlink: 'Lepas tautan',
     technicianNote:
       'Penanggung jawab dan tautan hanya bisa diubah Owner, Admin, Supervisor, atau CS.',
@@ -3117,6 +3173,31 @@ export const t = {
       'Verify token baru dibuat. Perbarui juga di pengaturan webhook aplikasi Meta.',
     subscribeFields: 'Event webhook yang dicentang di Meta',
     mailboxTitle: 'Kotak masuk',
+    /** Tahap 9.0 — alias alamat channel Email. */
+    aliases: {
+      title: 'Alias alamat',
+      hint: 'Alamat lain yang juga masuk ke kotak surat ini, mis. billing@ yang diteruskan ke cs@. Email ke alias ditandai di inbox, bisa disaring, dan tidak ikut “Balas semua”.',
+      primary: 'Alamat utama',
+      label: 'Alias',
+      placeholder: 'Ketik alamat, pisahkan dengan koma',
+      empty: 'Belum ada alias. Hanya email ke alamat utama yang dikenali sebagai alamat tujuan.',
+      count: (count: number, max: number) => `${count} dari ${max} alias`,
+      full: (max: number) => `Sudah ${max} alias, batas per channel.`,
+      invalid: (address: string) =>
+        `“${address}” bukan alamat email yang valid. Contoh: billing@perusahaan.co.id`,
+      primaryNotAlias: 'Alamat utama tidak perlu ditambahkan sebagai alias.',
+      limit: (max: number) => `Paling banyak ${max} alias per channel.`,
+      remove: (address: string) => `Hapus alias ${address}`,
+      removed: (address: string) => `${address} dihapus.`,
+      save: 'Simpan alias',
+      saving: 'Menyimpan…',
+      confirmTitle: 'Konfirmasi tambah alias',
+      confirmBody:
+        'Email ke alias ikut masuk ke channel ini dan alamatnya dianggap milik channel. Masukkan password dan kode autentikatormu untuk menyimpan.',
+      saved: 'Alias disimpan. Email baru ke alamat ini akan ditandai di inbox.',
+      unsaved: 'Ada perubahan yang belum disimpan.',
+      reset: 'Batalkan perubahan',
+    },
     lastPolled: 'Terakhir dicek',
     neverPolled: 'Belum pernah dicek',
     pollOk: 'Berhasil',
@@ -3498,6 +3579,7 @@ export const t = {
       summary: 'Ringkasan',
       diagnosis: 'Diagnosis',
       bot: 'Bot',
+      teamAccess: 'Akses tim',
     },
 
     /**
@@ -3615,8 +3697,56 @@ export const t = {
       saved: 'Kredensial diganti. Tekan “Tes koneksi” untuk memastikan semuanya cocok.',
     },
 
+    /** Tahap 9.0 — siapa yang bisa melihat chat channel ini (semua jenis channel). */
+    teamAccess: {
+      title: 'Akses tim',
+      hint: 'Atur siapa yang bisa melihat chat channel ini di inbox, notifikasi, pencarian, dan laporan.',
+      modeLabel: 'Siapa yang bisa melihat',
+      modeAll: 'Semua tim',
+      modeAllHint: 'Semua anggota yang boleh membuka inbox, sesuai perannya.',
+      modeRestricted: 'Hanya departemen atau pengguna tertentu',
+      modeRestrictedHint: 'Anggota departemen terpilih dan pengguna yang dipilih langsung.',
+      exempt: 'Owner dan Admin selalu bisa melihat semua channel.',
+      departments: 'Departemen',
+      departmentMembers: (count: number) => `${count} anggota`,
+      noDepartments: 'Belum ada departemen. Buat di Pengaturan → Departemen bila perlu.',
+      users: 'Pengguna',
+      usersHint: 'Supervisor, CS, dan Teknisi. Owner dan Admin tidak perlu dipilih.',
+      noUsers: 'Belum ada Supervisor, CS, atau Teknisi aktif.',
+      searchUsers: 'Cari pengguna',
+      searchPlaceholder: 'Cari nama',
+      clearSearch: 'Hapus pencarian',
+      noMatch: (search: string) => `Tidak ada pengguna yang cocok dengan “${search}”.`,
+      inactive: 'Nonaktif',
+      droppedInactive: (count: number) =>
+        `${count} pengguna nonaktif dilepas dari daftar. Simpan untuk menerapkannya.`,
+      summaryTitle: 'Yang bisa melihat',
+      summaryAll: 'Semua anggota tim sesuai perannya.',
+      summaryOwners: 'Owner dan Admin',
+      summaryDepartments: (count: number, members: number) =>
+        `${count} departemen (${members} anggota)`,
+      summaryUsers: (count: number) => `${count} pengguna`,
+      onlyOwners: 'Hanya Owner dan Admin yang bisa melihat chat channel ini.',
+      onlyOwnersHint:
+        'Pilih departemen atau pengguna supaya tim bisa membalas chat dari channel ini.',
+      selected: (count: number) => `${count} dipilih`,
+      loadFailed: 'Akses tim belum bisa dimuat.',
+      optionsFailed: 'Daftar departemen atau pengguna belum bisa dimuat.',
+      save: 'Simpan akses',
+      saving: 'Menyimpan…',
+      saved:
+        'Akses tim disimpan. Anggota yang tidak lagi berhak langsung tidak melihat chat channel ini.',
+      released: (count: number) =>
+        `${count} percakapan yang dipegang anggota tanpa akses dikembalikan ke antrian.`,
+      confirmTitle: 'Konfirmasi perluas akses',
+      confirmBody:
+        'Lebih banyak anggota tim akan bisa membaca chat channel ini. Masukkan password dan kode autentikatormu untuk menyimpan.',
+      unsaved: 'Ada perubahan yang belum disimpan.',
+      reset: 'Batalkan perubahan',
+      roleSuffix: (role: string) => ` · ${role}`,
+    },
     access: {
-      title: 'Akses channel',
+      title: 'Status channel',
       disableHint:
         'Nonaktifkan bila nomor ini sedang tidak dipakai. Kredensial tetap tersimpan dan bisa diaktifkan lagi kapan saja.',
       enableHint: 'Aktifkan lagi supaya chat dari nomor ini masuk ke inbox.',

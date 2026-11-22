@@ -126,6 +126,18 @@ export function contactQuery(contactId: string) {
   });
 }
 
+/**
+ * Tahap 9.0 — agen yang berhak atas satu channel (dialog tugaskan/alihkan). Kunci di bawah
+ * `inboxKeys.agents` supaya ikut dimuat ulang bersama daftar agen.
+ */
+export const channelAgentsQuery = (channelId: string) =>
+  queryOptions({
+    queryKey: [...inboxKeys.agents, 'channel', channelId] as const,
+    queryFn: ({ signal }) => endpoints.inbox.channelAgents(channelId, signal),
+    staleTime: 60_000,
+    retry: retryTransient,
+  });
+
 /** Agen inbox: nama pengirim pesan keluar (`senderUserId`) dan saringan agen. */
 export const agentsQuery = queryOptions({
   queryKey: inboxKeys.agents,
@@ -407,6 +419,8 @@ export function applyInboxEvent(queryClient: QueryClient, event: InboxStreamEven
       void queryClient.invalidateQueries({ queryKey: ['tickets'] });
       void queryClient.invalidateQueries({ queryKey: ['crm'] });
       void queryClient.invalidateQueries({ queryKey: ['departments'] });
+      // Tahap 9.0: akses per channel berubah → laporan bercakupan channel juga dimuat ulang.
+      void queryClient.invalidateQueries({ queryKey: ['reports'] });
       return;
     case 'conversation.updated': {
       const now = Date.now();

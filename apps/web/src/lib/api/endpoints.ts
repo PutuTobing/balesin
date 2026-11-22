@@ -732,6 +732,12 @@ export function createEndpoints(client: ApiClient) {
       /** Agen inbox (saringan agen, alihkan). */
       agents: (signal?: AbortSignal) =>
         client.request(API_ROUTES.inbox.agents, { schema: inboxAgentListResponseSchema, signal }),
+      /** Tahap 9.0: hanya agen yang berhak atas channel itu (dialog tugaskan/alihkan). */
+      channelAgents: (channelId: string, signal?: AbortSignal) =>
+        client.request(`${API_ROUTES.inbox.agents}?${new URLSearchParams({ channelId })}`, {
+          schema: inboxAgentListResponseSchema,
+          signal,
+        }),
       /** Tugaskan/alihkan ke agen (`inbox.assign`). */
       assign: (conversationId: string, userId: string) =>
         client.request(apiPath(API_ROUTES.inbox.assign, { conversationId }), {

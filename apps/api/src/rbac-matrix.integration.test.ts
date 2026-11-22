@@ -140,6 +140,9 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'POST /api/v1/settings/channels/:channelId/webhook/verify-token': 'channels.manage',
   'GET /api/v1/settings/channels/:channelId/business-profile': 'channels.manage',
   'PUT /api/v1/settings/channels/:channelId/business-profile': 'channels.manage',
+  // akses per channel (tahap 9.0) — semua jenis channel
+  'GET /api/v1/settings/channels/:channelId/access': 'channels.manage',
+  'PUT /api/v1/settings/channels/:channelId/access': 'channels.manage',
   // channel selain WhatsApp (Fase 6): Telegram, Email, Messenger, Instagram
   'GET /api/v1/settings/channel-connections': 'channels.manage',
   'POST /api/v1/settings/channel-connections': 'channels.manage',
@@ -319,6 +322,30 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'GET /api/v1/settings/api-keys': 'api_keys.manage',
   'POST /api/v1/settings/api-keys': 'api_keys.manage',
   'POST /api/v1/settings/api-keys/:apiKeyId/revoke': 'api_keys.manage',
+  // tahap 9.1: pengirim email + host lampiran key (konfirmasi identitas), riwayat email API
+  'PATCH /api/v1/settings/api-keys/:apiKeyId': 'api_keys.manage',
+  'GET /api/v1/settings/email-outbound': 'api_keys.manage',
+  // tahap 9.1: Pengaturan → Template email (templates.manage = Owner/Admin/Supervisor)
+  'GET /api/v1/settings/email-templates': 'templates.manage',
+  'POST /api/v1/settings/email-templates': 'templates.manage',
+  'GET /api/v1/settings/email-templates/presets': 'templates.manage',
+  'POST /api/v1/settings/email-templates/presets/:presetId': 'templates.manage',
+  'POST /api/v1/settings/email-templates/preview': 'templates.manage',
+  'GET /api/v1/settings/email-templates/:templateId': 'templates.manage',
+  'PATCH /api/v1/settings/email-templates/:templateId': 'templates.manage',
+  'POST /api/v1/settings/email-templates/:templateId/publish': 'templates.manage',
+  'POST /api/v1/settings/email-templates/:templateId/archive': 'templates.manage',
+  'POST /api/v1/settings/email-templates/:templateId/unarchive': 'templates.manage',
+  'GET /api/v1/settings/email-templates/:templateId/versions': 'templates.manage',
+  'GET /api/v1/settings/email-templates/:templateId/versions/:versionId': 'templates.manage',
+  'POST /api/v1/settings/email-templates/:templateId/versions/:versionId/restore':
+    'templates.manage',
+  'POST /api/v1/settings/email-templates/:templateId/test': 'templates.manage',
+  // tahap 9.1: batas & jeda per pengirim email (lanjutkan = sending.resume)
+  'GET /api/v1/settings/email-senders': 'sending.limits.manage',
+  'PUT /api/v1/settings/email-senders/:senderId': 'sending.limits.manage',
+  'POST /api/v1/settings/email-senders/:senderId/pause': 'sending.limits.manage',
+  'POST /api/v1/settings/email-senders/:senderId/resume': 'sending.resume',
   'GET /api/v1/settings/api': 'api_keys.manage',
   'PUT /api/v1/settings/api': 'api_keys.manage',
   // Webhook keluar (Fase 3): Owner/Admin (`integrations.manage`)
@@ -355,6 +382,14 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'GET /api/v1/public/tickets/:ticketId': 'apikey:tickets:read',
   'PATCH /api/v1/public/tickets/:ticketId': 'apikey:tickets:write',
   'POST /api/v1/public/tickets/:ticketId/comments': 'apikey:tickets:write',
+  // tahap 9.1: email lewat API (baca = email:read, kirim/batal/balas/unggah = email:send)
+  'GET /api/v1/public/email/senders': 'apikey:email:read',
+  'POST /api/v1/public/email/send': 'apikey:email:send',
+  'POST /api/v1/public/email/media': 'apikey:email:send',
+  'GET /api/v1/public/email/messages/:emailId': 'apikey:email:read',
+  'POST /api/v1/public/email/messages/:emailId/cancel': 'apikey:email:send',
+  'GET /api/v1/public/email/templates': 'apikey:email:read',
+  'POST /api/v1/public/email/messages/:emailId/reply': 'apikey:email:send',
   // kompatibel MobiChat: HANYA header X-API-Key + scope (sesi web apa pun → 401)
   'GET /api/public/messages': 'mobichat:messages:read',
   'POST /api/public/messages': 'mobichat:messages:send',
@@ -512,6 +547,10 @@ const SAMPLE_PARAMS: Readonly<Record<string, string>> = {
   boardId: '00000000-0000-4000-8000-0000000000b5',
   columnId: '00000000-0000-4000-8000-0000000000b6',
   departmentId: '00000000-0000-4000-8000-0000000000b7',
+  // tahap 9.1: email lewat API
+  emailId: '00000000-0000-4000-8000-0000000000b8',
+  senderId: 'chn_00000000-0000-4000-8000-0000000000b9',
+  versionId: '1',
 };
 
 function concreteUrl(pattern: string): string {

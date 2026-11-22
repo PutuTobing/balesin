@@ -21,14 +21,17 @@ export async function recordOutgoingEvent(
     contactId?: string | null;
     ticketId?: string | null;
     actorUserId?: string | null;
+    /** Tahap 9.1: email lewat API (`email.*`). */
+    emailOutboundId?: string | null;
   },
 ): Promise<void> {
   await db.execute(sql`
     insert into ${outgoingEvents}
-      (id, organization_id, type, conversation_id, message_id, contact_id, ticket_id, actor_user_id)
+      (id, organization_id, type, conversation_id, message_id, contact_id, ticket_id, actor_user_id,
+       email_outbound_id)
     select ${newId()}, ${event.organizationId}, ${event.type}, ${event.conversationId ?? null},
       ${event.messageId ?? null}, ${event.contactId ?? null}, ${event.ticketId ?? null},
-      ${event.actorUserId ?? null}
+      ${event.actorUserId ?? null}, ${event.emailOutboundId ?? null}
     where exists (
       select 1 from ${webhookEndpoints}
       where ${webhookEndpoints.organizationId} = ${event.organizationId}

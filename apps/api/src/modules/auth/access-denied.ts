@@ -57,6 +57,11 @@ export const ACCESS_RULES = {
   inboxInitiateResolved: 'inbox.initiate.resolved',
   /** Kirim/kirim ulang yang memulai percakapan ke percakapan terbuka DINGIN (> 7 hari) (P2-R2). */
   inboxInitiateStale: 'inbox.initiate.stale',
+  /**
+   * Tahap 9.0: balasan channel Email dengan Cc/Bcc ke alamat yang BELUM ada di utas (= memulai
+   * percakapan dengan orang baru) tanpa `inbox.initiate`.
+   */
+  inboxInitiateEmailRecipient: 'inbox.initiate.email_recipient',
   /** Mengubah catatan sesi milik orang lain (isi catatan hanya bisa diubah penulisnya). */
   noteEditOthers: 'inbox.note.edit_others',
   /** Menghapus catatan sesi milik orang lain tanpa izin `inbox.notes.moderate`. */

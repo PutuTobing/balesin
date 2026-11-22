@@ -636,3 +636,15 @@ describe('reopenIsStale (buka lagi chat selesai tanpa inbox.initiate, audit akhi
     expect(reopenIsStale({ ...email, lastInboundAt: null }, now)).toBe(true);
   });
 });
+
+describe('event resync (akses berubah)', () => {
+  it('memuat ulang inbox, channel, agen, laporan, dan data bercakupan lain', () => {
+    const queryClient = new QueryClient();
+    const spy = vi.spyOn(queryClient, 'invalidateQueries');
+    applyInboxEvent(queryClient, { type: 'resync' });
+    const keys = spy.mock.calls.map(([filters]) => JSON.stringify(filters?.queryKey));
+    for (const key of [['inbox'], ['reports'], ['departments'], ['tickets'], ['crm']]) {
+      expect(keys).toContain(JSON.stringify(key));
+    }
+  });
+});

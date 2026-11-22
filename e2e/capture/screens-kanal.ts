@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { json, sessionAs } from './mocks';
 import { PHOTO_CONVERSATIONS, inboxMocks } from './mocks-inbox';
-import { quietSecurity } from './mocks-tim';
+import { PHOTO_USER_IDS, quietSecurity, teamUsers } from './mocks-tim';
 import type { Screen } from './screens';
 
 /**
@@ -138,6 +138,7 @@ const EMAIL = {
   type: 'email',
   name: 'Email CS',
   emailAddress: 'cs@majujaya.co.id',
+  aliases: ['billing@majujaya.co.id', 'tagihan@majujaya.co.id'],
   fromName: 'CS Maju Jaya',
   imap: {
     host: 'mail.majujaya.co.id',
@@ -181,8 +182,40 @@ const MESSENGER = {
 };
 const CONNECTIONS = [TELEGRAM, EMAIL, MESSENGER];
 
+/** Tahap 9.0 — departemen untuk kartu "Akses tim". */
+const ACCESS_DEPARTMENTS = [
+  { id: '0d0e2d8c-6d3f-4b8a-9d55-5e2f8a1c0d01', name: 'Customer Service', memberCount: 3 },
+  { id: '0d0e2d8c-6d3f-4b8a-9d55-5e2f8a1c0d03', name: 'Tagihan', memberCount: 2 },
+  { id: '0d0e2d8c-6d3f-4b8a-9d55-5e2f8a1c0d02', name: 'Teknisi', memberCount: 1 },
+];
+
+/** Email CS: hanya departemen Tagihan + satu CS langsung. Channel lain: semua tim. */
+function accessFor(channelId: string) {
+  const restricted = channelId === EMAIL.id;
+  return {
+    channelId,
+    mode: restricted ? 'restricted' : 'all',
+    departments: restricted ? [ACCESS_DEPARTMENTS[1]] : [],
+    users: restricted
+      ? [{ id: PHOTO_USER_IDS.cs, name: 'Citra Maharani', role: 'cs', active: true }]
+      : [],
+    exemptRoles: ['owner', 'admin'],
+  };
+}
+
 async function connectionMocks(page: Page, channels: unknown[] = CONNECTIONS): Promise<void> {
   await quietSecurity(page);
+  await teamUsers(page);
+  await page.route(`${API}/departments`, (route) =>
+    json(route, {
+      departments: ACCESS_DEPARTMENTS.map((department) => ({ ...department, description: null })),
+    }),
+  );
+  for (const channel of CONNECTIONS) {
+    await page.route(`${API}/settings/channels/${channel.id}/access`, (route) =>
+      json(route, { access: accessFor(channel.id) }),
+    );
+  }
   await page.route(`${API}/settings/channel-connections`, (route) =>
     json(route, { channels, types: TYPES, canStoreSecrets: true, maxChannels: 20 }),
   );
@@ -283,6 +316,21 @@ const EMAIL_CONVERSATION = {
   },
   lastMessageAt: ago(40 * 60_000),
 };
+/** Tahap 9.0: utas email lewat alias billing@ dengan Cc. */
+const EMAIL_CC_CONVERSATION = {
+  ...EMAIL_CONVERSATION,
+  id: 'c1a2b3c4-0000-4000-8000-0000000009a3',
+  number: 903,
+  contact: { ...EMAIL_CONVERSATION.contact, id: 'd1a2b3c4-0000-4000-8000-0000000009a3' },
+  lastMessage: {
+    direction: 'outbound',
+    type: 'text',
+    text: 'Tagihan November sudah kami kirim ulang dalam format PDF.',
+    status: 'delivered',
+    createdAt: ago(30 * 60_000),
+  },
+  lastMessageAt: ago(30 * 60_000),
+};
 const EMAIL_MESSAGES = [
   {
     id: 'e1a2b3c4-0000-4000-8000-0000000009b1',
@@ -312,6 +360,11 @@ const EMAIL_MESSAGES = [
       authWarning: false,
       senderVerification: 'pass',
       skippedAttachments: 1,
+      to: ['billing@majujaya.co.id', 'dewi.keuangan@hartono-group.co.id'],
+      cc: ['andi.pratama@hartono-group.co.id'],
+      bcc: [],
+      recipient: 'billing@majujaya.co.id',
+      replyAll: ['dewi.keuangan@hartono-group.co.id', 'andi.pratama@hartono-group.co.id'],
     },
     createdAt: ago(40 * 60_000),
   },
@@ -343,15 +396,47 @@ const EMAIL_MESSAGES = [
       authWarning: true,
       senderVerification: 'fail',
       skippedAttachments: 0,
+      to: ['cs@majujaya.co.id'],
+      cc: [],
+      bcc: [],
+      recipient: 'cs@majujaya.co.id',
+      replyAll: [],
     },
     createdAt: ago(20 * 60_000),
   },
 ];
 
+/** Tahap 9.0: balasan tim ber-Cc/Bcc (Bcc hanya terlihat tim) setelah email masuk lewat alias. */
+const EMAIL_REPLY = {
+  ...EMAIL_MESSAGES[0],
+  id: 'e1a2b3c4-0000-4000-8000-0000000009b3',
+  number: 3,
+  direction: 'outbound',
+  senderKind: 'agent',
+  senderUserId: 'a1a2b3c4-0000-4000-8000-0000000000a1',
+  text: 'Selamat siang Pak Rudi,\n\nTagihan November sudah kami kirim ulang dalam format PDF. Bu Dewi dan Pak Andi kami tembuskan.\n\nSalam,\nCS Maju Jaya',
+  status: 'delivered',
+  email: {
+    subject: 'Re: Tagihan November tidak bisa dibuka',
+    hasHtml: false,
+    authWarning: false,
+    senderVerification: 'pass',
+    skippedAttachments: 0,
+    to: ['rudi.hartono@gmail.com'],
+    cc: ['dewi.keuangan@hartono-group.co.id', 'andi.pratama@hartono-group.co.id'],
+    bcc: ['arsip.tagihan@majujaya.co.id'],
+    recipient: null,
+    replyAll: [],
+  },
+  createdAt: ago(30 * 60_000),
+};
+const EMAIL_THREAD = [EMAIL_MESSAGES[0], EMAIL_REPLY];
+
 async function multiChannelInbox(page: Page): Promise<void> {
   await inboxMocks(page, {
     conversations: [
       TG_CONVERSATION,
+      EMAIL_CC_CONVERSATION,
       EMAIL_CONVERSATION,
       ...PHOTO_CONVERSATIONS.slice(1, 5),
     ] as typeof PHOTO_CONVERSATIONS,
@@ -359,6 +444,9 @@ async function multiChannelInbox(page: Page): Promise<void> {
       const url = route.request().url();
       if (url.includes(EMAIL_CONVERSATION.id)) {
         return json(route, { messages: [...EMAIL_MESSAGES].reverse(), nextCursor: null });
+      }
+      if (url.includes(EMAIL_CC_CONVERSATION.id)) {
+        return json(route, { messages: [...EMAIL_THREAD].reverse(), nextCursor: null });
       }
       return json(route, {
         messages: [
@@ -377,6 +465,37 @@ async function multiChannelInbox(page: Page): Promise<void> {
   await page.route(/\/api\/v1\/messages\/[0-9a-f-]{36}\/email-html$/, (route) =>
     json(route, {
       html: '<p>Selamat siang,</p><p>Mohon kirim ulang <b>tagihan November</b> ke email ini. Lampiran sebelumnya tidak bisa dibuka.</p><p>Terima kasih,<br>Rudi</p>',
+    }),
+  );
+  // Daftar channel inbox: channel Email dengan 3 alamat → saringan "Alamat tujuan" tampil.
+  await page.route(`${API}/channels`, (route) =>
+    json(route, {
+      channels: [
+        {
+          id: '6c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e01',
+          name: 'CS Maju Jaya',
+          type: 'whatsapp',
+          enabled: true,
+          displayPhoneNumber: '+62 811-7200-345',
+          emailAddresses: [],
+        },
+        {
+          id: TELEGRAM.id,
+          name: TELEGRAM.name,
+          type: 'telegram',
+          enabled: true,
+          displayPhoneNumber: null,
+          emailAddresses: [],
+        },
+        {
+          id: EMAIL.id,
+          name: EMAIL.name,
+          type: 'email',
+          enabled: true,
+          displayPhoneNumber: null,
+          emailAddresses: [EMAIL.emailAddress, ...EMAIL.aliases],
+        },
+      ],
     }),
   );
   await page.route(`${API}/inbox/availability`, (route) =>
@@ -572,6 +691,88 @@ export const channelConnectionScreens: Screen[] = [
     prepare: async (page) => {
       await page.getByRole('button', { name: 'Lihat versi HTML' }).click();
       await page.getByTitle('Isi email versi HTML (tanpa skrip)').waitFor();
+      await settle(page);
+    },
+  },
+  {
+    // Tahap 9.0: email masuk lewat alias (Kepada/Cc, "Dikirim ke billing@…") + balasan ber-Cc/Bcc.
+    name: 'inbox-email-cc',
+    path: `/inbox?chat=${EMAIL_CC_CONVERSATION.id}`,
+    before: multiChannelInbox,
+    waitFor: 'text=Re: Tagihan November tidak bisa dibuka',
+    prepare: settle,
+  },
+  {
+    // Composer Cc/Bcc terbuka (CS tanpa izin memulai percakapan): Balas semua + alamat baru bertanda.
+    name: 'inbox-email-ccbcc',
+    path: `/inbox?chat=${EMAIL_CC_CONVERSATION.id}`,
+    before: async (page) => {
+      await sessionAs(page, 'cs');
+      await multiChannelInbox(page);
+    },
+    waitFor: 'text=Re: Tagihan November tidak bisa dibuka',
+    prepare: async (page) => {
+      await page.getByRole('button', { name: /^Balas semua/ }).click();
+      const bcc = page.getByRole('textbox', { name: 'Alamat Bcc' });
+      await bcc.fill('pajak@konsultan-pajak.co.id');
+      await bcc.press('Enter');
+      await page
+        .getByRole('textbox', { name: 'Tulis balasan' })
+        .fill('Baik Pak Rudi, tagihan revisi kami lampirkan ulang.');
+      await page.getByText('Alamat baru butuh izin memulai percakapan').waitFor();
+      await settle(page);
+    },
+  },
+  {
+    // Saringan "Alamat tujuan" (channel Email punya alias).
+    name: 'inbox-saring-alamat',
+    path: '/inbox',
+    before: multiChannelInbox,
+    waitFor: 'text=Andika Pratama',
+    prepare: async (page) => {
+      await page.getByRole('button', { name: 'Saring chat' }).click();
+      await page.getByText('Alamat tujuan').waitFor();
+      await settle(page);
+    },
+  },
+  {
+    // Pengaturan → Channel → Email: kartu Alias alamat sedang diubah (alamat salah diberi penjelasan).
+    name: 'channel-email-alias',
+    path: `/pengaturan/channel/lain/${EMAIL.id}`,
+    before: (page) => connectionMocks(page),
+    waitFor: 'text=Alias alamat',
+    prepare: async (page) => {
+      const input = page.getByRole('textbox', { name: 'Alias', exact: true });
+      await input.fill('keuangan@majujaya.co.id');
+      await input.press('Enter');
+      await input.fill('admin@majujaya');
+      await input.press('Enter');
+      await page.getByRole('heading', { name: 'Alias alamat' }).scrollIntoViewIfNeeded();
+      await settle(page);
+    },
+  },
+  {
+    // Tahap 9.0: Akses tim — hanya departemen Tagihan + satu pengguna.
+    name: 'channel-akses-tim',
+    path: `/pengaturan/channel/lain/${EMAIL.id}`,
+    before: (page) => connectionMocks(page),
+    waitFor: 'text=Akses tim',
+    prepare: async (page) => {
+      await page.getByRole('checkbox', { name: /Tagihan/ }).waitFor();
+      await page.getByRole('heading', { name: 'Akses tim' }).scrollIntoViewIfNeeded();
+      await settle(page);
+    },
+  },
+  {
+    // Akses tim: mode terbatas tanpa pilihan → peringatan "hanya Owner dan Admin".
+    name: 'channel-akses-tim-kosong',
+    path: `/pengaturan/channel/lain/${TELEGRAM.id}`,
+    before: (page) => connectionMocks(page),
+    waitFor: 'text=Akses tim',
+    prepare: async (page) => {
+      await page.getByRole('radio', { name: /Hanya departemen atau pengguna tertentu/ }).click();
+      await page.getByText('Pilih departemen atau pengguna', { exact: false }).waitFor();
+      await page.getByRole('heading', { name: 'Akses tim' }).scrollIntoViewIfNeeded();
       await settle(page);
     },
   },

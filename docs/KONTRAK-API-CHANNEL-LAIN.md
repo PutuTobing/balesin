@@ -96,6 +96,14 @@ smtp: { mode: 'system' } | { mode: 'custom', host, port, security, username, pas
   hasil verifikasinya dipercaya, mis. `mx.google.com`, atau `.perusahaan.co.id` (domain +
   subdomain). Bawaan = host IMAP + domain induknya (+ `mx.google.com` untuk Gmail). Mengubahnya =
   konfirmasi identitas. Tampilan: `channel.senderVerification = { trustedAuthServIds, isDefault }`.
+- `aliases` (opsional, tahap 9.0; maks. 20, huruf kecil, duplikat & alamat utama dibuang): alamat lain
+  yang juga masuk ke kotak surat ini (mis. `billing@` diteruskan ke `cs@`). Dipakai menentukan
+  **alamat tujuan** email masuk, dibuang dari "Balas semua", dan dihitung alamat sendiri (anti-loop).
+  `PATCH` mengganti seluruh daftar (`[]` = kosongkan); **menambah** alias wajib konfirmasi identitas
+  (menghapus tidak; status tes tidak direset; diaudit `channel.updated` isian `aliases`). Alias yang
+  sudah tercatat sebagai kontak email organisasi → 400 "Alamat … sudah tercatat sebagai kontak
+  pelanggan, jadi tidak bisa dijadikan alias channel." (review 9.0 R7, juga saat membuat channel). Tampilan: `channel.aliases`; inbox:
+  `ChannelSummary.emailAddresses` = `[emailAddress, ...aliases]` (channel lain `[]`).
 - Tes: `incoming` (IMAP login + folder) + `outgoing` (SMTP verify).
 - `channel.mailbox` = status pengambilan terakhir (`lastPolledAt`, `lastPollOk`, `lastPollCode`,
   `lastPollMessage`, `skippedMessages`).

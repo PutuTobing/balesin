@@ -22,6 +22,9 @@ export interface OutboxItem {
   /** ID unggahan yang sudah berhasil (kirim ulang tidak mengunggah dua kali). */
   mediaId?: string;
   replyToMessageId?: string;
+  /** Channel Email (tahap 9.0): alamat tambahan. Kirim ulang memakai daftar yang sama. */
+  cc?: string[];
+  bcc?: string[];
   state: 'sending' | 'failed';
   error?: unknown;
   createdAt: string;
@@ -107,6 +110,10 @@ export async function sendOutboxItem(queryClient: QueryClient, item: OutboxItem)
       current = patch(current, { mediaId });
     }
     const caption = current.text.trim();
+    const copies = {
+      ...(current.cc && current.cc.length > 0 ? { cc: current.cc } : {}),
+      ...(current.bcc && current.bcc.length > 0 ? { bcc: current.bcc } : {}),
+    };
     const { message } = await endpoints.inbox.send(
       current.conversationId,
       current.kind === 'media' && mediaId
@@ -116,12 +123,14 @@ export async function sendOutboxItem(queryClient: QueryClient, item: OutboxItem)
             mediaId,
             ...(caption ? { caption } : {}),
             ...(current.replyToMessageId ? { replyToMessageId: current.replyToMessageId } : {}),
+            ...copies,
           }
         : {
             type: 'text',
             clientMessageId: current.clientMessageId,
             text: current.text,
             ...(current.replyToMessageId ? { replyToMessageId: current.replyToMessageId } : {}),
+            ...copies,
           },
     );
     storeMessage(queryClient, current.conversationId, message);

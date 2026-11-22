@@ -232,6 +232,27 @@
       "when": 1795073130102,
       "tag": "0032_bot_pengirim_terverifikasi",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1795358544255,
+      "tag": "0033_email_kepada_cc_alias",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1795358718019,
+      "tag": "0034_akses_per_channel",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1795363804293,
+      "tag": "0035_email_kirim_api",
+      "breakpoints": true
     }
   ]
 }

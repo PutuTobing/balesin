@@ -251,8 +251,16 @@ describe('penanganan percakapan', () => {
     fireEvent.click(menu.getByRole('menuitem', { name: h.reassign }));
     const dialog = within(await screen.findByRole('dialog', { name: h.reassignTitle }));
     expect(dialog.getByText(h.currentAssignee('Rina Kartika'))).toBeVisible();
+    expect(await dialog.findByText(h.load(3))).toBeVisible();
     expect(dialog.queryByText('Agus Nonaktif')).toBeNull();
-    expect(dialog.getByText(h.load(3))).toBeVisible();
+    // Tahap 9.0: hanya agen yang berhak atas channel percakapan ini.
+    expect(
+      api.requests.some(
+        (request) =>
+          request.path === API_ROUTES.inbox.agents &&
+          request.query.get('channelId') === served.channel.id,
+      ),
+    ).toBe(true);
     fireEvent.click(dialog.getByRole('radio', { name: /Citra/ }));
     fireEvent.click(dialog.getByRole('button', { name: h.assignConfirm }));
     await waitFor(() =>
@@ -261,6 +269,22 @@ describe('penanganan percakapan', () => {
       }),
     );
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('alihkan ke agen tanpa akses channel: galat 400 tampil apa adanya di dialog', async () => {
+    const message = 'Agen ini tidak punya akses ke channel percakapan ini.';
+    await openChat({
+      routes: {
+        [`POST ${apiPath(API_ROUTES.inbox.assign, { conversationId: served.id })}`]: () =>
+          apiError(400, 'VALIDATION_ERROR', message),
+      },
+    });
+    const menu = await openMenu();
+    fireEvent.click(menu.getByRole('menuitem', { name: h.reassign }));
+    const dialog = within(await screen.findByRole('dialog', { name: h.reassignTitle }));
+    fireEvent.click(await dialog.findByRole('radio', { name: /Citra/ }));
+    fireEvent.click(dialog.getByRole('button', { name: h.assignConfirm }));
+    expect(await dialog.findByRole('alert')).toHaveTextContent(message);
   });
 
   it('kembalikan ke antrian oleh Teknisi → { conversation: null } → chat ditutup', async () => {

@@ -11,6 +11,12 @@ import { z } from 'zod';
  */
 
 const shortText = (max: number) => z.string().max(max);
+/** Alamat email yang SUDAH dinormalkan pembuat payload (huruf kecil, tanpa spasi/kontrol). */
+const emailListItem = z
+  .string()
+  .min(3)
+  .max(254)
+  .regex(/^[^\s\p{Cc}<>@]+@[^\s\p{Cc}<>@]+$/u);
 
 export const channelInboundSenderSchema = z.object({
   /** Kunci identitas kontak (`contacts.external_user_id`). */
@@ -82,6 +88,14 @@ export const channelInboundMessageSchema = z.object({
       html: z.string().max(524_288).nullable(),
       /** Lampiran yang sudah disimpan — masing-masing menjadi pesan media tersendiri. */
       attachments: z.array(channelInboundMediaSchema).max(20),
+      /**
+       * Tahap 9.0 (payload lama: kosong). `to`/`cc` = header (huruf kecil); `recipient` = alamat/alias
+       * channel yang dituju (`emailDestination`); `replyAll` = To + Cc tanpa alamat sendiri & pengirim.
+       */
+      to: z.array(emailListItem).max(50).default([]),
+      cc: z.array(emailListItem).max(50).default([]),
+      recipient: emailListItem.nullable().default(null),
+      replyAll: z.array(emailListItem).max(100).default([]),
     })
     .nullable(),
 });

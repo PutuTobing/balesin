@@ -94,7 +94,10 @@ const SECURITY_EVENT_CONDITIONS: Readonly<Record<SecurityEventKind, SQL>> = {
   inbox_bulk_action: sql`${auditLogs.action} = ${AUDIT_ACTIONS.inboxBulkAction}`,
   webhook_changed: sql`(${auditLogs.action} in (${AUDIT_ACTIONS.outgoingWebhookCreated}, ${AUDIT_ACTIONS.outgoingWebhookSecretRotated}, ${AUDIT_ACTIONS.privateNetworkUpdated}) or (${auditLogs.action} = ${AUDIT_ACTIONS.outgoingWebhookUpdated} and ${auditLogs.metadata} ? 'host'))`,
   webhook_disabled: sql`${auditLogs.action} = ${AUDIT_ACTIONS.outgoingWebhookAutoDisabled}`,
-  api_key_changed: sql`${auditLogs.action} in (${AUDIT_ACTIONS.apiKeyCreated}, ${AUDIT_ACTIONS.apiKeyRevoked})`,
+  api_key_changed: sql`${auditLogs.action} in (${AUDIT_ACTIONS.apiKeyCreated}, ${AUDIT_ACTIONS.apiKeyRevoked}, ${AUDIT_ACTIONS.apiKeyUpdated})`,
+  // Tahap 9.1: template email terbit dengan tautan/angka baru; pengirim email API terblokir.
+  email_template_risky: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.emailTemplatePublished} and ${auditLogs.metadata} ->> 'risky' = 'true')`,
+  email_sender_blocked: sql`${auditLogs.action} = ${AUDIT_ACTIONS.emailSenderBlocked}`,
   bot_enabled: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.channelBotUpdated} and ${auditLogs.metadata} ->> 'enabled' = 'true' and ${auditLogs.metadata} ->> 'previousEnabled' = 'false' and ${auditLogs.metadata} ->> 'actorRole' <> 'owner')`,
   // Satu baris audit = satu jenis (`kindOf`): bila bersamaan dengan menyalakan bot, tampil `bot_enabled`.
   bot_verified_sender_disabled: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.channelBotUpdated} and ${auditLogs.metadata} ->> 'requireVerifiedSender' = 'false' and ${auditLogs.metadata} ->> 'previousRequireVerifiedSender' = 'true' and ${auditLogs.metadata} ->> 'actorRole' <> 'owner' and not (${auditLogs.metadata} ->> 'enabled' = 'true' and ${auditLogs.metadata} ->> 'previousEnabled' = 'false'))`,
@@ -225,7 +228,12 @@ function kindOf(row: AuditRow): SecurityEventKind | undefined {
       return 'webhook_disabled';
     case AUDIT_ACTIONS.apiKeyCreated:
     case AUDIT_ACTIONS.apiKeyRevoked:
+    case AUDIT_ACTIONS.apiKeyUpdated:
       return 'api_key_changed';
+    case AUDIT_ACTIONS.emailTemplatePublished:
+      return row.metadata.risky === true ? 'email_template_risky' : undefined;
+    case AUDIT_ACTIONS.emailSenderBlocked:
+      return 'email_sender_blocked';
     case AUDIT_ACTIONS.channelBotUpdated:
       if (row.metadata.actorRole === 'owner') return undefined;
       if (row.metadata.enabled === true && row.metadata.previousEnabled === false) {
@@ -271,7 +279,9 @@ const DETAIL_KEYS: Readonly<Record<SecurityEventKind, readonly string[]>> = {
   owner_password_reset_server: ['via', 'revokedSessions'],
   auto_message_risky: ['changedFields', 'addedLinks', 'addedNumbers', 'actorRole'],
   branding_changed: ['changedFields', 'addedLinks', 'addedNumbers', 'actorRole'],
-  api_key_changed: ['change', 'name', 'displayPrefix', 'scopes', 'actorRole'],
+  api_key_changed: ['change', 'name', 'displayPrefix', 'scopes', 'changedFields', 'actorRole'],
+  email_template_risky: ['name', 'slug', 'version', 'addedLinks', 'addedNumbers', 'actorRole'],
+  email_sender_blocked: ['senderId', 'address', 'reason'],
   webhook_changed: ['change', 'host', 'previousHost', 'events', 'cidrs', 'actorRole'],
   webhook_disabled: ['host', 'failures'],
   // P4-I1: Owner melihat bila perlindungan Email "hanya pengirim terverifikasi" ikut dimatikan.

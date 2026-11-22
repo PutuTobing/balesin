@@ -27,6 +27,8 @@ import styles from './Composer.module.css';
 import { ACCEPT, checkAttachment, guessMediaKind } from './attachments';
 import { messageBody } from './message-content';
 import { createOutboxItem, sendOutboxItem } from './outbox';
+import { EmailCopiesBar } from './EmailCopies';
+import { useEmailCopies } from './use-email-copies';
 import { slashQuery, useQuickReplies } from './quick-replies';
 import { InteractiveDialog } from './InteractiveDialog';
 import { TemplateSendDialog } from './TemplateSendDialog';
@@ -79,6 +81,8 @@ export function Composer({
   const [interactiveOpen, setInteractiveOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const isEmail = conversation.channel.type === 'email';
+  const emailCopies = useEmailCopies();
   const fileRef = useRef<HTMLInputElement>(null);
   const hintId = useId();
   const pickerId = useId();
@@ -163,12 +167,15 @@ export function Composer({
       file: file ?? undefined,
       previewUrl: preview ?? undefined,
       replyToMessageId: replyTo?.id,
+      ...(isEmail && emailCopies.copies.cc.length > 0 ? { cc: emailCopies.copies.cc } : {}),
+      ...(isEmail && emailCopies.copies.bcc.length > 0 ? { bcc: emailCopies.copies.bcc } : {}),
     });
     // Pratinjau kini milik item outbox (dicabut saat item dibuang).
     setPreview(null);
     setFile(null);
     setText('');
     if (fileRef.current) fileRef.current.value = '';
+    emailCopies.reset();
     onCancelReply();
     onError(null);
     sendOutboxItem(queryClient, item).catch(onSendError);
@@ -244,6 +251,9 @@ export function Composer({
 
   return (
     <div className={styles.composer}>
+      {isEmail ? (
+        <EmailCopiesBar conversation={conversation} state={emailCopies} disabled={disabled} />
+      ) : null}
       {pickerOpen ? (
         <QuickReplyPicker
           id={pickerId}
@@ -411,7 +421,7 @@ export function Composer({
               ? k.pausedPlaceholder
               : file
                 ? k.captionPlaceholder
-                : conversation.channel.type === 'email'
+                : isEmail
                   ? k.emailPlaceholder
                   : k.placeholder
           }

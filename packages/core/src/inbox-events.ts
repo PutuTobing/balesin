@@ -62,6 +62,12 @@ export const inboxBusEventSchema = z.strictObject({
   previousDepartmentId: z.uuid().optional(),
   /** Wajib untuk `access.changed`. */
   userId: z.uuid().optional(),
+  /**
+   * `conversation.deleted` (tahap 9.0, review R5): channel percakapan yang dihapus — barisnya sudah
+   * tidak ada, jadi hub memakai ini untuk akses per channel (`conversation.removed` hanya ke yang
+   * boleh melihat channel itu).
+   */
+  channelId: z.uuid().optional(),
 });
 export type InboxBusEvent = z.infer<typeof inboxBusEventSchema>;
 export type InboxBusEventInput = Omit<InboxBusEvent, 'v'>;

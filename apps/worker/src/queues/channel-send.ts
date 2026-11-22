@@ -81,6 +81,8 @@ export type ChannelSendOutcome =
       errorCode: number | null;
       /** Kode singkat untuk log. */
       kind: string;
+      /** Isian `extras` baru untuk disimpan bersama status gagal (Email: `deliveredCopies`, R8). */
+      extras?: MessageExtras;
     };
 
 export type PreparedChannelSend =
@@ -412,6 +414,11 @@ export async function prepareChannelSend(
       ].slice(-20);
       const subject = replySubject(previous?.extras.email?.subject ?? null);
       const messageId = newOutboundMessageId(fromAddress);
+      // Tahap 9.0: Cc/Bcc yang SUDAH diperiksa api (format, izin alamat baru, maks. 10).
+      const cc = message.extras.email?.cc ?? [];
+      const bcc = message.extras.email?.bcc ?? [];
+      // Review 9.0 R8: tembusan yang sudah menerima email ini (percobaan sebelumnya) tidak dikirimi lagi.
+      const alreadyDelivered = message.extras.email?.deliveredCopies ?? [];
       const store = deps.store;
       const transport = resolved.transport;
       const policy = resolved.policy;
@@ -434,6 +441,9 @@ export async function prepareChannelSend(
             transport.sender,
             {
               to: recipient,
+              cc,
+              bcc,
+              ...(alreadyDelivered.length > 0 ? { skipCopies: alreadyDelivered } : {}),
               subject,
               text: message.text ?? (attachments ? 'Terlampir.' : ''),
               thread: { messageId, inReplyTo, references },
@@ -455,6 +465,10 @@ export async function prepareChannelSend(
                   authWarning: false,
                   skippedAttachments: 0,
                   hasHtml: false,
+                  to: [recipient.toLowerCase()],
+                  cc,
+                  bcc,
+                  ...(result.rejectedCopies ? { rejectedCopies: result.rejectedCopies } : {}),
                 },
               },
             };
@@ -465,6 +479,19 @@ export async function prepareChannelSend(
             reason: result.code === 'unknown' ? 'delivery_unknown' : 'channel_rejected',
             errorCode: result.diagnostic.responseCode ?? null,
             kind: result.code,
+            ...(result.deliveredCopies && message.extras.email
+              ? {
+                  extras: {
+                    ...message.extras,
+                    email: {
+                      ...message.extras.email,
+                      deliveredCopies: [
+                        ...new Set([...alreadyDelivered, ...result.deliveredCopies]),
+                      ],
+                    },
+                  },
+                }
+              : {}),
           };
         },
       };

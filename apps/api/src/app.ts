@@ -39,6 +39,12 @@ import { createAccessDeniedRecorder } from './modules/auth/access-denied';
 import { createCsrfRejectionRecorder } from './modules/auth/csrf-rejection';
 import { createApiKeyAuthenticator } from './modules/api-keys/api-key-auth';
 import { apiKeysRoutes } from './modules/api-keys/api-keys.routes';
+import { emailMessageTemplatesRoutes } from './modules/email-message-templates/email-message-templates.routes';
+import { createEmailMessageTemplatesService } from './modules/email-message-templates/email-message-templates.service';
+import { emailSendRoutes } from './modules/email-send/email-send.routes';
+import { createEmailSendService } from './modules/email-send/email-send.service';
+import { emailSendersRoutes } from './modules/email-send/email-senders.routes';
+import { createEmailSendersService } from './modules/email-send/email-senders.service';
 import { createApiKeysService } from './modules/api-keys/api-keys.service';
 import { outgoingWebhooksRoutes } from './modules/outgoing-webhooks/outgoing-webhooks.routes';
 import { createOutgoingWebhooksService } from './modules/outgoing-webhooks/outgoing-webhooks.service';
@@ -84,6 +90,8 @@ import { createInvitationService } from './modules/invitations/invitations.servi
 import { passwordResetRoutes } from './modules/password-reset/password-reset.routes';
 import { createPasswordResetService } from './modules/password-reset/password-reset.service';
 import { auditRoutes } from './modules/audit/audit.routes';
+import { channelAccessRoutes } from './modules/channel-access/channel-access.routes';
+import { createChannelAccessService } from './modules/channel-access/channel-access.service';
 import { channelsRoutes } from './modules/channels/channels.routes';
 import { createChannelsService } from './modules/channels/channels.service';
 import { connectionsRoutes } from './modules/channel-connections/connections.routes';
@@ -597,6 +605,16 @@ export async function buildApp(deps: AppDeps) {
     limiter,
     cookieSecure: config.cookieSecure,
   });
+  await app.register(channelAccessRoutes, {
+    channelAccess: createChannelAccessService({
+      db,
+      publisher: inboxEvents,
+      twoFactor,
+      notifications: deps.notificationQueue,
+    }),
+    limiter,
+    cookieSecure: config.cookieSecure,
+  });
   await app.register(connectionsRoutes, {
     connections,
     limiter,
@@ -652,6 +670,42 @@ export async function buildApp(deps: AppDeps) {
     outbound,
     contacts: contactsService,
     assignment,
+  });
+  // Tahap 9.1 — email lewat API (n8n/billing) + Pengaturan → Template email & pengirim email.
+  const emailStore = createMediaStore(config.mediaDir);
+  const emailMessageTemplates = createEmailMessageTemplatesService({
+    db,
+    store: emailStore,
+    limiter,
+    notifier: deps.notifier,
+    twoFactor,
+    logger: deps.logger,
+  });
+  await app.register(emailSendRoutes, {
+    templates: emailMessageTemplates,
+    emailSend: createEmailSendService({
+      db,
+      store: emailStore,
+      sendingLimits,
+      publisher: inboxEvents,
+      logger: deps.logger,
+      ...(deps.overrides?.webhookAllowLoopback ? { remote: { allowLoopback: true } } : {}),
+    }),
+  });
+  await app.register(emailMessageTemplatesRoutes, {
+    templates: emailMessageTemplates,
+    limiter,
+    cookieSecure: config.cookieSecure,
+  });
+  await app.register(emailSendersRoutes, {
+    senders: createEmailSendersService({
+      db,
+      twoFactor,
+      notifier: deps.notifier,
+      logger: deps.logger,
+    }),
+    limiter,
+    cookieSecure: config.cookieSecure,
   });
   // Template Meta + mulai percakapan dengan template (Fase 4).
   await app.register(templatesRoutes, {

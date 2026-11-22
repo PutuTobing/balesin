@@ -369,6 +369,100 @@ describe('klien SMTP terhadap server tiruan', () => {
     expect(wire).toMatch(/^Subject: Email tes dari Balesin Uji$/m);
   });
 
+  it('tahap 9.0: Cc masuk header + amplop; Bcc HANYA di amplop (RCPT TO), tidak pernah di header', async () => {
+    const { config, policy, received } = await fakeSmtp((line) =>
+      /^AUTH/i.test(line) ? '235 masuk\r\n' : undefined,
+    );
+
+    const result = await sendSmtpMail(
+      config,
+      sender,
+      { ...mail, cc: ['rekan@contoh.test'], bcc: ['rahasia@lain.test'] },
+      policy,
+    );
+
+    expect(result).toEqual({ ok: true });
+    const wire = received.join('\n');
+    expect(wire).toContain('RCPT TO:<tujuan@contoh.test>');
+    expect(wire).toContain('RCPT TO:<rekan@contoh.test>');
+    expect(wire).toContain('RCPT TO:<rahasia@lain.test>');
+    expect(wire).toMatch(/^Cc: rekan@contoh\.test$/m);
+    expect(wire).not.toMatch(/^Bcc:/im);
+    // Selain perintah RCPT TO, alamat Bcc tidak muncul di mana pun dalam data email.
+    const data = received.filter((line) => !/^RCPT TO:/i.test(line)).join('\n');
+    expect(data).not.toContain('rahasia@lain.test');
+  });
+
+  it('tahap 9.0: hanya tembusan yang ditolak → tetap terkirim (rejectedCopies); penerima utama ditolak → gagal', async () => {
+    const rejectCopy = await fakeSmtp((line) => {
+      if (/^RCPT TO:<rahasia@lain\.test>/i.test(line)) return '550 5.1.1 tidak dikenal\r\n';
+      return /^AUTH/i.test(line) ? '235 masuk\r\n' : undefined;
+    });
+    expect(
+      await sendSmtpMail(
+        rejectCopy.config,
+        sender,
+        { ...mail, cc: ['rekan@contoh.test'], bcc: ['rahasia@lain.test'] },
+        rejectCopy.policy,
+      ),
+    ).toEqual({ ok: true, rejectedCopies: ['rahasia@lain.test'] });
+    await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
+
+    const rejectMain = await fakeSmtp((line) => {
+      if (/^RCPT TO:<tujuan@contoh\.test>/i.test(line)) return '550 5.1.1 tidak dikenal\r\n';
+      return /^AUTH/i.test(line) ? '235 masuk\r\n' : undefined;
+    });
+    expect(
+      await sendSmtpMail(
+        rejectMain.config,
+        sender,
+        { ...mail, cc: ['rekan@contoh.test'] },
+        rejectMain.policy,
+      ),
+    ).toMatchObject({ ok: false, code: 'recipient_rejected' });
+  });
+
+  it('review 9.0 R8: utama ditolak + tembusan diterima → deliveredCopies; kirim ulang melewati tembusan itu', async () => {
+    const first = await fakeSmtp((line) => {
+      if (/^RCPT TO:<tujuan@contoh\.test>/i.test(line)) return '550 5.1.1 tidak dikenal\r\n';
+      return /^AUTH/i.test(line) ? '235 masuk\r\n' : undefined;
+    });
+    expect(
+      await sendSmtpMail(
+        first.config,
+        sender,
+        { ...mail, cc: ['rekan@contoh.test'], bcc: ['rahasia@lain.test'] },
+        first.policy,
+      ),
+    ).toMatchObject({
+      ok: false,
+      code: 'recipient_rejected',
+      deliveredCopies: ['rekan@contoh.test', 'rahasia@lain.test'],
+    });
+    await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
+
+    const second = await fakeSmtp((line) => (/^AUTH/i.test(line) ? '235 masuk\r\n' : undefined));
+    expect(
+      await sendSmtpMail(
+        second.config,
+        sender,
+        {
+          ...mail,
+          cc: ['rekan@contoh.test'],
+          bcc: ['rahasia@lain.test'],
+          skipCopies: ['rekan@contoh.test', 'rahasia@lain.test'],
+        },
+        second.policy,
+      ),
+    ).toEqual({ ok: true });
+    const wire = second.received.join('\n');
+    expect(wire).toContain('RCPT TO:<tujuan@contoh.test>');
+    expect(wire).not.toContain('RCPT TO:<rekan@contoh.test>');
+    expect(wire).not.toContain('rahasia@lain.test');
+    // Header Cc tetap utuh (penerima utama melihat siapa saja yang ditembusi).
+    expect(wire).toMatch(/^Cc: rekan@contoh\.test$/m);
+  });
+
   it('port di luar daftar izin dan host terblokir ditolak sebelum ada sambungan', async () => {
     const { config, received } = await fakeSmtp(() => undefined);
 

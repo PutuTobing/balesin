@@ -427,6 +427,42 @@ async function findWebhookDetails(
   };
 }
 
+/** Tahap 9.1: rincian email API dari baris audit (nama template, alamat pengirim, batas). */
+async function findEmailApiDetails(
+  organizationId: string,
+  auditLogId: string | undefined,
+  deps: EmailJobDeps,
+): Promise<
+  | {
+      templateName?: string;
+      addedLinks?: number;
+      addedNumbers?: number;
+      senderAddress?: string;
+      blockedReason?: string;
+      previousLimit?: number;
+      nextLimit?: number;
+    }
+  | undefined
+> {
+  if (!auditLogId) return undefined;
+  const [row] = await deps.db
+    .select({ metadata: auditLogs.metadata })
+    .from(auditLogs)
+    .where(and(eq(auditLogs.organizationId, organizationId), eq(auditLogs.id, auditLogId)))
+    .limit(1);
+  if (!row) return undefined;
+  const { name, addedLinks, addedNumbers, address, reason, previous, next } = row.metadata;
+  return {
+    ...(typeof name === 'string' ? { templateName: name.slice(0, 80) } : {}),
+    ...(typeof addedLinks === 'number' ? { addedLinks } : {}),
+    ...(typeof addedNumbers === 'number' ? { addedNumbers } : {}),
+    ...(typeof address === 'string' ? { senderAddress: address.slice(0, 254) } : {}),
+    ...(typeof reason === 'string' ? { blockedReason: reason.slice(0, 64) } : {}),
+    ...(typeof previous === 'number' ? { previousLimit: previous } : {}),
+    ...(typeof next === 'number' ? { nextLimit: next } : {}),
+  };
+}
+
 /** IP + user agent dari baris audit kejadian (untuk "dari mana" di email keamanan). */
 async function findAuditOrigin(
   organizationId: string,
@@ -550,7 +586,10 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
     event === 'sending_paused' ||
     event === 'sending_limit_reached' ||
     event === 'sending_auto_paused' ||
-    event === 'webhook_disabled';
+    event === 'webhook_disabled' ||
+    event === 'email_template_risky' ||
+    event === 'email_sender_blocked' ||
+    event === 'email_sender_limit_raised';
   const recipient = await findActiveUser(organizationId, recipientUserId, deps);
   // Pengguna yang baru dinonaktifkan tetap disebut di email "dinonaktifkan".
   const subject =
@@ -558,7 +597,10 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
     event === 'sending_paused' ||
     event === 'sending_limit_reached' ||
     event === 'sending_auto_paused' ||
-    event === 'webhook_disabled'
+    event === 'webhook_disabled' ||
+    event === 'email_template_risky' ||
+    event === 'email_sender_blocked' ||
+    event === 'email_sender_limit_raised'
       ? await findUserAnyStateWithEmail(organizationId, subjectUserId, deps)
       : await findActiveUser(organizationId, subjectUserId, deps);
   const branding = await loadOrganizationBrand(deps.db, organizationId);
@@ -608,6 +650,12 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
       event === 'webhook_disabled'
         ? await findWebhookDetails(organizationId, auditLogId, deps)
         : undefined;
+    const emailApi =
+      event === 'email_template_risky' ||
+      event === 'email_sender_blocked' ||
+      event === 'email_sender_limit_raised'
+        ? await findEmailApiDetails(organizationId, auditLogId, deps)
+        : undefined;
     body = renderAdminAccountNoticeEmail({
       brand: branding.brand,
       timeZone: branding.timeZone,
@@ -620,6 +668,7 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
       ...(burst ? { burst } : {}),
       ...(sending ? { sending } : {}),
       ...(webhook ? { webhook } : {}),
+      ...(emailApi ? { emailApi } : {}),
       ...(origin ? { origin } : {}),
     });
   }

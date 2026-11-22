@@ -436,6 +436,12 @@ export const channelSummarySchema = z.object({
   name: z.string(),
   enabled: z.boolean(),
   displayPhoneNumber: z.string().nullable(),
+  /**
+   * Tahap 9.0 — channel Email: alamat utama + alias (huruf kecil) = pilihan saringan "Alamat
+   * tujuan" (tampilkan saringan hanya bila > 1). Channel lain: `[]`. Server selalu mengisi;
+   * opsional hanya untuk data tiruan lama.
+   */
+  emailAddresses: z.array(z.string()).optional(),
 });
 export type ChannelSummary = z.infer<typeof channelSummarySchema>;
 

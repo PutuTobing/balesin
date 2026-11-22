@@ -431,7 +431,9 @@ export function createChannelsService(deps: ChannelsServiceDeps): ChannelsServic
     canStoreSecrets: secretBox !== null,
 
     async listSummaries(auth) {
-      const rows = await listChannels(db, auth.organizationId);
+      // Tahap 9.0: pemilih/saringan channel (inbox, percakapan baru, kirim template) hanya memuat
+      // channel yang boleh dilihat pengguna ini (Owner/Admin: semua).
+      const rows = await listChannels(db, auth.organizationId, { visibleTo: auth.user.id });
       return { channels: rows.map(toChannelSummary) };
     },
 

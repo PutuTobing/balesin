@@ -161,6 +161,10 @@ function remoteError(error: RemoteFileError): AppError {
       return new AppError('PAYLOAD_TOO_LARGE', {
         message: 'Berkas di media_url melebihi batas ukuran WhatsApp untuk jenis media itu.',
       });
+    case 'host_not_allowed':
+      return new AppError('VALIDATION_ERROR', {
+        message: 'media_url ditolak: host tidak diizinkan.',
+      });
     default:
       return new AppError('VALIDATION_ERROR', {
         message: `media_url ditolak: ${WEBHOOK_TARGET_ERROR_MESSAGES[error].replace(/URL webhook|Webhook/g, 'URL')}`,
@@ -488,6 +492,7 @@ export function createMobichatService(deps: MobichatServiceDeps) {
           scope: 'all',
           userId: apiKeyId,
           organizationId: key.organizationId,
+          principal: 'apiKey',
         },
         message.id,
         signal,

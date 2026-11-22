@@ -499,6 +499,9 @@ importers:
       pino:
         specifier: 'catalog:'
         version: 10.4.0
+      qrcode-generator:
+        specifier: 2.0.4
+        version: 2.0.4
       sanitize-html:
         specifier: 2.18.2
         version: 2.18.2

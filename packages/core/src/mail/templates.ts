@@ -684,7 +684,10 @@ export interface AdminAccountNoticeEmailInput {
     | 'sending_paused'
     | 'sending_limit_reached'
     | 'sending_auto_paused'
-    | 'webhook_disabled';
+    | 'webhook_disabled'
+    | 'email_template_risky'
+    | 'email_sender_blocked'
+    | 'email_sender_limit_raised';
   subject: { name: string; email: string; role: UserRole };
   /**
    * Untuk `two_factor_reset`, `role_changed`, `user_disabled`: pelakunya. Untuk `member_joined`:
@@ -697,6 +700,20 @@ export interface AdminAccountNoticeEmailInput {
   burst?: { accounts: number; windowMinutes: number };
   /** Untuk `webhook_disabled`: host tujuan + jumlah gagal beruntun (dari baris audit). */
   webhook?: { host?: string; failures?: number };
+  /**
+   * Tahap 9.1 (dari baris audit): `email_template_risky` → nama template + jumlah tautan/angka baru;
+   * `email_sender_blocked` → alamat pengirim + kode alasan; `email_sender_limit_raised` → batas lama
+   * → baru.
+   */
+  emailApi?: {
+    templateName?: string;
+    addedLinks?: number;
+    addedNumbers?: number;
+    senderAddress?: string;
+    blockedReason?: string;
+    previousLimit?: number;
+    nextLimit?: number;
+  };
   /** Untuk `sending_paused` / `sending_limit_reached`: rincian dari baris audit. */
   sending?: {
     reason?: string;
@@ -799,6 +816,67 @@ export function renderAdminAccountNoticeEmail(input: AdminAccountNoticeEmailInpu
       details,
       notes: [
         `Periksa riwayat pengiriman di Pengaturan → Webhook di ${product}, perbaiki penerimanya, lalu aktifkan lagi.`,
+      ],
+    });
+  }
+  if (input.event === 'email_template_risky') {
+    const templateName = singleLine(input.emailApi?.templateName ?? 'tanpa nama');
+    const links = input.emailApi?.addedLinks ?? 0;
+    const numbers = input.emailApi?.addedNumbers ?? 0;
+    return compose(input.brand, {
+      subject: `Template email "${templateName}" diterbitkan dengan tautan/angka baru di ${product}`,
+      preheader: 'Isi template ini langsung terkirim ke pelanggan lewat API tanpa peninjauan lain.',
+      heading: 'Template email berisi tautan/angka baru',
+      paragraphs: [
+        hello(input.recipientName),
+        `${account} menerbitkan template email "${templateName}" yang memuat ${String(links)} tautan dan ${String(numbers)} angka panjang (mis. nomor rekening/VA) baru.`,
+        'Template email langsung dipakai aplikasi billing/n8n untuk mengirim ke banyak pelanggan. Bila ini tidak diduga, bisa jadi tanda akun yang dibobol menyisipkan nomor rekening atau tautan penipuan.',
+        'Kamu menerima email ini karena kamu Owner.',
+      ],
+      details,
+      notes: [
+        `Periksa template itu di Pengaturan → Template email di ${product}. Bila mencurigakan, arsipkan templatenya dan periksa Audit log.`,
+      ],
+    });
+  }
+  if (input.event === 'email_sender_blocked') {
+    const address = singleLine(input.emailApi?.senderAddress ?? 'pengirim email');
+    return compose(input.brand, {
+      subject: `Pengirim email ${address} terblokir di ${product}`,
+      preheader:
+        'Email API dari pengirim ini ditahan di antrean sampai kredensial SMTP diperbaiki.',
+      heading: 'Pengirim email API terblokir',
+      paragraphs: [
+        hello(input.recipientName),
+        `Server SMTP menolak login untuk pengirim ${address} (atau kredensialnya tidak bisa dibuka). Email yang dikirim lewat API dari pengirim ini ditahan di antrean; yang tertahan lebih dari 24 jam dibatalkan sebagai gagal.`,
+        'Kamu menerima email ini karena kamu Owner.',
+      ],
+      details: [{ label: 'Waktu', value: when }],
+      notes: [
+        `Perbaiki username/password SMTP di Pengaturan → Channel di ${product}, lalu tekan Lanjutkan pada pengirim itu di Pengaturan → Batas kirim.`,
+      ],
+    });
+  }
+  if (input.event === 'email_sender_limit_raised') {
+    const address = singleLine(input.emailApi?.senderAddress ?? 'pengirim email');
+    const previous = input.emailApi?.previousLimit;
+    const next = input.emailApi?.nextLimit;
+    const change =
+      previous !== undefined && next !== undefined
+        ? `${previous.toLocaleString('id-ID')} → ${next.toLocaleString('id-ID')} email per jam`
+        : null;
+    return compose(input.brand, {
+      subject: `Batas email per jam ${address} dinaikkan di ${product}`,
+      preheader: `${name} menaikkan batas kirim email API untuk ${address}.`,
+      heading: 'Batas email per jam dinaikkan',
+      paragraphs: [
+        hello(input.recipientName),
+        `${account} menaikkan batas email per jam untuk pengirim ${address}${change ? ` (${change})` : ''}.`,
+        'Batas yang terlalu tinggi bisa membuat server email menandai domainmu sebagai spam. Kamu menerima email ini karena kamu Owner.',
+      ],
+      details: [...details, ...(change ? [{ label: 'Perubahan', value: change }] : [])],
+      notes: [
+        `Bila tidak kamu duga, turunkan lagi di Pengaturan → Batas kirim di ${product} dan periksa Audit log.`,
       ],
     });
   }

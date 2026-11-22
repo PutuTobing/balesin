@@ -102,6 +102,19 @@ function main(config: WorkerConfig): void {
     notifications: { db, secretBox, appUrl: config.appUrl, throttle: redisThrottle(redis) },
     webhooksOut: { db, secretBox, appUrl: config.appUrl, notifyOwner: ownerNotifier.notify },
     broadcast: { db, meta, secretBox, publisher, notifyOwner: ownerNotifier.notify },
+    // Tahap 9.1: email lewat API (pola outbox `email_outbound`, SMTP pengirim Channel Email).
+    emailOutbound: {
+      db,
+      secretBox,
+      store: mediaStore,
+      publisher,
+      notifyOwner: ownerNotifier.notify,
+      smtp: {
+        allowedPorts: config.smtpAllowedPorts,
+        plaintextLogin: plaintextLoginPolicy(config.isProduction),
+        fallback: config.smtpFallback,
+      },
+    },
   });
 
   const shutdown = createShutdown({

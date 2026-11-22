@@ -160,6 +160,8 @@ export const API_ROUTES = {
     businessProfile: `${API_PREFIX}/settings/channels/:channelId/business-profile`,
     /** GET/PUT — saklar bot channel, jam kerja bot, batas waktu bot (`integrations.manage`). */
     bot: `${API_PREFIX}/settings/channels/:channelId/bot`,
+    /** GET/PUT — akses per channel: semua tim / hanya departemen & pengguna tertentu (`channels.manage`). */
+    access: `${API_PREFIX}/settings/channels/:channelId/access`,
   },
   /**
    * Channel selain WhatsApp — Telegram, Email, Messenger, Instagram (Fase 6,
@@ -341,6 +343,8 @@ export const API_ROUTES = {
     list: `${API_PREFIX}/settings/api-keys`,
     /** POST — cabut (seketika). */
     revoke: `${API_PREFIX}/settings/api-keys/:apiKeyId/revoke`,
+    /** PATCH — ubah pengirim email & host lampiran (tahap 9.1, + konfirmasi identitas). */
+    key: `${API_PREFIX}/settings/api-keys/:apiKeyId`,
     /** GET/PUT — pengaturan API publik (dokumentasi `/api/docs` aktif/mati). */
     settings: `${API_PREFIX}/settings/api`,
   },
@@ -386,6 +390,59 @@ export const API_ROUTES = {
     ticket: `${API_PREFIX}/public/tickets/:ticketId`,
     /** POST — komentar (`tickets:write`). */
     ticketComments: `${API_PREFIX}/public/tickets/:ticketId/comments`,
+  },
+  /**
+   * Tahap 9.1 — kirim email lewat API (docs/KONTRAK-API-EMAIL-KIRIM.md §3). Baca = `email:read`,
+   * kirim/batal/balas/unggah = `email:send`.
+   */
+  publicEmail: {
+    senders: `${API_PREFIX}/public/email/senders`,
+    send: `${API_PREFIX}/public/email/send`,
+    media: `${API_PREFIX}/public/email/media`,
+    message: `${API_PREFIX}/public/email/messages/:emailId`,
+    cancel: `${API_PREFIX}/public/email/messages/:emailId/cancel`,
+    templates: `${API_PREFIX}/public/email/templates`,
+    /** `:emailId` = ID pesan Inbox email MASUK yang dibalas. */
+    reply: `${API_PREFIX}/public/email/messages/:emailId/reply`,
+  },
+  /**
+   * Pengaturan → Template email (tahap 9.1, `templates.manage`). Terbit = konfirmasi identitas; kirim
+   * tes selalu ke alamat akun sendiri.
+   */
+  emailTemplates: {
+    /** GET — daftar (`?q=&archived=`); POST — buat. */
+    list: `${API_PREFIX}/settings/email-templates`,
+    /** GET — detail (draf + terbit); PATCH — ubah nama/slug/draf. */
+    template: `${API_PREFIX}/settings/email-templates/:templateId`,
+    publish: `${API_PREFIX}/settings/email-templates/:templateId/publish`,
+    archive: `${API_PREFIX}/settings/email-templates/:templateId/archive`,
+    unarchive: `${API_PREFIX}/settings/email-templates/:templateId/unarchive`,
+    versions: `${API_PREFIX}/settings/email-templates/:templateId/versions`,
+    version: `${API_PREFIX}/settings/email-templates/:templateId/versions/:versionId`,
+    restore: `${API_PREFIX}/settings/email-templates/:templateId/versions/:versionId/restore`,
+    /** POST — pratinjau isi (tanpa menyimpan). */
+    preview: `${API_PREFIX}/settings/email-templates/preview`,
+    /** POST — kirim tes ke alamat akun sendiri. */
+    test: `${API_PREFIX}/settings/email-templates/:templateId/test`,
+    /** GET — 6 preset ISP. */
+    presets: `${API_PREFIX}/settings/email-templates/presets`,
+    /** POST — template baru dari preset. */
+    fromPreset: `${API_PREFIX}/settings/email-templates/presets/:presetId`,
+  },
+  /**
+   * Pengaturan → Batas kirim → "Email per pengirim" (tahap 9.1): lihat/ubah/jeda =
+   * `sending.limits.manage`; lanjutkan = `sending.resume`.
+   */
+  emailSenders: {
+    list: `${API_PREFIX}/settings/email-senders`,
+    /** PUT — batas per jam (menaikkan = konfirmasi identitas). */
+    sender: `${API_PREFIX}/settings/email-senders/:senderId`,
+    pause: `${API_PREFIX}/settings/email-senders/:senderId/pause`,
+    resume: `${API_PREFIX}/settings/email-senders/:senderId/resume`,
+  },
+  /** Pengaturan → API key → "Email terkirim" (tahap 9.1, `api_keys.manage`; penerima tersamar). */
+  emailOutbound: {
+    list: `${API_PREFIX}/settings/email-outbound`,
   },
 
   /**

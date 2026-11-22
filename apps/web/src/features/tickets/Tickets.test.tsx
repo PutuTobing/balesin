@@ -229,6 +229,18 @@ describe('halaman tiket', () => {
 });
 
 describe('detail tiket', () => {
+  it('percakapan di channel tanpa akses: teks "tidak tersedia", bukan tautan', async () => {
+    await renderApp(
+      `/tiket/${TICKET.id}`,
+      base({
+        [`GET ${ticketPath}`]: () =>
+          json({ ticket: { ...TICKET, conversation: null, conversationUnavailable: true } }),
+      }),
+    );
+    expect(await screen.findByText(k.conversationUnavailable)).toBeVisible();
+    expect(screen.queryByRole('link', { name: /percakapan/i })).toBeNull();
+  });
+
   it('kehilangan akses setelah dialihkan → kembali ke daftar dengan pesan', async () => {
     const { router } = await renderApp(
       `/tiket/${TICKET.id}`,

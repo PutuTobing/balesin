@@ -9,6 +9,8 @@ import { Tooltip } from '../../components/ui/Tooltip';
 import { t } from '../../i18n/id';
 import {
   activeFilterCount,
+  emailRecipientOptions,
+  withChannel,
   type FilterChip,
   type FilterOptions,
   type InboxFilters,
@@ -32,6 +34,8 @@ export function InboxFilterMenu({
   const label = count > 0 ? f.openWithCount(count) : f.open;
   const keepOpen = (event: Event) => event.preventDefault();
   const showChannels = options.channels.length > 1 || filters.channelId !== undefined;
+  const recipients = emailRecipientOptions(options.channels, filters.channelId);
+  const showRecipients = recipients.length > 1 || filters.emailRecipient !== undefined;
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   useEdgeFade(menuRef, 'y', [open, options.agents?.length, options.channels.length]);
@@ -146,7 +150,9 @@ export function InboxFilterMenu({
             <Section title={f.channel}>
               <DropdownMenu.RadioGroup
                 value={filters.channelId ?? ANY}
-                onValueChange={(value) => onChange({ ...filters, channelId: value || undefined })}
+                onValueChange={(value) =>
+                  onChange(withChannel(filters, value || undefined, options.channels))
+                }
               >
                 <Radio value={ANY} onSelect={keepOpen}>
                   {f.allChannels}
@@ -154,6 +160,26 @@ export function InboxFilterMenu({
                 {options.channels.map((channel) => (
                   <Radio key={channel.id} value={channel.id} onSelect={keepOpen}>
                     {channel.name}
+                  </Radio>
+                ))}
+              </DropdownMenu.RadioGroup>
+            </Section>
+          ) : null}
+
+          {showRecipients ? (
+            <Section title={f.emailRecipient}>
+              <DropdownMenu.RadioGroup
+                value={filters.emailRecipient ?? ANY}
+                onValueChange={(value) =>
+                  onChange({ ...filters, emailRecipient: value || undefined })
+                }
+              >
+                <Radio value={ANY} onSelect={keepOpen}>
+                  {f.anyEmailRecipient}
+                </Radio>
+                {recipients.map((address) => (
+                  <Radio key={address} value={address} onSelect={keepOpen}>
+                    {address}
                   </Radio>
                 ))}
               </DropdownMenu.RadioGroup>

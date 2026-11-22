@@ -1,0 +1,153 @@
+/* Isian alamat email berbentuk chip (Cc/Bcc composer, alias channel Email). */
+
+.box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  min-height: var(--size-control);
+  padding: var(--space-4) var(--space-8);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--bg);
+  cursor: text;
+}
+
+.box:focus-within {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+
+.box[data-invalid] {
+  border-color: var(--danger);
+}
+
+.box[data-disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.prefix {
+  flex: none;
+  min-width: var(--space-24);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.chips {
+  display: contents;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  max-width: 100%;
+  min-width: 0;
+  height: 1.75rem;
+  padding-left: var(--space-8);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--text-13);
+}
+
+.chip[data-flagged] {
+  border-color: var(--warning);
+}
+
+.chipText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flag {
+  flex: none;
+  color: var(--warning-ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.remove {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 1.625rem;
+  height: 1.625rem;
+  border-radius: var(--radius-pill);
+  color: var(--ink-2);
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.remove:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.remove:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 0;
+}
+
+.input {
+  flex: 1 1 8rem;
+  min-width: 6rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: var(--text-14);
+}
+
+.input::placeholder {
+  color: var(--ink-2);
+  opacity: 1;
+}
+
+.input:focus,
+.input:focus-visible {
+  outline: none;
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .box {
+    min-height: var(--size-touch);
+  }
+
+  .chip {
+    height: 2rem;
+  }
+
+  /* Area tekan tombol hapus 44px tanpa membesarkan chip (melebar ke luar chip). */
+  .remove::after {
+    content: '';
+    position: absolute;
+    inset: calc((var(--size-touch) - 1.625rem) / -2);
+  }
+
+  .input {
+    height: 2rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .input {
+    /* 16px: iOS tidak memperbesar halaman saat kolom difokus. */
+    font-size: var(--text-16);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .remove {
+    transition: none;
+  }
+}

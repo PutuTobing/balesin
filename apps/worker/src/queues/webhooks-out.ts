@@ -46,6 +46,7 @@ import {
 import { Queue, UnrecoverableError, Worker } from 'bullmq';
 import { and, asc, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
 
+import { buildEmailEventData } from './email-events';
 import type { QueueConnectionOptions } from './system';
 
 /**
@@ -303,6 +304,17 @@ export async function buildEventBody(
 ): Promise<Record<string, unknown> | null> {
   const org = event.organizationId;
   const data: Record<string, unknown> = {};
+  // Tahap 9.1: email lewat API (`email.sent/failed/bounced/replied`).
+  if (event.type.startsWith('email.')) {
+    const email = await buildEmailEventData(db, event);
+    if (!email) return null;
+    return {
+      id: event.id,
+      event: event.type,
+      created_at: event.createdAt.toISOString(),
+      data: email,
+    };
+  }
   if (event.type.startsWith('ticket.')) {
     const ticket = await ticketData(db, org, event.ticketId);
     if (!ticket) return null;

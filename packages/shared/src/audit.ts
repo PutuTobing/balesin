@@ -96,6 +96,11 @@ export const AUDIT_ACTIONS = {
   channelTested: 'channel.tested',
   /** Saklar bot channel / jam kerja bot / batas waktu bot diubah (Fase 3). */
   channelBotUpdated: 'channel.bot_updated',
+  /**
+   * Akses per channel diubah (tahap 9.0): `mode`/`previousMode`, departemen & pengguna yang
+   * ditambah/dicabut (ID + nama tampilan), jumlah akhir. Tanpa data pelanggan.
+   */
+  channelAccessUpdated: 'channel.access_updated',
   /** Template Meta (Fase 4). */
   templateCreated: 'template.created',
   templateUpdated: 'template.updated',
@@ -224,6 +229,35 @@ export const AUDIT_ACTIONS = {
   workspaceSettingsUpdated: 'settings.workspace.updated',
   /** Ketersediaan/pengecualian agen dari alokasi otomatis diubah (`available`, `excluded`, `self`). */
   allocationAgentUpdated: 'settings.workspace.agent_updated',
+  /**
+   * Tahap 9.0 — balasan channel Email dengan Cc/Bcc (`cc`/`bcc` tersamar `maskEmail`, `newCount` =
+   * alamat baru di utas, `actor` = `user`/`apiKey`). Target = percakapan.
+   */
+  messageEmailCopiesSent: 'message.email_copies_sent',
+  // ── Tahap 9.1: email lewat API (docs/KONTRAK-API-EMAIL-KIRIM.md §11) ──
+  /** Pengirim email / host lampiran API key diubah (`changedFields`, `emailSenders`, `hosts`). */
+  apiKeyUpdated: 'api_key.updated',
+  /**
+   * Template email (tanpa isi HTML/subjek): `templateId`, `slug`, `version`, `changedFields`; terbit
+   * `risky: true` (+ `addedLinks`, `addedNumbers`) bila isi baru memuat tautan/angka panjang baru →
+   * kejadian keamanan `email_template_risky`.
+   */
+  emailTemplateCreated: 'email_template.created',
+  emailTemplateDraftSaved: 'email_template.draft_saved',
+  emailTemplatePublished: 'email_template.published',
+  emailTemplateArchived: 'email_template.archived',
+  emailTemplateUnarchived: 'email_template.unarchived',
+  emailTemplateRestored: 'email_template.restored',
+  emailTemplateTestSent: 'email_template.test_sent',
+  /** Batas email per jam sebuah pengirim diubah (`senderId`, `previous`, `next`). */
+  emailSenderLimitUpdated: 'settings.email_sender_limit.updated',
+  emailSenderPaused: 'settings.email_sender.paused',
+  emailSenderResumed: 'settings.email_sender.resumed',
+  /**
+   * Pengirim email terblokir otomatis (worker; tanpa pelaku): `senderId`, `reason` (kode) →
+   * kejadian keamanan `email_sender_blocked`.
+   */
+  emailSenderBlocked: 'settings.email_sender.blocked',
 } as const;
 
 export type AuditActionKey = keyof typeof AUDIT_ACTIONS;
@@ -287,6 +321,7 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'channel.deleted': 'Channel dihapus',
   'channel.tested': 'Koneksi channel dites',
   'channel.bot_updated': 'Pengaturan bot channel diubah',
+  'channel.access_updated': 'Akses channel diubah',
   'template.created': 'Template pesan dibuat (draf)',
   'template.updated': 'Template pesan diubah',
   'template.submitted': 'Template pesan diajukan ke Meta',
@@ -351,6 +386,19 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'webhook.secret_rotated': 'Rahasia webhook keluar dirotasi',
   'webhook.auto_disabled': 'Webhook keluar dinonaktifkan otomatis',
   'settings.private_network.updated': 'Allowlist IP privat diubah',
+  'message.email_copies_sent': 'Email dibalas dengan Cc/Bcc',
+  'api_key.updated': 'API key diubah (pengirim email / host lampiran)',
+  'email_template.created': 'Template email dibuat',
+  'email_template.draft_saved': 'Draf template email disimpan',
+  'email_template.published': 'Template email diterbitkan',
+  'email_template.archived': 'Template email diarsipkan',
+  'email_template.unarchived': 'Template email dipulihkan dari arsip',
+  'email_template.restored': 'Versi lama template email disalin ke draf',
+  'email_template.test_sent': 'Email tes template dikirim',
+  'settings.email_sender_limit.updated': 'Batas email per jam pengirim diubah',
+  'settings.email_sender.paused': 'Pengirim email dijeda',
+  'settings.email_sender.resumed': 'Pengirim email dilanjutkan',
+  'settings.email_sender.blocked': 'Pengirim email terblokir otomatis',
 };
 
 /** Label untuk aksi yang mungkin belum dikenal klien (versi lama): tampilkan kodenya apa adanya. */
@@ -383,6 +431,9 @@ export const AUDIT_TARGET_TYPES = [
   'ticket_board',
   'ticket',
   'department',
+  'conversation',
+  'email_template',
+  'email_sender',
 ] as const;
 export const auditTargetTypeSchema = z.enum(AUDIT_TARGET_TYPES, {
   error: 'Jenis target tidak dikenal.',
@@ -411,6 +462,9 @@ export const AUDIT_TARGET_TYPE_LABELS: Readonly<Record<AuditTargetType, string>>
   ticket_board: 'Board tiket',
   ticket: 'Tiket',
   department: 'Departemen',
+  conversation: 'Percakapan',
+  email_template: 'Template email',
+  email_sender: 'Pengirim email',
 };
 
 // ── GET /audit-logs ─────────────────────────────────────────────────────────
@@ -590,6 +644,13 @@ export const SECURITY_EVENT_KINDS = [
    * (review merek B2). `info`; `warning` bila nama aplikasi/maskot baru memuat tautan/angka panjang.
    */
   'branding_changed',
+  /**
+   * Tahap 9.1: template email (langsung terkirim ke banyak pelanggan lewat API) diterbitkan dengan
+   * tautan/angka panjang baru.
+   */
+  'email_template_risky',
+  /** Tahap 9.1: pengirim email API terblokir (login SMTP ditolak / kredensial tidak terbuka). */
+  'email_sender_blocked',
 ] as const;
 export const securityEventKindSchema = z.enum(SECURITY_EVENT_KINDS);
 export type SecurityEventKind = z.infer<typeof securityEventKindSchema>;
@@ -625,6 +686,8 @@ export const SECURITY_EVENT_SEVERITY: Readonly<Record<SecurityEventKind, 'warnin
   auto_message_risky: 'warning',
   owner_password_reset_server: 'warning',
   branding_changed: 'info',
+  email_template_risky: 'warning',
+  email_sender_blocked: 'warning',
 };
 
 export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> = {
@@ -645,7 +708,7 @@ export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> 
   sending_limits_changed: 'Batas kirim diubah',
   inbox_bulk_action: 'Aksi massal di inbox',
   quick_reply_risky: 'Balasan cepat diberi tautan/angka baru',
-  api_key_changed: 'API key dibuat atau dicabut',
+  api_key_changed: 'API key dibuat, diubah, atau dicabut',
   webhook_changed: 'Webhook keluar / allowlist IP privat diubah',
   bot_enabled: 'Bot channel dinyalakan oleh selain Owner',
   bot_verified_sender_disabled: 'Bot Email kembali melayani pengirim yang tidak terverifikasi',
@@ -653,6 +716,8 @@ export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> 
   auto_message_risky: 'Pesan otomatis diberi tautan/angka baru',
   owner_password_reset_server: 'Password Owner diatur ulang dari server',
   branding_changed: 'Merek aplikasi diubah',
+  email_template_risky: 'Template email diterbitkan dengan tautan/angka baru',
+  email_sender_blocked: 'Pengirim email API terblokir',
 };
 
 export const securityEventSchema = z.object({

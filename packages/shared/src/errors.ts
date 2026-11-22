@@ -125,6 +125,11 @@ export const errorDetailSchema = z.object({
   /** Nama isian, bertitik untuk isian bersarang (mis. `alamat.kota`). Kosong = seluruh bagian. */
   field: z.string(),
   message: z.string(),
+  /**
+   * Kode mesin yang stabil (opsional, tahap 9.1 — mis. `recipient_invalid`, `qris_crc_mismatch`)
+   * untuk integrator. Klien lama mengabaikannya; `ERROR_CODES` tidak bertambah.
+   */
+  reason: z.string().optional(),
 });
 export type ErrorDetail = z.infer<typeof errorDetailSchema>;
 

@@ -427,7 +427,14 @@ export async function deliverWebhook(
 // ── Unduh berkas dari URL (media_url lapisan kompatibel MobiChat) ──────────
 
 export type RemoteFileError =
-  WebhookTargetError | 'timeout' | 'network' | 'redirect' | 'too_large' | 'http';
+  | WebhookTargetError
+  | 'timeout'
+  | 'network'
+  | 'redirect'
+  | 'too_large'
+  | 'http'
+  /** Tahap 9.1: host (awal ATAU tujuan redirect) di luar allowlist pemanggil (`allowHost`). */
+  | 'host_not_allowed';
 
 export interface RemoteFileRequest {
   url: string;
@@ -438,6 +445,11 @@ export interface RemoteFileRequest {
   timeoutMs?: number;
   /** Bawaan 3. Setiap lompatan diperiksa ulang aturan SSRF yang sama. */
   maxRedirects?: number;
+  /**
+   * Tahap 9.1 (lampiran email API): allowlist host milik pemanggil, diperiksa SEBELUM DNS di SETIAP
+   * lompatan (URL awal + tiap redirect). `false` → `host_not_allowed` tanpa permintaan keluar.
+   */
+  allowHost?: (hostname: string) => boolean;
   lookup?: Lookup;
   /** HANYA tes: izinkan 127.0.0.1/::1 + port bebas (server tiruan). */
   allowLoopback?: boolean;
@@ -464,6 +476,18 @@ export async function fetchRemoteFile(request: RemoteFileRequest): Promise<Remot
   let current = request.url;
   let originalOrigin: string | null = null;
   for (let hop = 0; hop <= (request.maxRedirects ?? 3); hop += 1) {
+    if (request.allowHost) {
+      // Allowlist host pemanggil diperiksa PALING DULU di setiap lompatan (sebelum port/DNS).
+      let candidate: string | null;
+      try {
+        candidate = new URL(current).hostname.replace(/^\[|\]$/g, '').toLowerCase();
+      } catch {
+        candidate = null;
+      }
+      if (candidate !== null && !request.allowHost(candidate)) {
+        return { ok: false, error: 'host_not_allowed', httpStatus: null };
+      }
+    }
     const parsed = parseWebhookUrl(current, request.privateCidrs, options);
     if ('error' in parsed) return { ok: false, error: parsed.error, httpStatus: null };
     const { url, port } = parsed;

@@ -142,6 +142,13 @@ export const trustedAuthServIdsSchema = z
   .max(5, 'Paling banyak 5 nama server.')
   .nullable();
 
+/** Tahap 9.0 — alias channel Email (selain alamat utama). Maks. 20, tanpa duplikat. */
+export const EMAIL_CHANNEL_MAX_ALIASES = 20;
+export const emailAliasesSchema = z
+  .array(emailAddressSchema, { error: 'Daftar alias tidak valid.' })
+  .max(EMAIL_CHANNEL_MAX_ALIASES, 'Paling banyak 20 alias.')
+  .transform((list) => [...new Set(list)]);
+
 export const imapSettingsInputSchema = z.object({
   host: imapHostSchema,
   port: smtpPortSchema,
@@ -223,6 +230,11 @@ export const createEmailChannelSchema = z.object({
   markAsRead: z.boolean().default(true),
   smtp: emailChannelSmtpInputSchema,
   trustedAuthServIds: trustedAuthServIdsSchema.optional(),
+  /**
+   * Tahap 9.0: alamat lain yang juga masuk ke kotak surat ini (mis. `billing@` yang diteruskan ke
+   * `cs@`). Dipakai menentukan "Alamat tujuan" email masuk dan dibuang dari "Balas semua".
+   */
+  aliases: emailAliasesSchema.optional(),
   confirmation,
 });
 
@@ -288,6 +300,8 @@ export const updateConnectionChannelRequestSchema = z.discriminatedUnion(
       smtp: emailChannelSmtpInputSchema.optional(),
       /** `null` = kembali ke bawaan. Mengubahnya wajib konfirmasi identitas. */
       trustedAuthServIds: trustedAuthServIdsSchema.optional(),
+      /** Tahap 9.0: ganti seluruh daftar alias (`[]` = kosongkan). Tanpa konfirmasi identitas. */
+      aliases: emailAliasesSchema.optional(),
       confirmation,
     }),
     z.object({
@@ -481,6 +495,11 @@ export const emailChannelSchema = z.object({
   ...baseView,
   type: z.literal('email'),
   emailAddress: z.string(),
+  /**
+   * Tahap 9.0: alias selain `emailAddress` (huruf kecil). Server selalu mengisi; opsional hanya untuk
+   * data tiruan lama.
+   */
+  aliases: z.array(z.string()).optional(),
   fromName: z.string(),
   imap: z.object({
     host: z.string(),

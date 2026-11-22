@@ -217,6 +217,111 @@ describe('Pengaturan → Channel lain', () => {
     expect(screen.queryByRole('dialog', { name: c.editConfirmTitle })).toBeNull();
   });
 
+  it('alias Email: tambah (huruf kecil, alamat utama ditolak), hapus, simpan → PATCH aliases', async () => {
+    const a = c.aliases;
+    let patched: unknown = null;
+    await renderApp(
+      `/pengaturan/channel/lain/${EMAIL.id}`,
+      routes([EMAIL], {
+        [`GET ${apiPath(R.channel, { channelId: EMAIL.id })}`]: () =>
+          json({ channel: { ...EMAIL, aliases: ['lama@majujaya.co.id'] } }),
+        [`PATCH ${apiPath(R.channel, { channelId: EMAIL.id })}`]: (request) => {
+          patched = request.body;
+          return json({
+            channel: { ...EMAIL, aliases: (request.body as { aliases: string[] }).aliases },
+          });
+        },
+      }),
+    );
+    const card = within(
+      (await screen.findByRole('heading', { name: a.title })).closest('section')!,
+    );
+    expect(card.getByText(a.count(1, 20))).toBeVisible();
+    const save = card.getByRole('button', { name: a.save });
+    expect(save).toBeDisabled();
+
+    const input = card.getByLabelText(a.label, { selector: 'input' });
+    fireEvent.change(input, { target: { value: 'Billing@MajuJaya.co.id, cs@majujaya.co.id' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(card.getByRole('alert')).toHaveTextContent(a.primaryNotAlias);
+    fireEvent.change(input, { target: { value: 'bukan-alamat' } });
+    fireEvent.keyDown(input, { key: ',' });
+    expect(card.getByRole('alert')).toHaveTextContent(a.invalid('bukan-alamat'));
+    expect(input).toHaveValue('bukan-alamat');
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.click(card.getByRole('button', { name: a.remove('lama@majujaya.co.id') }));
+    expect(card.getByText(a.unsaved)).toBeVisible();
+
+    // Menambah alias = konfirmasi identitas (password + kode), lalu PATCH berisi `confirmation`.
+    fireEvent.click(card.getByRole('button', { name: a.save }));
+    await confirmIdentity(a.confirmTitle, a.save);
+    await waitFor(() =>
+      expect(patched).toEqual({
+        type: 'email',
+        aliases: ['billing@majujaya.co.id'],
+        confirmation: { password: TEST_PASSWORD, code: TEST_CODE },
+      }),
+    );
+    expect(await card.findByText(a.saved)).toBeVisible();
+    expect(card.getByRole('button', { name: a.save })).toBeDisabled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('alias Email: hanya menghapus → tanpa konfirmasi identitas', async () => {
+    const a = c.aliases;
+    let patched: unknown = null;
+    await renderApp(
+      `/pengaturan/channel/lain/${EMAIL.id}`,
+      routes([EMAIL], {
+        [`GET ${apiPath(R.channel, { channelId: EMAIL.id })}`]: () =>
+          json({ channel: { ...EMAIL, aliases: ['lama@majujaya.co.id'] } }),
+        [`PATCH ${apiPath(R.channel, { channelId: EMAIL.id })}`]: (request) => {
+          patched = request.body;
+          return json({ channel: { ...EMAIL, aliases: [] } });
+        },
+      }),
+    );
+    const card = within(
+      (await screen.findByRole('heading', { name: a.title })).closest('section')!,
+    );
+    fireEvent.click(card.getByRole('button', { name: a.remove('lama@majujaya.co.id') }));
+    fireEvent.click(card.getByRole('button', { name: a.save }));
+    await waitFor(() => expect(patched).toEqual({ type: 'email', aliases: [] }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(await card.findByText(a.saved)).toBeVisible();
+  });
+
+  it('alias Email: galat server tampil apa adanya; kosong = penjelasan', async () => {
+    const a = c.aliases;
+    await renderApp(
+      `/pengaturan/channel/lain/${EMAIL.id}`,
+      routes([EMAIL], {
+        [`GET ${apiPath(R.channel, { channelId: EMAIL.id })}`]: () => json({ channel: EMAIL }),
+        [`PATCH ${apiPath(R.channel, { channelId: EMAIL.id })}`]: () =>
+          apiError(
+            400,
+            'VALIDATION_ERROR',
+            'Alamat billing@majujaya.co.id sudah tercatat sebagai kontak pelanggan, jadi tidak bisa dijadikan alias channel.',
+          ),
+      }),
+    );
+    const card = within(
+      (await screen.findByRole('heading', { name: a.title })).closest('section')!,
+    );
+    expect(card.getByText(a.empty)).toBeVisible();
+    const input = card.getByLabelText(a.label, { selector: 'input' });
+    fireEvent.change(input, { target: { value: 'billing@majujaya.co.id' } });
+    fireEvent.blur(input);
+    fireEvent.click(card.getByRole('button', { name: a.save }));
+    await confirmIdentity(a.confirmTitle, a.save);
+    expect(
+      await card.findByText(
+        'Alamat billing@majujaya.co.id sudah tercatat sebagai kontak pelanggan, jadi tidak bisa dijadikan alias channel.',
+      ),
+    ).toBeVisible();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('ubah token lalu Batal di konfirmasi: isian diberi keterangan isi ulang; simpan tanpa token tidak mengklaim diganti', async () => {
     const bodies: unknown[] = [];
     await renderApp(

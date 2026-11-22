@@ -103,6 +103,7 @@ Prioritas: `low · normal · high · urgent` (Rendah/Normal/Tinggi/Mendesak). At
 
 **Tiket**: `{ id, number, boardId, column {id,name,position,isDone}, title, description, priority,
 assignee {id,name}|null, dueAt, overdue, contact (ringkas)|null, conversation {id,number,status}|null,
+conversationUnavailable (tahap 9.0: `true` = percakapan tertaut ada di channel yang tidak boleh dilihat pengguna ini, `conversation` dikirim `null`),
 attributes, position, closedAt, createdBy {kind: user|api_key, id, name}|null, createdAt, updatedAt }`.
 
 | Endpoint | Izin | Keterangan |

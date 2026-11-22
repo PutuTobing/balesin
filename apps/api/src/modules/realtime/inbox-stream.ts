@@ -7,11 +7,13 @@ import {
   type Redis,
 } from '@balesin/core';
 import {
+  channelAccessOf,
   conversations,
   departmentAccessOf,
   messages,
   openTicketHoldersOf,
   organizations,
+  type ChannelAccessIndex,
   type Database,
   type DepartmentAccess,
 } from '@balesin/db';
@@ -139,6 +141,8 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
     /** Fase 5: departemen percakapan + pemegang tiket terbuka yang menaut kontaknya. */
     departmentId?: string | null;
     ticketHolderUserIds?: readonly string[];
+    /** Tahap 9.0: channel percakapan (akses per channel). */
+    channelId?: string;
     message: InboxStreamEvent;
   }
 
@@ -173,6 +177,7 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
             status: conversations.status,
             assigneeUserId: conversations.assigneeUserId,
             contactId: conversations.contactId,
+            channelId: conversations.channelId,
             departmentId: conversations.departmentId,
             createdAt: conversations.createdAt,
             unreadCount: conversations.unreadCount,
@@ -227,6 +232,8 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
         // (Teknisi lain tidak mendapat ID percakapan yang bukan miliknya).
         return {
           assigneeUserId: event.previousAssigneeUserId ?? null,
+          // Tahap 9.0 (review R5): channel dari event (baris sudah terhapus).
+          ...(event.channelId ? { channelId: event.channelId } : {}),
           message: { type: 'conversation.removed', conversationId: event.conversationId },
         };
       }
@@ -293,6 +300,7 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
       if (conversation && event.type !== 'conversation.deleted') {
         payload.departmentId = conversation.departmentId;
         payload.ticketHolderUserIds = ticketHolders.get(conversation.id) ?? [];
+        payload.channelId = conversation.channelId;
       }
       result.push({ event, payload });
     }
@@ -304,6 +312,7 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
     event: InboxBusEvent,
     payload: Payload,
     access: ReadonlyMap<string, DepartmentAccess>,
+    channelAccess: ChannelAccessIndex,
   ): number {
     let delivered = 0;
     for (const client of group) {
@@ -312,8 +321,12 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
         departmentRestricted: clientAccess?.restricted ?? false,
       });
       const holders = payload.assigneeUserId ? [payload.assigneeUserId] : [];
+      // Tahap 9.0: irisan dengan akses per channel (Owner/Admin selalu lolos).
+      const channelAllowed =
+        payload.channelId === undefined || channelAccess.allows(client.userId, payload.channelId);
       const visible =
         scope !== null &&
+        channelAllowed &&
         (payload.assigneeUserId === undefined ||
           isWithinScope(
             scope,
@@ -335,6 +348,7 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
         event.type === 'conversation.updated' &&
         event.conversationId !== undefined &&
         event.previousDepartmentId !== undefined &&
+        channelAllowed &&
         clientAccess?.restricted === true &&
         clientAccess.departmentIds.includes(event.previousDepartmentId)
       ) {
@@ -347,7 +361,10 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
         event.type === 'conversation.updated' &&
         event.conversationId !== undefined &&
         event.previousAssigneeUserId !== undefined &&
-        client.userId === event.previousAssigneeUserId
+        client.userId === event.previousAssigneeUserId &&
+        // Review 9.0 R5: ID percakapan channel terlarang tidak dikirim (pencabutan akses channel
+        // sendiri sudah memicu `resync` lewat `access.changed`).
+        channelAllowed
       ) {
         send(client, { type: 'conversation.removed', conversationId: event.conversationId });
       }
@@ -450,8 +467,16 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
           [...group].map((client) => client.userId),
         )
       : new Map<string, DepartmentAccess>();
+    // Tahap 9.0: akses per channel, juga dibaca segar per batch (satu query bila tanpa channel terbatas).
+    const channelAccess = payloads.length
+      ? await channelAccessOf(
+          db,
+          organizationId,
+          [...group].map((client) => client.userId),
+        )
+      : { allows: () => true };
     for (const { event, payload } of payloads) {
-      delivered += sendToGroup(group, event, payload, access);
+      delivered += sendToGroup(group, event, payload, access, channelAccess);
     }
     return delivered;
   }

@@ -26,6 +26,11 @@ export const OUTGOING_WEBHOOK_EVENTS = [
   'contact.updated',
   'ticket.created',
   'ticket.updated',
+  // Tahap 9.1 — email lewat API (docs/KONTRAK-API-EMAIL-KIRIM.md §6), format native saja.
+  'email.sent',
+  'email.failed',
+  'email.bounced',
+  'email.replied',
 ] as const;
 export const outgoingWebhookEventSchema = z.enum(OUTGOING_WEBHOOK_EVENTS, {
   error: 'Jenis event webhook tidak dikenal.',
@@ -50,6 +55,10 @@ export const OUTGOING_WEBHOOK_EVENT_LABELS: Readonly<Record<OutgoingWebhookEvent
   'contact.updated': 'Kontak diubah (termasuk tag)',
   'ticket.created': 'Tiket baru',
   'ticket.updated': 'Tiket diubah (isian, kolom/status, penanggung jawab, komentar)',
+  'email.sent': 'Email API terkirim',
+  'email.failed': 'Email API gagal',
+  'email.bounced': 'Email API memantul',
+  'email.replied': 'Email API dibalas',
 };
 
 /** Port tujuan yang diizinkan (HTTPS 443/8443, HTTP 80/8080, n8n 5678). */

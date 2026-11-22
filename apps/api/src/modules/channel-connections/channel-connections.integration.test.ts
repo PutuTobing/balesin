@@ -48,6 +48,7 @@ import {
   connectionChannelListResponseSchema,
   connectionChannelResponseSchema,
   connectionTestResultSchema,
+  channelSummaryListResponseSchema,
   conversationListResponseSchema,
   createConnectionChannelResponseSchema,
   emailHtmlResponseSchema,
@@ -700,6 +701,151 @@ describe('Email', () => {
       await fetch(`http://${TEST_MAIL.host}:8025/api/v1/message/${mail.id}/headers`)
     ).json()) as Record<string, string[]>;
     expect(headers['In-Reply-To']?.[0]).toBe('<tagihan-1@pelanggan.test>');
+  });
+
+  it('tahap 9.0: alias → Kepada/Cc/alamat tujuan tersimpan; balas Cc + Bcc (Bcc tidak ada di header MIME)', async () => {
+    const owner = await completeSetup(harness.app);
+    const { channel } = await createEmail(owner, {
+      aliases: ['Billing@Contoh.test', 'cs@contoh.test'],
+    });
+    // Alamat utama dibuang dari daftar alias; huruf kecil.
+    expect(channel).toMatchObject({ aliases: ['billing@contoh.test'] });
+    const summaries = await send(owner, 'GET', API_ROUTES.channels.list);
+    expect(
+      channelSummaryListResponseSchema
+        .parse(summaries.json())
+        .channels.find((item) => item.id === channel.id)?.emailAddresses,
+    ).toEqual(['cs@contoh.test', 'billing@contoh.test']);
+
+    const jobs: WebhookEventJobPayload[] = [];
+    const deps = mailboxDeps(jobs);
+    const poll = () =>
+      processChannelJob(
+        {
+          name: CHANNEL_JOBS.emailPoll,
+          data: { organizationId: owner.session.organization.id, channelId: channel.id },
+        },
+        deps,
+      );
+    await poll();
+    const tag = Math.random().toString(36).slice(2, 8);
+    const customer = `pelanggan-${tag}@pelanggan.test`;
+    const colleague = `rekan-${tag}@pelanggan.test`;
+    const boss = `atasan-${tag}@pelanggan.test`;
+    const hidden = `rahasia-${tag}@lain.test`;
+    imap.add(
+      testEmail({
+        from: `"Ani" <${customer}>`,
+        to: `"Tagihan" <billing@contoh.test>, ${colleague}`,
+        messageId: `alias-${tag}@pelanggan.test`,
+        subject: 'Tagihan ganda',
+        headers: {
+          'Delivered-To': 'billing@contoh.test',
+          Cc: `${boss}, CS <cs@contoh.test>`,
+        },
+      }),
+    );
+    await poll();
+    await drainWebhooks(jobs);
+
+    const [conversation] = await conversationsOf(owner);
+    if (!conversation) throw new Error('tidak ada percakapan');
+    const [inbound] = messageListResponseSchema.parse(
+      (
+        await send(
+          owner,
+          'GET',
+          apiPath(API_ROUTES.inbox.messages, { conversationId: conversation.id }),
+        )
+      ).json(),
+    ).messages;
+    expect(inbound?.email).toMatchObject({
+      to: ['billing@contoh.test', colleague],
+      cc: [boss, 'cs@contoh.test'],
+      recipient: 'billing@contoh.test',
+      replyAll: [colleague, boss],
+    });
+    const filtered = await send(
+      owner,
+      'GET',
+      `${API_ROUTES.inbox.conversations}?emailRecipient=billing%40contoh.test`,
+    );
+    expect(
+      conversationListResponseSchema.parse(filtered.json()).conversations.map((item) => item.id),
+    ).toEqual([conversation.id]);
+
+    // Owner: Cc alamat lama (Balas semua) + Bcc alamat baru.
+    const reply = await sendReply(owner, conversation.id, {
+      type: 'text',
+      text: 'Sudah kami koreksi.',
+      cc: [colleague, boss],
+      bcc: [hidden],
+    });
+    expect(reply.statusCode, reply.body).toBe(202);
+    const [result] = await drainSends();
+    expect(result).toMatchObject({ status: 'sent' });
+    const mail = await waitForCapturedMail(customer);
+    const headers = (await (
+      await fetch(`http://${TEST_MAIL.host}:8025/api/v1/message/${mail.id}/headers`)
+    ).json()) as Record<string, string[]>;
+    expect(headers.Cc?.[0]).toContain(colleague);
+    expect(headers.Cc?.[0]).toContain(boss);
+    // Mailpit MENAMBAHKAN header `Bcc` sendiri untuk penerima amplop yang tidak ada di To/Cc, jadi
+    // "Bcc tidak di header MIME" dibuktikan di tingkat kabel SMTP (`packages/core/src/mail/mail.test.ts`).
+    // Di sini: Bcc sampai lewat amplop SMTP saja.
+    const detail = (await (
+      await fetch(`http://${TEST_MAIL.host}:8025/api/v1/message/${mail.id}`)
+    ).json()) as { Bcc?: { Address?: string }[] };
+    expect((detail.Bcc ?? []).map((entry) => entry.Address)).toEqual([hidden]);
+
+    const sent = messageListResponseSchema
+      .parse(
+        (
+          await send(
+            owner,
+            'GET',
+            apiPath(API_ROUTES.inbox.messages, { conversationId: conversation.id }),
+          )
+        ).json(),
+      )
+      .messages.find((message) => message.direction === 'outbound');
+    expect(sent?.email).toMatchObject({
+      subject: 'Re: Tagihan ganda',
+      to: [customer],
+      cc: [colleague, boss],
+      bcc: [hidden],
+    });
+    expect(sent?.email?.senderVerification).toBeUndefined();
+
+    // Review 9.0 R7: menambah alias wajib konfirmasi identitas; alamat kontak pelanggan ditolak.
+    const channelPath = path(routes.channel, channel.id);
+    const unconfirmed = await send(owner, 'PATCH', channelPath, {
+      type: 'email',
+      aliases: ['billing@contoh.test', 'info@contoh.test'],
+    });
+    expect(unconfirmed.statusCode, unconfirmed.body).toBe(400);
+    expect(unconfirmed.body).toContain('confirmation.password');
+    const customerAlias = await send(
+      owner,
+      'PATCH',
+      channelPath,
+      await withConfirmation(owner, { type: 'email', aliases: ['billing@contoh.test', customer] }),
+    );
+    expect(customerAlias.statusCode, customerAlias.body).toBe(400);
+    expect(customerAlias.body).toContain('sudah tercatat sebagai kontak pelanggan');
+    // Menghapus alias tidak butuh konfirmasi.
+    const removed = await send(owner, 'PATCH', channelPath, { type: 'email', aliases: [] });
+    expect(removed.statusCode, removed.body).toBe(200);
+    const added = await send(
+      owner,
+      'PATCH',
+      channelPath,
+      await withConfirmation(owner, { type: 'email', aliases: ['info@contoh.test'] }),
+    );
+    expect(added.statusCode, added.body).toBe(200);
+    expect(added.json<{ channel: { aliases: string[] } }>().channel.aliases).toEqual([
+      'info@contoh.test',
+    ]);
   });
 
   it('password IMAP salah → kode jelas; SMTP "system" tanpa email pengirim → smtp_not_configured', async () => {

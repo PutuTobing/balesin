@@ -9,6 +9,7 @@ import {
   createApiKeyRequestSchema,
   createApiKeyResponseSchema,
   errorEnvelopeSchema,
+  updateApiKeyRequestSchema,
 } from '@balesin/shared';
 import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -97,6 +98,33 @@ export const apiKeysRoutes: FastifyPluginCallbackZod<ApiKeysRoutesOptions> = (
       await enforceRateLimit(limiter, WRITE_RULE, auth.user.id, limitMessage);
       return {
         apiKey: await apiKeys.revoke(auth, clientInfo(request), request.params.apiKeyId),
+      };
+    },
+  );
+
+  // Tahap 9.1: pengirim email + host lampiran (SELALU konfirmasi identitas; scope tetap).
+  app.patch(
+    routes.key,
+    {
+      config: { access: MANAGE },
+      schema: {
+        params: apiKeyIdParamsSchema,
+        body: updateApiKeyRequestSchema,
+        response: { 200: apiKeyResponseSchema, ...errors },
+      },
+    },
+    async (request) => {
+      const auth = requireAuth(request);
+      if (!UUID.safeParse(request.params.apiKeyId).success) {
+        throw new AppError('NOT_FOUND', { message: 'API key tidak ditemukan.' });
+      }
+      await enforceRateLimit(limiter, WRITE_RULE, auth.user.id, limitMessage);
+      return {
+        apiKey: await apiKeys.update(auth, request.params.apiKeyId, request.body, {
+          client: clientInfo(request),
+          log: request.log,
+          presentedDeviceToken: readDeviceToken(request.headers.cookie, cookieSecure),
+        }),
       };
     },
   );
