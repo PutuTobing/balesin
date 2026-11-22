@@ -231,6 +231,33 @@ describe('S3 diperbaiki — html_too_complex (400) cepat di semua jalur API, HTM
   }, 60_000);
 });
 
+describe('Putaran 3 S4 (Sedang) — amplifikasi variabel template lewat pratinjau', () => {
+  // Supervisor+ (templates.manage): pratinjau menerima `values` ≤ 1.000 karakter per variabel dan
+  // menyisipkannya di setiap {{a}} tanpa batas ukuran hasil. 3.000 {{a}} × 1.000 "&" ≈ 15 juta
+  // karakter; 50.000 {{a}} = api kehabisan heap. Perbaikan boleh menolak (400) atau membatasi.
+  it.fails(
+    'pratinjau 3.000 {{a}} × nilai 1.000 "&" dijawab < 2 dtk',
+    async () => {
+      const started = performance.now();
+      const response = await call(
+        harness.app,
+        'POST',
+        API_ROUTES.emailTemplates.preview,
+        {
+          subject: 'Tagihan',
+          html: '<p>' + '{{a}}'.repeat(3_000) + '</p>',
+          layout: 'brand',
+          values: { a: '&'.repeat(1_000) },
+        },
+        { cookie: owner.cookie, csrf: owner.csrf },
+      );
+      expect([200, 400]).toContain(response.statusCode);
+      expect(performance.now() - started).toBeLessThan(2_000);
+    },
+    120_000,
+  );
+});
+
 describe('R2b (Rendah) — lampiran Office format lama (CFB) ditolak', () => {
   it.each(['surat.doc', 'data.xls', 'slide.ppt'])(
     '%s → 400 attachment_type_blocked',
