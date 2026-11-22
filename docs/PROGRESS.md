@@ -101,6 +101,11 @@
 - Penutupan: E2E penuh hijau 2× berturut-turut (285 lulus, 0 goyah) dari worktree cache dingin;
   suite api 1.163 lulus; keamanan AMAN putaran 3; desain LOLOS putaran 2.
 
+## Fase 9 — Modul Email (berjalan, posisi 60f0ba2)
+- **9.0** backend + web di-commit (5530ec3): Kepada/Cc/alamat tujuan, alias, Cc/Bcc + Balas semua (alamat baru = mulai percakapan), batas kirim per penerima, **akses per channel** semua jenis channel. Security backend AMAN (S1 diperbaiki). Menunggu: kritikus, E2E, security web.
+- **9.1** backend di-commit (5530ec3, 60f0ba2): API publik kirim email, template email + preset ISP, QRIS, lampiran ber-allowlist, idempotensi, worker + batas per pengirim, bounce, webhook `email.*`, hapus kontak UU PDP. Kontrak `docs/KONTRAK-API-EMAIL-KIRIM.md`. Berjalan: UI (Template email, API key, batas per pengirim), security review.
+- **9A** kontrak siap (`docs/KONTRAK-API-EMAIL.md`), mulai setelah 9.0/9.1 lolos.
+
 ## Sedang dikerjakan (posisi 0efafe4)
 - **Berikutnya: Fase 9 — Modul Email** (ditambahkan 22 Nov atas permintaan Tobing): spesifikasi
   `docs/PRD-EMAIL.md`, mockup & screenshot `docs/design/email/`. Urutan: 9.0 (Cc/Bcc + akses per channel di Inbox), 9.1 (API kirim email untuk n8n/billing), lalu 9A; OAuth (9E) menunggu
