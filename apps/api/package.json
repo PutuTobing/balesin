@@ -32,6 +32,7 @@
     "nodemailer": "10.5.0",
     "pg": "catalog:",
     "pino": "catalog:",
+    "qrcode-generator": "2.0.4",
     "sanitize-html": "2.18.2",
     "sharp": "0.35.5",
     "uuid": "catalog:",

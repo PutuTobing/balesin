@@ -261,7 +261,7 @@ describe('Pengaturan → Channel → Akses tim', () => {
     expect(bodies).toEqual([
       { mode: 'all', confirmation: { password: TEST_PASSWORD, code: TEST_CODE } },
     ]);
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     fireEvent.click(view.getByRole('button', { name: a.reset }));
     expect(view.getByRole('radio', { name: new RegExp(a.modeRestricted) })).toBeChecked();
   });

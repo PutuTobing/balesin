@@ -22,9 +22,11 @@ import { BASE_URL, VIEWPORTS, webServer, workers } from './viewports';
 const sharedEmailSpecs = /(tim-tanpa|tim-dengan|keamanan-dengan)-email\.spec\.ts$/;
 /**
  * Spec yang mengubah keadaan seluruh organisasi (ambang broadcast, pesan otomatis & pembagian chat,
- * merek di halaman masuk) dan peka rem darurat — dijalankan setelah proyek paralel, satu per satu.
+ * merek di halaman masuk, akses per channel & channel Email lain dijeda sementara karena kotak masuk
+ * IMAP tiruan dipakai bersama) dan peka rem darurat — dijalankan setelah proyek paralel, satu per
+ * satu.
  */
-const serialSpecs = /(broadcast|jam-kerja|merek)\.spec\.ts$/;
+const serialSpecs = /(broadcast|jam-kerja|merek|email-cc)\.spec\.ts$/;
 const desktop = { ...devices['Desktop Chrome'], viewport: VIEWPORTS.desktop };
 const hp = {
   ...devices['Desktop Chrome'],
