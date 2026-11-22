@@ -110,6 +110,11 @@ export function normalizePrivateCidr(value: string): string | null {
   return `${parsed.address.toLowerCase()}/${String(prefix)}`;
 }
 
+/** `true` bila alamat IP ada di salah satu CIDR (bentuk baku `normalizePrivateCidr`). */
+export function addressInCidrs(ip: string, cidrs: readonly string[]): boolean {
+  return inCidrs(ip, cidrs);
+}
+
 function inCidrs(ip: string, cidrs: readonly string[]): boolean {
   const parsed = unwrap(ip);
   if (!parsed) return false;

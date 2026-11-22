@@ -38,6 +38,8 @@ import {
   emailMailboxStates,
   emailSettings,
   isPgError,
+  lockEmailAddresses,
+  mailAccounts,
   newId,
   PG_ERROR_CODES,
   type Channel,
@@ -196,6 +198,42 @@ const CONFLICT_MESSAGES: Readonly<Record<string, { field: string; message: strin
 
 function notFound(): AppError {
   return new AppError('NOT_FOUND', { message: NOT_FOUND_MESSAGE });
+}
+
+/**
+ * Fase 9 (KONTRAK-API-EMAIL §4.3, arah sebaliknya): alamat/alias Channel Email tidak boleh sudah menjadi
+ * akun di menu Email. Advisory lock `email-address:<org>:<alamat>` yang SAMA dengan modul Email
+ * dipegang di transaksi, jadi dua permintaan bersamaan tidak bisa sama-sama lolos.
+ */
+async function assertNotMailAccount(
+  tx: DbExecutor,
+  organizationId: string,
+  addresses: readonly string[],
+): Promise<void> {
+  const list = [...new Set(addresses.filter((address) => address.length > 0))];
+  if (list.length === 0) return;
+  await lockEmailAddresses(tx, organizationId, list);
+  const [hit] = await tx
+    .select({ id: mailAccounts.id })
+    .from(mailAccounts)
+    .where(
+      and(
+        eq(mailAccounts.organizationId, organizationId),
+        inArray(mailAccounts.emailAddress, list),
+        isNull(mailAccounts.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (hit) {
+    const message =
+      'Alamat ini sudah terhubung sebagai akun di menu Email. Satu alamat hanya bisa dipakai di Inbox atau di menu Email. Putuskan dulu akunnya di Pengaturan → Akun email.';
+    throw new AppError('CONFLICT', {
+      message,
+      details: [
+        { location: 'body', field: 'emailAddress', message, reason: 'address_is_mail_account' },
+      ],
+    });
+  }
 }
 
 function bodyDetail(field: string, message: string): ErrorDetail {
@@ -859,6 +897,12 @@ export function createConnectionsService(deps: ConnectionsServiceDeps): Connecti
               message: `Batas ${MAX_CHANNELS_PER_ORGANIZATION} channel per organisasi sudah tercapai. Hapus channel yang tidak dipakai dulu.`,
             });
           }
+          if (input.type === 'email') {
+            await assertNotMailAccount(tx, auth.organizationId, [
+              input.emailAddress,
+              ...(input.aliases ?? []),
+            ]);
+          }
           const [inserted] = await tx.insert(channels).values(values).returning();
           if (!inserted) throw new Error('Channel tidak tersimpan');
           if (input.type === 'email') {
@@ -1178,6 +1222,20 @@ export function createConnectionsService(deps: ConnectionsServiceDeps): Connecti
       const updated = await db
         .transaction(async (tx) => {
           await assertActorStillAuthorized(tx, auth, 'channels.manage', context.log);
+          if (
+            row.type === 'email' &&
+            (changes.emailAddress !== undefined || changes.emailAliases !== undefined)
+          ) {
+            const previous = new Set([row.emailAddress ?? '', ...row.emailAliases]);
+            await assertNotMailAccount(
+              tx,
+              auth.organizationId,
+              [
+                changes.emailAddress ?? row.emailAddress ?? '',
+                ...(changes.emailAliases ?? row.emailAliases),
+              ].filter((address) => !previous.has(address)),
+            );
+          }
           const next = await updateRow(tx, auth, row.id, changes);
           if (resetMailbox) {
             await tx

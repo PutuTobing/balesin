@@ -687,7 +687,10 @@ export interface AdminAccountNoticeEmailInput {
     | 'webhook_disabled'
     | 'email_template_risky'
     | 'email_sender_blocked'
-    | 'email_sender_limit_raised';
+    | 'email_sender_limit_raised'
+    | 'mail_account_changed'
+    | 'mail_access_changed'
+    | 'mail_account_auth_failed';
   subject: { name: string; email: string; role: UserRole };
   /**
    * Untuk `two_factor_reset`, `role_changed`, `user_disabled`: pelakunya. Untuk `member_joined`:
@@ -855,6 +858,43 @@ export function renderAdminAccountNoticeEmail(input: AdminAccountNoticeEmailInpu
       notes: [
         `Perbaiki username/password SMTP di Pengaturan → Channel di ${product}, lalu tekan Lanjutkan pada pengirim itu di Pengaturan → Batas kirim.`,
       ],
+    });
+  }
+  if (input.event === 'mail_account_auth_failed') {
+    const address = singleLine(input.emailApi?.senderAddress ?? 'akun email');
+    return compose(input.brand, {
+      subject: `Password akun email ${address} ditolak di ${product}`,
+      preheader: 'Sinkron akun email ini berhenti sampai password-nya diperbarui.',
+      heading: 'Password akun email ditolak',
+      paragraphs: [
+        hello(input.recipientName),
+        `Password akun email ${address} ditolak server email. Supaya akun tidak terkunci penyedia, ${product} berhenti mencoba menyambung.`,
+        'Email baru di akun ini belum masuk ke menu Email sampai password-nya diperbarui.',
+      ],
+      details: [{ label: 'Waktu', value: when }],
+      notes: [`Perbarui di Pengaturan → Akun email di ${product}, lalu tekan Sinkron sekarang.`],
+    });
+  }
+  if (input.event === 'mail_account_changed' || input.event === 'mail_access_changed') {
+    const address = singleLine(input.emailApi?.senderAddress ?? 'akun email bersama');
+    const access = input.event === 'mail_access_changed';
+    return compose(input.brand, {
+      subject: access
+        ? `Akses akun email ${address} diperluas di ${product}`
+        : `Akun email bersama ${address} diubah di ${product}`,
+      preheader: access
+        ? `${name} menambah orang atau menaikkan hak di akun email bersama.`
+        : `${name} menambah, mengganti server/kredensial, atau memutus akun email bersama.`,
+      heading: access ? 'Akses akun email diperluas' : 'Akun email bersama diubah',
+      paragraphs: [
+        hello(input.recipientName),
+        access
+          ? `${account} memperluas akses akun email bersama ${address}: orang baru bisa membaca (atau mengirim dari) akun ini.`
+          : `${account} mengubah akun email bersama ${address} (dibuat, server/kredensial diganti, atau diputus).`,
+        'Kamu menerima email ini karena kamu Owner.',
+      ],
+      details,
+      notes: [`Bila tidak kamu duga, periksa Pengaturan → Akun email dan Audit log di ${product}.`],
     });
   }
   if (input.event === 'email_sender_limit_raised') {

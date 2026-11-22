@@ -49,6 +49,7 @@ describe('migrasi dari nol', () => {
       'broadcast_settings',
       'channel_access_departments',
       'channel_access_users',
+      'channel_avatars',
       'channels',
       'contact_events',
       'contact_tags',
@@ -70,6 +71,16 @@ describe('migrasi dari nol', () => {
       'email_template_versions',
       'email_templates',
       'installation',
+      'mail_account_access',
+      'mail_account_avatars',
+      'mail_accounts',
+      'mail_attachments',
+      'mail_folders',
+      'mail_identities',
+      'mail_message_bodies',
+      'mail_messages',
+      'mail_remote_image_allow',
+      'mail_settings',
       'media_files',
       'message_email_bodies',
       'message_templates',
@@ -151,6 +162,9 @@ describe('migrasi dari nol', () => {
     'meta_page_id',
     'meta_ig_account_id',
     'external_user_id',
+    // Fase 9 (modul Email): nomor bagian MIME IMAP (`1.2`) dan header `Content-ID` lampiran.
+    'part_id',
+    'content_id',
   ]);
 
   it('semua kolom waktu bertipe timestamptz dan semua id bertipe uuid', async () => {

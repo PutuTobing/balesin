@@ -1,8 +1,10 @@
 import {
   inboxEventsChannel,
   parseInboxBusMessage,
+  parseMailBusMessage,
   parseSessionRevokedMessage,
   type InboxBusEvent,
+  type MailBusEvent,
   type Logger,
   type Redis,
 } from '@balesin/core';
@@ -10,6 +12,7 @@ import {
   channelAccessOf,
   conversations,
   departmentAccessOf,
+  mailAccessIndexOf,
   messages,
   openTicketHoldersOf,
   organizations,
@@ -77,6 +80,13 @@ export interface InboxStreamHub {
    * organisasi (lebih → `resync`). Dipakai langganan Redis.
    */
   deliverBatch(events: readonly InboxBusEvent[]): Promise<number>;
+  /**
+   * Fase 9 (modul Email, KONTRAK-API-EMAIL §10): event `mail.*` hanya ke soket yang penggunanya
+   * punya hak ≥ `read` atas akunnya SAAT ITU (`resolveMailAccess`, dibaca segar per batch); akun
+   * pribadi → hanya pemiliknya. Maks. `maxMailEventsPerSecond` per akun, lebih → satu `mail.resync`
+   * per 5 dtk. `mail.access.changed` hanya ke pengguna yang disebut. Publik untuk tes.
+   */
+  deliverMail(events: readonly MailBusEvent[]): Promise<number>;
   revalidate(): Promise<void>;
   /** Sinyal pencabutan sesi: validasi ulang socket pengguna/organisasi itu sesaat lagi. */
   onSessionRevoked(event: { organizationId: string; userId?: string | undefined }): void;
@@ -104,6 +114,8 @@ export interface InboxStreamHubOptions {
   maxEventsPerSecond?: number;
   /** `message.status` per organisasi per batch di atas angka ini digabung ke `conversation.updated`. */
   statusMergeThreshold?: number;
+  /** Batas event `mail.*` per akun per detik (bawaan 50). */
+  maxMailEventsPerSecond?: number;
 }
 
 function send(client: StreamClient, event: InboxStreamEvent): boolean {
@@ -523,6 +535,138 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
     }
   }
 
+  // ── Event modul Email ─────────────────────────────────────────────────────
+  const maxMailPerSecond = options.maxMailEventsPerSecond ?? 50;
+  const mailRate = new Map<string, { windowStart: number; count: number; lastResync: number }>();
+  const pendingMail = new Map<string, MailBusEvent[]>();
+  let mailFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+  async function deliverMailOrganization(
+    organizationId: string,
+    events: readonly MailBusEvent[],
+  ): Promise<number> {
+    const group = byOrganization.get(organizationId);
+    if (!group || group.size === 0) return 0;
+    let delivered = 0;
+    const accountEvents: MailBusEvent[] = [];
+    for (const event of events) {
+      if (event.event.type === 'mail.access.changed') {
+        const targets = new Set(event.userIds ?? []);
+        for (const client of group) {
+          if (targets.has(client.userId) && send(client, { type: 'mail.access.changed' })) {
+            delivered += 1;
+          }
+        }
+        continue;
+      }
+      accountEvents.push(event);
+    }
+    if (accountEvents.length === 0) return delivered;
+    // Gabung `mail.folder.counts` per folder (yang terakhir menang) dan event yang identik.
+    const seen = new Map<string, MailBusEvent>();
+    for (const event of accountEvents) {
+      const inner = event.event;
+      const key =
+        inner.type === 'mail.folder.counts'
+          ? `counts|${inner.folderId}`
+          : inner.type === 'mail.account.status'
+            ? `status|${inner.accountId}`
+            : JSON.stringify(inner);
+      seen.delete(key);
+      seen.set(key, event);
+    }
+    // Batas per akun: kelebihan → satu `mail.resync` per 5 dtk.
+    const nowMs = Date.now();
+    const allowed: MailBusEvent[] = [];
+    const resyncAccounts = new Set<string>();
+    for (const event of seen.values()) {
+      const accountId = event.accountId as string;
+      const state = mailRate.get(accountId) ?? { windowStart: nowMs, count: 0, lastResync: 0 };
+      if (nowMs - state.windowStart >= 1_000) {
+        state.windowStart = nowMs;
+        state.count = 0;
+      }
+      mailRate.set(accountId, state);
+      if (event.event.type === 'mail.resync') {
+        resyncAccounts.add(accountId);
+        continue;
+      }
+      if (state.count >= maxMailPerSecond) {
+        if (nowMs - state.lastResync >= 5_000) {
+          state.lastResync = nowMs;
+          resyncAccounts.add(accountId);
+        }
+        continue;
+      }
+      state.count += 1;
+      allowed.push(event);
+    }
+    const accountIds = [
+      ...new Set([...allowed.map((event) => event.accountId as string), ...resyncAccounts]),
+    ];
+    const index = await mailAccessIndexOf(
+      db,
+      organizationId,
+      [...group].map((client) => client.userId),
+      accountIds,
+    );
+    for (const client of group) {
+      for (const event of allowed) {
+        if (index.levelOf(client.userId, event.accountId as string) && send(client, event.event)) {
+          delivered += 1;
+        }
+      }
+      for (const accountId of resyncAccounts) {
+        if (
+          index.levelOf(client.userId, accountId) &&
+          send(client, { type: 'mail.resync', accountId })
+        ) {
+          delivered += 1;
+        }
+      }
+    }
+    return delivered;
+  }
+
+  async function deliverMail(events: readonly MailBusEvent[]): Promise<number> {
+    const byOrg = new Map<string, MailBusEvent[]>();
+    for (const event of events) {
+      byOrg.set(event.organizationId, [...(byOrg.get(event.organizationId) ?? []), event]);
+    }
+    let delivered = 0;
+    for (const [organizationId, list] of byOrg) {
+      delivered += await deliverMailOrganization(organizationId, list);
+    }
+    return delivered;
+  }
+
+  function flushMail() {
+    mailFlushTimer = null;
+    const batch = [...pendingMail.values()].flat();
+    pendingMail.clear();
+    if (batch.length === 0) return;
+    deliverMail(batch).catch((err: unknown) => {
+      logger.warn({ err, events: batch.length }, 'Event email gagal diantar ke socket');
+    });
+  }
+
+  function enqueueMail(event: MailBusEvent) {
+    if (!byOrganization.has(event.organizationId)) return;
+    if (coalesceMs <= 0) {
+      deliverMail([event]).catch((err: unknown) => {
+        logger.warn({ err }, 'Event email gagal diantar ke socket');
+      });
+      return;
+    }
+    const list = pendingMail.get(event.organizationId) ?? [];
+    if (list.length < 2_000) list.push(event);
+    pendingMail.set(event.organizationId, list);
+    if (!mailFlushTimer) {
+      mailFlushTimer = setTimeout(flushMail, Math.max(coalesceMs, 250));
+      mailFlushTimer.unref();
+    }
+  }
+
   let revalidating: Promise<void> | null = null;
   const pendingTimers = new Set<ReturnType<typeof setTimeout>>();
   const sessionRecheckDelays = options.sessionRecheckDelaysMs ?? [250, 2_000];
@@ -606,6 +750,7 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
 
     deliver: (event) => deliverBatch([event]),
     deliverBatch,
+    deliverMail,
 
     revalidate() {
       // R2 (review real-time): putaran tidak pernah tumpang tindih — pemanggil berikutnya
@@ -659,6 +804,8 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
       clearInterval(revalidateTimer);
       if (flushTimer) clearTimeout(flushTimer);
       pending.clear();
+      if (mailFlushTimer) clearTimeout(mailFlushTimer);
+      pendingMail.clear();
       for (const timer of pendingTimers) clearTimeout(timer);
       pendingTimers.clear();
       for (const client of [...clients]) {
@@ -705,6 +852,11 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
       const revoked = parseSessionRevokedMessage(raw);
       if (revoked) {
         hub.onSessionRevoked(revoked);
+        return;
+      }
+      const mailEvent = parseMailBusMessage(raw);
+      if (mailEvent) {
+        enqueueMail(mailEvent);
         return;
       }
       const event = parseInboxBusMessage(raw);

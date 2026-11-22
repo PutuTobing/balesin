@@ -258,6 +258,27 @@ export const AUDIT_ACTIONS = {
    * kejadian keamanan `email_sender_blocked`.
    */
   emailSenderBlocked: 'settings.email_sender.blocked',
+  // ── Modul Email (Fase 9, KONTRAK-API-EMAIL §13) ──────────────────────────
+  // Target `mail_account`; metadata TANPA subjek/isi/alamat lawan (akun pribadi: hanya ID + alamat).
+  /** `kind`, `provider`, `address`, `imapHost`, `smtpHost`; bersama + bukan Owner → `mail_account_changed`. */
+  mailAccountCreated: 'mail.account.created',
+  /** `changedFields` (nama/warna/jendela sinkron — bukan kredensial). */
+  mailAccountUpdated: 'mail.account.updated',
+  /** Server/kredensial/alamat diganti (`changedFields`). */
+  mailAccountCredentialsUpdated: 'mail.account.credentials_updated',
+  mailAccountPaused: 'mail.account.paused',
+  mailAccountResumed: 'mail.account.resumed',
+  /** Diputus (cache dihapus bertahap; server email tidak disentuh). */
+  mailAccountDeleted: 'mail.account.deleted',
+  mailAccountAvatarUpdated: 'mail.account.avatar_updated',
+  /** Worker: login ditolak server → sinkron berhenti (tanpa pelaku). */
+  mailAccountAuthFailed: 'mail.account.auth_failed',
+  /** `added`, `removed`, `changed` (principal + level lama/baru), `loosened`. */
+  mailAccessUpdated: 'mail.access.updated',
+  /** Bagian 2: hapus permanen dari Sampah/Spam (`accountId`, `folderId`, `count`). */
+  mailMessagesDeletedPermanently: 'mail.message.deleted_permanently',
+  settingsMailUpdated: 'settings.mail.updated',
+  channelAvatarUpdated: 'channel.avatar_updated',
 } as const;
 
 export type AuditActionKey = keyof typeof AUDIT_ACTIONS;
@@ -399,6 +420,18 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'settings.email_sender.paused': 'Pengirim email dijeda',
   'settings.email_sender.resumed': 'Pengirim email dilanjutkan',
   'settings.email_sender.blocked': 'Pengirim email terblokir otomatis',
+  'mail.account.created': 'Akun email dihubungkan',
+  'mail.account.updated': 'Akun email diubah',
+  'mail.account.credentials_updated': 'Server atau password akun email diganti',
+  'mail.account.paused': 'Sinkron akun email dijeda',
+  'mail.account.resumed': 'Sinkron akun email dilanjutkan',
+  'mail.account.deleted': 'Akun email diputus',
+  'mail.account.avatar_updated': 'Foto akun email diubah',
+  'mail.account.auth_failed': 'Password akun email ditolak server',
+  'mail.access.updated': 'Akses akun email diubah',
+  'mail.message.deleted_permanently': 'Email dihapus permanen',
+  'settings.mail.updated': 'Pengaturan email diubah',
+  'channel.avatar_updated': 'Foto channel diubah',
 };
 
 /** Label untuk aksi yang mungkin belum dikenal klien (versi lama): tampilkan kodenya apa adanya. */
@@ -434,6 +467,7 @@ export const AUDIT_TARGET_TYPES = [
   'conversation',
   'email_template',
   'email_sender',
+  'mail_account',
 ] as const;
 export const auditTargetTypeSchema = z.enum(AUDIT_TARGET_TYPES, {
   error: 'Jenis target tidak dikenal.',
@@ -465,6 +499,7 @@ export const AUDIT_TARGET_TYPE_LABELS: Readonly<Record<AuditTargetType, string>>
   conversation: 'Percakapan',
   email_template: 'Template email',
   email_sender: 'Pengirim email',
+  mail_account: 'Akun email',
 };
 
 // ── GET /audit-logs ─────────────────────────────────────────────────────────
@@ -651,6 +686,13 @@ export const SECURITY_EVENT_KINDS = [
   'email_template_risky',
   /** Tahap 9.1: pengirim email API terblokir (login SMTP ditolak / kredensial tidak terbuka). */
   'email_sender_blocked',
+  /**
+   * Fase 9: akun email BERSAMA dibuat / server-kredensial diganti / diputus (`warning` bila oleh
+   * selain Owner, `info` oleh Owner).
+   */
+  'mail_account_changed',
+  /** Fase 9: akses akun email bersama diubah (`warning` bila diperluas oleh selain Owner). */
+  'mail_access_changed',
 ] as const;
 export const securityEventKindSchema = z.enum(SECURITY_EVENT_KINDS);
 export type SecurityEventKind = z.infer<typeof securityEventKindSchema>;
@@ -688,6 +730,8 @@ export const SECURITY_EVENT_SEVERITY: Readonly<Record<SecurityEventKind, 'warnin
   branding_changed: 'info',
   email_template_risky: 'warning',
   email_sender_blocked: 'warning',
+  mail_account_changed: 'info',
+  mail_access_changed: 'info',
 };
 
 export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> = {
@@ -718,6 +762,8 @@ export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> 
   branding_changed: 'Merek aplikasi diubah',
   email_template_risky: 'Template email diterbitkan dengan tautan/angka baru',
   email_sender_blocked: 'Pengirim email API terblokir',
+  mail_account_changed: 'Akun email bersama dihubungkan, diubah, atau diputus',
+  mail_access_changed: 'Akses akun email bersama diubah',
 };
 
 export const securityEventSchema = z.object({

@@ -589,7 +589,12 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
     event === 'webhook_disabled' ||
     event === 'email_template_risky' ||
     event === 'email_sender_blocked' ||
-    event === 'email_sender_limit_raised';
+    event === 'email_sender_limit_raised' ||
+    event === 'mail_account_changed' ||
+    event === 'mail_access_changed';
+  // Fase 9: password akun email ditolak → penerima dipilih pengantre (pemilik akun pribadi / pemegang
+  // Kelola + Owner/Admin), cukup masih aktif.
+  const anyActiveRecipient = event === 'mail_account_auth_failed';
   const recipient = await findActiveUser(organizationId, recipientUserId, deps);
   // Pengguna yang baru dinonaktifkan tetap disebut di email "dinonaktifkan".
   const subject =
@@ -600,7 +605,10 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
     event === 'webhook_disabled' ||
     event === 'email_template_risky' ||
     event === 'email_sender_blocked' ||
-    event === 'email_sender_limit_raised'
+    event === 'email_sender_limit_raised' ||
+    event === 'mail_account_changed' ||
+    event === 'mail_access_changed' ||
+    event === 'mail_account_auth_failed'
       ? await findUserAnyStateWithEmail(organizationId, subjectUserId, deps)
       : await findActiveUser(organizationId, subjectUserId, deps);
   const branding = await loadOrganizationBrand(deps.db, organizationId);
@@ -609,7 +617,8 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
   // pemberitahuan 2FA diatur ulang / perubahan tim oleh Admin.
   const recipientEligible =
     recipient !== undefined &&
-    (ownersOnly ? recipient.role === 'owner' : hasPermission(recipient.role, 'team.manage'));
+    (anyActiveRecipient ||
+      (ownersOnly ? recipient.role === 'owner' : hasPermission(recipient.role, 'team.manage')));
   const subjectEligible =
     subject !== undefined &&
     (event === 'two_factor_enabled' || event === 'password_reset_without_two_factor'
@@ -653,7 +662,10 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
     const emailApi =
       event === 'email_template_risky' ||
       event === 'email_sender_blocked' ||
-      event === 'email_sender_limit_raised'
+      event === 'email_sender_limit_raised' ||
+      event === 'mail_account_changed' ||
+      event === 'mail_access_changed' ||
+      event === 'mail_account_auth_failed'
         ? await findEmailApiDetails(organizationId, auditLogId, deps)
         : undefined;
     body = renderAdminAccountNoticeEmail({

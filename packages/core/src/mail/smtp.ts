@@ -3,7 +3,7 @@ import { createTransport } from 'nodemailer';
 
 import type { Secret } from '../secret';
 import { TimeoutError, withTimeout } from '../timeout';
-import { resolveMailHost, type HostLookup } from './host-guard';
+import { resolveMailHost, type HostLookup, type StrictMailHostRule } from './host-guard';
 
 /**
  * Klien SMTP terpusat (nodemailer) untuk api (tes koneksi, email tes) dan worker (notifikasi).
@@ -121,6 +121,10 @@ export interface SmtpPolicy {
   plaintextLogin?: PlaintextLoginPolicy;
   lookup?: HostLookup;
   timeouts?: Partial<SmtpTimeouts>;
+  /** Fase 9 (akun Email): aturan host ketat — privat hanya lewat allowlist organisasi. */
+  strict?: StrictMailHostRule;
+  /** HANYA tes: CA tambahan untuk server SMTP tiruan bersertifikat buatan sendiri. */
+  testCa?: string;
 }
 
 export type SmtpFailureCode = Exclude<
@@ -134,6 +138,11 @@ export interface SmtpDiagnostic {
   errorCode?: string;
   responseCode?: number;
   command?: string;
+  /**
+   * Fase 9: sebab khusus yang DIKENALI dari teks balasan (teksnya sendiri tidak disimpan):
+   * `m365_auth_disabled` (5.7.139), `app_password_required` (534-5.7.9 / "application-specific").
+   */
+  hint?: 'm365_auth_disabled' | 'app_password_required';
 }
 
 export type SmtpResult =
@@ -218,7 +227,20 @@ export function classifySmtpError(error: unknown): {
   const responseCode = typeof record.responseCode === 'number' ? record.responseCode : undefined;
   const command = typeof record.command === 'string' ? record.command.slice(0, 32) : undefined;
   const message = typeof record.message === 'string' ? record.message.slice(0, 2_000) : '';
-  const diagnostic: SmtpDiagnostic = { stage: 'smtp', errorCode, responseCode, command };
+  const hint: SmtpDiagnostic['hint'] = /5\.7\.139|smtp ?auth(entication)? is disabled/i.test(
+    message,
+  )
+    ? 'm365_auth_disabled'
+    : /5\.7\.9\b|application-specific password|app password/i.test(message)
+      ? 'app_password_required'
+      : undefined;
+  const diagnostic: SmtpDiagnostic = {
+    stage: 'smtp',
+    errorCode,
+    responseCode,
+    command,
+    ...(hint ? { hint } : {}),
+  };
   const done = (code: SmtpFailureCode) => ({ code, diagnostic });
   const hasCode = (codes: ReadonlySet<string>) =>
     (errorCode !== undefined && codes.has(errorCode)) ||
@@ -315,6 +337,7 @@ async function withTransport(
   const resolved = await resolveMailHost(config.host, {
     lookup: policy.lookup,
     timeoutMs: timeouts.dnsMs,
+    ...(policy.strict ? { strict: policy.strict } : {}),
   });
   if (!resolved.ok) return { ok: false, code: resolved.code, diagnostic: { stage: 'dns' } };
   if (
@@ -340,6 +363,7 @@ async function withTransport(
       servername: resolved.servername,
       minVersion: 'TLSv1.2',
       rejectUnauthorized: true,
+      ...(policy.testCa ? { ca: policy.testCa } : {}),
     },
     connectionTimeout: timeouts.connectionMs,
     greetingTimeout: timeouts.greetingMs,

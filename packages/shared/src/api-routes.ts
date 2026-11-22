@@ -533,6 +533,45 @@ export const API_ROUTES = {
     /** PATCH — ganti nama/warna; DELETE — hapus (dilepas dari semua kontak). */
     tag: `${API_PREFIX}/tags/:tagId`,
   },
+  /**
+   * Modul Email (Fase 9 tahap 9A, docs/KONTRAK-API-EMAIL.md). Izin rute `mail.view` (semua peran);
+   * hak nyata per akun (`resolveMailAccess`). Path ber-`:accountId`/`:folderId`/`:userId` disusun
+   * dengan `apiPath`. Bagian 2 (daftar/baca/aksi) menambah rute `messages*`/`view*` di sini.
+   */
+  mail: {
+    /** GET — kartu penyedia (cPanel/IMAP tersedia; Microsoft/Google/POP3 "Segera hadir"). */
+    providers: `${API_PREFIX}/mail/providers`,
+    /** POST — deteksi server dari alamat (`mail.private.own` atau `mail.accounts.manage`). */
+    detect: `${API_PREFIX}/mail/accounts/detect`,
+    /** POST — tes Masuk/Keluar tanpa menyimpan. */
+    test: `${API_PREFIX}/mail/accounts/test`,
+    /** GET — akun yang bisa kuakses; POST — buat akun. */
+    accounts: `${API_PREFIX}/mail/accounts`,
+    /** GET/PATCH/DELETE — satu akun (DELETE = putuskan, 202). */
+    account: `${API_PREFIX}/mail/accounts/:accountId`,
+    /** POST — tes dengan kredensial tersimpan (level `manage`). */
+    accountTest: `${API_PREFIX}/mail/accounts/:accountId/test`,
+    /** POST — sinkron sekarang (202). */
+    accountSync: `${API_PREFIX}/mail/accounts/:accountId/sync`,
+    /** POST — jeda sinkron. */
+    accountPause: `${API_PREFIX}/mail/accounts/:accountId/pause`,
+    /** POST — lanjutkan sinkron. */
+    accountResume: `${API_PREFIX}/mail/accounts/:accountId/resume`,
+    /** GET (`image/png`) / PUT / DELETE — foto akun. */
+    accountAvatar: `${API_PREFIX}/mail/accounts/:accountId/avatar`,
+    /** GET/PUT — akses akun (`mail.accounts.manage`; GET juga level `manage`). */
+    accountAccess: `${API_PREFIX}/mail/accounts/:accountId/access`,
+    /** GET — folder akun (level `read`). */
+    accountFolders: `${API_PREFIX}/mail/accounts/:accountId/folders`,
+    /** GET — kolom kiri: gabungan + akun + folder. */
+    sidebar: `${API_PREFIX}/mail/sidebar`,
+    /** GET — Pengaturan → Akun email (termasuk metadata akun pribadi orang lain untuk Owner/Admin). */
+    settingsAccounts: `${API_PREFIX}/settings/mail-accounts`,
+    /** GET/PUT — Pengaturan email (retensi cache, jendela sinkron bawaan). */
+    settings: `${API_PREFIX}/settings/mail`,
+    /** GET/PUT — Pengaturan → Tim → [pengguna] → tab Akses email. */
+    teamAccess: `${API_PREFIX}/settings/team/:userId/mail-access`,
+  },
   /** Quick reply `/` (butir 9): pakai = `inbox.reply`; kelola = `quick_replies.manage`. */
   quickReplies: {
     /** GET — daftar + cari (`inbox.reply`); POST — buat (`quick_replies.manage`). */

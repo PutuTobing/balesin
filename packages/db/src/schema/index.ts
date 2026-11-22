@@ -23,6 +23,7 @@ export * from './email-settings';
 export * from './email-settings-change-notices';
 export * from './installation';
 export * from './invitations';
+export * from './mail';
 export * from './media-files';
 export * from './message-templates';
 export * from './messages';

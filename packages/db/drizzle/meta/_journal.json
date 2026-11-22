@@ -253,6 +253,13 @@
       "when": 1795363804293,
       "tag": "0035_email_kirim_api",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1795382434906,
+      "tag": "0036_mail_fondasi",
+      "breakpoints": true
     }
   ]
 }

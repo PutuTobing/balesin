@@ -715,3 +715,35 @@ teks (mis. `5.7.139`, `534-5.7.9`), teks tidak diteruskan.
 
 Tidak ada yang memblokir 9A. Catatan untuk `devops`: rute `/api/v1/mail/view/*` butuh pengecualian
 `X-Frame-Options` (diganti `frame-ancestors`) di Fastify maupun nginx bila proxy menambah header itu.
+
+## 16. Penyimpangan implementasi 9A bagian 1 (backend, 2026-11-23)
+
+Disetujui sebagai keputusan pelaksana (DECISIONS 2026-11-23); bagian 2 memakai fondasi ini.
+
+1. **Kolom tambahan** `mail_accounts`: `folders_synced_at` (LIST terakhir), `idle_active`, `last_test_at`,
+   `last_test_incoming_ok`, `last_test_outgoing_ok` (untuk `sync.idleActive`/`sync.lastTest`);
+   `mail_folders.has_older_on_server` (untuk `hasOlderOnServer`). `mail_settings` ber-PK `organization_id`
+   (tanpa `id`). `mail_folders.parent_id` tanpa FK (daftar folder diganti utuh saat LIST). CHECK
+   `trusted_auth_serv_ids` memakai `char_length ≤ 1300` + regex tanpa `{1,1300}` (Postgres menolak
+   pengulangan > 255 — catatan: CHECK serupa di `channels` punya masalah yang sama).
+2. **Deklarasi rute**: semua rute `mail.view`, kecuali `PUT …/access`, `GET/PUT /settings/mail`, dan
+   `GET/PUT /settings/team/:userId/mail-access` = `mail.accounts.manage`. `detect`/`test` butuh
+   `mail.private.own` ATAU `mail.accounts.manage`; `POST /mail/accounts` butuh `mail.accounts.manage`
+   (bersama) / `mail.private.own` (pribadi) — diperiksa handler (403 + audit).
+3. **`navigation.mail`** dikirim di `GET /auth/me` dan `POST /auth/login` (bukan di jawaban 2FA/undangan/
+   setup — web memuat `/auth/me` setelahnya).
+4. **`GET …/access`** untuk pemegang Kelola non-Owner/Admin: boleh dibaca, `editable: false`. Akun pribadi
+   milik sendiri → 400 `personal_account_no_access`; milik orang lain → 404.
+5. **Galat tambahan**: `POST …/sync` saat `paused`/`owner_inactive` → 409 reason `account_paused`;
+   `details[].reason` `principal_invalid`, `account_not_found`, `password_required` (tes/ubah tanpa
+   password saat server berubah), `limit_reached` (grant > 200).
+6. **Larangan alamat ganda** juga membandingkan ALIAS Channel Email (dua arah).
+7. **Worker**: `mail-sync-folders` per AKUN (LIST + semua folder jatuh tempo, satu sambungan),
+   `mail-sync-folder` satu folder (IDLE). Deteksi email hilang = `UID SEARCH SINCE <jendela>` vs UID lokal
+   tiap sinkron (QRESYNC/VANISHED belum dipakai); `CHANGEDSINCE` dipakai bila CONDSTORE. `STATUS` per folder
+   saat disinkron. Pemilik nonaktif → `owner_inactive` lewat tick (≤ 30 dtk). `mail-load-older`,
+   `mail-fetch-body`, `mail-fetch-attachment`, `mail-action` = bagian 2.
+8. **Event bus** `mail.access.changed` membawa `userIds` (penerima) — tetap tanpa isi/alamat.
+9. **Rute foto channel** (`/channels/:channelId/avatar`) belum dibuat — tabel `channel_avatars` sudah ada.
+10. **Deteksi**: domain/MX Google & Microsoft memberi saran server (`provider: google/microsoft`) dengan
+    catatan; tebakan `mail.<domain>` hanya bila semua alamatnya lolos penjaga ketat (privat hanya allowlist).

@@ -39,6 +39,15 @@ import {
   type WebhooksOutDeps,
 } from './queues/webhooks-out';
 import { createWebhookWorker, type WebhookJobDeps } from './queues/webhooks';
+import { createIdleSupervisor, type IdleSupervisor } from './mail-idle/supervisor';
+import { createMailSync, type MailSyncDeps } from './mail/sync';
+import {
+  createMailQueue,
+  createMailWorker,
+  mailEnqueuers,
+  scheduleMailJobs,
+  type MailJobDeps,
+} from './queues/mail';
 import {
   createChannelsQueue,
   createChannelsWorker,
@@ -76,6 +85,12 @@ export interface WorkerServices {
   channels?: Omit<ChannelMailboxDeps, 'logger' | 'enqueuePoll' | 'enqueueEvents'>;
   /** Tahap 9.1 — antrian `email-outbound` (email lewat API, job berkala tiap 5 dtk). Opsional. */
   emailOutbound?: Omit<EmailOutboundDeps, 'logger'>;
+  /**
+   * Fase 9 — modul Email: antrian `mail` (tick, sinkron, putuskan, retensi) + pengawas IDLE.
+   * Opsional untuk tes. `idle: false` = tanpa pengawas IDLE (tes antrian saja).
+   */
+  mail?: Omit<MailSyncDeps, 'logger'> &
+    Pick<MailJobDeps, 'store'> & { idle?: boolean; prefix?: string };
 }
 
 const ERROR_LOG_INTERVAL_MS = 30_000;
@@ -106,6 +121,43 @@ export function startWorkers(
   let broadcastQueue: Queue | undefined;
   let channelsQueue: Queue | undefined;
   let webhookProducer: Queue | undefined;
+  let mailQueue: Queue | undefined;
+  let idleSupervisor: IdleSupervisor | undefined;
+  if (services.mail) {
+    const queue = createMailQueue(options);
+    mailQueue = queue;
+    queue.on('error', () => undefined);
+    const enqueue = mailEnqueuers(queue);
+    const { store, idle, prefix, ...syncDeps } = services.mail;
+    const sync = createMailSync({ ...syncDeps, logger });
+    workers.push(
+      createMailWorker(options, {
+        db: services.mail.db,
+        logger,
+        redis: options.connection,
+        ...(prefix ? { prefix } : {}),
+        sync,
+        store,
+        enqueueSync: (payload) => enqueue.enqueueSync(payload),
+        enqueuePurge: (payload) => enqueue.enqueuePurge(payload),
+      }),
+    );
+    scheduleMailJobs(queue).catch((err: unknown) => {
+      logger.error({ err }, 'Jadwal modul Email gagal didaftarkan');
+    });
+    if (idle !== false) {
+      idleSupervisor = createIdleSupervisor({
+        db: services.mail.db,
+        redis: options.connection,
+        logger,
+        secretBox: services.mail.secretBox,
+        sync,
+        enqueueFolder: (payload) => enqueue.enqueueFolder(payload),
+        ...(services.mail.connector ? { connector: services.mail.connector } : {}),
+        ...(prefix ? { prefix } : {}),
+      });
+    }
+  }
   if (services.channels) {
     const queue = createChannelsQueue(options);
     channelsQueue = queue;
@@ -216,6 +268,7 @@ export function startWorkers(
       // Tanpa koneksi Redis tidak ada job yang bisa diselesaikan, dan penutupan biasa akan
       // menunggu Redis selamanya — jadi tutup paksa (langsung putus) bila Redis sedang mati.
       const force = options.connection.status !== 'ready';
+      await idleSupervisor?.close();
       await Promise.all(workers.map((worker) => worker.close(force)));
       if (webhooksOutQueue) {
         if (force) await webhooksOutQueue.disconnect();
@@ -229,7 +282,7 @@ export function startWorkers(
         if (force) await broadcastQueue.disconnect();
         else await broadcastQueue.close();
       }
-      for (const queue of [channelsQueue, webhookProducer, emailOutboundQueue]) {
+      for (const queue of [channelsQueue, webhookProducer, emailOutboundQueue, mailQueue]) {
         if (!queue) continue;
         if (force) await queue.disconnect();
         else await queue.close();

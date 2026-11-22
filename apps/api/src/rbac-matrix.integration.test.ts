@@ -346,6 +346,32 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'PUT /api/v1/settings/email-senders/:senderId': 'sending.limits.manage',
   'POST /api/v1/settings/email-senders/:senderId/pause': 'sending.limits.manage',
   'POST /api/v1/settings/email-senders/:senderId/resume': 'sending.resume',
+  // Fase 9 (modul Email): pintu `mail.view`; hak nyata per akun + izin tambahan diperiksa handler
+  // (`mail.private.own`/`mail.accounts.manage`, diuji mail.integration.test.ts).
+  'GET /api/v1/mail/providers': 'mail.view',
+  'POST /api/v1/mail/accounts/detect': 'mail.view',
+  'POST /api/v1/mail/accounts/test': 'mail.view',
+  'GET /api/v1/mail/accounts': 'mail.view',
+  'POST /api/v1/mail/accounts': 'mail.view',
+  'GET /api/v1/settings/mail-accounts': 'mail.view',
+  'GET /api/v1/mail/accounts/:accountId': 'mail.view',
+  'PATCH /api/v1/mail/accounts/:accountId': 'mail.view',
+  'DELETE /api/v1/mail/accounts/:accountId': 'mail.view',
+  'POST /api/v1/mail/accounts/:accountId/test': 'mail.view',
+  'POST /api/v1/mail/accounts/:accountId/sync': 'mail.view',
+  'POST /api/v1/mail/accounts/:accountId/pause': 'mail.view',
+  'POST /api/v1/mail/accounts/:accountId/resume': 'mail.view',
+  'PUT /api/v1/mail/accounts/:accountId/avatar': 'mail.view',
+  'DELETE /api/v1/mail/accounts/:accountId/avatar': 'mail.view',
+  'GET /api/v1/mail/accounts/:accountId/avatar': 'mail.view',
+  'GET /api/v1/mail/accounts/:accountId/access': 'mail.view',
+  'PUT /api/v1/mail/accounts/:accountId/access': 'mail.accounts.manage',
+  'GET /api/v1/mail/accounts/:accountId/folders': 'mail.view',
+  'GET /api/v1/mail/sidebar': 'mail.view',
+  'GET /api/v1/settings/mail': 'mail.accounts.manage',
+  'PUT /api/v1/settings/mail': 'mail.accounts.manage',
+  'GET /api/v1/settings/team/:userId/mail-access': 'mail.accounts.manage',
+  'PUT /api/v1/settings/team/:userId/mail-access': 'mail.accounts.manage',
   'GET /api/v1/settings/api': 'api_keys.manage',
   'PUT /api/v1/settings/api': 'api_keys.manage',
   // Webhook keluar (Fase 3): Owner/Admin (`integrations.manage`)
@@ -551,6 +577,8 @@ const SAMPLE_PARAMS: Readonly<Record<string, string>> = {
   emailId: '00000000-0000-4000-8000-0000000000b8',
   senderId: 'chn_00000000-0000-4000-8000-0000000000b9',
   versionId: '1',
+  // Fase 9: modul Email
+  accountId: '00000000-0000-4000-8000-0000000000c1',
 };
 
 function concreteUrl(pattern: string): string {

@@ -15,6 +15,7 @@ import { closeDb, createDb, pingDb } from '@balesin/db';
 import { buildApp } from './app';
 import { loadConfig, type ApiConfig } from './config';
 import { createEmailQueue } from './queues/email-queue';
+import { createMailQueue } from './queues/mail-queue';
 import { createMessageQueue } from './queues/message-queue';
 import { createNotificationQueue } from './queues/notification-queue';
 import { createWebhookQueue } from './queues/webhook-queue';
@@ -63,6 +64,8 @@ async function main(config: ApiConfig): Promise<void> {
   const webhookQueue = createWebhookQueue({ connection: queueRedis });
   const messageQueue = createMessageQueue({ connection: queueRedis });
   const notificationQueue = createNotificationQueue({ connection: queueRedis, logger });
+  const mailQueue = createMailQueue({ connection: queueRedis });
+  const testOverrides = channelTestOverridesFromEnv(process.env);
 
   const app = await buildApp({
     config,
@@ -77,8 +80,23 @@ async function main(config: ApiConfig): Promise<void> {
     webhookQueue: webhookQueue.enqueuer,
     messageQueue: messageQueue.enqueuer,
     notificationQueue: notificationQueue.enqueuer,
+    mailQueue: mailQueue.enqueuer,
     // Non-produksi saja (stack E2E): Telegram/IMAP tiruan. Produksi dengan variabel ini = gagal start.
-    overrides: channelTestOverridesFromEnv(process.env),
+    overrides: {
+      ...testOverrides,
+      // Modul Email (Fase 9) memakai server IMAP tiruan yang sama di loopback (stack E2E saja).
+      ...(testOverrides.imap
+        ? {
+            mail: {
+              ...(testOverrides.imap.allowedPorts
+                ? { imapPorts: testOverrides.imap.allowedPorts }
+                : {}),
+              ...(testOverrides.imap.testCa ? { testCa: testOverrides.imap.testCa } : {}),
+              allowLoopback: true,
+            },
+          }
+        : {}),
+    },
   });
 
   const shutdown = createShutdown({
@@ -89,6 +107,7 @@ async function main(config: ApiConfig): Promise<void> {
       { name: 'antrian-webhook', run: () => webhookQueue.close() },
       { name: 'antrian-pesan', run: () => messageQueue.close() },
       { name: 'antrian-notifikasi', run: () => notificationQueue.close() },
+      { name: 'antrian-email', run: () => mailQueue.close() },
       { name: 'postgres', run: () => closeDb(db) },
       { name: 'redis', run: () => closeRedis(redis) },
       { name: 'redis-antrian', run: () => closeRedis(queueRedis) },

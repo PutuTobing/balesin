@@ -4,6 +4,7 @@ import { CHANNEL_TYPES } from './channels';
 import { hasControlCharacters, isoDateTimeSchema } from './fields';
 import { identityConfirmationSchema } from './identity';
 import { interactiveMessageSchema } from './interactive';
+import { mailStreamEventSchemas } from './mail';
 import { tagColorSchema, tagRefSchema } from './tags';
 
 /**
@@ -1027,5 +1028,7 @@ export const inboxStreamEventSchema = z.discriminatedUnion('type', [
    * dibuang, web memuat ulang daftar & percakapan yang terbuka lewat REST (`refreshInbox`).
    */
   z.object({ type: z.literal('resync') }),
+  // Fase 9 (modul Email, KONTRAK-API-EMAIL §10): ID & angka saja, difilter hak akses per akun.
+  ...mailStreamEventSchemas,
 ]);
 export type InboxStreamEvent = z.infer<typeof inboxStreamEventSchema>;

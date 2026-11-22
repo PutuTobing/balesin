@@ -22,12 +22,22 @@ import {
 import { AUTHENTICATED_OR_ENROLLING, PUBLIC } from '../../http/route-access';
 import { requireAuth } from './auth.hook';
 import type { AuthService, LoginResult } from './auth.service';
-import { sessionCookieMaxAge, toAuthenticatedSession, toSessionResponse } from './session.service';
+import {
+  sessionCookieMaxAge,
+  toAuthenticatedSession,
+  toSessionResponse,
+  type AuthContext,
+} from './session.service';
 import { TRUSTED_DEVICE_MAX_AGE_SECONDS } from './trusted-device';
 
 export interface AuthRoutesOptions {
   auth: AuthService;
   cookieSecure: boolean;
+  /**
+   * Fase 9: menu berbasis data (`navigation.mail`). Gagal dihitung = dilewati (klien menganggap
+   * `false`), respons sesi tetap terkirim.
+   */
+  navigation?: (auth: AuthContext) => Promise<{ mail: boolean }>;
 }
 
 /** Body login hanya email + password; batas kecil supaya tidak bisa dipakai membebani parser. */
@@ -55,6 +65,14 @@ export function setSessionCookies(
  */
 export const authRoutes: FastifyPluginCallbackZod<AuthRoutesOptions> = (app, options, done) => {
   const { auth, cookieSecure } = options;
+  const withNavigation = async <T extends object>(session: T, context: AuthContext) => {
+    if (!options.navigation || context.twoFactor.enrollmentRequired) return session;
+    try {
+      return { ...session, navigation: await options.navigation(context) };
+    } catch {
+      return session;
+    }
+  };
 
   app.post(
     API_ROUTES.auth.login,
@@ -81,7 +99,9 @@ export const authRoutes: FastifyPluginCallbackZod<AuthRoutesOptions> = (app, opt
       // ini, bila ada, baru dicabut saat langkah kedua selesai).
       if (outcome.kind === 'two_factor_challenge') return reply.send(outcome.challenge);
       setSessionCookies(reply, outcome.result, cookieSecure);
-      return reply.send(toSessionResponse(outcome.result.auth));
+      return reply.send(
+        await withNavigation(toSessionResponse(outcome.result.auth), outcome.result.auth),
+      );
     },
   );
 
@@ -136,8 +156,9 @@ export const authRoutes: FastifyPluginCallbackZod<AuthRoutesOptions> = (app, opt
       config: { access: AUTHENTICATED_OR_ENROLLING },
       schema: { response: { 200: meResponseSchema, 401: errorEnvelopeSchema } },
     },
-    (request, reply) => {
-      void reply.send(toSessionResponse(requireAuth(request)));
+    async (request, reply) => {
+      const context = requireAuth(request);
+      return reply.send(await withNavigation(toSessionResponse(context), context));
     },
   );
 

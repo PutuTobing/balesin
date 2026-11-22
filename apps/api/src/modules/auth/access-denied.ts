@@ -80,6 +80,10 @@ export const ACCESS_RULES = {
   ticketOutsideScope: 'ticket.outside_scope',
   /** Menghapus komentar tiket orang lain tanpa `tickets.configure`. */
   ticketCommentDeleteOthers: 'ticket.comment.delete_others',
+  /** Fase 9: hak per akun Email kurang (mis. "Baca" mencoba aksi "Kelola"). */
+  mailAccountLevel: 'mail.account.level',
+  /** Fase 9: mengubah/memutus akun Email PRIBADI milik orang lain (selain pemilik nonaktif). */
+  mailPersonalOwnerOnly: 'mail.personal.owner_only',
 } as const;
 export type AccessRule = (typeof ACCESS_RULES)[keyof typeof ACCESS_RULES];
 

@@ -11,6 +11,7 @@ export * from './errors';
 export * from './inbox-events';
 export * from './logger';
 export * from './mail';
+export * from './mail-client';
 export * from './media/store';
 export * from './meta';
 export * from './net/outgoing-webhook';

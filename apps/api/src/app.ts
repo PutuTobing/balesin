@@ -141,6 +141,16 @@ import { channelWebhookRoutes } from './modules/webhooks/channel-webhooks.routes
 import { createChannelWebhooksService } from './modules/webhooks/channel-webhooks.service';
 import { createWhatsAppWebhookService } from './modules/webhooks/whatsapp-webhook.service';
 import type { EmailNotifier } from './queues/email-queue';
+import type { MailJobEnqueuer } from './queues/mail-queue';
+import { createMailAccessService } from './modules/mail/mail-access.service';
+import { mailRoutes } from './modules/mail/mail.routes';
+import { createMailService } from './modules/mail/mail.service';
+import type { MailDetectionDns, RemoteFetcher } from './modules/mail/mail-detection';
+import {
+  createMailEventPublisher,
+  type MailImapConnector,
+  type MailSmtpVerifier,
+} from '@balesin/core';
 import type { OutboundMessageEnqueuer } from './queues/message-queue';
 import type { NotificationEnqueuer } from './queues/notification-queue';
 import type { WebhookEventEnqueuer } from './queues/webhook-queue';
@@ -181,6 +191,8 @@ export interface AppDeps {
   messageQueue: OutboundMessageEnqueuer;
   /** Pengantre notifikasi Web Push (dikirim worker). */
   notificationQueue: NotificationEnqueuer;
+  /** Fase 9: antrean `mail` (sinkron sekarang, putuskan). Tanpa ini worker memakai jadwalnya. */
+  mailQueue?: MailJobEnqueuer;
   /** Titik ganti untuk tes. Tidak diisi di `index.ts`. */
   overrides?: {
     /** Awalan kunci Redis batas laju, supaya tes tidak saling mengganggu. */
@@ -202,6 +214,21 @@ export interface AppDeps {
      * batas waktu pendek. Produksi: port 993/143, CA sistem.
      */
     imap?: { allowedPorts?: readonly number[]; testCa?: string; timeouts?: Partial<ImapTimeouts> };
+    /**
+     * HANYA tes (modul Email, Fase 9): server IMAP/SMTP tiruan (port, CA, loopback), DNS & unduhan
+     * deteksi tiruan, atau pengganti klien IMAP/SMTP.
+     */
+    mail?: {
+      imapPorts?: readonly number[];
+      smtpPorts?: readonly number[];
+      testCa?: string;
+      allowLoopback?: boolean;
+      detectionDns?: MailDetectionDns;
+      fetchRemote?: RemoteFetcher;
+      connector?: MailImapConnector;
+      smtpVerifier?: MailSmtpVerifier;
+      imapTimeouts?: Partial<ImapTimeouts>;
+    };
     /** Origin server push TIRUAN yang boleh didaftarkan (tes saja; produksi: layanan push dikenal). */
     pushEndpointOrigins?: readonly string[];
     /** Selang heartbeat/validasi ulang WebSocket inbox dan batas koneksi per pengguna. */
@@ -581,7 +608,45 @@ export async function buildApp(deps: AppDeps) {
     limiter,
     cookieSecure: config.cookieSecure,
   });
-  await app.register(authRoutes, { auth, cookieSecure: config.cookieSecure });
+  // Fase 9 — modul Email (akun, akses, folder). Dibuat sebelum rute auth: `navigation.mail`.
+  const mailOverrides = deps.overrides?.mail;
+  const mailPublisher = createMailEventPublisher(deps.redis, {
+    prefix: redisPrefix,
+    logger: app.log,
+  });
+  const mail = createMailService({
+    db,
+    secretBox,
+    twoFactor,
+    notifier: deps.notifier,
+    accessDenied,
+    publisher: mailPublisher,
+    ...(deps.mailQueue ? { queue: deps.mailQueue } : {}),
+    imap: {
+      lookup: deps.overrides?.mailLookup,
+      ...(mailOverrides?.testCa ? { testCa: mailOverrides.testCa } : {}),
+      ...(mailOverrides?.imapTimeouts ? { timeouts: mailOverrides.imapTimeouts } : {}),
+      ...(mailOverrides?.imapPorts ? { extraPorts: mailOverrides.imapPorts } : {}),
+      ...(mailOverrides?.allowLoopback ? { allowLoopback: true } : {}),
+    },
+    smtp: {
+      lookup: deps.overrides?.mailLookup,
+      timeouts: deps.overrides?.smtpTimeouts,
+      ...(mailOverrides?.testCa ? { testCa: mailOverrides.testCa } : {}),
+      ...(mailOverrides?.smtpPorts ? { extraPorts: mailOverrides.smtpPorts } : {}),
+    },
+    detection: {
+      ...(mailOverrides?.detectionDns ? { dns: mailOverrides.detectionDns } : {}),
+      ...(mailOverrides?.fetchRemote ? { fetchRemote: mailOverrides.fetchRemote } : {}),
+    },
+    ...(mailOverrides?.connector ? { connector: mailOverrides.connector } : {}),
+    ...(mailOverrides?.smtpVerifier ? { smtpVerifier: mailOverrides.smtpVerifier } : {}),
+  });
+  await app.register(authRoutes, {
+    auth,
+    cookieSecure: config.cookieSecure,
+    navigation: (context) => mail.navigation(context),
+  });
   await app.register(twoFactorRoutes, { twoFactor, cookieSecure: config.cookieSecure });
   await app.register(brandingRoutes, { branding: createBrandingService({ db }), limiter });
   await app.register(emailSettingsRoutes, {
@@ -810,6 +875,18 @@ export async function buildApp(deps: AppDeps) {
   await app.register(quickRepliesRoutes, {
     limiter,
     quickReplies: createQuickRepliesService({ db }),
+  });
+  await app.register(mailRoutes, {
+    mail,
+    mailAccess: createMailAccessService({
+      db,
+      twoFactor,
+      notifier: deps.notifier,
+      publisher: mailPublisher,
+      accessDenied,
+    }),
+    limiter,
+    cookieSecure: config.cookieSecure,
   });
   // Publik: penerima webhook Meta (keaslian dari tanda tangan App Secret, bukan sesi).
   await app.register(whatsAppWebhookRoutes, { guard: webhookGuard, webhooks: whatsAppWebhooks });

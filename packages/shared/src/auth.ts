@@ -72,6 +72,13 @@ const sessionFields = {
    * terkompilasi (tambahan Fase 1 butir 5) — perlakukan "tidak ada" sebagai `[]`.
    */
   permissions: z.array(permissionSchema).optional(),
+  /**
+   * Menu yang tampil berdasarkan DATA (bukan hanya izin): `mail` = menu Email (KONTRAK-API-EMAIL
+   * §1: `mail.view` DAN ≥ 1 akun bisa diakses / boleh menghubungkan akun pribadi / mengelola akun
+   * bersama). Dikirim di `GET /auth/me` dan login; web memuat ulang `/auth/me` saat event
+   * `mail.access.changed`. Opsional = klien lama tetap jalan (anggap `false`).
+   */
+  navigation: z.object({ mail: z.boolean() }).optional(),
 };
 
 /** Sesi penuh: login selesai (termasuk langkah 2FA bila ada), atau `GET /auth/me`. */

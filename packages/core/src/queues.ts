@@ -54,6 +54,11 @@ export const QUEUE_NAMES = {
    * jatuh tempo (pola outbox, tanpa produsen di api), mengirim lewat SMTP pengirim, dan retensi.
    */
   emailOutbound: 'email-outbound',
+  /**
+   * Fase 9 tahap 9A — modul Email (kotak surat multi-akun): tick, sinkron folder/akun, putuskan akun,
+   * retensi cache (`MAIL_JOBS`). IDLE TIDAK lewat antrian (pengawas di proses worker).
+   */
+  mail: 'mail',
 } as const;
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
@@ -444,6 +449,13 @@ export const SECURITY_NOTICE_ADMIN_EVENTS = [
   'email_template_risky',
   'email_sender_blocked',
   'email_sender_limit_raised',
+  // Fase 9 (modul Email): akun email bersama dibuat/server-kredensial diubah/diputus oleh Admin, dan
+  // akses akun bersama diperluas oleh Admin (ke semua Owner; subjek = pelaku). Password akun email
+  // ditolak server (ke pemilik akun pribadi / pemegang Kelola + Owner/Admin; subjek = penerima).
+  // Alamat akun dari baris audit (`address`).
+  'mail_account_changed',
+  'mail_access_changed',
+  'mail_account_auth_failed',
 ] as const;
 export type SecurityNoticeAdminEvent = (typeof SECURITY_NOTICE_ADMIN_EVENTS)[number];
 
@@ -572,4 +584,67 @@ export const EMAIL_POLL_JOB_OPTIONS = {
   attempts: 1,
   removeOnComplete: true,
   removeOnFail: true,
+};
+
+// ── Antrian `mail` (Fase 9 tahap 9A — modul Email, KONTRAK-API-EMAIL §11) ────
+//
+// Payload HANYA ID. Kredensial/alamat/subjek tidak pernah masuk Redis. Satu job menunggu per sasaran
+// (ID job), selesai/gagal langsung dihapus supaya ID bebas lagi; kegagalan dicatat di
+// `mail_accounts` (backoff) — bukan ulangan BullMQ.
+
+export const MAIL_JOBS = {
+  /** Berkala (30 dtk): pilih akun yang jatuh tempo → `mail-sync-folders`. Payload kosong. */
+  tick: 'mail-tick',
+  /** Satu akun: LIST folder (bila basi/dipaksa) + sinkron semua folder yang jatuh tempo. */
+  syncFolders: 'mail-sync-folders',
+  /** Satu folder (IDLE Kotak masuk / polling 2 menit). */
+  syncFolder: 'mail-sync-folder',
+  /** Putuskan akun: hapus baris `mail_*` + berkas cache bertahap. */
+  purgeAccount: 'mail-purge-account',
+  /** Harian: pangkas isi/lampiran yang tidak dibuka > `cache_retention_days`. */
+  cacheRetention: 'mail-cache-retention',
+} as const;
+export type MailJobName = (typeof MAIL_JOBS)[keyof typeof MAIL_JOBS];
+
+export const MAIL_TICK_INTERVAL_MS = 30_000;
+export const MAIL_TICK_BATCH = 50;
+export const MAIL_CACHE_RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+export const mailAccountJobPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  accountId: z.uuid(),
+  /** `true` = "Sinkron sekarang": LIST ulang + semua folder, tanpa menunggu jadwal. */
+  force: z.boolean().optional(),
+});
+export type MailAccountJobPayload = z.infer<typeof mailAccountJobPayloadSchema>;
+
+export const mailFolderJobPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  accountId: z.uuid(),
+  folderId: z.uuid(),
+});
+export type MailFolderJobPayload = z.infer<typeof mailFolderJobPayloadSchema>;
+
+export function mailSyncFoldersJobId(accountId: string): string {
+  return `mail-sync-${accountId}`;
+}
+export function mailSyncFolderJobId(folderId: string): string {
+  return `mail-folder-${folderId}`;
+}
+export function mailPurgeJobId(accountId: string): string {
+  return `mail-purge-${accountId}`;
+}
+
+export const MAIL_JOB_OPTIONS = {
+  attempts: 1,
+  removeOnComplete: true,
+  removeOnFail: true,
+};
+
+/** Putuskan akun: dicoba ulang (database sesaat bermasalah tidak meninggalkan data). */
+export const MAIL_PURGE_JOB_OPTIONS = {
+  attempts: 10,
+  backoff: { type: 'exponential', delay: 10_000 },
+  removeOnComplete: true,
+  removeOnFail: { age: 7 * 24 * 60 * 60, count: 1_000 },
 };

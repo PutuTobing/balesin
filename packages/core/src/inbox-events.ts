@@ -1,4 +1,4 @@
-import { CONVERSATION_DETAIL_SECTIONS } from '@balesin/shared';
+import { CONVERSATION_DETAIL_SECTIONS, mailStreamEventSchema } from '@balesin/shared';
 import { z } from 'zod';
 
 import type { Logger } from './logger';
@@ -211,6 +211,76 @@ export function parseSessionRevokedMessage(raw: string): SessionRevokedBusEvent 
   try {
     const parsed = sessionRevokedBusEventSchema.safeParse(JSON.parse(raw));
     return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+// ── Event modul Email (Fase 9, KONTRAK-API-EMAIL §10) ────────────────────────
+
+/**
+ * Event `mail.*` lewat channel pub/sub yang SAMA dengan inbox (satu soket untuk Inbox & Email).
+ * Isinya event WS final (ID & angka saja — tanpa subjek/alamat/nama/isi) + organisasi + akun; hub
+ * mengirimnya hanya ke soket yang penggunanya punya hak ≥ `read` atas akun itu SAAT ITU
+ * (`resolveMailAccess`). `mail.access.changed` membawa `userIds` penerima (tanpa akun).
+ */
+export const mailBusEventSchema = z.strictObject({
+  v: z.literal(1),
+  type: z.literal('mail'),
+  organizationId: z.uuid(),
+  accountId: z.uuid().optional(),
+  userIds: z.array(z.uuid()).max(1_000).optional(),
+  event: mailStreamEventSchema,
+});
+export type MailBusEvent = z.infer<typeof mailBusEventSchema>;
+export type MailBusEventInput = Omit<MailBusEvent, 'v' | 'type'>;
+
+function mailEventComplete(event: MailBusEvent): boolean {
+  if (event.event.type === 'mail.access.changed') {
+    return event.accountId === undefined && (event.userIds?.length ?? 0) > 0;
+  }
+  return event.accountId !== undefined && event.event.accountId === event.accountId;
+}
+
+export interface MailEventPublisher {
+  /** Setelah commit. Tidak pernah melempar (kegagalan Redis tidak menggagalkan sinkron/permintaan). */
+  publish(events: readonly MailBusEventInput[]): Promise<void>;
+}
+
+export const NOOP_MAIL_EVENT_PUBLISHER: MailEventPublisher = { publish: () => Promise.resolve() };
+
+export function createMailEventPublisher(
+  redis: Redis,
+  options: { prefix?: string; logger: Pick<Logger, 'warn'> },
+): MailEventPublisher {
+  const channel = inboxEventsChannel(options.prefix);
+  return {
+    async publish(events) {
+      if (events.length === 0) return;
+      try {
+        const pipeline = redis.pipeline();
+        for (const input of events) {
+          const message = mailBusEventSchema.parse({ v: 1, type: 'mail', ...input });
+          if (!mailEventComplete(message)) throw new Error('Event email tidak lengkap');
+          pipeline.publish(channel, JSON.stringify(message));
+        }
+        await pipeline.exec();
+      } catch (err) {
+        options.logger.warn(
+          { err, events: events.length },
+          'Event email real-time gagal diterbitkan',
+        );
+      }
+    },
+  };
+}
+
+/** Pesan Redis → event email, atau `null` (bukan event email / tidak sah). */
+export function parseMailBusMessage(raw: string): MailBusEvent | null {
+  if (raw.length > 64_000 || !raw.includes('"type":"mail"')) return null;
+  try {
+    const parsed = mailBusEventSchema.safeParse(JSON.parse(raw));
+    return parsed.success && mailEventComplete(parsed.data) ? parsed.data : null;
   } catch {
     return null;
   }

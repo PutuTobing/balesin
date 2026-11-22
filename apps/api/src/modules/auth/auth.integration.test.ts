@@ -289,12 +289,15 @@ describe('GET /auth/me dan masa berlaku sesi', () => {
     expect(response.headers['cache-control']).toBe('no-store');
     expect(Object.keys(response.json<object>()).sort()).toEqual([
       'csrfToken',
+      'navigation',
       'organization',
       'permissions',
       'session',
       'status',
       'user',
     ]);
+    // Fase 9: menu berbasis data — Owner selalu boleh mengelola akun email bersama.
+    expect(response.json<{ navigation: unknown }>().navigation).toEqual({ mail: true });
   });
 
   it('tanpa cookie, cookie ngawur, atau cookie ganda: 401', async () => {

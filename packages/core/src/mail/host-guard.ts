@@ -1,6 +1,7 @@
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { BlockList, isIP } from 'node:net';
 
+import { addressInCidrs, classifyAddress } from '../net/outgoing-webhook';
 import { withTimeout } from '../timeout';
 
 /**
@@ -190,9 +191,35 @@ export type ResolveMailHostResult =
     }
   | { ok: false; code: 'host_not_found' | 'host_blocked' | 'connection_timeout' };
 
+/**
+ * Aturan KETAT untuk server akun Email (Fase 9, KONTRAK-API-EMAIL §4.3): selain daftar blokir di
+ * atas, alamat yang SELALU ditolak webhook keluar (loopback, cadangan, pembungkus IPv4) juga ditolak,
+ * dan alamat PRIVAT hanya diterima bila CIDR-nya ada di allowlist IP privat organisasi — akun Email
+ * dibuat banyak orang (termasuk CS untuk akun pribadi), jadi tidak boleh menjadi jalan ke LAN.
+ */
+export interface StrictMailHostRule {
+  privateCidrs: readonly string[];
+  /** HANYA tes: server tiruan di 127.0.0.1/::1. Produksi tidak pernah mengisinya. */
+  allowLoopback?: boolean;
+}
+
 export interface ResolveMailHostOptions {
   lookup?: HostLookup;
   timeoutMs?: number;
+  /** Tanpa ini = aturan lama (Email pengirim sistem & channel Email: privat boleh). */
+  strict?: StrictMailHostRule;
+}
+
+/** `true` bila alamat ini lolos aturan ketat (lihat `StrictMailHostRule`). */
+export function strictMailAddressAllowed(address: string, rule: StrictMailHostRule): boolean {
+  if (isBlockedMailAddress(address)) return false;
+  const kind = classifyAddress(address);
+  if (kind === 'forbidden') {
+    const bare = address.replace(/^::ffff:/i, '');
+    return rule.allowLoopback === true && (bare === '127.0.0.1' || bare === '::1');
+  }
+  if (kind === 'private') return addressInCidrs(address, rule.privateCidrs);
+  return true;
 }
 
 /**
@@ -207,6 +234,9 @@ export async function resolveMailHost(
   const literal = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
   if (isIP(literal) !== 0) {
     const addressClass = classifyMailAddress(literal);
+    if (options.strict && !strictMailAddressAllowed(literal, options.strict)) {
+      return { ok: false, code: 'host_blocked' };
+    }
     return addressClass === 'blocked'
       ? { ok: false, code: 'host_blocked' }
       : { ok: true, address: literal, servername: undefined, addressClass };
@@ -231,6 +261,11 @@ export async function resolveMailHost(
 
   if (addresses.length === 0) return { ok: false, code: 'host_not_found' };
   if (addresses.some((entry) => isBlockedMailAddress(entry.address))) {
+    return { ok: false, code: 'host_blocked' };
+  }
+  // Aturan ketat: SEMUA alamat hasil resolve harus lolos (DNS campuran tidak bisa dipakai lolos).
+  const strict = options.strict;
+  if (strict && addresses.some((entry) => !strictMailAddressAllowed(entry.address, strict))) {
     return { ok: false, code: 'host_blocked' };
   }
 

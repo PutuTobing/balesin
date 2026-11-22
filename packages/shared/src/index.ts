@@ -33,6 +33,7 @@ export * from './invitations';
 export * from './outbound';
 export * from './outgoing-webhooks';
 export * from './links';
+export * from './mail';
 export * from './mobichat';
 export * from './notifications';
 export * from './password';
