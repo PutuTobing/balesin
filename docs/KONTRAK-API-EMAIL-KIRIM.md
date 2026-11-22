@@ -204,6 +204,12 @@ yang membuang gaya & gambar): berlaku untuk HTML template saat disimpan DAN HTML
 - Dibuang: skrip, `on*`, `javascript:`, `iframe`, `object`, `embed`, `form`/input, `svg`, `math`,
   `link`, `meta`, `base`, media.
 - HTML ≤ 512 KB, teks ≤ 256 KB, subjek 1–200 karakter setelah variabel diisi, tanpa CR/LF.
+- **Kerumitan HTML** (review 9.1 putaran 2 S3): maks. **20.000 tag** pembuka dan **kedalaman sarang
+  200** tingkat (tag void seperti `<br>`/`<img>` tidak menambah kedalaman; isi komentar/`<script>`/
+  `<style>` tidak dihitung). Diperiksa linear SEBELUM sanitasi; lewat batas → 400 `html_too_complex`
+  (kirim, balas, kirim tes, pratinjau & terbit template). Berlaku juga setelah variabel diisi (nilai
+  bergaris baru menjadi `<br>`). Konstanta `EMAIL_HTML_MAX_TAGS`/`EMAIL_HTML_MAX_DEPTH`
+  (`packages/core/src/mail/html-guard.ts`).
 - Bila ada yang dibuang dari HTML **luar**, email tetap dikirim dan respons/status memuat
   `sanitized: true` (supaya integrator tahu).
 
@@ -250,9 +256,10 @@ berkas `filename` (tidak dihitung dalam 10 lampiran). Merujuk `cid:` QRIS tanpa 
   (`details[].message` menyebut sebabnya: tidak ditemukan, HTTP 4xx/5xx, terlalu lama, terlalu besar,
   alamat terlarang).
 - Jenis dari **isi** (magic bytes), bukan nama/`Content-Type`. **Daftar izin** (review 9.1 R2): PDF,
-  PNG/JPEG/GIF/WebP/BMP/TIFF, Word/Excel/PowerPoint (`doc`/`docx`/`xls`/`xlsx`/`ppt`/`pptx`) tanpa
-  makro, CSV/TXT. Selain itu (berkas eksekusi, makro, HTML/SVG, skrip, pintasan, citra disk, arsip
-  `zip`/`rar`/`7z`, audio/video, biner tak dikenal) → 400 `attachment_type_blocked`. Ekstensi nama berkas
+  PNG/JPEG/GIF/WebP/BMP/TIFF, Word/Excel/PowerPoint modern (`docx`/`xlsx`/`pptx`) tanpa makro,
+  CSV/TXT. Selain itu (berkas eksekusi, makro, HTML/SVG, skrip, pintasan, citra disk, arsip
+  `zip`/`rar`/`7z`, audio/video, biner tak dikenal, dan **Office format lama `doc`/`xls`/`ppt`** —
+  wadah CFB/OLE, review 9.1 R2b) → 400 `attachment_type_blocked`. Ekstensi nama berkas
   dipaksa sesuai jenis isi (mis. PDF bernama `foto.jpg` → `foto.pdf`; tanpa ekstensi → ditambahkan).
 - Batas: ≤ 10 berkas (`attachments_too_many`), tiap berkas & total ≤ 20 MB setelah didekode
   (`attachment_too_large`). Gambar QRIS & logo tidak dihitung.
@@ -631,11 +638,12 @@ Amplop tetap `{ error: { code, message, details?, requestId } }`. **Tambahan kom
 | 400 | `VALIDATION_ERROR` | `subject_invalid` | "Subjek wajib diisi (maks. 200 karakter, satu baris)." |
 | 400 | `VALIDATION_ERROR` | `template_variable_missing` | "Variabel {{jatuh_tempo}} wajib diisi untuk template ini." |
 | 400 | `VALIDATION_ERROR` | `template_variable_invalid` | "Nilai {{tautan_bayar}} harus alamat https:// yang lengkap." |
+| 400 | `VALIDATION_ERROR` | `html_too_complex` | "HTML terlalu rumit untuk diproses: maksimal 20.000 tag dan kedalaman sarang 200 tingkat. Sederhanakan susunan HTML-nya, lalu kirim lagi." |
 | 400 | `VALIDATION_ERROR` | `qris_invalid_format` · `qris_crc_mismatch` | "Teks QRIS tidak sesuai format standar." · "Kode cek (CRC) QRIS tidak cocok — teksnya rusak atau terpotong. Ambil ulang dari sistem pembayaran." |
 | 400 | `VALIDATION_ERROR` | `cid_missing` | "HTML merujuk gambar cid:qris, tetapi gambarnya tidak dikirim." |
 | 400 | `VALIDATION_ERROR` | `attachment_source_invalid` · `attachment_media_not_found` | "Setiap lampiran butuh tepat satu sumber: contentBase64, mediaId, atau url." · "Lampiran mediaId tidak ditemukan atau sudah kedaluwarsa." |
 | 400 | `VALIDATION_ERROR` | `attachments_too_many` · `attachment_too_large` | "Lampiran maksimal 10 berkas." · "Total lampiran maksimal 20 MB." |
-| 400 | `VALIDATION_ERROR` | `attachment_type_blocked` | "Jenis berkas ini tidak boleh dilampirkan (program, makro, HTML, atau arsip)." |
+| 400 | `VALIDATION_ERROR` | `attachment_type_blocked` | "Jenis berkas ini tidak boleh dilampirkan (program, makro, HTML, arsip, atau dokumen Office lama .doc/.xls/.ppt — pakai PDF atau .docx/.xlsx/.pptx)." |
 | 400 | `VALIDATION_ERROR` | `attachment_fetch_failed` | "Lampiran dari URL tidak bisa diambil: server menjawab 404." |
 | 400 | `VALIDATION_ERROR` | `reply_to_not_allowed` · `from_address_not_allowed` | "Alamat balas-ke harus memakai domain pengirim." · "Alamat Dari ini bukan alamat atau alias pengirim." |
 | 400 | `VALIDATION_ERROR` | `conversation_requires_channel` · `conversation_requires_single_recipient` | "Mencatat ke Inbox hanya bisa untuk pengirim Channel Email." · "Mencatat ke Inbox butuh tepat satu alamat di Kepada." |

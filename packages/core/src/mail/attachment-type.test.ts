@@ -106,6 +106,15 @@ describe('classifyOutboundEmailAttachment', () => {
     ['CAB', text('MSCF\x00\x00\x00\x00'), 'berkas'],
     ['LNK', bytes(0x4c, 0, 0, 0, 0x01, 0x14, 0x02, 0x00, 0, 0), 'pintasan'],
     ['OLE bukan Office', bytes(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0), 'berkas.msg'],
+    // Review 9.1 R2b: Office format lama (CFB) selalu ditolak, juga tanpa penanda makro.
+    ['.doc format lama', bytes(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0), 'surat.doc'],
+    ['.xls format lama', bytes(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0), 'data.xls'],
+    ['.ppt format lama', bytes(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0), 'slide.ppt'],
+    [
+      'CFB bernama .pdf',
+      bytes(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0),
+      'invoice.pdf',
+    ],
     ['HTML', text('  <!DOCTYPE html><html><body>x</body></html>'), 'tagihan.txt'],
     [
       'HTML ber-BOM',

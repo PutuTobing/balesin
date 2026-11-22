@@ -1,5 +1,7 @@
 import sanitizeHtml from 'sanitize-html';
 
+import { EMAIL_HTML_TOO_COMPLEX_MESSAGE, htmlWithinLimits } from './html-guard';
+
 /**
  * HTML email KELUAR (Fase 9.1, docs/KONTRAK-API-EMAIL-KIRIM.md §3.3): sanitasi profil keluar, pemindai
  * variabel template, render (isi variabel + bingkai merek), dan versi teks.
@@ -145,6 +147,7 @@ const WARNING = {
   imageHttp: 'Gambar dari alamat http:// dibuang.',
   imageData: 'Gambar data: yang lebih dari 100 KB atau bukan PNG/JPEG/GIF dibuang.',
   imageOther: 'Alamat gambar yang tidak didukung dibuang (hanya cid:, https://, data:).',
+  tooComplex: EMAIL_HTML_TOO_COMPLEX_MESSAGE,
 } as const;
 
 const TAG_WARNINGS: Readonly<Record<string, { message: string; forbidden: boolean }>> = {
@@ -343,9 +346,17 @@ export interface SanitizedOutboundHtml {
   forbidden: boolean;
   /** Teks Indonesia singkat, unik, urut kemunculan. */
   warnings: string[];
+  /**
+   * Review 9.1 putaran 2 S3: HTML melewati batas tag/kedalaman (`html-guard.ts`) sehingga TIDAK
+   * disanitasi — `html` kosong. Pemanggil API menjawab 400 `html_too_complex`.
+   */
+  tooComplex: boolean;
 }
 
-/** Sanitasi HTML email keluar (template saat disimpan & HTML luar saat dikirim). */
+/**
+ * Sanitasi HTML email keluar (template saat disimpan & HTML luar saat dikirim). HTML yang terlalu
+ * rumit (> 20.000 tag atau sarang > 200 tingkat) tidak pernah diserahkan ke sanitize-html (S3).
+ */
 export function sanitizeOutboundEmailHtml(html: string): SanitizedOutboundHtml {
   const warnings = new Set<string>();
   let changed = false;
@@ -364,6 +375,16 @@ export function sanitizeOutboundEmailHtml(html: string): SanitizedOutboundHtml {
     if (clean.css !== '') styles.push(clean.css);
   }
   const withoutStyles = extracted.rest;
+  // Diukur pada masukan sanitize-html yang sebenarnya (blok `<style>` sudah diambil).
+  if (!htmlWithinLimits(withoutStyles)) {
+    return {
+      html: '',
+      changed: true,
+      forbidden: false,
+      warnings: [WARNING.tooComplex],
+      tooComplex: true,
+    };
+  }
 
   const inspect = (tagName: string, attribs: Record<string, string>) => {
     const tag = tagName.toLowerCase();
@@ -453,7 +474,7 @@ export function sanitizeOutboundEmailHtml(html: string): SanitizedOutboundHtml {
   });
 
   const head = styles.map((css) => `<style>${css}</style>`).join('');
-  return { html: `${head}${body}`, changed, forbidden, warnings: [...warnings] };
+  return { html: `${head}${body}`, changed, forbidden, warnings: [...warnings], tooComplex: false };
 }
 
 // ── Pemindai variabel ───────────────────────────────────────────────────────
@@ -519,6 +540,11 @@ export function scanTemplateVariables(input: {
   subject: string;
   html: string;
   text: string | null;
+  /**
+   * Hasil `sanitizeOutboundEmailHtml(html).html` bila pemanggil sudah menyanitasi (hindari sanitasi
+   * berulang, review 9.1 S3). Tanpa ini, HTML disanitasi di sini.
+   */
+  sanitizedHtml?: string;
 }): TemplateVariableScan {
   const used: string[] = [];
   const problems: TemplateVariableProblem[] = [];
@@ -548,7 +574,8 @@ export function scanTemplateVariables(input: {
   }
   const keptCounts = new Map<string, number>();
   const kept = (name: string) => keptCounts.set(name, (keptCounts.get(name) ?? 0) + 1);
-  for (const segment of segmentsOf(sanitizeOutboundEmailHtml(input.html).html)) {
+  const sanitizedHtml = input.sanitizedHtml ?? sanitizeOutboundEmailHtml(input.html).html;
+  for (const segment of segmentsOf(sanitizedHtml)) {
     if (!segment.value.includes('{{')) continue;
     if (segment.kind === 'text') {
       for (const name of placeholdersOf(segment.value)) if (validName(name)) kept(name);
@@ -634,7 +661,7 @@ export interface RenderOutboundEmailInput {
 
 export interface RenderOutboundEmailError {
   field: TemplateField;
-  reason: 'template_variable_invalid' | 'subject_invalid';
+  reason: 'template_variable_invalid' | 'subject_invalid' | 'html_too_complex';
   name?: string;
   message: string;
 }
@@ -653,6 +680,11 @@ export type RenderOutboundEmailResult =
   | { ok: false; errors: RenderOutboundEmailError[] };
 
 const SUBJECT_INVALID = 'Subjek wajib diisi (maks. 200 karakter, satu baris).';
+const tooComplexError: RenderOutboundEmailError = {
+  field: 'html',
+  reason: 'html_too_complex',
+  message: EMAIL_HTML_TOO_COMPLEX_MESSAGE,
+};
 
 export function renderOutboundEmail(input: RenderOutboundEmailInput): RenderOutboundEmailResult {
   const substitute = input.substituteVariables !== false;
@@ -680,6 +712,11 @@ export function renderOutboundEmail(input: RenderOutboundEmailInput): RenderOutb
   let sanitized = false;
   if (input.html !== null) {
     const first = sanitizeOutboundEmailHtml(input.html);
+    if (first.tooComplex) {
+      // S3: tidak ada yang bisa dirender — kembalikan galat segera (tanpa sanitasi kedua).
+      errors.push({ ...tooComplexError });
+      return { ok: false, errors };
+    }
     sanitized = first.changed;
     let filled = first.html;
     if (substitute) {
@@ -728,8 +765,16 @@ export function renderOutboundEmail(input: RenderOutboundEmailInput): RenderOutb
         });
       }
     }
-    // Pertahanan berlapis: hasil isian disanitasi ulang.
-    body = sanitizeOutboundEmailHtml(filled).html;
+    if (filled === first.html) {
+      // Tidak ada yang diisi (isi luar, atau template tanpa variabel di HTML): hasil sanitasi pertama
+      // dipakai langsung — sanitasi ulang tidak mengubah apa pun (review 9.1 S3, hindari kerja ganda).
+      body = first.html;
+    } else {
+      // Pertahanan berlapis: hasil isian disanitasi ulang (nilai variabel bisa menambah `<br>`).
+      const second = sanitizeOutboundEmailHtml(filled);
+      if (second.tooComplex) errors.push({ ...tooComplexError });
+      body = second.html;
+    }
   }
 
   if (errors.length > 0) return { ok: false, errors };

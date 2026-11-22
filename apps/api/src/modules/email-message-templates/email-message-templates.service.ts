@@ -1,5 +1,6 @@
 import {
   AppError,
+  EMAIL_HTML_TOO_COMPLEX_MESSAGE,
   newOutboundMessageId,
   sanitizeOutboundEmailHtml,
   scanTemplateVariables,
@@ -221,6 +222,10 @@ export function validateForPublish(content: EmailTemplateContent): EmailTemplate
   }
   if (content.html.trim() === '') throw bodyInvalid('draft.html', 'Isi HTML template wajib diisi.');
   const sanitized = sanitizeOutboundEmailHtml(content.html);
+  // Review 9.1 S3: HTML terlalu rumit tidak pernah disanitasi (sanitize-html super-linear).
+  if (sanitized.tooComplex) {
+    throw bodyInvalid('draft.html', EMAIL_HTML_TOO_COMPLEX_MESSAGE, 'html_too_complex');
+  }
   if (sanitized.forbidden) {
     throw bodyInvalid(
       'draft.html',
@@ -228,7 +233,12 @@ export function validateForPublish(content: EmailTemplateContent): EmailTemplate
       'html_forbidden',
     );
   }
-  const scan = scanTemplateVariables({ subject, html: content.html, text: content.text });
+  const scan = scanTemplateVariables({
+    subject,
+    html: content.html,
+    text: content.text,
+    sanitizedHtml: sanitized.html,
+  });
   const problem = scan.problems[0];
   if (problem) {
     throw bodyInvalid(
@@ -886,11 +896,15 @@ export function createEmailMessageTemplatesService(deps: {
     async preview(organizationId, input) {
       const warnings = new Set<string>();
       const sanitized = sanitizeOutboundEmailHtml(input.html);
+      if (sanitized.tooComplex) {
+        throw bodyInvalid('html', EMAIL_HTML_TOO_COMPLEX_MESSAGE, 'html_too_complex');
+      }
       for (const warning of sanitized.warnings) warnings.add(warning);
       const scan = scanTemplateVariables({
         subject: input.subject,
         html: input.html,
         text: input.text ?? null,
+        sanitizedHtml: sanitized.html,
       });
       for (const problem of scan.problems) {
         warnings.add(

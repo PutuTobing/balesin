@@ -2,6 +2,7 @@ export * from './api-smtp';
 export * from './attachment-type';
 export * from './dsn';
 export * from './host-guard';
+export * from './html-guard';
 export * from './outbound-html';
 export * from './qris';
 export * from './settings';

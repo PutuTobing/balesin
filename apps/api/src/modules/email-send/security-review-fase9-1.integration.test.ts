@@ -9,8 +9,10 @@
 import { channels, emailOutbound, newId } from '@balesin/db';
 import {
   API_ROUTES,
+  apiPath,
   createApiKeyResponseSchema,
   emailAttachmentHostAllowed,
+  emailTemplateResponseSchema,
   errorEnvelopeSchema,
   type ApiKeyScope,
 } from '@balesin/shared';
@@ -117,23 +119,135 @@ describe('Putaran 2 S3 (Tinggi) — sarang tag dalam lewat POST /public/email/se
   // sanitize-html super-linear terhadap kedalaman tag: render (2×) + sanitasi profil masuk di
   // `persist` (conversation: "create"). 40.000 `<div>` (~200 KB) ≈ 5–8 dtk event loop beku; 512 KB ≈
   // ±40 dtk, dan bisa diulang beruntun. Perbaikan boleh menolak (400) atau memproses cepat.
-  it.fails(
-    'HTML 40.000 <div> bersarang dijawab < 2 dtk (202 atau 400)',
-    async () => {
+  it('HTML 40.000 <div> bersarang dijawab < 2 dtk (202 atau 400)', async () => {
+    const { secret } = await createKey();
+    const started = performance.now();
+    const response = await api(secret, API_ROUTES.publicEmail.send, {
+      senderId,
+      to: [{ email: 'sarang@contoh.example' }],
+      subject: 'Tagihan',
+      html: '<div>'.repeat(40_000),
+      conversation: 'create',
+    });
+    const took = performance.now() - started;
+    expect([202, 400]).toContain(response.statusCode);
+    expect(took).toBeLessThan(2_000);
+  }, 180_000);
+});
+
+describe('S3 diperbaiki — html_too_complex (400) cepat di semua jalur API, HTML wajar tetap jalan', () => {
+  const deep512 = '<div>'.repeat(Math.floor((512 * 1024) / 5));
+
+  it('POST /public/email/send: HTML 512 KB bersarang → 400 html_too_complex < 2 dtk, tanpa baris email', async () => {
+    const { secret } = await createKey();
+    const before = await harness.db
+      .select({ id: emailOutbound.id })
+      .from(emailOutbound)
+      .where(eq(emailOutbound.organizationId, organizationId));
+    const started = performance.now();
+    const response = await api(secret, API_ROUTES.publicEmail.send, {
+      senderId,
+      to: [{ email: 'sarang@contoh.example' }],
+      subject: 'Tagihan',
+      html: deep512,
+      conversation: 'create',
+    });
+    expect(performance.now() - started).toBeLessThan(2_000);
+    expect(response.statusCode).toBe(400);
+    expect(reasonOf(response.body)).toMatchObject({ field: 'html', reason: 'html_too_complex' });
+    expect(reasonOf(response.body)?.message).toContain('terlalu rumit');
+    const after = await harness.db
+      .select({ id: emailOutbound.id })
+      .from(emailOutbound)
+      .where(eq(emailOutbound.organizationId, organizationId));
+    expect(after).toHaveLength(before.length);
+  }, 60_000);
+
+  it('POST /public/email/send: 20.001 tag datar → 400 html_too_complex', async () => {
+    const { secret } = await createKey();
+    const response = await api(secret, API_ROUTES.publicEmail.send, {
+      senderId,
+      to: [{ email: 'datar@contoh.example' }],
+      subject: 'Tagihan',
+      html: '<b>x</b>'.repeat(20_001),
+    });
+    expect(response.statusCode).toBe(400);
+    expect(reasonOf(response.body)?.reason).toBe('html_too_complex');
+  });
+
+  it('POST /public/email/send: sarang 150 tingkat + catat Inbox → 202 (di dalam batas)', async () => {
+    const { secret } = await createKey();
+    const response = await api(secret, API_ROUTES.publicEmail.send, {
+      senderId,
+      to: [{ email: 'wajar@contoh.example' }],
+      subject: 'Tagihan',
+      html: `${'<div>'.repeat(150)}Tagihan bulan ini${'</div>'.repeat(150)}`,
+      conversation: 'create',
+    });
+    expect(response.statusCode, response.body).toBe(202);
+  });
+
+  it('pratinjau & terbit template: HTML 512 KB bersarang → 400 html_too_complex < 2 dtk', async () => {
+    const session = { cookie: owner.cookie, csrf: owner.csrf };
+    let started = performance.now();
+    const preview = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.emailTemplates.preview,
+      { subject: 'Tagihan', html: deep512, layout: 'brand' },
+      session,
+    );
+    expect(performance.now() - started).toBeLessThan(2_000);
+    expect(preview.statusCode).toBe(400);
+    expect(reasonOf(preview.body)?.reason).toBe('html_too_complex');
+
+    const created = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.emailTemplates.list,
+      {
+        name: 'Sarang',
+        slug: 'sarang-s3',
+        draft: { subject: 'Tagihan', html: deep512, variables: [], layout: 'brand' },
+      },
+      session,
+    );
+    expect(created.statusCode, created.body).toBe(201);
+    const template = emailTemplateResponseSchema.parse(created.json()).template;
+    started = performance.now();
+    const published = await call(
+      harness.app,
+      'POST',
+      apiPath(API_ROUTES.emailTemplates.publish, { templateId: template.id }),
+      { confirmation: await confirmationFor() },
+      session,
+    );
+    expect(performance.now() - started).toBeLessThan(5_000);
+    expect(published.statusCode).toBe(400);
+    expect(reasonOf(published.body)).toMatchObject({
+      field: 'draft.html',
+      reason: 'html_too_complex',
+    });
+  }, 60_000);
+});
+
+describe('R2b (Rendah) — lampiran Office format lama (CFB) ditolak', () => {
+  it.each(['surat.doc', 'data.xls', 'slide.ppt'])(
+    '%s → 400 attachment_type_blocked',
+    async (filename) => {
       const { secret } = await createKey();
-      const started = performance.now();
+      const cfb = Buffer.alloc(1_024);
+      Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]).copy(cfb);
       const response = await api(secret, API_ROUTES.publicEmail.send, {
         senderId,
-        to: [{ email: 'sarang@contoh.example' }],
-        subject: 'Tagihan',
-        html: '<div>'.repeat(40_000),
-        conversation: 'create',
+        to: [{ email: 'lampiran@contoh.example' }],
+        subject: 'Dokumen',
+        text: 'Terlampir.',
+        attachments: [{ filename, contentBase64: cfb.toString('base64') }],
       });
-      const took = performance.now() - started;
-      expect([202, 400]).toContain(response.statusCode);
-      expect(took).toBeLessThan(2_000);
+      expect(response.statusCode).toBe(400);
+      expect(reasonOf(response.body)?.reason).toBe('attachment_type_blocked');
     },
-    180_000,
   );
 });
 

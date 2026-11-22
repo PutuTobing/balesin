@@ -16,6 +16,7 @@
     "@balesin/shared": "workspace:*",
     "bullmq": "6.7.2",
     "drizzle-orm": "catalog:",
+    "htmlparser2": "12.0.0",
     "imapflow": "2.12.1",
     "ioredis": "catalog:",
     "mailparser": "3.14.5",

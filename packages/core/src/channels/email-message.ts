@@ -12,6 +12,12 @@ import sanitizeHtml from 'sanitize-html';
 /** Review Fase 6 R1: hasil verifikasi pengirim email. */
 export type EmailSenderVerification = 'pass' | 'fail' | 'unverified';
 
+import {
+  EMAIL_HTML_MAX_DEPTH,
+  EMAIL_HTML_MAX_TAGS,
+  htmlWithinLimits,
+  plainTextFromUntrustedHtml,
+} from '../mail/html-guard';
 import { cleanCustomerText, cleanFileName } from '../meta/contact-identity';
 import { detectMedia } from '../meta/media-sniff';
 
@@ -302,10 +308,34 @@ const ALLOWED_TAGS = [
 ];
 
 /**
+ * Review 9.1 putaran 2 S3 — jaring pengaman `sanitizeEmailHtml`: batas umum (`html-guard.ts`) +
+ * ruang untuk bingkai dokumen email keluar (html/body/tabel merek ≈ 8 tingkat, ±25 tag) karena
+ * salinan Inbox email API (`persist`) disanitasi ulang dengan profil ini SETELAH render. Email masuk
+ * diperiksa dengan batas umum di `parseInboundEmail` sebelum sampai sini.
+ */
+const SANITIZE_SAFETY_LIMITS = {
+  maxTags: EMAIL_HTML_MAX_TAGS + 500,
+  maxDepth: EMAIL_HTML_MAX_DEPTH + 20,
+} as const;
+
+/** Catatan di versi teks saat tampilan HTML email masuk dibuang (terlalu besar/rumit). */
+export const EMAIL_HTML_OMITTED_NOTE =
+  '(Tampilan HTML email ini tidak tersedia karena terlalu besar atau terlalu rumit. Yang tampil hanya versi teksnya.)';
+
+/**
  * HTML email → HTML aman. Tanpa `style`/`class`/`id`/event, tanpa gambar, tanpa skrip/form/iframe/
  * svg/math, tautan hanya http(s)/mailto dengan `rel="noopener noreferrer nofollow"` + `target=_blank`.
+ *
+ * Review 9.1 S3: HTML yang melewati batas tag/kedalaman TIDAK disanitasi (sanitize-html super-linear
+ * terhadap kedalaman) — hasilnya string kosong (= tanpa tampilan HTML).
  */
 export function sanitizeEmailHtml(html: string): string {
+  if (!htmlWithinLimits(html, SANITIZE_SAFETY_LIMITS)) return '';
+  return sanitizeInboundProfile(html);
+}
+
+/** Tanpa penjaga — pemanggil WAJIB sudah memeriksa `htmlWithinLimits`. */
+function sanitizeInboundProfile(html: string): string {
   return sanitizeHtml(html, {
     allowedTags: ALLOWED_TAGS,
     allowedAttributes: {
@@ -381,11 +411,13 @@ export function stripQuotedReply(text: string): string {
   return kept.length > 0 ? kept : text.trim();
 }
 
+const EMAIL_TEXT_MAX_CHARS = 65_536;
+
 function cleanBody(text: string | undefined): string | null {
   if (!text) return null;
   const cleaned = stripQuotedReply(text.replaceAll('\u0000', '').replace(/\r\n/g, '\n'));
   if (cleaned.length === 0) return null;
-  return cleaned.length > 65_536 ? cleaned.slice(0, 65_536) : cleaned;
+  return cleaned.length > EMAIL_TEXT_MAX_CHARS ? cleaned.slice(0, EMAIL_TEXT_MAX_CHARS) : cleaned;
 }
 
 // ── Lampiran ────────────────────────────────────────────────────────────────
@@ -544,10 +576,32 @@ export async function parseInboundEmail(
   if (!fromAddress) return { ok: false, reason: 'no_sender' };
   if (ownAddresses.includes(fromAddress)) return { ok: false, reason: 'own_address' };
 
+  // Review 9.1 putaran 2 S3: email mentah boleh 25 MB dari pengirim mana pun di internet. Ukuran
+  // (≤ 512 KB) dan kerumitan (tag/kedalaman) HTML diperiksa SEBELUM sanitize-html (super-linear
+  // terhadap kedalaman). Lewat batas → HTML dibuang, versi teks + catatan dipakai.
   let html: string | null = null;
-  if (typeof parsed.html === 'string' && parsed.html.length > 0) {
-    const clean = sanitizeEmailHtml(parsed.html).trim();
-    html = clean.length > 0 && Buffer.byteLength(clean) <= EMAIL_MAX_HTML_BYTES ? clean : null;
+  let htmlOmitted = false;
+  const rawHtml = typeof parsed.html === 'string' ? parsed.html : '';
+  if (rawHtml.length > 0) {
+    if (
+      rawHtml.length > EMAIL_MAX_HTML_BYTES ||
+      Buffer.byteLength(rawHtml) > EMAIL_MAX_HTML_BYTES ||
+      !htmlWithinLimits(rawHtml)
+    ) {
+      htmlOmitted = true;
+    } else {
+      const clean = sanitizeInboundProfile(rawHtml).trim();
+      if (Buffer.byteLength(clean) > EMAIL_MAX_HTML_BYTES) htmlOmitted = true;
+      else if (clean.length > 0) html = clean;
+    }
+  }
+  let text = cleanBody(parsed.text);
+  if (htmlOmitted) {
+    const body = (text ?? cleanBody(plainTextFromUntrustedHtml(rawHtml)) ?? '').slice(
+      0,
+      EMAIL_TEXT_MAX_CHARS - EMAIL_HTML_OMITTED_NOTE.length - 2,
+    );
+    text = body.length > 0 ? `${body}\n\n${EMAIL_HTML_OMITTED_NOTE}` : EMAIL_HTML_OMITTED_NOTE;
   }
 
   const attachments: EmailAttachmentPart[] = [];
@@ -583,7 +637,7 @@ export async function parseInboundEmail(
       subject: cleanCustomerText(parsed.subject ?? null, 998),
       from: { address: fromAddress, name: cleanCustomerText(sender?.name ?? null) },
       date: parsed.date && !Number.isNaN(parsed.date.getTime()) ? parsed.date : null,
-      text: cleanBody(parsed.text),
+      text,
       html,
       senderVerification: verification,
       authWarning: verification === 'fail',

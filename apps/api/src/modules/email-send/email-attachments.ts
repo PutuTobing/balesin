@@ -273,7 +273,7 @@ export async function resolveAttachments(
         verdict.reason === 'empty' ? 'attachment_source_invalid' : 'attachment_type_blocked',
         verdict.reason === 'empty'
           ? 'Berkas lampiran kosong.'
-          : 'Jenis berkas ini tidak boleh dilampirkan (program, makro, HTML, atau arsip).',
+          : 'Jenis berkas ini tidak boleh dilampirkan (program, makro, HTML, arsip, atau dokumen Office lama .doc/.xls/.ppt — pakai PDF atau .docx/.xlsx/.pptx).',
       );
     }
     if (item.inline === true && !verdict.rasterImage) {

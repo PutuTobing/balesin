@@ -4,8 +4,7 @@
  * Satu permintaan `POST /public/email/send` (key `email:send`) berisi HTML ≤ 512 KB membekukan event
  * loop api berpuluh menit (Inbox, webhook Meta, semua pengguna ikut berhenti).
  *
- * Tes di bawah `it.fails` = MENGUNCI temuan: lulus selama celah masih ada. Setelah diperbaiki, ubah
- * menjadi `it` biasa (tes akan gagal sebagai pengingat bila lupa).
+ * S1 sudah diperbaiki (putaran 2): tes di bawah `it` biasa dengan asersi utuh — regresi.
  *
  * Ukuran masukan sengaja kecil (≤ 50 KB, jauh di bawah batas 512 KB) supaya CI tetap cepat; perkiraan
  * waktu untuk ukuran penuh ada di laporan.
@@ -59,50 +58,43 @@ describe('review 9.1 S1 — ReDoS sanitasi HTML email keluar', () => {
  * (`<div>` bersarang tanpa penutup). Bukan regex — perbaikan S1 tidak menyentuhnya. Jalur: render
  * email API (sanitasi 2× + sanitasi profil masuk di `persist`) dan email MASUK dari internet
  * (`parseInboundEmail` menyanitasi HTML SEBELUM batas 512 KB diperiksa, mentah ≤ 25 MB).
- * `it.fails` = mengunci temuan; ubah ke `it` setelah diperbaiki.
+ * Diperbaiki (penjaga `html-guard.ts`: batas tag/kedalaman SEBELUM sanitize-html) — `it` biasa dengan
+ * asersi utuh. Render API menjawab galat `html_too_complex`; email masuk membuang HTML.
  */
 describe('review 9.1 putaran 2 S3 — sarang tag dalam (sanitize-html super-linear)', () => {
-  it.fails(
-    'render email API dengan 40.000 <div> bersarang (~200 KB) selesai < 1 dtk',
-    () => {
-      const html = '<div>'.repeat(40_000);
-      expect(
-        elapsed(() =>
-          renderOutboundEmail({
-            subject: 'Tagihan',
-            html,
-            text: null,
-            values: {},
-            organizationName: 'Organisasi',
-            qrisImageSrc: null,
-            layout: 'brand',
-            brand: { primaryColor: '#112233', logoSrc: null, footerText: null },
-            substituteVariables: false,
-          }),
-        ),
-      ).toBeLessThan(1_000);
-    },
-    120_000,
-  );
+  it('render email API dengan 40.000 <div> bersarang (~200 KB) selesai < 1 dtk', () => {
+    const html = '<div>'.repeat(40_000);
+    expect(
+      elapsed(() =>
+        renderOutboundEmail({
+          subject: 'Tagihan',
+          html,
+          text: null,
+          values: {},
+          organizationName: 'Organisasi',
+          qrisImageSrc: null,
+          layout: 'brand',
+          brand: { primaryColor: '#112233', logoSrc: null, footerText: null },
+          substituteVariables: false,
+        }),
+      ),
+    ).toBeLessThan(1_000);
+  }, 120_000);
 
-  it.fails(
-    'email MASUK 1 MB berisi 200.000 <div> bersarang diurai < 2 dtk (pengirim internet mana pun)',
-    async () => {
-      const head = [
-        'From: Luar <luar@contoh.example>',
-        'To: cs@perusahaan.example',
-        'Subject: Halo',
-        'Message-ID: <sarang@contoh.example>',
-        'Date: Mon, 23 Nov 2026 00:00:00 +0700',
-        'MIME-Version: 1.0',
-        'Content-Type: text/html; charset=utf-8',
-      ].join(String.fromCharCode(13, 10));
-      const crlf = String.fromCharCode(13, 10);
-      const raw = Buffer.from(head + crlf + crlf + '<div>'.repeat(200_000) + crlf);
-      const start = performance.now();
-      await parseInboundEmail(raw, ['cs@perusahaan.example'], []);
-      expect(performance.now() - start).toBeLessThan(2_000);
-    },
-    120_000,
-  );
+  it('email MASUK 1 MB berisi 200.000 <div> bersarang diurai < 2 dtk (pengirim internet mana pun)', async () => {
+    const head = [
+      'From: Luar <luar@contoh.example>',
+      'To: cs@perusahaan.example',
+      'Subject: Halo',
+      'Message-ID: <sarang@contoh.example>',
+      'Date: Mon, 23 Nov 2026 00:00:00 +0700',
+      'MIME-Version: 1.0',
+      'Content-Type: text/html; charset=utf-8',
+    ].join(String.fromCharCode(13, 10));
+    const crlf = String.fromCharCode(13, 10);
+    const raw = Buffer.from(head + crlf + crlf + '<div>'.repeat(200_000) + crlf);
+    const start = performance.now();
+    await parseInboundEmail(raw, ['cs@perusahaan.example'], []);
+    expect(performance.now() - start).toBeLessThan(2_000);
+  }, 120_000);
 });

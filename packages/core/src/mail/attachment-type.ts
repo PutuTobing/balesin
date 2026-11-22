@@ -6,8 +6,8 @@ import { detectMedia } from '../meta/media-sniff';
  * (ekstensi berbahaya) dan membedakan teks CSV/TXT serta dokumen Office.
  *
  * Ditolak (v1 konservatif): program/eksekusi, skrip, pintasan, citra disk, arsip, dokumen Office
- * bermakro, HTML/SVG. Diizinkan: PDF, gambar raster, Office tanpa makro, CSV/TXT, dan biner tak
- * dikenal yang bukan daftar tolak (`application/octet-stream`).
+ * bermakro, dokumen Office format lama (CFB/OLE `.doc`/`.xls`/`.ppt`, review 9.1 R2b), HTML/SVG.
+ * Diizinkan: PDF, gambar, Office modern (OOXML) tanpa makro, CSV/TXT.
  */
 
 export type OutboundAttachmentClass =
@@ -36,9 +36,6 @@ const ALLOWED_EXTENSIONS_BY_TYPE: Readonly<Record<string, readonly string[]>> = 
   'image/tiff': ['tif', 'tiff'],
   'text/csv': ['csv'],
   'text/plain': ['txt', 'csv'],
-  'application/msword': ['doc'],
-  'application/vnd.ms-excel': ['xls'],
-  'application/vnd.ms-powerpoint': ['ppt'],
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['docx'],
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['xlsx'],
   'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['pptx'],
@@ -208,8 +205,12 @@ function sniffOutboundEmailAttachment(content: Buffer, filename: string): SniffR
   const detected = detectMedia(content, filename, { verifyContainer: true });
   const zip = startsWith(content, [0x50, 0x4b, 0x03, 0x04]) || startsWith(content, [0x50, 0x4b]);
   const cfb = startsWith(content, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
-  if (zip || cfb) {
-    // Hanya dokumen Office tanpa makro; arsip ZIP lain / wadah OLE lain ditolak.
+  // Review 9.1 R2b: wadah CFB/OLE (Office 97–2003 `.doc`/`.xls`/`.ppt`, `.msg`, dll.) SELALU
+  // ditolak. Makro di `.ppt` disimpan terkompresi di dalam aliran dokumen (tidak terlihat dari nama
+  // aliran `VBA`/`_VBA_PROJECT`), jadi pemeriksaan nama aliran tidak cukup. Pakai OOXML atau PDF.
+  if (cfb) return { ok: false, reason: 'blocked' };
+  if (zip) {
+    // Hanya dokumen Office tanpa makro; arsip ZIP lain ditolak.
     return detected?.kind === 'document'
       ? { ok: true, mimeType: detected.mimeType, rasterImage: false }
       : { ok: false, reason: 'blocked' };

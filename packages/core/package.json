@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@balesin/shared": "workspace:*",
+    "htmlparser2": "12.0.0",
     "imapflow": "2.12.1",
     "ioredis": "catalog:",
     "mailparser": "3.14.5",

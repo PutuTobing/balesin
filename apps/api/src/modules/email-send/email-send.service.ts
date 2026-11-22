@@ -788,6 +788,11 @@ export function createEmailSendService(deps: EmailSendServiceDeps): EmailSendSer
     const at = now();
     const messageIdHeader = newOutboundMessageId(input.fromAddress);
     const saved = await storeParts(store, composed.parts);
+    // Tampilan Inbox selalu lewat sanitasi profil MASUK (bukan profil keluar). Dihitung SEBELUM
+    // transaksi (tidak menahan transaksi selama sanitasi); `composed.html` sudah lolos batas
+    // kerumitan saat render (review 9.1 S3), jadi ini satu-satunya sanitasi tambahan.
+    const inboxHtml =
+      input.inbox.mode !== 'none' && composed.html ? sanitizeEmailHtml(composed.html) : '';
     const events: InboxBusEventInput[] = [];
     try {
       const row = await db.transaction(async (tx) => {
@@ -857,7 +862,7 @@ export function createEmailSendService(deps: EmailSendServiceDeps): EmailSendSer
                   references,
                   authWarning: false,
                   skippedAttachments: 0,
-                  hasHtml: composed.html !== null,
+                  hasHtml: inboxHtml !== '',
                   to: input.recipients.to.map((item) => item.email),
                   cc: input.recipients.cc.map((item) => item.email),
                   bcc: input.recipients.bcc.map((item) => item.email),
@@ -868,12 +873,11 @@ export function createEmailSendService(deps: EmailSendServiceDeps): EmailSendSer
             .returning({ id: messages.id });
           if (!message) throw new Error('INSERT pesan tidak mengembalikan baris');
           messageId = message.id;
-          if (composed.html) {
-            // Tampilan Inbox selalu lewat sanitasi profil MASUK (bukan profil keluar).
+          if (inboxHtml !== '') {
             await tx.insert(messageEmailBodies).values({
               organizationId: key.organizationId,
               messageId,
-              html: sanitizeEmailHtml(composed.html),
+              html: inboxHtml,
             });
           }
           await tx
@@ -1394,7 +1398,7 @@ export function createEmailSendService(deps: EmailSendServiceDeps): EmailSendSer
           verdict.reason === 'empty' ? 'attachment_source_invalid' : 'attachment_type_blocked',
           verdict.reason === 'empty'
             ? 'Berkas lampiran kosong.'
-            : 'Jenis berkas ini tidak boleh dilampirkan (program, makro, HTML, atau arsip).',
+            : 'Jenis berkas ini tidak boleh dilampirkan (program, makro, HTML, arsip, atau dokumen Office lama .doc/.xls/.ppt — pakai PDF atau .docx/.xlsx/.pptx).',
         );
       }
       const at = now();
