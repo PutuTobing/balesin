@@ -1,0 +1,173 @@
+/* Pengaturan → Tim → [pengguna] → Akses email. */
+
+.hint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.menuState {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.menuState[data-visible] {
+  color: var(--success-ink);
+  font-weight: var(--weight-semibold);
+}
+
+.menuIcon {
+  flex: none;
+  margin-top: 1px;
+}
+
+.rows {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+  padding: var(--space-12) var(--space-16);
+}
+
+.row + .row {
+  border-top: 1px solid var(--line);
+}
+
+.account {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  gap: var(--space-12);
+  min-width: 0;
+}
+
+.account > span:first-child {
+  margin-top: var(--space-8);
+}
+
+.accountText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.accountName {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.accountAddress {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sources {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+.effective {
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+}
+
+.select {
+  flex: none;
+  width: 11rem;
+  height: var(--size-control);
+  padding: 0 var(--space-8);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--text-14);
+  cursor: pointer;
+}
+
+.select:hover {
+  border-color: var(--ink-2);
+}
+
+.select:focus-visible {
+  border-color: var(--primary);
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+
+.personal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.subTitle {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.personalList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.personalRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  min-height: var(--size-control);
+}
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.skeleton > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.skeletonRow {
+  height: var(--space-48);
+}
+
+@media (max-width: 640px) {
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-12);
+  }
+
+  .select {
+    width: 100%;
+    height: var(--size-touch);
+  }
+}

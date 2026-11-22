@@ -164,6 +164,7 @@ import { api, type ApiClient } from './client';
 import { createChannelEndpoints } from './endpoints-channels';
 import { createCrmEndpoints } from './endpoints-crm';
 import { createEmailEndpoints } from './endpoints-email';
+import { createMailEndpoints } from './endpoints-mail';
 
 /** Saringan & kursor daftar percakapan → query string (lihat `features/inbox/inbox-filters.ts`). */
 export type QueryString = string;
@@ -187,6 +188,7 @@ export function createEndpoints(client: ApiClient) {
     ...createCrmEndpoints(client),
     ...createChannelEndpoints(client),
     ...createEmailEndpoints(client),
+    ...createMailEndpoints(client),
     setup: {
       status: (signal?: AbortSignal) =>
         client.request(API_ROUTES.setup.status, { schema: setupStatusResponseSchema, signal }),

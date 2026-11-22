@@ -1,0 +1,43 @@
+import { MAIL_PROVIDERS_AVAILABLE, type MailAvailableProvider } from '@balesin/shared';
+
+/** Tampilan gabungan di kolom folder (alamat Indonesia, ikut tampil ke pengguna). */
+export const MAIL_VIEWS = ['semua', 'belum-dibaca', 'berbintang'] as const;
+export type MailView = (typeof MAIL_VIEWS)[number];
+
+/** `/email?f=` — tampilan gabungan atau ID folder. */
+export interface MailSearch {
+  f?: string;
+}
+
+const FOLDER_ID = /^[0-9a-f-]{8,64}$/i;
+
+export function parseMailSearch(search: Record<string, unknown>): MailSearch {
+  const f = search.f;
+  if (typeof f !== 'string') return {};
+  if ((MAIL_VIEWS as readonly string[]).includes(f) || FOLDER_ID.test(f)) return { f };
+  return {};
+}
+
+export function isMailView(value: string | undefined): value is MailView {
+  return value !== undefined && (MAIL_VIEWS as readonly string[]).includes(value);
+}
+
+/**
+ * `/pengaturan/akun-email?tambah=` — buka wizard hubungkan akun; nilainya penyedia yang sudah
+ * dipilih (`cpanel`/`imap`) atau `baru` (tanpa pilihan).
+ */
+export interface MailAccountsSearch {
+  tambah?: MailAvailableProvider | 'baru';
+}
+
+export function parseMailAccountsSearch(search: Record<string, unknown>): MailAccountsSearch {
+  const value = search.tambah;
+  if (value === 'baru') return { tambah: 'baru' };
+  if (
+    typeof value === 'string' &&
+    (MAIL_PROVIDERS_AVAILABLE as readonly string[]).includes(value)
+  ) {
+    return { tambah: value as MailAvailableProvider };
+  }
+  return {};
+}

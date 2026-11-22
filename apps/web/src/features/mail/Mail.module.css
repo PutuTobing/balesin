@@ -1,0 +1,691 @@
+/*
+ * Menu Email (PRD-EMAIL §8): desktop = kolom folder 15,5rem · daftar · panel baca fleksibel.
+ * Tablet = daftar + panel baca, folder menjadi laci. HP = daftar saja, folder menjadi laci.
+ */
+
+.mail {
+  position: relative;
+  display: grid;
+  flex: 1;
+  grid-template-columns: 15.5rem var(--size-list) minmax(0, 1fr);
+  min-height: 0;
+}
+
+/* ---------- Kolom folder ---------- */
+
+.folders {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.foldersInner {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.foldersHead {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+  height: var(--size-bar);
+  padding: 0 var(--space-8) 0 var(--space-16);
+}
+
+.foldersTitle {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-20);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-title);
+  letter-spacing: var(--tracking-title);
+}
+
+.headIcon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--size-control);
+  height: var(--size-control);
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+}
+
+.headIcon:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.drawerClose {
+  display: none;
+}
+
+.foldersScroll {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-4) var(--space-8) var(--space-16);
+  overflow-y: auto;
+}
+
+.folderList,
+.accountList,
+.subList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.folderLink {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-height: var(--size-control);
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-input);
+  color: var(--ink);
+  font-size: var(--text-14);
+  line-height: var(--leading-title);
+}
+
+.folderLink:hover {
+  background: var(--surface-2);
+  text-decoration: none;
+}
+
+.folderLink[aria-current='page'] {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: var(--weight-semibold);
+}
+
+.folderIcon {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.folderLink[aria-current='page'] .folderIcon {
+  color: inherit;
+}
+
+.folderName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.count {
+  flex: none;
+  color: var(--ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.folderLink[aria-current='page'] .count {
+  color: inherit;
+}
+
+.countMuted {
+  color: var(--ink-2);
+  font-weight: var(--weight-medium);
+}
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--size-control);
+  margin-top: var(--space-16);
+  padding: 0 0 0 var(--space-8);
+}
+
+.sectionLabel {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.sectionAction {
+  display: grid;
+  place-items: center;
+  width: var(--size-control);
+  height: var(--size-control);
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+}
+
+.sectionAction:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.accountGroup + .accountGroup {
+  margin-top: var(--space-4);
+}
+
+.accountHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  width: 100%;
+  min-height: var(--size-touch);
+  padding: var(--space-4) var(--space-8) var(--space-4) var(--space-4);
+  border-radius: var(--radius-input);
+  color: var(--ink);
+  text-align: left;
+}
+
+.accountHead:hover {
+  background: var(--surface-2);
+}
+
+.chevron {
+  flex: none;
+  color: var(--ink-2);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.chevronClosed {
+  transform: rotate(-90deg);
+}
+
+.accountText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.accountName {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.truncate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lock {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.accountAddress {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attention {
+  flex: none;
+  color: var(--warning-ink);
+}
+
+/* Folder akun: ikon sejajar dengan titik warna (chevron 16 + jarak 8 + tepi 4). */
+.accountGroup .subList {
+  padding-left: var(--space-24);
+}
+
+.subLink[data-depth='1'] {
+  padding-left: var(--space-24);
+}
+
+.subLink[data-depth='2'],
+.subLink[data-depth='3'] {
+  padding-left: var(--space-32);
+}
+
+.noFolders {
+  padding: var(--space-4) var(--space-8) var(--space-8);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.foldersFoot {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-12) var(--space-16);
+  border-top: 1px solid var(--line);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+.footLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.footIcon {
+  flex: none;
+}
+
+.spinning {
+  animation: spin var(--duration-pulse) linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+.footWarn {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: var(--space-8);
+  color: var(--warning-ink);
+  font-weight: var(--weight-semibold);
+}
+
+/* ---------- Daftar email ---------- */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.listHead {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-8);
+  height: var(--size-bar);
+  padding: 0 var(--space-12) 0 var(--space-16);
+  border-bottom: 1px solid var(--line);
+}
+
+.menuButton {
+  display: none;
+}
+
+.listHeading {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.listTitle {
+  overflow: hidden;
+  font-size: var(--text-16);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-title);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.listSub {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.listState {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin: var(--space-16);
+  padding: var(--space-16);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-card);
+}
+
+.listStateTitle {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.listStateBody {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.progress {
+  width: 100%;
+  height: var(--space-8);
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  appearance: none;
+}
+
+.progress::-webkit-progress-bar {
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+}
+
+.progress::-webkit-progress-value {
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+}
+
+.progress::-moz-progress-bar {
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+}
+
+/* ---------- Panel baca ---------- */
+
+.reading {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+}
+
+/* ---------- Keadaan memuat ---------- */
+
+.skeletonFolders {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding: var(--space-16);
+}
+
+.skeletonFolders > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.skeletonTitle {
+  width: 5rem;
+  height: var(--space-24);
+  margin-bottom: var(--space-8);
+}
+
+.skeletonRow {
+  width: 100%;
+  height: var(--space-24);
+}
+
+.skeletonLabel {
+  width: 3rem;
+  height: var(--space-12);
+  margin-top: var(--space-16);
+}
+
+.skeletonList {
+  display: flex;
+  flex-direction: column;
+}
+
+.skeletonMail {
+  display: flex;
+  gap: var(--space-12);
+  padding: var(--space-16);
+  border-bottom: 1px solid var(--line);
+}
+
+.skeletonAvatar {
+  flex: none;
+  width: var(--size-control);
+  height: var(--size-control);
+  border-radius: var(--radius-pill);
+}
+
+.skeletonLines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.skeletonLineShort {
+  width: 40%;
+  height: var(--space-12);
+}
+
+.skeletonLine {
+  width: 75%;
+  height: var(--space-12);
+}
+
+.skeletonLineLong {
+  width: 90%;
+  height: var(--space-12);
+}
+
+/* ---------- Seluruh layar: kosong / gagal ---------- */
+
+.fullState {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.emptyWide {
+  padding-right: var(--space-16);
+  padding-left: var(--space-16);
+}
+
+.emptyActions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-16);
+}
+
+.providerTiles {
+  display: grid;
+  grid-template-columns: repeat(5, 7.5rem);
+  gap: var(--space-8);
+  margin: 0 0 var(--space-8);
+  padding: 0;
+  list-style: none;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-8);
+  height: 100%;
+  min-height: 6.5rem;
+  padding: var(--space-12) var(--space-8);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+  text-align: center;
+}
+
+.tileLink {
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
+}
+
+.tileLink:hover {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  text-decoration: none;
+}
+
+.tileIcon {
+  display: grid;
+  place-items: center;
+  width: var(--size-control);
+  height: var(--size-control);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.tileIcon[data-available] {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.tileName {
+  text-wrap: balance;
+}
+
+.tileNote {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-medium);
+}
+
+.emptyNote {
+  max-width: 34rem;
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+/* ---------- Tablet: folder jadi laci, daftar + panel baca ---------- */
+
+@media (max-width: 1023px) {
+  .mail {
+    grid-template-columns: min(var(--size-list), 50%) minmax(0, 1fr);
+  }
+
+  .folders {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 3;
+    width: min(18rem, 85%);
+    border-right: 1px solid var(--line);
+    box-shadow: var(--shadow-2);
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition:
+      transform var(--duration-slow) var(--ease-out),
+      visibility var(--duration-slow);
+  }
+
+  .mail[data-drawer='open'] .folders {
+    transform: none;
+    visibility: visible;
+  }
+
+  /* Kerangka memuat: kolom folder tidak tampil (laci tertutup). */
+  .foldersStatic {
+    display: none;
+  }
+
+  .scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    border: 0;
+    background: var(--on-accent);
+    opacity: 0.5;
+  }
+
+  .drawerClose,
+  .menuButton {
+    display: grid;
+  }
+
+  .listHead {
+    padding-left: var(--space-8);
+  }
+
+  .providerTiles {
+    grid-template-columns: repeat(3, 7.5rem);
+  }
+}
+
+/* ---------- HP: daftar saja ---------- */
+
+@media (max-width: 640px) {
+  .mail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .reading {
+    display: none;
+  }
+
+  .list {
+    border-right: 0;
+  }
+
+  .listHead {
+    padding: 0 var(--space-16) 0 var(--space-4);
+  }
+
+  .folders {
+    width: min(20rem, 88%);
+  }
+
+  .foldersHead {
+    padding-right: var(--space-4);
+  }
+
+  .headIcon {
+    width: var(--size-touch);
+    height: var(--size-touch);
+  }
+
+  .folderLink {
+    min-height: var(--size-touch);
+  }
+
+  .sectionAction {
+    width: var(--size-touch);
+    height: var(--size-touch);
+  }
+
+  .providerTiles {
+    grid-template-columns: repeat(2, minmax(0, 9rem));
+  }
+
+  .providerTiles > li:last-child {
+    grid-column: 1 / -1;
+    justify-self: center;
+    width: calc(50% - var(--space-4));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinning {
+    animation: none;
+  }
+
+  .folders {
+    transition: none;
+  }
+}

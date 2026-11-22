@@ -12,6 +12,8 @@ import {
   type TeamUser,
   type TeamUserListResponse,
   permissionsForRole,
+  mailMenuVisible,
+  MAIL_PROVIDER_CARDS,
   isTwoFactorRequired,
   type AuthenticatedSession,
   type BrandingResponse,
@@ -102,6 +104,8 @@ export function fakeSession(role: UserRole = 'owner', name = 'Rina Kartika'): Au
     },
     csrfToken: 'csrf-tes-1',
     permissions: permissionsForRole(role),
+    // Menu Email: belum ada akun; tampil bila boleh menghubungkan akun (KONTRAK-API-EMAIL §1).
+    navigation: { mail: mailMenuVisible(role, 0) },
     session: {
       idleExpiresAt: '2026-11-14T00:00:00.000Z',
       absoluteExpiresAt: '2026-12-13T00:00:00.000Z',
@@ -413,6 +417,12 @@ export interface FakeApi {
   setSession(session: MeResponse | null): void;
 }
 
+function hasRolePermission(session: MeResponse | null, permission: string): boolean {
+  return (
+    session?.status === 'authenticated' && (session.permissions ?? []).some((p) => p === permission)
+  );
+}
+
 export function installFakeApi(options: FakeApiOptions = {}): FakeApi {
   let session = options.session === undefined ? fakeSession() : options.session;
   const routes = new Map<string, FakeHandler>();
@@ -449,6 +459,35 @@ export function installFakeApi(options: FakeApiOptions = {}): FakeApi {
       json({ tickets: [], nextCursor: null }),
     ),
     [`GET ${API_ROUTES.departments.list}`]: fullSessionOnly(() => json({ departments: [] })),
+    // Fase 9 (modul Email): bawaan belum ada akun; tes Email mengganti lewat `routes`.
+    [`GET ${API_ROUTES.mail.providers}`]: fullSessionOnly(() =>
+      json({ providers: MAIL_PROVIDER_CARDS }),
+    ),
+    [`GET ${API_ROUTES.mail.accounts}`]: fullSessionOnly(() =>
+      json({
+        accounts: [],
+        canConnectPersonal: hasRolePermission(session, 'mail.private.own'),
+        canManageShared: hasRolePermission(session, 'mail.accounts.manage'),
+      }),
+    ),
+    [`GET ${API_ROUTES.mail.settingsAccounts}`]: fullSessionOnly(() =>
+      json({
+        accounts: [],
+        canConnectPersonal: hasRolePermission(session, 'mail.private.own'),
+        canManageShared: hasRolePermission(session, 'mail.accounts.manage'),
+      }),
+    ),
+    [`GET ${API_ROUTES.mail.sidebar}`]: fullSessionOnly(() =>
+      json({
+        unified: { unreadCount: 0 },
+        unread: { count: 0 },
+        starred: { count: 0 },
+        accounts: [],
+      }),
+    ),
+    [`GET ${API_ROUTES.mail.settings}`]: fullSessionOnly(() =>
+      json({ settings: { cacheRetentionDays: 90, defaultSyncWindowDays: 90 } }),
+    ),
     // Fase 6: channel selain WhatsApp (bawaan belum ada).
     [`GET ${API_ROUTES.channelConnections.list}`]: fullSessionOnly(() =>
       json({ channels: [], types: channelTypeInfos(), canStoreSecrets: true, maxChannels: 20 }),

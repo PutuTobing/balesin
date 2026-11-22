@@ -15,6 +15,7 @@ import {
   KeyRound,
   Webhook,
   type LucideIcon,
+  Inbox,
   Mail,
   Mails,
   MessageSquareText,
@@ -34,7 +35,9 @@ import { cx } from '../../lib/cx';
 import { parsePreference, type ResolvedTheme, type ThemePreference } from '../../theme/theme';
 import { useTheme } from '../../theme/theme-context';
 import { themeOptions } from '../../theme/theme-options';
-import { useCan } from '../auth/session';
+import { useCan, useSession } from '../auth/session';
+import { mailSettingsAccountsQuery } from '../mail/mail-queries';
+import { needsAttention } from '../mail/mail-format';
 import { endpoints } from '../../lib/api/endpoints';
 import { quickRepliesKey } from '../quick-replies/quick-replies-key';
 import { EmailStatusBadge } from '../email-settings/EmailStatusBadge';
@@ -87,6 +90,7 @@ export function SettingsPage() {
   const canTemplates = useCan('templates.manage');
   const canWorkspace = useCan('settings.workspace.manage');
   const canBranding = useCan('organization.manage');
+  const canMailShared = useCan('mail.accounts.manage');
 
   return (
     <Page>
@@ -101,7 +105,8 @@ export function SettingsPage() {
         canApiKeys ||
         canWebhooks ||
         canWorkspace ||
-        canBranding ? (
+        canBranding ||
+        canMailShared ? (
           <OrganizationSettings
             showChannels={canChannels}
             showTeam={canTeam}
@@ -114,11 +119,12 @@ export function SettingsPage() {
             showWebhooks={canWebhooks}
             showWorkspace={canWorkspace}
             showBranding={canBranding}
+            showMail={canMailShared}
             canInvite={canInvite}
             canManageTeam={canManageTeam}
           />
         ) : null}
-        <AccountSettings />
+        <AccountSettings showMail={!canMailShared} />
         <section className={styles.card} aria-labelledby={APPEARANCE_HEADING_ID}>
           <div className={styles.cardHead}>
             <h2 id={APPEARANCE_HEADING_ID} className={styles.cardTitle}>
@@ -203,6 +209,7 @@ function OrganizationSettings({
   showWebhooks,
   showWorkspace,
   showBranding,
+  showMail,
   canInvite,
   canManageTeam,
 }: {
@@ -217,6 +224,7 @@ function OrganizationSettings({
   showWebhooks: boolean;
   showWorkspace: boolean;
   showBranding: boolean;
+  showMail: boolean;
   canInvite: boolean;
   canManageTeam: boolean;
 }) {
@@ -234,6 +242,7 @@ function OrganizationSettings({
         {showBranding ? <BrandingMenuItem /> : null}
         {showWorkspace ? <DepartmentsMenuItem /> : null}
         {showEmail ? <EmailMenuItem /> : null}
+        {showMail ? <MailAccountsMenuItem /> : null}
         {showTemplates ? <TemplatesMenuItem /> : null}
         {showTemplates ? <EmailTemplatesMenuItem /> : null}
         {showQuickReplies ? <QuickRepliesMenuItem /> : null}
@@ -568,7 +577,8 @@ function MenuRow({
     | '/pengaturan/departemen'
     | '/pengaturan/jam-kerja'
     | '/pengaturan/merek'
-    | '/pengaturan/csat';
+    | '/pengaturan/csat'
+    | '/pengaturan/akun-email';
   icon: LucideIcon;
   label: string;
   hint: string;
@@ -595,6 +605,29 @@ function MenuRow({
         <Icon icon={ChevronRight} size={16} className={styles.chevron} />
       </Link>
     </li>
+  );
+}
+
+/** Akun email (Fase 9): jumlah akun + yang perlu perhatian (password ditolak, gagal tersambung). */
+function MailAccountsMenuItem() {
+  const list = useQuery(mailSettingsAccountsQuery);
+  const accounts = list.data?.accounts;
+  const attention = accounts?.filter((account) => needsAttention(account.sync.state)).length ?? 0;
+  return (
+    <MenuRow
+      to="/pengaturan/akun-email"
+      icon={Inbox}
+      label={t.mail.accounts.title}
+      hint={t.mail.accounts.menuHint}
+      status={
+        accounts
+          ? attention > 0
+            ? `${t.mail.accounts.menuCount(accounts.length)} · ${t.mail.accounts.menuAttention(attention)}`
+            : t.mail.accounts.menuCount(accounts.length)
+          : null
+      }
+      loading={list.isPending}
+    />
   );
 }
 
@@ -688,8 +721,11 @@ function AuditMenuItem() {
 }
 
 /** Menu akun pengguna sendiri (semua peran): Keamanan akun dengan status 2FA. */
-function AccountSettings() {
+function AccountSettings({ showMail }: { showMail: boolean }) {
   const status = useQuery(twoFactorStatusQuery);
+  const session = useSession();
+  // Menu Email tampil (punya akun / boleh menghubungkan akun pribadi): Akun email di bagian akun.
+  const mailVisible = showMail && session?.navigation?.mail === true;
   const canNotifications = useCan('inbox.view');
   const queryClient = useQueryClient();
   // Data Keamanan akun dimuat lebih dulu (seperti undangan & anggota untuk baris Tim): dibuka dari
@@ -727,6 +763,7 @@ function AccountSettings() {
           </Link>
         </li>
         {canNotifications ? <NotificationsMenuItem /> : null}
+        {mailVisible ? <MailAccountsMenuItem /> : null}
       </ul>
     </section>
   );

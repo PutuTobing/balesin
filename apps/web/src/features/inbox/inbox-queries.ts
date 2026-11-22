@@ -14,6 +14,7 @@ import {
   type InfiniteData,
   type QueryClient,
 } from '@tanstack/react-query';
+import { applyMailEvent, isMailEvent } from '../mail/mail-events';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
 import { compactParams, conversationQueryString, type ConversationParams } from './inbox-filters';
@@ -497,6 +498,10 @@ export function applyInboxEvent(queryClient: QueryClient, event: InboxStreamEven
         void queryClient.invalidateQueries({ queryKey: inboxKeys.messages(event.conversationId) });
       }
       scheduleListRefresh(queryClient);
+      return;
+    default:
+      // Fase 9: soket yang sama membawa event modul Email (ID & angka saja).
+      if (isMailEvent(event)) applyMailEvent(queryClient, event);
       return;
   }
 }

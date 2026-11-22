@@ -10,6 +10,7 @@ export type PageParent =
   | 'templates'
   | 'emailTemplates'
   | 'apiKeys'
+  | 'mailAccounts'
   | 'broadcast'
   | 'contacts'
   | 'tickets';

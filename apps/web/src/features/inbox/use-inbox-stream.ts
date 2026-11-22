@@ -1,6 +1,7 @@
+import type { InboxStreamEvent } from '@balesin/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useEffectEvent, useState } from 'react';
 import { queryKeys, refetchSession } from '../../lib/api/queries';
 import { applyInboxEvent, refreshInbox } from './inbox-queries';
 import { InboxStream, inboxStreamUrl, type SocketLike, type StreamStatus } from './inbox-stream';
@@ -11,23 +12,32 @@ export function setInboxSocketFactory(factory: ((url: string) => SocketLike) | u
   socketFactory = factory;
 }
 
+interface RealtimeHandlers {
+  onEvent: (event: InboxStreamEvent) => void;
+  /** Tersambung lagi setelah putus: event selama terputus tidak diulang server. */
+  onResync: () => void;
+}
+
 /**
- * Satu-satunya pemakai WebSocket inbox: dipasang sekali di halaman Inbox. Event diterapkan ke
- * cache TanStack Query (`applyInboxEvent`); status sambungan dipakai untuk menentukan seberapa
- * sering daftar disegarkan lewat REST sebagai cadangan.
+ * Hook WebSocket terpusat (`GET /inbox/stream` — satu soket untuk Inbox & Email, KONTRAK-API-EMAIL
+ * keputusan 13). Dipasang oleh layar yang membutuhkan data real-time (Inbox, menu Email, Pengaturan
+ * → Akun email); hanya satu layar aktif sekaligus, jadi hanya ada satu soket. Penanganan event
+ * lewat `useEffectEvent` supaya soket tidak tersambung ulang saat penanganannya berubah.
  */
-export function useInboxStream(): StreamStatus {
+export function useRealtimeStream(handlers: RealtimeHandlers): StreamStatus {
   const queryClient = useQueryClient();
   const router = useRouter();
   const [status, setStatus] = useState<StreamStatus>('connecting');
+  const onEvent = useEffectEvent((event: InboxStreamEvent) => handlers.onEvent(event));
+  const onResync = useEffectEvent(() => handlers.onResync());
 
   useEffect(() => {
     const stream = new InboxStream({
       url: inboxStreamUrl(),
       createSocket: socketFactory,
-      onEvent: (event) => applyInboxEvent(queryClient, event),
+      onEvent: (event) => onEvent(event),
       onStatus: setStatus,
-      onResync: () => refreshInbox(queryClient),
+      onResync: () => onResync(),
       // 4401: sesi habis → `/auth/me` menjawab 401 dan aplikasi membuka halaman masuk.
       // 4403: izin berubah → sesi & penjaga rute diperiksa ulang.
       onAuthClosed: () => {
@@ -48,6 +58,19 @@ export function useInboxStream(): StreamStatus {
   }, [queryClient, router]);
 
   return status;
+}
+
+/**
+ * WebSocket di halaman Inbox. Event diterapkan ke cache TanStack Query (`applyInboxEvent`, yang
+ * juga meneruskan event `mail.*` ke cache Email); status sambungan dipakai untuk menentukan
+ * seberapa sering daftar disegarkan lewat REST sebagai cadangan.
+ */
+export function useInboxStream(): StreamStatus {
+  const queryClient = useQueryClient();
+  return useRealtimeStream({
+    onEvent: (event) => applyInboxEvent(queryClient, event),
+    onResync: () => refreshInbox(queryClient),
+  });
 }
 
 /**

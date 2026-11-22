@@ -27,6 +27,8 @@ import { InboxPage } from '../features/inbox/InboxPage';
 import { InboxSkeleton } from '../features/inbox/InboxSkeleton';
 import { parseInboxSearch } from '../features/inbox/inbox-search';
 import { parseContactSearch } from '../features/contacts/contact-search';
+import { MailSkeleton } from '../features/mail/MailSkeleton';
+import { parseMailAccountsSearch, parseMailSearch } from '../features/mail/mail-search';
 import { parseTicketSearch } from '../features/tickets/ticket-search';
 import { SecuritySkeleton } from '../features/security/SecuritySkeleton';
 import { SetupSkeleton } from '../features/setup/SetupSkeleton';
@@ -61,6 +63,7 @@ import {
   guardNavRoute,
   guardEnrollment,
   guardLogin,
+  guardMail,
   guardPermission,
   guardSetup,
   guardVoluntaryEnrollment,
@@ -205,6 +208,19 @@ const inboxRoute = createRoute({
   pendingComponent: InboxSkeleton,
 });
 
+/**
+ * Menu Email (Fase 9, KONTRAK-API-EMAIL): kolom folder + daftar + panel baca. Hanya bila sesi
+ * `navigation.mail` (punya akun yang bisa diakses atau boleh menghubungkan akun).
+ */
+const mailRoute = createRoute({
+  getParentRoute,
+  path: 'email',
+  validateSearch: parseMailSearch,
+  beforeLoad: ({ context }) => guardMail(context.session),
+  component: lazyRouteComponent(() => import('../features/mail/MailPage'), 'MailPage'),
+  pendingComponent: MailSkeleton,
+});
+
 const contactsRoute = createRoute({
   getParentRoute,
   path: 'kontak',
@@ -333,6 +349,34 @@ const emailSettingsRoute = createRoute({
     'EmailSettingsPage',
   ),
   pendingComponent: EmailSettingsSkeleton,
+});
+
+/**
+ * Pengaturan → Akun email (Fase 9): akun yang bisa kukelola + metadata akun pribadi orang lain
+ * untuk Owner/Admin. `?tambah=` membuka wizard hubungkan akun.
+ */
+const mailAccountsRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/akun-email',
+  staticData: { page: { title: t.mail.accounts.title, parent: 'settings' } },
+  validateSearch: parseMailAccountsSearch,
+  beforeLoad: ({ context }) => guardMail(context.session, '/pengaturan'),
+  component: lazyRouteComponent(
+    () => import('../features/mail/MailAccountsPage'),
+    'MailAccountsPage',
+  ),
+});
+
+/** Pengaturan → Akun email → satu akun (status, tampilan, server, akses, putuskan). */
+const mailAccountRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/akun-email/$accountId',
+  staticData: { page: { title: t.mail.detail.title, parent: 'mailAccounts' } },
+  beforeLoad: ({ context }) => guardMail(context.session, '/pengaturan'),
+  component: lazyRouteComponent(
+    () => import('../features/mail/MailAccountPage'),
+    'MailAccountPage',
+  ),
 });
 
 /**
@@ -739,6 +783,7 @@ const notFoundRoute = createRoute({
 const appChildren = [
   indexRoute,
   inboxRoute,
+  mailRoute,
   contactsRoute,
   contactImportRoute,
   contactRoute,
@@ -756,6 +801,8 @@ const appChildren = [
   reportsRoute,
   settingsRoute,
   emailSettingsRoute,
+  mailAccountsRoute,
+  mailAccountRoute,
   channelsRoute,
   quickRepliesRoute,
   templatesRoute,

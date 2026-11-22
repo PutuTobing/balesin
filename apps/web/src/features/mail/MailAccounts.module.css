@@ -1,0 +1,489 @@
+/* Pengaturan → Akun email & halaman satu akun (kolom isi standar 48rem). */
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  width: 100%;
+  max-width: var(--size-column);
+}
+
+.intro {
+  color: var(--ink-2);
+  font-size: var(--text-14);
+  text-wrap: pretty;
+}
+
+.flash:focus {
+  outline: none;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding: var(--space-24);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.cardHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.cardHeadRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+
+.cardTitle {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+}
+
+.cardHint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+/* ---------- Daftar akun ---------- */
+
+.tableHead,
+.row {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1.6fr)
+    var(--size-touch);
+  align-items: center;
+  gap: var(--space-12);
+}
+
+/* Daftar merapat ke tepi kartu, dipisah garis. */
+.card:has(.rows) {
+  gap: 0;
+  padding: 0;
+}
+
+.tableHead {
+  padding: var(--space-12) var(--space-16) var(--space-12) var(--space-24);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  min-height: 4.5rem;
+  padding: var(--space-12) var(--space-16) var(--space-12) var(--space-24);
+}
+
+.row + .row {
+  border-top: 1px solid var(--line);
+}
+
+.accountCell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-width: 0;
+}
+
+.accountText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.accountName {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+a.accountName:hover {
+  color: var(--primary);
+}
+
+.address {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+  min-width: 0;
+  color: var(--ink);
+  font-size: var(--text-13);
+  line-height: var(--leading-title);
+}
+
+.metaIcon {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.statusDetail {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+
+.fixLink {
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.menuTrigger {
+  display: grid;
+  place-items: center;
+  width: var(--size-control);
+  height: var(--size-control);
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+}
+
+.menuTrigger:hover,
+.menuTrigger[data-state='open'] {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.menu {
+  z-index: 40;
+  min-width: 13rem;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+}
+
+.menuItem,
+.menuItemDanger {
+  display: flex;
+  align-items: center;
+  min-height: var(--size-control);
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-input);
+  color: var(--ink);
+  font-size: var(--text-14);
+  cursor: pointer;
+  user-select: none;
+}
+
+.menuItem:hover,
+.menuItemDanger:hover {
+  text-decoration: none;
+}
+
+.menuItemDanger {
+  color: var(--danger-ink);
+}
+
+.menuItem[data-highlighted],
+.menuItemDanger[data-highlighted] {
+  outline: none;
+  background: var(--surface-2);
+}
+
+.menuSeparator {
+  height: 1px;
+  margin: var(--space-4) 0;
+  background: var(--line);
+}
+
+/* ---------- Memuat ---------- */
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+}
+
+.skeletonRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-16) var(--space-24);
+}
+
+.skeletonRow + .skeletonRow {
+  border-top: 1px solid var(--line);
+}
+
+.skeletonDot {
+  width: var(--space-8);
+  height: var(--space-8);
+  border-radius: var(--radius-pill);
+}
+
+.skeletonLines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.skeletonName {
+  width: 9rem;
+  height: var(--space-12);
+}
+
+.skeletonAddress {
+  width: 12rem;
+  height: var(--space-12);
+}
+
+.skeletonStatus {
+  width: 7rem;
+  height: var(--space-16);
+}
+
+.settingsSkeleton {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-16);
+}
+
+.settingsSkeleton > div {
+  display: contents;
+}
+
+.skeletonField {
+  height: var(--size-control);
+}
+
+/* ---------- Form pengaturan ---------- */
+
+.fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.formRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--space-16);
+}
+
+.unit {
+  flex: none;
+  padding: 0 var(--space-12);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+/* ---------- Halaman satu akun ---------- */
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+}
+
+.summaryText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.summaryName {
+  overflow: hidden;
+  font-size: var(--text-20);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-title);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summaryMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-12);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.summaryMetaItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-16);
+  margin: 0;
+  padding: var(--space-16) 0 0;
+  border-top: 1px solid var(--line);
+}
+
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.factLabel {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.factValue {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--text-14);
+  overflow-wrap: anywhere;
+}
+
+.summaryActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.serverList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-16);
+  margin: 0;
+}
+
+.serverItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-12) var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.serverHost {
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.serverMeta {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+/* ---------- HP ---------- */
+
+@media (max-width: 640px) {
+  .tableHead {
+    display: none;
+  }
+
+  /* Kartu: akun + menu · penyedia & jenis sebaris · status. */
+  .row {
+    grid-template-areas:
+      'account account actions'
+      'provider kind kind'
+      'status status status';
+    grid-template-columns: auto minmax(0, 1fr) var(--size-touch);
+    gap: var(--space-8) var(--space-16);
+    padding: var(--space-12) var(--space-4) var(--space-12) var(--space-16);
+  }
+
+  .accountCell {
+    grid-area: account;
+  }
+
+  .actions {
+    grid-area: actions;
+  }
+
+  /* Sejajar dengan nama akun (titik warna 8 + jarak 12). */
+  .meta:nth-child(2) {
+    grid-area: provider;
+    padding-left: calc(var(--space-8) + var(--space-12));
+  }
+
+  .meta:nth-child(3) {
+    grid-area: kind;
+  }
+
+  .status {
+    grid-area: status;
+    padding-left: calc(var(--space-8) + var(--space-12));
+  }
+
+  .menuTrigger {
+    width: var(--size-touch);
+    height: var(--size-touch);
+  }
+
+  .card {
+    padding: var(--space-16);
+  }
+
+  .formRow,
+  .facts,
+  .serverList,
+  .settingsSkeleton {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .summaryActions > * {
+    flex: 1;
+  }
+}

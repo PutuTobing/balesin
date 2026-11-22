@@ -199,3 +199,15 @@ export async function guardVoluntaryEnrollment(queryClient: QueryClient): Promis
     throw redirect({ to: '/pengaturan/keamanan', replace: true });
   }
 }
+
+/**
+ * Menu Email & Pengaturan → Akun email (KONTRAK-API-EMAIL §1): `mail.view` DAN `navigation.mail`
+ * dari sesi (punya akun yang bisa diakses, atau boleh menghubungkan akun). Menu yang tidak tampil
+ * juga tidak bisa dibuka lewat alamat. Server tetap menegakkan hak per akun.
+ */
+export function guardMail(session: AuthenticatedSession, to: DeniedTarget = '/inbox'): void {
+  if (!sessionCan(session, 'mail.view') || session.navigation?.mail !== true) {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error -- pola resmi TanStack Router
+    throw redirect({ to, replace: true });
+  }
+}

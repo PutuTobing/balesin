@@ -180,11 +180,29 @@ describe('menu mengikuti izin peran (permissions dari sesi)', () => {
 
   it('item tanpa izin yang cocok disembunyikan; tanpa izin apa pun hanya Pengaturan & Lainnya', () => {
     const ids = (permissions: Parameters<typeof allowedNavItems>[1]) =>
-      allowedNavItems(navItems, permissions).map((item) => item.id);
+      allowedNavItems(navItems, permissions, { mail: true }).map((item) => item.id);
     expect(ids(fakeSession('owner').permissions ?? [])).toEqual(navItems.map((item) => item.id));
     expect(ids(fakeSession('supervisor').permissions ?? [])).toContain('broadcast');
     expect(ids(fakeSession('cs').permissions ?? [])).not.toContain('broadcast');
     expect(ids([])).toEqual(['more', 'settings']);
+  });
+
+  it('menu Email hanya tampil bila sesi `navigation.mail` (punya akun atau boleh menghubungkan)', () => {
+    const owner = fakeSession('owner').permissions ?? [];
+    const ids = (navigation: { mail: boolean } | undefined) =>
+      allowedNavItems(navItems, owner, navigation).map((item) => item.id);
+    expect(ids({ mail: true })).toContain('mail');
+    expect(ids({ mail: false })).not.toContain('mail');
+    // Klien lama tanpa `navigation`: tidak tampil.
+    expect(ids(undefined)).not.toContain('mail');
+    // Tanpa izin `mail.view`, penanda sesi saja tidak cukup.
+    expect(
+      allowedNavItems(
+        navItems,
+        owner.filter((p) => p !== 'mail.view'),
+        { mail: true },
+      ).map((item) => item.id),
+    ).not.toContain('mail');
   });
 });
 
@@ -282,12 +300,13 @@ describe('navActiveState', () => {
     expect(navActiveState(more, '/kontak')).toBeNull();
   });
 
-  it('navigasi bawah HP berisi tepat Inbox, Kontak, Broadcast, Lainnya', () => {
+  it('navigasi bawah HP berisi tepat Inbox, Email, Kontak, Broadcast, Lainnya', () => {
     const bottom = navItems.filter(
       (item) => item.placement === 'primary' || item.placement === 'more',
     );
     expect(bottom.map((item) => item.label)).toEqual([
       t.nav.inbox,
+      t.nav.mail,
       t.nav.contacts,
       t.nav.broadcast,
       t.nav.more,

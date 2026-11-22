@@ -250,3 +250,22 @@ export function LoadFailedIllustration() {
     </Frame>
   );
 }
+
+/** Email: amplop terbuka berisi surat, dengan lencana centang (akun email terhubung). */
+export function MailboxIllustration() {
+  return (
+    <Frame>
+      <rect x={20} y={50} width={104} height={62} rx={10} className={styles.card} />
+      <rect x={42} y={16} width={82} height={66} rx={8} className={styles.card} />
+      <Bar x={54} y={30} w={44} />
+      <Bar x={54} y={42} w={58} className={styles.tintBar} />
+      <Bar x={54} y={54} w={36} className={styles.soft} />
+      <path
+        d="M20.75 64L72 94l51.25-30v38a9.25 9.25 0 0 1-9.25 9.25H30a9.25 9.25 0 0 1-9.25-9.25z"
+        className={styles.pocket}
+      />
+      <circle cx={126} cy={18} r={11} className={styles.accent} />
+      <path d="M121 18.5l3.5 3.5 6.5-7" className={styles.check} />
+    </Frame>
+  );
+}
