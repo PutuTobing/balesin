@@ -1,11 +1,12 @@
 import { EMAIL_MAX_EXTRA_RECIPIENTS, type Conversation } from '@balesin/shared';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { ReplyAll } from 'lucide-react';
-import { useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { AddressChips } from '../../components/ui/AddressChips';
 import { Icon } from '../../components/ui/Icon';
 import { Notice } from '../../components/ui/Notice';
 import { t } from '../../i18n/id';
+import { media, useMediaQuery } from '../../lib/media';
 import { useCan } from '../auth/session';
 import styles from './EmailCopies.module.css';
 import {
@@ -19,28 +20,10 @@ import {
   type CopyField,
 } from './email-recipients';
 import { flattenMessages, inboxChannelsQuery, messagesQuery } from './inbox-queries';
-import type { EmailCopiesState } from './use-email-copies';
+import { rejectionText, type EmailCopiesState } from './use-email-copies';
 
 const k = t.inbox.emailCopies;
 const MAX = EMAIL_MAX_EXTRA_RECIPIENTS;
-
-/** Penjelasan penolakan pertama (satu baris; alamat tidak sah tetap di kolom untuk diperbaiki). */
-function rejectionText(result: AddResult): string | null {
-  const first = result.rejected[0];
-  if (!first) return null;
-  switch (first.reason) {
-    case 'invalid':
-      return k.invalid(first.address);
-    case 'customer':
-      return k.customer;
-    case 'self':
-      return k.self;
-    case 'otherChannel':
-      return k.otherChannel;
-    case 'limit':
-      return k.limit(MAX);
-  }
-}
 
 /**
  * Kepala penerima di atas kotak tulis channel Email: "Kepada <pelanggan>", tombol "Balas semua"
@@ -57,8 +40,9 @@ export function EmailCopiesBar({
   state: EmailCopiesState;
   disabled?: boolean;
 }) {
-  const { copies, setCopies, open, setOpen } = state;
+  const { copies, setCopies, open, setOpen, drafts, setDraft, errors, setError } = state;
   const canInitiate = useCan('inbox.initiate');
+  const isHp = useMediaQuery(media.hp);
   const messages = useInfiniteQuery(messagesQuery(conversation.id)).data;
   const loaded = useMemo(() => flattenMessages(messages), [messages]);
   const channels = useQuery(inboxChannelsQuery).data?.channels;
@@ -74,6 +58,15 @@ export function EmailCopiesBar({
     [channels, conversation.channel.id],
   );
   const customer = conversation.contact.channelHandle?.toLowerCase() ?? null;
+  const context = useMemo(
+    () => ({ customer, own: ownAddresses, others: otherAddresses }),
+    [customer, ownAddresses, otherAddresses],
+  );
+  // Aturan alamat juga dipakai `finalize` saat kirim (ketikan yang belum jadi chip).
+  const { contextRef } = state;
+  useEffect(() => {
+    contextRef.current = context;
+  }, [contextRef, context]);
   const known = useMemo(() => threadAddresses(loaded, customer), [loaded, customer]);
   const replyAll = useMemo(
     () => lastReplyAll(loaded).filter((address) => address !== customer),
@@ -81,53 +74,58 @@ export function EmailCopiesBar({
   );
   const fresh = useMemo(() => newCopies(copies, known), [copies, known]);
   const flagged = useMemo(() => new Set(fresh), [fresh]);
-  const [error, setError] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState('');
-  const ccRef = useRef<HTMLInputElement>(null);
   const id = useId();
   const total = copies.cc.length + copies.bcc.length;
   const full = total >= MAX;
 
-  const context = { customer, own: ownAddresses, others: otherAddresses };
-
-  const commit = (field: CopyField) => (raw: string) => {
-    const result = addCopies(copies, field, splitAddressInput(raw), context);
-    return apply(result);
-  };
-
-  const apply = (result: AddResult) => {
+  /** Hasil satu kolom: galat hanya untuk kolom itu (kolom lain tidak ikut berubah). */
+  const apply = (field: CopyField, result: AddResult) => {
     setCopies({ cc: result.cc, bcc: result.bcc });
-    setError(rejectionText(result));
+    setError(field, rejectionText(result));
     return leftoverInput(result);
   };
+
+  const commit = (field: CopyField) => (raw: string) =>
+    apply(field, addCopies(copies, field, splitAddressInput(raw), context));
 
   const remove = (field: CopyField) => (address: string) => {
     setCopies((current) => ({
       ...current,
       [field]: current[field].filter((item) => item !== address),
     }));
-    setError(null);
+    // Galat batas/penolakan lama tidak berlaku lagi; ketikan salah yang masih ada tetap ditandai.
+    if (drafts[field].trim() === '') setError(field, null);
   };
 
   const fillReplyAll = () => {
     const result = addCopies(copies, 'cc', replyAll, context);
-    apply(result);
+    apply('cc', result);
     setOpen(true);
     setAnnouncement(k.replyAllDone(result.added.length));
-    requestAnimationFrame(() => ccRef.current?.focus());
+    requestAnimationFrame(() => state.ccRef.current?.focus());
   };
 
   const toggle = () => {
     const next = !open;
     setOpen(next);
-    setError(null);
-    if (next) requestAnimationFrame(() => ccRef.current?.focus());
+    if (next) requestAnimationFrame(() => state.ccRef.current?.focus());
   };
 
   const fieldsId = `${id}-isian`;
   const metaId = `${id}-keterangan`;
-  const errorId = `${id}-galat`;
-  const describedBy = [metaId, error ? errorId : null].filter(Boolean).join(' ');
+  const warning =
+    fresh.length > 0 && !canInitiate ? (
+      isHp ? (
+        <Notice tone="warning" className={styles.notice}>
+          {k.newNoInitiateShort}
+        </Notice>
+      ) : (
+        <Notice tone="warning" title={k.newNoInitiateTitle} className={styles.notice}>
+          {k.newNoInitiateBody(fresh.length)}
+        </Notice>
+      )
+    ) : null;
 
   return (
     <div className={styles.copies}>
@@ -166,61 +164,46 @@ export function EmailCopiesBar({
         </div>
       </div>
       {open ? (
+        // Semua isi (kolom, keterangan, peringatan) dalam satu area gulir: di HP tingginya dibatasi
+        // supaya riwayat chat tetap terlihat saat keyboard terbuka (review 9.0 P1).
         <div id={fieldsId} className={styles.fields}>
-          <AddressChips
-            ref={ccRef}
-            prefix={k.cc}
-            inputLabel={k.fieldLabel(k.cc)}
-            addresses={copies.cc}
-            onCommit={commit('cc')}
-            onRemove={remove('cc')}
-            flagged={flagged}
-            flagLabel={k.newBadge}
-            flagDescription={k.newBadgeLabel}
-            removeLabel={k.remove}
-            removedAnnouncement={k.removed}
-            placeholder={k.placeholderShort}
-            inputDisabled={full}
-            disabled={disabled}
-            invalid={error !== null}
-            describedBy={describedBy}
-          />
-          <AddressChips
-            prefix={k.bcc}
-            inputLabel={k.fieldLabel(k.bcc)}
-            addresses={copies.bcc}
-            onCommit={commit('bcc')}
-            onRemove={remove('bcc')}
-            flagged={flagged}
-            flagLabel={k.newBadge}
-            flagDescription={k.newBadgeLabel}
-            removeLabel={k.remove}
-            removedAnnouncement={k.removed}
-            placeholder={k.placeholderShort}
-            inputDisabled={full}
-            disabled={disabled}
-            describedBy={describedBy}
-          />
-          {error ? (
-            <p id={errorId} className={styles.error} role="alert">
-              {error}
-            </p>
-          ) : null}
+          {(['cc', 'bcc'] as const).map((field) => (
+            <AddressChips
+              key={field}
+              ref={field === 'cc' ? state.ccRef : state.bccRef}
+              prefix={k[field]}
+              inputLabel={k.fieldLabel(k[field])}
+              addresses={copies[field]}
+              onCommit={commit(field)}
+              onRemove={remove(field)}
+              draft={drafts[field]}
+              onDraftChange={(value, reason) => setDraft(field, value, reason)}
+              error={errors[field] ?? null}
+              flagged={flagged}
+              flagLabel={k.newBadge}
+              flagDescription={k.newBadgeLabel}
+              removeLabel={k.remove}
+              removedAnnouncement={k.removed}
+              placeholder={k.placeholderShort}
+              inputDisabled={full}
+              disabled={disabled}
+              describedBy={metaId}
+            />
+          ))}
           <p id={metaId} className={styles.meta}>
             <span className={styles.count} data-full={full ? '' : undefined}>
               {full ? k.full(MAX) : k.count(total, MAX)}
             </span>
             <span>{k.bccNote}</span>
           </p>
+          {warning}
+          {fresh.length > 0 && canInitiate ? (
+            <p className={styles.meta}>{k.newInitiate(fresh.length)}</p>
+          ) : null}
         </div>
-      ) : null}
-      {fresh.length > 0 && !canInitiate ? (
-        <Notice tone="warning" title={k.newNoInitiateTitle} className={styles.notice}>
-          {k.newNoInitiateBody(fresh.length)}
-        </Notice>
-      ) : fresh.length > 0 && open ? (
-        <p className={styles.meta}>{k.newInitiate(fresh.length)}</p>
-      ) : null}
+      ) : (
+        warning
+      )}
       <span className="sr-only" role="status" aria-live="polite">
         {announcement}
       </span>

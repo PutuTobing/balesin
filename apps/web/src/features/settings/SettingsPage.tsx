@@ -16,6 +16,7 @@ import {
   Webhook,
   type LucideIcon,
   Mail,
+  Mails,
   MessageSquareText,
   Palette,
   ShieldCheck,
@@ -51,6 +52,7 @@ import { TwoFactorBadge } from '../security/TwoFactorBadge';
 import { sendingLimitsQuery } from '../inbox/inbox-queries';
 import { integrationKeys } from '../integrations/integration-queries';
 import { templatesQuery } from '../templates/template-queries';
+import { emailTemplatesQuery } from '../email-templates/email-template-queries';
 import { connectorsQuery, telegramAlarmQuery } from '../broadcast/broadcast-queries';
 import { usePushDevice } from '../notifications/use-push-device';
 import { contactAttributesQuery } from '../contacts/contact-queries';
@@ -233,6 +235,7 @@ function OrganizationSettings({
         {showWorkspace ? <DepartmentsMenuItem /> : null}
         {showEmail ? <EmailMenuItem /> : null}
         {showTemplates ? <TemplatesMenuItem /> : null}
+        {showTemplates ? <EmailTemplatesMenuItem /> : null}
         {showQuickReplies ? <QuickRepliesMenuItem /> : null}
         {showWorkspace ? <AttributesMenuItem /> : null}
         {showWorkspace ? <CsatMenuItem /> : null}
@@ -354,6 +357,29 @@ function TemplatesMenuItem() {
         all
           ? t.templates.menuCount(
               all.filter((template) => template.status === 'APPROVED').length,
+              all.length,
+            )
+          : null
+      }
+      loading={list.isPending}
+    />
+  );
+}
+
+/** Template email (tahap 9.1): jumlah yang sudah terbit dari semua template aktif. */
+function EmailTemplatesMenuItem() {
+  const list = useQuery(emailTemplatesQuery(false));
+  const all = list.data?.templates;
+  return (
+    <MenuRow
+      to="/pengaturan/template-email"
+      icon={Mails}
+      label={t.emailTemplates.title}
+      hint={t.emailTemplates.menuHint}
+      status={
+        all
+          ? t.emailTemplates.menuCount(
+              all.filter((template) => template.publishedVersion !== null).length,
               all.length,
             )
           : null
@@ -535,6 +561,7 @@ function MenuRow({
     | '/pengaturan/api-key'
     | '/pengaturan/webhook'
     | '/pengaturan/template'
+    | '/pengaturan/template-email'
     | '/pengaturan/konektor-data'
     | '/pengaturan/alarm'
     | '/pengaturan/atribut-kontak'

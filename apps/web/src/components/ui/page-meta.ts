@@ -8,6 +8,8 @@ export type PageParent =
   | 'team'
   | 'channels'
   | 'templates'
+  | 'emailTemplates'
+  | 'apiKeys'
   | 'broadcast'
   | 'contacts'
   | 'tickets';

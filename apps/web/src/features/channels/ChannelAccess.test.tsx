@@ -212,9 +212,9 @@ describe('Pengaturan → Channel → Akses tim', () => {
     expect(users.queryByRole('checkbox', { name: /Ayu Admin/ })).toBeNull();
     expect(users.queryByRole('checkbox', { name: /Lama/ })).toBeNull();
     fireEvent.click(users.getByRole('checkbox', { name: /Sinta/ }));
-    expect(
-      view.getByText(`${a.summaryOwners} · ${a.summaryDepartments(1, 3)} · ${a.summaryUsers(1)}`),
-    ).toBeVisible();
+    expect(view.getByText(a.summaryTitle).nextElementSibling).toHaveTextContent(
+      `${a.summaryOwners} · ${a.summaryDepartments(1, 3)} · ${a.summaryUsers(1)}`,
+    );
     expect(view.queryByText(a.onlyOwnersHint)).toBeNull();
 
     fireEvent.click(view.getByRole('button', { name: a.save }));
@@ -227,7 +227,8 @@ describe('Pengaturan → Channel → Akses tim', () => {
       }),
     );
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(await view.findByText(`${a.saved} ${a.released(2)}`)).toBeVisible();
+    expect(await view.findByText(a.savedTitle)).toBeVisible();
+    expect(view.getByText(`${a.saved} ${a.released(2)}`)).toBeVisible();
     expect(view.getByRole('button', { name: a.save })).toBeDisabled();
   });
 

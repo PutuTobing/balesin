@@ -189,7 +189,7 @@ function TelegramFacts({
             <span className={styles.url}>{channel.webhook.url}</span>
           </span>
         </Fact>
-        <Fact label={c.statusTitle}>
+        <Fact label={c.statusLabel}>
           {channel.webhook.registeredAt ? (
             <span className={styles.ok}>
               <Icon icon={CheckCircle2} size={16} />
@@ -313,6 +313,9 @@ function AliasesCard({ channel }: { channel: EmailChannel }) {
   const saved = channel.aliases ?? [];
   const [aliases, setAliases] = useState<string[]>(saved);
   const [inputError, setInputError] = useState<string | null>(null);
+  /** Ketikan yang belum jadi chip (dikendalikan supaya bisa diperiksa saat simpan). */
+  const [draft, setDraft] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
   const [done, setDone] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -338,6 +341,12 @@ function AliasesCard({ channel }: { channel: EmailChannel }) {
   };
 
   const submit = async () => {
+    // Ketikan yang tidak sah tidak boleh hilang diam-diam: perbaiki/hapus dulu.
+    if (draft.trim() !== '') {
+      setInputError(a.pendingInvalid(draft.trim()));
+      inputRef.current?.focus();
+      return;
+    }
     if (!dirty) return;
     setError(null);
     setDone(false);
@@ -356,7 +365,6 @@ function AliasesCard({ channel }: { channel: EmailChannel }) {
     }
   };
   const hintId = `${id}-petunjuk`;
-  const errorId = `${id}-galat`;
 
   return (
     <section className={styles.card} aria-labelledby="channel-alias">
@@ -383,7 +391,14 @@ function AliasesCard({ channel }: { channel: EmailChannel }) {
             {a.label}
           </label>
           <AddressChips
+            ref={inputRef}
             id={`${id}-alias`}
+            draft={draft}
+            onDraftChange={(value, reason) => {
+              setDraft(value);
+              if (reason === 'input' && value.trim() === '') setInputError(null);
+            }}
+            error={inputError}
             inputLabel={a.label}
             addresses={aliases}
             onCommit={(raw) => {
@@ -406,15 +421,8 @@ function AliasesCard({ channel }: { channel: EmailChannel }) {
             placeholder={a.placeholder}
             inputDisabled={full}
             disabled={pending}
-            invalid={inputError !== null}
-            describedBy={inputError ? `${errorId} ${hintId}` : hintId}
+            describedBy={hintId}
           />
-          {inputError ? (
-            <p id={errorId} className={styles.aliasError} role="alert">
-              <Icon icon={CircleAlert} size={16} />
-              <span>{inputError}</span>
-            </p>
-          ) : null}
           <p id={hintId} className={styles.hint}>
             {aliases.length === 0
               ? a.empty
@@ -438,6 +446,7 @@ function AliasesCard({ channel }: { channel: EmailChannel }) {
               disabled={pending}
               onClick={() => {
                 setAliases(saved);
+                setDraft('');
                 setInputError(null);
                 setError(null);
               }}

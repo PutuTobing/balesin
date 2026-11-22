@@ -305,8 +305,10 @@ describe('kepala email: Kepada, Cc, Bcc, alamat tujuan', () => {
       'sari@pelanggan.co.id',
       'rudi@pelanggan.co.id',
       'andi@pelanggan.co.id',
-      'arsip@majujaya.co.id',
+      `arsip@majujaya.co.id ${e.bccTeamOnlyShort}${e.bccTeamOnly}`,
     ]);
+    // "hanya tim" terlihat tanpa hover (HP).
+    expect(chat().getByText(e.bccTeamOnlyShort)).toBeVisible();
     const via = chat().getByText('billing@majujaya.co.id', { selector: 'strong' });
     expect(via.closest('p')).toHaveTextContent(`${e.sentTo} billing@majujaya.co.id`);
     expect(chat().getByText(e.bccTeamOnly)).toBeInTheDocument();
@@ -399,6 +401,56 @@ describe('composer channel Email: Cc/Bcc & Balas semua', () => {
     expect(chat().getByRole('alert')).toHaveTextContent(k.self);
     expect(sentBody(api)).toBeUndefined();
     expect(chat().queryByRole('list', { name: k.fieldLabel('Cc') })).toBeNull();
+  });
+
+  it('galat per kolom: galat Bcc tidak menandai Cc; ketikan salah memblokir kirim', async () => {
+    const { api } = await openChat();
+    fireEvent.click(chat().getByRole('button', { name: k.toggleLabel }));
+    const cc = chat().getByRole('textbox', { name: k.fieldLabel('Cc') });
+    const bcc = chat().getByRole('textbox', { name: k.fieldLabel('Bcc') });
+    typeAddress('Bcc', 'billing@majujaya.co.id');
+    expect(bcc).toHaveAttribute('aria-invalid', 'true');
+    expect(cc).not.toHaveAttribute('aria-invalid');
+    expect(chat().getByRole('alert')).toHaveTextContent(k.self);
+
+    // Cc salah; menambah Bcc yang sah tidak menghapus galat Cc.
+    typeAddress('Cc', 'bukan-email');
+    typeAddress('Bcc', 'arsip@majujaya.co.id');
+    expect(cc).toHaveValue('bukan-email');
+    expect(cc).toHaveAttribute('aria-invalid', 'true');
+    expect(
+      chat()
+        .getAllByRole('alert')
+        .map((item) => item.textContent),
+    ).toEqual([k.invalid('bukan-email')]);
+
+    // Kirim diblokir sampai ketikan diperbaiki.
+    const box = chat().getByRole('textbox', { name: t.inbox.compose.label });
+    fireEvent.change(box, { target: { value: 'Halo' } });
+    fireEvent.click(chat().getByRole('button', { name: t.inbox.compose.send }));
+    expect(chat().getByRole('alert')).toHaveTextContent(k.pendingInvalid('bukan-email'));
+    expect(sentBody(api)).toBeUndefined();
+    expect(box).toHaveValue('Halo');
+
+    // Ketikan dihapus → galat hilang → terkirim.
+    fireEvent.change(cc, { target: { value: '' } });
+    expect(cc).not.toHaveAttribute('aria-invalid');
+    fireEvent.click(chat().getByRole('button', { name: t.inbox.compose.send }));
+    await waitFor(() =>
+      expect(sentBody(api)).toMatchObject({ bcc: ['arsip@majujaya.co.id'], text: 'Halo' }),
+    );
+  });
+
+  it('ketikan sah yang belum jadi chip ikut terkirim', async () => {
+    const { api } = await openChat();
+    fireEvent.click(chat().getByRole('button', { name: k.toggleLabel }));
+    fireEvent.change(chat().getByRole('textbox', { name: k.fieldLabel('Cc') }), {
+      target: { value: 'sari@pelanggan.co.id' },
+    });
+    const box = chat().getByRole('textbox', { name: t.inbox.compose.label });
+    fireEvent.change(box, { target: { value: 'Halo' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    await waitFor(() => expect(sentBody(api)).toMatchObject({ cc: ['sari@pelanggan.co.id'] }));
   });
 
   it('Balas semua mengisi Cc dari email masuk terakhir (tanpa pelanggan & alamat channel)', async () => {

@@ -212,9 +212,30 @@ async function connectionMocks(page: Page, channels: unknown[] = CONNECTIONS): P
     }),
   );
   for (const channel of CONNECTIONS) {
-    await page.route(`${API}/settings/channels/${channel.id}/access`, (route) =>
-      json(route, { access: accessFor(channel.id) }),
-    );
+    await page.route(`${API}/settings/channels/${channel.id}/access`, (route) => {
+      if (route.request().method() !== 'PUT') return json(route, { access: accessFor(channel.id) });
+      // Simpan: keadaan baru dari isian + 3 percakapan dikembalikan ke antrian.
+      const body = route.request().postDataJSON() as {
+        mode: 'all' | 'restricted';
+        departmentIds?: string[];
+        userIds?: string[];
+      };
+      return json(route, {
+        access: {
+          channelId: channel.id,
+          mode: body.mode,
+          departments: ACCESS_DEPARTMENTS.filter((item) => body.departmentIds?.includes(item.id)),
+          users: (body.userIds ?? []).map((id) => ({
+            id,
+            name: 'Citra Maharani',
+            role: 'cs',
+            active: true,
+          })),
+          exemptRoles: ['owner', 'admin'],
+        },
+        releasedConversations: 3,
+      });
+    });
   }
   await page.route(`${API}/settings/channel-connections`, (route) =>
     json(route, { channels, types: TYPES, canStoreSecrets: true, maxChannels: 20 }),
@@ -719,7 +740,7 @@ export const channelConnectionScreens: Screen[] = [
       await page
         .getByRole('textbox', { name: 'Tulis balasan' })
         .fill('Baik Pak Rudi, tagihan revisi kami lampirkan ulang.');
-      await page.getByText('Alamat baru butuh izin memulai percakapan').waitFor();
+      await page.getByText('butuh izin memulai percakapan', { exact: false }).first().waitFor();
       await settle(page);
     },
   },
@@ -731,7 +752,9 @@ export const channelConnectionScreens: Screen[] = [
     waitFor: 'text=Andika Pratama',
     prepare: async (page) => {
       await page.getByRole('button', { name: 'Saring chat' }).click();
-      await page.getByText('Alamat tujuan').waitFor();
+      const last = page.getByRole('menu').getByText('tagihan@majujaya.co.id');
+      await last.waitFor();
+      await last.scrollIntoViewIfNeeded();
       await settle(page);
     },
   },
@@ -747,7 +770,7 @@ export const channelConnectionScreens: Screen[] = [
       await input.press('Enter');
       await input.fill('admin@majujaya');
       await input.press('Enter');
-      await page.getByRole('heading', { name: 'Alias alamat' }).scrollIntoViewIfNeeded();
+      await page.getByRole('button', { name: 'Simpan alias' }).scrollIntoViewIfNeeded();
       await settle(page);
     },
   },
@@ -772,7 +795,108 @@ export const channelConnectionScreens: Screen[] = [
     prepare: async (page) => {
       await page.getByRole('radio', { name: /Hanya departemen atau pengguna tertentu/ }).click();
       await page.getByText('Pilih departemen atau pengguna', { exact: false }).waitFor();
-      await page.getByRole('heading', { name: 'Akses tim' }).scrollIntoViewIfNeeded();
+      await page.getByRole('button', { name: 'Simpan akses' }).scrollIntoViewIfNeeded();
+      await settle(page);
+    },
+  },
+  {
+    // Melonggarkan akses (menambah departemen) → konfirmasi identitas.
+    name: 'akses-konfirmasi',
+    path: `/pengaturan/channel/lain/${EMAIL.id}`,
+    before: (page) => connectionMocks(page),
+    waitFor: 'text=Akses tim',
+    prepare: async (page) => {
+      await page.getByRole('checkbox', { name: /Customer Service/ }).check();
+      await page.getByRole('button', { name: 'Simpan akses' }).click();
+      await page.getByRole('dialog', { name: 'Perluas akses channel ini?' }).waitFor();
+      await settle(page);
+    },
+  },
+  {
+    // Mempersempit akses (tanpa konfirmasi) → tersimpan, 3 percakapan dikembalikan ke antrian.
+    name: 'akses-tersimpan',
+    path: `/pengaturan/channel/lain/${EMAIL.id}`,
+    before: (page) => connectionMocks(page),
+    waitFor: 'text=Akses tim',
+    prepare: async (page) => {
+      await page.getByRole('checkbox', { name: /Citra Maharani/ }).uncheck();
+      await page.getByRole('button', { name: 'Simpan akses' }).click();
+      const done = page.getByText('Akses tim disimpan');
+      await done.waitFor();
+      await done.scrollIntoViewIfNeeded();
+      await settle(page);
+    },
+  },
+  {
+    // Menambah alias → konfirmasi identitas.
+    name: 'alias-konfirmasi',
+    path: `/pengaturan/channel/lain/${EMAIL.id}`,
+    before: (page) => connectionMocks(page),
+    waitFor: 'text=Alias alamat',
+    prepare: async (page) => {
+      const input = page.getByRole('textbox', { name: 'Alias', exact: true });
+      await input.fill('keuangan@majujaya.co.id');
+      await input.press('Enter');
+      await page.getByRole('button', { name: 'Simpan alias' }).click();
+      await page.getByRole('dialog', { name: 'Tambah alias ke channel ini?' }).waitFor();
+      await settle(page);
+    },
+  },
+  {
+    // Galat Cc: ketikan bukan alamat tetap di kolom Cc dengan penjelasan; Bcc tidak ikut merah.
+    name: 'cc-galat',
+    path: `/inbox?chat=${EMAIL_CC_CONVERSATION.id}`,
+    before: multiChannelInbox,
+    waitFor: 'text=Re: Tagihan November tidak bisa dibuka',
+    prepare: async (page) => {
+      await page.getByRole('button', { name: 'Tambah Cc atau Bcc' }).click();
+      const cc = page.getByRole('textbox', { name: 'Alamat Cc' });
+      await cc.fill('dewi.keuangan@hartono-group.co.id bukan-email');
+      await cc.press('Enter');
+      await page.getByRole('textbox', { name: 'Tulis balasan' }).fill('Baik, kami tembuskan.');
+      await page.getByRole('button', { name: 'Kirim', exact: true }).click();
+      await page.getByText('belum jadi alamat', { exact: false }).waitFor();
+      await settle(page);
+    },
+  },
+  {
+    // Galat Bcc: alamat channel sendiri ditolak — hanya kotak Bcc yang merah.
+    name: 'bcc-galat',
+    path: `/inbox?chat=${EMAIL_CC_CONVERSATION.id}`,
+    before: multiChannelInbox,
+    waitFor: 'text=Re: Tagihan November tidak bisa dibuka',
+    prepare: async (page) => {
+      await page.getByRole('button', { name: 'Tambah Cc atau Bcc' }).click();
+      const bcc = page.getByRole('textbox', { name: 'Alamat Bcc' });
+      await bcc.fill('billing@majujaya.co.id');
+      await bcc.press('Enter');
+      await page.getByText('Alamat channel ini sendiri', { exact: false }).waitFor();
+      await settle(page);
+    },
+  },
+  {
+    // Keyboard HP terbuka (tinggi layar 58%): CS mengisi Bcc baru setelah Balas semua.
+    name: 'keyboard-hp',
+    path: `/inbox?chat=${EMAIL_CC_CONVERSATION.id}`,
+    before: async (page) => {
+      await sessionAs(page, 'cs');
+      await multiChannelInbox(page);
+    },
+    waitFor: 'text=Re: Tagihan November tidak bisa dibuka',
+    prepare: async (page) => {
+      const viewport = page.viewportSize();
+      if (viewport) {
+        await page.setViewportSize({
+          width: viewport.width,
+          height: Math.round(viewport.height * 0.58),
+        });
+      }
+      await page.getByRole('button', { name: /^Balas semua/ }).click();
+      const bcc = page.getByRole('textbox', { name: 'Alamat Bcc' });
+      await bcc.fill('pajak@konsultan-pajak.co.id');
+      await bcc.press('Enter');
+      await page.getByRole('textbox', { name: 'Tulis balasan' }).fill('Baik Pak Rudi.');
+      await bcc.focus();
       await settle(page);
     },
   },

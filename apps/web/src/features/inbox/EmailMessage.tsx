@@ -1,7 +1,7 @@
 import { EMAIL_SENDER_VERIFICATION_LABELS, type Message } from '@balesin/shared';
 import { useQuery } from '@tanstack/react-query';
 import { AtSign, CircleAlert, EyeOff, FileCode2, ShieldCheck, ShieldQuestion } from 'lucide-react';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Dialog, DialogActions } from '../../components/ui/Dialog';
 import { Icon } from '../../components/ui/Icon';
@@ -114,23 +114,34 @@ function EmailAddresses({ message }: { message: Message }) {
             const rest = row.list.length - visible.length;
             return (
               <div key={row.key} className={styles.addressRow}>
-                <dt className={styles.addressLabel}>
-                  {row.label}
-                  {row.hidden ? (
-                    <span className={styles.teamOnly} title={e.bccTeamOnly}>
-                      <Icon icon={EyeOff} size={16} />
-                      <span className="sr-only">{e.bccTeamOnly}</span>
-                    </span>
-                  ) : null}
-                </dt>
+                <dt className={styles.addressLabel}>{row.label}</dt>
                 <dd className={styles.addressValues}>
-                  {visible.map((address, index) => (
-                    <span key={address} className={styles.address}>
-                      {address}
-                      {index < visible.length - 1 || rest > 0 ? ', ' : ''}
-                    </span>
-                  ))}
+                  {visible.map((address, index) => {
+                    const more = index < visible.length - 1 || rest > 0;
+                    return (
+                      <Fragment key={address}>
+                        <span className={styles.address}>
+                          {address}
+                          {more ? ',' : ''}
+                        </span>
+                        {/* Spasi di luar kotak alamat = tempat pindah baris. */}
+                        {more ? ' ' : null}
+                      </Fragment>
+                    );
+                  })}
                   {rest > 0 ? <span className={styles.more}>{e.more(rest)}</span> : null}
+                  {row.hidden ? (
+                    // Label terlihat (HP tanpa hover): Bcc tidak pernah dilihat pelanggan (P6).
+                    // Di kolom nilai supaya kolom label tetap sempit.
+                    <>
+                      {' '}
+                      <span className={styles.teamOnly} title={e.bccTeamOnly}>
+                        <Icon icon={EyeOff} size={16} />
+                        <span aria-hidden="true">{e.bccTeamOnlyShort}</span>
+                        <span className="sr-only">{e.bccTeamOnly}</span>
+                      </span>
+                    </>
+                  ) : null}
                 </dd>
               </div>
             );

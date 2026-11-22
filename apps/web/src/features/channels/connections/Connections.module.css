@@ -504,16 +504,3 @@ ul.checks,
   font-weight: var(--weight-semibold);
   line-height: var(--leading-title);
 }
-
-.aliasError {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-4);
-  color: var(--danger-ink);
-  font-size: var(--text-13);
-}
-
-.aliasError > svg {
-  flex: none;
-  margin-top: 1px;
-}

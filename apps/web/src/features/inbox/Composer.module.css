@@ -278,7 +278,7 @@
 }
 
 @media (max-width: 640px) {
-  .handling:has(~ .composer textarea:focus) .handlingLong {
+  .handling:has(~ .composer :is(textarea, input):focus) .handlingLong {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -287,14 +287,14 @@
     white-space: nowrap;
   }
 
-  .handling:has(~ .composer textarea:focus) .handlingShort {
+  .handling:has(~ .composer :is(textarea, input):focus) .handlingShort {
     display: inline;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .handling:has(~ .composer textarea:focus) {
+  .handling:has(~ .composer :is(textarea, input):focus) {
     padding-block: var(--space-4);
   }
 }

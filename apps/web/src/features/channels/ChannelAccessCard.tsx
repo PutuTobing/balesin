@@ -9,7 +9,7 @@ import {
 } from '@balesin/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { RadioGroup } from 'radix-ui';
-import { useId, useRef, useState } from 'react';
+import { Fragment, useId, useRef, useState } from 'react';
 import { isConfirmationError, needsConfirmation } from '../identity/confirmation-error';
 import { IdentityDialog } from '../identity/IdentityDialog';
 import { Button } from '../../components/ui/Button';
@@ -290,15 +290,21 @@ function AccessForm({
           <p className={styles.summaryTitle}>{a.summaryTitle}</p>
           <p className={styles.summaryBody}>
             {restricted
-              ? [
+              ? // Tiap bagian tidak dipecah (mis. di dalam kurung); pindah baris di antara bagian (P9).
+                [
                   a.summaryOwners,
                   summary.departments > 0
                     ? a.summaryDepartments(summary.departments, summary.members)
                     : null,
                   summary.users > 0 ? a.summaryUsers(summary.users) : null,
                 ]
-                  .filter(Boolean)
-                  .join(' · ')
+                  .filter((part): part is string => part !== null)
+                  .map((part, index) => (
+                    <Fragment key={part}>
+                      {index > 0 ? ' · ' : null}
+                      <span className={styles.segment}>{part}</span>
+                    </Fragment>
+                  ))
               : a.summaryAll}
           </p>
           <p className={styles.hint}>{a.exempt}</p>
@@ -317,7 +323,7 @@ function AccessForm({
             {isApiError(error) ? error.message : t.api.network}
           </Notice>
         ) : done && !dirty ? (
-          <Notice tone="success" role="status">
+          <Notice tone="success" role="status" title={a.savedTitle}>
             {done}
           </Notice>
         ) : null}

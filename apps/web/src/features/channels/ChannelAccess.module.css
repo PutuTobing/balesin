@@ -148,7 +148,8 @@
 .options {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-4) var(--space-12);
+  /* Sama dengan kartu mode di atasnya: kolom kanan sejajar (M1). */
+  gap: var(--space-8);
 }
 
 .options[data-scroll] {
@@ -196,6 +197,10 @@
   color: var(--ink-2);
   font-size: var(--text-12);
   font-weight: var(--weight-semibold);
+}
+
+.segment {
+  white-space: nowrap;
 }
 
 .summaryBody {

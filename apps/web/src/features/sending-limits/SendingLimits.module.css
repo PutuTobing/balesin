@@ -162,6 +162,133 @@
   height: var(--size-control);
 }
 
+/* ---------- Email per pengirim (tahap 9.1) ---------- */
+
+ul.senders,
+.senders {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.senderSkeleton {
+  width: 100%;
+  height: calc(var(--space-48) * 3);
+  border-radius: var(--radius-input);
+}
+
+.emptySenders {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-8);
+  padding: var(--space-16);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-input);
+}
+
+.sender {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding: var(--space-16);
+  border: 1px solid var(--line);
+  /* Garis kiri selalu 4px (warna menurut keadaan) supaya isi semua baris sejajar. */
+  border-left-width: 4px;
+  border-radius: var(--radius-input);
+  background: var(--bg);
+}
+
+/* Terblokir: garis kiri merah seperti kartu rem darurat. */
+.sender[data-state='blocked'] {
+  border-left-color: var(--danger);
+}
+
+.sender[data-state='paused'],
+.sender[data-state='throttled'] {
+  border-left-color: var(--warning);
+}
+
+.senderHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-8) var(--space-12);
+}
+
+.senderName {
+  display: flex;
+  flex: 1 1 14rem;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.senderAddress {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  overflow-wrap: anywhere;
+}
+
+.senderAddress code {
+  color: var(--ink);
+  font-family: var(--font-mono);
+}
+
+.senderState {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  color: var(--ink);
+  font-size: var(--text-14);
+  text-wrap: pretty;
+}
+
+.senderState[data-tone='danger'] p:first-child {
+  color: var(--danger-ink);
+  font-weight: var(--weight-semibold);
+}
+
+.senderState[data-tone='warning'] p:first-child {
+  color: var(--warning-ink);
+  font-weight: var(--weight-semibold);
+}
+
+.inlineLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--size-control);
+  color: var(--primary);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.usageQueued {
+  color: var(--ink-2);
+}
+
+.senderForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-12) var(--space-16);
+}
+
+.senderLimit {
+  flex: 0 1 14rem;
+}
+
+/* Sejajar dengan kolom isian (label 13px × 1,2 + jarak 8px). */
+.senderActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  margin-top: calc(var(--text-13) * var(--leading-title) + var(--space-8));
+  margin-left: auto;
+}
+
 @media (max-width: 640px) {
   .card {
     padding: var(--space-16);
@@ -169,5 +296,28 @@
 
   .numberField {
     max-width: none;
+  }
+
+  .sender {
+    padding: var(--space-12);
+  }
+
+  .senderLimit {
+    flex: 1 1 100%;
+  }
+
+  .senderActions {
+    flex: 1 1 100%;
+    flex-direction: column-reverse;
+    margin-top: 0;
+    margin-left: 0;
+  }
+
+  .senderActions > * {
+    width: 100%;
+  }
+
+  .inlineLink {
+    min-height: var(--size-touch);
   }
 }

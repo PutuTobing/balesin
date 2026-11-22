@@ -160,6 +160,10 @@ export function Composer({
 
   const send = () => {
     if (!canSend) return;
+    // Channel Email: ketikan Cc/Bcc yang belum jadi chip ikut diperiksa; yang tidak sah membatalkan
+    // kirim (dengan penjelasan di kolomnya) supaya alamat tidak hilang diam-diam.
+    const copies = isEmail ? emailCopies.finalize() : null;
+    if (isEmail && !copies) return;
     const item = createOutboxItem({
       conversationId: conversation.id,
       kind: file ? 'media' : 'text',
@@ -167,8 +171,8 @@ export function Composer({
       file: file ?? undefined,
       previewUrl: preview ?? undefined,
       replyToMessageId: replyTo?.id,
-      ...(isEmail && emailCopies.copies.cc.length > 0 ? { cc: emailCopies.copies.cc } : {}),
-      ...(isEmail && emailCopies.copies.bcc.length > 0 ? { bcc: emailCopies.copies.bcc } : {}),
+      ...(copies && copies.cc.length > 0 ? { cc: copies.cc } : {}),
+      ...(copies && copies.bcc.length > 0 ? { bcc: copies.bcc } : {}),
     });
     // Pratinjau kini milik item outbox (dicabut saat item dibuang).
     setPreview(null);

@@ -1,6 +1,12 @@
-import { API_DOCS_ROUTES, API_KEY_SCOPE_LABELS, type ApiKey } from '@balesin/shared';
+import {
+  API_DOCS_ROUTES,
+  API_KEY_SCOPE_LABELS,
+  apiKeyHasEmailScope,
+  type ApiKey,
+} from '@balesin/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronRight, ExternalLink, KeyRound, Plus } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
+import { ChevronRight, ExternalLink, KeyRound, Mails, Plus } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Checkbox } from '../../components/ui/Checkbox';
@@ -16,6 +22,7 @@ import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
 import { formatDateTime, formatDateTimeInline } from '../../lib/format';
 import { ApiKeyCreateDialog } from './ApiKeyCreateDialog';
+import { ApiKeyEmailDialog } from './ApiKeyEmailDialog';
 import { integrationKeys } from './integration-queries';
 import styles from './Integrations.module.css';
 import { SecretDialog } from './SecretDialog';
@@ -88,6 +95,20 @@ export function ApiKeysPage() {
                   setNotice(copy.revoked(revoked.name));
                   void queryClient.invalidateQueries({ queryKey: integrationKeys.apiKeys });
                 }}
+                onUpdated={(updated) => {
+                  setNotice(copy.emailSaved(updated.name));
+                  queryClient.setQueryData(
+                    integrationKeys.apiKeys,
+                    (current: { apiKeys: ApiKey[] } | undefined) =>
+                      current
+                        ? {
+                            apiKeys: current.apiKeys.map((item) =>
+                              item.id === updated.id ? updated : item,
+                            ),
+                          }
+                        : current,
+                  );
+                }}
               />
             )
           ) : list.isPending ? (
@@ -108,6 +129,9 @@ export function ApiKeysPage() {
           )}
         </section>
 
+        {list.data?.apiKeys.some((apiKey) => apiKeyHasEmailScope(apiKey.scopes)) ? (
+          <EmailOutboundCard />
+        ) : null}
         <DocsCard />
       </div>
 
@@ -147,9 +171,11 @@ export function ApiKeysPage() {
 function KeyGroups({
   apiKeys,
   onRevoked,
+  onUpdated,
 }: {
   apiKeys: ApiKey[];
   onRevoked: (apiKey: ApiKey) => void;
+  onUpdated: (apiKey: ApiKey) => void;
 }) {
   const active = apiKeys.filter((apiKey) => apiKey.status === 'active');
   const inactive = apiKeys.filter((apiKey) => apiKey.status !== 'active');
@@ -161,7 +187,12 @@ function KeyGroups({
       {active.length > 0 ? (
         <ul className={styles.list}>
           {active.map((apiKey) => (
-            <ApiKeyRow key={apiKey.id} apiKey={apiKey} onRevoked={onRevoked} />
+            <ApiKeyRow
+              key={apiKey.id}
+              apiKey={apiKey}
+              onRevoked={onRevoked}
+              onUpdated={onUpdated}
+            />
           ))}
         </ul>
       ) : null}
@@ -177,7 +208,12 @@ function KeyGroups({
           </summary>
           <ul className={styles.list}>
             {inactive.map((apiKey) => (
-              <ApiKeyRow key={apiKey.id} apiKey={apiKey} onRevoked={onRevoked} />
+              <ApiKeyRow
+                key={apiKey.id}
+                apiKey={apiKey}
+                onRevoked={onRevoked}
+                onUpdated={onUpdated}
+              />
             ))}
           </ul>
         </details>
@@ -186,8 +222,19 @@ function KeyGroups({
   );
 }
 
-function ApiKeyRow({ apiKey, onRevoked }: { apiKey: ApiKey; onRevoked: (apiKey: ApiKey) => void }) {
+function ApiKeyRow({
+  apiKey,
+  onRevoked,
+  onUpdated,
+}: {
+  apiKey: ApiKey;
+  onRevoked: (apiKey: ApiKey) => void;
+  onUpdated: (apiKey: ApiKey) => void;
+}) {
   const [confirming, setConfirming] = useState(false);
+  const [editingEmail, setEditingEmail] = useState(false);
+  const emailRef = useRef<HTMLButtonElement>(null);
+  const hasEmail = apiKeyHasEmailScope(apiKey.scopes);
   const [failure, setFailure] = useState<unknown>(null);
   const [pending, setPending] = useState(false);
   const revokeRef = useRef<HTMLButtonElement>(null);
@@ -247,22 +294,60 @@ function ApiKeyRow({ apiKey, onRevoked }: { apiKey: ApiKey; onRevoked: (apiKey: 
         ))}
       </ul>
       <p className={styles.meta}>{facts.join(' · ')}</p>
+      {hasEmail ? <EmailAccess apiKey={apiKey} /> : null}
       {failure ? (
         <Notice tone="danger" role="alert">
           {isApiError(failure) ? failure.message : t.api.network}
         </Notice>
       ) : null}
-      {apiKey.status === 'active' ? (
+      {apiKey.status === 'active' || hasEmail ? (
         <div className={styles.itemActions}>
-          <Button
-            ref={revokeRef}
-            className={styles.dangerText}
-            aria-label={copy.revoke(apiKey.name)}
-            onClick={() => setConfirming(true)}
-          >
-            {copy.revokeShort}
-          </Button>
+          {hasEmail ? (
+            <Button variant="ghost" asChild>
+              <Link
+                to="/pengaturan/api-key/email-terkirim"
+                search={{ apiKeyId: apiKey.id }}
+                aria-label={copy.emailHistoryLabel(apiKey.name)}
+              >
+                <Icon icon={Mails} size={16} />
+                {copy.emailHistory}
+              </Link>
+            </Button>
+          ) : null}
+          {hasEmail && apiKey.status === 'active' ? (
+            <Button
+              ref={emailRef}
+              aria-label={copy.emailEditLabel(apiKey.name)}
+              onClick={() => setEditingEmail(true)}
+            >
+              {copy.emailEdit}
+            </Button>
+          ) : null}
+          {apiKey.status === 'active' ? (
+            <Button
+              ref={revokeRef}
+              className={styles.dangerText}
+              aria-label={copy.revoke(apiKey.name)}
+              onClick={() => setConfirming(true)}
+            >
+              {copy.revokeShort}
+            </Button>
+          ) : null}
         </div>
+      ) : null}
+      {editingEmail ? (
+        <ApiKeyEmailDialog
+          apiKey={apiKey}
+          returnFocusRef={emailRef}
+          onClose={() => {
+            setEditingEmail(false);
+            requestAnimationFrame(() => emailRef.current?.focus());
+          }}
+          onSaved={(updated) => {
+            setEditingEmail(false);
+            onUpdated(updated);
+          }}
+        />
       ) : null}
       <ConfirmDialog
         open={confirming}
@@ -280,6 +365,47 @@ function ApiKeyRow({ apiKey, onRevoked }: { apiKey: ApiKey; onRevoked: (apiKey: 
         }}
       />
     </li>
+  );
+}
+
+/** Pengirim email yang boleh dipakai key + allowlist host URL lampiran (tahap 9.1). */
+function EmailAccess({ apiKey }: { apiKey: ApiKey }) {
+  const senders = apiKey.emailSenders.map((sender) => `${sender.name} (${sender.address})`);
+  const canSend = apiKey.scopes.includes('email:send');
+  return (
+    <ul className={styles.emailAccess}>
+      <li className={senders.length === 0 ? styles.warningText : undefined}>
+        {senders.length > 0 ? copy.emailSenders(senders.join(', ')) : copy.emailSendersNone}
+      </li>
+      {canSend ? (
+        <li>
+          {apiKey.emailAttachmentHosts.length > 0
+            ? copy.emailHosts(apiKey.emailAttachmentHosts.join(', '))
+            : copy.emailHostsNone}
+        </li>
+      ) : null}
+    </ul>
+  );
+}
+
+function EmailOutboundCard() {
+  return (
+    <section className={styles.card} aria-labelledby="api-email-terkirim">
+      <div className={styles.cardHeadRow}>
+        <div className={styles.cardHead}>
+          <h2 id="api-email-terkirim" className={styles.cardTitle}>
+            {copy.outboundTitle}
+          </h2>
+          <p className={styles.hint}>{copy.outboundHint}</p>
+        </div>
+        <Button asChild>
+          <Link to="/pengaturan/api-key/email-terkirim" search={{}}>
+            <Icon icon={Mails} size={16} />
+            {copy.outboundOpen}
+          </Link>
+        </Button>
+      </div>
+    </section>
   );
 }
 

@@ -32,6 +32,7 @@ import { broadcastScreens } from './screens-broadcast';
 import { crmScreens } from './screens-crm';
 import { channelConnectionScreens } from './screens-kanal';
 import { brandingScreens } from './screens-merek';
+import { emailApiScreens } from './screens-email-api';
 
 export interface Screen {
   /** Nama berkas: e2e/screenshots/<name>--<viewport>-<tema>.png */
@@ -1009,4 +1010,6 @@ export const screens: Screen[] = [
   ...channelConnectionScreens,
   // Fase 7: white-label (Pengaturan → Merek, halaman masuk bermerek).
   ...brandingScreens,
+  // Fase 9.1: template email, akses email API key, riwayat email API, batas per pengirim email.
+  ...emailApiScreens,
 ];

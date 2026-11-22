@@ -1,5 +1,6 @@
-import { X } from 'lucide-react';
+import { CircleAlert, X } from 'lucide-react';
 import {
+  useId,
   useRef,
   useState,
   type ClipboardEvent,
@@ -25,6 +26,15 @@ interface AddressChipsProps {
    */
   onCommit: (raw: string) => string;
   onRemove: (address: string) => void;
+  /**
+   * Ketikan yang belum jadi chip, dikendalikan pemanggil (mis. supaya bisa diperiksa saat kirim).
+   * Tanpa ini komponen menyimpannya sendiri.
+   */
+  draft?: string;
+  /** `reason`: `input` = diketik pengguna, `commit` = sisa setelah dijadikan chip. */
+  onDraftChange?: (draft: string, reason: 'input' | 'commit') => void;
+  /** Galat kolom ini, tampil tepat di bawah kotak (ikon + teks) dan dikaitkan ke kolom ketik. */
+  error?: string | null;
   /** Alamat yang diberi penanda (mis. "baru"). */
   flagged?: ReadonlySet<string>;
   flagLabel?: string;
@@ -36,7 +46,6 @@ interface AddressChipsProps {
   /** Kolom ketik nonaktif (mis. batas tercapai); tombol hapus chip tetap bisa dipakai. */
   inputDisabled?: boolean;
   disabled?: boolean;
-  invalid?: boolean;
   describedBy?: string;
   /** Diteruskan ke kolom ketik (fokus dari luar). */
   ref?: Ref<HTMLInputElement>;
@@ -60,6 +69,9 @@ export function AddressChips({
   addresses,
   onCommit,
   onRemove,
+  draft: controlledDraft,
+  onDraftChange,
+  error,
   flagged,
   flagLabel,
   flagDescription,
@@ -68,20 +80,26 @@ export function AddressChips({
   placeholder,
   inputDisabled = false,
   disabled = false,
-  invalid = false,
   describedBy,
   ref,
   trailing,
   className,
 }: AddressChipsProps) {
-  const [draft, setDraft] = useState('');
+  const [ownDraft, setOwnDraft] = useState('');
+  const draft = controlledDraft ?? ownDraft;
+  const setDraft = (next: string, reason: 'input' | 'commit' = 'commit') => {
+    if (controlledDraft === undefined) setOwnDraft(next);
+    onDraftChange?.(next, reason);
+  };
   const [announcement, setAnnouncement] = useState('');
   const boxRef = useRef<HTMLDivElement>(null);
   const focusInput = () => boxRef.current?.querySelector('input')?.focus();
+  const errorId = `${useId()}-galat`;
+  const invalid = Boolean(error);
 
   const commit = (raw: string) => {
     if (raw.trim() === '') {
-      setDraft('');
+      if (draft !== '') setDraft('');
       return;
     }
     setDraft(onCommit(raw));
@@ -125,79 +143,104 @@ export function AddressChips({
   };
 
   return (
-    <div
-      ref={boxRef}
-      className={cx(styles.box, className)}
-      data-invalid={invalid ? '' : undefined}
-      data-disabled={disabled ? '' : undefined}
-      onClick={(event) => {
-        // Ketuk area kosong kotak → fokus ke kolom ketik.
-        if (event.target === event.currentTarget) focusInput();
-      }}
-    >
-      {prefix ? (
-        <span className={styles.prefix} aria-hidden="true">
-          {prefix}
+    <div className={styles.field}>
+      <div
+        ref={boxRef}
+        className={cx(styles.box, className)}
+        data-invalid={invalid ? '' : undefined}
+        data-disabled={disabled ? '' : undefined}
+        onClick={(event) => {
+          // Ketuk area kosong kotak → fokus ke kolom ketik.
+          const target = event.target;
+          if (
+            target === event.currentTarget ||
+            (target instanceof HTMLElement && target.dataset.flow !== undefined)
+          ) {
+            focusInput();
+          }
+        }}
+      >
+        {prefix ? (
+          <span className={styles.prefix} aria-hidden="true">
+            {prefix}
+          </span>
+        ) : null}
+        {/* Chip & kolom ketik satu aliran: baris kedua sejajar chip pertama, bukan di bawah label. */}
+        <div className={styles.flow} data-flow="">
+          {addresses.length > 0 ? (
+            <ul className={styles.chips} aria-label={inputLabel}>
+              {addresses.map((address) => {
+                const isFlagged = flagged?.has(address) ?? false;
+                return (
+                  <li
+                    key={address}
+                    className={styles.chip}
+                    data-flagged={isFlagged ? '' : undefined}
+                  >
+                    <span className={styles.chipText} title={address}>
+                      {address}
+                    </span>
+                    {isFlagged && flagLabel ? (
+                      <span className={styles.flag}>
+                        {flagLabel}
+                        {flagDescription ? (
+                          <span className="sr-only">, {flagDescription}</span>
+                        ) : null}
+                      </span>
+                    ) : null}
+                    <button
+                      type="button"
+                      className={styles.remove}
+                      aria-label={removeLabel(address)}
+                      disabled={disabled}
+                      onClick={() => {
+                        remove(address);
+                        focusInput();
+                      }}
+                    >
+                      <Icon icon={X} size={16} />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+          <input
+            ref={ref}
+            id={id}
+            type="email"
+            inputMode="email"
+            autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            enterKeyHint="done"
+            multiple
+            className={styles.input}
+            value={draft}
+            placeholder={inputDisabled ? undefined : placeholder}
+            aria-label={inputLabel}
+            aria-invalid={invalid || undefined}
+            aria-describedby={
+              [invalid ? errorId : null, describedBy].filter(Boolean).join(' ') || undefined
+            }
+            disabled={disabled || inputDisabled}
+            onChange={(event) => setDraft(event.target.value, 'input')}
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+            onBlur={() => commit(draft)}
+          />
+        </div>
+        {trailing}
+        <span className="sr-only" role="status" aria-live="polite">
+          {announcement}
         </span>
+      </div>
+      {error ? (
+        <p id={errorId} className={styles.error} role="alert">
+          <Icon icon={CircleAlert} size={16} />
+          <span>{error}</span>
+        </p>
       ) : null}
-      {addresses.length > 0 ? (
-        <ul className={styles.chips} aria-label={inputLabel}>
-          {addresses.map((address) => {
-            const isFlagged = flagged?.has(address) ?? false;
-            return (
-              <li key={address} className={styles.chip} data-flagged={isFlagged ? '' : undefined}>
-                <span className={styles.chipText} title={address}>
-                  {address}
-                </span>
-                {isFlagged && flagLabel ? (
-                  <span className={styles.flag}>
-                    {flagLabel}
-                    {flagDescription ? <span className="sr-only">, {flagDescription}</span> : null}
-                  </span>
-                ) : null}
-                <button
-                  type="button"
-                  className={styles.remove}
-                  aria-label={removeLabel(address)}
-                  disabled={disabled}
-                  onClick={() => {
-                    remove(address);
-                    focusInput();
-                  }}
-                >
-                  <Icon icon={X} size={16} />
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
-      <input
-        ref={ref}
-        id={id}
-        type="email"
-        inputMode="email"
-        autoComplete="off"
-        autoCapitalize="none"
-        spellCheck={false}
-        enterKeyHint="done"
-        multiple
-        className={styles.input}
-        value={draft}
-        placeholder={inputDisabled ? undefined : placeholder}
-        aria-label={inputLabel}
-        aria-invalid={invalid || undefined}
-        aria-describedby={describedBy}
-        disabled={disabled || inputDisabled}
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={onKeyDown}
-        onPaste={onPaste}
-        onBlur={() => commit(draft)}
-      />
-      {trailing}
-      <span className="sr-only" role="status" aria-live="polite">
-        {announcement}
-      </span>
     </div>
   );
 }

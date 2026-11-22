@@ -35,6 +35,7 @@ import { TeamSkeleton } from '../features/team/TeamSkeleton';
 import { TeamUserSkeleton } from '../features/team-user/TeamUserSkeleton';
 import { AuditSkeleton } from '../features/audit/AuditSkeleton';
 import { parseAuditSearch } from '../features/audit/audit-search';
+import { parseEmailOutboundSearch } from '../features/integrations/email-outbound-search';
 import { sessionCan } from '../features/auth/session';
 import { isChannelId } from '../features/channels/channel-status';
 import { EnrollmentSkeleton } from '../features/two-factor/EnrollmentSkeleton';
@@ -399,6 +400,45 @@ const templateEditRoute = createRoute({
   ),
 });
 
+/**
+ * Pengaturan → Template email (tahap 9.1): `templates.manage` (Owner, Admin, Supervisor). Isi
+ * email yang dikirim aplikasi lain lewat API; terbit = konfirmasi identitas.
+ */
+const emailTemplatesRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/template-email',
+  staticData: { page: { title: t.emailTemplates.title, parent: 'settings' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'templates.manage'),
+  component: lazyRouteComponent(
+    () => import('../features/email-templates/EmailTemplatesPage'),
+    'EmailTemplatesPage',
+  ),
+});
+
+const emailTemplateEditRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/template-email/$templateId',
+  staticData: { page: { title: t.emailTemplates.editTitle, parent: 'emailTemplates' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'templates.manage'),
+  component: lazyRouteComponent(
+    () => import('../features/email-templates/EmailTemplateEditorPage'),
+    'EmailTemplateEditorPage',
+  ),
+});
+
+/** Pengaturan → API key → Email terkirim (tahap 9.1): `api_keys.manage`; saringan di URL. */
+const emailOutboundRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/api-key/email-terkirim',
+  staticData: { page: { title: t.emailOutbound.title, parent: 'apiKeys' } },
+  validateSearch: parseEmailOutboundSearch,
+  beforeLoad: ({ context }) => guardPermission(context.session, 'api_keys.manage'),
+  component: lazyRouteComponent(
+    () => import('../features/integrations/EmailOutboundPage'),
+    'EmailOutboundPage',
+  ),
+});
+
 /** Pengaturan → API key: `api_keys.manage` (Owner, Admin). */
 const apiKeysRoute = createRoute({
   getParentRoute,
@@ -721,10 +761,13 @@ const appChildren = [
   templatesRoute,
   templateNewRoute,
   templateEditRoute,
+  emailTemplatesRoute,
+  emailTemplateEditRoute,
   oldQuickRepliesRoute,
   sendingLimitsRoute,
   notificationsRoute,
   apiKeysRoute,
+  emailOutboundRoute,
   webhooksRoute,
   connectorsRoute,
   alarmsRoute,

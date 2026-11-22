@@ -27,6 +27,7 @@ import {
   type MessageListFilter,
   type PauseSendingRequest,
   type UpdateContactRequest,
+  type UpdateApiKeyRequest,
   type UpdateSendingLimitsRequest,
   quickReplyListResponseSchema,
   quickReplyResponseSchema,
@@ -162,6 +163,7 @@ import { z } from 'zod';
 import { api, type ApiClient } from './client';
 import { createChannelEndpoints } from './endpoints-channels';
 import { createCrmEndpoints } from './endpoints-crm';
+import { createEmailEndpoints } from './endpoints-email';
 
 /** Saringan & kursor daftar percakapan → query string (lihat `features/inbox/inbox-filters.ts`). */
 export type QueryString = string;
@@ -184,6 +186,7 @@ export function createEndpoints(client: ApiClient) {
   return {
     ...createCrmEndpoints(client),
     ...createChannelEndpoints(client),
+    ...createEmailEndpoints(client),
     setup: {
       status: (signal?: AbortSignal) =>
         client.request(API_ROUTES.setup.status, { schema: setupStatusResponseSchema, signal }),
@@ -1140,6 +1143,13 @@ export function createEndpoints(client: ApiClient) {
       revoke: (apiKeyId: string) =>
         client.request(apiPath(API_ROUTES.apiKeys.revoke, { apiKeyId }), {
           method: 'POST',
+          schema: apiKeyResponseSchema,
+        }),
+      /** Ubah pengirim email & host lampiran (tahap 9.1). Selalu wajib konfirmasi identitas. */
+      update: (apiKeyId: string, body: UpdateApiKeyRequest) =>
+        client.request(apiPath(API_ROUTES.apiKeys.key, { apiKeyId }), {
+          method: 'PATCH',
+          body,
           schema: apiKeyResponseSchema,
         }),
       settings: (signal?: AbortSignal) =>

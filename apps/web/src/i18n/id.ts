@@ -199,6 +199,7 @@ export const t = {
       cc: 'Cc',
       bcc: 'Bcc',
       bccTeamOnly: 'Hanya terlihat oleh tim. Penerima lain tidak melihat alamat Bcc.',
+      bccTeamOnlyShort: 'hanya tim',
       recipients: 'Penerima email',
       sentTo: 'Dikirim ke',
       sentToAlias: 'alamat alias channel ini',
@@ -244,6 +245,11 @@ export const t = {
         `${count === 1 ? 'Alamat' : `${count} alamat`} bertanda “baru” belum pernah ada di utas ini, jadi balasan bisa ditolak. Hapus alamatnya atau minta izin ke Owner atau Admin di tempatmu.`,
       newInitiate: (count: number) =>
         `${count === 1 ? 'Satu alamat' : `${count} alamat`} baru di utas ini. Mengirim ke alamat baru dihitung memulai percakapan dan memakai jatah harian.`,
+      /** HP (ruang sempit, keyboard terbuka): satu kalimat, tanpa judul. */
+      newNoInitiateShort:
+        'Alamat bertanda “baru” butuh izin memulai percakapan. Hapus alamatnya, atau minta izin ke Owner atau Admin di tempatmu.',
+      pendingInvalid: (text: string) =>
+        `“${text}” belum jadi alamat. Perbaiki atau hapus dulu sebelum mengirim.`,
     },
     chat: {
       label: 'Ruang chat',
@@ -1470,7 +1476,7 @@ export const t = {
     openConversation: (number: number) => `Buka percakapan #${number}`,
     conversationStatus: (number: number, status: string) => `#${number} · ${status}`,
     notLinked: 'Tidak ditautkan',
-    conversationUnavailable: 'Percakapan terkait tidak tersedia',
+    conversationUnavailable: 'Ada, di channel yang tidak bisa kamu buka',
     unlink: 'Lepas tautan',
     technicianNote:
       'Penanggung jawab dan tautan hanya bisa diubah Owner, Admin, Supervisor, atau CS.',
@@ -3186,14 +3192,16 @@ export const t = {
       invalid: (address: string) =>
         `“${address}” bukan alamat email yang valid. Contoh: billing@perusahaan.co.id`,
       primaryNotAlias: 'Alamat utama tidak perlu ditambahkan sebagai alias.',
+      pendingInvalid: (text: string) =>
+        `“${text}” belum jadi alamat. Perbaiki atau hapus dulu sebelum menyimpan.`,
       limit: (max: number) => `Paling banyak ${max} alias per channel.`,
       remove: (address: string) => `Hapus alias ${address}`,
       removed: (address: string) => `${address} dihapus.`,
       save: 'Simpan alias',
       saving: 'Menyimpan…',
-      confirmTitle: 'Konfirmasi tambah alias',
+      confirmTitle: 'Tambah alias ke channel ini?',
       confirmBody:
-        'Email ke alias ikut masuk ke channel ini dan alamatnya dianggap milik channel. Masukkan password dan kode autentikatormu untuk menyimpan.',
+        'Email ke alamat alias akan masuk ke channel ini, dan alamatnya dianggap milik channel.',
       saved: 'Alias disimpan. Email baru ke alamat ini akan ditandai di inbox.',
       unsaved: 'Ada perubahan yang belum disimpan.',
       reset: 'Batalkan perubahan',
@@ -3239,7 +3247,8 @@ export const t = {
       'Kredensial atau tujuan koneksi berubah. Status channel kembali "Belum dites".',
     newSecretHint: 'Kosongkan bila tidak diganti.',
     reenterPassword: 'Isi ulang password karena host, port, keamanan, atau username berubah.',
-    statusTitle: 'Status',
+    statusTitle: 'Status channel',
+    statusLabel: 'Status',
     enable: 'Aktifkan',
     disable: 'Nonaktifkan',
     enableBlocked: 'Aktifkan setelah tes koneksi terakhir berhasil.',
@@ -3726,7 +3735,7 @@ export const t = {
       summaryDepartments: (count: number, members: number) =>
         `${count} departemen (${members} anggota)`,
       summaryUsers: (count: number) => `${count} pengguna`,
-      onlyOwners: 'Hanya Owner dan Admin yang bisa melihat chat channel ini.',
+      onlyOwners: 'Hanya Owner dan Admin yang bisa melihat chat channel ini',
       onlyOwnersHint:
         'Pilih departemen atau pengguna supaya tim bisa membalas chat dari channel ini.',
       selected: (count: number) => `${count} dipilih`,
@@ -3734,13 +3743,13 @@ export const t = {
       optionsFailed: 'Daftar departemen atau pengguna belum bisa dimuat.',
       save: 'Simpan akses',
       saving: 'Menyimpan…',
-      saved:
-        'Akses tim disimpan. Anggota yang tidak lagi berhak langsung tidak melihat chat channel ini.',
+      savedTitle: 'Akses tim disimpan',
+      saved: 'Anggota yang tidak lagi berhak sudah tidak bisa melihat chat channel ini.',
       released: (count: number) =>
-        `${count} percakapan yang dipegang anggota tanpa akses dikembalikan ke antrian.`,
-      confirmTitle: 'Konfirmasi perluas akses',
+        `${count} percakapan yang mereka pegang dikembalikan ke antrian.`,
+      confirmTitle: 'Perluas akses channel ini?',
       confirmBody:
-        'Lebih banyak anggota tim akan bisa membaca chat channel ini. Masukkan password dan kode autentikatormu untuk menyimpan.',
+        'Lebih banyak anggota tim akan bisa membaca chat channel ini, termasuk riwayat lamanya.',
       unsaved: 'Ada perubahan yang belum disimpan.',
       reset: 'Batalkan perubahan',
       roleSuffix: (role: string) => ` · ${role}`,
@@ -4083,6 +4092,18 @@ export const t = {
       'messages:initiate': 'Mulai percakapan',
       'contacts:read': 'Baca kontak',
       'contacts:write': 'Ubah kontak',
+      'tickets:read': 'Baca tiket',
+      'tickets:write': 'Ubah tiket',
+      'email:read': 'Baca status email',
+      'email:send': 'Kirim email',
+    } as Record<string, string>,
+    /** Kelompok izin di dialog buat key (awalan scope). */
+    scopeGroups: {
+      conversations: 'Percakapan & pesan',
+      messages: 'Percakapan & pesan',
+      contacts: 'Kontak',
+      tickets: 'Tiket',
+      email: 'Email lewat API',
     } as Record<string, string>,
     inactiveTitle: (count: number) => `Dicabut & kedaluwarsa (${count.toLocaleString('id-ID')})`,
     scopesHint: 'Pilih seperlunya. Izin yang lebih tinggi otomatis mencakup izin baca di bawahnya.',
@@ -4116,6 +4137,42 @@ export const t = {
     copied: 'Tersalin',
     copiedAnnouncement: 'API key tersalin.',
     done: 'Sudah saya simpan',
+    // Tahap 9.1 — akses email per key
+    emailSendersLabel: 'Pengirim email yang boleh dipakai',
+    emailSendersHint:
+      'Key ini hanya bisa mengirim dan melihat status email dari pengirim yang dicentang. Tidak ada pilihan "semua pengirim".',
+    emailSendersRequired: 'Pilih minimal satu pengirim email.',
+    emailSendersEmpty:
+      'Belum ada channel Email. Hubungkan channel Email dulu di Pengaturan → Channel, lalu buat key ini.',
+    emailSendersFailed: 'Daftar pengirim email belum bisa dimuat.',
+    emailSenderDisabled: 'channel nonaktif',
+    emailHostsLabel: 'Host URL lampiran yang diizinkan',
+    emailHostsHint:
+      'Satu host per baris, mis. billing.perusahaan.co.id atau *.perusahaan.co.id (semua subdomainnya). Kosongkan bila lampiran tidak diambil dari URL. Jenis berkas tetap dibatasi: PDF, gambar, dokumen Office tanpa makro, CSV, dan TXT.',
+    emailHostsInvalid: (line: number) =>
+      `Baris ${line.toLocaleString('id-ID')}: host tidak valid. Contoh: billing.perusahaan.co.id atau *.perusahaan.co.id.`,
+    emailHostsTooMany: (max: number) => `Paling banyak ${max.toLocaleString('id-ID')} host.`,
+    emailSenders: (list: string) => `Pengirim email: ${list}`,
+    emailSendersNone: 'Tanpa pengirim email: semua kiriman email ditolak',
+    emailHosts: (list: string) => `Lampiran URL hanya dari ${list}`,
+    emailHostsNone: 'Lampiran dari URL tidak diizinkan',
+    emailEdit: 'Ubah akses email',
+    emailEditLabel: (name: string) => `Ubah akses email ${name}`,
+    emailEditTitle: (name: string) => `Akses email ${name}`,
+    emailEditBody: 'Izin (scope) tidak bisa diubah. Untuk izin lain, buat key baru.',
+    emailSave: 'Simpan akses',
+    emailSaving: 'Menyimpan…',
+    emailUnchanged: 'Belum ada yang diubah.',
+    emailSaved: (name: string) => `Akses email ${name} disimpan.`,
+    emailConfirmTitle: 'Simpan akses email key ini?',
+    emailConfirmBody:
+      'Perubahan langsung berlaku untuk integrasi yang memakai key ini, termasuk email yang masih mengantre.',
+    emailHistory: 'Email terkirim',
+    emailHistoryLabel: (name: string) => `Lihat email terkirim lewat ${name}`,
+    outboundTitle: 'Email terkirim lewat API',
+    outboundHint:
+      'Status setiap email dari n8n, aplikasi billing, dan kirim tes template. Alamat penerima disamarkan.',
+    outboundOpen: 'Lihat riwayat',
     docsTitle: 'Dokumentasi API',
     docsHint:
       'Halaman /api/docs bisa dibuka tanpa masuk. Isinya hanya dokumentasi, tanpa data organisasi.',
@@ -4208,6 +4265,16 @@ export const t = {
     descriptionLabel: 'Keterangan',
     descriptionHint: 'Opsional, mis. "n8n bot tagihan".',
     eventsLabel: 'Kejadian yang dikirim',
+    /** Kelompok kejadian di form (awalan nama event). */
+    eventGroups: {
+      message: 'Pesan',
+      conversation: 'Percakapan',
+      contact: 'Kontak',
+      ticket: 'Tiket',
+      email: 'Email lewat API',
+    } as Record<string, string>,
+    emailEventsHint:
+      'Hanya email yang dikirim aplikasi lain lewat API key, bukan email di Inbox. Datanya memuat metadata dari aplikasimu, mis. nomor invoice.',
     allEvents: 'Pilih semua',
     save: 'Simpan',
     saving: 'Menyimpan…',
@@ -4438,6 +4505,343 @@ export const t = {
     saved: 'Batas kirim disimpan.',
     confirmTitle: 'Simpan batas kirim baru?',
     confirmBody: 'Batas baru langsung berlaku untuk seluruh tim dan tercatat di log audit.',
+    // Email per pengirim (tahap 9.1)
+    emailTitle: 'Email per pengirim',
+    emailHint:
+      'Untuk email yang dikirim aplikasi lain lewat API. Batas dihitung per penerima (Kepada, Cc, dan Bcc), sama seperti hitungan penyedia hosting email. Email yang melebihi batas menunggu di antrean, tidak hilang.',
+    emailEmptyTitle: 'Belum ada pengirim email',
+    emailEmptyBody:
+      'Hubungkan channel Email supaya n8n atau aplikasi billing bisa mengirim email lewat API.',
+    emailEmptyAction: 'Buka Channel',
+    emailLoadFailed: 'Pengirim email belum bisa dimuat',
+    emailListLabel: 'Pengirim email',
+    emailState: {
+      ok: 'Berjalan',
+      throttled: 'Ditahan server email',
+      paused: 'Dijeda',
+      blocked: 'Terblokir',
+      disabled: 'Channel nonaktif',
+    },
+    emailSmtp: { system: 'SMTP sistem', custom: 'SMTP sendiri' },
+    emailUsage: (sent: number, limit: number) =>
+      `${sent.toLocaleString('id-ID')} dari ${limit.toLocaleString('id-ID')} penerima dalam 1 jam terakhir`,
+    emailUsageLabel: (name: string) => `Pemakaian batas per jam ${name}`,
+    emailQueued: (count: number) =>
+      count === 0
+        ? 'Tidak ada yang menunggu'
+        : `${count.toLocaleString('id-ID')} penerima menunggu`,
+    emailThrottled: (when: string) =>
+      `Server email minta jeda sampai ${when}. Email menunggu, lalu dikirim otomatis.`,
+    emailThrottledNoTime: 'Server email minta jeda. Email menunggu, lalu dikirim otomatis.',
+    emailPausedBy: (name: string, when: string) =>
+      `Dijeda oleh ${name}, ${when}. Email menunggu sampai dilanjutkan.`,
+    emailPausedAt: (when: string) => `Dijeda ${when}. Email menunggu sampai dilanjutkan.`,
+    emailBlockedHint: 'Email menunggu. Setelah diperbaiki, tekan Lanjutkan untuk mencoba lagi.',
+    emailDisabled:
+      'Channel ini nonaktif, jadi email menunggu. Aktifkan lagi di pengaturan channel-nya.',
+    emailOpenChannel: 'Buka pengaturan channel',
+    emailLimitLabel: 'Penerima per jam',
+    emailLimitHint: (fallback: number, max: number) =>
+      `Bawaan ${fallback.toLocaleString('id-ID')}, paling banyak ${max.toLocaleString('id-ID')}.`,
+    emailLimitSave: 'Simpan',
+    emailLimitSaveFor: (name: string) => `Simpan batas penerima per jam ${name}`,
+    emailLimitSaved: (name: string) => `Batas penerima per jam ${name} disimpan.`,
+    emailLimitUnchanged: 'Batasnya masih sama.',
+    emailLimitInvalid: (max: number) => `Isi angka 1–${max.toLocaleString('id-ID')}.`,
+    emailRaiseTitle: 'Naikkan batas penerima per jam?',
+    emailRaiseBody: (name: string, from: number, to: number) =>
+      `${name}: ${from.toLocaleString('id-ID')} → ${to.toLocaleString('id-ID')} penerima per jam. Pastikan hosting email-nya sanggup; bila terlewati, akun email bisa diblokir penyedia.`,
+    emailPause: 'Jeda',
+    emailPauseFor: (name: string) => `Jeda pengiriman email ${name}`,
+    emailPauseTitle: (name: string) => `Jeda email dari ${name}?`,
+    emailPauseBody:
+      'Email baru tetap diterima dan menunggu di antrean. Untuk melanjutkan, Owner atau Admin perlu mengonfirmasi identitasnya.',
+    emailPauseConfirm: 'Jeda pengiriman',
+    emailPausing: 'Menjeda…',
+    emailPausedDone: (name: string) => `Pengiriman email ${name} dijeda.`,
+    emailResume: 'Lanjutkan',
+    emailResumeFor: (name: string) => `Lanjutkan pengiriman email ${name}`,
+    emailResumeTitle: (name: string) => `Lanjutkan email dari ${name}?`,
+    emailResumeBody:
+      'Email yang menunggu dikirim lagi mulai dari yang paling lama. Bila server email masih menolak login, pengirim kembali terblokir.',
+    emailResuming: 'Melanjutkan…',
+    emailResumed: (name: string) => `Pengiriman email ${name} berjalan lagi.`,
+    emailResumeNotAllowed: 'Hanya Owner atau Admin yang bisa melanjutkan pengiriman.',
+  },
+
+  /**
+   * Pengaturan → Template email (`templates.manage`, tahap 9.1): isi email tagihan/VA/bukti bayar
+   * yang dikirim aplikasi lain lewat API. Beda dengan template WhatsApp (disetujui Meta).
+   */
+  emailTemplates: {
+    title: 'Template email',
+    editTitle: 'Ubah template email',
+    menuHint: 'Isi email tagihan, kode VA, dan bukti bayar yang dikirim lewat API',
+    menuCount: (published: number, total: number) =>
+      total === 0
+        ? 'Belum ada template'
+        : `${published.toLocaleString('id-ID')} terbit dari ${total.toLocaleString('id-ID')}`,
+    intro:
+      'Aplikasi billing atau n8n memakai template ini saat mengirim email lewat API, cukup dengan slug dan nilai variabelnya. Draf boleh diubah kapan saja; email baru selalu memakai versi yang sudah diterbitkan.',
+    create: 'Buat template',
+    fromPreset: 'Pakai preset',
+    searchLabel: 'Cari template email',
+    searchPlaceholder: 'Cari nama, slug, atau subjek',
+    clearSearch: 'Hapus pencarian',
+    viewLabel: 'Tampilkan template',
+    viewActive: 'Aktif',
+    viewArchived: 'Diarsipkan',
+    listLabel: 'Daftar template email',
+    emptyTitle: 'Belum ada template email',
+    emptyBody:
+      'Mulai dari preset tagihan bulanan, kode VA, atau pembayaran diterima, lalu sesuaikan isinya. Bisa juga mulai dari kosong.',
+    archivedEmptyTitle: 'Tidak ada template yang diarsipkan',
+    archivedEmptyBody:
+      'Template yang diarsipkan tidak bisa dipakai API, tetapi isi dan riwayat versinya tetap tersimpan.',
+    notFound: 'Tidak ada template yang cocok dengan pencarian ini.',
+    resetSearch: 'Hapus pencarian',
+    loadFailedTitle: 'Template email belum bisa dimuat',
+    open: (name: string) => `Buka template ${name}`,
+    badge: {
+      published: (version: number) => `Terbit v${version.toLocaleString('id-ID')}`,
+      unpublished: 'Belum terbit',
+      archived: 'Diarsipkan',
+    },
+    unpublishedChanges: 'Ada perubahan belum terbit',
+    updatedAt: (when: string) => `Diubah ${when}`,
+    lastUsed: (when: string) => `Terakhir dipakai API ${when}`,
+    neverUsed: 'Belum pernah dipakai API',
+    noSubject: 'Subjek belum diisi',
+    // Buat dari kosong
+    createTitle: 'Buat template email',
+    createBody: 'Isi nama dan slug dulu. Isi email ditulis di halaman berikutnya.',
+    nameLabel: 'Nama template',
+    nameHint: 'Untuk dikenali timmu, mis. "Tagihan bulanan".',
+    slugLabel: 'Slug',
+    slugHint:
+      'Dipakai aplikasimu sebagai templateId. Huruf kecil, angka, dan tanda hubung. Terkunci setelah pertama kali terbit.',
+    slugLocked:
+      'Terkunci karena template sudah pernah terbit dan mungkin sudah dipakai aplikasi lain. Buat template baru bila butuh slug lain.',
+    descriptionLabel: 'Keterangan',
+    descriptionHint: 'Kapan template ini dipakai, mis. "Dikirim billing tiap tanggal 20".',
+    creating: 'Membuat…',
+    cancel: 'Batal',
+    created: 'Template dibuat. Tulis isinya, lalu terbitkan supaya bisa dipakai API.',
+    // Preset
+    presetsTitle: 'Pilih preset template email',
+    presetsBody:
+      'Teks umum untuk tagihan internet, siap disesuaikan. Setelah dipilih, isinya bisa diubah dulu sebelum diterbitkan.',
+    presetsLabel: 'Preset template email',
+    presetsFailed: 'Preset belum bisa dimuat.',
+    presetVariables: (count: number) => `${count.toLocaleString('id-ID')} variabel`,
+    presetQris: 'ada QRIS',
+    presetUse: (name: string) => `Pakai preset ${name}`,
+    presetUseShort: 'Pakai',
+    presetUsing: 'Membuat…',
+    presetCreated: (name: string) =>
+      `Draf "${name}" dibuat dari preset. Periksa isinya, lalu terbitkan.`,
+    // Editor
+    notFoundTitle: 'Template email tidak ditemukan',
+    notFoundBody: 'Mungkin sudah dihapus atau alamatnya salah.',
+    backToList: 'Kembali ke Template email',
+    tabsLabel: 'Bagian template',
+    tabs: { content: 'Isi', preview: 'Pratinjau', history: 'Riwayat versi' },
+    slugFact: 'Slug untuk API',
+    copySlug: 'Salin',
+    copySlugLabel: (slug: string) => `Salin slug ${slug}`,
+    slugCopied: 'Tersalin',
+    slugCopiedAnnouncement: 'Slug tersalin.',
+    publishedBy: (version: number, name: string, when: string) =>
+      `v${version.toLocaleString('id-ID')} diterbitkan ${name}, ${when}`,
+    publishedAt: (version: number, when: string) =>
+      `v${version.toLocaleString('id-ID')} diterbitkan ${when}`,
+    archivedNotice:
+      'Template ini diarsipkan: API menolak email yang memakainya. Isi dan riwayatnya tetap tersimpan.',
+    unarchive: 'Batal arsip',
+    unarchiving: 'Memulihkan…',
+    unarchived: 'Template aktif lagi dan bisa dipakai API.',
+    identityTitle: 'Identitas',
+    contentTitle: 'Isi email',
+    subjectLabel: 'Subjek',
+    subjectHint: 'Boleh memuat variabel, mis. "Tagihan {{periode}} — {{id_pelanggan}}".',
+    layoutLabel: 'Tampilan',
+    layouts: { brand: 'Bingkai merek', none: 'HTML apa adanya' },
+    layoutHints: {
+      brand:
+        'Logo organisasi di kepala email dan teks kaki di bawahnya, dengan lebar yang pas di HP.',
+      none: 'HTML dikirim tanpa bingkai. Cocok bila desainmu sudah lengkap.',
+    },
+    htmlLabel: 'Isi HTML',
+    htmlHint:
+      'Tulis variabel sebagai {{nama_variabel}}. Skrip, form, dan iframe dibuang otomatis saat dikirim.',
+    textLabel: 'Versi teks',
+    textHint:
+      'Untuk aplikasi email yang tidak menampilkan HTML. Kosongkan supaya dibuat otomatis dari HTML.',
+    footerLabel: 'Teks kaki',
+    footerHint:
+      'Tampil di bawah bingkai merek, mis. alamat kantor atau cara berhenti berlangganan.',
+    count: (used: number, max: number) =>
+      `${used.toLocaleString('id-ID')}/${max.toLocaleString('id-ID')}`,
+    variablesTitle: 'Variabel',
+    variablesHint:
+      'Diambil otomatis dari subjek, HTML, dan versi teks. Contoh nilainya dipakai untuk pratinjau dan kirim tes.',
+    variablesEmpty:
+      'Belum ada variabel. Tulis {{nama}} di subjek atau HTML untuk menambahkan isian dari aplikasimu.',
+    variablesListLabel: 'Daftar variabel',
+    variableLabel: 'Label',
+    variableLabelFor: (name: string) => `Label {{${name}}}`,
+    variableExample: 'Contoh nilai',
+    variableExampleFor: (name: string) => `Contoh nilai {{${name}}}`,
+    variableRequired: 'Wajib diisi aplikasi',
+    variableRequiredFor: (name: string) => `{{${name}}} wajib diisi aplikasi`,
+    builtinTitle: 'Tersedia otomatis',
+    builtin: {
+      nama_organisasi: 'nama organisasimu',
+      qris: 'gambar QRIS dari permintaan API',
+    } as Record<string, string>,
+    invalidVariables: (names: string) =>
+      `${names} bukan nama variabel yang sah. Pakai huruf kecil, angka, dan garis bawah, diawali huruf.`,
+    tooManyVariables: (max: number) =>
+      `Paling banyak ${max.toLocaleString('id-ID')} variabel per template.`,
+    subjectRequired: 'Subjek wajib diisi sebelum terbit.',
+    subjectOneLine: 'Subjek harus satu baris.',
+    subjectTooLong: 'Subjek maksimal 200 karakter.',
+    htmlRequired: 'Isi HTML wajib diisi sebelum terbit.',
+    fixFirst: 'Perbaiki isian yang ditandai dulu, lalu terbitkan.',
+    savedAt: (when: string) => `Draf disimpan ${when}`,
+    unsaved: 'Ada perubahan yang belum disimpan',
+    nothingToPublish: 'Draf sama dengan versi terbit',
+    saveDraft: 'Simpan draf',
+    saving: 'Menyimpan…',
+    saved: 'Draf disimpan. Belum dipakai API sampai diterbitkan.',
+    noChanges: 'Belum ada yang diubah.',
+    publish: 'Terbitkan',
+    publishing: 'Menerbitkan…',
+    publishTitle: (name: string) => `Terbitkan ${name}?`,
+    publishBody:
+      'Email berikutnya yang memakai template ini langsung memakai isi baru, tanpa peninjauan pihak lain. Periksa pratinjaunya dulu.',
+    published: (version: number) =>
+      `Versi ${version.toLocaleString('id-ID')} diterbitkan. Email API berikutnya memakai isi ini.`,
+    archive: 'Arsipkan',
+    archiveTitle: (name: string) => `Arsipkan ${name}?`,
+    archiveBody:
+      'API langsung menolak email yang memakai template ini. Isi dan riwayat versinya tetap tersimpan dan bisa diaktifkan lagi.',
+    archiveConfirm: 'Arsipkan template',
+    archiving: 'Mengarsipkan…',
+    archived: (name: string) => `${name} diarsipkan.`,
+    leaveTitle: 'Tinggalkan perubahan?',
+    // Pratinjau
+    previewTitle: 'Pratinjau',
+    previewHint:
+      'Contoh nilai variabel dipakai di sini. Gambar dari alamat luar tidak dimuat di pratinjau.',
+    previewSourceLabel: 'Isi yang ditampilkan',
+    previewSource: {
+      draft: 'Draf saat ini',
+      published: (version: number) => `Versi terbit (v${version.toLocaleString('id-ID')})`,
+      version: (version: number) => `Versi ${version.toLocaleString('id-ID')} dari riwayat`,
+    },
+    previewWidthLabel: 'Lebar layar',
+    previewWidth: { desktop: 'Desktop', phone: 'HP' },
+    previewThemeLabel: 'Tema aplikasi email',
+    previewTheme: { light: 'Terang', dark: 'Gelap' },
+    previewDarkNote:
+      'Perkiraan mode gelap: banyak aplikasi email membalik warna terang secara otomatis, hasilnya berbeda di tiap aplikasi.',
+    previewQris: 'Tampilkan QRIS contoh',
+    previewSubject: 'Subjek',
+    previewFrame: (name: string) => `Pratinjau email ${name}`,
+    previewText: 'Lihat versi teks',
+    previewWarningsTitle: 'Ada bagian yang perlu diperiksa',
+    previewFailed: 'Pratinjau belum bisa dimuat',
+    previewEmpty: 'Isi subjek dan HTML dulu untuk melihat pratinjau.',
+    previewUpdating: 'Memperbarui pratinjau…',
+    // Kirim tes
+    testTitle: 'Kirim tes',
+    testHint: (email: string) =>
+      `Email tes dikirim ke alamat akunmu (${email}) dengan subjek berawalan [Tes]. Paling banyak 10 kali per 10 menit.`,
+    testSenderLabel: 'Kirim dari',
+    testWhichLabel: 'Isi yang dikirim',
+    testWhich: { draft: 'Draf', published: 'Versi terbit' },
+    testNoSender:
+      'Belum ada channel Email yang aktif untuk mengirim tes. Hubungkan channel Email di Pengaturan → Channel.',
+    testSend: 'Kirim tes',
+    testSending: 'Mengirim…',
+    testSent: (email: string) =>
+      `Email tes masuk antrean ke ${email}. Biasanya tiba dalam satu menit.`,
+    testLockedTitle: 'Kirim tes dibatasi sementara',
+    testSaveFirst: 'Perubahan draf disimpan dulu sebelum dikirim.',
+    // Riwayat
+    historyTitle: 'Riwayat versi',
+    historyHint:
+      'Setiap terbit membuat versi baru. Versi lama bisa dipulihkan ke draf, lalu diterbitkan lagi.',
+    historyEmpty:
+      'Belum ada versi terbit. Riwayat muncul setelah template pertama kali diterbitkan.',
+    historyFailed: 'Riwayat versi belum bisa dimuat',
+    versionName: (version: number) => `Versi ${version.toLocaleString('id-ID')}`,
+    versionState: { published: 'Sedang dipakai', superseded: 'Versi lama', draft: 'Draf' },
+    versionPublished: (name: string, when: string) => `Diterbitkan ${name}, ${when}`,
+    versionPublishedAt: (when: string) => `Diterbitkan ${when}`,
+    versionPreview: 'Pratinjau',
+    versionPreviewLabel: (version: number) => `Pratinjau versi ${version.toLocaleString('id-ID')}`,
+    versionRestore: 'Pulihkan ke draf',
+    versionRestoreLabel: (version: number) =>
+      `Pulihkan versi ${version.toLocaleString('id-ID')} ke draf`,
+    restoreTitle: (version: number) => `Pulihkan versi ${version.toLocaleString('id-ID')} ke draf?`,
+    restoreBody:
+      'Isi draf sekarang diganti isi versi ini. Versi terbit tidak berubah sampai kamu menerbitkannya lagi.',
+    restoreBodyDirty:
+      'Isi draf sekarang, termasuk perubahan yang belum disimpan, diganti isi versi ini. Versi terbit tidak berubah sampai kamu menerbitkannya lagi.',
+    restoreConfirm: 'Pulihkan',
+    restoring: 'Memulihkan…',
+    restored: (version: number) =>
+      `Isi versi ${version.toLocaleString('id-ID')} disalin ke draf. Periksa, lalu terbitkan.`,
+  },
+
+  /** Pengaturan → API key → Email terkirim (`api_keys.manage`, tahap 9.1). */
+  emailOutbound: {
+    title: 'Email terkirim lewat API',
+    intro:
+      'Catatan email dari aplikasi lain lewat API key dan kirim tes template. Alamat penerima disamarkan; isi email dan lampirannya tidak ditampilkan di sini.',
+    filtersLabel: 'Saring email',
+    apiKeyLabel: 'API key',
+    allApiKeys: 'Semua API key',
+    senderLabel: 'Pengirim',
+    allSenders: 'Semua pengirim',
+    statusLabel: 'Status',
+    allStatuses: 'Semua status',
+    fromLabel: 'Dari tanggal',
+    toLabel: 'Sampai tanggal',
+    rangeInvalid: 'Tanggal akhir tidak boleh sebelum tanggal awal.',
+    resetFilters: 'Hapus saringan',
+    listLabel: 'Email terkirim',
+    status: {
+      scheduled: 'Dijadwalkan',
+      queued: 'Mengantre',
+      sending: 'Mengirim',
+      sent: 'Terkirim',
+      failed: 'Gagal',
+      bounced: 'Memantul',
+      canceled: 'Dibatalkan',
+    },
+    testSource: 'Kirim tes template',
+    deletedKey: 'API key terhapus',
+    moreRecipients: (count: number) => `+${count.toLocaleString('id-ID')} lainnya`,
+    recipientsLabel: 'Penerima (disamarkan)',
+    template: (slug: string, version: number | null) =>
+      version === null
+        ? `Template ${slug}`
+        : `Template ${slug} v${version.toLocaleString('id-ID')}`,
+    createdAt: (when: string) => `Diterima ${when}`,
+    sentAt: (when: string) => `terkirim ${when}`,
+    smtpCode: (code: number) => `kode server ${String(code)}`,
+    metadataLabel: 'Metadata dari aplikasi',
+    emptyTitle: 'Belum ada email lewat API',
+    emptyBody:
+      'Email yang dikirim n8n atau aplikasi billing lewat API, juga kirim tes template, tercatat di sini.',
+    noMatch: 'Tidak ada email yang cocok dengan saringan ini.',
+    loadFailedTitle: 'Riwayat email belum bisa dimuat',
+    loadMore: 'Muat lagi',
+    loadingMore: 'Memuat…',
+    backToKeys: 'Kembali ke API key',
   },
 
   settingsMenu: {

@@ -129,17 +129,25 @@
 
 .teamOnly {
   display: inline-flex;
+  vertical-align: top;
+  align-items: center;
+  gap: var(--space-4);
   color: var(--ink-2);
-}
-
-.teamOnly > svg {
-  margin-top: 1px;
+  font-size: var(--text-12);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
 }
 
 .addressValues {
   min-width: 0;
   margin: 0;
   color: var(--ink);
+}
+
+/* Baris pindah DI ANTARA alamat, bukan di tengah satu alamat (P5). */
+.address {
+  display: inline-block;
+  max-width: 100%;
   overflow-wrap: anywhere;
 }
 

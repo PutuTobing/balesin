@@ -89,6 +89,11 @@
   min-width: 0;
 }
 
+/* Kotak tidak pernah menyusut di bawah isinya: bila sempit, area ini yang menggulir (P1). */
+.fields > * {
+  flex-shrink: 0;
+}
+
 .meta {
   display: flex;
   flex-wrap: wrap;
@@ -106,12 +111,6 @@
   font-weight: var(--weight-semibold);
 }
 
-.error {
-  color: var(--danger-ink);
-  font-size: var(--text-12);
-  font-weight: var(--weight-semibold);
-}
-
 .notice {
   font-size: var(--text-13);
 }
@@ -123,17 +122,39 @@
   }
 
   .bar {
-    /* Tombol 44px: baris "Kepada" tidak memakan ruang lebih dari satu tombol. */
     margin-block: calc(var(--space-4) * -1);
+  }
+}
+
+@media (max-width: 640px) {
+  /* "Kepada" satu baris penuh (alamat utama tidak terpotong); tombol turun, rata kanan (P4). */
+  .bar {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+
+  .to {
+    flex: 1 1 100%;
+    padding-top: var(--space-8);
+  }
+
+  .toAddress {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .actions {
+    margin-left: auto;
   }
 }
 
 @media (max-width: 640px) {
   /* Keyboard HP terbuka: isian Cc/Bcc tidak menghabiskan ruang riwayat chat. */
   .fields {
-    max-height: 32dvh;
+    max-height: min(26dvh, 40svh);
     overflow-y: auto;
     overscroll-behavior: contain;
+    scroll-padding-block: var(--space-8);
   }
 }
 

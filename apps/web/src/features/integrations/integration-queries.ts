@@ -5,4 +5,6 @@ export const integrationKeys = {
   webhooks: ['integrations', 'webhooks'] as const,
   deliveries: (webhookId: string) => ['integrations', 'webhooks', webhookId, 'deliveries'] as const,
   privateNetwork: ['integrations', 'private-network'] as const,
+  /** Riwayat email lewat API (tahap 9.1), diikuti saringan. */
+  emailOutbound: ['integrations', 'email-outbound'] as const,
 };

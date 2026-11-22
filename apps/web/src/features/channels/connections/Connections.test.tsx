@@ -248,8 +248,13 @@ describe('Pengaturan → Channel lain', () => {
     fireEvent.keyDown(input, { key: ',' });
     expect(card.getByRole('alert')).toHaveTextContent(a.invalid('bukan-alamat'));
     expect(input).toHaveValue('bukan-alamat');
-    fireEvent.change(input, { target: { value: '' } });
+    // Simpan diblokir selama ketikan salah masih ada.
     fireEvent.click(card.getByRole('button', { name: a.remove('lama@majujaya.co.id') }));
+    fireEvent.click(card.getByRole('button', { name: a.save }));
+    expect(card.getByRole('alert')).toHaveTextContent(a.pendingInvalid('bukan-alamat'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.change(input, { target: { value: '' } });
+    expect(card.queryByRole('alert')).toBeNull();
     expect(card.getByText(a.unsaved)).toBeVisible();
 
     // Menambah alias = konfirmasi identitas (password + kode), lalu PATCH berisi `confirmation`.
