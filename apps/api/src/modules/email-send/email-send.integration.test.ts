@@ -18,6 +18,7 @@ import {
   messages,
   newId,
   organizations,
+  outgoingEvents,
 } from '@balesin/db';
 import {
   API_ROUTES,
@@ -29,12 +30,13 @@ import {
   emailStatusResponseSchema,
   emailTemplateResponseSchema,
   errorEnvelopeSchema,
+  maskEmailAddress,
   publicEmailSendersResponseSchema,
   publicEmailTemplatesResponseSchema,
   securitySummaryResponseSchema,
   type ApiKeyScope,
 } from '@balesin/shared';
-import { and, count, eq } from 'drizzle-orm';
+import { and, count, eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
@@ -1003,5 +1005,100 @@ describe('template email & riwayat', () => {
     expect(all).not.toContain('budi.santoso@contoh.example');
     expect(all).not.toContain('arsip@perusahaan.example');
     expect(all).toContain('bu***@co***.example');
+  });
+});
+
+describe('hapus kontak (UU PDP) × email API', () => {
+  it('isi dipangkas, penerima disamarkan, lampiran & outbox dibuang, antrean dibatalkan; baris tetap ada', async () => {
+    const { secret } = await createKey();
+    const address = `pdp-${newId().slice(-8)}@contoh.example`;
+    const created = await api(secret, 'POST', API_ROUTES.publicEmail.send, {
+      senderId,
+      to: [{ email: address, name: 'Rina Pelanggan' }],
+      subject: 'Tagihan Rina',
+      html: '<p>Halo Rina, VA 8808000000000001</p>',
+      attachments: [{ filename: 'Invoice-Rina.pdf', contentBase64: PDF.toString('base64') }],
+      conversation: 'create',
+      metadata: { pelanggan: 'Rina' },
+    });
+    expect(created.statusCode, created.body).toBe(202);
+    const first = emailSendResponseSchema.parse(created.json());
+    // Email lain tanpa catat Inbox, alamat itu di Cc (tetap ikut disamarkan).
+    const copy = await api(secret, 'POST', API_ROUTES.publicEmail.send, {
+      senderId,
+      to: [{ email: 'orang.lain@contoh.example' }],
+      cc: [{ email: address }],
+      subject: 'Tembusan Rina',
+      text: 'Halo',
+    });
+    const second = emailSendResponseSchema.parse(copy.json());
+    const [message] = await harness.db
+      .select({ contactId: messages.contactId })
+      .from(messages)
+      .where(eq(messages.id, first.messageId!));
+    const before = await countRows();
+
+    const response = await call(
+      harness.app,
+      'DELETE',
+      apiPath(API_ROUTES.inbox.contact, { contactId: message!.contactId }),
+      { confirmation: await confirmationFor() },
+      { cookie: owner.cookie, csrf: owner.csrf },
+    );
+    expect(response.statusCode, response.body).toBe(200);
+
+    const rows = await harness.db
+      .select()
+      .from(emailOutbound)
+      .where(inArray(emailOutbound.id, [first.id, second.id]));
+    expect(rows).toHaveLength(2);
+    const dump = JSON.stringify(rows);
+    expect(dump).not.toContain(address);
+    expect(dump).not.toContain('Rina');
+    expect(dump).not.toContain('8808000000000001');
+    for (const row of rows) {
+      expect(row).toMatchObject({
+        subject: '(dihapus)',
+        html: null,
+        text: null,
+        metadata: null,
+        contactId: null,
+        status: 'canceled',
+      });
+      expect(row.bodyPurgedAt).not.toBeNull();
+    }
+    expect(rows.find((row) => row.id === first.id)?.to).toEqual([
+      { email: maskEmailAddress(address), name: null },
+    ]);
+    const parts = await harness.db
+      .select()
+      .from(emailOutboundAttachments)
+      .where(eq(emailOutboundAttachments.emailOutboundId, first.id));
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toMatchObject({ storageKey: null, filename: 'lampiran-dihapus' });
+    const events = await harness.db
+      .select()
+      .from(outgoingEvents)
+      .where(inArray(outgoingEvents.emailOutboundId, [first.id, second.id]));
+    expect(events).toHaveLength(0);
+    // Hitungan email tetap (batas harian & laporan tidak berubah); hanya kontaknya yang hilang.
+    const after = await countRows();
+    expect(after.emails).toBe(before.emails);
+    expect(after.contacts).toBe(before.contacts - 1);
+    const [audit] = await harness.db
+      .select({ metadata: auditLogs.metadata })
+      .from(auditLogs)
+      .where(
+        and(eq(auditLogs.organizationId, organizationId), eq(auditLogs.action, 'contact.deleted')),
+      );
+    expect(audit?.metadata).toMatchObject({ emailOutbound: 2 });
+    // Status lewat API tetap bisa dibaca (tanpa data pribadi).
+    const status = await api(
+      secret,
+      'GET',
+      apiPath(API_ROUTES.publicEmail.message, { emailId: first.id }),
+    );
+    expect(status.statusCode).toBe(200);
+    expect(JSON.stringify(status.json())).not.toContain(address);
   });
 });

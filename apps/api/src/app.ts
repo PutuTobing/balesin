@@ -643,6 +643,7 @@ export async function buildApp(deps: AppDeps) {
     publisher: inboxEvents,
     twoFactor,
     purgeMedia: (ids) => outbound.purgeMediaFiles(ids),
+    removeEmailFile: (storageKey) => createMediaStore(config.mediaDir).remove(storageKey),
     logger: deps.logger,
   });
   // Webhook keluar (Fase 3).

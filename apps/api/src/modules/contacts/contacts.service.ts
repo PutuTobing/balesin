@@ -44,6 +44,7 @@ import type { AuthContext } from '../auth/session.service';
 import { requireIdentityConfirmation } from '../two-factor/require-confirmation';
 import type { TwoFactorContext, TwoFactorService } from '../two-factor/two-factor.service';
 import { attributeRules, attributeValidationError } from '../attributes/attributes.service';
+import { eraseContactEmails } from '../email-send/contact-erasure';
 import { deleteContactData } from './contacts.repo';
 
 /**
@@ -155,6 +156,11 @@ export function createContactsService(deps: {
    * SETELAH commit (R4; review hapus Info: bukan pembersih global di dalam permintaan).
    */
   purgeMedia?: (mediaFileIds: readonly string[]) => Promise<number>;
+  /**
+   * Tahap 9.1: hapus berkas lampiran email lewat API (`email-out/…`) milik kontak yang dihapus —
+   * dipanggil SETELAH commit.
+   */
+  removeEmailFile?: (storageKey: string) => Promise<void>;
   logger?: Pick<Logger, 'warn' | 'info'>;
   now?: () => Date;
 }): ContactsService {
@@ -426,6 +432,8 @@ export function createContactsService(deps: {
               eq(conversations.contactId, contactId),
             ),
           );
+        // Tahap 9.1: email lewat API ke kontak ini → isi dipangkas, penerima disamarkan (UU PDP).
+        const emails = await eraseContactEmails(tx, auth.organizationId, contactId, now());
         const result = await deleteContactData(tx, auth.organizationId, contactId);
         if (!result) throw new AppError('NOT_FOUND', { message: CONTACT_NOT_FOUND });
         const hadOpenConversation = affected.some((row) => row.status !== 'resolved');
@@ -440,6 +448,7 @@ export function createContactsService(deps: {
             messages: result.messages,
             conversations: result.conversations,
             webhookEvents: result.webhookEvents,
+            emailOutbound: emails.emails,
             hadOpenConversation,
             actorRole: role,
           },
@@ -448,6 +457,7 @@ export function createContactsService(deps: {
         return {
           result,
           affected,
+          emailStorageKeys: emails.storageKeys,
           mediaFileIds: [
             ...new Set(media.map((row) => row.id).filter((id): id is string => id !== null)),
           ],
@@ -463,6 +473,11 @@ export function createContactsService(deps: {
           { err },
           'Pembersihan media setelah hapus kontak gagal (dicoba lagi berkala)',
         );
+      }
+      for (const storageKey of outcome.emailStorageKeys) {
+        await deps.removeEmailFile?.(storageKey).catch((err: unknown) => {
+          deps.logger?.warn({ err }, 'Berkas lampiran email API kontak yang dihapus gagal dibuang');
+        });
       }
       // Agen pemegang ikut dikirim supaya hub menyaring per cakapan (review hapus Info).
       await publisher.publish(
