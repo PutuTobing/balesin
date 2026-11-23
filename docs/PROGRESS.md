@@ -1,7 +1,7 @@
 # Progress
 
-**Fase aktif:** 9 — Modul Email (`docs/PRD-EMAIL.md`), mulai 9.0 → 9.1 → 9A. Rilis 1.0 menunggu langkah Tobing (BUTUH-TOBING #18)
-**Terakhir diperbarui:** 2026-11-23 (Fase 7 butir 1–4 selesai; revisi UI Fase 5, UI channel/jam kerja, stabilisasi tes berjalan)
+**Fase aktif:** 9 — Modul Email (`docs/PRD-EMAIL.md`). 9.0, 9.1, 9A, 9B SELESAI di `dev`; rilis v1.1.0 menunggu langkah Tobing; **9C–9E menunggu keputusan Tobing**
+**Terakhir diperbarui:** 2026-11-24 (9A+9B di-merge ke `dev`, E2E penuh hijau + spec menu Email)
 
 ## Selesai
 
@@ -101,12 +101,14 @@
 - Penutupan: E2E penuh hijau 2× berturut-turut (285 lulus, 0 goyah) dari worktree cache dingin;
   suite api 1.163 lulus; keamanan AMAN putaran 3; desain LOLOS putaran 2.
 
-## Fase 9 — Modul Email (berjalan, posisi 06cadd8)
+## Fase 9 — Modul Email (9.0–9B selesai; 9C–9E menunggu Tobing)
 - **9.0 SELESAI** (5530ec3 … 68af11d): Kepada/Cc/alamat tujuan, alias, Cc/Bcc + Balas semua, batas kirim per penerima, akses per channel. Security AMAN, kritikus LOLOS putaran 3, E2E `email-cc.spec.ts`.
-- **9.1 SELESAI** (5530ec3 … 06cadd8): API publik kirim email + template email (preset ISP) + QRIS + lampiran ber-allowlist + idempotensi + webhook `email.*` + UI (Template email, API key, Email terkirim, batas penerima per pengirim). Security 3 putaran: ReDoS, batas per penerima, sanitize-html sarang dalam (juga email masuk Fase 6), pembengkakan variabel — semua tertutup. Kritikus LOLOS putaran 2.
-- **9A SELESAI di branch `wip/9a`** (belum di `dev`): backend daftar/baca/aksi + proksi gambar + token tampilan, UI daftar & panel baca, revisi akun P1–P9. Security 9A-1 putaran 2 **AMAN**, 9A-2 putaran 2 **AMAN** (P2-S8/P2-R13 ditutup; sisa berkas cache yatim dilanjutkan sebagai 9B S5). Kritikus 9A-baca LOLOS (H1/H2 diperbaiki, minor di "Poles desain").
-- **9B berjalan di `wip/9a`** (DIHENTIKAN 24 Nov atas permintaan Tobing). Sudah: kontrak `docs/KONTRAK-API-EMAIL-TULIS.md` (c7cea73), backend 9B (a433997), frontend 9B (b1c1507). Security 9B **PERBAIKI** (b7189d7: S1/S2 Tinggi, S3–S6 Sedang, R1–R5, `it.fails` di `security-review-fase9b*`). Perbaikan backend setengah jadi disimpan di commit WIP berikutnya (migrasi `0040_mail_review_9b`, `mail-identity-guard.ts`, persetujuan identitas) — **belum diverifikasi**.
-- **Lanjutkan (urut):** (1) cek working tree/commit WIP, selesaikan perbaikan security 9B (keputusan pendekatan ada di prompt: hapus cadangan SEARCH, tolak kotak surat pengirim sistem sebagai akun, persetujuan Owner/Admin untuk identitas pribadi berdomain organisasi, klaim pribadi belum terverifikasi tidak memblokir, rename atomik cache gambar, anggaran APPEND draf, R1–R5) → tes terkait; (2) frontend: sesuaikan UI persetujuan identitas bila rute API berubah; (3) security putaran 2 9B sampai AMAN; (4) kritikus 9B **1 putaran** (layar `email-tulis`, `email-balas`, `email-tulis-lampiran`, `email-terkirim-batalkan`, `email-utas-baru-409`, `akun-identitas`, `akun-tanda-tangan(-ubah)`, `email-baca`, `/email/tautan`) → perbaiki penahan saja; (5) E2E penuh → merge `wip/9a` ke `dev` (satu kali untuk 9A+9B, DECISIONS 23 Nov) → hapus `wip/9a`; (6) bab panduan `docs/panduan/10-modul-email.md`; (7) siapkan update server: PR dev→main, catatan rilis v1.1.0, langkah Tobing (merge, tag `v1.1.0`, approve, `sudo balesin update`). 9C–9E menunggu keputusan Tobing.
+- **9.1 SELESAI** (5530ec3 … 06cadd8): API publik kirim email + template email (preset ISP) + QRIS + lampiran ber-allowlist + idempotensi + webhook `email.*` + UI. Security AMAN (3 putaran), kritikus LOLOS putaran 2.
+- **9A SELESAI**: akun IMAP/SMTP + wizard, sinkron IDLE/berkala, daftar & panel baca (iframe sandbox, proksi gambar, token tampilan kanonik), hak akses per akun. Security 9A-1 & 9A-2 **AMAN**; kritikus 9A-baca LOLOS (H1/H2 diperbaiki).
+- **9B SELESAI**: tulis/balas/teruskan, identitas + verifikasi (kode 6 digit / pencocokan lokal) + persetujuan Owner/Admin untuk identitas pribadi berdomain organisasi, tanda tangan, draf + salinan server, lampiran, batalkan kirim/outbox, salinan Terkirim, presence. Security 9B putaran 2 **AMAN** (+ tambahan 5aa9cd7 AMAN); kritikus 9B LOLOS 1 putaran (minor di "Poles desain"). Langkah Verifikasi di wizard, banner verifikasi, saran Gmail/Microsoft, panduan bab 10 (`docs/panduan/10-modul-email.md`).
+- **Penutupan 9A+9B** (merge `wip/9a` → `dev` sekali, DECISIONS 23 Nov): E2E penuh 287 lulus/0 gagal (3 worker; tes basi diperbaiki 80378ff), spec baru `e2e/tests/email-menu.spec.ts` (wizard + tes koneksi, verifikasi, baca + gambar pelacak diblokir, balas + batalkan kirim, akses CS/Teknisi, HP 390) hijau 2×; lint/prettier/typecheck/build/check:deps bersih. Sinkron susulan saat IDLE tersambung (5aa9cd7).
+- **Ditunda ke 9C:** batas kirim → UI Email, `acc_` di daftar pengirim, baki outbox, security P2-R1/R2/R3 (lihat review 9B), I-5aa-1 (Origin-Agent-Cluster dari gateway), E2E lokal sebaiknya 3 worker.
+- **Berikutnya:** rilis v1.1.0 (PR dev→main, tag, approve, `sudo balesin update`) — langkah Tobing. 9C–9E menunggu keputusan Tobing.
 
 ## Sedang dikerjakan (posisi 0efafe4)
 - **Berikutnya: Fase 9 — Modul Email** (ditambahkan 22 Nov atas permintaan Tobing): spesifikasi
