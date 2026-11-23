@@ -35,6 +35,7 @@ import {
   mailOutbox,
   emailSenderSettings,
   newId,
+  mailOrganizationDomains,
   users,
   type Database,
   type DbExecutor,
@@ -99,9 +100,18 @@ import type { TwoFactorContext, TwoFactorService } from '../two-factor/two-facto
 import { processMailAvatar } from './mail-avatar';
 import {
   IDENTITY_RESET,
+  addressHeldError,
+  addressHoldersOf,
   addressIsMailIdentity,
+  claimAddressForOrganization,
+  isWeakClaim,
+  notifyApprovalRequest,
+  notifyRevokedClaims,
+  recordApprovalRequest,
   systemSenderConflicts,
   systemSenderOf,
+  type AddressHolder,
+  type RevokedClaim,
   type SystemSenderFallback,
 } from './mail-compose.repo';
 import { detectMailAccount, type MailDetectionOptions } from './mail-detection';
@@ -355,6 +365,77 @@ export function createMailService(deps: MailServiceDeps) {
       }
     }
     return conflict('address_already_connected', ADDRESS_ALREADY_CONNECTED);
+  }
+
+  /**
+   * Review 9B S2: kotak surat Email pengirim sistem (alamat ATAU host + username SMTP/IMAP) TIDAK boleh
+   * dihubungkan sebagai akun Email (pribadi maupun bersama) — salinan tautan reset password, undangan,
+   * dan kode verifikasi di Terkirim terbaca pembaca akun itu. 409 `system_sender_mailbox`.
+   */
+  async function assertNotSystemSenderMailbox(
+    executor: DbExecutor,
+    organizationId: string,
+    candidate: Parameters<typeof systemSenderConflicts>[1],
+  ): Promise<void> {
+    const sender = await systemSenderOf(
+      executor,
+      organizationId,
+      deps.systemSenderFallback ?? null,
+    );
+    if (systemSenderConflicts(sender, candidate)) {
+      throw conflict('system_sender_mailbox', MAIL_COMPOSE_MESSAGES.systemSenderMailbox);
+    }
+  }
+
+  /** Pemegang Channel/pengirim sistem sudah ditangani pemeriksaan sendiri (pesan lebih jelas). */
+  const handledElsewhere = (holder: AddressHolder) =>
+    holder.kind === 'system_sender' || holder.kind === 'channel';
+
+  /**
+   * Larangan alamat ganda untuk alamat akun (9B §3.3). Akun PRIBADI: pemegang apa pun → 409 umum.
+   * Akun BERSAMA (Owner/Admin, review 9B S4): klaim lemah akun pribadi tidak menghalangi — dicabut di
+   * transaksi (`revoke`), pemegang kuat → 409 yang menyebut pemegangnya.
+   */
+  async function guardAccountAddress(
+    executor: DbExecutor,
+    auth: AuthContext,
+    kind: string,
+    address: string,
+    client: MailContext['client'] | null,
+  ): Promise<RevokedClaim[]> {
+    if (kind === 'personal') {
+      if (await addressIsMailIdentity(executor, auth.organizationId, address)) {
+        throw conflict('address_in_use', MAIL_COMPOSE_MESSAGES.addressInUse);
+      }
+      return [];
+    }
+    const sender = await systemSenderOf(
+      executor,
+      auth.organizationId,
+      deps.systemSenderFallback ?? null,
+    );
+    const domains = await mailOrganizationDomains(executor, auth.organizationId);
+    if (!client) {
+      const holders = await addressHoldersOf(executor, auth.organizationId, address, {
+        systemSender: sender,
+      });
+      const strong = holders.find(
+        (holder) => !handledElsewhere(holder) && !isWeakClaim(holder, domains),
+      );
+      if (strong) throw addressHeldError(auth.user.role, strong, 'emailAddress');
+      return [];
+    }
+    return claimAddressForOrganization(executor, {
+      organizationId: auth.organizationId,
+      actorUserId: auth.user.id,
+      role: auth.user.role,
+      address,
+      systemSender: sender,
+      domains,
+      client,
+      field: 'emailAddress',
+      ignore: handledElsewhere,
+    });
   }
 
   /**
@@ -907,10 +988,18 @@ export function createMailService(deps: MailServiceDeps) {
       if (await addressIsMailAccount(db, auth.organizationId, address)) {
         throw await alreadyConnected(auth, address);
       }
-      // 9B §3.3: alamat yang sudah jadi alias akun lain / Email pengirim sistem juga ditolak.
-      if (await addressIsMailIdentity(db, auth.organizationId, address)) {
-        throw conflict('address_in_use', MAIL_COMPOSE_MESSAGES.addressInUse);
-      }
+      // Review 9B S2: kotak surat Email pengirim sistem tidak boleh jadi akun Email.
+      await assertNotSystemSenderMailbox(db, auth.organizationId, {
+        emailAddress: address,
+        imapHost: input.imap.host,
+        imapUsername: input.imap.username,
+        smtpHost: input.smtp.host,
+        smtpUsername: input.smtp.sameCredentials ? null : (input.smtp.username ?? null),
+        smtpSameCredentials: input.smtp.sameCredentials,
+      });
+      // 9B §3.3 + review 9B S4: alamat yang sudah jadi alias akun lain juga ditolak (klaim lemah akun
+      // pribadi tidak menghalangi akun bersama).
+      await guardAccountAddress(db, auth, input.kind, address, null);
 
       const servers = resolveServers(input, null);
       const tested = await runTests(
@@ -971,6 +1060,8 @@ export function createMailService(deps: MailServiceDeps) {
         createdByUserId: auth.user.id,
       };
 
+      let revoked: RevokedClaim[] = [];
+      let approvalAuditId: string | null = null;
       const row = await db.transaction(async (tx) => {
         await assertActorStillAuthorized(
           tx,
@@ -988,9 +1079,15 @@ export function createMailService(deps: MailServiceDeps) {
         if (await addressIsMailAccount(tx, auth.organizationId, address)) {
           throw await alreadyConnected(auth, address);
         }
-        if (await addressIsMailIdentity(tx, auth.organizationId, address)) {
-          throw conflict('address_in_use', MAIL_COMPOSE_MESSAGES.addressInUse);
-        }
+        await assertNotSystemSenderMailbox(tx, auth.organizationId, {
+          emailAddress: address,
+          imapHost: input.imap.host,
+          imapUsername: input.imap.username,
+          smtpHost: input.smtp.host,
+          smtpUsername: input.smtp.sameCredentials ? null : (input.smtp.username ?? null),
+          smtpSameCredentials: input.smtp.sameCredentials,
+        });
+        revoked = await guardAccountAddress(tx, auth, input.kind, address, context.client);
         const [total] = await tx
           .select({ value: count() })
           .from(mailAccounts)
@@ -1023,16 +1120,31 @@ export function createMailService(deps: MailServiceDeps) {
         if (!personal) await validateGrants(tx, auth.organizationId, input.access);
         const [inserted] = await tx.insert(mailAccounts).values(values).returning();
         if (!inserted) throw new Error('Akun email tidak tersimpan');
-        await tx.insert(mailIdentities).values({
-          organizationId: auth.organizationId,
-          accountId: id,
-          address,
-          displayName: input.fromName,
-          isPrimary: true,
-          // Review 9A-1 S4: login IMAP tidak membuktikan alamat (server bisa milik pendaftar sendiri).
-          // Verifikasi (email uji ke alamat itu) menyusul 9B sebelum dipakai sebagai pengirim.
-          verifiedAt: null,
-        });
+        const [primary] = await tx
+          .insert(mailIdentities)
+          .values({
+            organizationId: auth.organizationId,
+            accountId: id,
+            address,
+            displayName: input.fromName,
+            isPrimary: true,
+            // Review 9A-1 S4: login IMAP tidak membuktikan alamat (server bisa milik pendaftar sendiri).
+            // Verifikasi (email uji ke alamat itu) menyusul 9B sebelum dipakai sebagai pengirim.
+            verifiedAt: null,
+          })
+          .returning();
+        // Review 9B S3: akun PRIBADI berdomain organisasi → menunggu persetujuan Owner/Admin.
+        if (personal && primary) {
+          approvalAuditId = await recordApprovalRequest(tx, {
+            organizationId: auth.organizationId,
+            actorUserId: auth.user.id,
+            accountKind: 'personal',
+            accountId: id,
+            identity: primary,
+            domains: await mailOrganizationDomains(tx, auth.organizationId),
+            client: context.client,
+          });
+        }
         if (input.access.length > 0) {
           await tx.insert(mailAccountAccess).values(
             input.access.map((grant) => ({
@@ -1072,6 +1184,20 @@ export function createMailService(deps: MailServiceDeps) {
       });
       await publisher.publish([statusEvent(row)]);
       if (input.access.length > 0) await publishAccessChanged(auth.organizationId, input.access);
+      await notifyRevokedClaims(
+        deps.notifier,
+        { organizationId: auth.organizationId, actorUserId: auth.user.id, occurredAt: now() },
+        revoked,
+      );
+      const requested = approvalAuditId as string | null;
+      if (requested) {
+        await notifyApprovalRequest(db, deps.notifier, {
+          organizationId: auth.organizationId,
+          requesterUserId: auth.user.id,
+          auditLogId: requested,
+          occurredAt: now(),
+        });
+      }
       await enqueueSync(row, context.log);
       return view(auth, row);
     },
@@ -1248,9 +1374,7 @@ export function createMailService(deps: MailServiceDeps) {
           if (await addressIsMailAccount(db, auth.organizationId, address, row.id)) {
             throw await alreadyConnected(auth, address);
           }
-          if (await addressIsMailIdentity(db, auth.organizationId, address)) {
-            throw conflict('address_in_use', MAIL_COMPOSE_MESSAGES.addressInUse);
-          }
+          await guardAccountAddress(db, auth, row.kind, address, null);
           changes.emailAddress = address;
           credentialFields.push('emailAddress');
           resetMailbox = true;
@@ -1345,6 +1469,18 @@ export function createMailService(deps: MailServiceDeps) {
       }
       if (resetMailbox) resetIdentities = true;
       if (plainFields.length === 0 && credentialFields.length === 0) return view(auth, row, viewer);
+      // Review 9B S2: kotak surat hasil ubahan tidak boleh = kotak surat Email pengirim sistem.
+      const candidate = {
+        emailAddress: changes.emailAddress ?? row.emailAddress,
+        imapHost: changes.imapHost ?? row.imapHost,
+        imapUsername: changes.imapUsername ?? row.imapUsername,
+        smtpHost: changes.smtpHost !== undefined ? changes.smtpHost : row.smtpHost,
+        smtpUsername: changes.smtpUsername !== undefined ? changes.smtpUsername : row.smtpUsername,
+        smtpSameCredentials: changes.smtpSameCredentials ?? row.smtpSameCredentials,
+      };
+      // Hanya bila kotak suratnya berganti (akun lama yang bentrok tetap bisa diperbarui password-nya).
+      if (resetIdentities) await assertNotSystemSenderMailbox(db, auth.organizationId, candidate);
+      let revoked: RevokedClaim[] = [];
 
       const updated = await db.transaction(async (tx) => {
         if (credentialFields.length > 0) {
@@ -1364,10 +1500,16 @@ export function createMailService(deps: MailServiceDeps) {
             if (await addressIsMailAccount(tx, auth.organizationId, changes.emailAddress, row.id)) {
               throw await alreadyConnected(auth, changes.emailAddress);
             }
-            if (await addressIsMailIdentity(tx, auth.organizationId, changes.emailAddress)) {
-              throw conflict('address_in_use', MAIL_COMPOSE_MESSAGES.addressInUse);
-            }
+            revoked = await guardAccountAddress(
+              tx,
+              auth,
+              row.kind,
+              changes.emailAddress,
+              context.client,
+            );
           }
+          if (resetIdentities)
+            await assertNotSystemSenderMailbox(tx, auth.organizationId, candidate);
         }
         const locked = await loadAccountRow(tx, auth.organizationId, row.id, { forUpdate: true });
         if (!locked) throw mailNotFound();
@@ -1393,7 +1535,15 @@ export function createMailService(deps: MailServiceDeps) {
           await tx
             .update(mailIdentities)
             .set({
-              ...(changes.emailAddress ? { address: changes.emailAddress } : {}),
+              // Review 9B S3: alamat baru = keputusan persetujuan lama gugur.
+              ...(changes.emailAddress
+                ? {
+                    address: changes.emailAddress,
+                    approvalState: null,
+                    approvalDecidedAt: null,
+                    approvalDecidedByUserId: null,
+                  }
+                : {}),
               ...(changes.fromName ? { displayName: changes.fromName } : {}),
             })
             .where(
@@ -1463,6 +1613,11 @@ export function createMailService(deps: MailServiceDeps) {
         }
         return saved;
       });
+      await notifyRevokedClaims(
+        deps.notifier,
+        { organizationId: auth.organizationId, actorUserId: auth.user.id, occurredAt: now() },
+        revoked,
+      );
       if (credentialFields.length > 0) {
         await publisher.publish([statusEvent(updated)]);
         await enqueueSync(updated, context.log);

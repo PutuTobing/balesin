@@ -21,6 +21,8 @@ import {
 } from '@balesin/core';
 import {
   lockEmailAddresses,
+  mailAccountsMatchingSystemSender,
+  mailOrganizationDomains,
   organizations,
   type Database,
   type DbExecutor,
@@ -28,6 +30,7 @@ import {
 } from '@balesin/db';
 import {
   EMAIL_TEST_MESSAGES,
+  MAIL_COMPOSE_MESSAGES,
   type DetectEmailHostResponse,
   type EmailSettingsInput,
   type IdentityConfirmation,
@@ -45,7 +48,11 @@ import type { ClientInfo } from '../../http/client-info';
 import type { EmailNotifier } from '../../queues/email-queue';
 import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
 import { assertActorStillAuthorized } from '../auth/actor-check';
-import { addressIsMailIdentity } from '../mail/mail-compose.repo';
+import {
+  claimAddressForOrganization,
+  notifyRevokedClaims,
+  type RevokedClaim,
+} from '../mail/mail-compose.repo';
 import type { AuthContext } from '../auth/session.service';
 import { requireIdentityConfirmation } from '../two-factor/require-confirmation';
 import type { TwoFactorService } from '../two-factor/two-factor.service';
@@ -514,20 +521,65 @@ export function createEmailSettingsService(deps: EmailSettingsServiceDeps): Emai
       );
       if (confirmed) await confirmChange(auth, confirmation, context);
 
-      return db.transaction(async (tx) => {
+      let revoked: RevokedClaim[] = [];
+      const saved = await db.transaction(async (tx) => {
         // Pelaku diperiksa ulang di transaksi tulis (review akhir Fase 1 R3).
         await assertActorStillAuthorized(tx, auth, 'settings.email.manage', context.log);
         const stored = await findEmailSettings(tx, actor.organizationId);
         const prepared = prepare(input, stored, '');
         const values = toValues(actor.organizationId, prepared, stored);
-        // 9B (KONTRAK-API-EMAIL-TULIS §3.3, arah sebaliknya): alamat pengirim sistem BARU tidak boleh
-        // sudah menjadi identitas (alamat/alias) akun di menu Email.
         const nextAddress = values.fromAddress.trim().toLowerCase();
-        if (!stored || stored.fromAddress.trim().toLowerCase() !== nextAddress) {
+        const addressChanged = !stored || stored.fromAddress.trim().toLowerCase() !== nextAddress;
+        const mailboxChanged =
+          !stored ||
+          stored.host.trim().toLowerCase() !== values.host.trim().toLowerCase() ||
+          (stored.username ?? '').trim().toLowerCase() !==
+            (values.username ?? '').trim().toLowerCase();
+        if (addressChanged || mailboxChanged) {
           await lockEmailAddresses(tx, actor.organizationId, [nextAddress]);
-          if (await addressIsMailIdentity(tx, actor.organizationId, nextAddress)) {
-            const message =
-              'Alamat ini sudah dipakai sebagai alamat pengirim di menu Email. Pakai alamat lain (mis. noreply@) untuk Email pengirim sistem.';
+          // Review 9B S2 (arah sebaliknya): kotak surat Email pengirim sistem (alamat ATAU host +
+          // username) tidak boleh kotak surat yang sudah jadi akun Email — salinan tautan reset password,
+          // undangan, dan kode verifikasi di Terkirim akan terbaca pembaca akun itu.
+          const [account] = await mailAccountsMatchingSystemSender(
+            tx,
+            actor.organizationId,
+            { address: nextAddress, host: values.host, username: values.username },
+            { includeIdentities: false },
+          );
+          if (account) {
+            const message = MAIL_COMPOSE_MESSAGES.systemSenderMailboxTaken;
+            throw new AppError('CONFLICT', {
+              message,
+              details: [
+                {
+                  location: 'body',
+                  field: 'fromAddress',
+                  message,
+                  reason: 'system_sender_mailbox',
+                },
+              ],
+            });
+          }
+        }
+        if (addressChanged) {
+          // 9B (KONTRAK-API-EMAIL-TULIS §3.3, arah sebaliknya): alamat pengirim sistem BARU tidak boleh
+          // sudah menjadi identitas (alias) akun di menu Email. Review 9B S4: klaim akun PRIBADI yang
+          // belum terverifikasi/disetujui tidak menghalangi — dicabut.
+          try {
+            revoked = await claimAddressForOrganization(tx, {
+              organizationId: actor.organizationId,
+              actorUserId: actor.userId,
+              role: auth.user.role,
+              address: nextAddress,
+              systemSender: null,
+              domains: await mailOrganizationDomains(tx, actor.organizationId),
+              client: context.client,
+              field: 'fromAddress',
+              ignore: (holder) => holder.kind !== 'identity',
+            });
+          } catch (error) {
+            if (!(error instanceof AppError) || error.code !== 'CONFLICT') throw error;
+            const message = `${error.message} Pakai alamat lain (mis. noreply@) untuk Email pengirim sistem.`;
             throw new AppError('CONFLICT', {
               message,
               details: [
@@ -584,6 +636,12 @@ export function createEmailSettingsService(deps: EmailSettingsServiceDeps): Emai
         }
         return view(actor.organizationId, tx);
       });
+      await notifyRevokedClaims(
+        deps.notifier,
+        { organizationId: actor.organizationId, actorUserId: actor.userId, occurredAt: new Date() },
+        revoked,
+      );
+      return saved;
     },
 
     testConnection: (actor, draft, context) =>

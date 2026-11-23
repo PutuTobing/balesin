@@ -24,6 +24,8 @@ import {
   mailDraftListQuerySchema,
   mailDraftListResponseSchema,
   mailDraftResponseSchema,
+  mailIdentityApprovalListResponseSchema,
+  mailIdentityApprovalRequestSchema,
   mailIdentityIdParamsSchema,
   mailIdentityListResponseSchema,
   mailIdentityResponseSchema,
@@ -94,6 +96,7 @@ export const MAIL_COMPOSE_RULES = {
 
 const VIEW = requirePermission('mail.view');
 const SEND = requirePermission('mail.send');
+const MANAGE_ACCOUNTS = requirePermission('mail.accounts.manage');
 
 const errors = {
   400: errorEnvelopeSchema,
@@ -290,6 +293,41 @@ export const mailComposeRoutes: FastifyPluginAsyncZod<MailComposeRoutesOptions> 
         request.body.code,
         contextOf(request),
       );
+    },
+  );
+
+  // Review 9B S3: persetujuan identitas akun pribadi berdomain organisasi (Owner/Admin).
+  app.get(
+    routes.identityApprovals,
+    {
+      config: { access: MANAGE_ACCOUNTS },
+      schema: { response: { 200: mailIdentityApprovalListResponseSchema, ...errors } },
+    },
+    (request) => identities.approvals(requireAuth(request), contextOf(request)),
+  );
+
+  app.post(
+    routes.identityApproval,
+    {
+      config: { access: MANAGE_ACCOUNTS },
+      bodyLimit: BODY_LIMIT_BYTES,
+      schema: {
+        params: mailIdentityIdParamsSchema,
+        body: mailIdentityApprovalRequestSchema,
+        response: { 200: mailIdentityResponseSchema, ...errors },
+      },
+    },
+    async (request) => {
+      const auth = requireAuth(request);
+      await limit(MAIL_WRITE_RULE, auth.user.id);
+      return {
+        identity: await identities.decideApproval(
+          auth,
+          request.params.identityId,
+          request.body,
+          contextOf(request),
+        ),
+      };
     },
   );
 

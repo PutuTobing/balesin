@@ -120,7 +120,7 @@ export function createComposeMaintenance(deps: ComposeMaintenanceDeps) {
       .update(mailOutbox)
       .set({ html: null, text: null, bodyPurgedAt: at })
       .where(
-        sql`${mailOutbox.id} in (select id from mail_outbox where status in ('sent', 'failed', 'canceled') and body_purged_at is null and coalesce(sent_at, failed_at, canceled_at) < ${new Date(at.getTime() - BODY_RETENTION_MS)} limit ${BATCH})`,
+        sql`${mailOutbox.id} in (select id from mail_outbox where status in ('sent', 'failed', 'canceled', 'delivery_unknown') and body_purged_at is null and coalesce(sent_at, failed_at, canceled_at) < ${new Date(at.getTime() - BODY_RETENTION_MS)} limit ${BATCH})`,
       )
       .returning({ id: mailOutbox.id });
     result.bodies = bodies.length;
@@ -150,7 +150,7 @@ export function createComposeMaintenance(deps: ComposeMaintenanceDeps) {
     const rows = await db
       .delete(mailOutbox)
       .where(
-        sql`${mailOutbox.id} in (select id from mail_outbox where status in ('sent', 'failed', 'canceled') and created_at < ${new Date(at.getTime() - ROW_RETENTION_MS)} limit ${BATCH})`,
+        sql`${mailOutbox.id} in (select id from mail_outbox where status in ('sent', 'failed', 'canceled', 'delivery_unknown') and created_at < ${new Date(at.getTime() - ROW_RETENTION_MS)} limit ${BATCH})`,
       )
       .returning({ id: mailOutbox.id });
     result.rows = rows.length;

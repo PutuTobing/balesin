@@ -605,6 +605,13 @@ export const API_ROUTES = {
     identityVerification: `${API_PREFIX}/mail/identities/:identityId/verification`,
     /** POST — masukkan kode verifikasi. */
     identityVerificationConfirm: `${API_PREFIX}/mail/identities/:identityId/verification/confirm`,
+    /**
+     * Review 9B S3 — GET: identitas akun PRIBADI berdomain organisasi yang menunggu persetujuan
+     * (Owner/Admin, `mail.accounts.manage`).
+     */
+    identityApprovals: `${API_PREFIX}/mail/identity-approvals`,
+    /** Review 9B S3 — POST `{ decision, confirmation }`: setujui/tolak (Owner/Admin). */
+    identityApproval: `${API_PREFIX}/mail/identities/:identityId/approval`,
     /** GET — tanda tangan siap sisip (`?purpose=new|reply`). */
     identitySignature: `${API_PREFIX}/mail/identities/:identityId/signature`,
     /** GET — tanda tangan bersama + milikku; POST — buat. */

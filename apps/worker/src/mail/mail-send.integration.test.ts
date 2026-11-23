@@ -447,11 +447,17 @@ describe('hasil SMTP', () => {
     nextResult = { ok: false, kind: 'delivery_unknown', smtpCode: null, code: 'x' };
     await worker.sendOne({ organizationId: ctx.organizationId, outboxId: row.id });
     const after = await outboxRow(row.id);
+    // Review 9B R4: status final tersendiri (bukan `failed`) + audit, tidak diulang.
     expect(after).toMatchObject({
-      status: 'failed',
+      status: 'delivery_unknown',
       failureReason: 'delivery_unknown',
       nextAttemptAt: null,
     });
+    const audits = await db
+      .select({ action: auditLogs.action })
+      .from(auditLogs)
+      .where(eq(auditLogs.organizationId, ctx.organizationId));
+    expect(audits.map((audit) => audit.action)).toContain('mail.message.delivery_unknown');
   });
 
   it('batas per jam akun (per penerima) menahan email berikutnya', async () => {
@@ -595,7 +601,12 @@ describe('salinan draf di folder Draf server', () => {
     // Simpan lagi (versi 2): baru saja diubah → ditunda; setelah diam & 2 menit → ganti salinan.
     await db
       .update(mailDrafts)
-      .set({ version: 2, serverSyncState: 'pending', updatedAt: new Date() })
+      .set({
+        version: 2,
+        bodyHtml: '<p>Halo lagi</p>',
+        serverSyncState: 'pending',
+        updatedAt: new Date(),
+      })
       .where(eq(mailDrafts.id, draft.id));
     expect(
       (
@@ -629,6 +640,38 @@ describe('salinan draf di folder Draf server', () => {
     expect(imap.folders.get('INBOX.Drafts')?.messages).toHaveLength(1);
   });
 
+  it('review 9B S6: isi tidak berubah → tidak di-APPEND ulang (tetap `synced`)', async () => {
+    const ctx = await seed();
+    const { sync, copies: copier } = copies();
+    await sync.syncAccount({
+      organizationId: ctx.organizationId,
+      accountId: ctx.accountId,
+      force: true,
+    });
+    const draft = await editingDraft(ctx);
+    const run = () =>
+      copier.syncDraft({
+        organizationId: ctx.organizationId,
+        accountId: ctx.accountId,
+        draftId: draft.id,
+      });
+    expect((await run()).status).toBe('done');
+    await db
+      .update(mailDrafts)
+      .set({
+        version: 2,
+        serverSyncState: 'pending',
+        updatedAt: new Date(Date.now() - 60_000),
+        serverSyncedAt: new Date(Date.now() - 5 * 60_000),
+      })
+      .where(eq(mailDrafts.id, draft.id));
+    const commandsBefore = imap.commands.length;
+    expect((await run()).status).toBe('done');
+    expect(imap.commands.slice(commandsBefore)).toEqual([]);
+    const [row] = await db.select().from(mailDrafts).where(eq(mailDrafts.id, draft.id));
+    expect(row).toMatchObject({ serverSyncState: 'synced', serverSyncedVersion: 2 });
+  });
+
   it('tanpa UIDPLUS: salinan lama hanya ditandai \\Deleted, TIDAK PERNAH EXPUNGE biasa', async () => {
     await imap.close();
     imap = await startFakeMailImap({ password: PASSWORD, uidplus: false });
@@ -649,6 +692,7 @@ describe('salinan draf di folder Draf server', () => {
       .update(mailDrafts)
       .set({
         version: 2,
+        bodyHtml: '<p>Halo lagi</p>',
         serverSyncState: 'pending',
         updatedAt: new Date(Date.now() - 60_000),
         serverSyncedAt: new Date(Date.now() - 5 * 60_000),
@@ -733,49 +777,48 @@ describe('verifikasi alamat lewat kotak surat', () => {
     expect(published.some((event) => event.event.type === 'mail.identity.updated')).toBe(true);
   });
 
-  it('cadangan SEARCH: Message-ID ditemukan di Spam → verified', async () => {
+  it('cadangan LOKAL (review 9B S1): Message-ID di Spam baru terbukti setelah tersinkron, tanpa SEARCH ke server', async () => {
     const ctx = await seed({ verified: false });
     const messageId = `v.${randomBytes(8).toString('hex')}@sistem.test`;
     await pending(ctx, messageId);
     await db
       .update(mailIdentities)
-      .set({
-        verificationSentAt: new Date(),
-        verificationSecretEncrypted: secretBox.encrypt(JSON.stringify({ messageId }), {
-          organizationId: ctx.organizationId,
-          purpose: 'mail_identities.verification_secret',
-          subjectId: ctx.identity.id,
-        }),
-      })
+      .set({ verificationSentAt: new Date(), verificationSecretEncrypted: null })
       .where(eq(mailIdentities.id, ctx.identity.id));
+    // Sinkron TANPA `verifyByMailbox` → cadangan `verifyCheck` yang membuktikan (dari database).
     const { sync, copies: copier } = copies();
     await sync.syncAccount({
       organizationId: ctx.organizationId,
       accountId: ctx.accountId,
       force: true,
     });
-    expect(
-      (
-        await copier.verifyCheck({
-          organizationId: ctx.organizationId,
-          accountId: ctx.accountId,
-          identityId: ctx.identity.id,
-        })
-      ).status,
-    ).toBe('delay');
+    const check = () =>
+      copier.verifyCheck({
+        organizationId: ctx.organizationId,
+        accountId: ctx.accountId,
+        identityId: ctx.identity.id,
+      });
+    expect((await check()).status).toBe('delay');
     imap.add(
       'INBOX.Junk',
-      `Message-ID: <${messageId}>\r\nFrom: noreply@sistem.test\r\nSubject: Kode\r\n\r\nisi`,
+      `Message-ID: <${messageId}>
+
+From: noreply@sistem.test
+
+Subject: Kode
+
+
+
+isi`,
     );
-    expect(
-      (
-        await copier.verifyCheck({
-          organizationId: ctx.organizationId,
-          accountId: ctx.accountId,
-          identityId: ctx.identity.id,
-        })
-      ).status,
-    ).toBe('verified');
+    // Email sudah di server tetapi BELUM tersinkron: server tidak ditanya → belum terbukti.
+    expect((await check()).status).toBe('delay');
+    await sync.syncAccount({
+      organizationId: ctx.organizationId,
+      accountId: ctx.accountId,
+      force: true,
+    });
+    expect((await check()).status).toBe('verified');
     const [done] = await db
       .select()
       .from(mailIdentities)

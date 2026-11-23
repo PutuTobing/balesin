@@ -33,6 +33,7 @@ import {
   loadBroadcastSettings,
   messageTemplates,
   emailOutbound,
+  mailOutbox,
   messages,
   organizations,
   recordAlarm,
@@ -934,8 +935,23 @@ export async function broadcastGuard(deps: BroadcastJobDeps): Promise<Record<str
     .from(emailOutbound)
     .where(and(eq(emailOutbound.source, 'api'), sql`${emailOutbound.createdAt} > ${minuteAgo}`))
     .groupBy(emailOutbound.organizationId);
+  // Review 9B R1 (KONTRAK-API-EMAIL-TULIS §12.2): email menu Email ikut dihitung PER PENERIMA, saat
+  // SMTP dimulai/selesai (`delivery_unknown` = mungkin terkirim).
+  const mailBursts = await db
+    .select({
+      organizationId: mailOutbox.organizationId,
+      total: sql<number>`coalesce(sum(${mailOutbox.recipientCount}), 0)::int`,
+    })
+    .from(mailOutbox)
+    .where(
+      and(
+        inArray(mailOutbox.status, ['sending', 'sent', 'delivery_unknown']),
+        sql`coalesce(${mailOutbox.sentAt}, ${mailOutbox.sendingStartedAt}) > ${minuteAgo}`,
+      ),
+    )
+    .groupBy(mailOutbox.organizationId);
   const totals = new Map<string, number>();
-  for (const row of [...messageBursts, ...emailBursts]) {
+  for (const row of [...messageBursts, ...emailBursts, ...mailBursts]) {
     totals.set(row.organizationId, (totals.get(row.organizationId) ?? 0) + Number(row.total));
   }
   const bursts = [...totals].map(([organizationId, total]) => ({ organizationId, total }));

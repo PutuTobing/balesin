@@ -378,11 +378,28 @@ export const mailIdentities = pgTable(
     ),
     /** Alias: pembuat; utama: `null`. */
     createdByUserId: uuid('created_by_user_id'),
+    /**
+     * Review 9B S3: keputusan Owner/Admin atas identitas akun PRIBADI berdomain organisasi
+     * (`approved`/`rejected`; `null` = belum diputuskan). Perlu/tidaknya persetujuan dihitung saat
+     * dipakai dari domain organisasi (bisa berubah), bukan disimpan.
+     */
+    approvalState: text('approval_state'),
+    approvalDecidedAt: timestamptz('approval_decided_at'),
+    approvalDecidedByUserId: uuid('approval_decided_by_user_id'),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
   (table) => [
     unique('mail_identities_organization_id_id_unique').on(table.organizationId, table.id),
+    foreignKey({
+      name: 'mail_identities_organization_id_approval_decided_by_fk',
+      columns: [table.organizationId, table.approvalDecidedByUserId],
+      foreignColumns: [users.organizationId, users.id],
+    }).onDelete('restrict'),
+    check(
+      'mail_identities_approval',
+      sql`(${table.approvalState} is null or ${table.approvalState} in ('approved', 'rejected')) and ((${table.approvalState} is null) = (${table.approvalDecidedAt} is null))`,
+    ),
     foreignKey({
       name: 'mail_identities_organization_id_account_id_fk',
       columns: [table.organizationId, table.accountId],
@@ -961,6 +978,13 @@ export const mailDrafts = pgTable(
     serverSyncState: text('server_sync_state').notNull().default('pending'),
     serverSyncedAt: timestamptz('server_synced_at'),
     serverErrorCode: text('server_error_code'),
+    /**
+     * Review 9B S6: SHA-256 isi salinan server terakhir (tanpa `Date`/`Message-ID`) & daftar lampirannya —
+     * APPEND hanya bila isinya berubah; lampiran besar yang tidak berubah disalin ulang paling sering
+     * tiap 30 menit.
+     */
+    serverCopyHash: text('server_copy_hash'),
+    serverCopyAttachmentsHash: text('server_copy_attachments_hash'),
     /** Template email terakhir yang disisipkan (statistik `last_used_at`; tanpa FK). */
     templateId: uuid('template_id'),
     createdAt: createdAtColumn(),
@@ -1170,7 +1194,7 @@ export const mailOutbox = pgTable(
     check(
       'mail_outbox_known',
       sql.raw(
-        `status in (${list(MAIL_OUTBOX_STATUSES)}) and mode in (${list(MAIL_DRAFT_MODES)}) and (failure_reason is null or failure_reason in (${list(MAIL_SEND_FAILURE_REASONS)})) and (hold_reason is null or hold_reason in (${list(MAIL_OUTBOX_HOLD_REASONS)})) and sent_copy_state in (${list(MAIL_SENT_COPY_STATES)}) and ((status = 'failed') = (failure_reason is not null))`,
+        `status in (${list(MAIL_OUTBOX_STATUSES)}) and mode in (${list(MAIL_DRAFT_MODES)}) and (failure_reason is null or failure_reason in (${list(MAIL_SEND_FAILURE_REASONS)})) and (hold_reason is null or hold_reason in (${list(MAIL_OUTBOX_HOLD_REASONS)})) and sent_copy_state in (${list(MAIL_SENT_COPY_STATES)}) and ((status in ('failed', 'delivery_unknown')) = (failure_reason is not null))`,
       ),
     ),
     check(

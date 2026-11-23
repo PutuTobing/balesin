@@ -14,7 +14,10 @@ import {
   mailAccounts,
   mailDrafts,
   mailIdentities,
+  mailIdentityApprovalStateOf,
+  mailOrganizationDomains,
   mailSignatures,
+  users,
   type Database,
   type MailAccountRow,
   type MailIdentityRow,
@@ -33,6 +36,8 @@ import {
   type CreateMailIdentityRequest,
   type MailComposeIdentityListResponse,
   type MailIdentity,
+  type MailIdentityApprovalListResponse,
+  type MailIdentityApprovalRequest,
   type MailVerificationUnavailableReason,
   type UpdateMailIdentityRequest,
 } from '@balesin/shared';
@@ -51,15 +56,22 @@ import type { TwoFactorService } from '../two-factor/two-factor.service';
 import { createComposeAccess } from './mail-compose-access';
 import {
   IDENTITY_RESET,
+  addressHoldersOf,
   addressInUse,
   addressUsedElsewhere,
+  claimAddressForOrganization,
   detailError,
   identitiesOf,
+  identityUnavailableReason,
   loadIdentity,
   normalizeAddress,
+  notifyApprovalRequest,
+  notifyRevokedClaims,
+  organizationVerificationBlock,
+  recordApprovalRequest,
   systemSenderOf,
   toMailIdentity,
-  verificationUnavailableReason,
+  type RevokedClaim,
   type SystemSenderFallback,
 } from './mail-compose.repo';
 import { avatarUrlOf, isUuid, loadAccountRow, mailNotFound } from './mail.repo';
@@ -71,7 +83,12 @@ import type { MailContext } from './mail.service';
  *    pintas Owner/Admin (menutup sisa risiko S4 review 9A-1).
  *  - Email verifikasi lewat Email pengirim SISTEM (rute MX asli), bukan SMTP akun yang bisa dikuasai
  *    pendaftar. Kotak surat akun = kotak surat pengirim sistem → `system_sender_conflict` (terkunci).
- *  - Bukti: `Message-ID` rahasia ditemukan di kotak surat akun ini (worker) ATAU kode 6 digit.
+ *  - Bukti: `Message-ID` rahasia ditemukan di folder MASUK akun ini saat sinkron (dicocokkan LOKAL;
+ *    nilainya tidak pernah dikirim ke server IMAP akun — review 9B S1) ATAU kode 6 digit.
+ *  - Review 9B S2: kotak surat Email pengirim sistem = akun Email MANA PUN → verifikasi seluruh
+ *    organisasi terkunci (`system_sender_conflict`).
+ *  - Review 9B S3: identitas akun PRIBADI berdomain organisasi wajib disetujui Owner/Admin dulu.
+ *  - Review 9B S4: klaim akun pribadi yang belum terverifikasi tidak menghalangi Owner/Admin.
  *  - Alamat identitas unik di organisasi (akun lain, Channel Email + alias, pengirim sistem) di bawah
  *    advisory lock `email-address:<org>:<alamat>`.
  *  - Alias akun bersama = `mail.accounts.manage` + konfirmasi identitas; akun pribadi = pemilik.
@@ -102,6 +119,9 @@ export const VERIFY_CODE_RULE: RateLimitRule = {
 
 const CONFIRM_ALIAS =
   'Masukkan password-mu (dan kode verifikasi dua langkah) untuk menambah alamat pengirim di akun email bersama.';
+const CONFIRM_APPROVAL =
+  'Masukkan password-mu (dan kode verifikasi dua langkah) untuk menyetujui atau menolak alamat pengirim akun pribadi.';
+const APPROVALS_MAX = 200;
 const VERIFY_CHECK_DELAY_MS = 60_000;
 
 export interface MailIdentitiesServiceDeps {
@@ -123,17 +143,14 @@ export function createMailIdentitiesService(deps: MailIdentitiesServiceDeps) {
   const now = deps.now ?? (() => new Date());
   const access = createComposeAccess({ db, accessDenied: deps.accessDenied });
 
-  async function unavailableFor(
-    organizationId: string,
-    account: MailAccountRow,
-    identities: readonly MailIdentityRow[],
-  ): Promise<MailVerificationUnavailableReason | null> {
+  /** Blok verifikasi tingkat organisasi (S2) + domain organisasi (S3). */
+  async function guardContext(organizationId: string) {
     const sender = await systemSenderOf(db, organizationId, deps.systemSenderFallback);
-    return verificationUnavailableReason(
-      sender,
-      account,
-      identities.map((identity) => identity.address),
-    );
+    const [unavailable, domains] = await Promise.all([
+      organizationVerificationBlock(db, organizationId, sender),
+      mailOrganizationDomains(db, organizationId),
+    ]);
+    return { sender, unavailable, domains };
   }
 
   async function viewAll(
@@ -142,10 +159,52 @@ export function createMailIdentitiesService(deps: MailIdentitiesServiceDeps) {
     level: Parameters<typeof toMailIdentity>[1]['level'],
   ): Promise<MailIdentity[]> {
     const rows = await identitiesOf(db, auth.organizationId, [account.id]);
-    const unavailable = await unavailableFor(auth.organizationId, account, rows);
+    const { unavailable, domains } = await guardContext(auth.organizationId);
     return rows.map((row) =>
-      toMailIdentity(row, { now: now(), role: auth.user.role, level, account, unavailable }),
+      toMailIdentity(row, {
+        now: now(),
+        role: auth.user.role,
+        level,
+        account,
+        unavailable,
+        domains,
+      }),
     );
+  }
+
+  /**
+   * Verifikasi boleh dimulai/diselesaikan: blok organisasi (S2), persetujuan (S3), dan — untuk akun
+   * pribadi — alamatnya belum dipegang pemegang lain (S4: klaim yang dicabut tetap tertahan).
+   */
+  async function assertVerifiable(
+    executor: Parameters<typeof loadIdentity>[0],
+    auth: AuthContext,
+    account: MailAccountRow,
+    identity: MailIdentityRow,
+    field: string,
+  ): Promise<void> {
+    const { sender, unavailable, domains } = await guardContext(auth.organizationId);
+    const approval = mailIdentityApprovalStateOf(identity, account.kind, domains);
+    const reason: MailVerificationUnavailableReason | null = identityUnavailableReason(
+      unavailable,
+      approval,
+    );
+    if (reason) {
+      throw detailError(
+        'CONFLICT',
+        'verification_unavailable',
+        MAIL_VERIFICATION_UNAVAILABLE_MESSAGES[reason],
+        field,
+        { cause: reason },
+      );
+    }
+    if (account.kind === 'personal') {
+      const holders = await addressHoldersOf(executor, auth.organizationId, identity.address, {
+        systemSender: sender,
+        exceptIdentityId: identity.id,
+      });
+      if (holders.length > 0) throw addressInUse(field);
+    }
   }
 
   async function viewOne(auth: AuthContext, identityId: string): Promise<MailIdentity> {
@@ -188,6 +247,18 @@ export function createMailIdentitiesService(deps: MailIdentitiesServiceDeps) {
           'Hanya Owner/Admin yang bisa menambah atau menghapus alamat pengirim akun bersama.',
       });
     }
+  }
+
+  /** Owner/Admin (`mail.accounts.manage`) — selain itu 403 + catatan akses ditolak. */
+  async function requireApprover(auth: AuthContext, context: MailContext): Promise<void> {
+    if (hasPermission(auth.user.role, 'mail.accounts.manage')) return;
+    await forbidByRule(deps.accessDenied, {
+      auth,
+      rule: ACCESS_RULES.mailAccountLevel,
+      client: context.client,
+      details: { required: 'mail.accounts.manage' },
+      message: 'Hanya Owner/Admin yang bisa menyetujui alamat pengirim akun pribadi.',
+    });
   }
 
   function publishIdentity(identity: MailIdentityRow) {
@@ -274,17 +345,12 @@ export function createMailIdentitiesService(deps: MailIdentitiesServiceDeps) {
         auth.organizationId,
         accounts.map((account) => account.id),
       );
-      const sender = await systemSenderOf(db, auth.organizationId, deps.systemSenderFallback);
+      const { unavailable, domains } = await guardContext(auth.organizationId);
       const result: MailComposeIdentityListResponse['identities'] = [];
       for (const account of accounts.sort((a, b) =>
         a.displayName.localeCompare(b.displayName, 'id', { sensitivity: 'base' }),
       )) {
         const own = rows.filter((row) => row.accountId === account.id);
-        const unavailable = verificationUnavailableReason(
-          sender,
-          account,
-          own.map((row) => row.address),
-        );
         for (const row of own) {
           result.push({
             ...toMailIdentity(row, {
@@ -293,6 +359,7 @@ export function createMailIdentitiesService(deps: MailIdentitiesServiceDeps) {
               level: levels.get(account.id) ?? null,
               account,
               unavailable,
+              domains,
             }),
             account: {
               id: account.id,
@@ -350,6 +417,9 @@ export function createMailIdentitiesService(deps: MailIdentitiesServiceDeps) {
         );
       }
       const sender = await systemSenderOf(db, auth.organizationId, deps.systemSenderFallback);
+      const domains = await mailOrganizationDomains(db, auth.organizationId);
+      let revoked: RevokedClaim[] = [];
+      let approvalAuditId: string | null = null;
       const created = await db.transaction(async (tx) => {
         await assertActorStillAuthorized(
           tx,
@@ -362,7 +432,19 @@ export function createMailIdentitiesService(deps: MailIdentitiesServiceDeps) {
           forUpdate: true,
         });
         if (!locked) throw mailNotFound();
-        if (
+        if (account.kind === 'shared') {
+          // Review 9B S4: alias BERSAMA (Owner/Admin) — klaim lemah akun pribadi dicabut, pemegang
+          // kuat → 409 yang menyebut pemegangnya.
+          revoked = await claimAddressForOrganization(tx, {
+            organizationId: auth.organizationId,
+            actorUserId: auth.user.id,
+            role: auth.user.role,
+            address,
+            systemSender: sender,
+            domains,
+            client: context.client,
+          });
+        } else if (
           await addressUsedElsewhere(tx, auth.organizationId, address, { systemSender: sender })
         ) {
           throw addressInUse();
@@ -393,6 +475,15 @@ export function createMailIdentitiesService(deps: MailIdentitiesServiceDeps) {
           })
           .returning();
         if (!inserted) throw new Error('Identitas tidak tersimpan');
+        approvalAuditId = await recordApprovalRequest(tx, {
+          organizationId: auth.organizationId,
+          actorUserId: auth.user.id,
+          accountKind: account.kind,
+          accountId: account.id,
+          identity: inserted,
+          domains,
+          client: context.client,
+        });
         const auditLogId = await recordAudit(tx, {
           organizationId: auth.organizationId,
           actorUserId: auth.user.id,
@@ -420,6 +511,20 @@ export function createMailIdentitiesService(deps: MailIdentitiesServiceDeps) {
         return inserted;
       });
       await publishIdentity(created);
+      await notifyRevokedClaims(
+        deps.notifier,
+        { organizationId: auth.organizationId, actorUserId: auth.user.id, occurredAt: now() },
+        revoked,
+      );
+      const requested = approvalAuditId as string | null;
+      if (requested) {
+        await notifyApprovalRequest(db, deps.notifier, {
+          organizationId: auth.organizationId,
+          requesterUserId: auth.user.id,
+          auditLogId: requested,
+          occurredAt: now(),
+        });
+      }
       // Verifikasi langsung dimulai bila tersedia (usaha terbaik: gagal tidak menggagalkan pembuatan).
       try {
         await service.startVerification(auth, created.id, context);
@@ -608,17 +713,7 @@ export function createMailIdentitiesService(deps: MailIdentitiesServiceDeps) {
           'identityId',
         );
       }
-      const all = await identitiesOf(db, auth.organizationId, [account.id]);
-      const unavailable = await unavailableFor(auth.organizationId, account, all);
-      if (unavailable) {
-        throw detailError(
-          'CONFLICT',
-          'verification_unavailable',
-          MAIL_VERIFICATION_UNAVAILABLE_MESSAGES[unavailable],
-          'identityId',
-          { cause: unavailable },
-        );
-      }
+      await assertVerifiable(db, auth, account, identity, 'identityId');
       const box = deps.secretBox;
       if (!box) {
         throw new AppError('SERVICE_UNAVAILABLE', {
@@ -641,6 +736,7 @@ export function createMailIdentitiesService(deps: MailIdentitiesServiceDeps) {
       const messageId = newMailVerificationMessageId(domain);
       const at = now();
       const updated = await db.transaction(async (tx) => {
+        await lockEmailAddresses(tx, auth.organizationId, [identity.address]);
         const locked = await loadIdentity(tx, auth.organizationId, identity.id, {
           forUpdate: true,
         });
@@ -653,6 +749,7 @@ export function createMailIdentitiesService(deps: MailIdentitiesServiceDeps) {
             'identityId',
           );
         }
+        await assertVerifiable(tx, auth, account, locked, 'identityId');
         const [saved] = await tx
           .update(mailIdentities)
           .set({
@@ -711,6 +808,7 @@ export function createMailIdentitiesService(deps: MailIdentitiesServiceDeps) {
       const { identity, row: account } = await loadOwned(auth, identityId);
       await access.require(auth, account.id, 'manage', context.client);
       const outcome = await db.transaction(async (tx) => {
+        await lockEmailAddresses(tx, auth.organizationId, [identity.address]);
         const locked = await loadIdentity(tx, auth.organizationId, identity.id, {
           forUpdate: true,
         });
@@ -723,6 +821,9 @@ export function createMailIdentitiesService(deps: MailIdentitiesServiceDeps) {
             'code',
           );
         }
+        // Review 9B S2/S3/S4: kode TIDAK diterima selama verifikasi terkunci (kode mungkin sudah
+        // terbaca lewat Terkirim pengirim sistem / alamat belum disetujui / sudah dipegang organisasi).
+        await assertVerifiable(tx, auth, account, locked, 'code');
         if (
           locked.verificationState !== 'pending' ||
           !locked.verificationCodeHash ||
@@ -801,6 +902,173 @@ export function createMailIdentitiesService(deps: MailIdentitiesServiceDeps) {
       }
       await publishIdentity(outcome.row);
       return { identity: await viewOne(auth, identity.id) };
+    },
+
+    /** Review 9B S3 — daftar menunggu persetujuan (Owner/Admin, `mail.accounts.manage`). */
+    async approvals(
+      auth: AuthContext,
+      context: MailContext,
+    ): Promise<MailIdentityApprovalListResponse> {
+      await requireApprover(auth, context);
+      const { domains } = await guardContext(auth.organizationId);
+      const rows = await db
+        .select({
+          identity: mailIdentities,
+          ownerId: users.id,
+          ownerName: users.name,
+        })
+        .from(mailIdentities)
+        .innerJoin(
+          mailAccounts,
+          and(
+            eq(mailAccounts.organizationId, mailIdentities.organizationId),
+            eq(mailAccounts.id, mailIdentities.accountId),
+          ),
+        )
+        .leftJoin(
+          users,
+          and(
+            eq(users.organizationId, mailAccounts.organizationId),
+            eq(users.id, mailAccounts.ownerUserId),
+          ),
+        )
+        .where(
+          and(
+            eq(mailIdentities.organizationId, auth.organizationId),
+            eq(mailAccounts.kind, 'personal'),
+            isNull(mailAccounts.deletedAt),
+            isNull(mailIdentities.approvalState),
+          ),
+        )
+        .orderBy(sql`${mailIdentities.createdAt} desc`)
+        .limit(2_000);
+      return {
+        approvals: rows
+          .filter(
+            (row) => mailIdentityApprovalStateOf(row.identity, 'personal', domains) === 'pending',
+          )
+          .slice(0, APPROVALS_MAX)
+          .map((row) => ({
+            identityId: row.identity.id,
+            accountId: row.identity.accountId,
+            address: row.identity.address,
+            displayName: row.identity.displayName,
+            isPrimary: row.identity.isPrimary,
+            owner: row.ownerId ? { id: row.ownerId, name: row.ownerName ?? '' } : null,
+            createdAt: row.identity.createdAt.toISOString(),
+          })),
+      };
+    },
+
+    /**
+     * Review 9B S3 — setujui/tolak identitas akun PRIBADI berdomain organisasi (Owner/Admin +
+     * konfirmasi identitas). Admin tidak bisa memutuskan alamat akun pribadinya sendiri. Tolak = juga
+     * kembali `unverified`. Audit + email ke pemilik akun.
+     */
+    async decideApproval(
+      auth: AuthContext,
+      identityId: string,
+      input: MailIdentityApprovalRequest,
+      context: MailContext,
+    ): Promise<MailIdentity> {
+      await requireApprover(auth, context);
+      if (!isUuid(identityId)) throw mailNotFound();
+      const identity = await loadIdentity(db, auth.organizationId, identityId);
+      if (!identity) throw mailNotFound();
+      const account = await loadAccountRow(db, auth.organizationId, identity.accountId);
+      const { domains } = await guardContext(auth.organizationId);
+      // Hanya identitas yang MEMANG perlu persetujuan yang terbuka untuk Owner/Admin (akun pribadi
+      // lain tetap 404).
+      if (
+        !account ||
+        account.deletedAt !== null ||
+        mailIdentityApprovalStateOf(identity, account.kind, domains) === 'not_required'
+      ) {
+        throw mailNotFound();
+      }
+      if (account.ownerUserId === auth.user.id && auth.user.role !== 'owner') {
+        await forbidByRule(deps.accessDenied, {
+          auth,
+          rule: ACCESS_RULES.mailAccountLevel,
+          client: context.client,
+          details: { required: 'owner' },
+          message: 'Alamat pengirim akun pribadimu sendiri harus disetujui Owner.',
+        });
+      }
+      await requireIdentityConfirmation(
+        deps.twoFactor,
+        auth,
+        input.confirmation,
+        'mail.identity.approval',
+        context,
+        CONFIRM_APPROVAL,
+      );
+      const approve = input.decision === 'approve';
+      const at = now();
+      const decided = await db.transaction(async (tx) => {
+        await assertActorStillAuthorized(tx, auth, 'mail.accounts.manage', context.log);
+        const locked = await loadIdentity(tx, auth.organizationId, identity.id, {
+          forUpdate: true,
+        });
+        if (!locked) throw mailNotFound();
+        const [saved] = await tx
+          .update(mailIdentities)
+          .set({
+            ...(approve ? {} : IDENTITY_RESET),
+            approvalState: approve ? 'approved' : 'rejected',
+            approvalDecidedAt: at,
+            approvalDecidedByUserId: auth.user.id,
+          })
+          .where(
+            and(
+              eq(mailIdentities.organizationId, auth.organizationId),
+              eq(mailIdentities.id, locked.id),
+            ),
+          )
+          .returning();
+        if (!saved) throw mailNotFound();
+        const auditLogId = await recordAudit(tx, {
+          organizationId: auth.organizationId,
+          actorUserId: auth.user.id,
+          action: approve ? AUDIT_ACTIONS.mailIdentityApproved : AUDIT_ACTIONS.mailIdentityRejected,
+          targetType: 'mail_account',
+          targetId: account.id,
+          metadata: {
+            accountId: account.id,
+            identityId: saved.id,
+            kind: 'personal',
+            address: saved.address,
+            isPrimary: saved.isPrimary,
+            reason: approve ? 'approved' : 'rejected',
+            actorRole: auth.user.role,
+          },
+          client: context.client,
+        });
+        return { saved, auditLogId };
+      });
+      await publishIdentity(decided.saved);
+      if (account.ownerUserId && account.ownerUserId !== auth.user.id) {
+        await deps.notifier
+          .securityNoticeAdmin({
+            organizationId: auth.organizationId,
+            recipientUserId: account.ownerUserId,
+            subjectUserId: account.ownerUserId,
+            actorUserId: auth.user.id,
+            event: 'mail_identity_decided',
+            occurredAt: at.toISOString(),
+            auditLogId: decided.auditLogId,
+          })
+          .catch(() => undefined);
+      }
+      const view = toMailIdentity(decided.saved, {
+        now: now(),
+        role: auth.user.role,
+        level: null,
+        account,
+        unavailable: (await guardContext(auth.organizationId)).unavailable,
+        domains,
+      });
+      return view;
     },
   };
   return service;

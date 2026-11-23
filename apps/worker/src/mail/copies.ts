@@ -1,15 +1,18 @@
+import { createHash } from 'node:crypto';
+
 import {
   assembleMailBody,
   buildComposedMime,
   buildMailQuote,
   hasMailImapCompose,
-  mailIdentityVerificationContext,
+  mailMessageIdHash,
   type Logger,
   type MailEventPublisher,
   type MailImapActions,
   type MailImapCompose,
   type MailImapSession,
   type MediaStore,
+  type Redis,
   type SecretBox,
 } from '@balesin/core';
 import {
@@ -18,19 +21,21 @@ import {
   mailDrafts,
   mailFolders,
   mailIdentities,
+  mailIdentityApprovalAllows,
+  mailIdentityApprovalStateOf,
   mailMessageBodies,
+  mailMessages,
+  mailOrganizationDomains,
   mailOutbox,
   mailSignatures,
   newId,
   type Database,
+  type DbExecutor,
   type MailAccountRow,
   type MailFolderRow,
 } from '@balesin/db';
-import {
-  MAIL_DRAFT_SERVER_COPY_MAX_BYTES,
-  MAIL_VERIFICATION_AUTO_CHECK_MINUTES,
-} from '@balesin/shared';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { MAIL_VERIFICATION_AUTO_CHECK_MINUTES } from '@balesin/shared';
+import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
 
 /**
  * Salinan di server IMAP akun (tahap 9B, KONTRAK-API-EMAIL-TULIS §7, §13) — semua lewat sambungan
@@ -40,8 +45,12 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
  *    tidak ada → APPEND. 3× coba (1, 10, 60 mnt) lalu `failed` (email TETAP terkirim).
  *  - Draf server: APPEND (`\Draft \Seen`) + hapus UID lama (`\Deleted` + `UID EXPUNGE` bila UIDPLUS;
  *    tanpa UIDPLUS hanya `\Deleted` — TIDAK PERNAH `EXPUNGE` biasa). Diam ≥ 30 dtk, ≤ 1×/2 menit.
- *    Database = kebenaran; > 30 MB tidak disalin.
- *  - Cadangan verifikasi: `UID SEARCH HEADER Message-ID` di Kotak masuk & Spam (maks. 15 menit).
+ *    Database = kebenaran. Review 9B S6: APPEND hanya bila isi berubah (hash); lampiran > 10 MB tidak
+ *    disalin (salinan lama dihapus); lampiran > 1 MB yang TIDAK berubah disalin ulang paling sering
+ *    tiap 30 menit; anggaran APPEND 50 MB/akun/jam (Redis) — lewat batas → ditunda (tetap `pending`,
+ *    diambil lagi oleh simpan berikutnya / pemeliharaan).
+ *  - Cadangan verifikasi (review 9B S1): HANYA pencocokan LOKAL `Message-ID` email yang sudah
+ *    tersinkron di folder masuk akun — nilai rahasianya tidak pernah dikirim ke server IMAP akun.
  */
 
 const MINUTE = 60_000;
@@ -50,6 +59,17 @@ const SENT_COPY_MAX_ATTEMPTS = 3;
 export const DRAFT_SYNC_QUIET_MS = 30_000;
 export const DRAFT_SYNC_MIN_INTERVAL_MS = 2 * MINUTE;
 const ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
+const MB = 1024 * 1024;
+/** Review 9B S6: total lampiran > 10 MB → draf tidak disalin ke server (`disabled`). */
+export const DRAFT_COPY_ATTACHMENTS_MAX_BYTES = 10 * MB;
+/** Lampiran > 1 MB yang tidak berubah → salinan diperbarui paling sering tiap 30 menit. */
+export const DRAFT_COPY_LARGE_BYTES = MB;
+export const DRAFT_COPY_LARGE_INTERVAL_MS = 30 * MINUTE;
+/** Anggaran byte APPEND salinan draf per akun per jam. */
+export const DRAFT_COPY_BUDGET_BYTES_PER_HOUR = 50 * MB;
+/** Folder yang BUKAN "masuk" — `Message-ID` verifikasi di sana bukan bukti (review 9B S1). */
+const NOT_INBOUND_ROLES = ['sent', 'drafts', 'trash', 'all', 'flagged'];
+const VERIFY_SCAN_LIMIT = 500;
 
 type ComposeSession = MailImapSession & MailImapActions & MailImapCompose;
 
@@ -60,6 +80,9 @@ export interface MailCopiesDeps {
   publisher: MailEventPublisher;
   store: MediaStore | null;
   openSession(account: MailAccountRow): Promise<MailImapSession & MailImapActions>;
+  /** Anggaran APPEND salinan draf (review 9B S6). Tanpa Redis → tanpa anggaran (tes). */
+  redis?: Redis;
+  prefix?: string;
   enqueueFolder?: (payload: {
     organizationId: string;
     accountId: string;
@@ -251,6 +274,57 @@ export function createMailCopies(deps: MailCopiesDeps) {
 
   // ── Draf server ────────────────────────────────────────────────────────
 
+  /** Anggaran APPEND salinan draf: `INCRBY` per akun per jam; `false` = habis (dikembalikan). */
+  async function takeCopyBudget(accountId: string, bytes: number): Promise<boolean> {
+    if (!deps.redis) return true;
+    const hour = Math.floor(now().getTime() / (60 * MINUTE));
+    const key = `${deps.prefix ?? 'balesin'}:mail:draft-copy-bytes:${accountId}:${String(hour)}`;
+    try {
+      const used = await deps.redis.incrby(key, bytes);
+      if (used === bytes) await deps.redis.expire(key, 2 * 60 * 60);
+      if (used > DRAFT_COPY_BUDGET_BYTES_PER_HOUR && used !== bytes) {
+        await deps.redis.decrby(key, bytes);
+        return false;
+      }
+      return true;
+    } catch {
+      return true;
+    }
+  }
+
+  /**
+   * Draf tidak (lagi) disalin ke server (`disabled`): salinan lama DIHAPUS dari folder Draf server
+   * (bukan ditinggal basi), kolom salinan dikosongkan.
+   */
+  async function disableDraftCopy(
+    account: MailAccountRow,
+    draft: typeof mailDrafts.$inferSelect,
+  ): Promise<void> {
+    if (draft.serverFolderId && draft.serverUid !== null && draft.serverUidvalidity !== null) {
+      await removeDraftCopy({
+        organizationId: draft.organizationId,
+        accountId: account.id,
+        folderId: draft.serverFolderId,
+        uid: draft.serverUid,
+        uidValidity: draft.serverUidvalidity,
+      }).catch((error: unknown) => {
+        logger.warn({ err: error, draftId: draft.id }, 'Salinan draf server lama gagal dihapus');
+      });
+    }
+    await db
+      .update(mailDrafts)
+      .set({
+        serverSyncState: 'disabled',
+        serverFolderId: null,
+        serverUid: null,
+        serverUidvalidity: null,
+        serverMessageId: null,
+        serverCopyHash: null,
+        serverCopyAttachmentsHash: null,
+      })
+      .where(eq(mailDrafts.id, draft.id));
+  }
+
   async function syncDraft(payload: {
     organizationId: string;
     accountId: string;
@@ -282,16 +356,48 @@ export function createMailCopies(deps: MailCopiesDeps) {
       .where(eq(mailIdentities.id, draft.identityId))
       .limit(1);
     if (!identity) return { status: 'skipped' };
-    const attachments = await db
-      .select()
-      .from(mailDraftAttachments)
-      .where(eq(mailDraftAttachments.draftId, draft.id))
-      .orderBy(mailDraftAttachments.position);
+    const attachments = (
+      await db
+        .select()
+        .from(mailDraftAttachments)
+        .where(eq(mailDraftAttachments.draftId, draft.id))
+        .orderBy(mailDraftAttachments.position)
+    ).filter((file) => file.state === 'ready' && file.storageKey);
+    // Review 9B S6: ukuran & sidik lampiran dari DATABASE dulu (berkas belum dibaca).
+    const attachmentBytes = attachments.reduce((sum, file) => sum + file.sizeBytes, 0);
+    const attachmentsHash = sha256(
+      JSON.stringify(
+        attachments.map((file) => [
+          file.id,
+          file.sha256,
+          file.sizeBytes,
+          file.inline,
+          file.contentId,
+          file.filename,
+          file.contentType,
+        ]),
+      ),
+    );
+    if (attachmentBytes > DRAFT_COPY_ATTACHMENTS_MAX_BYTES) {
+      await disableDraftCopy(account, draft);
+      return { status: 'skipped' };
+    }
+    // Lampiran besar yang TIDAK berubah: salinan diperbarui paling sering tiap 30 menit (isi lain
+    // tetap tersimpan di database; tetap `pending` → diambil lagi nanti).
+    if (
+      attachmentBytes > DRAFT_COPY_LARGE_BYTES &&
+      draft.serverUid !== null &&
+      draft.serverCopyAttachmentsHash === attachmentsHash &&
+      draft.serverSyncedAt &&
+      at.getTime() - draft.serverSyncedAt.getTime() < DRAFT_COPY_LARGE_INTERVAL_MS
+    ) {
+      return { status: 'done' };
+    }
     let total = 0;
     const inline: { cid: string; filename: string; contentType: string; content: Buffer }[] = [];
     const parts: { filename: string; contentType: string; content: Buffer }[] = [];
     for (const file of attachments) {
-      if (file.state !== 'ready' || !file.storageKey) continue;
+      if (!file.storageKey) continue;
       const content = await readFile(file.storageKey);
       if (!content) continue;
       total += content.length;
@@ -304,12 +410,8 @@ export function createMailCopies(deps: MailCopiesDeps) {
         });
       else parts.push({ filename: file.filename, contentType: file.contentType, content });
     }
-    // Base64 menambah ±33%.
-    if (total * 1.37 > MAIL_DRAFT_SERVER_COPY_MAX_BYTES) {
-      await db
-        .update(mailDrafts)
-        .set({ serverSyncState: 'disabled' })
-        .where(eq(mailDrafts.id, draft.id));
+    if (total > DRAFT_COPY_ATTACHMENTS_MAX_BYTES) {
+      await disableDraftCopy(account, draft);
       return { status: 'skipped' };
     }
     const logos = await db
@@ -359,6 +461,32 @@ export function createMailCopies(deps: MailCopiesDeps) {
         .where(eq(mailDrafts.id, draft.id));
       return { status: 'failed' };
     }
+    // Review 9B S6: isi salinan sama dengan salinan terakhir → tidak di-APPEND ulang.
+    const contentHash = sha256(
+      JSON.stringify([
+        identity.address,
+        identity.displayName,
+        identity.replyTo,
+        draft.to,
+        draft.cc,
+        draft.bcc,
+        draft.subject,
+        assembled.html,
+        assembled.text,
+        attachmentsHash,
+      ]),
+    );
+    if (draft.serverUid !== null && draft.serverCopyHash === contentHash) {
+      await db
+        .update(mailDrafts)
+        .set({
+          serverSyncedVersion: draft.version,
+          serverErrorCode: null,
+          serverSyncState: sql`case when ${mailDrafts.version} = ${draft.version} then 'synced' else 'pending' end`,
+        })
+        .where(eq(mailDrafts.id, draft.id));
+      return { status: 'done' };
+    }
     const domain = identity.address.split('@')[1] ?? 'balesin.invalid';
     const messageId = `d.${draft.serverRef}.${String(draft.version)}@${domain}`;
     let mime;
@@ -385,6 +513,14 @@ export function createMailCopies(deps: MailCopiesDeps) {
         .set({ serverSyncState: 'error', serverErrorCode: 'mime_invalid' })
         .where(eq(mailDrafts.id, draft.id));
       return { status: 'failed' };
+    }
+    // Review 9B S6: anggaran byte APPEND per akun per jam (Redis). Lewat batas → ditunda.
+    if (!(await takeCopyBudget(account.id, mime.withBcc.length))) {
+      logger.info(
+        { draftId: draft.id, accountId: account.id },
+        'Salinan draf server ditunda: anggaran jam ini habis',
+      );
+      return { status: 'done' };
     }
     try {
       const saved = await withSession(account, async (session) => {
@@ -439,6 +575,8 @@ export function createMailCopies(deps: MailCopiesDeps) {
           serverSyncedVersion: draft.version,
           serverSyncedAt: now(),
           serverErrorCode: null,
+          serverCopyHash: contentHash,
+          serverCopyAttachmentsHash: attachmentsHash,
           serverSyncState: sql`case when ${mailDrafts.version} = ${draft.version} then 'synced' else 'pending' end`,
         })
         .where(eq(mailDrafts.id, draft.id));
@@ -482,8 +620,13 @@ export function createMailCopies(deps: MailCopiesDeps) {
     });
   }
 
-  // ── Cadangan verifikasi alamat ─────────────────────────────────────────
+  // ── Cadangan verifikasi alamat (review 9B S1) ─────────────────────────
 
+  /**
+   * Cadangan pencocokan sinkron: TANPA perintah IMAP apa pun. `Message-ID` rahasia tidak pernah
+   * dikirim ke server akun (server milik pendaftar bisa menjawab "ketemu" untuk apa saja DAN akan
+   * mengetahui nilainya). Yang dicek hanya email yang SUDAH tersinkron ke folder masuk akun ini.
+   */
   async function verifyCheck(payload: {
     organizationId: string;
     accountId: string;
@@ -502,7 +645,7 @@ export function createMailCopies(deps: MailCopiesDeps) {
     if (
       !identity ||
       identity.verificationState !== 'pending' ||
-      !identity.verificationSecretEncrypted
+      !identity.verificationMessageIdHash
     ) {
       return { status: 'skipped' };
     }
@@ -515,60 +658,61 @@ export function createMailCopies(deps: MailCopiesDeps) {
     ) {
       return { status: 'skipped' };
     }
-    let messageId: string;
-    try {
-      if (!deps.secretBox) return { status: 'skipped' };
-      const secret = JSON.parse(
-        deps.secretBox.decrypt(
-          identity.verificationSecretEncrypted,
-          mailIdentityVerificationContext(identity.organizationId, identity.id),
-        ),
-      ) as { messageId?: unknown };
-      if (typeof secret.messageId !== 'string') return { status: 'skipped' };
-      messageId = secret.messageId;
-    } catch {
-      return { status: 'skipped' };
-    }
-    const account = await loadAccount(identity.organizationId, identity.accountId);
-    if (!account) return { status: 'delay', delayMs: MINUTE };
-    const targets = await db
-      .select()
-      .from(mailFolders)
-      .where(
-        and(eq(mailFolders.accountId, account.id), inArray(mailFolders.role, ['inbox', 'junk'])),
-      );
-    const since = new Date(identity.verificationSentAt.getTime() - 24 * 60 * MINUTE);
-    const found = await withSession(account, async (session) => {
-      for (const folder of targets) {
-        await session.select(folder.path);
-        const uids = await session.searchMessageId(messageId, since);
-        if (uids.length > 0) return true;
-      }
-      return false;
-    }).catch(() => false);
-    if (!found) return { status: 'delay', delayMs: MINUTE };
     const verified = await markVerifiedByMailbox(db, identity.organizationId, identity.id, at);
-    if (verified) {
-      await deps.publisher.publish([
-        {
-          organizationId: identity.organizationId,
+    if (!verified) return { status: 'delay', delayMs: MINUTE };
+    await deps.publisher.publish([
+      {
+        organizationId: identity.organizationId,
+        accountId: identity.accountId,
+        event: {
+          type: 'mail.identity.updated',
           accountId: identity.accountId,
-          event: {
-            type: 'mail.identity.updated',
-            accountId: identity.accountId,
-            identityId: identity.id,
-            verificationState: 'verified',
-          },
+          identityId: identity.id,
+          verificationState: 'verified',
         },
-      ]);
-    }
+      },
+    ]);
     return { status: 'verified' };
   }
 
   return { appendSent, syncDraft, removeDraftCopy, verifyCheck };
 }
 
-/** Identitas `pending` → `verified` (`mailbox`) + audit. `false` bila sudah tidak tertunda. */
+const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
+
+/**
+ * Bukti lokal (review 9B S1): email ber-`Message-ID` verifikasi (SHA-256 sama) SUDAH tersimpan di
+ * folder MASUK akun itu (bukan Terkirim/Draf/Sampah/Semua/Berbintang).
+ */
+async function inboundCopyExists(
+  db: DbExecutor,
+  organizationId: string,
+  accountId: string,
+  messageIdHash: string,
+): Promise<boolean> {
+  const rows = await db
+    .select({ messageId: mailMessages.messageIdHeader })
+    .from(mailMessages)
+    .where(
+      and(
+        eq(mailMessages.organizationId, organizationId),
+        eq(mailMessages.accountId, accountId),
+        isNotNull(mailMessages.messageIdHeader),
+        sql`(${mailMessages.folderRole} is null or ${mailMessages.folderRole} not in (${sql.join(
+          NOT_INBOUND_ROLES.map((role) => sql`${role}`),
+          sql`, `,
+        )}))`,
+      ),
+    )
+    .orderBy(desc(mailMessages.createdAt))
+    .limit(VERIFY_SCAN_LIMIT);
+  return rows.some((row) => row.messageId && mailMessageIdHash(row.messageId) === messageIdHash);
+}
+
+/**
+ * Identitas `pending` → `verified` (`mailbox`) + audit. `false` bila sudah tidak tertunda, tidak ada
+ * bukti lokal (S1), atau identitas akun pribadi berdomain organisasi belum disetujui (S3).
+ */
 export async function markVerifiedByMailbox(
   db: Database,
   organizationId: string,
@@ -576,6 +720,46 @@ export async function markVerifiedByMailbox(
   at: Date,
 ): Promise<boolean> {
   return db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({ identity: mailIdentities, kind: mailAccounts.kind })
+      .from(mailIdentities)
+      .innerJoin(
+        mailAccounts,
+        and(
+          eq(mailAccounts.organizationId, mailIdentities.organizationId),
+          eq(mailAccounts.id, mailIdentities.accountId),
+        ),
+      )
+      .where(
+        and(eq(mailIdentities.organizationId, organizationId), eq(mailIdentities.id, identityId)),
+      )
+      .for('update', { of: mailIdentities })
+      .limit(1);
+    const pending = current?.identity;
+    if (
+      !current ||
+      !pending ||
+      pending.verificationState !== 'pending' ||
+      !pending.verificationMessageIdHash
+    ) {
+      return false;
+    }
+    if (
+      !(await inboundCopyExists(
+        tx,
+        organizationId,
+        pending.accountId,
+        pending.verificationMessageIdHash,
+      ))
+    ) {
+      return false;
+    }
+    if (current.kind === 'personal') {
+      const domains = await mailOrganizationDomains(tx, organizationId);
+      if (!mailIdentityApprovalAllows(mailIdentityApprovalStateOf(pending, 'personal', domains))) {
+        return false;
+      }
+    }
     const [saved] = await tx
       .update(mailIdentities)
       .set({

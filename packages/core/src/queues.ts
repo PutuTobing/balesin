@@ -475,6 +475,12 @@ export const SECURITY_NOTICE_ADMIN_EVENTS = [
   // 9B: alias (alamat pengirim) baru di akun email BERSAMA oleh Admin (ke semua Owner; subjek =
   // pelaku). Alamat alias & akun dari baris audit.
   'mail_identity_added',
+  // Review 9B S3: alamat pengirim akun PRIBADI berdomain organisasi menunggu persetujuan (ke semua
+  // Owner/Admin = `team.manage`; subjek = pemilik akun pribadi). Alamat dari baris audit.
+  'mail_identity_approval_requested',
+  // Review 9B S3/S4: alamat pengirim akun pribadi disetujui / ditolak / klaimnya dicabut (ke PEMILIK
+  // akun pribadi; subjek = penerima; pelaku = Owner/Admin). Alamat & keputusan (`reason`) dari audit.
+  'mail_identity_decided',
 ] as const;
 export type SecurityNoticeAdminEvent = (typeof SECURITY_NOTICE_ADMIN_EVENTS)[number];
 

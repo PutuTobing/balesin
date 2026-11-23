@@ -124,6 +124,12 @@ export interface SendingLimitsService {
     client: ClientInfo;
     /** Kepada + Cc + Bcc setelah digabung. */
     recipients: number;
+    /**
+     * Review 9B R2: transaksi penyisip outbox. Bila diisi, kunci advisory per pengguna
+     * (`mail-daily:<org>:<user>`) diambil di transaksi itu SEBELUM menghitung, sehingga kirim paralel
+     * dihitung berurutan (hitungan melihat outbox yang sudah di-commit pengirim sebelumnya).
+     */
+    executor?: DbExecutor;
   }): Promise<void>;
 }
 
@@ -172,7 +178,7 @@ async function countOutbound(
         and(
           eq(mailOutbox.organizationId, organizationId),
           eq(mailOutbox.createdByUserId, senderUserId),
-          sql`${mailOutbox.status} in ('pending', 'queued', 'sending', 'sent')`,
+          sql`${mailOutbox.status} in ('pending', 'queued', 'sending', 'sent', 'delivery_unknown')`,
           gt(mailOutbox.createdAt, since),
         ),
       );
@@ -485,8 +491,14 @@ export function createSendingLimitsService(deps: SendingLimitsServiceDeps): Send
       }
     },
 
-    async assertCanSendMail({ organizationId, userId, client, recipients }) {
-      const [org] = await db
+    async assertCanSendMail({ organizationId, userId, client, recipients, executor }) {
+      if (executor) {
+        await executor.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${`mail-daily:${organizationId}:${userId}`}, 0))`,
+        );
+      }
+      const reader = executor ?? db;
+      const [org] = await reader
         .select({
           pausedAt: organizations.sendingPausedAt,
           perUser: organizations.sendDailyLimitPerUser,
@@ -496,7 +508,7 @@ export function createSendingLimitsService(deps: SendingLimitsServiceDeps): Send
       if (!org) throw new AppError('NOT_FOUND');
       if (org.pausedAt) throw new AppError('SENDING_PAUSED');
       const since = new Date(now().getTime() - SENDING_DAY_MS);
-      const mine = await countOutbound(db, organizationId, since, userId);
+      const mine = await countOutbound(reader, organizationId, since, userId);
       if (mine + Math.max(1, recipients) > org.perUser) {
         await limitReached(
           organizationId,

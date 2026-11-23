@@ -48,7 +48,11 @@ import {
   emailSettings,
   emailSettingsChangeNotices,
   mailAccounts,
+  mailAccountsMatchingSystemSender,
   mailIdentities,
+  mailIdentityApprovalAllows,
+  mailIdentityApprovalStateOf,
+  mailOrganizationDomains,
   organizationLogos,
   organizations,
   mailAccessIndexOf,
@@ -601,7 +605,9 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
     event === 'mail_identity_added';
   // Fase 9: password akun email ditolak → penerima dipilih pengantre (pemilik akun pribadi / pemegang
   // Kelola + Owner/Admin), cukup masih aktif.
-  const anyActiveRecipient = event === 'mail_account_auth_failed';
+  // Review 9B S3/S4: keputusan atas alamat pengirim akun pribadi → pemiliknya (hak `manage` dicek ulang).
+  const anyActiveRecipient =
+    event === 'mail_account_auth_failed' || event === 'mail_identity_decided';
   const recipient = await findActiveUser(organizationId, recipientUserId, deps);
   // Pengguna yang baru dinonaktifkan tetap disebut di email "dinonaktifkan".
   const subject =
@@ -616,6 +622,8 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
     event === 'mail_account_changed' ||
     event === 'mail_access_changed' ||
     event === 'mail_identity_added' ||
+    event === 'mail_identity_approval_requested' ||
+    event === 'mail_identity_decided' ||
     event === 'mail_account_auth_failed'
       ? await findUserAnyStateWithEmail(organizationId, subjectUserId, deps)
       : await findActiveUser(organizationId, subjectUserId, deps);
@@ -692,6 +700,8 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
       event === 'mail_account_changed' ||
       event === 'mail_access_changed' ||
       event === 'mail_identity_added' ||
+      event === 'mail_identity_approval_requested' ||
+      event === 'mail_identity_decided' ||
       event === 'mail_account_auth_failed'
         ? await findEmailApiDetails(organizationId, auditLogId, deps)
         : undefined;
@@ -1204,14 +1214,14 @@ const VERIFICATION_RESET = {
   verificationAttempts: 0,
 } as const;
 
-const sameText = (a: string | null | undefined, b: string | null | undefined) =>
-  !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
-
 /**
  * 9B — email verifikasi alamat pengirim menu Email (KONTRAK-API-EMAIL-TULIS §3.2): lewat Email
  * pengirim SISTEM (rute MX asli), BUKAN SMTP akun yang bisa dikuasai pendaftar. Kode + `Message-ID`
- * dari salinan terenkripsi (dihapus setelah terkirim). Konflik pengirim sistem (kotak surat yang sama
- * dengan akun) diperiksa ulang di sini → verifikasi dibatalkan, tidak dikirim.
+ * dari salinan terenkripsi yang DIHAPUS UTUH setelah terkirim (review 9B S1: hanya SHA-256
+ * `Message-ID` yang tersisa, untuk pencocokan lokal saat sinkron). Diperiksa ulang di sini → verifikasi
+ * dibatalkan, tidak dikirim:
+ *  - review 9B S2: kotak surat pengirim sistem terhubung sebagai akun Email MANA PUN di organisasi;
+ *  - review 9B S3: identitas akun pribadi berdomain organisasi belum disetujui Owner/Admin.
  */
 async function sendMailIdentityVerification(
   job: EmailJob,
@@ -1259,16 +1269,23 @@ async function sendMailIdentityVerification(
   const transport = await resolveTransport(organizationId, deps);
   if (transport.kind === 'ready') {
     const sender = transport.settings;
-    const account = row.account;
-    const smtpUser = account.smtpSameCredentials ? account.imapUsername : account.smtpUsername;
-    const conflict =
-      sameText(sender.sender.fromAddress, account.emailAddress) ||
-      sameText(sender.sender.fromAddress, identity.address) ||
-      (sameText(sender.connection.host, account.smtpHost) &&
-        sameText(sender.connection.username, smtpUser)) ||
-      (sameText(sender.connection.host, account.imapHost) &&
-        sameText(sender.connection.username, account.imapUsername));
-    if (conflict) {
+    const conflicting = await mailAccountsMatchingSystemSender(deps.db, organizationId, {
+      address: sender.sender.fromAddress,
+      host: sender.connection.host,
+      username: sender.connection.username,
+    });
+    const domains =
+      row.account.kind === 'personal'
+        ? await mailOrganizationDomains(deps.db, organizationId)
+        : new Set<string>();
+    const notApproved = !mailIdentityApprovalAllows(
+      mailIdentityApprovalStateOf(identity, row.account.kind, domains),
+    );
+    if (
+      conflicting.length > 0 ||
+      identity.address === sender.sender.fromAddress.trim().toLowerCase() ||
+      notApproved
+    ) {
       await deps.db
         .update(mailIdentities)
         .set(VERIFICATION_RESET)
@@ -1276,8 +1293,8 @@ async function sendMailIdentityVerification(
           and(eq(mailIdentities.organizationId, organizationId), eq(mailIdentities.id, identityId)),
         );
       deps.logger.warn(
-        { jobId: job.id, identityId },
-        'Email verifikasi alamat tidak dikirim: kotak surat sama dengan Email pengirim sistem',
+        { jobId: job.id, identityId, notApproved },
+        'Email verifikasi alamat tidak dikirim: kotak surat Email pengirim sistem terhubung sebagai akun Email, atau alamat belum disetujui',
       );
       return { status: 'skipped', reason: 'no_longer_valid' };
     }
@@ -1295,24 +1312,11 @@ async function sendMailIdentityVerification(
   }
   const branding = await loadOrganizationBrand(deps.db, organizationId);
   if (!branding) return { status: 'skipped', reason: 'recipient_unavailable' };
-  const [requester] = identity.verificationRequestedByUserId
-    ? await deps.db
-        .select({ name: users.name })
-        .from(users)
-        .where(
-          and(
-            eq(users.organizationId, organizationId),
-            eq(users.id, identity.verificationRequestedByUserId),
-          ),
-        )
-        .limit(1)
-    : [];
+  // Review 9B R3: tanpa teks bebas pendaftar (nama pengguna / nama tampilan akun).
   const body = renderMailIdentityVerificationEmail({
     brand: branding.brand,
-    requesterName: requester?.name ?? 'Seseorang',
     organizationName: branding.brand.organizationName ?? 'organisasimu',
     address: identity.address,
-    accountName: row.account.displayName,
     code: secret.code,
   });
   let result: EmailJobResult;
@@ -1333,16 +1337,13 @@ async function sendMailIdentityVerification(
     if (error instanceof UnrecoverableError || isFinalAttempt(job)) await clearSecret();
     throw error;
   }
-  if (result.status === 'sent' && deps.secretBox) {
-    // KODE dibuang dari salinan; `Message-ID` disimpan terenkripsi (tanpa kode) sampai verifikasi
-    // selesai/kedaluwarsa — dipakai cadangan `UID SEARCH HEADER Message-ID` (§3.2).
+  if (result.status === 'sent') {
+    // Review 9B S1: salinan terenkripsi (kode + `Message-ID`) DIHAPUS utuh — yang tersisa hanya HMAC
+    // kode & SHA-256 `Message-ID` (pencocokan lokal saat sinkron, tidak pernah dikirim ke server akun).
     await deps.db
       .update(mailIdentities)
       .set({
-        verificationSecretEncrypted: deps.secretBox.encrypt(
-          JSON.stringify({ messageId: secret.messageId }),
-          mailIdentityVerificationContext(organizationId, identityId),
-        ),
+        verificationSecretEncrypted: null,
         verificationSentAt: new Date(),
       })
       .where(

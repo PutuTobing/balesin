@@ -788,7 +788,15 @@ export function createMailMessagesService(deps: MailMessagesServiceDeps) {
     return file ? { row, file } : null;
   }
 
-  /** Simpan hasil unduhan ke cache selama kuota cache gambar organisasi masih cukup. */
+  /**
+   * Simpan hasil unduhan ke cache selama kuota cache gambar organisasi masih cukup.
+   *
+   * Review 9B S5 (sisa P2-S8): seluruh langkah — cek baris segar, cek kuota, tulis berkas, upsert —
+   * berjalan di bawah kunci advisory per `(akun, url)` di SATU transaksi. Unduhan bersamaan untuk
+   * gambar yang sama jadi berurutan: yang datang belakangan melihat baris segar dan tidak menulis
+   * berkas. Berkas yang ditulis tetapi transaksinya gagal langsung dibuang; berkas lama yang tergantikan
+   * dibuang SETELAH commit. Jadi setiap berkas di `mail/` dirujuk tepat satu baris (kuota & retensi).
+   */
   async function rememberImage(
     organizationId: string,
     accountId: string,
@@ -796,65 +804,80 @@ export function createMailMessagesService(deps: MailMessagesServiceDeps) {
     body: Buffer,
     type: string,
   ) {
-    if (!imageCacheOn || !deps.store) return;
+    const store = deps.store;
+    if (!imageCacheOn || !store) return;
     const at = now();
-    // Review 9A-2 P2-S8: SEMUA baris dihitung (yang kedaluwarsa tetap memakai disk sampai retensi
-    // memangkasnya), tiap berkas minimal satu blok 4 KB, plus batas jumlah entri. Penuh → tidak
-    // disimpan (gambar tetap disajikan dengan batas S5 yang sama).
-    const [usage] = await db
-      .select({
-        entries: sql<string>`count(*)`,
-        total: sql<string>`coalesce(sum(greatest(${mailRemoteImageCache.sizeBytes}, ${MAIL_REMOTE_IMAGE_CACHE_MIN_FILE_BYTES})), 0)`,
-      })
-      .from(mailRemoteImageCache)
-      .where(eq(mailRemoteImageCache.organizationId, organizationId));
-    if (Number(usage?.entries ?? 0) >= MAIL_REMOTE_IMAGE_CACHE_ORGANIZATION_MAX_ENTRIES) return;
-    const cost = Math.max(body.length, MAIL_REMOTE_IMAGE_CACHE_MIN_FILE_BYTES);
-    if (Number(usage?.total ?? 0) + cost > MAIL_REMOTE_IMAGE_CACHE_ORGANIZATION_MAX_BYTES) return;
-    const saved = await deps.store.save('mail', body);
-    const expiresAt = new Date(at.getTime() + MAIL_REMOTE_IMAGE_CACHE_TTL_MS);
-    const [previous] = await db
-      .select({ storageKey: mailRemoteImageCache.storageKey })
-      .from(mailRemoteImageCache)
-      .where(
-        and(
-          eq(mailRemoteImageCache.accountId, accountId),
-          eq(mailRemoteImageCache.urlHash, urlHash),
-        ),
-      )
-      .limit(1);
+    const written: { key: string | null; replaced: string | null } = { key: null, replaced: null };
     try {
-      await db
-        .insert(mailRemoteImageCache)
-        .values({
-          organizationId,
-          accountId,
-          urlHash,
-          storageKey: saved.storageKey,
-          contentType: type,
-          sizeBytes: saved.sizeBytes,
-          fetchedAt: at,
-          expiresAt,
-        })
-        .onConflictDoUpdate({
-          target: [mailRemoteImageCache.accountId, mailRemoteImageCache.urlHash],
-          set: {
+      await db.transaction(async (tx) => {
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${`mail-image:${accountId}:${urlHash}`}, 0))`,
+        );
+        const [current] = await tx
+          .select({
+            storageKey: mailRemoteImageCache.storageKey,
+            expiresAt: mailRemoteImageCache.expiresAt,
+          })
+          .from(mailRemoteImageCache)
+          .where(
+            and(
+              eq(mailRemoteImageCache.accountId, accountId),
+              eq(mailRemoteImageCache.urlHash, urlHash),
+            ),
+          )
+          .limit(1);
+        // Permintaan lain baru saja menyimpannya.
+        if (current && current.expiresAt.getTime() > at.getTime()) return;
+        // Review 9A-2 P2-S8: SEMUA baris dihitung (yang kedaluwarsa tetap memakai disk sampai retensi
+        // memangkasnya), tiap berkas minimal satu blok 4 KB, plus batas jumlah entri. Penuh → tidak
+        // disimpan (gambar tetap disajikan dengan batas S5 yang sama).
+        const [usage] = await tx
+          .select({
+            entries: sql<string>`count(*)`,
+            total: sql<string>`coalesce(sum(greatest(${mailRemoteImageCache.sizeBytes}, ${MAIL_REMOTE_IMAGE_CACHE_MIN_FILE_BYTES})), 0)`,
+          })
+          .from(mailRemoteImageCache)
+          .where(eq(mailRemoteImageCache.organizationId, organizationId));
+        if (Number(usage?.entries ?? 0) >= MAIL_REMOTE_IMAGE_CACHE_ORGANIZATION_MAX_ENTRIES) return;
+        const cost = Math.max(body.length, MAIL_REMOTE_IMAGE_CACHE_MIN_FILE_BYTES);
+        if (Number(usage?.total ?? 0) + cost > MAIL_REMOTE_IMAGE_CACHE_ORGANIZATION_MAX_BYTES)
+          return;
+        const saved = await store.save('mail', body);
+        written.key = saved.storageKey;
+        const expiresAt = new Date(at.getTime() + MAIL_REMOTE_IMAGE_CACHE_TTL_MS);
+        await tx
+          .insert(mailRemoteImageCache)
+          .values({
+            organizationId,
+            accountId,
+            urlHash,
             storageKey: saved.storageKey,
             contentType: type,
             sizeBytes: saved.sizeBytes,
             fetchedAt: at,
             expiresAt,
-            updatedAt: sql`now()`,
-          },
-        });
+          })
+          .onConflictDoUpdate({
+            target: [mailRemoteImageCache.accountId, mailRemoteImageCache.urlHash],
+            set: {
+              storageKey: saved.storageKey,
+              contentType: type,
+              sizeBytes: saved.sizeBytes,
+              fetchedAt: at,
+              expiresAt,
+              updatedAt: sql`now()`,
+            },
+          });
+        if (current && current.storageKey !== saved.storageKey) {
+          written.replaced = current.storageKey;
+        }
+      });
     } catch {
       // Akun diputus di tengah jalan (FK) dsb.: cache bukan kebenaran — cukup buang berkasnya.
-      await deps.store.remove(saved.storageKey).catch(() => undefined);
+      if (written.key) await store.remove(written.key).catch(() => undefined);
       return;
     }
-    if (previous && previous.storageKey !== saved.storageKey) {
-      await deps.store.remove(previous.storageKey).catch(() => undefined);
-    }
+    if (written.replaced) await store.remove(written.replaced).catch(() => undefined);
   }
 
   /** Jatah unduhan bersamaan; `null` = dapat (wajib `release`), selain itu status penolakan. */

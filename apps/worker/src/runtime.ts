@@ -202,6 +202,8 @@ export function startWorkers(
       publisher: syncDeps.publisher,
       store,
       openSession: (account) => reader.openSession(account),
+      redis: options.connection,
+      prefix: queuePrefix,
       enqueueFolder: (payload) => enqueue.enqueueFolder(payload),
       ...(syncDeps.now ? { now: syncDeps.now } : {}),
     });

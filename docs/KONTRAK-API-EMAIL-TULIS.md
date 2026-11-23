@@ -206,8 +206,8 @@ wajib diverifikasi; **tidak ada jalan pintas**, termasuk untuk Owner/Admin.
      menyimpan email baru di folder berperan `inbox`, `junk`, `archive`, atau folder sendiri
      (**bukan** `sent`/`drafts`/`trash`) akun yang SAMA, SHA-256 `Message-ID`-nya dicocokkan dengan
      verifikasi tertunda akun itu. IDLE membuat ini biasanya < 10 dtk. Cadangan: job
-     `mail-identity-verify-check` (tiap 60 dtk, maks. 15 menit) menjalankan `UID SEARCH SINCE <hari ini>
-     HEADER Message-ID <nilai>` di Kotak masuk & Spam. Ini membuktikan: email ke alamat itu, lewat
+     `mail-identity-verify-check` (tiap 60 dtk, maks. 15 menit) mencocokkan ULANG secara lokal email yang sudah
+     tersinkron (review 9B S1: `Message-ID` TIDAK PERNAH dikirim ke server akun). Ini membuktikan: email ke alamat itu, lewat
      rute aslinya, masuk ke kotak surat yang terhubung — pola alias/penerusan yang sah.
    - **Kode** (`verified_method: code`): pemegang `manage` memasukkan kode dari email itu (untuk alamat
      "kirim sebagai" yang kotak suratnya ada di tempat lain — pola Gmail "Kirim email sebagai"). Maks.
@@ -956,10 +956,11 @@ ini sedang diputus atau pemiliknya nonaktif."). Teks balasan server SMTP tidak p
 - **Galat**: `errorDetailSchema` mendapat isian opsional `attemptsLeft`, `currentVersion`, `updatedAt`, `count`,
   `latestReceivedAt`, `messageIds`, `cause`. Tanpa konfirmasi identitas (tambah alias bersama, menaikkan batas) →
   **400** `VALIDATION_ERROR` (pola `requireIdentityConfirmation` yang ada), password salah → 403.
-- **Kuota unggah 500 MB/24 jam** dihitung dari lampiran unggahan yang MASIH ada (database), bukan penghitung Redis.
-- **Verifikasi**: setelah email verifikasi terkirim, salinan terenkripsi berisi `Message-ID` saja (kode dibuang)
-  sampai terverifikasi/kedaluwarsa (dibutuhkan cadangan `SEARCH`). Tanpa produsen antrean (tes) email verifikasi
-  TIDAK dikirim ulang oleh tick.
+- **Kuota unggah 500 MB/24 jam** dihitung dari lampiran unggahan yang masih ada (database) DITAMBAH unggahan ≤ 24 jam
+  yang sudah dihapus (sorted set Redis per pengguna) — review 9B R5.
+- **Verifikasi**: setelah email verifikasi terkirim, salinan terenkripsi DIHAPUS utuh (review 9B S1) — tidak ada lagi
+  cadangan `UID SEARCH HEADER Message-ID` ke server akun; job `mail-identity-verify-check` hanya mencocokkan email yang
+  sudah tersinkron di folder masuk (lokal). Tanpa produsen antrean (tes) email verifikasi TIDAK dikirim ulang oleh tick.
 - **Kutipan**: bila isi email asli belum/tidak lagi di cache (`mail_message_bodies`), email dikirim TANPA kutipan
   (bukan menunggu pengambilan isi). Zona waktu kutipan salinan draf server = `Asia/Jakarta` (worker tidak tahu zona
   organisasi); email terkirim memakai zona organisasi.
@@ -986,3 +987,27 @@ ini sedang diputus atau pemiliknya nonaktif."). Teks balasan server SMTP tidak p
   (level Kelola). `MailSettings` juga `maxRecipientsPerEmail`, `maxAttachmentTotalMb` (PUT: opsional,
   menaikkan butuh `confirmation`). Detail email 9A: `threadKey` + `composing[]`; daftar folder Draf: `draftId`
   (hanya draf milikku).
+- **Perbaikan review keamanan 9B (2026-11-23) — perubahan bentuk API untuk web** (migrasi `0040_mail_review_9b`):
+  - `MailIdentity.approval: { state: 'not_required' | 'pending' | 'approved' | 'rejected', decidedAt }` (S3).
+    `verification.unavailableReason` bisa juga `approval_pending` / `approval_rejected` (pesan di
+    `MAIL_VERIFICATION_UNAVAILABLE_MESSAGES`); `cannotSendReason` (identitas & draf) bisa `identity_not_approved`.
+    Teks `system_sender_conflict` diganti: kini berlaku untuk SELURUH organisasi (kotak surat Email pengirim sistem
+    terhubung sebagai akun Email mana pun).
+  - Rute baru (Owner/Admin, `mail.accounts.manage`): `GET /api/v1/mail/identity-approvals` →
+    `{ approvals: [{ identityId, accountId, address, displayName, isPrimary, owner: { id, name } | null, createdAt }] }`
+    (menunggu persetujuan, maks. 200); `POST /api/v1/mail/identities/:identityId/approval`
+    `{ decision: 'approve' | 'reject', confirmation }` → 200 `{ identity }` · 400 tanpa konfirmasi · 403 bukan
+    Owner/Admin (atau Admin memutuskan alamat akun pribadinya sendiri) · 404 identitas yang tidak perlu persetujuan.
+  - Galat baru: 409 `system_sender_mailbox` (buat/ubah akun Email yang kotak suratnya = Email pengirim sistem;
+    `PUT /settings/email` ke alamat/kotak surat akun Email yang ada); 409 `identity_not_approved` (kirim); 409
+    `verification_unavailable` kini juga saat MASUKKAN KODE bila verifikasi terkunci (`details[].cause`), dan 409
+    `address_in_use` saat mulai verifikasi identitas akun pribadi yang alamatnya kini dipegang organisasi. 409
+    `address_in_use` untuk Owner/Admin menyebut pemegangnya (`details[].cause`: `system_sender` · `channel` ·
+    `shared_identity` · `personal_identity`); Channel Email tetap `address_is_mail_account` dengan pesan yang menyebut
+    pemegangnya.
+  - Status outbox baru **`delivery_unknown`** (final, tidak diulang; `failureReason: 'delivery_unknown'`) di
+    `MailOutboxItem.status` dan event WS `mail.outbox.updated` — web harus menganggapnya FINAL (toast kirim selesai,
+    seperti `failed`) dan menampilkannya di baki `?state=failed`.
+  - Salinan draf server (S6): draf berlampiran > 10 MB → `serverCopy.state: 'disabled'`; salinan bisa tetap `pending`
+    lebih lama (lampiran > 1 MB yang tidak berubah disalin ulang paling sering tiap 30 menit; anggaran 50 MB/akun/jam).
+  - Email verifikasi tidak lagi memuat nama pengguna / nama tampilan akun (R3).

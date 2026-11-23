@@ -296,6 +296,21 @@ export const AUDIT_ACTIONS = {
   mailIdentityVerificationStarted: 'mail.identity.verification_started',
   mailIdentityVerified: 'mail.identity.verified',
   mailIdentityVerificationFailed: 'mail.identity.verification_failed',
+  /**
+   * Review 9B S3: identitas akun PRIBADI berdomain organisasi menunggu persetujuan (`address`,
+   * `accountId`, `identityId`, `isPrimary`) → email ke Owner/Admin.
+   */
+  mailIdentityApprovalRequested: 'mail.identity.approval_requested',
+  /** Review 9B S3: disetujui / ditolak Owner/Admin (`address`, `ownerUserId`) → email ke pemilik. */
+  mailIdentityApproved: 'mail.identity.approved',
+  mailIdentityRejected: 'mail.identity.rejected',
+  /**
+   * Review 9B S4: klaim alamat akun pribadi yang BELUM terverifikasi dicabut karena Owner/Admin memakai
+   * alamat itu (alias/akun bersama, Channel Email, Email pengirim sistem) → email ke pemilik.
+   */
+  mailIdentityRevoked: 'mail.identity.revoked',
+  /** Review 9B R4: status kirim tidak pasti (worker; tanpa subjek/isi/alamat penerima). */
+  mailMessageDeliveryUnknown: 'mail.message.delivery_unknown',
   /** Tanda tangan BERSAMA saja (tanpa isi; `risky` = tautan/angka panjang baru). */
   mailSignatureCreated: 'mail.signature.created',
   mailSignatureUpdated: 'mail.signature.updated',
@@ -462,6 +477,12 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'mail.identity.verification_started': 'Verifikasi alamat pengirim dimulai',
   'mail.identity.verified': 'Alamat pengirim terverifikasi',
   'mail.identity.verification_failed': 'Verifikasi alamat pengirim gagal',
+  'mail.identity.approval_requested':
+    'Alamat pengirim pribadi berdomain organisasi menunggu persetujuan',
+  'mail.identity.approved': 'Alamat pengirim pribadi disetujui',
+  'mail.identity.rejected': 'Alamat pengirim pribadi ditolak',
+  'mail.identity.revoked': 'Klaim alamat pengirim pribadi dicabut',
+  'mail.message.delivery_unknown': 'Status kirim email tidak pasti',
   'mail.signature.created': 'Tanda tangan email bersama dibuat',
   'mail.signature.updated': 'Tanda tangan email bersama diubah',
   'mail.signature.deleted': 'Tanda tangan email bersama dihapus',

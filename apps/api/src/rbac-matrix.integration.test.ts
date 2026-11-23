@@ -393,6 +393,9 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'DELETE /api/v1/mail/identities/:identityId': 'mail.view',
   'POST /api/v1/mail/identities/:identityId/verification': 'mail.view',
   'POST /api/v1/mail/identities/:identityId/verification/confirm': 'mail.view',
+  // Review 9B S3: persetujuan identitas akun pribadi berdomain organisasi (Owner/Admin).
+  'GET /api/v1/mail/identity-approvals': 'mail.accounts.manage',
+  'POST /api/v1/mail/identities/:identityId/approval': 'mail.accounts.manage',
   'GET /api/v1/mail/identities/:identityId/signature': 'mail.send',
   'GET /api/v1/mail/accounts/:accountId/signatures': 'mail.view',
   'POST /api/v1/mail/accounts/:accountId/signatures': 'mail.view',

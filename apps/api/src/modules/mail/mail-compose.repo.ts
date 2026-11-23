@@ -3,8 +3,13 @@ import {
   channels,
   emailSettings,
   mailAccounts,
+  mailAccountsMatchingSystemSender,
+  mailDrafts,
   mailIdentities,
+  mailIdentityApprovalAllows,
+  mailIdentityApprovalStateOf,
   mailSettings,
+  users,
   type DbExecutor,
   type MailAccountRow,
   type MailIdentityRow,
@@ -16,14 +21,19 @@ import {
   MAIL_VERIFICATION_AUTO_CHECK_MINUTES,
   MAIL_VERIFICATION_MAX_ATTEMPTS,
   canMailSend,
+  hasPermission,
   type MailAccessLevel,
   type MailCannotSendReason,
   type MailIdentity,
+  type MailIdentityApprovalState,
   type MailVerificationUnavailableReason,
   type UserRole,
 } from '@balesin/shared';
-import { and, eq, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 
+import type { ClientInfo } from '../../http/client-info';
+import type { EmailNotifier } from '../../queues/email-queue';
+import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
 import { normalizeRecipientAddress } from '../email-send/email-content';
 
 /**
@@ -125,15 +135,30 @@ export function systemSenderConflicts(
   return mailbox(account.smtpHost, smtpUser) || mailbox(account.imapHost, account.imapUsername);
 }
 
-export function verificationUnavailableReason(
+/**
+ * Alasan verifikasi tidak tersedia di TINGKAT ORGANISASI (review 9B S2): Email pengirim sistem belum
+ * ada, atau kotak suratnya (alamat ATAU host + username) terhubung sebagai akun Email MANA PUN yang
+ * hidup → salinan email ber-kode di Terkirim terbaca pembaca akun itu → SEMUA identitas terkunci.
+ */
+export async function organizationVerificationBlock(
+  db: DbExecutor,
+  organizationId: string,
   sender: SystemSender | null,
-  account: Parameters<typeof systemSenderConflicts>[1],
-  identityAddresses: readonly string[] = [],
-): MailVerificationUnavailableReason | null {
+): Promise<'system_sender_missing' | 'system_sender_conflict' | null> {
   if (!sender) return 'system_sender_missing';
-  return systemSenderConflicts(sender, account, identityAddresses)
-    ? 'system_sender_conflict'
-    : null;
+  const hits = await mailAccountsMatchingSystemSender(db, organizationId, sender);
+  return hits.length > 0 ? 'system_sender_conflict' : null;
+}
+
+/** Alasan per identitas: blok organisasi dulu, lalu persetujuan (review 9B S3). */
+export function identityUnavailableReason(
+  organizationBlock: MailVerificationUnavailableReason | null,
+  approval: MailIdentityApprovalState,
+): MailVerificationUnavailableReason | null {
+  if (organizationBlock) return organizationBlock;
+  if (approval === 'pending') return 'approval_pending';
+  if (approval === 'rejected') return 'approval_rejected';
+  return null;
 }
 
 // ── Identitas ─────────────────────────────────────────────────────────────
@@ -177,17 +202,28 @@ export interface IdentityViewContext {
   now: Date;
   role: UserRole;
   level: MailAccessLevel | null;
-  account: Pick<MailAccountRow, 'deletedAt' | 'syncState'>;
+  account: Pick<MailAccountRow, 'deletedAt' | 'syncState' | 'kind'>;
+  /** Blok tingkat organisasi (`organizationVerificationBlock`). */
   unavailable: MailVerificationUnavailableReason | null;
+  /** Domain organisasi (`mailOrganizationDomains`) — persetujuan akun pribadi (review 9B S3). */
+  domains: ReadonlySet<string>;
+}
+
+export function approvalOf(
+  identity: Pick<MailIdentityRow, 'address' | 'approvalState'>,
+  context: Pick<IdentityViewContext, 'account' | 'domains'>,
+): MailIdentityApprovalState {
+  return mailIdentityApprovalStateOf(identity, context.account.kind, context.domains);
 }
 
 export function cannotSendReasonOf(
-  identity: Pick<MailIdentityRow, 'verificationState'>,
-  context: Pick<IdentityViewContext, 'role' | 'level' | 'account'>,
+  identity: Pick<MailIdentityRow, 'verificationState' | 'address' | 'approvalState'>,
+  context: Pick<IdentityViewContext, 'role' | 'level' | 'account' | 'domains'>,
 ): MailCannotSendReason | null {
   if (context.account.deletedAt !== null) return 'account_deleting';
   if (context.account.syncState === 'owner_inactive') return 'account_unavailable';
   if (!canMailSend(context.role, context.level)) return 'level_insufficient';
+  if (!mailIdentityApprovalAllows(approvalOf(identity, context))) return 'identity_not_approved';
   if (identity.verificationState !== 'verified') return 'identity_unverified';
   return null;
 }
@@ -207,6 +243,8 @@ export function toMailIdentity(row: MailIdentityRow, context: IdentityViewContex
         }
       : null;
   const reason = cannotSendReasonOf(row, context);
+  const approval = approvalOf(row, context);
+  const unavailable = identityUnavailableReason(context.unavailable, approval);
   return {
     id: row.id,
     accountId: row.accountId,
@@ -219,8 +257,15 @@ export function toMailIdentity(row: MailIdentityRow, context: IdentityViewContex
       verifiedAt: row.verifiedAt?.toISOString() ?? null,
       method: (row.verifiedMethod as 'mailbox' | 'code' | null) ?? null,
       pending,
-      available: context.unavailable === null,
-      unavailableReason: context.unavailable,
+      available: unavailable === null,
+      unavailableReason: unavailable,
+    },
+    approval: {
+      state: approval,
+      decidedAt:
+        approval === 'approved' || approval === 'rejected'
+          ? (row.approvalDecidedAt?.toISOString() ?? null)
+          : null,
     },
     defaultSignatures: { new: row.defaultSignatureNewId, reply: row.defaultSignatureReplyId },
     canSend: reason === null,
@@ -322,6 +367,290 @@ export function addressInUse(field = 'address'): AppError {
   return detailError('CONFLICT', 'address_in_use', MAIL_COMPOSE_MESSAGES.addressInUse, field);
 }
 
+// ── Pemegang alamat & prioritas organisasi (review 9B S4) ─────────────────
+
+export type AddressHolder =
+  | { kind: 'system_sender' }
+  | { kind: 'channel'; channelId: string; channelName: string }
+  | {
+      kind: 'identity';
+      identityId: string;
+      accountId: string;
+      accountKind: 'shared' | 'personal';
+      accountName: string;
+      address: string;
+      isPrimary: boolean;
+      verified: boolean;
+      approvalState: string | null;
+      ownerUserId: string | null;
+      ownerName: string | null;
+    };
+
+/**
+ * Semua pemegang `address` di organisasi: Email pengirim sistem, Channel Email (+ alias), identitas
+ * (utama/alias) akun Email hidup. Panggil di bawah `lockEmailAddresses`.
+ */
+export async function addressHoldersOf(
+  db: DbExecutor,
+  organizationId: string,
+  address: string,
+  options: {
+    systemSender: SystemSender | null;
+    exceptIdentityId?: string;
+    exceptAccountId?: string;
+  },
+): Promise<AddressHolder[]> {
+  const holders: AddressHolder[] = [];
+  if (sameText(options.systemSender?.address, address)) holders.push({ kind: 'system_sender' });
+  const channelRows = await db
+    .select({ id: channels.id, name: channels.name })
+    .from(channels)
+    .where(
+      and(
+        eq(channels.organizationId, organizationId),
+        eq(channels.type, 'email'),
+        isNull(channels.deletedAt),
+        or(eq(channels.emailAddress, address), sql`${address} = any(${channels.emailAliases})`),
+      ),
+    );
+  for (const row of channelRows) {
+    holders.push({ kind: 'channel', channelId: row.id, channelName: row.name });
+  }
+  const identityRows = await db
+    .select({
+      identityId: mailIdentities.id,
+      accountId: mailAccounts.id,
+      accountKind: mailAccounts.kind,
+      accountName: mailAccounts.displayName,
+      address: mailIdentities.address,
+      isPrimary: mailIdentities.isPrimary,
+      state: mailIdentities.verificationState,
+      approvalState: mailIdentities.approvalState,
+      ownerUserId: mailAccounts.ownerUserId,
+      ownerName: users.name,
+    })
+    .from(mailIdentities)
+    .innerJoin(
+      mailAccounts,
+      and(
+        eq(mailAccounts.organizationId, mailIdentities.organizationId),
+        eq(mailAccounts.id, mailIdentities.accountId),
+      ),
+    )
+    .leftJoin(
+      users,
+      and(
+        eq(users.organizationId, mailAccounts.organizationId),
+        eq(users.id, mailAccounts.ownerUserId),
+      ),
+    )
+    .where(
+      and(
+        eq(mailIdentities.organizationId, organizationId),
+        eq(mailIdentities.address, address),
+        isNull(mailAccounts.deletedAt),
+        options.exceptIdentityId ? ne(mailIdentities.id, options.exceptIdentityId) : undefined,
+        options.exceptAccountId ? ne(mailAccounts.id, options.exceptAccountId) : undefined,
+      ),
+    );
+  for (const row of identityRows) {
+    holders.push({
+      kind: 'identity',
+      identityId: row.identityId,
+      accountId: row.accountId,
+      accountKind: row.accountKind === 'personal' ? 'personal' : 'shared',
+      accountName: row.accountName,
+      address: row.address,
+      isPrimary: row.isPrimary,
+      verified: row.state === 'verified',
+      approvalState: row.approvalState,
+      ownerUserId: row.ownerUserId,
+      ownerName: row.ownerName,
+    });
+  }
+  return holders;
+}
+
+/**
+ * Klaim LEMAH (review 9B S4): identitas akun PRIBADI yang belum `verified`, atau yang persetujuannya
+ * (S3) belum mengizinkan. Klaim lemah tidak boleh menghalangi Owner/Admin memakai alamat organisasi.
+ */
+export function isWeakClaim(holder: AddressHolder, domains: ReadonlySet<string>): boolean {
+  if (holder.kind !== 'identity' || holder.accountKind !== 'personal') return false;
+  if (!holder.verified) return true;
+  return !mailIdentityApprovalAllows(mailIdentityApprovalStateOf(holder, 'personal', domains));
+}
+
+/**
+ * 409 `address_in_use`. Untuk pemegang `mail.accounts.manage` (Owner/Admin) pesannya menyebut
+ * pemegangnya (`cause`: `system_sender` · `channel` · `shared_identity` · `personal_identity`);
+ * pengguna lain mendapat pesan umum (akun pribadi orang lain tidak dibocorkan).
+ */
+export function addressHeldError(
+  role: UserRole,
+  holder: AddressHolder | undefined,
+  field = 'address',
+): AppError {
+  if (!holder || !hasPermission(role, 'mail.accounts.manage')) return addressInUse(field);
+  const [cause, text] =
+    holder.kind === 'system_sender'
+      ? ['system_sender', 'sebagai Email pengirim sistem']
+      : holder.kind === 'channel'
+        ? ['channel', `oleh Channel Email "${holder.channelName}"`]
+        : holder.accountKind === 'shared'
+          ? ['shared_identity', `di akun email bersama "${holder.accountName}"`]
+          : [
+              'personal_identity',
+              `sebagai alamat pengirim terverifikasi di akun email pribadi milik ${holder.ownerName ?? 'pengguna lain'}. Minta ia menghapusnya, atau nonaktifkan penggunanya lalu putus akunnya di Pengaturan → Akun email`,
+            ];
+  return detailError(
+    'CONFLICT',
+    'address_in_use',
+    MAIL_COMPOSE_MESSAGES.addressHeldBy(text),
+    field,
+    { cause },
+  );
+}
+
+export interface RevokedClaim {
+  identityId: string;
+  accountId: string;
+  ownerUserId: string | null;
+  address: string;
+  auditLogId: string;
+}
+
+/**
+ * Aksi Owner/Admin atas `address` (alias/akun bersama, Channel Email, Email pengirim sistem), review
+ * 9B S4: pemegang KUAT → 409 (menyebut pemegangnya); klaim LEMAH akun pribadi dicabut — alias dihapus
+ * (draf dipindah ke identitas utama), identitas utama direset `unverified` — + audit
+ * `mail.identity.revoked`. Mengembalikan klaim yang dicabut (pemberitahuan ke pemiliknya dikirim
+ * pemanggil SETELAH commit, `notifyRevokedClaims`). Panggil di transaksi, di bawah
+ * `lockEmailAddresses`.
+ */
+export async function claimAddressForOrganization(
+  tx: DbExecutor,
+  input: {
+    organizationId: string;
+    actorUserId: string;
+    role: UserRole;
+    address: string;
+    systemSender: SystemSender | null;
+    domains: ReadonlySet<string>;
+    client: ClientInfo;
+    field?: string;
+    /** Abaikan pemegang tertentu (mis. Channel Email yang sedang diubah, pengirim sistem sendiri). */
+    ignore?: (holder: AddressHolder) => boolean;
+    exceptIdentityId?: string;
+    exceptAccountId?: string;
+  },
+): Promise<RevokedClaim[]> {
+  const holders = (
+    await addressHoldersOf(tx, input.organizationId, input.address, {
+      systemSender: input.systemSender,
+      ...(input.exceptIdentityId ? { exceptIdentityId: input.exceptIdentityId } : {}),
+      ...(input.exceptAccountId ? { exceptAccountId: input.exceptAccountId } : {}),
+    })
+  ).filter((holder) => !input.ignore?.(holder));
+  const strong = holders.find((holder) => !isWeakClaim(holder, input.domains));
+  if (strong) throw addressHeldError(input.role, strong, input.field);
+  const revoked: RevokedClaim[] = [];
+  for (const holder of holders) {
+    if (holder.kind !== 'identity') continue;
+    if (holder.isPrimary) {
+      await tx
+        .update(mailIdentities)
+        .set(IDENTITY_RESET)
+        .where(
+          and(
+            eq(mailIdentities.organizationId, input.organizationId),
+            eq(mailIdentities.id, holder.identityId),
+          ),
+        );
+    } else {
+      const [primary] = await tx
+        .select({ id: mailIdentities.id })
+        .from(mailIdentities)
+        .where(
+          and(
+            eq(mailIdentities.organizationId, input.organizationId),
+            eq(mailIdentities.accountId, holder.accountId),
+            eq(mailIdentities.isPrimary, true),
+          ),
+        )
+        .limit(1);
+      if (primary) {
+        await tx
+          .update(mailDrafts)
+          .set({ identityId: primary.id, version: sql`${mailDrafts.version} + 1` })
+          .where(
+            and(
+              eq(mailDrafts.organizationId, input.organizationId),
+              eq(mailDrafts.identityId, holder.identityId),
+            ),
+          );
+      }
+      await tx
+        .delete(mailIdentities)
+        .where(
+          and(
+            eq(mailIdentities.organizationId, input.organizationId),
+            eq(mailIdentities.id, holder.identityId),
+          ),
+        );
+    }
+    const auditLogId = await recordAudit(tx, {
+      organizationId: input.organizationId,
+      actorUserId: input.actorUserId,
+      action: AUDIT_ACTIONS.mailIdentityRevoked,
+      targetType: 'mail_account',
+      targetId: holder.accountId,
+      // Alamat organisasi (bukan isi kotak surat pribadi) — perlu untuk pemberitahuan pemiliknya.
+      metadata: {
+        accountId: holder.accountId,
+        identityId: holder.identityId,
+        kind: 'personal',
+        address: input.address,
+        isPrimary: holder.isPrimary,
+        reason: 'revoked',
+        actorRole: input.role,
+      },
+      client: input.client,
+    });
+    revoked.push({
+      identityId: holder.identityId,
+      accountId: holder.accountId,
+      ownerUserId: holder.ownerUserId,
+      address: input.address,
+      auditLogId,
+    });
+  }
+  return revoked;
+}
+
+/** Pemberitahuan klaim dicabut ke pemilik akun pribadi (usaha terbaik, setelah commit). */
+export async function notifyRevokedClaims(
+  notifier: Pick<EmailNotifier, 'securityNoticeAdmin'> | undefined,
+  input: { organizationId: string; actorUserId: string; occurredAt: Date },
+  revoked: readonly RevokedClaim[],
+): Promise<void> {
+  if (!notifier) return;
+  for (const claim of revoked) {
+    if (!claim.ownerUserId) continue;
+    await notifier
+      .securityNoticeAdmin({
+        organizationId: input.organizationId,
+        recipientUserId: claim.ownerUserId,
+        subjectUserId: claim.ownerUserId,
+        actorUserId: input.actorUserId,
+        event: 'mail_identity_decided',
+        occurredAt: input.occurredAt.toISOString(),
+        auditLogId: claim.auditLogId,
+      })
+      .catch(() => undefined);
+  }
+}
+
 // ── Pengaturan & kunci utas ───────────────────────────────────────────────
 
 export interface ComposeLimits {
@@ -356,4 +685,77 @@ export function threadKeyOf(
   threadRoot: string | null,
 ): string | null {
   return threadRoot ? keys.threadKey(accountId, threadRoot) : null;
+}
+
+// ── Persetujuan identitas akun pribadi berdomain organisasi (review 9B S3) ──
+
+/**
+ * Identitas baru akun PRIBADI yang domainnya domain organisasi → audit
+ * `mail.identity.approval_requested` (alamat organisasi ikut dicatat). `null` bila tidak perlu.
+ */
+export async function recordApprovalRequest(
+  tx: DbExecutor,
+  input: {
+    organizationId: string;
+    actorUserId: string;
+    accountKind: string;
+    accountId: string;
+    identity: { id: string; address: string; isPrimary: boolean };
+    domains: ReadonlySet<string>;
+    client: ClientInfo;
+  },
+): Promise<string | null> {
+  const state = mailIdentityApprovalStateOf(
+    { address: input.identity.address, approvalState: null },
+    input.accountKind,
+    input.domains,
+  );
+  if (state !== 'pending') return null;
+  return recordAudit(tx, {
+    organizationId: input.organizationId,
+    actorUserId: input.actorUserId,
+    action: AUDIT_ACTIONS.mailIdentityApprovalRequested,
+    targetType: 'mail_account',
+    targetId: input.accountId,
+    metadata: {
+      accountId: input.accountId,
+      identityId: input.identity.id,
+      kind: 'personal',
+      address: input.identity.address,
+      isPrimary: input.identity.isPrimary,
+    },
+    client: input.client,
+  });
+}
+
+/** Email "menunggu persetujuan" ke semua Owner/Admin aktif selain peminta (usaha terbaik). */
+export async function notifyApprovalRequest(
+  db: DbExecutor,
+  notifier: Pick<EmailNotifier, 'securityNoticeAdmin'> | undefined,
+  input: { organizationId: string; requesterUserId: string; auditLogId: string; occurredAt: Date },
+): Promise<void> {
+  if (!notifier) return;
+  const recipients = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(
+      and(
+        eq(users.organizationId, input.organizationId),
+        inArray(users.role, ['owner', 'admin']),
+        isNull(users.disabledAt),
+        ne(users.id, input.requesterUserId),
+      ),
+    );
+  for (const recipient of recipients) {
+    await notifier
+      .securityNoticeAdmin({
+        organizationId: input.organizationId,
+        recipientUserId: recipient.id,
+        subjectUserId: input.requesterUserId,
+        event: 'mail_identity_approval_requested',
+        occurredAt: input.occurredAt.toISOString(),
+        auditLogId: input.auditLogId,
+      })
+      .catch(() => undefined);
+  }
 }

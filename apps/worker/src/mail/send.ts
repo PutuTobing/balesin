@@ -27,6 +27,9 @@ import {
   mailDraftAttachments,
   mailDrafts,
   mailIdentities,
+  mailIdentityApprovalAllows,
+  mailIdentityApprovalStateOf,
+  mailOrganizationDomains,
   mailOutbox,
   mailSignatures,
   organizations,
@@ -129,7 +132,8 @@ function outboxEvent(row: MailOutboxRow): MailBusEventInput {
       accountId: row.accountId,
       outboxId: row.id,
       draftId: row.draftId,
-      status: row.status as 'pending' | 'queued' | 'sending' | 'sent' | 'failed' | 'canceled',
+      status: row.status as
+        'pending' | 'queued' | 'sending' | 'sent' | 'failed' | 'canceled' | 'delivery_unknown',
       holdReason: row.holdReason,
       sendAfter: row.sendAfter.toISOString(),
       nextAttemptAt: row.nextAttemptAt?.toISOString() ?? null,
@@ -175,6 +179,64 @@ async function failRow(
       .where(eq(mailDrafts.id, failed.draftId));
   }
   return failed;
+}
+
+/**
+ * Review 9B R4: status kirim TIDAK PASTI (SMTP terputus setelah isi mungkin diterima, atau `sending`
+ * basi 15 menit sejak SMTP dimulai) → `delivery_unknown` (final, TIDAK diulang, dihitung "mungkin
+ * terkirim" di batas) + audit `mail.message.delivery_unknown` (tanpa subjek/isi/alamat penerima).
+ * Draf kembali bisa disunting dengan peringatan "cek Terkirim sebelum mengirim ulang".
+ */
+async function markDeliveryUnknown(
+  tx: DbExecutor,
+  row: MailOutboxRow,
+  at: Date,
+  smtpCode: number | null = null,
+): Promise<MailOutboxRow | null> {
+  const [unknown] = await tx
+    .update(mailOutbox)
+    .set({
+      status: 'delivery_unknown',
+      failedAt: at,
+      failureReason: 'delivery_unknown',
+      smtpCode,
+      holdReason: null,
+      nextAttemptAt: null,
+    })
+    .where(and(eq(mailOutbox.id, row.id), eq(mailOutbox.status, 'sending')))
+    .returning();
+  if (!unknown) return null;
+  if (unknown.draftId) {
+    await tx
+      .update(mailDrafts)
+      .set({
+        state: 'editing',
+        lastSendError: {
+          reason: 'delivery_unknown',
+          message: MAIL_SEND_FAILURE_MESSAGES.delivery_unknown,
+          at: at.toISOString(),
+        },
+      })
+      .where(eq(mailDrafts.id, unknown.draftId));
+  }
+  await tx.insert(auditLogs).values({
+    organizationId: unknown.organizationId,
+    actorUserId: unknown.createdByUserId,
+    action: 'mail.message.delivery_unknown',
+    targetType: 'mail_account',
+    targetId: unknown.accountId,
+    metadata: {
+      accountId: unknown.accountId,
+      identityId: unknown.identityId,
+      outboxId: unknown.id,
+      mode: unknown.mode,
+      recipientCount: unknown.recipientCount,
+      attachmentCount: unknown.attachmentCount,
+      hasBcc: unknown.bcc.length > 0,
+      smtpCode,
+    },
+  });
+  return unknown;
 }
 
 async function holdRow(
@@ -235,7 +297,8 @@ async function accountWindow(
       and(
         eq(mailOutbox.organizationId, row.organizationId),
         eq(mailOutbox.accountId, row.accountId),
-        inArray(mailOutbox.status, ['sending', 'sent']),
+        // `delivery_unknown` = mungkin terkirim → ikut dihitung (review 9B R4).
+        inArray(mailOutbox.status, ['sending', 'sent', 'delivery_unknown']),
         gt(sql`coalesce(${mailOutbox.sentAt}, ${mailOutbox.sendingStartedAt})`, hourAgo),
       ),
     );
@@ -372,7 +435,8 @@ export function createMailSender(deps: MailSendDeps) {
     });
     counts.claimed = claimed.length;
 
-    // Proses mati di tengah kirim → status tidak pasti, TIDAK diulang.
+    // Proses mati di tengah kirim → status tidak pasti, TIDAK diulang. `sending_started_at` diperbarui
+    // sesaat sebelum SMTP (review 9B R4), jadi "basi" diukur dari awal SMTP, bukan dari klaim.
     const stale = await db
       .select()
       .from(mailOutbox)
@@ -384,9 +448,9 @@ export function createMailSender(deps: MailSendDeps) {
       )
       .limit(CLAIM_BATCH);
     for (const row of stale) {
-      const failed = await db.transaction((tx) => failRow(tx, row, 'delivery_unknown', at));
-      if (failed) {
-        events.push(outboxEvent(failed));
+      const unknown = await db.transaction((tx) => markDeliveryUnknown(tx, row, at));
+      if (unknown) {
+        events.push(outboxEvent(unknown));
         counts.recovered += 1;
       }
     }
@@ -467,6 +531,13 @@ export function createMailSender(deps: MailSendDeps) {
       identity.address !== row.fromAddress
     ) {
       return 'identity_unverified';
+    }
+    // Review 9B S3: akun PRIBADI berdomain organisasi masih harus disetujui Owner/Admin.
+    if (account.kind === 'personal') {
+      const domains = await mailOrganizationDomains(db, row.organizationId);
+      if (!mailIdentityApprovalAllows(mailIdentityApprovalStateOf(identity, 'personal', domains))) {
+        return 'identity_unverified';
+      }
     }
     return null;
   }
@@ -604,6 +675,26 @@ export function createMailSender(deps: MailSendDeps) {
           },
         });
     });
+  }
+
+  async function finishUnknown(row: MailOutboxRow, smtpCode: number | null) {
+    const unknown = await db.transaction((tx) => markDeliveryUnknown(tx, row, now(), smtpCode));
+    if (unknown) await publisher.publish([outboxEvent(unknown)]);
+    logger.warn(
+      { outboxId: row.id, accountId: row.accountId, smtpCode },
+      'Email menu Email: status kirim tidak pasti',
+    );
+    return { status: 'failed' as const, reason: 'delivery_unknown' as const };
+  }
+
+  /** Review 9B R4: `sending_started_at` = sekarang (masih `sending`?). `false` = sudah tidak dikirim. */
+  async function touchSending(row: MailOutboxRow): Promise<boolean> {
+    const touched = await db
+      .update(mailOutbox)
+      .set({ sendingStartedAt: now() })
+      .where(and(eq(mailOutbox.id, row.id), eq(mailOutbox.status, 'sending')))
+      .returning({ id: mailOutbox.id });
+    return touched.length > 0;
   }
 
   async function finishFailure(
@@ -834,7 +925,11 @@ export function createMailSender(deps: MailSendDeps) {
       mailSmtpLeaseKey(deps.prefix, row.accountId),
       SMTP_LEASE_MS,
     );
-    if (!lease) throw new MailSendBusyError('SMTP akun ini sedang dipakai');
+    if (!lease) {
+      // Masih menunggu giliran SMTP akun (bukan basi) — stempel diperbarui (review 9B R4).
+      if (!(await touchSending(row))) return { status: 'skipped' as const };
+      throw new MailSendBusyError('SMTP akun ini sedang dipakai');
+    }
     try {
       const denied = await recheck(row);
       if (denied) return await finishFailure(row, denied, null);
@@ -945,6 +1040,9 @@ export function createMailSender(deps: MailSendDeps) {
           return await finishFailure(row, 'message_rejected', null);
         throw error;
       }
+      // Review 9B R4: "basi" diukur dari AWAL SMTP — baris yang sudah ditandai tidak pasti/dibatalkan
+      // tidak dikirim.
+      if (!(await touchSending(row))) return { status: 'skipped' as const };
       const result = await send(
         {
           host: account.smtpHost,
@@ -982,7 +1080,7 @@ export function createMailSender(deps: MailSendDeps) {
         case 'message_rejected':
           return await finishFailure(row, 'message_rejected', result.smtpCode);
         default:
-          return await finishFailure(row, 'delivery_unknown', result.smtpCode);
+          return await finishUnknown(row, result.smtpCode);
       }
     } finally {
       await lease.release();

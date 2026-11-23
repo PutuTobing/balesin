@@ -8,7 +8,10 @@ import {
 import {
   emailSenderSettings,
   mailDrafts,
+  mailIdentityApprovalAllows,
+  mailIdentityApprovalStateOf,
   mailMessageBodies,
+  mailOrganizationDomains,
   mailOutbox,
   type Database,
   type DbExecutor,
@@ -259,6 +262,21 @@ export function createMailOutboxService(deps: {
           'identityId',
         );
       }
+      // Review 9B S3: akun PRIBADI berdomain organisasi → wajib disetujui Owner/Admin (worker cek ulang).
+      if (account.row.kind === 'personal') {
+        const domains = await mailOrganizationDomains(db, auth.organizationId);
+        const approval = mailIdentityApprovalStateOf(identity, 'personal', domains);
+        if (!mailIdentityApprovalAllows(approval)) {
+          throw detailError(
+            'CONFLICT',
+            'identity_not_approved',
+            approval === 'rejected'
+              ? MAIL_COMPOSE_MESSAGES.approvalRejected
+              : MAIL_COMPOSE_MESSAGES.approvalRequired,
+            'identityId',
+          );
+        }
+      }
       if (identity.verificationState !== 'verified') {
         throw detailError(
           'CONFLICT',
@@ -425,6 +443,15 @@ export function createMailOutboxService(deps: {
               { currentVersion: locked.version, updatedAt: locked.updatedAt.toISOString() },
             );
           }
+          // Review 9B R2: batas harian dihitung ULANG di bawah kunci advisory per pengguna (kirim
+          // paralel berurutan; outbox pengirim sebelumnya sudah ter-commit saat kunci didapat).
+          await deps.sendingLimits.assertCanSendMail({
+            organizationId: auth.organizationId,
+            userId: auth.user.id,
+            client: context.client,
+            recipients: recipients.total,
+            executor: tx,
+          });
           const [row] = await tx
             .insert(mailOutbox)
             .values({
@@ -498,7 +525,8 @@ export function createMailOutboxService(deps: {
           ? inArray(mailOutbox.status, ['pending', 'queued', 'sending'])
           : state === 'failed'
             ? and(
-                eq(mailOutbox.status, 'failed'),
+                // Review 9B R4: `delivery_unknown` ikut baki "gagal" (pengguna perlu memeriksanya).
+                inArray(mailOutbox.status, ['failed', 'delivery_unknown']),
                 gt(mailOutbox.failedAt, new Date(now().getTime() - FAILED_WINDOW_MS)),
                 // Drafnya belum dikirim ulang (tidak ada outbox lebih baru untuk draf yang sama).
                 notExists(

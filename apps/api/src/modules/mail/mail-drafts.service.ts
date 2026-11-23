@@ -21,9 +21,13 @@ import {
   emailTemplates,
   mailAttachments,
   mailCorrespondents,
+  mailAccounts,
   mailDraftAttachments,
   mailDrafts,
+  mailIdentityApprovalAllows,
+  mailIdentityApprovalStateOf,
   mailMessageBodies,
+  mailOrganizationDomains,
   mailMessages,
   mailSignatures,
   newId,
@@ -315,20 +319,92 @@ export function createMailDraftsService(deps: DraftDeps) {
     ]);
   }
 
+  // ── Kuota unggah: catatan unggahan yang dihapus (review 9B R5) ──────────
+
+  const uploadLedgerKey = (organizationId: string, userId: string) =>
+    `${deps.redisPrefix}:mail:upload-removed:${organizationId}:${userId}`;
+
+  /**
+   * Lampiran UNGGAHAN (≤ 24 jam) yang dihapus/dibuang dicatat di sorted set Redis per pengguna (skor =
+   * waktu unggah, anggota = `<id>:<byte>`), supaya tetap memakai kuota unggah sampai 24 jam sejak
+   * diunggah. Tanpa Redis → tidak dicatat (kuota hanya dari lampiran yang masih ada).
+   */
+  async function recordRemovedUploads(
+    organizationId: string,
+    rows: readonly Pick<
+      MailDraftAttachmentRow,
+      'id' | 'source' | 'sizeBytes' | 'createdAt' | 'createdByUserId'
+    >[],
+  ): Promise<void> {
+    const redis = deps.redis;
+    if (!redis) return;
+    const cutoff = now().getTime() - DAY_MS;
+    const byUser = new Map<string, (string | number)[]>();
+    for (const row of rows) {
+      if (row.source !== 'upload' || !row.createdByUserId) continue;
+      if (row.createdAt.getTime() <= cutoff) continue;
+      const list = byUser.get(row.createdByUserId) ?? [];
+      list.push(row.createdAt.getTime(), `${row.id}:${String(row.sizeBytes)}`);
+      byUser.set(row.createdByUserId, list);
+    }
+    for (const [userId, members] of byUser) {
+      const key = uploadLedgerKey(organizationId, userId);
+      try {
+        await redis.zadd(key, ...members);
+        await redis.zremrangebyscore(key, '-inf', cutoff);
+        await redis.expire(key, 25 * 60 * 60);
+      } catch {
+        // Redis tidak tersedia: kuota dihitung dari lampiran yang masih ada saja.
+      }
+    }
+  }
+
+  async function removedUploadBytes(organizationId: string, userId: string): Promise<number> {
+    const redis = deps.redis;
+    if (!redis) return 0;
+    try {
+      const members = await redis.zrangebyscore(
+        uploadLedgerKey(organizationId, userId),
+        `(${String(now().getTime() - DAY_MS)}`,
+        '+inf',
+      );
+      return members.reduce((sum, member) => {
+        const bytes = Number(member.slice(member.lastIndexOf(':') + 1));
+        return sum + (Number.isFinite(bytes) && bytes > 0 ? bytes : 0);
+      }, 0);
+    } catch {
+      return 0;
+    }
+  }
+
   async function identityOf(executor: DbExecutor, auth: AuthContext, identityId: string) {
     const identity = await loadIdentity(executor, auth.organizationId, identityId);
     if (!identity) throw composeNotFound();
     return identity;
   }
 
-  function cannotSendOf(
+  /** Review 9B S3: identitas akun PRIBADI berdomain organisasi harus disetujui Owner/Admin. */
+  async function approvalAllows(
+    organizationId: string,
+    accountKind: string,
+    identity: Pick<MailIdentityRow, 'address' | 'approvalState'> | null,
+  ): Promise<boolean> {
+    if (!identity || accountKind !== 'personal') return true;
+    const domains = await mailOrganizationDomains(db, organizationId);
+    return mailIdentityApprovalAllows(mailIdentityApprovalStateOf(identity, accountKind, domains));
+  }
+
+  async function cannotSendOf(
     auth: AuthContext,
     account: AccountAccess,
-    identity: Pick<MailIdentityRow, 'verificationState'> | null,
-  ): MailCannotSendReason | null {
+    identity: Pick<MailIdentityRow, 'verificationState' | 'address' | 'approvalState'> | null,
+  ): Promise<MailCannotSendReason | null> {
     if (account.row.deletedAt !== null) return 'account_deleting';
     if (account.row.syncState === 'owner_inactive') return 'account_unavailable';
     if (!canMailSend(auth.user.role, account.level)) return 'level_insufficient';
+    if (!(await approvalAllows(auth.organizationId, account.row.kind, identity))) {
+      return 'identity_not_approved';
+    }
     if (!identity || identity.verificationState !== 'verified') return 'identity_unverified';
     return null;
   }
@@ -357,7 +433,7 @@ export function createMailDraftsService(deps: DraftDeps) {
       hasHtml = body?.html === true;
     }
     const snapshot = draft.sourceSnapshot;
-    const reason = cannotSendOf(auth, account, identity);
+    const reason = await cannotSendOf(auth, account, identity);
     const error = draft.lastSendError;
     return {
       id: draft.id,
@@ -1043,12 +1119,44 @@ export function createMailDraftsService(deps: DraftDeps) {
         : [];
       const withAttachments = new Set(attachmentCounts.map((row) => row.draftId));
       const last = page.at(-1);
+      // Review 9B S3: persetujuan identitas akun pribadi berdomain organisasi.
+      const personal = page.length
+        ? new Set(
+            (
+              await db
+                .select({ id: mailAccounts.id })
+                .from(mailAccounts)
+                .where(
+                  and(
+                    eq(mailAccounts.organizationId, auth.organizationId),
+                    eq(mailAccounts.kind, 'personal'),
+                    inArray(mailAccounts.id, [...new Set(page.map((row) => row.accountId))]),
+                  ),
+                )
+            ).map((row) => row.id),
+          )
+        : new Set<string>();
+      const domains =
+        personal.size > 0
+          ? await mailOrganizationDomains(db, auth.organizationId)
+          : new Set<string>();
       return {
         drafts: page.map((row) => {
           const identity = identities.find((item) => item.id === row.identityId);
           const level = levels.get(row.accountId) ?? null;
+          const approved =
+            !identity ||
+            mailIdentityApprovalAllows(
+              mailIdentityApprovalStateOf(
+                identity,
+                personal.has(row.accountId) ? 'personal' : 'shared',
+                domains,
+              ),
+            );
           const canSend =
-            canMailSend(auth.user.role, level) && identity?.verificationState === 'verified';
+            canMailSend(auth.user.role, level) &&
+            approved &&
+            identity?.verificationState === 'verified';
           const error = row.lastSendError;
           return {
             id: row.id,
@@ -1223,6 +1331,7 @@ export function createMailDraftsService(deps: DraftDeps) {
       if (deleted.length === 0) {
         throw detailError('CONFLICT', 'draft_locked', MAIL_COMPOSE_MESSAGES.draftLocked, 'draftId');
       }
+      await recordRemovedUploads(auth.organizationId, files);
       for (const file of files) {
         if (file.storageKey) await deps.store?.remove(file.storageKey).catch(() => undefined);
       }
@@ -1319,7 +1428,7 @@ export function createMailDraftsService(deps: DraftDeps) {
           ? replyTo
           : null;
       const thread = await threadNewMessages(auth, draft, null);
-      const reason = cannotSendOf(auth, account, identity);
+      const reason = await cannotSendOf(auth, account, identity);
       return {
         checks: {
           totalRecipients: entries.length,
@@ -1384,7 +1493,7 @@ export function createMailDraftsService(deps: DraftDeps) {
       }
       const used = existing.reduce((sum, row) => sum + row.sizeBytes, 0);
       const room = Math.min(MAIL_DRAFT_ATTACHMENT_FILE_MAX_BYTES, limits.maxAttachmentBytes - used);
-      // Kuota unggah 500 MB / 24 jam / pengguna (dihitung dari lampiran unggahan yang masih ada).
+      // Kuota unggah 500 MB / 24 jam / pengguna: lampiran unggahan yang masih ada + yang sudah dihapus.
       const [quota] = await db
         .select({ total: sql<number>`coalesce(sum(${mailDraftAttachments.sizeBytes}), 0)::bigint` })
         .from(mailDraftAttachments)
@@ -1396,7 +1505,10 @@ export function createMailDraftsService(deps: DraftDeps) {
             gt(mailDraftAttachments.createdAt, new Date(now().getTime() - DAY_MS)),
           ),
         );
-      const uploadedToday = Number(quota?.total ?? 0);
+      // Review 9B R5: unggahan 24 jam yang SUDAH dihapus tetap dihitung (unggah-lalu-hapus tidak
+      // membebaskan kuota).
+      const uploadedToday =
+        Number(quota?.total ?? 0) + (await removedUploadBytes(auth.organizationId, auth.user.id));
       if (uploadedToday >= MAIL_DRAFT_UPLOAD_QUOTA_BYTES) {
         throw detailError(
           'RATE_LIMITED',
@@ -1643,6 +1755,7 @@ export function createMailDraftsService(deps: DraftDeps) {
         const saved = await bumpVersion(tx, locked);
         return { removed, saved };
       });
+      await recordRemovedUploads(auth.organizationId, [result.removed]);
       if (result.removed.storageKey) {
         await deps.store?.remove(result.removed.storageKey).catch(() => undefined);
       }

@@ -40,6 +40,10 @@ export const MAIL_VERIFICATION_LIMITS = {
 export const MAIL_VERIFICATION_UNAVAILABLE_REASONS = [
   'system_sender_missing',
   'system_sender_conflict',
+  /** Review 9B S3: identitas akun pribadi berdomain organisasi belum disetujui Owner/Admin. */
+  'approval_pending',
+  /** Review 9B S3: ditolak Owner/Admin (hapus alias / ganti alamat). */
+  'approval_rejected',
 ] as const;
 export type MailVerificationUnavailableReason =
   (typeof MAIL_VERIFICATION_UNAVAILABLE_REASONS)[number];
@@ -49,8 +53,25 @@ export const MAIL_VERIFICATION_UNAVAILABLE_MESSAGES: Readonly<
   system_sender_missing:
     'Atur Email pengirim di Pengaturan dulu supaya email verifikasi bisa dikirim.',
   system_sender_conflict:
-    'Akun ini juga dipakai sebagai Email pengirim sistem. Ganti Email pengirim ke alamat lain (mis. noreply@) supaya verifikasi aman.',
+    'Kotak surat Email pengirim sistem juga terhubung sebagai akun di menu Email, jadi verifikasi alamat dikunci di seluruh organisasi. Ganti Email pengirim ke kotak surat lain (mis. noreply@) atau putuskan akun itu.',
+  approval_pending:
+    'Alamat ini memakai domain organisasi, jadi perlu disetujui Owner/Admin dulu sebelum bisa diverifikasi.',
+  approval_rejected: 'Owner/Admin menolak alamat ini sebagai alamat pengirim akun pribadi.',
 };
+
+/**
+ * Review 9B S3: identitas (utama/alias) akun PRIBADI yang domainnya domain organisasi (domain identitas
+ * akun Email bersama, Channel Email + alias, Email pengirim sistem) wajib disetujui Owner/Admin sebelum
+ * bisa diverifikasi & dipakai mengirim. `not_required` = domain luar / akun bersama.
+ */
+export const MAIL_IDENTITY_APPROVAL_STATES = [
+  'not_required',
+  'pending',
+  'approved',
+  'rejected',
+] as const;
+export const mailIdentityApprovalStateSchema = z.enum(MAIL_IDENTITY_APPROVAL_STATES);
+export type MailIdentityApprovalState = z.infer<typeof mailIdentityApprovalStateSchema>;
 
 export const MAIL_ALIASES_PER_ACCOUNT_MAX = 20;
 export const MAIL_SIGNATURES_SHARED_MAX = 20;
@@ -88,7 +109,10 @@ export const MAIL_DRAFT_ATTACHMENTS_MAX = 20;
 export const MAIL_DRAFT_ATTACHMENT_FILE_MAX_BYTES = 25 * 1024 * 1024;
 export const MAIL_DRAFT_INLINE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 export const MAIL_DRAFT_UPLOAD_QUOTA_BYTES = 500 * 1024 * 1024;
-/** Draf yang MIME-nya lebih besar tidak disalin ke folder Draf server. */
+/**
+ * Batas lama salinan draf server. Review 9B S6: worker kini memakai batas LAMPIRAN 10 MB (lebih besar →
+ * draf tidak disalin, `serverCopy.state: disabled`).
+ */
 export const MAIL_DRAFT_SERVER_COPY_MAX_BYTES = 30 * 1024 * 1024;
 export const MAIL_QUOTE_HTML_MAX_BYTES = 192 * 1024;
 export const MAIL_QUOTE_TEXT_MAX_BYTES = 64 * 1024;
@@ -106,6 +130,11 @@ export const MAIL_OUTBOX_STATUSES = [
   'sent',
   'failed',
   'canceled',
+  /**
+   * Review 9B R4: final, TIDAK diulang — SMTP terputus/basi setelah isi mungkin diterima server
+   * (`failureReason: delivery_unknown`). Dihitung sebagai "mungkin terkirim" di batas & rem otomatis.
+   */
+  'delivery_unknown',
 ] as const;
 export const mailOutboxStatusSchema = z.enum(MAIL_OUTBOX_STATUSES);
 export type MailOutboxStatus = z.infer<typeof mailOutboxStatusSchema>;
@@ -206,6 +235,17 @@ export const MAIL_COMPOSE_MESSAGES = {
   notCancelable: 'Email sudah terkirim, jadi tidak bisa dibatalkan.',
   accountDeleting: 'Akun ini sedang diputus.',
   addressInUse: 'Alamat ini sudah dipakai di akun email, channel, atau Email pengirim lain.',
+  /** Review 9B S4: 409 untuk Owner/Admin menyebut pemegang alamat. */
+  addressHeldBy: (holder: string) => `Alamat ini sudah dipakai ${holder}.`,
+  /** Review 9B S2. */
+  systemSenderMailbox:
+    'Kotak surat ini dipakai sebagai Email pengirim sistem (tautan reset password, undangan, kode verifikasi). Hubungkan kotak surat lain, atau ganti Email pengirim dulu di Pengaturan → Email pengirim.',
+  systemSenderMailboxTaken:
+    'Kotak surat ini sudah terhubung sebagai akun di menu Email, jadi tidak bisa dipakai sebagai Email pengirim sistem (salinan tautan reset password, undangan, dan kode verifikasi akan terbaca pembaca akun itu). Pakai kotak surat lain (mis. noreply@) atau putuskan akunnya dulu.',
+  approvalRequired:
+    'Alamat ini memakai domain organisasi, jadi perlu disetujui Owner/Admin dulu sebelum bisa diverifikasi.',
+  approvalRejected: 'Owner/Admin menolak alamat ini sebagai alamat pengirim akun pribadi.',
+  approvalNotPending: 'Alamat ini tidak sedang menunggu persetujuan.',
   alreadyVerified: 'Alamat ini sudah terverifikasi.',
   aliasLimit: 'Maksimal 20 alias per akun email.',
   primaryIdentity: 'Identitas utama tidak bisa dihapus.',
@@ -444,6 +484,8 @@ export const mailIdentityVerificationSchema = z.object({
 
 export const MAIL_CANNOT_SEND_REASONS = [
   'identity_unverified',
+  /** Review 9B S3: akun pribadi berdomain organisasi belum disetujui (atau ditolak) Owner/Admin. */
+  'identity_not_approved',
   'level_insufficient',
   'account_deleting',
   'account_unavailable',
@@ -458,6 +500,11 @@ export const mailIdentitySchema = z.object({
   isPrimary: z.boolean(),
   replyTo: z.string().nullable(),
   verification: mailIdentityVerificationSchema,
+  /** Review 9B S3. `decidedAt` = waktu disetujui/ditolak (null bila belum/tidak perlu). */
+  approval: z.object({
+    state: mailIdentityApprovalStateSchema,
+    decidedAt: isoDateTimeSchema.nullable(),
+  }),
   defaultSignatures: z.object({ new: z.uuid().nullable(), reply: z.uuid().nullable() }),
   canSend: z.boolean(),
   cannotSendReason: z.enum(MAIL_CANNOT_SEND_REASONS).nullable(),
@@ -511,6 +558,33 @@ export const updateMailIdentityRequestSchema = z
   })
   .strict();
 export type UpdateMailIdentityRequest = z.infer<typeof updateMailIdentityRequestSchema>;
+
+/** Review 9B S3 — `POST …/identities/:identityId/approval` (Owner/Admin + konfirmasi identitas). */
+export const mailIdentityApprovalRequestSchema = z
+  .object({
+    decision: z.enum(['approve', 'reject'], { error: 'Pilih setujui atau tolak.' }),
+    confirmation: identityConfirmationSchema.optional(),
+  })
+  .strict();
+export type MailIdentityApprovalRequest = z.infer<typeof mailIdentityApprovalRequestSchema>;
+
+/** Review 9B S3 — `GET /mail/identity-approvals`: menunggu persetujuan (terbaru dulu, maks. 200). */
+export const mailIdentityApprovalListResponseSchema = z.object({
+  approvals: z.array(
+    z.object({
+      identityId: z.uuid(),
+      accountId: z.uuid(),
+      address: z.string(),
+      displayName: z.string(),
+      isPrimary: z.boolean(),
+      owner: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+      createdAt: isoDateTimeSchema,
+    }),
+  ),
+});
+export type MailIdentityApprovalListResponse = z.infer<
+  typeof mailIdentityApprovalListResponseSchema
+>;
 
 export const mailVerificationResponseSchema = z.object({
   verification: mailIdentityVerificationSchema,
