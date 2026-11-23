@@ -61,6 +61,16 @@ export const test = base.extend<{
         ) {
           return;
         }
+        // Panel baca menu Email (9A): `<iframe sandbox src="/api/v1/mail/view/<token>">`. Dokumen itu
+        // SATU baris tanpa skrip (`renderMailViewDocument`), jadi baris > 0 / tanpa URL = sisipan
+        // Playwright; skrip yang lolos dari isi email (baris 0) tetap tertangkap.
+        const mailView = /^Blocked script execution in 'https?:\/\/[^/']+\/api\/v1\/mail\/view\//;
+        if (
+          mailView.test(msg.text()) &&
+          (at.url === '' || (at.url.includes('/api/v1/mail/view/') && at.lineNumber > 0))
+        ) {
+          return;
+        }
         problems.push(`console.${msg.type()}: ${msg.text()} (${at.url}:${at.lineNumber})`);
       });
       page.on('pageerror', (error) => problems.push(`pageerror: ${error.message}`));

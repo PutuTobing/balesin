@@ -9,7 +9,11 @@ import { cleanEnvSource, isProductionLike, type EnvSource } from '../env';
  *
  *  - `BALESIN_TEST_TELEGRAM_BASE_URL` — alamat server Bot API tiruan (`http://127.0.0.1:<port>`).
  *  - `BALESIN_TEST_IMAP_PORTS` — port IMAP TAMBAHAN yang boleh dituju (mis. `46993`), dipisah koma.
- *  - `BALESIN_TEST_IMAP_CA_FILE` — berkas PEM CA tambahan untuk sertifikat IMAP tiruan.
+ *  - `BALESIN_TEST_IMAP_CA_FILE` — berkas PEM CA tambahan untuk sertifikat IMAP tiruan (juga dipakai
+ *    SMTP tiruan modul Email: sertifikat tes yang sama).
+ *  - `BALESIN_TEST_MAIL_SMTP_PORTS` — port SMTP TAMBAHAN modul Email (Fase 9) yang boleh dituju server
+ *    SMTP tiruan ber-TLS di loopback (mis. `46465`), dipisah koma. Hanya modul Email; Email pengirim
+ *    sistem & Channel Email tetap memakai daftar port bawaan.
  *
  * Di lingkungan seperti produksi (NODE_ENV bukan `development`/`test`) variabel ini DITOLAK (proses
  * gagal start) — tidak pernah diam-diam dipakai. Alamat Telegram hanya boleh loopback.
@@ -18,12 +22,15 @@ import { cleanEnvSource, isProductionLike, type EnvSource } from '../env';
 export interface ChannelTestOverrides {
   telegramBaseUrl?: string;
   imap?: { allowedPorts?: readonly number[]; testCa?: string };
+  /** SMTP tiruan modul Email (Fase 9). */
+  mailSmtp?: { allowedPorts: readonly number[] };
 }
 
 export const CHANNEL_TEST_OVERRIDE_VARIABLES = [
   'BALESIN_TEST_TELEGRAM_BASE_URL',
   'BALESIN_TEST_IMAP_PORTS',
   'BALESIN_TEST_IMAP_CA_FILE',
+  'BALESIN_TEST_MAIL_SMTP_PORTS',
 ] as const;
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
@@ -33,6 +40,14 @@ export class ChannelTestOverrideError extends Error {
     super(message);
     this.name = 'ChannelTestOverrideError';
   }
+}
+
+function parsePorts(name: string, value: string): number[] {
+  const parsed = value.split(',').map((part) => Number(part.trim()));
+  if (parsed.some((port) => !Number.isInteger(port) || port < 1024 || port > 65_535)) {
+    throw new ChannelTestOverrideError(`${name} harus daftar port 1024–65535 dipisah koma.`);
+  }
+  return parsed;
 }
 
 export function channelTestOverridesFromEnv(
@@ -73,15 +88,7 @@ export function channelTestOverridesFromEnv(
   const caFile = env.BALESIN_TEST_IMAP_CA_FILE;
   if (ports !== undefined || caFile !== undefined) {
     const imap: { allowedPorts?: number[]; testCa?: string } = {};
-    if (ports !== undefined) {
-      const parsed = ports.split(',').map((part) => Number(part.trim()));
-      if (parsed.some((port) => !Number.isInteger(port) || port < 1024 || port > 65_535)) {
-        throw new ChannelTestOverrideError(
-          'BALESIN_TEST_IMAP_PORTS harus daftar port 1024–65535 dipisah koma.',
-        );
-      }
-      imap.allowedPorts = parsed;
-    }
+    if (ports !== undefined) imap.allowedPorts = parsePorts('BALESIN_TEST_IMAP_PORTS', ports);
     if (caFile !== undefined) {
       let pem: string;
       try {
@@ -95,6 +102,13 @@ export function channelTestOverridesFromEnv(
       imap.testCa = pem;
     }
     overrides.imap = imap;
+  }
+
+  const mailSmtpPorts = env.BALESIN_TEST_MAIL_SMTP_PORTS;
+  if (mailSmtpPorts !== undefined) {
+    overrides.mailSmtp = {
+      allowedPorts: parsePorts('BALESIN_TEST_MAIL_SMTP_PORTS', mailSmtpPorts),
+    };
   }
   return overrides;
 }

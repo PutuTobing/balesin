@@ -434,6 +434,9 @@ describe('header keamanan', () => {
     expect(response.headers['permissions-policy']).toContain('geolocation=()');
     expect(response.headers['x-powered-by']).toBeUndefined();
     expect(response.headers['strict-transport-security']).toBeUndefined();
+    // Halaman web tidak memintanya; kalau hanya dokumen API (isi email) yang meminta, Chrome
+    // memperingatkan di console (QA E2E menu Email).
+    expect(response.headers['origin-agent-cluster']).toBeUndefined();
   });
 
   it('header keamanan juga ada di respons error', async () => {

@@ -512,6 +512,9 @@ function ComposeForm({
     const timer = window.setInterval(beat, PRESENCE_HEARTBEAT_MS);
     return () => {
       window.clearInterval(timer);
+      // Draf dibuang: server sudah menghapus penandanya bersama draf; melepasnya lagi = 404 di
+      // console karena drafnya sudah tidak ada (QA E2E menu Email).
+      if (closing.current === 'discard') return;
       void endpoints.mail.presence(draft.id, false).catch(() => undefined);
     };
   }, [draft.id, draft.mode, draft.threadKey]);

@@ -301,7 +301,10 @@ test('Email 9.0: Kepada/Cc & "Dikirim ke", Balas semua + Bcc ke Mailpit, izin al
       const csCc = csRoom.getByRole('textbox', { name: 'Alamat Cc', exact: true });
       await csCc.fill(stranger);
       await csCc.press('Enter');
-      await expect(csRoom.getByText('Alamat baru butuh izin memulai percakapan')).toBeVisible();
+      // HP: satu baris ringkas (revisi kritikus 9.0 N1), bukan kotak Notice berjudul seperti desktop.
+      await expect(
+        csRoom.getByText('Alamat “baru” butuh izin memulai percakapan.', { exact: false }),
+      ).toBeVisible();
       await csRoom.getByRole('textbox', { name: 'Tulis balasan' }).fill('Kami tembuskan ke tim.');
       await csRoom.getByRole('button', { name: 'Kirim', exact: true }).click();
       await expect(
@@ -330,11 +333,9 @@ test('Email 9.0: Kepada/Cc & "Dikirim ke", Balas semua + Bcc ke Mailpit, izin al
       await accessCard.getByRole('checkbox', { name: new RegExp(department.name) }).check();
       await accessCard.getByRole('button', { name: 'Simpan akses' }).click();
       // Mempersempit tidak butuh konfirmasi; percakapan yang dipegang CS kembali ke antrian.
-      await expect(
-        accessCard.getByText(
-          /^Akses tim disimpan\..*1 percakapan yang dipegang anggota tanpa akses dikembalikan ke antrian\.$/,
-        ),
-      ).toBeVisible();
+      const saved = accessCard.getByRole('status');
+      await expect(saved).toContainText('Akses tim disimpan');
+      await expect(saved).toContainText('1 percakapan yang mereka pegang dikembalikan ke antrian.');
 
       // Real-time (resync): baris hilang dari daftar CS tanpa muat ulang.
       await expect(conversationRow(csPage.page, customerName)).toHaveCount(0, { timeout: 20_000 });
@@ -362,8 +363,8 @@ test('Email 9.0: Kepada/Cc & "Dikirim ke", Balas semua + Bcc ke Mailpit, izin al
       // ── Kembali ke "Semua tim" (melonggarkan) = konfirmasi identitas ──────────────────────
       await accessCard.getByRole('radio', { name: /Semua tim/ }).click();
       await accessCard.getByRole('button', { name: 'Simpan akses' }).click();
-      await confirmAsOwner(page, 'Konfirmasi perluas akses', 'Simpan akses');
-      await expect(accessCard.getByText(/^Akses tim disimpan\./)).toBeVisible();
+      await confirmAsOwner(page, 'Perluas akses channel ini?', 'Simpan akses');
+      await expect(accessCard.getByRole('status')).toContainText('Akses tim disimpan');
 
       await csPage.page.goto('/inbox');
       await expect(async () => {

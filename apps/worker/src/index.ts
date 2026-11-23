@@ -122,7 +122,14 @@ function main(config: WorkerConfig): void {
           }
         : {}),
       notifyOwner: ownerNotifier.notify,
-      smtp: testOverrides.imap ? { allowLoopback: true } : {},
+      // Stack E2E saja: SMTP tiruan ber-TLS sertifikat tes di loopback (port dari variabel tes).
+      smtp: testOverrides.imap
+        ? {
+            allowLoopback: true,
+            ...(testOverrides.mailSmtp ? { extraPorts: testOverrides.mailSmtp.allowedPorts } : {}),
+            ...(testOverrides.imap.testCa ? { testCa: testOverrides.imap.testCa } : {}),
+          }
+        : {},
       imap: {
         ...(testOverrides.imap?.allowedPorts
           ? { extraPorts: testOverrides.imap.allowedPorts }

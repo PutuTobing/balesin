@@ -4,7 +4,8 @@
  *   1. database `E2E_DATABASE_NAME` dihapus lalu dibuat ulang, dimigrasi dari nol;
  *   2. Redis E2E (database nomor 14) dikosongkan — batas percobaan & penguncian akun hilang;
  *   3. server Meta TIRUAN dijalankan (`fake-meta-server.ts`, 127.0.0.1 port acak), lalu server channel
- *      TIRUAN (`fake-channels-server.ts`: Bot API Telegram + IMAP TLS; kendali di port tetap);
+ *      TIRUAN (`fake-channels-server.ts`: Bot API Telegram + IMAP TLS + IMAP/SMTP modul Email; kendali
+ *      di port tetap);
  *   4. API dan worker dijalankan (tsx, tanpa watch) dengan env dari `stack/env.ts` ditambah
  *      `META_GRAPH_BASE_URL` = alamat server tiruan. Tes E2E tidak pernah memanggil Meta sungguhan.
  *
@@ -210,10 +211,12 @@ try {
     await startFakeServer('fake-channels-server.ts', 'FAKE_CHANNELS=', 'server channel tiruan'),
   );
   process.env.BALESIN_TEST_TELEGRAM_BASE_URL = fakeChannels.telegramUrl;
-  process.env.BALESIN_TEST_IMAP_PORTS = String(fakeChannels.imapPort);
+  // Modul Email (Fase 9): IMAP & SMTP tiruan sendiri (port acak), sertifikat tes yang sama.
+  process.env.BALESIN_TEST_IMAP_PORTS = `${fakeChannels.imapPort},${fakeChannels.mailImapPort}`;
+  process.env.BALESIN_TEST_MAIL_SMTP_PORTS = String(fakeChannels.mailSmtpPort);
   process.env.BALESIN_TEST_IMAP_CA_FILE = fakeChannels.caFile;
   log(
-    `server channel tiruan: Telegram ${fakeChannels.telegramUrl}, IMAP localhost:${fakeChannels.imapPort}`,
+    `server channel tiruan: Telegram ${fakeChannels.telegramUrl}, IMAP localhost:${fakeChannels.imapPort}, Email IMAP ${fakeChannels.mailImapPort} SMTP ${fakeChannels.mailSmtpPort}`,
   );
   children.push(
     run('api', ['--filter', '@balesin/api', 'exec', 'tsx', 'src/index.ts'], { wait: false }),

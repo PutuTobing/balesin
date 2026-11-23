@@ -154,6 +154,9 @@ export function createIdleSupervisor(deps: IdleSupervisorDeps): IdleSupervisor {
         }, debounceMs);
         pending.unref();
       };
+      // Sinkron susulan: email yang tiba antara sinkron terakhir dan IDLE mulai tidak memicu EXISTS
+      // (QA E2E menu Email: tertunda sampai sinkron berkala).
+      trigger();
       while (!abort.signal.aborted && !closed) {
         await session.idle({ maxMs: idleRefreshMs, signal: abort.signal, onChange: trigger });
       }

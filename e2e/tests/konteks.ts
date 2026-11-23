@@ -47,6 +47,15 @@ export async function openWatchedPage(
     if (msg.type() !== 'error' && msg.type() !== 'warning') return;
     const failed = /status of (\d{3})/.exec(msg.text());
     if (failed && isExpected(msg.location().url, Number(failed[1]))) return;
+    // Sama dengan fixture `page` (fixtures.ts): skrip sisipan Playwright yang ditolak sandbox iframe
+    // isi email menu Email (dokumen satu baris tanpa skrip → baris > 0 / tanpa URL = sisipan).
+    const at = msg.location();
+    if (
+      /^Blocked script execution in 'https?:\/\/[^/']+\/api\/v1\/mail\/view\//.test(msg.text()) &&
+      (at.url === '' || (at.url.includes('/api/v1/mail/view/') && at.lineNumber > 0))
+    ) {
+      return;
+    }
     problems.push(`console.${msg.type()}: ${msg.text()}`);
   });
   page.on('pageerror', (error) => problems.push(`pageerror: ${error.message}`));
