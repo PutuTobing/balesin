@@ -321,6 +321,11 @@ describe('deklarasi akses rute (bawaan tolak)', () => {
       // Ikon PWA/favicon dari logo (Fase 7 white-label): hanya nama berkas dari daftar tetap.
       '/api/v1/branding/icons/:file',
       '/api/v1/branding/logo',
+      // Dokumen tampilan email (9A, KONTRAK-API-EMAIL §8): iframe sandbox ber-origin opak tanpa
+      // cookie → diautentikasi token HMAC ber-sesi di path; service memeriksa ulang sesi & hak baca.
+      '/api/v1/mail/view/:token',
+      '/api/v1/mail/view/:token/cid/:attachmentId',
+      '/api/v1/mail/view/:token/images/:index',
       '/api/v1/setup/check-password',
       '/api/v1/setup/complete',
       '/api/v1/setup/email/detect-host',

@@ -168,7 +168,9 @@ describe('Pengaturan → Akun email → satu akun', () => {
     });
     // Judul Notice tidak sama dengan lencana; pesan server sekali saja, tanpa paragraf tambahan.
     expect(await screen.findByText(d.authFailedTitle)).toBeVisible();
-    expect(screen.getAllByText('Username atau password akun email ditolak server.')).toHaveLength(1);
+    expect(screen.getAllByText('Username atau password akun email ditolak server.')).toHaveLength(
+      1,
+    );
     expect(screen.queryByText(m.authFailedHint)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: d.fixPassword }));
     expect(await screen.findByRole('dialog', { name: d.editServerTitle })).toBeVisible();
@@ -178,7 +180,7 @@ describe('Pengaturan → Akun email → satu akun', () => {
     await renderApp(`/pengaturan/akun-email/${MAIL_IDS.cs}?ubah=server`, routes());
     const dialog = await screen.findByRole('dialog', { name: d.editServerTitle });
     expect(dialog).toBeVisible();
-    fireEvent.click(within(dialog).getByRole('button', { name: t.common.cancel }));
+    fireEvent.click(within(dialog).getByRole('button', { name: w.cancel }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(window.location.search).toBe('');
   });

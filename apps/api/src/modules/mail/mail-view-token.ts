@@ -70,7 +70,10 @@ export function createMailViewTokens(secret: Buffer | string): MailViewTokens {
     verify(token, now) {
       if (token.length > 100 || !/^[A-Za-z0-9_-]+$/.test(token)) return null;
       const bytes = Buffer.from(token, 'base64url');
-      if (bytes.length !== PAYLOAD_BYTES + MAC_BYTES) return null;
+      // Kanonik: decoder base64url Node mengabaikan karakter sisa, jadi wajib encode ulang = token.
+      if (bytes.length !== PAYLOAD_BYTES + MAC_BYTES || bytes.toString('base64url') !== token) {
+        return null;
+      }
       const payload = bytes.subarray(0, PAYLOAD_BYTES);
       const given = bytes.subarray(PAYLOAD_BYTES);
       if (!timingSafeEqual(given, mac(payload))) return null;

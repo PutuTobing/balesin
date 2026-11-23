@@ -625,9 +625,7 @@ function MailAccountsMenuItem() {
             // Bagian "perlu perhatian" = warna peringatan, sama dengan kaki kolom folder Email.
             <>
               {t.mail.accounts.menuCount(accounts.length)} ·{' '}
-              <span className={styles.menuWarning}>
-                {t.mail.accounts.menuAttention(attention)}
-              </span>
+              <span className={styles.menuWarning}>{t.mail.accounts.menuAttention(attention)}</span>
             </>
           ) : (
             t.mail.accounts.menuCount(accounts.length)

@@ -38,7 +38,8 @@ export function failedTitle(side: 'incoming' | 'outgoing', code: MailTestCode): 
 export function onlyConnectionFailures(result: TestMailAccountResponse): boolean {
   const failed = [result.incoming, result.outgoing].filter((side) => side && !side.ok);
   return (
-    failed.length > 0 && failed.every((side) => side && mailTestCodeKind(side.code) === 'connection')
+    failed.length > 0 &&
+    failed.every((side) => side && mailTestCodeKind(side.code) === 'connection')
   );
 }
 

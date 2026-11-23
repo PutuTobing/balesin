@@ -45,7 +45,9 @@ async function wizardStep3(page: Page): Promise<void> {
   await wizardStep2(page);
   const dialog = wizard(page);
   await dialog.getByRole('button', { name: 'Tes koneksi' }).click();
-  await dialog.getByText(/Masuk ke SMTP (berhasil|gagal)|Server SMTP belum bisa dihubungi/).waitFor();
+  await dialog
+    .getByText(/Masuk ke SMTP (berhasil|gagal)|Server SMTP belum bisa dihubungi/)
+    .waitFor();
   await settle(page);
 }
 
