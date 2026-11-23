@@ -177,6 +177,14 @@ dilewati.
 Kedua channel ini butuh **App Review Meta** yang disetujui lebih dulu, lalu tes koneksi yang
 berhasil. Sebelum itu channel tetap **Nonaktif** dengan lencana **Butuh App Review Meta**.
 
+## Menu Email
+
+Masalah di menu **Email** (bukan Channel Email di Inbox) dibahas di
+[Bab 10.10](10-modul-email.md#1010-tanya-jawab): tidak bisa mengirim karena alamat belum
+diverifikasi atau belum disetujui, email baru tidak muncul, status "Password ditolak", dan "Ruang
+cache email penuh". Galat tes koneksi akun email ada di
+[Bab 10.2](10-modul-email.md#102-untuk-owner-dan-admin-menghubungkan-akun).
+
 ## Integrasi
 
 ### Webhook keluar "Dinonaktifkan otomatis"
