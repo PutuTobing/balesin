@@ -1,5 +1,6 @@
 import { AppError, type MailComposeKeys } from '@balesin/core';
 import {
+  auditLogs,
   channels,
   emailSettings,
   mailAccounts,
@@ -29,7 +30,7 @@ import {
   type MailVerificationUnavailableReason,
   type UserRole,
 } from '@balesin/shared';
-import { and, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 
 import type { ClientInfo } from '../../http/client-info';
 import type { EmailNotifier } from '../../queues/email-queue';
@@ -728,6 +729,8 @@ export async function recordApprovalRequest(
   });
 }
 
+const APPROVAL_NOTICE_WINDOW_MS = 60 * 60 * 1000;
+
 /** Email "menunggu persetujuan" ke semua Owner/Admin aktif selain peminta (usaha terbaik). */
 export async function notifyApprovalRequest(
   db: DbExecutor,
@@ -735,6 +738,22 @@ export async function notifyApprovalRequest(
   input: { organizationId: string; requesterUserId: string; auditLogId: string; occurredAt: Date },
 ): Promise<void> {
   if (!notifier) return;
+  // Review 9B putaran 2 P2-S1: tambah-hapus alias berulang tidak boleh membanjiri Owner/Admin dan
+  // menghabiskan kuota SMTP pengirim sistem. Maks. 1 email per peminta per jam; permintaan lain
+  // tetap tampil di daftar "menunggu persetujuan" (sumber kebenaran: audit, tanpa Redis).
+  const since = new Date(input.occurredAt.getTime() - APPROVAL_NOTICE_WINDOW_MS);
+  const [recent] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(auditLogs)
+    .where(
+      and(
+        eq(auditLogs.organizationId, input.organizationId),
+        eq(auditLogs.actorUserId, input.requesterUserId),
+        eq(auditLogs.action, AUDIT_ACTIONS.mailIdentityApprovalRequested),
+        gte(auditLogs.createdAt, since),
+      ),
+    );
+  if ((recent?.count ?? 0) > 1) return;
   const recipients = await db
     .select({ id: users.id })
     .from(users)
