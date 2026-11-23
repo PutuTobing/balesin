@@ -454,6 +454,9 @@ describe('event real-time Email', () => {
       trustedAuthServIds: null,
       syncWindowDays: 90,
       periodicSyncMinutes: 5,
+      sentCopyMode: 'auto',
+      warnExternalRecipients: false,
+      warnings: [],
       sync: {
         state: 'initial_sync',
         lastSyncedAt: null,

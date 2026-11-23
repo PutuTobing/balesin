@@ -1,6 +1,6 @@
 import {
   MAIL_CACHE_RETENTION_DAYS,
-  mailSettingsSchema,
+  updateMailSettingsRequestSchema,
   type IdentityConfirmation,
   type MailAccount,
   type MailSettings,
@@ -53,6 +53,7 @@ import {
   peekAccountsFlash,
   useRequireCode,
 } from './mail-queries';
+import { MailIdentityApprovalsCard, MailPreferencesCard } from './MailComposeSettings';
 import { useMailStream } from './use-mail-stream';
 import styles from './MailAccounts.module.css';
 
@@ -163,6 +164,11 @@ export function MailAccountsPage() {
             }
           />
         )}
+        {data &&
+        data.accounts.some((account) => !account.redacted && account.myLevel !== 'read') ? (
+          <MailPreferencesCard />
+        ) : null}
+        {data?.canManageShared ? <MailIdentityApprovalsCard /> : null}
         {data?.canManageShared ? <MailSettingsCard /> : null}
       </div>
       {search.tambah && data && canConnect ? (
@@ -535,7 +541,7 @@ function SettingsForm({ saved }: { saved: MailSettings }) {
       cacheRetentionDays: /^\d+$/.test(retention.trim()) ? Number(retention.trim()) : Number.NaN,
       defaultSyncWindowDays: parseWindow(syncWindow),
     };
-    const parsed = mailSettingsSchema.safeParse(body);
+    const parsed = updateMailSettingsRequestSchema.safeParse(body);
     if (!parsed.success) {
       setErrors(zodFieldErrors(parsed.error));
       return;

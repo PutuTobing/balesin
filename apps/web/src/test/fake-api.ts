@@ -489,8 +489,21 @@ export function installFakeApi(options: FakeApiOptions = {}): FakeApi {
       json({ messages: [], nextCursor: null, olderOnServer: false }),
     ),
     [`GET ${API_ROUTES.mail.settings}`]: fullSessionOnly(() =>
-      json({ settings: { cacheRetentionDays: 90, defaultSyncWindowDays: 90 } }),
+      json({
+        settings: {
+          cacheRetentionDays: 90,
+          defaultSyncWindowDays: 90,
+          maxRecipientsPerEmail: 50,
+          maxAttachmentTotalMb: 20,
+        },
+      }),
     ),
+    // 9B: preferensi menulis bawaan, belum ada identitas/antrean persetujuan.
+    [`GET ${API_ROUTES.mail.preferences}`]: fullSessionOnly(() =>
+      json({ undoSendSeconds: 10, composeFormat: 'html', signatureChoices: {} }),
+    ),
+    [`GET ${API_ROUTES.mail.composeIdentities}`]: fullSessionOnly(() => json({ identities: [] })),
+    [`GET ${API_ROUTES.mail.identityApprovals}`]: fullSessionOnly(() => json({ approvals: [] })),
     // Fase 6: channel selain WhatsApp (bawaan belum ada).
     [`GET ${API_ROUTES.channelConnections.list}`]: fullSessionOnly(() =>
       json({ channels: [], types: channelTypeInfos(), canStoreSecrets: true, maxChannels: 20 }),

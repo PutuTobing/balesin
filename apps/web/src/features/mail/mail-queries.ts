@@ -44,6 +44,16 @@ export const mailKeys = {
   /** URL dokumen tampilan ber-token; `images` = `auto`/`show`. */
   view: (messageId: string, images: 'auto' | 'show') =>
     ['mail', 'view', messageId, images] as const,
+  // ── 9B: tulis ──
+  /** Pilihan "Dari" di jendela tulis (semua akun ber-hak kirim). */
+  composeIdentities: ['mail', 'compose-identities'] as const,
+  /** Identitas & alias satu akun (Pengaturan → Akun email). */
+  identities: (accountId: string) => ['mail', 'identities', accountId] as const,
+  signatures: (accountId: string) => ['mail', 'signatures', accountId] as const,
+  preferences: ['mail', 'preferences'] as const,
+  draft: (draftId: string) => ['mail', 'draft', draftId] as const,
+  snippets: (q: string) => ['mail', 'snippets', q] as const,
+  suggest: (q: string, accountId: string | null) => ['mail', 'suggest', q, accountId] as const,
 };
 
 /** Kartu penyedia jarang berubah (daftar tetap di server). */
@@ -219,6 +229,64 @@ export function markAttachmentCached(queryClient: QueryClient, attachmentId: str
           }
         : data,
   );
+}
+
+// ── 9B: tulis, identitas, tanda tangan, preferensi ──
+
+export const composeIdentitiesQuery = queryOptions({
+  queryKey: mailKeys.composeIdentities,
+  queryFn: ({ signal }) => endpoints.mail.composeIdentities(signal),
+  retry: retryTransient,
+});
+
+export const mailIdentitiesQuery = (accountId: string) =>
+  queryOptions({
+    queryKey: mailKeys.identities(accountId),
+    queryFn: ({ signal }) => endpoints.mail.accountIdentities(accountId, signal),
+    retry: retryTransient,
+  });
+
+export const mailSignaturesQuery = (accountId: string) =>
+  queryOptions({
+    queryKey: mailKeys.signatures(accountId),
+    queryFn: ({ signal }) => endpoints.mail.signatures(accountId, signal),
+    retry: retryTransient,
+  });
+
+export const mailPreferencesQuery = queryOptions({
+  queryKey: mailKeys.preferences,
+  queryFn: ({ signal }) => endpoints.mail.preferences(signal),
+  retry: retryTransient,
+  staleTime: 5 * 60_000,
+});
+
+/** Menu template (balasan cepat + template email terbit), dicari di server. */
+export function mailSnippetsQuery(q: string) {
+  return queryOptions({
+    queryKey: mailKeys.snippets(q),
+    queryFn: ({ signal }) => endpoints.mail.composeSnippets(q, signal),
+    staleTime: 60_000,
+    retry: retryTransient,
+  });
+}
+
+/** Pelengkap Kepada/Cc/Bcc (q ≥ 2 karakter). Tidak diulang otomatis: ketikan berikutnya cukup. */
+export function mailSuggestQuery(q: string, accountId: string | null) {
+  return queryOptions({
+    queryKey: mailKeys.suggest(q, accountId),
+    queryFn: ({ signal }) => endpoints.mail.suggestRecipients(q, accountId ?? undefined, signal),
+    staleTime: 60_000,
+    retry: false,
+    enabled: q.trim().length >= 2,
+  });
+}
+
+/** Identitas berubah (verifikasi, alias): pilihan "Dari" & daftar identitas akun dimuat ulang. */
+export function refreshIdentities(queryClient: QueryClient, accountId?: string): void {
+  void queryClient.invalidateQueries({ queryKey: mailKeys.composeIdentities });
+  void queryClient.invalidateQueries({
+    queryKey: accountId ? mailKeys.identities(accountId) : ['mail', 'identities'],
+  });
 }
 
 export const mailSettingsQuery = queryOptions({

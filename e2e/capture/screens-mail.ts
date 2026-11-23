@@ -7,6 +7,7 @@ import {
   MAIL_PHOTO_IDS,
   mailAccess,
   mailAccounts,
+  mailCompose,
   mailMessages,
   mailWizard,
   teamMailAccess,
@@ -308,6 +309,177 @@ export const mailScreens: Screen[] = [
     },
     // Setinggi isi (kartu Akses email di bawah Detail anggota), tanpa hash yang menggeser shell.
     tall: true,
+  },
+];
+
+// ── 9B: tulis, balas, teruskan ──────────────────────────────────────────
+
+/** Buka jendela tulis: FAB "Tulis" di HP, tombol "Tulis email" di kolom folder desktop/tablet. */
+async function openNewCompose(page: Page): Promise<void> {
+  const fab = page.getByRole('button', { name: 'Tulis', exact: true });
+  if (await fab.isVisible()) await fab.click();
+  else await page.getByRole('button', { name: 'Tulis email', exact: true }).click();
+  await page.getByRole('dialog', { name: /^Tulis email:/ }).waitFor();
+  await page.getByRole('combobox', { name: 'Penerima (Kepada)' }).waitFor();
+}
+
+/** Kepada dari saran kontak + subjek + isi pendek di atas tanda tangan. */
+async function fillNewCompose(page: Page, body: string): Promise<void> {
+  const to = page.getByRole('combobox', { name: 'Penerima (Kepada)' });
+  await to.fill('ri');
+  await page.getByRole('option', { name: /Rina Wulandari/ }).click();
+  await page.getByLabel('Subjek').fill('Penawaran paket Bisnis 50 Mbps');
+  const editor = page.getByRole('textbox', { name: 'Isi email' });
+  await editor.focus();
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.type(body);
+}
+
+async function openReply(page: Page): Promise<void> {
+  await readyFrame(page);
+  await page
+    .getByRole('group', { name: 'Balas atau teruskan' })
+    .getByRole('button', { name: 'Balas', exact: true })
+    .click();
+  await page.getByRole('dialog', { name: /^Tulis email: Balas:/ }).waitFor();
+}
+
+const COMPOSE_BODY = [
+  'Halo Bu Rina,',
+  'Terima kasih atas permintaannya. Penawaran paket Bisnis 50 Mbps untuk kantor cabang Sukadana kami kirim lewat email ini. Kalau sudah cocok, cukup balas email ini ya, Bu.',
+].join('\n');
+
+async function withCompose(page: Page, options?: Parameters<typeof mailCompose>[1]) {
+  await mailAccounts(page);
+  await mailCompose(page, options);
+}
+
+async function withSettings(page: Page) {
+  await mailAccounts(page);
+  await mailAccess(page);
+  await mailCompose(page);
+}
+
+export const composeScreens: Screen[] = [
+  // Desktop: jendela mengambang 600×600 di kanan bawah. HP: layar penuh (FAB "Tulis").
+  {
+    name: 'email-tulis',
+    path: `/email?f=${CS_INBOX_FOLDER}`,
+    before: (page) => withCompose(page),
+    waitFor: 'h1',
+    prepare: async (page) => {
+      await openNewCompose(page);
+      await fillNewCompose(page, COMPOSE_BODY);
+      await page
+        .getByText(/Draf tersimpan · /)
+        .first()
+        .waitFor();
+      await settle(page);
+    },
+  },
+  // Balas: penerima & subjek terisi, kutipan email asli di iframe ber-token (bukan di editor).
+  {
+    name: 'email-balas',
+    path: `/email?m=${MAIL_MESSAGE_IDS.noc}`,
+    before: (page) => withCompose(page),
+    waitFor: 'iframe',
+    prepare: async (page) => {
+      await openReply(page);
+      await page.getByRole('button', { name: /Tampilkan kutipan email/ }).click();
+      await page.frameLocator('iframe[title="Kutipan email asli"]').locator('table').waitFor();
+      await settle(page);
+    },
+  },
+  // Lampiran: satu siap, satu sedang diunggah (progres), satu ditolak sebelum diunggah.
+  {
+    name: 'email-tulis-lampiran',
+    path: `/email?f=${CS_INBOX_FOLDER}`,
+    before: (page) => withCompose(page, { hangUpload: true }),
+    waitFor: 'h1',
+    prepare: async (page) => {
+      await openNewCompose(page);
+      await fillNewCompose(page, 'Halo Bu Rina, rincian harga dan denah lokasi ada di lampiran.');
+      const pdf = Buffer.from('%PDF-1.7');
+      await page.locator('input[type="file"][multiple]').setInputFiles([
+        { name: 'Penawaran-Bisnis-50Mbps.pdf', mimeType: 'application/pdf', buffer: pdf },
+        { name: 'Denah-Lokasi-Sukadana.pdf', mimeType: 'application/pdf', buffer: pdf },
+        {
+          name: 'pemasang-driver.exe',
+          mimeType: 'application/octet-stream',
+          buffer: Buffer.from('MZ'),
+        },
+      ]);
+      await page.getByText('Penawaran-Bisnis-50Mbps.pdf').first().waitFor();
+      await page.getByRole('progressbar').waitFor();
+      await settle(page);
+    },
+  },
+  // Kirim → toast "Email akan dikirim dari … · Batalkan (hitung mundur) · Kirim sekarang".
+  {
+    name: 'email-terkirim-batalkan',
+    path: `/email?f=${CS_INBOX_FOLDER}`,
+    before: (page) => withCompose(page),
+    waitFor: 'h1',
+    prepare: async (page) => {
+      await openNewCompose(page);
+      await fillNewCompose(page, COMPOSE_BODY);
+      const send = page.getByRole('button', { name: 'Kirim', exact: true });
+      await send.click();
+      await page.getByText('Email akan dikirim dari cs@majujaya.co.id').waitFor();
+      await settle(page);
+    },
+  },
+  // Ada email baru di utas sejak mulai menulis (409) → Lihat dulu / Tetap kirim.
+  {
+    name: 'email-utas-baru-409',
+    path: `/email?m=${MAIL_MESSAGE_IDS.noc}`,
+    before: (page) => withCompose(page, { threadConflict: true }),
+    waitFor: 'iframe',
+    prepare: async (page) => {
+      await openReply(page);
+      await page.getByRole('button', { name: 'Kirim', exact: true }).click();
+      await page.getByRole('dialog', { name: 'Ada email baru di utas ini' }).waitFor();
+      await page.mouse.move(1, 1);
+    },
+  },
+  // Pengaturan → Akun email → CS: alamat pengirim (utama terverifikasi + alias menunggu kode).
+  {
+    name: 'akun-identitas',
+    path: `/pengaturan/akun-email/${MAIL_PHOTO_IDS.cs}`,
+    before: withSettings,
+    waitFor: 'h1',
+    prepare: async (page) => {
+      await page.getByText('tagihan@majujaya.co.id').first().waitFor();
+      await page
+        .locator('#alamat-pengirim')
+        .evaluate((node) => node.scrollIntoView({ block: 'start' }));
+      await settle(page);
+    },
+  },
+  {
+    name: 'akun-tanda-tangan',
+    path: `/pengaturan/akun-email/${MAIL_PHOTO_IDS.cs}`,
+    before: withSettings,
+    waitFor: 'h1',
+    prepare: async (page) => {
+      await page.getByText('Singkat untuk balasan').first().waitFor();
+      await page
+        .locator('#tanda-tangan')
+        .evaluate((node) => node.scrollIntoView({ block: 'start' }));
+      await settle(page);
+    },
+  },
+  // Ubah tanda tangan: editor yang sama dengan jendela tulis + variabel + logo.
+  {
+    name: 'akun-tanda-tangan-ubah',
+    path: `/pengaturan/akun-email/${MAIL_PHOTO_IDS.cs}`,
+    before: withSettings,
+    waitFor: 'h1',
+    prepare: async (page) => {
+      await page.getByRole('button', { name: 'Ubah Formal' }).click();
+      await page.getByRole('dialog', { name: 'Ubah tanda tangan' }).waitFor();
+      await page.mouse.move(1, 1);
+    },
   },
 ];
 

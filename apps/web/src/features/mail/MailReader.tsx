@@ -13,7 +13,10 @@ import { DropdownMenu } from 'radix-ui';
 import {
   Archive,
   ArrowLeft,
+  ChevronDown,
+  ChevronUp,
   Clock,
+  Forward,
   Download,
   File,
   FileArchive,
@@ -26,6 +29,9 @@ import {
   LoaderCircle,
   Mail,
   MailOpen,
+  PenLine,
+  Reply,
+  ReplyAll,
   Shield,
   ShieldAlert,
   ShieldCheck,
@@ -52,7 +58,9 @@ import { endpoints } from '../../lib/api/endpoints';
 import { cx } from '../../lib/cx';
 import { saveBlob } from '../../lib/download';
 import { formatDateTime } from '../../lib/format';
+import { useSession } from '../auth/session';
 import { ContactAvatar } from '../inbox/InboxBits';
+import { openCompose } from './compose/compose-store';
 import { AccountMark } from './AccountMark';
 import { folderIcon, formatBytes, visibleFolders } from './mail-format';
 import {
@@ -81,6 +89,7 @@ import styles from './MailReader.module.css';
 
 const r = t.mail.reading;
 const l = t.mail.list;
+const rb = t.mail.replyBar;
 
 /** Iframe dokumen tampilan: tanpa `allow-scripts` & `allow-same-origin` (kontrak §8). */
 const FRAME_SANDBOX = 'allow-popups allow-popups-to-escape-sandbox';
@@ -102,6 +111,11 @@ interface MailReaderProps {
   onFlash: (flash: ReaderFlash) => void;
   /** HP & keyboard: fokus ke subjek saat dibuka. */
   focusTitle?: boolean;
+  /** 9B: pengguna punya hak kirim di akun mana pun (Teruskan). */
+  canCompose?: boolean;
+  /** 9B: posisi di daftar ("1 dari N") + email sebelumnya/berikutnya (desktop). */
+  position?: { index: number; total: number; previous: string | null; next: string | null } | null;
+  onStep?: (messageId: string) => void;
 }
 
 /**
@@ -117,6 +131,9 @@ export function MailReader({
   onLeave,
   onFlash,
   focusTitle,
+  canCompose = false,
+  position = null,
+  onStep,
 }: MailReaderProps) {
   const queryClient = useQueryClient();
   const detail = useQuery(mailMessageQuery(messageId));
@@ -215,6 +232,8 @@ export function MailReader({
     <div className={styles.reader}>
       <ReaderBar
         onBack={onBack}
+        position={position}
+        onStep={onStep}
         message={message}
         moveTargets={message ? folders.filter((folder) => folder.id !== message.folderId) : []}
         onAction={(action, folderId) => {
@@ -223,6 +242,7 @@ export function MailReader({
         }}
       />
       {content}
+      {message ? <ReplyBar message={message} canCompose={canCompose} /> : null}
       <ConfirmDialog
         open={confirmDelete}
         title={r.deleteConfirm.title}
@@ -247,7 +267,11 @@ function ReaderBar({
   message,
   moveTargets = [],
   onAction,
+  position,
+  onStep,
 }: {
+  position?: MailReaderProps['position'];
+  onStep?: (messageId: string) => void;
   onBack?: () => void;
   message?: MailMessageDetail;
   moveTargets?: ReturnType<typeof visibleFolders>;
@@ -316,7 +340,80 @@ function ReaderBar({
           />
         </div>
       ) : null}
+      {position && onStep ? (
+        <div className={styles.position}>
+          <span className={styles.positionText}>{rb.position(position.index, position.total)}</span>
+          <IconButton
+            label={rb.previous}
+            icon={ChevronUp}
+            disabled={!position.previous}
+            onClick={() => position.previous && onStep(position.previous)}
+          />
+          <IconButton
+            label={rb.next}
+            icon={ChevronDown}
+            disabled={!position.next}
+            onClick={() => position.next && onStep(position.next)}
+          />
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+// ── Balas / teruskan (9B) ─────────────────────────────────────────────────
+
+/**
+ * Kaki panel baca: Balas · Balas semua · Teruskan (mockup). Balas hanya dari akun yang sama
+ * (level ≥ kirim); Teruskan boleh dari akun lain yang ber-hak kirim (KONTRAK-API-EMAIL-TULIS §6.1).
+ */
+function ReplyBar({ message, canCompose }: { message: MailMessageDetail; canCompose: boolean }) {
+  const canReply = canCompose && message.myLevel !== 'read';
+  if (!canCompose) return null;
+  const open = (kind: 'reply' | 'reply_all' | 'forward') =>
+    openCompose({
+      kind,
+      sourceMessageId: message.id,
+      accountId: message.accountId,
+      subject: message.subject,
+    });
+  return (
+    <div className={styles.replyBar} role="group" aria-label={rb.actionsLabel}>
+      <Button disabled={!canReply} onClick={() => open('reply')}>
+        <Icon icon={Reply} size={16} />
+        {rb.reply}
+      </Button>
+      <Button disabled={!canReply} onClick={() => open('reply_all')} aria-label={rb.replyAll}>
+        <Icon icon={ReplyAll} size={16} />
+        <span className={styles.replyAllLong}>{rb.replyAll}</span>
+        <span className={styles.replyAllShort} aria-hidden="true">
+          {rb.replyAllShort}
+        </span>
+      </Button>
+      <Button onClick={() => open('forward')}>
+        <Icon icon={Forward} size={16} />
+        {rb.forward}
+      </Button>
+      {!canReply ? <p className={styles.replyNote}>{rb.noSendRight}</p> : null}
+    </div>
+  );
+}
+
+/** "Dimas sedang membalas…" (presence 9B; diri sendiri tidak ditampilkan). */
+function ComposingChip({ detail }: { detail: MailMessageDetail }) {
+  const selfId = useSession()?.user.id;
+  const others = (detail.composing ?? []).filter((item) => item.user.id !== selfId);
+  const first = others[0];
+  if (!first) return null;
+  return (
+    <span className={styles.composingChip} role="status">
+      <Icon icon={PenLine} size={16} />
+      {others.length === 1
+        ? rb.composing(first.user.name)
+        : others.length === 2
+          ? rb.composingTwo(first.user.name, others[1]?.user.name ?? '')
+          : rb.composingMany(first.user.name, others.length - 1)}
+    </span>
   );
 }
 
@@ -366,6 +463,7 @@ function ReaderHead({
               ? r.folderChip(folderName, summary.account.displayName)
               : summary.account.displayName}
           </span>
+          {detail ? <ComposingChip detail={detail} /> : null}
           {summary.pending ? (
             <span className={styles.chip}>
               <Icon icon={Clock} size={16} />
@@ -774,7 +872,11 @@ function Attachments({ attachments }: { attachments: readonly MailAttachment[] }
         if (!pending) return;
         waiting.current.delete(signal.attachmentId);
         if (signal.type === 'attachment.ready') void download(pending.item, pending.confirm);
-        else setState(signal.attachmentId, { state: 'error', message: r.attachments.failed });
+        else
+          setState(signal.attachmentId, {
+            state: 'error',
+            message: signal.code === 'cache_full' ? r.attachments.cacheFull : r.attachments.failed,
+          });
       }),
     [download, setState],
   );

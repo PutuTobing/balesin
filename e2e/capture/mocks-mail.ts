@@ -83,6 +83,9 @@ function account(init: {
     trustedAuthServIds: null,
     syncWindowDays: 90,
     periodicSyncMinutes: 5,
+    sentCopyMode: 'auto',
+    warnExternalRecipients: false,
+    warnings: [] as string[],
     sync: {
       state: init.state ?? 'ready',
       lastSyncedAt: init.lastSyncedAt === undefined ? ago(MINUTE) : init.lastSyncedAt,
@@ -300,7 +303,14 @@ export async function mailAccounts(page: Page, empty = false): Promise<void> {
     json(route, { accounts: empty ? [] : [...MAIL_ACCOUNTS, REDACTED], ...flags }),
   );
   await page.route(`${API}/settings/mail`, (route) =>
-    json(route, { settings: { cacheRetentionDays: 90, defaultSyncWindowDays: 90 } }),
+    json(route, {
+      settings: {
+        cacheRetentionDays: 90,
+        defaultSyncWindowDays: 90,
+        maxRecipientsPerEmail: 50,
+        maxAttachmentTotalMb: 20,
+      },
+    }),
   );
   await page.route(`${API}/departments`, (route) => json(route, { departments: DEPARTMENTS }));
   await teamUsers(page);
@@ -837,5 +847,399 @@ export async function mailMessages(
       },
       body: NOC_DOCUMENT,
     }),
+  );
+}
+
+// ── 9B: tulis, balas, teruskan, identitas, tanda tangan ────────────────────
+
+export const COMPOSE_PHOTO_IDS = {
+  identityCs: '7a1b2c3d-0000-4000-8000-0000000000d1',
+  identityTagihan: '7a1b2c3d-0000-4000-8000-0000000000d2',
+  identityBilling: '7a1b2c3d-0000-4000-8000-0000000000d3',
+  identityPersonal: '7a1b2c3d-0000-4000-8000-0000000000d4',
+  draftNew: '7a1b2c3d-0000-4000-8000-0000000000f1',
+  draftReply: '7a1b2c3d-0000-4000-8000-0000000000f2',
+  outbox: '7a1b2c3d-0000-4000-8000-0000000000f9',
+  signatureFormal: '7a1b2c3d-0000-4000-8000-0000000000fb',
+  signatureShort: '7a1b2c3d-0000-4000-8000-0000000000fc',
+} as const;
+
+const ACCOUNT_REF_FULL = {
+  cs: { ...ACCOUNT_REFS.cs, kind: 'shared', avatarUrl: null },
+  billing: { ...ACCOUNT_REFS.billing, kind: 'shared', avatarUrl: null },
+  personal: { ...ACCOUNT_REFS.personal, kind: 'personal', avatarUrl: null },
+};
+
+function identity(init: {
+  id: string;
+  accountId: string;
+  address: string;
+  displayName: string;
+  isPrimary?: boolean;
+  state?: 'verified' | 'pending' | 'unverified';
+  replyTo?: string | null;
+}) {
+  const state = init.state ?? 'verified';
+  const verified = state === 'verified';
+  return {
+    id: init.id,
+    accountId: init.accountId,
+    address: init.address,
+    displayName: init.displayName,
+    isPrimary: init.isPrimary ?? true,
+    replyTo: init.replyTo ?? null,
+    verification: {
+      state,
+      verifiedAt: verified ? ago(20 * 24 * HOUR) : null,
+      method: verified ? 'mailbox' : null,
+      pending:
+        state === 'pending'
+          ? {
+              sentAt: ago(2 * MINUTE),
+              expiresAt: new Date(Date.now() + 28 * MINUTE).toISOString(),
+              attemptsLeft: 5,
+              autoCheckUntil: null,
+            }
+          : null,
+      available: true,
+      unavailableReason: null,
+    },
+    approval: { state: 'not_required', decidedAt: null },
+    defaultSignatures: {
+      new: init.id === COMPOSE_PHOTO_IDS.identityCs ? COMPOSE_PHOTO_IDS.signatureFormal : null,
+      reply: init.id === COMPOSE_PHOTO_IDS.identityCs ? COMPOSE_PHOTO_IDS.signatureShort : null,
+    },
+    canSend: verified,
+    cannotSendReason: verified ? null : 'identity_unverified',
+    createdAt: ago(30 * 24 * HOUR),
+  };
+}
+
+const CS_IDENTITIES = [
+  identity({
+    id: COMPOSE_PHOTO_IDS.identityCs,
+    accountId: MAIL_PHOTO_IDS.cs,
+    address: 'cs@majujaya.co.id',
+    displayName: 'CS Maju Jaya',
+  }),
+  identity({
+    id: COMPOSE_PHOTO_IDS.identityTagihan,
+    accountId: MAIL_PHOTO_IDS.cs,
+    address: 'tagihan@majujaya.co.id',
+    displayName: 'Tim Tagihan',
+    isPrimary: false,
+    state: 'pending',
+    replyTo: 'billing@majujaya.co.id',
+  }),
+];
+
+const COMPOSE_IDENTITIES = [
+  ...CS_IDENTITIES.map((item) => ({ ...item, account: ACCOUNT_REF_FULL.cs })),
+  {
+    ...identity({
+      id: COMPOSE_PHOTO_IDS.identityBilling,
+      accountId: MAIL_PHOTO_IDS.billing,
+      address: 'billing@majujaya.co.id',
+      displayName: 'Billing Maju Jaya',
+    }),
+    account: ACCOUNT_REF_FULL.billing,
+  },
+  {
+    ...identity({
+      id: COMPOSE_PHOTO_IDS.identityPersonal,
+      accountId: MAIL_PHOTO_IDS.personal,
+      address: 'rina.kartika@surel.id',
+      displayName: 'Rina Kartika',
+    }),
+    account: ACCOUNT_REF_FULL.personal,
+  },
+];
+
+const SIGNATURE_HTML = `<div data-signature="${COMPOSE_PHOTO_IDS.signatureFormal}"><p>Salam hangat,<br><strong>Rina Kartika</strong><br>Tim Layanan Pelanggan PT Maju Jaya</p></div>`;
+
+const SIGNATURES = {
+  shared: [
+    {
+      id: COMPOSE_PHOTO_IDS.signatureFormal,
+      accountId: MAIL_PHOTO_IDS.cs,
+      scope: 'shared',
+      name: 'Formal',
+      html: '<p>Salam hangat,<br><strong>{{nama_agen}}</strong><br>Tim Layanan Pelanggan {{nama_organisasi}}</p>',
+      text: 'Salam hangat,\n{{nama_agen}}\nTim Layanan Pelanggan {{nama_organisasi}}',
+      logoUrl: null,
+      editable: true,
+      createdAt: ago(20 * 24 * HOUR),
+      updatedAt: ago(2 * 24 * HOUR),
+    },
+    {
+      id: COMPOSE_PHOTO_IDS.signatureShort,
+      accountId: MAIL_PHOTO_IDS.cs,
+      scope: 'shared',
+      name: 'Singkat untuk balasan',
+      html: '<p>Salam,<br>{{nama_agen}} · {{nama_organisasi}}</p>',
+      text: 'Salam,\n{{nama_agen}} · {{nama_organisasi}}',
+      logoUrl: null,
+      editable: true,
+      createdAt: ago(20 * 24 * HOUR),
+      updatedAt: ago(5 * 24 * HOUR),
+    },
+  ],
+  mine: [
+    {
+      id: '7a1b2c3d-0000-4000-8000-0000000000fd',
+      accountId: MAIL_PHOTO_IDS.cs,
+      scope: 'personal',
+      name: 'Pribadi Rina',
+      html: '<p>Terima kasih,<br>Rina · 0812-0000-1234</p>',
+      text: 'Terima kasih,\nRina · 0812-0000-1234',
+      logoUrl: null,
+      editable: true,
+      createdAt: ago(10 * 24 * HOUR),
+      updatedAt: ago(10 * 24 * HOUR),
+    },
+  ],
+};
+
+type Address = { address: string; name: string | null };
+
+function draft(init: {
+  id: string;
+  mode: 'new' | 'reply' | 'reply_all' | 'forward';
+  to?: Address[];
+  cc?: Address[];
+  subject?: string;
+  bodyHtml?: string;
+  sourceMessageId?: string | null;
+  threadKey?: string | null;
+}) {
+  const reply = init.mode !== 'new';
+  return {
+    id: init.id,
+    accountId: MAIL_PHOTO_IDS.cs,
+    identityId: COMPOSE_PHOTO_IDS.identityCs,
+    mode: init.mode,
+    sourceMessageId: init.sourceMessageId ?? null,
+    threadKey: init.threadKey ?? null,
+    to: init.to ?? [],
+    cc: init.cc ?? [],
+    bcc: [],
+    subject: init.subject ?? '',
+    format: 'html',
+    bodyHtml: init.bodyHtml ?? `<p><br></p>${SIGNATURE_HTML}`,
+    bodyText: null,
+    includeQuote: reply,
+    quote: reply
+      ? {
+          available: true,
+          messageId: init.sourceMessageId ?? null,
+          from: { address: 'noc@nusaraya-backbone.id', name: 'NOC Nusaraya Backbone' },
+          sentAt: ago(HOUR),
+          hasHtml: true,
+        }
+      : { available: false, messageId: null, from: null, sentAt: null, hasHtml: false },
+    attachments: [],
+    attachmentTotalBytes: 0,
+    version: 1,
+    state: 'editing',
+    lastSendError: null,
+    serverCopy: { state: 'synced', syncedAt: ago(MINUTE) },
+    threadSeenAt: ago(MINUTE),
+    canSend: true,
+    cannotSendReason: null,
+    createdAt: ago(MINUTE),
+    updatedAt: ago(MINUTE),
+  };
+}
+
+const REPLY_BODY = `<p>Terima kasih atas informasinya. Pelanggan korporat yang terdampak sudah kami kabari:</p><ul><li>SKT-LT-01 — PT Lada Lampung (sudah dikonfirmasi)</li><li>SKT-LT-02 — Koperasi Tani Makmur</li></ul><p>Mohon kabari kami bila jadwalnya berubah.</p>${SIGNATURE_HTML}`;
+
+const CHECKS = {
+  checks: {
+    totalRecipients: 1,
+    maxRecipients: 50,
+    bccCount: 0,
+    bccWarning: false,
+    recipients: [],
+    newAddressCount: 0,
+    newAddressQuota: { limit: 200, remaining: 196 },
+    replyToDiffers: null,
+    identity: { verified: true, reason: null },
+    attachments: { totalBytes: 0, maxBytes: 20 * 1024 * 1024, notReady: 0 },
+    threadNewMessages: { count: 0, latestReceivedAt: null },
+  },
+};
+
+function outbox() {
+  const now = Date.now();
+  return {
+    id: COMPOSE_PHOTO_IDS.outbox,
+    draftId: COMPOSE_PHOTO_IDS.draftNew,
+    accountId: MAIL_PHOTO_IDS.cs,
+    identity: {
+      id: COMPOSE_PHOTO_IDS.identityCs,
+      address: 'cs@majujaya.co.id',
+      displayName: 'CS Maju Jaya',
+    },
+    status: 'pending',
+    holdReason: null,
+    // Masa batal panjang supaya hitung mundur masih terlihat saat difoto.
+    sendAfter: new Date(now + 30_000).toISOString(),
+    nextAttemptAt: null,
+    attempts: 0,
+    subject: 'Penawaran paket Bisnis 50 Mbps',
+    recipientCount: 1,
+    toPreview: ['Rina Wulandari'],
+    sentAt: null,
+    failure: null,
+    rejectedRecipients: [],
+    sentCopy: { state: 'pending' },
+    createdAt: new Date(now).toISOString(),
+  };
+}
+
+const THREAD_CONFLICT = {
+  error: {
+    code: 'CONFLICT',
+    message: 'Ada 1 email baru di utas ini sejak kamu mulai menulis.',
+    details: [
+      {
+        field: 'draftId',
+        message: 'Ada email baru di utas ini.',
+        reason: 'thread_has_new_messages',
+        count: 1,
+        latestReceivedAt: ago(MINUTE),
+        messageIds: [MAIL_MESSAGE_IDS.upgrade],
+      },
+    ],
+    requestId: 'req-foto',
+  },
+};
+
+const DRAFT_PATH = /\/api\/v1\/mail\/drafts\/[0-9a-f-]{36}(\/[a-z-]+)?(\?.*)?$/;
+
+/**
+ * Jendela tulis 9B: identitas "Dari", buat/simpan/cek draf, saran penerima, unggah lampiran,
+ * kirim (outbox `pending` dengan masa batal), presence, tanda tangan, preferensi.
+ * `threadConflict` = kirim pertama dijawab 409 `thread_has_new_messages`; `hangUpload` = unggahan
+ * kedua tidak dijawab (foto progres).
+ */
+export async function mailCompose(
+  page: Page,
+  options: { threadConflict?: boolean; hangUpload?: boolean } = {},
+): Promise<void> {
+  let version = 1;
+  let uploads = 0;
+  let sends = 0;
+  await page.route(`${API}/mail/identities`, (route) =>
+    json(route, { identities: COMPOSE_IDENTITIES }),
+  );
+  await page.route(`${API}/mail/preferences`, (route) =>
+    json(route, { undoSendSeconds: 10, composeFormat: 'html', signatureChoices: {} }),
+  );
+  await page.route(`${API}/mail/identity-approvals`, (route) => json(route, { approvals: [] }));
+  for (const item of MAIL_ACCOUNTS) {
+    const own = COMPOSE_IDENTITIES.filter((entry) => entry.accountId === item.id).map(
+      ({ account: _account, ...rest }) => rest,
+    );
+    await page.route(`${API}/mail/accounts/${item.id}/identities`, (route) =>
+      json(route, { identities: item.id === MAIL_PHOTO_IDS.cs ? CS_IDENTITIES : own }),
+    );
+    await page.route(`${API}/mail/accounts/${item.id}/signatures`, (route) =>
+      json(route, item.id === MAIL_PHOTO_IDS.cs ? SIGNATURES : { shared: [], mine: [] }),
+    );
+  }
+  await page.route(`${API}/mail/drafts`, (route) => {
+    const body = route.request().postDataJSON() as { mode: string; sourceMessageId?: string };
+    const created =
+      body.mode === 'new'
+        ? draft({ id: COMPOSE_PHOTO_IDS.draftNew, mode: 'new' })
+        : draft({
+            id: COMPOSE_PHOTO_IDS.draftReply,
+            mode: body.mode as 'reply',
+            sourceMessageId: body.sourceMessageId ?? null,
+            threadKey: 'utas-foto',
+            to: [{ address: 'noc@nusaraya-backbone.id', name: 'NOC Nusaraya Backbone' }],
+            cc:
+              body.mode === 'reply_all'
+                ? [{ address: 'rina.kartika@majujaya.co.id', name: 'Rina Kartika' }]
+                : [],
+            subject:
+              body.mode === 'forward'
+                ? 'Fwd: Jadwal pemeliharaan backbone 26 Nov, 01.00–04.00 WIB'
+                : 'Re: Jadwal pemeliharaan backbone 26 Nov, 01.00–04.00 WIB',
+            bodyHtml: REPLY_BODY,
+          });
+    return json(route, { draft: created, skippedAttachments: [] }, 201);
+  });
+  await page.route(DRAFT_PATH, (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const draftId = url.pathname.split('/')[5] ?? COMPOSE_PHOTO_IDS.draftNew;
+    const action = url.pathname.split('/')[6] ?? '';
+    const method = request.method();
+    if (action === 'check') return json(route, CHECKS);
+    if (action === 'presence') return json(route, { threadKey: 'utas-foto', users: [] });
+    if (action === 'attachments') {
+      uploads += 1;
+      // Unggahan kedua dibiarkan menggantung: foto progres.
+      if (options.hangUpload && uploads === 2) return undefined;
+      version += 1;
+      return json(
+        route,
+        {
+          attachment: {
+            id: `7a1b2c3d-0000-4000-8000-00000000a0${String(uploads).padStart(2, '0')}`,
+            filename: 'Penawaran-Bisnis-50Mbps.pdf',
+            contentType: 'application/pdf',
+            sizeBytes: 319_488,
+            inline: false,
+            contentId: null,
+            state: 'ready',
+            source: 'upload',
+          },
+          draft: { version },
+        },
+        201,
+      );
+    }
+    if (action === 'send') {
+      sends += 1;
+      if (options.threadConflict && sends === 1) return json(route, THREAD_CONFLICT, 409);
+      return json(route, { outbox: outbox() }, 202);
+    }
+    if (method === 'PUT') {
+      version += 1;
+      return json(route, {
+        draft: {
+          id: draftId,
+          version,
+          updatedAt: new Date().toISOString(),
+          serverCopy: { state: 'pending', syncedAt: null },
+        },
+      });
+    }
+    if (method === 'DELETE') return json(route, { deleted: true });
+    return json(route, { draft: draft({ id: draftId, mode: 'new' }) });
+  });
+  await page.route(`${API}/mail/recipients/suggest**`, (route) =>
+    json(route, {
+      suggestions: [
+        {
+          address: 'rina.wulandari@lada-lampung.co.id',
+          name: 'Rina Wulandari',
+          source: 'contact',
+          contactId: null,
+        },
+        {
+          address: 'rizal@lada-lampung.co.id',
+          name: 'Rizal Pratama',
+          source: 'history',
+          contactId: null,
+        },
+      ],
+    }),
+  );
+  await page.route(`${API}/mail/compose/snippets**`, (route) =>
+    json(route, { quickReplies: [], emailTemplates: [] }),
   );
 }

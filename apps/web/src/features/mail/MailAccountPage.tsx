@@ -35,6 +35,7 @@ import { AccountMark } from './AccountMark';
 import { AvatarPicker } from './AvatarPicker';
 import { EditServerDialog } from './EditServerDialog';
 import { MailAccessCard } from './MailAccessCard';
+import { MailIdentitiesCard, MailSendingCard, MailSignaturesCard } from './MailComposeSettings';
 import { ColorPicker } from './MailControls';
 import { TestResults } from './TestResults';
 import {
@@ -341,6 +342,14 @@ function AccountScreen({ account }: { account: MailAccount }) {
       <SettingsCard account={account} readOnly={!manage} />
 
       {manage ? <PhotoCard account={account} /> : null}
+
+      {state === 'deleting' ? null : (
+        <>
+          <MailIdentitiesCard account={account} />
+          <MailSignaturesCard account={account} />
+          {manage ? <MailSendingCard account={account} /> : null}
+        </>
+      )}
 
       {account.imap && account.smtp && canEditServer ? (
         <section className={styles.card} aria-labelledby="akun-email-server" id="server">

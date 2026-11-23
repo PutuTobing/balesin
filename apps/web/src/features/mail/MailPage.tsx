@@ -5,9 +5,9 @@ import {
   type MailMessageSummary,
   type MailSidebarResponse,
 } from '@balesin/shared';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Link, getRouteApi, useRouter } from '@tanstack/react-router';
-import { Menu, Plus, X } from 'lucide-react';
+import { Menu, Plus, SquarePen, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   LoadFailedIllustration,
@@ -23,12 +23,15 @@ import { isApiError } from '../../lib/api/client';
 import { cx } from '../../lib/cx';
 import { media, useMediaQuery } from '../../lib/media';
 import { usePageTitle } from '../../lib/use-page-title';
+import { useCan } from '../auth/session';
+import { ComposeHost } from './compose/ComposeHost';
+import { openCompose, useComposeStore } from './compose/compose-store';
 import { MailFolders } from './MailFolders';
 import { MailList } from './MailList';
 import { MailReader, type ReaderFlash } from './MailReader';
 import { PROVIDER_ICONS } from './mail-format';
-import { listParams } from './mail-list';
-import { mailAccountsQuery, mailSidebarQuery } from './mail-queries';
+import { MAIL_PAGE_SIZE, listParams } from './mail-list';
+import { mailAccountsQuery, mailMessagesQuery, mailSidebarQuery } from './mail-queries';
 import { isMailView } from './mail-search';
 import { onMailSignal } from './mail-signals';
 import { MailSkeleton } from './MailSkeleton';
@@ -106,6 +109,25 @@ function MailScreen({
   const open = drawer && drawerOpen;
   const params = useMemo(() => listParams(selected), [selected]);
   const [flash, setFlash] = useState<ReaderFlash | null>(null);
+  const compose = useComposeStore();
+  // 9B: "Tulis" hanya bila ada akun ber-hak kirim (server tetap memeriksa).
+  const canCompose =
+    useCan('mail.send') && accounts.accounts.some((account) => account.myLevel !== 'read');
+  const currentAccountId =
+    sidebar.accounts.find((entry) => entry.folders.some((folder) => folder.id === selected))
+      ?.account.id ?? null;
+  const startCompose = useCallback(() => {
+    if (drawerOpen) setDrawerOpen(false);
+    openCompose({ kind: 'new', accountId: currentAccountId });
+  }, [currentAccountId, drawerOpen]);
+  const composeFullscreen = isHp && compose.windows.some((window) => window.mode !== 'minimized');
+
+  // "1 dari N" + naik/turun di panel baca (desktop): urutan daftar yang sudah dimuat.
+  const listed = useInfiniteQuery({ ...mailMessagesQuery(params, MAIL_PAGE_SIZE), enabled: false });
+  const ordered = useMemo(
+    () => listed.data?.pages.flatMap((page) => page.messages) ?? [],
+    [listed.data],
+  );
 
   // HP: email dibuka dari daftar dengan entri riwayat baru, jadi "kembali" = langkah mundur
   // browser (gesture kembali HP), bukan entri baru. Fokus kembali ke baris yang tadi dibuka.
@@ -115,6 +137,11 @@ function MailScreen({
 
   const openMessage = useCallback(
     (message: MailMessageSummary) => {
+      // Salinan draf MILIKKU di folder Draf: buka jendela tulis, bukan panel baca.
+      if (message.draftId) {
+        openCompose({ kind: 'draft', draftId: message.draftId, subject: message.subject });
+        return;
+      }
       if (message.id === messageId) return;
       pushedFromList.current = isHp;
       lastOpened.current = message.id;
@@ -186,7 +213,7 @@ function MailScreen({
       data-drawer={open ? 'open' : 'closed'}
       data-reading={reading ? 'open' : 'closed'}
       // HP: email terbuka = layar penuh bertumpuk; kerangka aplikasi menyembunyikan navigasi bawah.
-      data-hp-immersive={reading && isHp ? '' : undefined}
+      data-hp-immersive={(reading && isHp) || composeFullscreen ? '' : undefined}
     >
       <aside
         ref={drawerRef}
@@ -202,6 +229,7 @@ function MailScreen({
           selected={selected}
           canConnect={canConnect}
           headingId={headingId}
+          onCompose={canCompose ? startCompose : undefined}
           onNavigate={drawer ? () => setDrawerOpen(false) : undefined}
           closeButton={
             drawer ? (
@@ -285,13 +313,45 @@ function MailScreen({
             onLeave={closeMessage}
             onFlash={setFlash}
             focusTitle={focusTitle}
+            canCompose={canCompose}
+            position={desktop ? positionOf(ordered, messageId) : null}
+            onStep={(id) =>
+              void navigate({ search: (prev) => ({ ...prev, m: id }), replace: true })
+            }
           />
         ) : (
           <EmptyState title={m.reading.title} body={m.reading.body} />
         )}
       </section>
+      {canCompose && !open ? (
+        <button type="button" className={styles.fab} onClick={startCompose}>
+          <Icon icon={SquarePen} size={20} />
+          {m.compose.fab}
+        </button>
+      ) : null}
+      <ComposeHost
+        isHp={isHp}
+        onOpenMessage={(id) =>
+          void navigate({ search: (prev) => ({ ...prev, m: id }), replace: !isHp })
+        }
+      />
     </div>
   );
+}
+
+/** Posisi email terbuka di daftar yang dimuat (untuk "1 dari N" + sebelumnya/berikutnya). */
+function positionOf(
+  messages: readonly MailMessageSummary[],
+  messageId: string,
+): { index: number; total: number; previous: string | null; next: string | null } | null {
+  const index = messages.findIndex((message) => message.id === messageId);
+  if (index < 0) return null;
+  return {
+    index: index + 1,
+    total: messages.length,
+    previous: messages[index - 1]?.id ?? null,
+    next: messages[index + 1]?.id ?? null,
+  };
 }
 
 /** Judul & ringkasan kepala daftar untuk tampilan/folder yang dibuka. */

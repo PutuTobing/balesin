@@ -589,6 +589,58 @@ ul.attachmentList {
   height: var(--space-12);
 }
 
+/* ---------- 9B: posisi, balas/teruskan, sedang membalas ---------- */
+
+.position {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+  margin-left: auto;
+}
+
+.positionText {
+  padding: 0 var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.replyBar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-12) var(--space-24);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.replyAllShort {
+  display: none;
+}
+
+.replyNote {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+.composingChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: var(--space-24);
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--warning-ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
 /* ---------- HP ---------- */
 
 @media (max-width: 640px) {
@@ -626,6 +678,29 @@ ul.attachmentList {
 
   .inner {
     padding: var(--space-16);
+  }
+
+  /* Mockup HP: tiga tombol sama lebar di dasar layar baca. */
+  .replyBar {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    padding: var(--space-8) var(--space-12) calc(var(--space-8) + env(safe-area-inset-bottom, 0px));
+  }
+
+  .replyBar > button {
+    padding: 0 var(--space-8);
+  }
+
+  .replyAllLong {
+    display: none;
+  }
+
+  .replyAllShort {
+    display: inline;
+  }
+
+  .replyNote {
+    grid-column: 1 / -1;
   }
 
   .subject {
