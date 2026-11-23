@@ -169,3 +169,12 @@ dikerjakan (M1, M2, M4, M5, M10 sudah; M3, M7, M8, M9 ikut terkerjakan di `wip/9
 - **M12** lencana jumlah belum dibaca di rail & navigasi bawah "Email" (mockup "14").
 - **M13** titik warna akun berbentuk sama dengan titik status (mis. akun hijau + "● Tersinkron"): titik akun
   10px bercincin `--surface`, atau titik status 6px.
+Minor review daftar & baca email 9A (`docs/design-reviews/2026-11-23-fase9a-baca.md`, H1/H2 sudah):
+- **m1** dialog "Ubah server atau password" dari "Perbarui password" fokus ke kolom Password.
+- **m2** hitungan nol di `headingFor`: "Semua sudah dibaca · 4 akun", "CS Maju Jaya · kosong".
+- **m3** gambar luar diblokir tampil ruang kosong → gaya `img[data-gambar-diblokir]` (latar + garis putus) di `display-html.ts`.
+- **m4** mock foto: `email-baca` vs `email-baca-gambar` HTML berbeda; sidebar mock kurangi belum dibaca setelah `mark_read`.
+- **m5** `Wizard.module.css` `.result` → `align-items: flex-start` untuk hasil tes multi-baris.
+- **m6** "Isinya hanya bisa dibaca pemiliknya." pindah ke tooltip ikon gembok di daftar akun.
+- **m7** "1 dari N", naik/turun, menu "…" di bilah baca (bersama 9B).
+- **m8** mode gelap: tepi kartu iframe isi email (isi tetap putih).

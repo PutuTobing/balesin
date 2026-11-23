@@ -178,6 +178,7 @@ function ViewLink({
       <Link
         to="/email"
         search={view === 'semua' ? {} : { f: view }}
+        activeOptions={{ exact: true }}
         className={styles.folderLink}
         aria-current={active ? 'page' : undefined}
         onClick={onNavigate}
@@ -262,6 +263,7 @@ function AccountGroup({
                 <Link
                   to="/email"
                   search={{ f: folder.id }}
+                  activeOptions={{ exact: true }}
                   className={cx(styles.folderLink, styles.subLink)}
                   data-depth={folder.role ? 0 : Math.min(folder.depth - baseDepth, 3)}
                   aria-current={active ? 'page' : undefined}

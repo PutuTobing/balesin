@@ -287,11 +287,7 @@ function MailScreen({
             focusTitle={focusTitle}
           />
         ) : (
-          <EmptyState
-            illustration={<MailboxIllustration />}
-            title={m.reading.title}
-            body={m.reading.body}
-          />
+          <EmptyState title={m.reading.title} body={m.reading.body} />
         )}
       </section>
     </div>

@@ -127,6 +127,10 @@ describe('menu Email', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Vendor' })).toBeVisible();
     expect(router.state.location.search).toEqual({ f: MAIL_IDS.csVendor });
     expect(screen.getByText(`CS Maju Jaya · ${m.folderSummary(2, 1200)}`)).toBeVisible();
+    // Hanya satu item aktif (review 9A-baca H1: router membandingkan search secara parsial).
+    const current = column.querySelectorAll('[aria-current="page"]');
+    expect(current).toHaveLength(1);
+    expect(current[0]).toHaveTextContent('Vendor');
 
     const toggle = within(column).getByRole('button', {
       name: m.toggleAccount('CS Maju Jaya', [m.unreadLabel(6)]),
