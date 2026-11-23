@@ -46,6 +46,7 @@ import {
   emailSettingsChangeNotices,
   organizationLogos,
   organizations,
+  mailAccessIndexOf,
   userInvitations,
   users,
   type Database,
@@ -626,6 +627,24 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
       : true);
   if (!recipient || !subject || !branding || !recipientEligible || !subjectEligible) {
     return { status: 'skipped', reason: 'recipient_unavailable' };
+  }
+  // Review 9A-1 R6: hak penerima atas akun email diperiksa ULANG saat mengirim (grant bisa dicabut
+  // di antara antre & kirim) — harus masih `manage` (pemilik akun pribadi / Kelola / Owner-Admin).
+  if (anyActiveRecipient) {
+    const [audit] = auditLogId
+      ? await deps.db
+          .select({ targetId: auditLogs.targetId })
+          .from(auditLogs)
+          .where(and(eq(auditLogs.organizationId, organizationId), eq(auditLogs.id, auditLogId)))
+          .limit(1)
+      : [];
+    const accountId = audit?.targetId ?? null;
+    const index = accountId
+      ? await mailAccessIndexOf(deps.db, organizationId, [recipientUserId], [accountId])
+      : null;
+    if (!accountId || index?.levelOf(recipientUserId, accountId) !== 'manage') {
+      return { status: 'skipped', reason: 'recipient_unavailable' };
+    }
   }
   const origin = await findAuditOrigin(organizationId, auditLogId, deps);
 

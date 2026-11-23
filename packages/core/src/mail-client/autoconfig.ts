@@ -102,7 +102,7 @@ export function parseAutoconfigXml(xml: string, domain: string): AutoconfigResul
 
 // ── Cuplikan ───────────────────────────────────────────────────────────────
 
-function decodeQuotedPrintable(raw: Buffer): Buffer {
+export function decodeQuotedPrintable(raw: Buffer): Buffer {
   const text = raw.toString('latin1').replace(/=\r?\n/g, '');
   const bytes: number[] = [];
   for (let i = 0; i < text.length; i += 1) {

@@ -21,8 +21,8 @@ import {
   windowValue,
 } from './mail-format';
 import { mailKeys } from './mail-queries';
-import { parseMailAccountsSearch, parseMailSearch } from './mail-search';
-import { testRows } from './test-rows';
+import { parseMailAccountSearch, parseMailAccountsSearch, parseMailSearch } from './mail-search';
+import { failedTitle, onlyConnectionFailures, testRows } from './test-rows';
 import {
   createBody,
   displayNameFromAddress,
@@ -292,6 +292,36 @@ describe('hasil tes koneksi', () => {
     expect(rows[0]).toMatchObject({ tone: 'fail', title: t.mail.wizard.incomingFailed });
     expect(rows[0]?.durationMs).toBeUndefined();
   });
+
+  it('judul galat per jenis kode: koneksi ≠ proses masuk (review 9A P9)', () => {
+    const w = t.mail.wizard;
+    expect(failedTitle('outgoing', 'smtp_connection_timeout')).toBe(w.outgoingUnreachable);
+    expect(failedTitle('outgoing', 'smtp_tls_failed')).toBe(w.outgoingUnreachable);
+    expect(failedTitle('outgoing', 'smtp_host_not_found')).toBe(w.outgoingUnreachable);
+    expect(failedTitle('outgoing', 'smtp_auth_failed')).toBe(w.outgoingFailed);
+    expect(failedTitle('outgoing', 'smtp_app_password_required')).toBe(w.outgoingFailed);
+    expect(failedTitle('incoming', 'imap_certificate_invalid')).toBe(w.incomingUnreachable);
+    expect(failedTitle('incoming', 'imap_auth_failed')).toBe(w.incomingFailed);
+
+    const timeout = {
+      testedAt: '2026-11-23T01:00:00.000Z',
+      incoming: null,
+      outgoing: {
+        ok: false,
+        code: 'smtp_connection_timeout',
+        message: 'Server SMTP tidak merespons.',
+        durationMs: 8000,
+      },
+    } as const;
+    expect(onlyConnectionFailures(timeout)).toBe(true);
+    expect(testRows(timeout, 'cs@majujaya.co.id')[0]?.hint).toBeTruthy();
+    expect(
+      onlyConnectionFailures({
+        ...timeout,
+        outgoing: { ...timeout.outgoing, code: 'smtp_auth_failed' },
+      }),
+    ).toBe(false);
+  });
 });
 
 describe('akses', () => {
@@ -400,6 +430,8 @@ describe('format & alamat', () => {
     expect(parseMailAccountsSearch({ tambah: 'baru' })).toEqual({ tambah: 'baru' });
     // Penyedia yang belum tersedia tidak bisa dipilih lewat alamat.
     expect(parseMailAccountsSearch({ tambah: 'google' })).toEqual({});
+    expect(parseMailAccountSearch({ ubah: 'server' })).toEqual({ ubah: 'server' });
+    expect(parseMailAccountSearch({ ubah: 'hapus' })).toEqual({});
   });
 });
 

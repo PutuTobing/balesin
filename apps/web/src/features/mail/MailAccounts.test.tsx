@@ -74,10 +74,12 @@ describe('Pengaturan → Akun email', () => {
     );
     expect(screen.getAllByText(m.syncStates.ready ?? '').length).toBeGreaterThan(0);
     expect(screen.getByText(m.syncStates.auth_failed ?? '')).toBeVisible();
-    expect(screen.getByText('Password akun email billing@majujaya.co.id ditolak.')).toBeVisible();
+    // Daftar hanya lencana + tautan (pesan lengkap di halaman akun, review 9A P5); tautan membuka
+    // dialog Ubah server lewat `?ubah=server` (P4).
+    expect(screen.queryByText('Password akun email billing@majujaya.co.id ditolak.')).toBeNull();
     expect(screen.getByRole('link', { name: c.fixPassword })).toHaveAttribute(
       'href',
-      `/pengaturan/akun-email/${MAIL_IDS.billing}#server`,
+      `/pengaturan/akun-email/${MAIL_IDS.billing}?ubah=server`,
     );
     // Akun pribadi orang lain: hanya metadata, tanpa tautan ke isinya.
     expect(screen.getByText(c.personalOf('Dimas Saputra'))).toBeVisible();

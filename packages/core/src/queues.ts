@@ -59,6 +59,11 @@ export const QUEUE_NAMES = {
    * retensi cache (`MAIL_JOBS`). IDLE TIDAK lewat antrian (pengawas di proses worker).
    */
   mail: 'mail',
+  /**
+   * Review 9A-1 S2: jadwal modul Email (`mail-tick`, retensi cache) di antrian SENDIRI supaya tidak
+   * berebut slot konkurensi dengan job sinkron yang bisa lama (server lambat/jahat).
+   */
+  mailSchedule: 'mail-schedule',
 } as const;
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
@@ -603,6 +608,12 @@ export const MAIL_JOBS = {
   purgeAccount: 'mail-purge-account',
   /** Harian: pangkas isi/lampiran yang tidak dibuka > `cache_retention_days`. */
   cacheRetention: 'mail-cache-retention',
+  /** Bagian 2: ambil isi satu email dari IMAP (saat dibuka; prioritas tinggi). */
+  fetchBody: 'mail-fetch-body',
+  /** Bagian 2: ambil satu lampiran dari IMAP (saat diunduh). */
+  fetchAttachment: 'mail-fetch-attachment',
+  /** Bagian 2: terapkan aksi dua arah yang tertunda satu akun ke server (berurutan per akun). */
+  action: 'mail-action',
 } as const;
 export type MailJobName = (typeof MAIL_JOBS)[keyof typeof MAIL_JOBS];
 
@@ -624,6 +635,46 @@ export const mailFolderJobPayloadSchema = z.strictObject({
   folderId: z.uuid(),
 });
 export type MailFolderJobPayload = z.infer<typeof mailFolderJobPayloadSchema>;
+
+export const mailMessageJobPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  accountId: z.uuid(),
+  messageId: z.uuid(),
+});
+export type MailMessageJobPayload = z.infer<typeof mailMessageJobPayloadSchema>;
+
+export const mailAttachmentJobPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  accountId: z.uuid(),
+  attachmentId: z.uuid(),
+});
+export type MailAttachmentJobPayload = z.infer<typeof mailAttachmentJobPayloadSchema>;
+
+export function mailFetchBodyJobId(messageId: string): string {
+  return `mail-body-${messageId}`;
+}
+export function mailFetchAttachmentJobId(attachmentId: string): string {
+  return `mail-att-${attachmentId}`;
+}
+export function mailActionJobId(accountId: string): string {
+  return `mail-action-${accountId}`;
+}
+
+/** Ambil isi/lampiran: 2 percobaan (sambungan sesaat putus), gagal → `body_state = error`. */
+export const MAIL_FETCH_JOB_OPTIONS = {
+  attempts: 2,
+  backoff: { type: 'fixed', delay: 3_000 },
+  removeOnComplete: true,
+  removeOnFail: true,
+};
+
+/** Aksi dua arah: 3 percobaan (kontrak §9), lalu dikembalikan + `mail.action.failed`. */
+export const MAIL_ACTION_JOB_OPTIONS = {
+  attempts: 3,
+  backoff: { type: 'exponential', delay: 5_000 },
+  removeOnComplete: true,
+  removeOnFail: true,
+};
 
 export function mailSyncFoldersJobId(accountId: string): string {
   return `mail-sync-${accountId}`;

@@ -366,18 +366,24 @@ button.stepButton:hover .stepName {
   text-wrap: pretty;
 }
 
+/* Lencana boleh dua baris: domain hasil deteksi adalah informasi utamanya, jadi tidak dipotong. */
 .tag {
   max-width: 100%;
-  overflow: hidden;
   padding: var(--space-4) var(--space-8);
-  border-radius: var(--radius-pill);
-  line-height: 1;
+  border-radius: var(--radius-input);
+  line-height: var(--leading-title);
   background: var(--surface);
   color: var(--ink-2);
   font-size: var(--text-12);
   font-weight: var(--weight-semibold);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-align: left;
+}
+
+/* Domain tetap satu kesatuan; baru dipatahkan bila lebih panjang dari kartu. */
+.tagDomain {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .providerCard[data-disabled] .tag {
@@ -519,6 +525,15 @@ button.stepButton:hover .stepName {
   overflow-wrap: anywhere;
 }
 
+/* Langkah perbaikan per kode: di bawah sebab, teks sama redupnya tapi dipisah sedikit. */
+.resultHint {
+  margin-top: var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+
 .resultTime {
   flex: none;
   color: var(--ink-2);
@@ -624,18 +639,14 @@ button.stepButton:hover .stepName {
     max-height: 100dvh;
   }
 
+  /* Tepi 16px kiri & kanan (penunjuk langkah simetris); tombol tutup 44px menjorok 8px ke kanan. */
   .head {
     gap: var(--space-12);
-    padding: var(--space-8) var(--space-8) var(--space-12) var(--space-16);
-  }
-
-  .close {
-    margin-right: 0;
+    padding: var(--space-8) var(--space-16) var(--space-12);
   }
 
   .stepper {
     gap: var(--space-4);
-    padding-right: var(--space-8);
   }
 
   /* Hanya nama langkah yang sedang dibuka yang tampil; sisanya nomor. */

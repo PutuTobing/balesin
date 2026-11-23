@@ -368,6 +368,22 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'PUT /api/v1/mail/accounts/:accountId/access': 'mail.accounts.manage',
   'GET /api/v1/mail/accounts/:accountId/folders': 'mail.view',
   'GET /api/v1/mail/sidebar': 'mail.view',
+  // Fase 9 bagian 2: daftar/baca/aksi (hak per akun di service, diuji mail-messages.integration.test.ts).
+  'GET /api/v1/mail/messages': 'mail.view',
+  'POST /api/v1/mail/messages/actions': 'mail.view',
+  'GET /api/v1/mail/messages/:messageId': 'mail.view',
+  'POST /api/v1/mail/messages/:messageId/view': 'mail.view',
+  'GET /api/v1/mail/messages/:messageId/source': 'mail.view',
+  'GET /api/v1/mail/attachments/:attachmentId': 'mail.view',
+  'GET /api/v1/mail/attachments/:attachmentId/preview': 'mail.view',
+  'GET /api/v1/mail/remote-image-senders': 'mail.view',
+  'POST /api/v1/mail/remote-image-senders': 'mail.view',
+  'DELETE /api/v1/mail/remote-image-senders': 'mail.view',
+  // Dokumen tampilan iframe: tanpa sesi cookie (origin opak) — token bertanda tangan + cek ulang
+  // sesi asal & hak setiap permintaan.
+  'GET /api/v1/mail/view/:token': 'public',
+  'GET /api/v1/mail/view/:token/images/:index': 'public',
+  'GET /api/v1/mail/view/:token/cid/:attachmentId': 'public',
   'GET /api/v1/settings/mail': 'mail.accounts.manage',
   'PUT /api/v1/settings/mail': 'mail.accounts.manage',
   'GET /api/v1/settings/team/:userId/mail-access': 'mail.accounts.manage',
@@ -579,6 +595,10 @@ const SAMPLE_PARAMS: Readonly<Record<string, string>> = {
   versionId: '1',
   // Fase 9: modul Email
   accountId: '00000000-0000-4000-8000-0000000000c1',
+  // Fase 9 bagian 2 (token tampilan palsu → 410 TOKEN_INVALID dari handler)
+  attachmentId: '00000000-0000-4000-8000-0000000000c2',
+  token: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+  index: '0',
 };
 
 function concreteUrl(pattern: string): string {

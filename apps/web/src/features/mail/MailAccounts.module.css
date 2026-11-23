@@ -353,6 +353,17 @@ a.accountName:hover {
   font-size: var(--text-13);
 }
 
+/* Alamat panjang dipatahkan di dalam kolomnya, tidak meluber ke lencana status. */
+.summaryAddress {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.summaryStatus {
+  display: flex;
+  flex: none;
+}
+
 .summaryMetaItem {
   display: inline-flex;
   align-items: center;
@@ -485,5 +496,17 @@ a.accountName:hover {
 
   .summaryActions > * {
     flex: 1;
+  }
+
+  /* Lencana status pindah ke baris sendiri di bawah alamat, sejajar teks (bukan avatar). */
+  .summary {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: var(--space-8) var(--space-16);
+  }
+
+  .summaryStatus {
+    grid-column: 2;
   }
 }

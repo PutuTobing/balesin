@@ -119,6 +119,9 @@ export function avatarUrlOf(row: Pick<MailAccountRow, 'id' | 'avatarSha256'>): s
 
 function errorMessageOf(code: string | null): string | null {
   if (!code) return null;
+  if (code === 'mailbox_too_large') {
+    return 'Kotak surat terlalu besar untuk disinkron (maks. 500.000 email). Persempit jendela sinkron.';
+  }
   return Object.hasOwn(MAIL_TEST_MESSAGES, code)
     ? MAIL_TEST_MESSAGES[code as MailTestCode]
     : 'Sinkron gagal karena sebab yang tidak dikenali. Coba lagi beberapa saat lagi.';

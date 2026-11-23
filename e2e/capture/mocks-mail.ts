@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { MAIL_PROVIDER_CARDS } from '../../packages/shared/src/mail';
+import { MAIL_PROVIDER_CARDS, MAIL_TEST_MESSAGES } from '../../packages/shared/src/mail';
 import { json } from './mocks';
 import { PHOTO_USER_IDS, quietSecurity, teamUsers } from './mocks-tim';
 
@@ -112,6 +112,8 @@ export const MAIL_ACCOUNTS = [
     displayName: 'CS Maju Jaya',
     emailAddress: 'cs@majujaya.co.id',
     color: 'tagBlue',
+    // Kotak masuk 6 + folder Vendor 1 (lihat SIDEBAR).
+    unreadCount: 7,
   }),
   account({
     id: MAIL_PHOTO_IDS.billing,
@@ -130,6 +132,7 @@ export const MAIL_ACCOUNTS = [
     provider: 'imap',
     owner: OWNER,
     lastSyncedAt: ago(20_000),
+    unreadCount: 5,
   }),
   account({
     id: MAIL_PHOTO_IDS.notif,
@@ -138,8 +141,8 @@ export const MAIL_ACCOUNTS = [
     color: 'accent',
     state: 'auth_failed',
     lastErrorCode: 'imap_auth_failed',
-    lastErrorMessage:
-      'Password akun email notifikasi@majujaya.co.id ditolak. Perbarui di Pengaturan → Akun email.',
+    // Pesan asli backend (kode tetap), bukan teks buatan yang menunjuk ke halaman itu sendiri.
+    lastErrorMessage: MAIL_TEST_MESSAGES.imap_auth_failed,
     lastSyncedAt: ago(3 * HOUR),
     unreadCount: 0,
   }),
@@ -181,9 +184,14 @@ function folder(
 
 export const CS_INBOX_FOLDER = `${MAIL_PHOTO_IDS.cs.slice(0, -2)}f1`;
 
+/**
+ * Angka saling cocok (review 9A M5): Semua kotak masuk = jumlah belum dibaca di INBOX tiap akun
+ * (CS 6 + Billing 3 + Kantor Rina 5 + Notifikasi 0 = 14); Belum dibaca = semua folder kecuali Spam
+ * & Sampah (14 + Vendor 1 = 15).
+ */
 const SIDEBAR = {
-  unified: { unreadCount: 17 },
-  unread: { count: 19 },
+  unified: { unreadCount: 14 },
+  unread: { count: 15 },
   starred: { count: 4 },
   accounts: MAIL_ACCOUNTS.map((item) => ({
     account: {
@@ -209,13 +217,17 @@ const SIDEBAR = {
               path: 'INBOX.Drafts',
               name: 'Drafts',
               role: 'drafts',
-              unread: 1,
             }),
             folder(item.id, 'f3', { path: 'INBOX.Sent', name: 'Sent', role: 'sent' }),
             folder(item.id, 'f4', { path: 'INBOX.Archive', name: 'Archive', role: 'archive' }),
-            folder(item.id, 'f5', { path: 'INBOX.Junk', name: 'Junk', role: 'junk', unread: 1 }),
+            folder(item.id, 'f5', { path: 'INBOX.Junk', name: 'Junk', role: 'junk' }),
             folder(item.id, 'f6', { path: 'INBOX.Trash', name: 'Trash', role: 'trash' }),
-            folder(item.id, 'f7', { path: 'INBOX.Vendor', name: 'Vendor', role: null }),
+            folder(item.id, 'f7', {
+              path: 'INBOX.Vendor',
+              name: 'Vendor',
+              role: null,
+              unread: 1,
+            }),
             folder(item.id, 'f8', {
               path: 'INBOX.Pelanggan korporat',
               name: 'Pelanggan korporat',
@@ -243,7 +255,10 @@ export async function mailSession(page: Page): Promise<void> {
   await page.route(`${API}/auth/me`, async (route) => {
     const response = await route.fetch();
     const body = (await response.json()) as Record<string, unknown>;
-    await route.fulfill({ response, json: { ...body, navigation: { mail: true } } });
+    // Id pengguna sesi = id pemilik tiruan (Rina), supaya akun pribadinya tampil "Pribadi · milikmu"
+    // (review 9A M4). Hanya dipakai pembanding di browser; API tetap memakai cookie sesi asli.
+    const user = { ...(body.user as Record<string, unknown>), id: OWNER.id, name: OWNER.name };
+    await route.fulfill({ response, json: { ...body, user, navigation: { mail: true } } });
   });
 }
 
@@ -326,8 +341,7 @@ export async function mailWizard(page: Page, outgoingOk = true): Promise<void> {
         : {
             ok: false,
             code: 'smtp_connection_timeout',
-            message:
-              'Server SMTP tidak merespons. Banyak jaringan memblokir port 465/587 keluar; tanyakan ke penyedia server.',
+            message: MAIL_TEST_MESSAGES.smtp_connection_timeout,
             durationMs: 8000,
           },
     }),

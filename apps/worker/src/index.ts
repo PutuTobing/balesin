@@ -108,6 +108,7 @@ function main(config: WorkerConfig): void {
       db,
       secretBox,
       store: mediaStore,
+      appUrl: config.appUrl,
       publisher: createMailEventPublisher(redis, { logger }),
       notify: ownerNotifier.notify,
       imap: {

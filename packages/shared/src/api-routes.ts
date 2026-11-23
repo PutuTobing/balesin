@@ -571,6 +571,29 @@ export const API_ROUTES = {
     settings: `${API_PREFIX}/settings/mail`,
     /** GET/PUT — Pengaturan → Tim → [pengguna] → tab Akses email. */
     teamAccess: `${API_PREFIX}/settings/team/:userId/mail-access`,
+    // ── Bagian 2: daftar, baca, aksi (kontrak §7–§9) ──
+    /** GET — daftar email (`view` = inboxes/unread/starred/folder, kursor). */
+    messages: `${API_PREFIX}/mail/messages`,
+    /** POST — aksi dua arah (≤ 100 ID): dibaca/bintang/pindah/arsip/sampah/spam/hapus permanen. */
+    messageActions: `${API_PREFIX}/mail/messages/actions`,
+    /** GET — detail satu email (isi belum ada → `body.state: "loading"` + job ambil isi). */
+    message: `${API_PREFIX}/mail/messages/:messageId`,
+    /** POST — URL dokumen tampilan ber-token (10 menit) untuk iframe sandbox. */
+    messageView: `${API_PREFIX}/mail/messages/:messageId/view`,
+    /** GET — header mentah (`text/plain`, ≤ 64 KB). */
+    messageSource: `${API_PREFIX}/mail/messages/:messageId/source`,
+    /** GET (token, tanpa cookie) — dokumen HTML tersanitasi ber-CSP sendiri. */
+    view: `${API_PREFIX}/mail/view/:token`,
+    /** GET (token) — proksi gambar luar ke-`index`. */
+    viewImage: `${API_PREFIX}/mail/view/:token/images/:index`,
+    /** GET (token) — gambar inline `cid:` milik email itu. */
+    viewCid: `${API_PREFIX}/mail/view/:token/cid/:attachmentId`,
+    /** GET — unduh lampiran (`?confirm=1` untuk arsip). */
+    attachment: `${API_PREFIX}/mail/attachments/:attachmentId`,
+    /** GET — pratinjau gambar raster lampiran (inline). */
+    attachmentPreview: `${API_PREFIX}/mail/attachments/:attachmentId/preview`,
+    /** GET/POST/DELETE — "Selalu tampilkan gambar dari pengirim ini" milik pengguna. */
+    remoteImageSenders: `${API_PREFIX}/mail/remote-image-senders`,
   },
   /** Quick reply `/` (butir 9): pakai = `inbox.reply`; kelola = `quick_replies.manage`. */
   quickReplies: {

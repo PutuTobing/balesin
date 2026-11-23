@@ -116,7 +116,7 @@ const asciiLower = (value: string) => value.replace(/[A-Z]+/g, (run) => run.toLo
  * Blok `<style>` dipindai dengan `indexOf` (linear, review 9.1 S1): `<style …>` sampai `</style …>`
  * berikutnya. Tanpa penutup → berhenti (sisanya diurus sanitize-html, yang membuang `<style>`).
  */
-function extractStyleBlocks(html: string): { rest: string; blocks: string[] } {
+export function extractStyleBlocks(html: string): { rest: string; blocks: string[] } {
   const lower = asciiLower(html);
   const blocks: string[] = [];
   let rest = '';
@@ -319,7 +319,7 @@ function safeCssValue(value: string): boolean {
 }
 
 /** Atribut `style`: hanya properti daftar izin dengan nilai aman. */
-function filterInlineStyle(value: string): { style: string; changed: boolean } {
+export function filterInlineStyle(value: string): { style: string; changed: boolean } {
   const kept: string[] = [];
   let changed = false;
   for (const declaration of value.split(';')) {
@@ -359,7 +359,7 @@ function stripCssComments(css: string): string {
  * `>`, `\`. Review 9.1 S1: dipindai per karakter pemisah (`;`, `{`, `}`) — linear; potongan yang tidak
  * aman dibuang utuh (beserta `;` penutupnya).
  */
-function sanitizeCssBlock(css: string): { css: string; changed: boolean } {
+export function sanitizeCssBlock(css: string): { css: string; changed: boolean } {
   const base = stripCssComments(css);
   const cleaned = base.replace(/[<>\\]/g, '');
   let out = '';
@@ -384,14 +384,15 @@ const isControlOrSpace = (char: string) => {
   const code = char.charCodeAt(0);
   return code <= 0x20 || code === 0x7f;
 };
-const compact = (value: string) => [...value].filter((char) => !isControlOrSpace(char)).join('');
+export const compactUrlText = (value: string) =>
+  [...value].filter((char) => !isControlOrSpace(char)).join('');
 
 function hrefAllowed(value: string): boolean {
   // Review 9.1 S1: nilai kepanjangan ditolak SEBELUM regex apa pun.
   if (value.length > HREF_URL_MAX) return false;
   const trimmed = value.trim();
   if (PLACEHOLDER_ONLY.test(trimmed)) return true;
-  return /^(https?:\/\/|mailto:|tel:)/i.test(compact(trimmed));
+  return /^(https?:\/\/|mailto:|tel:)/i.test(compactUrlText(trimmed));
 }
 
 type ImageVerdict = 'ok' | 'imageHttp' | 'imageData' | 'imageOther';
@@ -406,13 +407,13 @@ function imageSource(value: string): ImageVerdict {
       return 'imageOther';
     }
   }
-  if (/^http:/i.test(compact(trimmed))) return 'imageHttp';
+  if (/^http:/i.test(compactUrlText(trimmed))) return 'imageHttp';
   const data = /^data:image\/(png|jpeg|gif);base64,([A-Za-z0-9+/=\s]+)$/i.exec(trimmed);
   if (data) {
     const payload = (data[2] ?? '').replace(/\s+/g, '');
     return Math.floor((payload.length * 3) / 4) <= DATA_IMAGE_MAX_BYTES ? 'ok' : 'imageData';
   }
-  if (/^data:/i.test(compact(trimmed))) return 'imageData';
+  if (/^data:/i.test(compactUrlText(trimmed))) return 'imageData';
   return 'imageOther';
 }
 
@@ -482,7 +483,7 @@ export function sanitizeOutboundEmailHtml(html: string): SanitizedOutboundHtml {
         note(WARNING.event, true);
         continue;
       }
-      if (/^(javascript|vbscript):/i.test(compact(value))) {
+      if (/^(javascript|vbscript):/i.test(compactUrlText(value))) {
         note(WARNING.javascript, true);
         continue;
       }

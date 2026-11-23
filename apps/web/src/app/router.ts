@@ -28,7 +28,11 @@ import { InboxSkeleton } from '../features/inbox/InboxSkeleton';
 import { parseInboxSearch } from '../features/inbox/inbox-search';
 import { parseContactSearch } from '../features/contacts/contact-search';
 import { MailSkeleton } from '../features/mail/MailSkeleton';
-import { parseMailAccountsSearch, parseMailSearch } from '../features/mail/mail-search';
+import {
+  parseMailAccountSearch,
+  parseMailAccountsSearch,
+  parseMailSearch,
+} from '../features/mail/mail-search';
 import { parseTicketSearch } from '../features/tickets/ticket-search';
 import { SecuritySkeleton } from '../features/security/SecuritySkeleton';
 import { SetupSkeleton } from '../features/setup/SetupSkeleton';
@@ -372,6 +376,7 @@ const mailAccountRoute = createRoute({
   getParentRoute,
   path: 'pengaturan/akun-email/$accountId',
   staticData: { page: { title: t.mail.detail.title, parent: 'mailAccounts' } },
+  validateSearch: parseMailAccountSearch,
   beforeLoad: ({ context }) => guardMail(context.session, '/pengaturan'),
   component: lazyRouteComponent(
     () => import('../features/mail/MailAccountPage'),

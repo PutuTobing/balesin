@@ -6,9 +6,10 @@ import { TEST_IMAP_CERT, TEST_IMAP_KEY } from '../../channels/testing/test-cert'
 /**
  * Server IMAP TIRUAN multi-folder untuk tes modul Email (Fase 9) — perintah yang dipakai
  * `mail-client` lewat imapflow: CAPABILITY, LOGIN, LIST, STATUS, SELECT/EXAMINE, UID SEARCH
- * (ALL/SINCE), UID FETCH (UID, FLAGS, INTERNALDATE, RFC822.SIZE, BODYSTRUCTURE, header terpilih,
- * awal bagian teks), IDLE/DONE, NOOP, LOGOUT. TLS dengan sertifikat tes. Bukan server IMAP sungguhan:
- * hanya cukup untuk menguji adaptor & alur sinkron.
+ * (ALL/SINCE), UID FETCH (UID, FLAGS, INTERNALDATE, RFC822.SIZE, BODYSTRUCTURE dari MIME sungguhan,
+ * header terpilih, `BODY.PEEK[]`/`BODY.PEEK[<bagian>]` dengan potongan `<awal.panjang>`), UID STORE,
+ * UID COPY/MOVE (COPYUID), UID EXPUNGE, EXPUNGE, CREATE, IDLE/DONE, NOOP, LOGOUT. TLS dengan
+ * sertifikat tes. Bukan server IMAP sungguhan: hanya cukup untuk menguji adaptor & alur sinkron/aksi.
  */
 
 export interface FakeMailMessage {
@@ -32,6 +33,10 @@ export interface FakeMailImapOptions {
   /** Selain INBOX. Bawaan: Sent, Drafts, Junk, Trash (gaya cPanel `INBOX.`). */
   folders?: string[];
   idle?: boolean;
+  /** Kemampuan `MOVE` (RFC 6851). Bawaan `false` (jalur COPY + \Deleted + UID EXPUNGE). */
+  move?: boolean;
+  /** Kemampuan `UIDPLUS`. Bawaan `true`. */
+  uidplus?: boolean;
   /** Teks balasan LOGIN gagal (mis. untuk menguji pengenalan "sandi aplikasi"). */
   loginFailureText?: string;
 }
@@ -48,6 +53,8 @@ export interface FakeMailImapServer {
   remove(path: string, uid: number): void;
   setFlags(path: string, uid: number, flags: string[]): void;
   setUidValidity(path: string, value: number): void;
+  /** Perintah berikutnya dengan awalan ini dijawab `NO` (sekali per pemanggilan). */
+  failNext(commandPrefix: string): void;
   /** Jumlah sambungan yang sedang terbuka. */
   connections(): number;
   close(): Promise<void>;
@@ -83,11 +90,121 @@ function inSet(uid: number, set: string, maxUid: number): boolean {
   });
 }
 
+// ── MIME minimal (BODYSTRUCTURE & bagian) ───────────────────────────────────
+
+interface MimeNode {
+  header: Buffer;
+  body: Buffer;
+  type: string;
+  subtype: string;
+  params: Record<string, string>;
+  encoding: string;
+  id: string | null;
+  disposition: string | null;
+  dispositionParams: Record<string, string>;
+  children: MimeNode[];
+}
+
 function splitMessage(raw: Buffer): { headers: Buffer; body: Buffer } {
   const text = raw.toString('latin1');
   const index = text.indexOf('\r\n\r\n');
   if (index < 0) return { headers: raw, body: Buffer.alloc(0) };
   return { headers: raw.subarray(0, index + 4), body: raw.subarray(index + 4) };
+}
+
+function headerMap(block: Buffer): Map<string, string> {
+  const unfolded = block.toString('latin1').replace(/\r\n[ \t]+/g, ' ');
+  const map = new Map<string, string>();
+  for (const line of unfolded.split('\r\n')) {
+    const colon = line.indexOf(':');
+    if (colon <= 0) continue;
+    const key = line.slice(0, colon).trim().toLowerCase();
+    if (!map.has(key)) map.set(key, line.slice(colon + 1).trim());
+  }
+  return map;
+}
+
+function paramsOf(value: string): { main: string; params: Record<string, string> } {
+  const [main = '', ...rest] = value.split(';');
+  const params: Record<string, string> = {};
+  for (const item of rest) {
+    const eq = item.indexOf('=');
+    if (eq <= 0) continue;
+    params[item.slice(0, eq).trim().toLowerCase()] = unquote(item.slice(eq + 1).trim());
+  }
+  return { main: main.trim().toLowerCase(), params };
+}
+
+function parseMime(raw: Buffer, depth = 0): MimeNode {
+  const { headers, body } = splitMessage(raw);
+  const map = headerMap(headers);
+  const contentType = paramsOf(map.get('content-type') ?? 'text/plain; charset=us-ascii');
+  const [type = 'text', subtype = 'plain'] = contentType.main.split('/');
+  const disposition = map.get('content-disposition');
+  const parsedDisposition = disposition ? paramsOf(disposition) : null;
+  const node: MimeNode = {
+    header: headers,
+    body,
+    type,
+    subtype,
+    params: contentType.params,
+    encoding: (map.get('content-transfer-encoding') ?? '7bit').toLowerCase(),
+    id: map.get('content-id') ?? null,
+    disposition: parsedDisposition?.main ?? null,
+    dispositionParams: parsedDisposition?.params ?? {},
+    children: [],
+  };
+  const boundary = contentType.params.boundary;
+  if (type === 'multipart' && boundary && depth < 10) {
+    const text = body.toString('latin1');
+    const marker = `--${boundary}`;
+    const pieces = text.split(marker).slice(1);
+    for (const piece of pieces) {
+      if (piece.startsWith('--')) break;
+      const content = piece.replace(/^\r\n/, '').replace(/\r\n$/, '');
+      node.children.push(parseMime(Buffer.from(content, 'latin1'), depth + 1));
+    }
+  }
+  return node;
+}
+
+const q = (value: string) => `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+const paramList = (params: Record<string, string>) => {
+  const entries = Object.entries(params);
+  return entries.length === 0
+    ? 'NIL'
+    : `(${entries.map(([key, value]) => `${q(key.toUpperCase())} ${q(value)}`).join(' ')})`;
+};
+
+function bodyStructureOf(node: MimeNode): string {
+  if (node.children.length > 0) {
+    return `(${node.children.map(bodyStructureOf).join('')} ${q(node.subtype.toUpperCase())} ${paramList(
+      node.params.boundary ? { boundary: node.params.boundary } : {},
+    )} NIL NIL)`;
+  }
+  const disposition = node.disposition
+    ? `(${q(node.disposition.toUpperCase())} ${paramList(node.dispositionParams)})`
+    : 'NIL';
+  const lines =
+    node.type === 'text' ? ` ${String(node.body.toString('latin1').split('\r\n').length)}` : '';
+  return `(${q(node.type.toUpperCase())} ${q(node.subtype.toUpperCase())} ${paramList(node.params)} ${
+    node.id ? q(node.id) : 'NIL'
+  } NIL ${q(node.encoding.toUpperCase())} ${String(node.body.length)}${lines} NIL ${disposition} NIL)`;
+}
+
+/** Bagian bernomor IMAP (`1`, `2.1`, …). Email satu bagian: `1` = isi. */
+function partOf(root: MimeNode, section: string): MimeNode | null {
+  const numbers = section.split('.').map(Number);
+  let node: MimeNode | undefined = root;
+  for (const number of numbers) {
+    if (!node) return null;
+    if (node.children.length === 0) {
+      if (number !== 1) return null;
+      continue;
+    }
+    node = node.children[number - 1];
+  }
+  return node ?? null;
 }
 
 export async function startFakeMailImap(
@@ -109,10 +226,37 @@ export async function startFakeMailImap(
     });
   }
   const commands: string[] = [];
+  const failures: string[] = [];
   const idleClients = new Set<{ socket: Socket | TLSSocket; selected: string | null }>();
   let open = 0;
   const sockets = new Set<Socket | TLSSocket>();
-  const capability = `IMAP4rev1 UIDPLUS${options.idle === false ? '' : ' IDLE'}`;
+  const capability = `IMAP4rev1${options.uidplus === false ? '' : ' UIDPLUS'}${
+    options.move ? ' MOVE' : ''
+  }${options.idle === false ? '' : ' IDLE'}`;
+
+  const notifyIdle = (path: string, line: string, except?: Socket | TLSSocket) => {
+    for (const client of idleClients) {
+      if (client.selected === path && client.socket !== except) client.socket.write(line);
+    }
+  };
+
+  const copyInto = (source: FakeMailFolder, target: FakeMailFolder, uids: number[]) => {
+    const map: [number, number][] = [];
+    for (const uid of uids) {
+      const message = source.messages.find((item) => item.uid === uid);
+      if (!message) continue;
+      const next = target.nextUid;
+      target.nextUid += 1;
+      target.messages.push({
+        uid: next,
+        raw: message.raw,
+        flags: message.flags.filter((flag) => flag !== '\\Deleted'),
+        internalDate: message.internalDate,
+      });
+      map.push([uid, next]);
+    }
+    return map;
+  };
 
   const handle = (socket: Socket | TLSSocket) => {
     open += 1;
@@ -132,6 +276,16 @@ export async function startFakeMailImap(
       sockets.delete(socket);
       idleClients.delete(state);
     });
+    const expungeUids = (folder: FakeMailFolder, uids: Set<number>) => {
+      for (let index = folder.messages.length - 1; index >= 0; index -= 1) {
+        const message = folder.messages[index];
+        if (message && uids.has(message.uid)) {
+          folder.messages.splice(index, 1);
+          write(`* ${String(index + 1)} EXPUNGE\r\n`);
+          notifyIdle(folder.path, `* ${String(index + 1)} EXPUNGE\r\n`, socket);
+        }
+      }
+    };
     socket.on('data', (chunk: Buffer) => {
       buffer += chunk.toString('latin1');
       let index: number;
@@ -149,7 +303,14 @@ export async function startFakeMailImap(
         const [tag = '*', rawCommand = '', ...rest] = line.split(' ');
         const command = rawCommand.toUpperCase();
         const args = rest.join(' ');
-        commands.push(command === 'LOGIN' ? 'LOGIN ***' : `${command} ${args}`.trim());
+        const text = command === 'LOGIN' ? 'LOGIN ***' : `${command} ${args}`.trim();
+        commands.push(text);
+        const failureIndex = failures.findIndex((prefix) => text.toUpperCase().startsWith(prefix));
+        if (failureIndex >= 0) {
+          failures.splice(failureIndex, 1);
+          write(`${tag} NO [SERVERBUG] gagal (tiruan)\r\n`);
+          continue;
+        }
         const folder = state.selected ? folders.get(state.selected) : undefined;
         switch (command) {
           case 'CAPABILITY':
@@ -183,6 +344,22 @@ export async function startFakeMailImap(
             write(`${tag} OK LIST selesai\r\n`);
             break;
           }
+          case 'CREATE': {
+            const path = unquote(args.trim());
+            if (!authed || path.length === 0 || folders.has(path)) {
+              write(`${tag} NO [ALREADYEXISTS] sudah ada\r\n`);
+              break;
+            }
+            folders.set(path, {
+              path,
+              flags: ['\\HasNoChildren'],
+              uidValidity: 1,
+              nextUid: 1,
+              messages: [],
+            });
+            write(`${tag} OK CREATE selesai\r\n`);
+            break;
+          }
           case 'STATUS': {
             const match = /^("(?:[^"\\]|\\.)*"|\S+)/.exec(args);
             const target = folders.get(unquote(match?.[1] ?? ''));
@@ -213,6 +390,22 @@ export async function startFakeMailImap(
             write(`${tag} OK [${command === 'SELECT' ? 'READ-WRITE' : 'READ-ONLY'}] selesai\r\n`);
             break;
           }
+          case 'EXPUNGE': {
+            if (!folder) {
+              write(`${tag} NO belum memilih folder\r\n`);
+              break;
+            }
+            expungeUids(
+              folder,
+              new Set(
+                folder.messages
+                  .filter((message) => message.flags.includes('\\Deleted'))
+                  .map((message) => message.uid),
+              ),
+            );
+            write(`${tag} OK EXPUNGE selesai\r\n`);
+            break;
+          }
           case 'UID': {
             const sub = (rest[0] ?? '').toUpperCase();
             if (!folder) {
@@ -220,6 +413,11 @@ export async function startFakeMailImap(
               break;
             }
             const maxUid = folder.messages.at(-1)?.uid ?? 0;
+            const set = rest[1] ?? '';
+            const selectedUids = () =>
+              folder.messages
+                .filter((message) => inSet(message.uid, set, maxUid))
+                .map((m) => m.uid);
             if (sub === 'SEARCH') {
               const criteria = rest.slice(1).join(' ').toUpperCase();
               const since = criteria.includes('SINCE') ? parseSearchDate(criteria) : null;
@@ -229,34 +427,121 @@ export async function startFakeMailImap(
               write(
                 `* SEARCH${uids.map((uid) => ` ${String(uid)}`).join('')}\r\n${tag} OK SEARCH selesai\r\n`,
               );
+            } else if (sub === 'STORE') {
+              const mode = (rest[2] ?? '').toUpperCase();
+              const flagText = /\(([^)]*)\)/.exec(rest.slice(3).join(' '))?.[1] ?? '';
+              const flags = flagText.split(/\s+/).filter((flag) => flag.length > 0);
+              folder.messages.forEach((message, position) => {
+                if (!inSet(message.uid, set, maxUid)) return;
+                if (mode.startsWith('+')) {
+                  message.flags = [...new Set([...message.flags, ...flags])];
+                } else if (mode.startsWith('-')) {
+                  const lower = new Set(flags.map((flag) => flag.toLowerCase()));
+                  message.flags = message.flags.filter((flag) => !lower.has(flag.toLowerCase()));
+                } else {
+                  message.flags = flags;
+                }
+                if (!mode.includes('.SILENT')) {
+                  write(
+                    `* ${String(position + 1)} FETCH (UID ${String(message.uid)} FLAGS (${message.flags.join(' ')}))\r\n`,
+                  );
+                }
+              });
+              write(`${tag} OK STORE selesai\r\n`);
+            } else if (sub === 'COPY' || sub === 'MOVE') {
+              if (sub === 'MOVE' && !options.move) {
+                write(`${tag} BAD MOVE tidak didukung\r\n`);
+                break;
+              }
+              const target = folders.get(unquote(rest.slice(2).join(' ').trim()));
+              if (!target) {
+                write(`${tag} NO [TRYCREATE] folder tujuan tidak ada\r\n`);
+                break;
+              }
+              const uids = selectedUids();
+              const map = copyInto(folder, target, uids);
+              const code =
+                options.uidplus === false || map.length === 0
+                  ? ''
+                  : `[COPYUID ${String(target.uidValidity)} ${map.map(([from]) => String(from)).join(',')} ${map
+                      .map(([, to]) => String(to))
+                      .join(',')}] `;
+              if (sub === 'MOVE') {
+                if (code) write(`* OK ${code}dipindah\r\n`);
+                expungeUids(folder, new Set(uids));
+                write(`${tag} OK MOVE selesai\r\n`);
+              } else {
+                write(`${tag} OK ${code}COPY selesai\r\n`);
+              }
+              if (map.length > 0) {
+                notifyIdle(target.path, `* ${String(target.messages.length)} EXISTS\r\n`, socket);
+              }
+            } else if (sub === 'EXPUNGE') {
+              if (options.uidplus === false) {
+                write(`${tag} BAD UID EXPUNGE tidak didukung\r\n`);
+                break;
+              }
+              expungeUids(
+                folder,
+                new Set(
+                  folder.messages
+                    .filter(
+                      (message) =>
+                        inSet(message.uid, set, maxUid) && message.flags.includes('\\Deleted'),
+                    )
+                    .map((message) => message.uid),
+                ),
+              );
+              write(`${tag} OK UID EXPUNGE selesai\r\n`);
             } else if (sub === 'FETCH') {
-              const set = rest[1] ?? '';
-              const items = rest.slice(2).join(' ').toUpperCase();
+              const items = rest.slice(2).join(' ');
+              const upper = items.toUpperCase();
+              const sections = [
+                ...items.matchAll(/BODY\.PEEK\[([^\]]*)\](?:<(\d+)\.(\d+)>)?/gi),
+              ].map((match) => ({
+                section: match[1] ?? '',
+                start: match[2] === undefined ? null : Number(match[2]),
+                length: match[3] === undefined ? null : Number(match[3]),
+              }));
               folder.messages.forEach((message, position) => {
                 if (!inSet(message.uid, set, maxUid)) return;
                 const parts: (string | Buffer)[] = [
                   `* ${String(position + 1)} FETCH (UID ${String(message.uid)}`,
                 ];
-                const { headers, body } = splitMessage(message.raw);
-                if (items.includes('FLAGS')) parts.push(` FLAGS (${message.flags.join(' ')})`);
-                if (items.includes('INTERNALDATE'))
+                const { headers } = splitMessage(message.raw);
+                const mime = parseMime(message.raw);
+                if (/\bFLAGS\b/.test(upper)) parts.push(` FLAGS (${message.flags.join(' ')})`);
+                if (upper.includes('INTERNALDATE'))
                   parts.push(` INTERNALDATE "${imapDate(message.internalDate)}"`);
-                if (items.includes('RFC822.SIZE'))
+                if (upper.includes('RFC822.SIZE'))
                   parts.push(` RFC822.SIZE ${String(message.raw.length)}`);
-                if (items.includes('BODYSTRUCTURE')) {
+                if (upper.includes('BODYSTRUCTURE'))
+                  parts.push(` BODYSTRUCTURE ${bodyStructureOf(mime)}`);
+                for (const { section, start, length } of sections) {
+                  const key = section.toUpperCase();
+                  let content: Buffer;
+                  let label = section;
+                  if (key.startsWith('HEADER.FIELDS')) {
+                    content = headers;
+                    label = 'HEADER.FIELDS (FROM)';
+                  } else if (key === '') {
+                    content = message.raw;
+                  } else if (key === 'TEXT') {
+                    content = mime.body;
+                  } else if (/^[\d.]+\.MIME$/.test(key)) {
+                    content = partOf(mime, key.replace(/\.MIME$/, ''))?.header ?? Buffer.alloc(0);
+                  } else {
+                    content = partOf(mime, key)?.body ?? Buffer.alloc(0);
+                  }
+                  const origin = start ?? 0;
+                  const slice =
+                    start === null
+                      ? content
+                      : content.subarray(origin, origin + (length ?? content.length));
                   parts.push(
-                    ` BODYSTRUCTURE ("TEXT" "PLAIN" ("CHARSET" "utf-8") NIL NIL "7BIT" ${String(body.length)} 1)`,
+                    ` BODY[${label}]${start === null ? '' : `<${String(origin)}>`} {${String(slice.length)}}\r\n`,
+                    slice,
                   );
-                }
-                if (items.includes('HEADER.FIELDS')) {
-                  parts.push(
-                    ` BODY[HEADER.FIELDS (FROM)] {${String(headers.length)}}\r\n`,
-                    headers,
-                  );
-                }
-                if (/BODY\.PEEK\[1\]/.test(items)) {
-                  const preview = body.subarray(0, 4096);
-                  parts.push(` BODY[1] {${String(preview.length)}}\r\n`, preview);
                 }
                 parts.push(')\r\n');
                 for (const part of parts) write(part);
@@ -289,12 +574,6 @@ export async function startFakeMailImap(
   const server: Server = createTlsServer({ cert: TEST_IMAP_CERT, key: TEST_IMAP_KEY }, handle);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = (server.address() as AddressInfo).port;
-
-  const notifyIdle = (path: string, line: string) => {
-    for (const client of idleClients) {
-      if (client.selected === path) client.socket.write(line);
-    }
-  };
 
   return {
     port,
@@ -330,6 +609,9 @@ export async function startFakeMailImap(
     setUidValidity(path, value) {
       const folder = folders.get(path);
       if (folder) folder.uidValidity = value;
+    },
+    failNext(commandPrefix) {
+      failures.push(commandPrefix.toUpperCase());
     },
     connections: () => open,
     close: () =>

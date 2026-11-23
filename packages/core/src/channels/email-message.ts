@@ -472,6 +472,11 @@ function extensionOf(filename: string | null): string {
   return /\.([A-Za-z0-9]{1,8})$/.exec(filename ?? '')?.[1]?.toLowerCase() ?? '';
 }
 
+/** Fase 9 (modul Email): nama berkas berekstensi yang bisa dijalankan/ditafsirkan browser/bermakro. */
+export function isDangerousEmailFileName(filename: string | null): boolean {
+  return DANGEROUS_EXTENSIONS.has(extensionOf(filename));
+}
+
 const CFB_SIGNATURE = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 const isCfbContainer = (content: Buffer) =>
   content.length >= CFB_SIGNATURE.length &&

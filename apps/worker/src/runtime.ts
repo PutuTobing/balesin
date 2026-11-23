@@ -40,9 +40,13 @@ import {
 } from './queues/webhooks-out';
 import { createWebhookWorker, type WebhookJobDeps } from './queues/webhooks';
 import { createIdleSupervisor, type IdleSupervisor } from './mail-idle/supervisor';
+import { createMailActions } from './mail/actions';
+import { createMailReader } from './mail/read';
 import { createMailSync, type MailSyncDeps } from './mail/sync';
 import {
   createMailQueue,
+  createMailScheduleQueue,
+  createMailScheduleWorker,
   createMailWorker,
   mailEnqueuers,
   scheduleMailJobs,
@@ -90,7 +94,12 @@ export interface WorkerServices {
    * Opsional untuk tes. `idle: false` = tanpa pengawas IDLE (tes antrian saja).
    */
   mail?: Omit<MailSyncDeps, 'logger'> &
-    Pick<MailJobDeps, 'store'> & { idle?: boolean; prefix?: string };
+    Pick<MailJobDeps, 'store'> & {
+      idle?: boolean;
+      prefix?: string;
+      /** Origin web (`APP_URL`) — halaman peringatan tautan menipu di dokumen tampilan. */
+      appUrl: string;
+    };
 }
 
 const ERROR_LOG_INTERVAL_MS = 30_000;
@@ -122,27 +131,55 @@ export function startWorkers(
   let channelsQueue: Queue | undefined;
   let webhookProducer: Queue | undefined;
   let mailQueue: Queue | undefined;
+  let mailScheduleQueue: Queue | undefined;
   let idleSupervisor: IdleSupervisor | undefined;
   if (services.mail) {
     const queue = createMailQueue(options);
     mailQueue = queue;
     queue.on('error', () => undefined);
     const enqueue = mailEnqueuers(queue);
-    const { store, idle, prefix, ...syncDeps } = services.mail;
+    const { store, idle, prefix, appUrl, ...syncDeps } = services.mail;
     const sync = createMailSync({ ...syncDeps, logger });
-    workers.push(
-      createMailWorker(options, {
-        db: services.mail.db,
-        logger,
-        redis: options.connection,
-        ...(prefix ? { prefix } : {}),
-        sync,
-        store,
-        enqueueSync: (payload) => enqueue.enqueueSync(payload),
-        enqueuePurge: (payload) => enqueue.enqueuePurge(payload),
-      }),
-    );
-    scheduleMailJobs(queue).catch((err: unknown) => {
+    const reader = createMailReader({
+      db: syncDeps.db,
+      logger,
+      secretBox: syncDeps.secretBox,
+      publisher: syncDeps.publisher,
+      store,
+      appUrl,
+      policyFor: (organizationId) => sync.policyFor(organizationId),
+      ...(syncDeps.connector ? { connector: syncDeps.connector } : {}),
+      ...(syncDeps.now ? { now: syncDeps.now } : {}),
+    });
+    const actions = createMailActions({
+      db: syncDeps.db,
+      logger,
+      publisher: syncDeps.publisher,
+      reader,
+      enqueueSync: (payload) => enqueue.enqueueSync(payload),
+      ...(syncDeps.now ? { now: syncDeps.now } : {}),
+    });
+    const mailDeps = {
+      db: services.mail.db,
+      logger,
+      redis: options.connection,
+      ...(prefix ? { prefix } : {}),
+      sync,
+      store,
+      reader,
+      actions,
+      enqueueSync: (payload: Parameters<typeof enqueue.enqueueSync>[0]) =>
+        enqueue.enqueueSync(payload),
+      enqueuePurge: (payload: Parameters<typeof enqueue.enqueuePurge>[0]) =>
+        enqueue.enqueuePurge(payload),
+      enqueueAction: (payload: Parameters<typeof enqueue.enqueueAction>[0]) =>
+        enqueue.enqueueAction(payload),
+    };
+    const scheduleQueue = createMailScheduleQueue(options);
+    mailScheduleQueue = scheduleQueue;
+    scheduleQueue.on('error', () => undefined);
+    workers.push(createMailWorker(options, mailDeps), createMailScheduleWorker(options, mailDeps));
+    scheduleMailJobs(scheduleQueue, queue).catch((err: unknown) => {
       logger.error({ err }, 'Jadwal modul Email gagal didaftarkan');
     });
     if (idle !== false) {
@@ -282,7 +319,13 @@ export function startWorkers(
         if (force) await broadcastQueue.disconnect();
         else await broadcastQueue.close();
       }
-      for (const queue of [channelsQueue, webhookProducer, emailOutboundQueue, mailQueue]) {
+      for (const queue of [
+        channelsQueue,
+        webhookProducer,
+        emailOutboundQueue,
+        mailQueue,
+        mailScheduleQueue,
+      ]) {
         if (!queue) continue;
         if (force) await queue.disconnect();
         else await queue.close();

@@ -91,13 +91,18 @@
 }
 
 .effective {
+  color: var(--ink-2);
+}
+
+.effectiveValue {
   color: var(--ink);
   font-weight: var(--weight-semibold);
 }
 
 .select {
   flex: none;
-  width: 11rem;
+  /* Muat opsi terpanjang ("Tanpa akses langsung") + chevron. */
+  width: 13.5rem;
   height: var(--size-control);
   padding: 0 var(--space-8);
   border: 1px solid var(--line);
@@ -166,8 +171,10 @@
     gap: var(--space-12);
   }
 
+  /* Sejajar nama akun (titik warna 8 + jarak 12), bukan tepi titik. */
   .select {
-    width: 100%;
+    width: calc(100% - var(--space-8) - var(--space-12));
     height: var(--size-touch);
+    margin-left: calc(var(--space-8) + var(--space-12));
   }
 }

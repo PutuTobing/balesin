@@ -217,7 +217,7 @@ export function classifyImapError(error: unknown): ImapFailure {
 export async function openImapClient(
   config: Omit<ImapConnectionConfig, 'folder'>,
   policy: ImapPolicy,
-  limits: { maxLiteralBytes?: number } = {},
+  limits: { maxLiteralBytes?: number; signal?: AbortSignal } = {},
 ): Promise<ImapFlow> {
   return openClient({ ...config, folder: 'INBOX' }, policy, limits);
 }
@@ -225,7 +225,7 @@ export async function openImapClient(
 async function openClient(
   config: ImapConnectionConfig,
   policy: ImapPolicy,
-  limits: { maxLiteralBytes?: number } = {},
+  limits: { maxLiteralBytes?: number; signal?: AbortSignal } = {},
 ): Promise<ImapFlow> {
   const timeouts = { ...DEFAULT_IMAP_TIMEOUTS, ...policy.timeouts };
   if (!policy.allowedPorts.includes(config.port)) throw new ImapFailure('imap_port_not_allowed');
@@ -270,10 +270,23 @@ async function openClient(
   });
   // Galat setelah tersambung (soket putus) tidak boleh menjatuhkan proses.
   client.on('error', () => undefined);
+  // Review 9A-1 S2: tenggat pemanggil bisa memutus sambungan bahkan selama fase connect (server jahat
+  // bisa membanjiri perintah awal seperti `LIST "" ""`).
+  const kill = () => {
+    try {
+      client.close();
+    } catch {
+      // sudah tertutup
+    }
+    (client as unknown as { socket?: { destroy(): void } }).socket?.destroy();
+  };
+  if (limits.signal?.aborted) throw new ImapFailure('imap_connection_timeout', 'ABORTED');
+  limits.signal?.addEventListener('abort', kill, { once: true });
   try {
     await client.connect();
   } catch (error) {
-    client.close();
+    kill();
+    if (limits.signal?.aborted) throw new ImapFailure('imap_connection_timeout', 'ABORTED');
     throw classifyImapError(error);
   }
   return client;

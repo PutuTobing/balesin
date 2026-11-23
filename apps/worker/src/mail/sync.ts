@@ -1,4 +1,5 @@
 import {
+  boundMailBodyStructure,
   classifyMailImapError,
   decodeTextPreview,
   defaultMailImapConnector,
@@ -15,6 +16,7 @@ import {
   type MailImapSession,
   type MailServerMessage,
   type SecretBox,
+  withMailSession,
 } from '@balesin/core';
 import {
   auditLogs,
@@ -86,6 +88,14 @@ export const MAIL_FOLDER_LIST_STALE_MS = 30 * 60 * 1000;
 export const MAIL_FLAG_SWEEP_MS = 60 * 60 * 1000;
 export const MAIL_NO_IDLE_INBOX_POLL_MINUTES = 2;
 const HEADER_BATCH = 200;
+/** Review 9A-1 S3: header baru per job (sisanya job berikutnya, segera). */
+export const MAIL_SYNC_HEADER_BUDGET = 2_000;
+/** Review 9A-1 S3: baris email per akun. */
+export const MAIL_ACCOUNT_MESSAGES_MAX = 500_000;
+/** Review 9A-1 S2: tenggat total satu job sinkron (sambungan diputus bila lewat). */
+export const MAIL_SYNC_TOTAL_MS = 5 * 60 * 1000;
+/** Jeda sebelum job lanjutan bila anggaran header habis. */
+const CONTINUE_DELAY_MS = 5_000;
 const FLAG_RECENT = 500;
 /** Event per job sebelum diganti satu `mail.resync`. */
 const EVENT_BUDGET = 50;
@@ -260,7 +270,22 @@ export function createMailSync(deps: MailSyncDeps) {
           metadata: { kind: row.kind, address: row.emailAddress, code },
         })
         .returning({ id: auditLogs.id });
-      if (deps.notify) {
+      // Review 9A-1 R6: paling banyak satu putaran pemberitahuan per akun per 24 jam ("Sinkron
+      // sekarang" berulang tidak membanjiri Owner/Admin).
+      const [recent] = await db
+        .select({ id: auditLogs.id })
+        .from(auditLogs)
+        .where(
+          and(
+            eq(auditLogs.organizationId, row.organizationId),
+            eq(auditLogs.action, 'mail.account.auth_failed'),
+            eq(auditLogs.targetId, row.id),
+            sql`${auditLogs.createdAt} > now() - interval '24 hours'`,
+            audit ? sql`${auditLogs.id} <> ${audit.id}` : undefined,
+          ),
+        )
+        .limit(1);
+      if (deps.notify && !recent) {
         for (const recipientUserId of await authFailedRecipients(row)) {
           await deps
             .notify({
@@ -335,10 +360,12 @@ export function createMailSync(deps: MailSyncDeps) {
         syncEnabled:
           folder.selectable &&
           !(role && (MAIL_UNSYNCED_FOLDER_ROLES as readonly string[]).includes(role)),
-        totalCount: folder.status?.messages ?? 0,
-        unreadCount: folder.status?.unseen ?? 0,
+        // LIST tanpa STATUS (review 9A-1 S2): hitungan hanya diganti bila server memberinya.
+        ...(folder.status
+          ? { totalCount: folder.status.messages, unreadCount: folder.status.unseen }
+          : {}),
       };
-      if (folder.path.length > 1000) continue;
+      if (folder.path.length > 1000 || folder.path.includes('\u0000')) continue;
       const current = byPath.get(folder.path);
       if (current) {
         await db.update(mailFolders).set(values).where(eq(mailFolders.id, current.id));
@@ -451,7 +478,7 @@ export function createMailSync(deps: MailSyncDeps) {
       authDetails: header?.authDetails ?? null,
       warnings: [],
       bodyState: 'none',
-      bodystructure: message.bodyStructure,
+      bodystructure: boundMailBodyStructure(message.bodyStructure),
     };
   }
 
@@ -462,6 +489,8 @@ export function createMailSync(deps: MailSyncDeps) {
     events: MailBusEventInput[];
     resync: boolean;
     discovered: number;
+    /** Masih ada header baru yang belum diambil (anggaran job habis). */
+    truncated: boolean;
   }
 
   async function syncOneFolder(
@@ -470,6 +499,7 @@ export function createMailSync(deps: MailSyncDeps) {
     folder: MailFolderRow,
     identities: readonly string[],
     onProgress: (fetched: number, discovered: number) => Promise<void>,
+    budget: { remaining: number },
   ): Promise<FolderOutcome> {
     const outcome: FolderOutcome = {
       created: 0,
@@ -478,6 +508,7 @@ export function createMailSync(deps: MailSyncDeps) {
       events: [],
       resync: false,
       discovered: 0,
+      truncated: false,
     };
     const at = now();
     const status = await session.status(folder.path).catch(() => null);
@@ -517,8 +548,11 @@ export function createMailSync(deps: MailSyncDeps) {
     const localByUid = new Map(localRows.map((message) => [message.uid, message]));
 
     // 1. Email baru — dari yang TERBARU, per 200.
-    const fresh = serverUids.filter((uid) => !localByUid.has(uid)).sort((a, b) => b - a);
-    outcome.discovered = fresh.length;
+    const allFresh = serverUids.filter((uid) => !localByUid.has(uid)).sort((a, b) => b - a);
+    outcome.discovered = allFresh.length;
+    const fresh = allFresh.slice(0, Math.max(0, budget.remaining));
+    outcome.truncated = fresh.length < allFresh.length;
+    budget.remaining -= fresh.length;
     for (let index = 0; index < fresh.length; index += HEADER_BATCH) {
       const batch = fresh.slice(index, index + HEADER_BATCH);
       const fetched = await session.fetchHeaders(batch);
@@ -640,7 +674,8 @@ export function createMailSync(deps: MailSyncDeps) {
         unreadCount: unread,
         oldestSyncedAt: since,
         hasOlderOnServer: since !== null && totalOnServer > serverUids.length,
-        lastSyncedAt: at,
+        // Anggaran habis: folder tetap jatuh tempo supaya sisanya diambil job berikutnya.
+        ...(outcome.truncated ? {} : { lastSyncedAt: at }),
         ...(sweep ? { lastFullFlagSweepAt: at } : {}),
       })
       .where(eq(mailFolders.id, folder.id));
@@ -716,47 +751,150 @@ export function createMailSync(deps: MailSyncDeps) {
       if (saved) row = saved;
     }
 
-    let session: MailImapSession;
+    const imapConfig = {
+      host: row.imapHost ?? '',
+      port: row.imapPort ?? 993,
+      security: row.imapSecurity === 'starttls' ? ('starttls' as const) : ('ssl' as const),
+      username: row.imapUsername ?? '',
+      password,
+    };
+    const policy = await policyFor(row.organizationId);
+    const totalMs = deps.imap.timeouts?.totalMs ?? MAIL_SYNC_TOTAL_MS;
     try {
-      session = await connector(
-        {
-          host: row.imapHost ?? '',
-          port: row.imapPort ?? 993,
-          security: row.imapSecurity === 'starttls' ? 'starttls' : 'ssl',
-          username: row.imapUsername ?? '',
-          password,
-        },
-        await policyFor(row.organizationId),
+      // Review 9A-1 S2: tenggat TOTAL yang memutus sambungan (server jahat/tarpit).
+      return await withMailSession(
+        (signal) => connector(imapConfig, policy, { signal }),
+        totalMs,
+        (session) => syncWithSession(session),
       );
     } catch (error) {
       const failure = classifyMailImapError(error);
+      if (failure.code === 'unknown' && !(error as { code?: unknown } | null)?.code) {
+        // Bukan galat IMAP (mis. database). Review 9A-1 R6: tanpa `err` mentah (galat Drizzle memuat
+        // parameter kueri: subjek, alamat).
+        logger.error(
+          { accountId: row.id, errorName: error instanceof Error ? error.name : typeof error },
+          'Sinkron akun email gagal (internal)',
+        );
+      }
       await recordFailure(row, failure.code, failure.diagnostic);
       return { status: 'failed', code: failure.code };
     }
 
-    const totals = { folders: 0, created: 0, deleted: 0, updated: 0 };
-    const events: MailBusEventInput[] = [];
-    let resync = false;
-    try {
-      const at = now();
-      const listStale =
-        payload.force === true ||
-        row.foldersSyncedAt === null ||
-        at.getTime() - row.foldersSyncedAt.getTime() >= MAIL_FOLDER_LIST_STALE_MS;
-      let folders: MailFolderRow[];
-      if (listStale) {
-        folders = await syncFolderList(session, row);
-        const quota = await session.quota();
-        const saved = await updateAccount(row, {
-          foldersSyncedAt: at,
-          capabilities: session.capabilities,
-          quotaUsedBytes: quota?.usedBytes ?? null,
-          quotaLimitBytes: quota?.limitBytes ?? null,
-        });
-        if (saved) row = saved;
-      } else {
-        folders = await db
-          .select()
+    async function syncWithSession(session: MailImapSession): Promise<MailSyncResult> {
+      const totals = { folders: 0, created: 0, deleted: 0, updated: 0 };
+      const events: MailBusEventInput[] = [];
+      let resync = false;
+      {
+        const at = now();
+        const listStale =
+          payload.force === true ||
+          row.foldersSyncedAt === null ||
+          at.getTime() - row.foldersSyncedAt.getTime() >= MAIL_FOLDER_LIST_STALE_MS;
+        let folders: MailFolderRow[];
+        if (listStale) {
+          folders = await syncFolderList(session, row);
+          const quota = await session.quota();
+          const saved = await updateAccount(row, {
+            foldersSyncedAt: at,
+            capabilities: session.capabilities,
+            quotaUsedBytes: quota?.usedBytes ?? null,
+            quotaLimitBytes: quota?.limitBytes ?? null,
+          });
+          if (saved) row = saved;
+        } else {
+          folders = await db
+            .select()
+            .from(mailFolders)
+            .where(
+              and(
+                eq(mailFolders.organizationId, row.organizationId),
+                eq(mailFolders.accountId, row.id),
+              ),
+            );
+        }
+        const periodicMs = row.periodicSyncMinutes * 60_000;
+        const initial = row.syncState === 'initial_sync';
+        const due = folders
+          .filter((folder) => folder.syncEnabled && folder.selectable)
+          .filter((folder) =>
+            payload.folderId
+              ? folder.id === payload.folderId
+              : payload.force === true ||
+                initial ||
+                folder.lastSyncedAt === null ||
+                at.getTime() - folder.lastSyncedAt.getTime() >=
+                  (folder.role === 'inbox' && !session.capabilities.idle
+                    ? Math.min(periodicMs, MAIL_NO_IDLE_INBOX_POLL_MINUTES * 60_000)
+                    : folder.role === 'inbox'
+                      ? 0
+                      : periodicMs) -
+                    5_000,
+          )
+          .sort(
+            (a, b) =>
+              (ROLE_ORDER[a.role ?? ''] ?? 9) - (ROLE_ORDER[b.role ?? ''] ?? 9) ||
+              a.path.localeCompare(b.path),
+          );
+        const identityRows = await db
+          .select({ address: mailIdentities.address })
+          .from(mailIdentities)
+          .where(
+            and(
+              eq(mailIdentities.organizationId, row.organizationId),
+              eq(mailIdentities.accountId, row.id),
+            ),
+          );
+        const identities = [row.emailAddress, ...identityRows.map((item) => item.address)];
+        let done = row.initialSyncDone;
+        let total = row.initialSyncTotal ?? 0;
+        const [stored] = await db
+          .select({ value: sql<number>`count(*)::int` })
+          .from(mailMessages)
+          .where(
+            and(
+              eq(mailMessages.organizationId, row.organizationId),
+              eq(mailMessages.accountId, row.id),
+            ),
+          );
+        const quotaReached = Number(stored?.value ?? 0) >= MAIL_ACCOUNT_MESSAGES_MAX;
+        const budget = { remaining: quotaReached ? 0 : MAIL_SYNC_HEADER_BUDGET };
+        let truncated = false;
+        for (const folder of due) {
+          const outcome = await syncOneFolder(
+            session,
+            row,
+            folder,
+            identities,
+            async (fetched) => {
+              if (!initial) return;
+              done += fetched;
+              const saved = await updateAccount(row, {
+                initialSyncDone: done,
+                initialSyncTotal: Math.max(total, done),
+              });
+              if (saved) {
+                row = saved;
+                await publisher.publish([statusEvent(saved)]);
+              }
+            },
+            budget,
+          );
+          if (initial) total += outcome.discovered;
+          truncated ||= outcome.truncated;
+          totals.folders += 1;
+          totals.created += outcome.created;
+          totals.deleted += outcome.deleted;
+          totals.updated += outcome.updated;
+          events.push(...outcome.events);
+          resync ||= outcome.resync;
+        }
+        // Ringkasan akun dari hitungan folder (server).
+        const [sum] = await db
+          .select({
+            messages: sql<number>`coalesce(sum(${mailFolders.totalCount}) filter (where ${mailFolders.syncEnabled}), 0)::bigint`,
+            unread: sql<number>`coalesce(sum(${mailFolders.unreadCount}) filter (where ${mailFolders.syncEnabled} and (${mailFolders.role} is null or ${mailFolders.role} not in ('junk', 'trash'))), 0)::bigint`,
+          })
           .from(mailFolders)
           .where(
             and(
@@ -764,117 +902,41 @@ export function createMailSync(deps: MailSyncDeps) {
               eq(mailFolders.accountId, row.id),
             ),
           );
-      }
-      const periodicMs = row.periodicSyncMinutes * 60_000;
-      const initial = row.syncState === 'initial_sync';
-      const due = folders
-        .filter((folder) => folder.syncEnabled && folder.selectable)
-        .filter((folder) =>
-          payload.folderId
-            ? folder.id === payload.folderId
-            : payload.force === true ||
-              initial ||
-              folder.lastSyncedAt === null ||
-              at.getTime() - folder.lastSyncedAt.getTime() >=
-                (folder.role === 'inbox' && !session.capabilities.idle
-                  ? Math.min(periodicMs, MAIL_NO_IDLE_INBOX_POLL_MINUTES * 60_000)
-                  : folder.role === 'inbox'
-                    ? 0
-                    : periodicMs) -
-                  5_000,
-        )
-        .sort(
-          (a, b) =>
-            (ROLE_ORDER[a.role ?? ''] ?? 9) - (ROLE_ORDER[b.role ?? ''] ?? 9) ||
-            a.path.localeCompare(b.path),
-        );
-      const identityRows = await db
-        .select({ address: mailIdentities.address })
-        .from(mailIdentities)
-        .where(
-          and(
-            eq(mailIdentities.organizationId, row.organizationId),
-            eq(mailIdentities.accountId, row.id),
+        const finishedAt = now();
+        const nextMinutes = session.capabilities.idle
+          ? row.periodicSyncMinutes
+          : Math.min(row.periodicSyncMinutes, MAIL_NO_IDLE_INBOX_POLL_MINUTES);
+        const more = truncated && !quotaReached;
+        const saved = await updateAccount(row, {
+          syncState: (payload.folderId || more) && initial ? 'initial_sync' : 'ready',
+          lastSyncedAt: finishedAt,
+          lastErrorCode: quotaReached ? 'mailbox_too_large' : null,
+          lastErrorAt: quotaReached ? finishedAt : null,
+          consecutiveFailures: 0,
+          nextAttemptAt: new Date(
+            finishedAt.getTime() + (more ? CONTINUE_DELAY_MS : nextMinutes * 60_000),
           ),
-        );
-      const identities = [row.emailAddress, ...identityRows.map((item) => item.address)];
-      let done = row.initialSyncDone;
-      let total = row.initialSyncTotal ?? 0;
-      for (const folder of due) {
-        const outcome = await syncOneFolder(session, row, folder, identities, async (fetched) => {
-          if (!initial) return;
-          done += fetched;
-          const saved = await updateAccount(row, {
-            initialSyncDone: done,
-            initialSyncTotal: Math.max(total, done),
-          });
-          if (saved) {
-            row = saved;
-            await publisher.publish([statusEvent(saved)]);
-          }
+          messageCount: Number(sum?.messages ?? 0),
+          unreadCount: Number(sum?.unread ?? 0),
+          ...(initial && !payload.folderId
+            ? { initialSyncDone: done, initialSyncTotal: Math.max(total, done) }
+            : {}),
         });
-        if (initial) total += outcome.discovered;
-        totals.folders += 1;
-        totals.created += outcome.created;
-        totals.deleted += outcome.deleted;
-        totals.updated += outcome.updated;
-        events.push(...outcome.events);
-        resync ||= outcome.resync;
+        if (resync || events.length > EVENT_BUDGET) {
+          await publisher.publish([
+            {
+              organizationId: row.organizationId,
+              accountId: row.id,
+              event: { type: 'mail.resync', accountId: row.id },
+            },
+            ...(saved ? [statusEvent(saved)] : []),
+          ]);
+        } else {
+          await publisher.publish([...events, ...(saved ? [statusEvent(saved)] : [])]);
+        }
+        logger.info({ accountId: row.id, ...totals }, 'Akun email disinkron');
+        return { status: 'synced', ...totals };
       }
-      // Ringkasan akun dari hitungan folder (server).
-      const [sum] = await db
-        .select({
-          messages: sql<number>`coalesce(sum(${mailFolders.totalCount}) filter (where ${mailFolders.syncEnabled}), 0)::bigint`,
-          unread: sql<number>`coalesce(sum(${mailFolders.unreadCount}) filter (where ${mailFolders.syncEnabled} and (${mailFolders.role} is null or ${mailFolders.role} not in ('junk', 'trash'))), 0)::bigint`,
-        })
-        .from(mailFolders)
-        .where(
-          and(
-            eq(mailFolders.organizationId, row.organizationId),
-            eq(mailFolders.accountId, row.id),
-          ),
-        );
-      const finishedAt = now();
-      const nextMinutes = session.capabilities.idle
-        ? row.periodicSyncMinutes
-        : Math.min(row.periodicSyncMinutes, MAIL_NO_IDLE_INBOX_POLL_MINUTES);
-      const saved = await updateAccount(row, {
-        syncState: payload.folderId && initial ? 'initial_sync' : 'ready',
-        lastSyncedAt: finishedAt,
-        lastErrorCode: null,
-        lastErrorAt: null,
-        consecutiveFailures: 0,
-        nextAttemptAt: new Date(finishedAt.getTime() + nextMinutes * 60_000),
-        messageCount: Number(sum?.messages ?? 0),
-        unreadCount: Number(sum?.unread ?? 0),
-        ...(initial && !payload.folderId
-          ? { initialSyncDone: done, initialSyncTotal: Math.max(total, done) }
-          : {}),
-      });
-      if (resync || events.length > EVENT_BUDGET) {
-        await publisher.publish([
-          {
-            organizationId: row.organizationId,
-            accountId: row.id,
-            event: { type: 'mail.resync', accountId: row.id },
-          },
-          ...(saved ? [statusEvent(saved)] : []),
-        ]);
-      } else {
-        await publisher.publish([...events, ...(saved ? [statusEvent(saved)] : [])]);
-      }
-      logger.info({ accountId: row.id, ...totals }, 'Akun email disinkron');
-      return { status: 'synced', ...totals };
-    } catch (error) {
-      const failure = classifyMailImapError(error);
-      if (failure.code === 'unknown' && !(error as { code?: unknown } | null)?.code) {
-        // Bukan galat IMAP (mis. database): dicatat, dicoba lagi dengan backoff.
-        logger.error({ err: error, accountId: row.id }, 'Sinkron akun email gagal (internal)');
-      }
-      await recordFailure(row, failure.code, failure.diagnostic);
-      return { status: 'failed', code: failure.code };
-    } finally {
-      await session.close().catch(() => undefined);
     }
   }
 

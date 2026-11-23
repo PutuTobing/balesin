@@ -107,56 +107,48 @@ afterAll(async () => {
 });
 
 describe('S1 (Tinggi) — password tersimpan bisa diarahkan ke host SMTP baru', () => {
-  it.fails(
-    'POST /mail/accounts/test {accountId, smtp: host baru + sameCredentials} TIDAK boleh mengirim password IMAP tersimpan ke host itu (tanpa konfirmasi identitas)',
-    async () => {
-      const account = await createShared();
-      smtpCalls.length = 0;
-      const response = await call(
-        harness.app,
-        'POST',
-        API_ROUTES.mail.test,
-        {
-          accountId: account.id,
-          emailAddress: account.emailAddress,
-          smtp: { host: ATTACKER_HOST, port: 465, security: 'ssl', sameCredentials: true },
-          targets: ['outgoing'],
-        },
-        owner,
-      );
-      // Perilaku aman: 400 password_required (server berubah → isi ulang password), dan password
-      // tersimpan tidak pernah dikirim ke host yang belum pernah disimpan.
-      expect(
-        smtpCalls.filter(
-          (entry) => entry.host === ATTACKER_HOST && entry.password === IMAP_PASSWORD,
-        ),
-      ).toHaveLength(0);
-      expect(response.statusCode).toBe(400);
-    },
-  );
+  it('POST /mail/accounts/test {accountId, smtp: host baru + sameCredentials} TIDAK boleh mengirim password IMAP tersimpan ke host itu (tanpa konfirmasi identitas)', async () => {
+    const account = await createShared();
+    smtpCalls.length = 0;
+    const response = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.mail.test,
+      {
+        accountId: account.id,
+        emailAddress: account.emailAddress,
+        smtp: { host: ATTACKER_HOST, port: 465, security: 'ssl', sameCredentials: true },
+        targets: ['outgoing'],
+      },
+      owner,
+    );
+    // Perilaku aman: 400 password_required (server berubah → isi ulang password), dan password
+    // tersimpan tidak pernah dikirim ke host yang belum pernah disimpan.
+    expect(
+      smtpCalls.filter((entry) => entry.host === ATTACKER_HOST && entry.password === IMAP_PASSWORD),
+    ).toHaveLength(0);
+    expect(response.statusCode).toBe(400);
+  });
 
-  it.fails(
-    'PATCH /mail/accounts/:id {smtp: host baru + sameCredentials} tanpa password → 400 password_required (kontrak §4: ganti host tanpa password ditolak)',
-    async () => {
-      const account = await createShared();
-      smtpCalls.length = 0;
-      const response = await call(
-        harness.app,
-        'PATCH',
-        apiPath(API_ROUTES.mail.account, { accountId: account.id }),
-        {
-          smtp: { host: ATTACKER_HOST, port: 465, security: 'ssl', sameCredentials: true },
-          confirmation: await confirmationOf(owner),
-        },
-        owner,
-      );
-      expect(response.statusCode, response.body).toBe(400);
-      expect(errorEnvelopeSchema.parse(response.json()).error.details?.[0]?.reason).toBe(
-        'password_required',
-      );
-      expect(smtpCalls.some((entry) => entry.host === ATTACKER_HOST)).toBe(false);
-    },
-  );
+  it('PATCH /mail/accounts/:id {smtp: host baru + sameCredentials} tanpa password → 400 password_required (kontrak §4: ganti host tanpa password ditolak)', async () => {
+    const account = await createShared();
+    smtpCalls.length = 0;
+    const response = await call(
+      harness.app,
+      'PATCH',
+      apiPath(API_ROUTES.mail.account, { accountId: account.id }),
+      {
+        smtp: { host: ATTACKER_HOST, port: 465, security: 'ssl', sameCredentials: true },
+        confirmation: await confirmationOf(owner),
+      },
+      owner,
+    );
+    expect(response.statusCode, response.body).toBe(400);
+    expect(errorEnvelopeSchema.parse(response.json()).error.details?.[0]?.reason).toBe(
+      'password_required',
+    );
+    expect(smtpCalls.some((entry) => entry.host === ATTACKER_HOST)).toBe(false);
+  });
 
   it('regresi: tes dengan accountId + IMAP host baru tanpa password → 400 password_required', async () => {
     const account = await createShared();
@@ -180,40 +172,37 @@ describe('S1 (Tinggi) — password tersimpan bisa diarahkan ke host SMTP baru', 
 });
 
 describe('S4 (Sedang) — alamat akun tidak terikat ke kotak surat (penguasaan alamat)', () => {
-  it.fails(
-    'CS tidak bisa mendaftarkan akun pribadi berlabel alamat lain (billing@) dengan kredensial kotak suratnya sendiri sebagai identitas TERVERIFIKASI',
-    async () => {
-      const hasher = createPasswordHasher();
-      const csUser = await insertUser(harness.db, owner.session.organization.id, {
-        role: 'cs',
-        name: 'CS dibobol',
-        email: `cs-${randomBytes(4).toString('hex')}@majujaya.test`,
-        passwordHash: await hasher.hash(PASSWORD),
-      });
-      const cs = await login(harness.app, { email: csUser.email, password: PASSWORD });
-      const response = await call(
-        harness.app,
-        'POST',
-        API_ROUTES.mail.accounts,
-        // Kredensial IMAP milik cs@contoh.test, tetapi alamat yang diklaim billing@contoh.test.
-        shared({ kind: 'personal', emailAddress: 'billing@contoh.test' }),
-        cs,
-      );
-      if (response.statusCode === 201) {
-        const { account } = mailAccountResponseSchema.parse(response.json());
-        const [identity] = await harness.db
-          .select()
-          .from(mailIdentities)
-          .where(eq(mailIdentities.accountId, account.id));
-        // Diterima hanya bila identitasnya TIDAK ditandai terverifikasi.
-        expect(identity?.verifiedAt ?? null).toBeNull();
-      } else {
-        expect(response.statusCode).toBe(400);
-      }
-      // Dampak bila lolos: Owner tidak bisa lagi menghubungkan billing@ sebagai akun bersama (409)
-      // dan tidak bisa memutus akun pribadi itu selama CS aktif (403).
-      const rows = await harness.db.select().from(mailAccounts);
-      expect(rows.length).toBeLessThanOrEqual(1);
-    },
-  );
+  it('CS tidak bisa mendaftarkan akun pribadi berlabel alamat lain (billing@) dengan kredensial kotak suratnya sendiri sebagai identitas TERVERIFIKASI', async () => {
+    const hasher = createPasswordHasher();
+    const csUser = await insertUser(harness.db, owner.session.organization.id, {
+      role: 'cs',
+      name: 'CS dibobol',
+      email: `cs-${randomBytes(4).toString('hex')}@majujaya.test`,
+      passwordHash: await hasher.hash(PASSWORD),
+    });
+    const cs = await login(harness.app, { email: csUser.email, password: PASSWORD });
+    const response = await call(
+      harness.app,
+      'POST',
+      API_ROUTES.mail.accounts,
+      // Kredensial IMAP milik cs@contoh.test, tetapi alamat yang diklaim billing@contoh.test.
+      shared({ kind: 'personal', emailAddress: 'billing@contoh.test' }),
+      cs,
+    );
+    if (response.statusCode === 201) {
+      const { account } = mailAccountResponseSchema.parse(response.json());
+      const [identity] = await harness.db
+        .select()
+        .from(mailIdentities)
+        .where(eq(mailIdentities.accountId, account.id));
+      // Diterima hanya bila identitasnya TIDAK ditandai terverifikasi.
+      expect(identity?.verifiedAt ?? null).toBeNull();
+    } else {
+      expect(response.statusCode).toBe(400);
+    }
+    // Dampak bila lolos: Owner tidak bisa lagi menghubungkan billing@ sebagai akun bersama (409)
+    // dan tidak bisa memutus akun pribadi itu selama CS aktif (403).
+    const rows = await harness.db.select().from(mailAccounts);
+    expect(rows.length).toBeLessThanOrEqual(1);
+  });
 });

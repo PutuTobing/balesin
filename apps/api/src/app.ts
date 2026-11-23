@@ -144,6 +144,9 @@ import type { EmailNotifier } from './queues/email-queue';
 import type { MailJobEnqueuer } from './queues/mail-queue';
 import { createMailAccessService } from './modules/mail/mail-access.service';
 import { mailRoutes } from './modules/mail/mail.routes';
+import { mailMessagesRoutes } from './modules/mail/mail-messages.routes';
+import { createMailMessagesService } from './modules/mail/mail-messages.service';
+import { createMailViewTokens } from './modules/mail/mail-view-token';
 import { createMailService } from './modules/mail/mail.service';
 import type { MailDetectionDns, RemoteFetcher } from './modules/mail/mail-detection';
 import {
@@ -887,6 +890,23 @@ export async function buildApp(deps: AppDeps) {
     }),
     limiter,
     cookieSecure: config.cookieSecure,
+  });
+  // Fase 9 bagian 2 — daftar, baca (dokumen tampilan ber-token), lampiran, aksi dua arah.
+  await app.register(mailMessagesRoutes, {
+    limiter,
+    messages: createMailMessagesService({
+      db,
+      accessDenied,
+      publisher: mailPublisher,
+      ...(deps.mailQueue ? { queue: deps.mailQueue } : {}),
+      store: createMediaStore(config.mediaDir),
+      tokens: createMailViewTokens(
+        config.masterKey ? config.masterKey.reveal() : sessionSecret.reveal(),
+      ),
+      sessions,
+      appOrigin: new URL(config.appUrl).origin,
+      ...(mailOverrides?.fetchRemote ? { fetchRemote: mailOverrides.fetchRemote } : {}),
+    }),
   });
   // Publik: penerima webhook Meta (keaslian dari tanda tangan App Secret, bukan sesi).
   await app.register(whatsAppWebhookRoutes, { guard: webhookGuard, webhooks: whatsAppWebhooks });

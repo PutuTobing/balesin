@@ -195,6 +195,15 @@ describe('serializer request/response', () => {
     expect(serialized).toEqual({ method: 'GET', url: '/webhooks/whatsapp/abc', ip: '10.0.0.7' });
   });
 
+  it('token dokumen tampilan email di path disensor (Fase 9 bagian 2)', () => {
+    expect(
+      serializeRequest({ method: 'GET', url: '/api/v1/mail/view/AbC_token-123/images/4?x=1' }).url,
+    ).toBe('/api/v1/mail/view/***/images/4');
+    expect(serializeRequest({ method: 'GET', url: '/api/v1/mail/view/AbC' }).url).toBe(
+      '/api/v1/mail/view/***',
+    );
+  });
+
   it('menerima IncomingMessage mentah dan nilai yang bukan objek', () => {
     expect(
       serializeRequest({ method: 'POST', url: '/x#frag', socket: { remoteAddress: '::1' } }),

@@ -46,6 +46,7 @@ import {
 import { eq } from 'drizzle-orm';
 import { inject } from 'vitest';
 
+import type { MailJobEnqueuer } from '../queues/mail-queue';
 import type { App, AppConfig, AppDeps } from '../app';
 import { sessionCookieName } from '../http/cookies';
 import type { EmailNotifier } from '../queues/email-queue';
@@ -89,6 +90,8 @@ export interface HarnessOptions {
   messageQueue?: OutboundMessageEnqueuer;
   /** Pengganti pengantre notifikasi (bawaan: mencatat ke `notificationJobs`). */
   notificationQueue?: NotificationEnqueuer;
+  /** Fase 9: pengganti antrean modul Email. */
+  mailQueue?: MailJobEnqueuer;
   /** `false` = Redis yang tidak pernah tersambung (menguji perilaku saat Redis mati). */
   redis?: false;
 }
@@ -136,6 +139,7 @@ export async function createIntegrationHarness(
         webhookQueue: next.webhookQueue,
         messageQueue: next.messageQueue,
         notificationQueue: next.notificationQueue,
+        ...(next.mailQueue ? { mailQueue: next.mailQueue } : {}),
         overrides: { rateLimitPrefix, ...next.overrides },
       });
     },

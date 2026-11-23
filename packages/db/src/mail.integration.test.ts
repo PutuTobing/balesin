@@ -5,6 +5,7 @@ import { closeDb, createDb, type Database } from './client';
 import { PG_ERROR_CODES } from './errors';
 import { accessibleMailAccountsOf, mailAccessIndexOf } from './mail-access';
 import {
+  channels,
   departmentMembers,
   departments,
   mailAccountAccess,
@@ -201,6 +202,95 @@ describe('skema mail_*', () => {
     expect(
       await db.select().from(mailMessages).where(eqOrg(mailMessages.organizationId, org.id)),
     ).toEqual([]);
+  });
+
+  it('aksi tertunda: hanya flags/move/delete, waktu wajib, move wajib folder tujuan (migrasi 0037)', async () => {
+    const org = await insertOrganization(db);
+    const [row] = await db.insert(mailAccounts).values(account(org.id)).returning();
+    if (!row) throw new Error('akun');
+    const [folder] = await db
+      .insert(mailFolders)
+      .values({ organizationId: org.id, accountId: row.id, path: 'INBOX', name: 'Kotak masuk' })
+      .returning();
+    if (!folder) throw new Error('folder');
+    const base = {
+      organizationId: org.id,
+      accountId: row.id,
+      folderId: folder.id,
+      uidvalidity: 1,
+      receivedAt: new Date(),
+    };
+    const rejected = [
+      { uid: 1, pendingAction: 'archive', pendingActionAt: new Date() },
+      { uid: 2, pendingAction: 'flags' },
+      { uid: 3, pendingAction: 'move', pendingActionAt: new Date() },
+      { uid: 4, pendingTargetFolderId: folder.id },
+    ];
+    for (const values of rejected) {
+      expect(
+        (await pgErrorOf(db.insert(mailMessages).values({ ...base, ...values }))).constraint,
+      ).toBe('mail_messages_known');
+    }
+    await db.insert(mailMessages).values([
+      { ...base, uid: 5, pendingAction: 'flags', pendingActionAt: new Date() },
+      {
+        ...base,
+        uid: 6,
+        pendingAction: 'move',
+        pendingActionAt: new Date(),
+        pendingTargetFolderId: folder.id,
+        pendingRevert: { isRead: false, isStarred: true },
+      },
+      { ...base, uid: 7, pendingAction: 'delete', pendingActionAt: new Date() },
+    ]);
+  });
+
+  it('bug lama 0037: channels.email_trusted_auth_serv_ids terisi tidak lagi galat 2201B; batas 1.300 tetap', async () => {
+    const org = await insertOrganization(db);
+    const values = {
+      organizationId: org.id,
+      type: 'email',
+      name: 'CS Email',
+      emailAddress: `cs-${uniqueSuffix()}@contoh.test`,
+      emailFromName: 'CS',
+      emailImapHost: 'imap.contoh.test',
+      emailImapPort: 993,
+      emailImapSecurity: 'ssl',
+      emailImapUsername: 'cs',
+      emailImapPasswordEncrypted: 'x',
+      emailImapFolder: 'INBOX',
+      emailPollIntervalMinutes: 5,
+      emailMarkAsRead: false,
+      emailSmtpMode: 'system',
+    } as const;
+    const [saved] = await db
+      .insert(channels)
+      .values({ ...values, emailTrustedAuthServIds: ['mail.contoh.test', '.contoh.test'] })
+      .returning({ ids: channels.emailTrustedAuthServIds });
+    expect(saved?.ids).toEqual(['mail.contoh.test', '.contoh.test']);
+    const tooLong = Array.from({ length: 5 }, (_, index) => `${'a'.repeat(260)}${String(index)}`);
+    expect(
+      (
+        await pgErrorOf(
+          db.insert(channels).values({
+            ...values,
+            emailAddress: `cs-${uniqueSuffix()}@contoh.test`,
+            emailTrustedAuthServIds: tooLong,
+          }),
+        )
+      ).constraint,
+    ).toBe('channels_fase6_formats');
+    expect(
+      (
+        await pgErrorOf(
+          db.insert(channels).values({
+            ...values,
+            emailAddress: `cs-${uniqueSuffix()}@contoh.test`,
+            emailTrustedAuthServIds: ['MAIL.Contoh.test'],
+          }),
+        )
+      ).constraint,
+    ).toBe('channels_fase6_formats');
   });
 
   it('pemuat hak: pribadi orang lain tidak pernah terbuka, departemen memberi hak, Owner semua bersama', async () => {

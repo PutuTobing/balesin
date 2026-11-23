@@ -25,7 +25,7 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { RadioGroup } from 'radix-ui';
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { defaultBrand, useBrand } from '../../brand/brand';
 import { Icon } from '../../components/ui/Icon';
 import { Page } from '../../components/ui/Page';
@@ -582,7 +582,7 @@ function MenuRow({
   icon: LucideIcon;
   label: string;
   hint: string;
-  status: string | null;
+  status: ReactNode;
   loading: boolean;
 }) {
   return (
@@ -620,11 +620,19 @@ function MailAccountsMenuItem() {
       label={t.mail.accounts.title}
       hint={t.mail.accounts.menuHint}
       status={
-        accounts
-          ? attention > 0
-            ? `${t.mail.accounts.menuCount(accounts.length)} · ${t.mail.accounts.menuAttention(attention)}`
-            : t.mail.accounts.menuCount(accounts.length)
-          : null
+        accounts ? (
+          attention > 0 ? (
+            // Bagian "perlu perhatian" = warna peringatan, sama dengan kaki kolom folder Email.
+            <>
+              {t.mail.accounts.menuCount(accounts.length)} ·{' '}
+              <span className={styles.menuWarning}>
+                {t.mail.accounts.menuAttention(attention)}
+              </span>
+            </>
+          ) : (
+            t.mail.accounts.menuCount(accounts.length)
+          )
+        ) : null
       }
       loading={list.isPending}
     />

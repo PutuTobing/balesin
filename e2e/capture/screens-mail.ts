@@ -45,7 +45,7 @@ async function wizardStep3(page: Page): Promise<void> {
   await wizardStep2(page);
   const dialog = wizard(page);
   await dialog.getByRole('button', { name: 'Tes koneksi' }).click();
-  await dialog.getByText(/Masuk ke SMTP (berhasil|gagal)/).waitFor();
+  await dialog.getByText(/Masuk ke SMTP (berhasil|gagal)|Server SMTP belum bisa dihubungi/).waitFor();
   await settle(page);
 }
 
@@ -202,11 +202,26 @@ export const mailScreens: Screen[] = [
     },
     waitFor: 'h1',
   },
+  // Tautan "Perbarui password" di daftar → halaman akun dengan dialog Ubah server langsung terbuka.
+  {
+    name: 'akun-email-perbarui-password',
+    path: '/pengaturan/akun-email',
+    before: async (page) => {
+      await mailAccounts(page);
+      await mailAccess(page);
+    },
+    waitFor: 'h1',
+    prepare: async (page) => {
+      await page.getByRole('link', { name: 'Perbarui password' }).click();
+      await page.getByRole('dialog', { name: 'Ubah server atau password' }).waitFor();
+      await page.mouse.move(1, 1);
+    },
+  },
 
   // Tim → [CS] → Akses email.
   {
     name: 'tim-akses-email',
-    path: `/pengaturan/tim/${CS_USER.id}#akses-email`,
+    path: `/pengaturan/tim/${CS_USER.id}`,
     before: async (page) => {
       await mailAccounts(page);
       await teamUsers(page);
@@ -215,17 +230,12 @@ export const mailScreens: Screen[] = [
     },
     waitFor: 'h1',
     prepare: async (page) => {
-      const heading = page.getByRole('heading', { name: 'Akses email' });
-      await heading.waitFor();
-      // Gulir wadah gulir halaman saja (scrollIntoView ikut menggeser leluhur ber-overflow).
-      await heading.evaluate((element) => {
-        let box: HTMLElement | null = element.parentElement;
-        while (box && getComputedStyle(box).overflowY !== 'auto') box = box.parentElement;
-        if (!box) return;
-        box.scrollTop += element.getBoundingClientRect().top - box.getBoundingClientRect().top - 16;
-      });
+      await page.getByRole('heading', { name: 'Akses email' }).waitFor();
+      await page.getByLabel('Hak langsung di Billing').waitFor();
       await page.mouse.move(1, 1);
     },
+    // Setinggi isi (kartu Akses email di bawah Detail anggota), tanpa hash yang menggeser shell.
+    tall: true,
   },
 ];
 

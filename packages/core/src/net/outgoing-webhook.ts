@@ -49,6 +49,8 @@ for (const [address, prefix] of [
   ['2002::', 16],
   ['64:ff9b:1::', 48],
   ['2001::', 32],
+  // Review 9A-1 R1: IPv4-translated SIIT (`::ffff:0:a.b.c.d`, RFC 2765/6145).
+  ['::ffff:0:0:0', 96],
 ] as const) {
   FORBIDDEN.addSubnet(address, prefix, 'ipv6');
 }

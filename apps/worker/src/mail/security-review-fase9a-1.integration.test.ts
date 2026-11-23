@@ -186,61 +186,49 @@ function syncWith(session: MailImapSession) {
 }
 
 describe('S3 (Sedang) — penimbunan data dari server jahat ke Postgres bersama', () => {
-  it.fails(
-    'satu job sinkron punya anggaran header (saran ≤ 2.000 per job; sisanya job berikutnya)',
-    async () => {
-      const seed = await seedAccount();
-      const result = await syncWith(floodSession(2_500, null)).syncAccount(seed);
-      expect(result.status).toBe('synced');
-      expect(result.status === 'synced' ? result.created : 0).toBeLessThanOrEqual(2_000);
-    },
-    60_000,
-  );
+  it('satu job sinkron punya anggaran header (saran ≤ 2.000 per job; sisanya job berikutnya)', async () => {
+    const seed = await seedAccount();
+    const result = await syncWith(floodSession(2_500, null)).syncAccount(seed);
+    expect(result.status).toBe('synced');
+    expect(result.status === 'synced' ? result.created : 0).toBeLessThanOrEqual(2_000);
+  }, 60_000);
 
-  it.fails(
-    '`bodystructure` yang disimpan per email dibatasi (≤ 64 KB) walau server mengirim struktur MIME raksasa',
-    async () => {
-      const seed = await seedAccount();
-      // 30 × 30 = 900 daun bernama 200 karakter ≈ ratusan KB per email (imapflow mengizinkan
-      // hingga ~6 MB per respons; `structureOf` membatasi 100 anak × kedalaman 20).
-      await syncWith(floodSession(1, wideStructure(30, 2))).syncAccount(seed);
-      const [row] = await db
-        .select({ size: sql<number>`octet_length(${mailMessages.bodystructure}::text)` })
-        .from(mailMessages)
-        .where(eq(mailMessages.accountId, seed.accountId));
-      expect(row?.size ?? 0).toBeGreaterThan(0);
-      expect(row?.size ?? 0).toBeLessThanOrEqual(64 * 1024);
-    },
-    30_000,
-  );
+  it('`bodystructure` yang disimpan per email dibatasi (≤ 64 KB) walau server mengirim struktur MIME raksasa', async () => {
+    const seed = await seedAccount();
+    // 30 × 30 = 900 daun bernama 200 karakter ≈ ratusan KB per email (imapflow mengizinkan
+    // hingga ~6 MB per respons; `structureOf` membatasi 100 anak × kedalaman 20).
+    await syncWith(floodSession(1, wideStructure(30, 2))).syncAccount(seed);
+    const [row] = await db
+      .select({ size: sql<number>`octet_length(${mailMessages.bodystructure}::text)` })
+      .from(mailMessages)
+      .where(eq(mailMessages.accountId, seed.accountId));
+    expect(row?.size ?? 0).toBeGreaterThan(0);
+    expect(row?.size ?? 0).toBeLessThanOrEqual(64 * 1024);
+  }, 30_000);
 });
 
 describe('S2 (Tinggi) — sinkron tanpa tenggat total terhadap server jahat', () => {
-  it.fails(
-    'syncAccount ke server yang tidak pernah menyelesaikan LIST selesai (gagal + backoff) dalam tenggat totalMs, sambungan ditutup',
-    async () => {
-      const closed = { value: false };
-      const sync = createMailSync({
-        db,
-        logger,
-        secretBox,
-        publisher: { publish: () => Promise.resolve() },
-        imap: {
-          timeouts: { connectionMs: 1_000, greetingMs: 1_000, socketMs: 1_000, totalMs: 1_500 },
-        },
-        connector: () => Promise.resolve(tarpitSession(closed)),
-      });
-      const seed = await seedAccount();
-      const outcome = await Promise.race([
-        sync.syncAccount(seed),
-        new Promise<'hang'>((resolve) => setTimeout(() => resolve('hang'), 4_000)),
-      ]);
-      // Yang DIHARAPKAN: job berhenti sendiri (status gagal, backoff dicatat) dan sesi ditutup.
-      // Sekarang job menggantung selamanya → memegang 1 dari 4 slot `concurrency` antrean `mail`
-      // (juga `mail-tick`) dan sewa kerja kedaluwarsa setelah 10 mnt tanpa diperpanjang.
-      expect(outcome).not.toBe('hang');
-      expect(closed.value).toBe(true);
-    },
-    10_000,
-  );
+  it('syncAccount ke server yang tidak pernah menyelesaikan LIST selesai (gagal + backoff) dalam tenggat totalMs, sambungan ditutup', async () => {
+    const closed = { value: false };
+    const sync = createMailSync({
+      db,
+      logger,
+      secretBox,
+      publisher: { publish: () => Promise.resolve() },
+      imap: {
+        timeouts: { connectionMs: 1_000, greetingMs: 1_000, socketMs: 1_000, totalMs: 1_500 },
+      },
+      connector: () => Promise.resolve(tarpitSession(closed)),
+    });
+    const seed = await seedAccount();
+    const outcome = await Promise.race([
+      sync.syncAccount(seed),
+      new Promise<'hang'>((resolve) => setTimeout(() => resolve('hang'), 4_000)),
+    ]);
+    // Yang DIHARAPKAN: job berhenti sendiri (status gagal, backoff dicatat) dan sesi ditutup.
+    // Sekarang job menggantung selamanya → memegang 1 dari 4 slot `concurrency` antrean `mail`
+    // (juga `mail-tick`) dan sewa kerja kedaluwarsa setelah 10 mnt tanpa diperpanjang.
+    expect(outcome).not.toBe('hang');
+    expect(closed.value).toBe(true);
+  }, 10_000);
 });

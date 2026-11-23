@@ -302,6 +302,41 @@ export function createMailService(deps: MailServiceDeps) {
     return { viewer, row };
   }
 
+  /**
+   * 409 `address_already_connected`. Review 9A-1 S4: pemegang `mail.accounts.manage` diberi tahu
+   * pemilik akun PRIBADI yang memakai alamat itu (metadata yang sama sudah terlihat di Pengaturan →
+   * Akun email) supaya bisa ditindaklanjuti (minta diputus / nonaktifkan pengguna).
+   */
+  async function alreadyConnected(auth: AuthContext, address: string): Promise<AppError> {
+    if (hasPermission(auth.user.role, 'mail.accounts.manage')) {
+      const [holder] = await db
+        .select({ kind: mailAccounts.kind, ownerName: users.name, ownerId: users.id })
+        .from(mailAccounts)
+        .leftJoin(
+          users,
+          and(
+            eq(users.organizationId, mailAccounts.organizationId),
+            eq(users.id, mailAccounts.ownerUserId),
+          ),
+        )
+        .where(
+          and(
+            eq(mailAccounts.organizationId, auth.organizationId),
+            eq(mailAccounts.emailAddress, address),
+            isNull(mailAccounts.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (holder?.kind === 'personal' && holder.ownerName && holder.ownerId !== auth.user.id) {
+        return conflict(
+          'address_already_connected',
+          `Alamat ini sudah terhubung sebagai akun email pribadi milik ${holder.ownerName}. Minta ia memutusnya, atau nonaktifkan penggunanya lalu putus akunnya di Pengaturan → Akun email.`,
+        );
+      }
+    }
+    return conflict('address_already_connected', ADDRESS_ALREADY_CONNECTED);
+  }
+
   async function view(auth: AuthContext, row: MailAccountRow, viewer?: MailAccessUser) {
     const subject = viewer ?? (await viewerOf(db, auth));
     const level = await levelOf(db, subject, auth.organizationId, row);
@@ -406,6 +441,12 @@ export function createMailService(deps: MailServiceDeps) {
   ): ResolvedServers & { secretUnavailable: ('imap' | 'smtp')[] } {
     const secretUnavailable: ('imap' | 'smtp')[] = [];
     let imap: ResolvedServers['imap'] = null;
+    /**
+     * Review 9A-1 S1: password yang DIBUKA DARI DATABASE hanya boleh dikirim ke tujuan yang persis
+     * sama dengan saat disimpan (host, port, keamanan, username — IMAP, dan SMTP bila
+     * `smtp_same_credentials`). Tujuan lain → 400 `password_required`.
+     */
+    let imapFromStore = false;
     if (input.imap) {
       let password: Secret<string> | null = input.imap.password
         ? new Secret(input.imap.password)
@@ -428,9 +469,11 @@ export function createMailService(deps: MailServiceDeps) {
         }
         password = openStored(stored, 'imapPassword');
         if (!password) secretUnavailable.push('imap');
+        imapFromStore = true;
       }
       if (password) imap = { ...input.imap, password };
     } else if (stored) {
+      imapFromStore = true;
       const password = openStored(stored, 'imapPassword');
       if (!password) secretUnavailable.push('imap');
       else
@@ -445,6 +488,26 @@ export function createMailService(deps: MailServiceDeps) {
     let smtp: ResolvedServers['smtp'] = null;
     if (input.smtp) {
       if (input.smtp.sameCredentials) {
+        if (
+          imapFromStore &&
+          (!stored ||
+            !stored.smtpSameCredentials ||
+            !sameServer(
+              { ...input.smtp, username: imap?.username ?? stored.imapUsername ?? '' },
+              {
+                host: stored.smtpHost,
+                port: stored.smtpPort,
+                security: stored.smtpSecurity,
+                username: stored.imapUsername,
+              },
+            ))
+        ) {
+          throw validation(
+            'smtp.password',
+            'Server berubah — isi ulang password-nya.',
+            'password_required',
+          );
+        }
         if (imap)
           smtp = {
             ...input.smtp,
@@ -771,7 +834,7 @@ export function createMailService(deps: MailServiceDeps) {
         throw inboxChannelConflict(hasPermission(auth.user.role, 'channels.manage'));
       }
       if (await addressIsMailAccount(db, auth.organizationId, address)) {
-        throw conflict('address_already_connected', ADDRESS_ALREADY_CONNECTED);
+        throw await alreadyConnected(auth, address);
       }
 
       const servers = resolveServers(input, null);
@@ -848,7 +911,7 @@ export function createMailService(deps: MailServiceDeps) {
           throw inboxChannelConflict(hasPermission(auth.user.role, 'channels.manage'));
         }
         if (await addressIsMailAccount(tx, auth.organizationId, address)) {
-          throw conflict('address_already_connected', ADDRESS_ALREADY_CONNECTED);
+          throw await alreadyConnected(auth, address);
         }
         const [total] = await tx
           .select({ value: count() })
@@ -888,7 +951,9 @@ export function createMailService(deps: MailServiceDeps) {
           address,
           displayName: input.fromName,
           isPrimary: true,
-          verifiedAt: createdAt,
+          // Review 9A-1 S4: login IMAP tidak membuktikan alamat (server bisa milik pendaftar sendiri).
+          // Verifikasi (email uji ke alamat itu) menyusul 9B sebelum dipakai sebagai pengirim.
+          verifiedAt: null,
         });
         if (input.access.length > 0) {
           await tx.insert(mailAccountAccess).values(
@@ -1082,7 +1147,7 @@ export function createMailService(deps: MailServiceDeps) {
             throw inboxChannelConflict(hasPermission(auth.user.role, 'channels.manage'));
           }
           if (await addressIsMailAccount(db, auth.organizationId, address, row.id)) {
-            throw conflict('address_already_connected', ADDRESS_ALREADY_CONNECTED);
+            throw await alreadyConnected(auth, address);
           }
           changes.emailAddress = address;
           credentialFields.push('emailAddress');
@@ -1187,7 +1252,7 @@ export function createMailService(deps: MailServiceDeps) {
               throw inboxChannelConflict(hasPermission(auth.user.role, 'channels.manage'));
             }
             if (await addressIsMailAccount(tx, auth.organizationId, changes.emailAddress, row.id)) {
-              throw conflict('address_already_connected', ADDRESS_ALREADY_CONNECTED);
+              throw await alreadyConnected(auth, changes.emailAddress);
             }
           }
         }
@@ -1402,6 +1467,22 @@ export function createMailService(deps: MailServiceDeps) {
         );
         const locked = await loadAccountRow(tx, auth.organizationId, row.id, { forUpdate: true });
         if (!locked) throw conflict('account_deleting', ACCOUNT_DELETING, 'accountId');
+        if (ownerInactive) {
+          // Review 9A-1 R6: pemilik bisa diaktifkan lagi di antara pemeriksaan & transaksi.
+          const [ownerNow] = await tx
+            .select({ disabledAt: users.disabledAt })
+            .from(users)
+            .where(
+              and(
+                eq(users.organizationId, auth.organizationId),
+                eq(users.id, row.ownerUserId ?? ''),
+              ),
+            )
+            .for('update');
+          if (ownerNow && ownerNow.disabledAt === null) {
+            throw new AppError('FORBIDDEN', { message: PERSONAL_OWNER_ONLY });
+          }
+        }
         // Kredensial dimusnahkan SEKETIKA; isi cache dihapus bertahap oleh job.
         await tx
           .update(mailAccounts)
@@ -1669,7 +1750,8 @@ export function createMailService(deps: MailServiceDeps) {
             inArray(mailMessages.accountId, ids),
             sql`(${mailMessages.isStarred} or not ${mailMessages.isRead})`,
             sql`${mailMessages.folderRole} is distinct from 'junk' and ${mailMessages.folderRole} is distinct from 'trash'`,
-            sql`${mailMessages.pendingAction} is null`,
+            // Bagian 2: aksi bendera tertunda tetap dihitung; pindah/hapus tertunda tidak.
+            sql`(${mailMessages.pendingAction} is null or ${mailMessages.pendingAction} = 'flags')`,
           ),
         );
       let unified = 0;

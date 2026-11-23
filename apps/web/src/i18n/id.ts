@@ -4937,7 +4937,8 @@ export const t = {
     retryAt: (when: string) => `Dicoba lagi ${when}`,
     pausedHint: 'Sinkron dijeda. Email baru tidak diambil sampai dilanjutkan.',
     ownerInactiveHint: 'Pemilik akun ini nonaktif, jadi sinkron berhenti.',
-    authFailedHint: 'Perbarui password-nya di pengaturan akun ini.',
+    /** Galat password untuk yang tidak berhak mengubah server (pengelola akun bersama non-Admin). */
+    authFailedHint: 'Minta Owner atau Admin di tempatmu memperbarui password-nya.',
     time: {
       justNow: 'baru saja',
       minutes: (count: number) => `${count} menit lalu`,
@@ -5001,6 +5002,8 @@ export const t = {
       resume: 'Lanjutkan sinkron',
       disconnect: 'Putuskan',
       fixPassword: 'Perbarui password',
+      /** Galat lain (bukan password): detailnya ada di halaman akun. */
+      viewProblem: 'Lihat masalah',
       done: {
         created: (name: string) =>
           `${name} terhubung. Sinkron awal berjalan, foldernya muncul di menu Email dalam beberapa saat.`,
@@ -5069,7 +5072,8 @@ export const t = {
       orPick: 'Atau pilih penyedia',
       providersLabel: 'Penyedia email',
       soon: 'Segera hadir',
-      match: (domain: string) => `Cocok untuk @${domain}`,
+      /** Diikuti `@domain` (span sendiri supaya domain tidak terpotong di tengah). */
+      matchPrefix: 'Cocok untuk',
       pickProvider: 'Pilih penyedia yang tersedia.',
       // Langkah 2
       detectedTitle: (domain: string) => `Pengaturan server terdeteksi untuk ${domain}`,
@@ -5078,10 +5082,10 @@ export const t = {
       notDetectedTitle: 'Pengaturan server belum dikenali',
       notDetectedBody:
         'Isi host dan port dari penyedia email-mu. Tombol panduan di bawah bisa membantu.',
-      unsupportedTitle: 'Penyedia ini belum bisa dihubungkan dengan login biasa',
+      unsupportedTitle: 'Penyedia ini belum bisa dihubungkan dengan username dan password biasa',
       detectFailed: 'Pengaturan server belum bisa dikenali otomatis. Isi manual di bawah.',
       displayName: 'Nama akun',
-      displayNameHint: 'Tampil di menu Email, mis. "CS" atau "Billing".',
+      displayNameHint: 'Tampil di menu Email, mis. “CS” atau “Billing”.',
       fromName: 'Nama pengirim',
       fromNameHint: 'Nama yang dilihat penerima saat kamu membalas.',
       username: 'Username',
@@ -5104,6 +5108,7 @@ export const t = {
       testingTitle: 'Menguji sambungan ke server…',
       incomingOk: 'Masuk ke IMAP berhasil',
       incomingFailed: 'Masuk ke IMAP gagal',
+      incomingUnreachable: 'Server IMAP belum bisa dihubungi',
       incomingDetail: (folders: number, total: number) =>
         `${folders.toLocaleString('id-ID')} folder ditemukan · ${total.toLocaleString('id-ID')} email di Kotak masuk`,
       specialTitle: 'Folder khusus dikenali',
@@ -5112,6 +5117,7 @@ export const t = {
       specialNoneBody: 'Arsip dan Sampah dibuat otomatis saat pertama dibutuhkan.',
       outgoingOk: 'Masuk ke SMTP berhasil',
       outgoingFailed: 'Masuk ke SMTP gagal',
+      outgoingUnreachable: 'Server SMTP belum bisa dihubungi',
       outgoingDetail: (address: string) =>
         `Siap mengirim sebagai ${address}. Tidak ada email yang dikirim saat tes.`,
       idleTitle: 'Email baru langsung masuk',
@@ -5123,6 +5129,10 @@ export const t = {
       seconds: (ms: number) =>
         `${(ms / 1000).toLocaleString('id-ID', { maximumFractionDigits: 1 })} dtk`,
       fixHint: 'Perbaiki isiannya di langkah Detail akun, lalu tes ulang.',
+      /** Semua galat berupa koneksi (host/port/TLS/timeout): isian mungkin sudah benar. */
+      fixHintConnection: 'Kalau isiannya sudah benar, tes ulang setelah port dibuka.',
+      /** Dialog Ubah server (tidak ada "langkah Detail akun"). */
+      fixHintDialog: 'Perbaiki isiannya di atas, lalu simpan lagi.',
       syncNotice: (window: string, estimate: number | null) =>
         estimate === null
           ? `Sinkron awal mengambil email ${window}. Email yang lebih lama tetap bisa diambil nanti.`
@@ -5230,7 +5240,7 @@ export const t = {
       serverHint: 'Server dites ulang dengan isian baru sebelum disimpan.',
       incoming: 'Masuk',
       outgoing: 'Keluar',
-      sameCredentials: 'Login sama dengan server masuk',
+      sameCredentials: 'Username dan password sama dengan server masuk',
       passwordSaved: (tail: string) => `Password tersimpan ${tail}`,
       editServer: 'Ubah server atau password',
       editServerTitle: 'Ubah server atau password',
@@ -5240,6 +5250,8 @@ export const t = {
       serverSaved: 'Pengaturan server tersimpan.',
       noChanges: 'Belum ada yang diubah.',
       dangerHint: 'Semua email yang tersimpan di aplikasi dihapus. Email di server tidak disentuh.',
+      authFailedTitle: 'Server menolak password akun ini',
+      fixPassword: 'Perbarui password',
     },
 
     team: {
@@ -5253,7 +5265,7 @@ export const t = {
       levelFor: (account: string) => `Hak langsung di ${account}`,
       viaRole: 'Otomatis Kelola sebagai Owner atau Admin',
       viaDepartment: (department: string, level: string) => `Lewat ${department}: ${level}`,
-      effective: (level: string) => `Hak efektif ${level}`,
+      effectiveLabel: 'Hak efektif:',
       noEffective: 'Belum punya akses',
       personalTitle: 'Akun pribadi miliknya',
       personalHint: 'Isinya hanya bisa dibaca pemiliknya.',

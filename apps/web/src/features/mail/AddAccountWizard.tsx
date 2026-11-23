@@ -39,6 +39,7 @@ import { GrantsEditor } from './GrantsEditor';
 import { ColorPicker } from './MailControls';
 import { CredentialFields, ServerCards } from './ServerFields';
 import { TestResults } from './TestResults';
+import { onlyConnectionFailures } from './test-rows';
 import {
   PROVIDER_ICONS,
   WINDOW_OPTIONS,
@@ -676,7 +677,7 @@ export function AddAccountWizard({
                     </Notice>
                   ) : (
                     <Notice tone="danger" role="alert" title={w.failedTitle}>
-                      {w.fixHint}
+                      {onlyConnectionFailures(test.result) ? w.fixHintConnection : w.fixHint}
                     </Notice>
                   )
                 ) : null}
@@ -893,7 +894,7 @@ function ProviderCard({
       <span className={styles.providerBody}>{card.description}</span>
       {matched ? (
         <span className={styles.tag} data-tone="success">
-          {w.match(matched)}
+          {w.matchPrefix} <span className={styles.tagDomain}>@{matched}</span>
         </span>
       ) : !usable ? (
         <span className={styles.tag}>{card.note ?? w.soon}</span>

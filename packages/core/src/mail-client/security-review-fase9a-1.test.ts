@@ -98,45 +98,41 @@ afterEach(async () => {
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe('S2 (Tinggi) — server IMAP jahat: tidak ada tenggat yang MENUTUP sambungan', () => {
-  it.fails(
-    'tes Masuk ke server yang mengalirkan LIST tanpa akhir: setelah tenggat, sambungan ditutup (tidak terus menumpuk memori di proses api)',
-    async () => {
-      hostile = await startEndlessListServer();
-      const started = Date.now();
-      const outcome = await testMailIncoming(
-        {
-          host: 'imap.contoh.test',
-          port: hostile.port,
-          security: 'ssl',
-          username: 'cs@penyerang.test',
-          password: new Secret('apa-saja'),
+  it('tes Masuk ke server yang mengalirkan LIST tanpa akhir: setelah tenggat, sambungan ditutup (tidak terus menumpuk memori di proses api)', async () => {
+    hostile = await startEndlessListServer();
+    const started = Date.now();
+    const outcome = await testMailIncoming(
+      {
+        host: 'imap.contoh.test',
+        port: hostile.port,
+        security: 'ssl',
+        username: 'cs@penyerang.test',
+        password: new Secret('apa-saja'),
+      },
+      {
+        allowedPorts: [hostile.port],
+        lookup: () => Promise.resolve([{ address: '127.0.0.1', family: 4 }]),
+        testCa: TEST_IMAP_CERT,
+        strict: { privateCidrs: [], allowLoopback: true },
+        timeouts: {
+          connectionMs: 2_000,
+          greetingMs: 2_000,
+          socketMs: 2_000,
+          totalMs: 1_500,
         },
-        {
-          allowedPorts: [hostile.port],
-          lookup: () => Promise.resolve([{ address: '127.0.0.1', family: 4 }]),
-          testCa: TEST_IMAP_CERT,
-          strict: { privateCidrs: [], allowLoopback: true },
-          timeouts: {
-            connectionMs: 2_000,
-            greetingMs: 2_000,
-            socketMs: 2_000,
-            totalMs: 1_500,
-          },
-        },
-        { syncWindowDays: 90, roleOf: () => null },
-      );
-      // Tenggat jawaban berfungsi (laporan tes gagal dalam ~1,5 dtk)…
-      expect(outcome.ok).toBe(false);
-      expect(Date.now() - started).toBeLessThan(5_000);
-      const sentAtTimeout = hostile.sent();
-      await wait(1_500);
-      // …tetapi yang DIHARAPKAN: sambungan ke server jahat sudah ditutup dan aliran berhenti.
-      // Sekarang sesi tetap terbuka dan imapflow terus menimbun entri LIST di memori.
-      expect(hostile.open()).toBe(0);
-      expect(hostile.sent() - sentAtTimeout).toBeLessThan(1024 * 1024);
-    },
-    15_000,
-  );
+      },
+      { syncWindowDays: 90, roleOf: () => null },
+    );
+    // Tenggat jawaban berfungsi (laporan tes gagal dalam ~1,5 dtk)…
+    expect(outcome.ok).toBe(false);
+    expect(Date.now() - started).toBeLessThan(5_000);
+    const sentAtTimeout = hostile.sent();
+    await wait(1_500);
+    // …tetapi yang DIHARAPKAN: sambungan ke server jahat sudah ditutup dan aliran berhenti.
+    // Sekarang sesi tetap terbuka dan imapflow terus menimbun entri LIST di memori.
+    expect(hostile.open()).toBe(0);
+    expect(hostile.sent() - sentAtTimeout).toBeLessThan(1024 * 1024);
+  }, 15_000);
 });
 
 describe('R1 (Rendah) — penjaga host ketat', () => {
@@ -166,12 +162,9 @@ describe('R1 (Rendah) — penjaga host ketat', () => {
     expect(strictMailAddressAllowed('203.0.113.10', rule)).toBe(true);
   });
 
-  it.fails(
-    'SIIT/IPv4-translated ::ffff:0:a.b.c.d (pembungkus IPv4) ditolak seperti ::ffff:a.b.c.d',
-    () => {
-      const rule = { privateCidrs: [] as string[] };
-      expect(strictMailAddressAllowed('::ffff:0:7f00:1', rule)).toBe(false);
-      expect(strictMailAddressAllowed('::ffff:0:a00:1', rule)).toBe(false);
-    },
-  );
+  it('SIIT/IPv4-translated ::ffff:0:a.b.c.d (pembungkus IPv4) ditolak seperti ::ffff:a.b.c.d', () => {
+    const rule = { privateCidrs: [] as string[] };
+    expect(strictMailAddressAllowed('::ffff:0:7f00:1', rule)).toBe(false);
+    expect(strictMailAddressAllowed('::ffff:0:a00:1', rule)).toBe(false);
+  });
 });

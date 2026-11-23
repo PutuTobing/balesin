@@ -41,3 +41,15 @@ export function parseMailAccountsSearch(search: Record<string, unknown>): MailAc
   }
   return {};
 }
+
+/**
+ * `/pengaturan/akun-email/$accountId?ubah=server` — buka dialog Ubah server/password saat halaman
+ * akun dimuat (tautan "Perbarui password" dari daftar akun; review 9A P4).
+ */
+export interface MailAccountSearch {
+  ubah?: 'server';
+}
+
+export function parseMailAccountSearch(search: Record<string, unknown>): MailAccountSearch {
+  return search.ubah === 'server' ? { ubah: 'server' } : {};
+}

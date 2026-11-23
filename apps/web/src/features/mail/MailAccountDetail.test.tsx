@@ -154,6 +154,35 @@ describe('Pengaturan → Akun email → satu akun', () => {
     expect(screen.getByText(w.outgoingFailed)).toBeVisible();
   });
 
+  it('password ditolak: Notice dengan tombol Perbarui password yang membuka dialog server', async () => {
+    const failed = fakeMailAccount({
+      sync: {
+        ...account.sync,
+        state: 'auth_failed',
+        lastErrorCode: 'imap_auth_failed',
+        lastErrorMessage: 'Username atau password akun email ditolak server.',
+      },
+    });
+    await renderApp(`/pengaturan/akun-email/${MAIL_IDS.cs}`, {
+      routes: { ...routes().routes, [`GET ${accountPath}`]: () => json({ account: failed }) },
+    });
+    // Judul Notice tidak sama dengan lencana; pesan server sekali saja, tanpa paragraf tambahan.
+    expect(await screen.findByText(d.authFailedTitle)).toBeVisible();
+    expect(screen.getAllByText('Username atau password akun email ditolak server.')).toHaveLength(1);
+    expect(screen.queryByText(m.authFailedHint)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: d.fixPassword }));
+    expect(await screen.findByRole('dialog', { name: d.editServerTitle })).toBeVisible();
+  });
+
+  it('?ubah=server (tautan dari daftar akun) langsung membuka dialog server', async () => {
+    await renderApp(`/pengaturan/akun-email/${MAIL_IDS.cs}?ubah=server`, routes());
+    const dialog = await screen.findByRole('dialog', { name: d.editServerTitle });
+    expect(dialog).toBeVisible();
+    fireEvent.click(within(dialog).getByRole('button', { name: t.common.cancel }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(window.location.search).toBe('');
+  });
+
   it('akun pribadi orang lain / tidak ada → tidak ditemukan', async () => {
     await renderApp(`/pengaturan/akun-email/${MAIL_IDS.other}`);
     expect(await screen.findByRole('heading', { name: d.notFoundTitle })).toBeVisible();

@@ -1,5 +1,7 @@
 import {
+  MAIL_ACTION_JOB_OPTIONS,
   MAIL_CACHE_RETENTION_INTERVAL_MS,
+  MAIL_FETCH_JOB_OPTIONS,
   MAIL_JOBS,
   MAIL_JOB_OPTIONS,
   MAIL_PURGE_JOB_OPTIONS,
@@ -8,13 +10,20 @@ import {
   QUEUE_NAMES,
   QUEUE_PREFIX,
   mailAccountJobPayloadSchema,
+  mailActionJobId,
+  mailAttachmentJobPayloadSchema,
+  mailFetchAttachmentJobId,
+  mailFetchBodyJobId,
   mailFolderJobPayloadSchema,
+  mailMessageJobPayloadSchema,
   mailPurgeJobId,
   mailSyncFolderJobId,
   mailSyncFoldersJobId,
   type Logger,
   type MailAccountJobPayload,
+  type MailAttachmentJobPayload,
   type MailFolderJobPayload,
+  type MailMessageJobPayload,
   type MediaStore,
   type Redis,
 } from '@balesin/core';
@@ -32,7 +41,9 @@ import { MAIL_CACHE_RETENTION_DAYS } from '@balesin/shared';
 import { DelayedError, Queue, UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, eq, inArray, isNotNull, isNull, lte, notInArray, sql } from 'drizzle-orm';
 
+import type { MailActions } from '../mail/actions';
 import { acquireLease, mailWorkLeaseKey } from '../mail/lease';
+import { MailReadError, type MailReader } from '../mail/read';
 import type { MailSync } from '../mail/sync';
 import type { QueueConnectionOptions } from './system';
 
@@ -57,8 +68,12 @@ export interface MailJobDeps {
   prefix?: string;
   sync: MailSync;
   store: MediaStore | null;
+  /** Bagian 2: isi & lampiran saat dibuka, aksi dua arah. Opsional untuk tes sinkron lama. */
+  reader?: MailReader;
+  actions?: MailActions;
   enqueueSync(payload: MailAccountJobPayload): Promise<void>;
   enqueuePurge(payload: Omit<MailAccountJobPayload, 'force'>): Promise<void>;
+  enqueueAction?(payload: Omit<MailAccountJobPayload, 'force'>): Promise<void>;
   now?: () => Date;
 }
 
@@ -69,7 +84,9 @@ const TICK_LEASE_MS = 10 * 60 * 1000;
 const PURGE_BATCH = 1_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export async function runMailTick(deps: MailJobDeps): Promise<{ queued: number; purges: number }> {
+export async function runMailTick(
+  deps: MailJobDeps,
+): Promise<{ queued: number; purges: number; actions: number }> {
   const { db } = deps;
   const now = (deps.now ?? (() => new Date()))();
   // Pemilik akun pribadi dinonaktifkan → berhenti; diaktifkan lagi → lanjut.
@@ -78,7 +95,7 @@ export async function runMailTick(deps: MailJobDeps): Promise<{ queued: number; 
     from users u
     where u.organization_id = a.organization_id and u.id = a.owner_user_id and a.kind = 'personal'
       and a.deleted_at is null and u.disabled_at is not null
-      and a.sync_state not in ('owner_inactive', 'deleting')`);
+      and a.sync_state in ('initial_sync', 'ready', 'syncing', 'error')`);
   await db.execute(sql`
     update mail_accounts a set sync_state = 'syncing', next_attempt_at = now(), consecutive_failures = 0, updated_at = now()
     from users u
@@ -118,7 +135,14 @@ export async function runMailTick(deps: MailJobDeps): Promise<{ queued: number; 
   for (const row of deleting) {
     await deps.enqueuePurge({ organizationId: row.organizationId, accountId: row.id });
   }
-  return { queued: due.length, purges: deleting.length };
+  // Bagian 2: aksi dua arah tertunda > 24 jam dikembalikan; yang antreannya terlewat diantre lagi.
+  let actions = 0;
+  if (deps.actions && deps.enqueueAction) {
+    const swept = await deps.actions.sweep();
+    for (const target of swept.accounts) await deps.enqueueAction(target);
+    actions = swept.accounts.length;
+  }
+  return { queued: due.length, purges: deleting.length, actions };
 }
 
 /** Putuskan akun: hapus bertahap. Akun yang ternyata masih hidup tidak disentuh. */
@@ -276,11 +300,31 @@ async function withWorkSlot<T>(
     }
     throw new Error('Sambungan akun email sedang dipakai');
   }
+  // Review 9A-1 S2: sewa diperpanjang selama job berjalan (job lama tidak boleh kehilangan sewanya
+  // sehingga job kedua membuka sambungan ke akun yang sama).
+  const renew = setInterval(() => {
+    lease.renew(WORK_LEASE_MS).catch(() => undefined);
+  }, WORK_LEASE_MS / 3);
+  renew.unref();
   try {
     return await run();
   } finally {
+    clearInterval(renew);
     await lease.release();
   }
+}
+
+function requireReader(deps: MailJobDeps): MailReader {
+  if (!deps.reader) throw new UnrecoverableError('Pengambil isi email belum disiapkan di worker');
+  return deps.reader;
+}
+
+function isFinalAttempt(job: Job): boolean {
+  return job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
+}
+
+function codeOf(error: unknown): string {
+  return error instanceof MailReadError ? error.code : 'unknown';
 }
 
 export async function processMailJob(
@@ -315,6 +359,57 @@ export async function processMailJob(
     }
     case MAIL_JOBS.cacheRetention:
       return runMailCacheRetention(deps);
+    case MAIL_JOBS.fetchBody: {
+      const payload = mailMessageJobPayloadSchema.safeParse(job.data);
+      if (!payload.success) throw new UnrecoverableError('Payload job mail-fetch-body tidak valid');
+      const reader = requireReader(deps);
+      return withWorkSlot(job, token, payload.data.accountId, deps, async () => {
+        try {
+          return await reader.fetchBody(payload.data);
+        } catch (error) {
+          if (isFinalAttempt(job)) {
+            await reader.markBodyError(
+              payload.data.organizationId,
+              payload.data.accountId,
+              payload.data.messageId,
+            );
+            return { status: 'failed', code: codeOf(error) };
+          }
+          throw error;
+        }
+      });
+    }
+    case MAIL_JOBS.fetchAttachment: {
+      const payload = mailAttachmentJobPayloadSchema.safeParse(job.data);
+      if (!payload.success)
+        throw new UnrecoverableError('Payload job mail-fetch-attachment tidak valid');
+      const reader = requireReader(deps);
+      return withWorkSlot(job, token, payload.data.accountId, deps, async () => {
+        try {
+          return await reader.fetchAttachment(payload.data);
+        } catch (error) {
+          if (isFinalAttempt(job)) {
+            await reader.failAttachment(
+              payload.data.organizationId,
+              payload.data.accountId,
+              payload.data.attachmentId,
+              codeOf(error),
+            );
+            return { status: 'failed', code: codeOf(error) };
+          }
+          throw error;
+        }
+      });
+    }
+    case MAIL_JOBS.action: {
+      const payload = mailAccountJobPayloadSchema.safeParse(job.data);
+      if (!payload.success) throw new UnrecoverableError('Payload job mail-action tidak valid');
+      const actions = deps.actions;
+      if (!actions) throw new UnrecoverableError('Aksi email belum disiapkan di worker');
+      return withWorkSlot(job, token, payload.data.accountId, deps, () =>
+        actions.run(payload.data, { finalAttempt: isFinalAttempt(job) }),
+      );
+    }
     default:
       throw new UnrecoverableError(`Job "${job.name}" tidak dikenal di antrian mail`);
   }
@@ -327,7 +422,22 @@ export function createMailQueue(options: QueueConnectionOptions): Queue {
   });
 }
 
-export async function scheduleMailJobs(queue: Queue): Promise<void> {
+export function createMailScheduleQueue(options: QueueConnectionOptions): Queue {
+  return new Queue(QUEUE_NAMES.mailSchedule, {
+    connection: options.connection,
+    prefix: options.prefix ?? QUEUE_PREFIX,
+  });
+}
+
+/**
+ * Jadwal berkala di antrian `mail-schedule` (review 9A-1 S2). `legacy` = antrian `mail`: jadwal lama
+ * di sana dihapus supaya tick tidak lagi berebut slot dengan job sinkron.
+ */
+export async function scheduleMailJobs(queue: Queue, legacy?: Queue): Promise<void> {
+  if (legacy) {
+    await legacy.removeJobScheduler(MAIL_JOBS.tick).catch(() => undefined);
+    await legacy.removeJobScheduler(MAIL_JOBS.cacheRetention).catch(() => undefined);
+  }
   const opts = { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 200 } };
   await queue.upsertJobScheduler(
     MAIL_JOBS.tick,
@@ -357,6 +467,29 @@ export function mailEnqueuers(queue: Queue) {
         jobId: mailSyncFolderJobId(data.folderId),
       });
     },
+    async enqueueAction(payload: Omit<MailAccountJobPayload, 'force'>) {
+      const data = mailAccountJobPayloadSchema.parse(payload);
+      await queue.add(MAIL_JOBS.action, data, {
+        ...MAIL_ACTION_JOB_OPTIONS,
+        jobId: mailActionJobId(data.accountId),
+      });
+    },
+    async enqueueFetchBody(payload: MailMessageJobPayload) {
+      const data = mailMessageJobPayloadSchema.parse(payload);
+      await queue.add(MAIL_JOBS.fetchBody, data, {
+        ...MAIL_FETCH_JOB_OPTIONS,
+        priority: 1,
+        jobId: mailFetchBodyJobId(data.messageId),
+      });
+    },
+    async enqueueFetchAttachment(payload: MailAttachmentJobPayload) {
+      const data = mailAttachmentJobPayloadSchema.parse(payload);
+      await queue.add(MAIL_JOBS.fetchAttachment, data, {
+        ...MAIL_FETCH_JOB_OPTIONS,
+        priority: 2,
+        jobId: mailFetchAttachmentJobId(data.attachmentId),
+      });
+    },
     async enqueuePurge(payload: Omit<MailAccountJobPayload, 'force'>) {
       const data = mailAccountJobPayloadSchema.parse(payload);
       await queue.add(MAIL_JOBS.purgeAccount, data, {
@@ -373,5 +506,17 @@ export function createMailWorker(options: QueueConnectionOptions, deps: MailJobD
     prefix: options.prefix ?? QUEUE_PREFIX,
     // Sambungan per akun dijaga sewa; beberapa AKUN boleh disinkron bersamaan.
     concurrency: 4,
+  });
+}
+
+/** Pekerja jadwal (`mail-tick`, retensi) — satu slot, terpisah dari job sinkron. */
+export function createMailScheduleWorker(
+  options: QueueConnectionOptions,
+  deps: MailJobDeps,
+): Worker {
+  return new Worker(QUEUE_NAMES.mailSchedule, (job, token) => processMailJob(job, token, deps), {
+    connection: options.connection,
+    prefix: options.prefix ?? QUEUE_PREFIX,
+    concurrency: 1,
   });
 }

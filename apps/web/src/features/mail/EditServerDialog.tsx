@@ -19,6 +19,7 @@ import { isConfirmationError } from '../identity/confirmation-error';
 import { IdentityDialog } from '../identity/IdentityDialog';
 import { CredentialFields, ServerCards } from './ServerFields';
 import { TestResults } from './TestResults';
+import { onlyConnectionFailures } from './test-rows';
 import { useRequireCode } from './mail-queries';
 import { resultFromSaveFailure, serverBody, type ServerValues } from './wizard-state';
 import styles from './Wizard.module.css';
@@ -231,7 +232,7 @@ export function EditServerDialog({
               <div className={styles.stack} role="alert">
                 <TestResults result={failure} pending={false} emailAddress={account.emailAddress} />
                 <Notice tone="danger" title={w.failedTitle}>
-                  {w.fixHint}
+                  {onlyConnectionFailures(failure) ? w.fixHintConnection : w.fixHintDialog}
                 </Notice>
               </div>
             ) : null}

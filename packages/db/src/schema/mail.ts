@@ -417,6 +417,13 @@ export const MAIL_MESSAGE_WARNINGS = [
   'dangerous_attachment',
 ] as const;
 export const MAIL_BODY_STATES = ['none', 'loading', 'ready', 'too_large', 'error'] as const;
+export const MAIL_PENDING_ACTIONS = ['flags', 'move', 'delete'] as const;
+export type MailPendingAction = (typeof MAIL_PENDING_ACTIONS)[number];
+
+export interface MailPendingRevert {
+  isRead: boolean;
+  isStarred: boolean;
+}
 
 /** Header + status (daftar ringan); isi di `mail_message_bodies`. */
 export const mailMessages = pgTable(
@@ -470,8 +477,17 @@ export const mailMessages = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
     bodyState: text('body_state').notNull().default('none'),
+    /**
+     * Aksi lokal yang belum tercermin di server (kontrak §9, bagian 2): `flags` (dibaca/bintang),
+     * `move` (pindah/arsip/sampah/spam → `pending_target_folder_id`), `delete` (hapus permanen).
+     * Pesan `move`/`delete` tidak tampil di daftar mana pun sampai diterapkan worker.
+     */
     pendingAction: text('pending_action'),
     pendingActionAt: timestamptz('pending_action_at'),
+    /** Folder tujuan aksi `move` yang tertunda (akun yang sama; tanpa FK — folder bisa dihapus LIST). */
+    pendingTargetFolderId: uuid('pending_target_folder_id'),
+    /** Bendera SEBELUM aksi tertunda pertama — dipakai mengembalikan bila server menolak. */
+    pendingRevert: jsonb('pending_revert').$type<MailPendingRevert>(),
     bodystructure: jsonb('bodystructure').$type<unknown>(),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
@@ -505,10 +521,14 @@ export const mailMessages = pgTable(
         sql`${table.isStarred} and ${table.folderRole} is distinct from 'junk' and ${table.folderRole} is distinct from 'trash'`,
       ),
     index('mail_messages_account_message_id_idx').on(table.accountId, table.messageIdHeader),
+    // Bagian 2: antrean aksi dua arah per akun (worker `mail-action`, tick cadangan).
+    index('mail_messages_pending_idx')
+      .on(table.accountId, table.pendingActionAt)
+      .where(sql`${table.pendingAction} is not null`),
     check(
       'mail_messages_known',
       sql.raw(
-        `sender_verification in ('pass', 'fail', 'unverified') and body_state in (${list(MAIL_BODY_STATES)}) and (folder_role is null or folder_role in (${list(MAIL_FOLDER_ROLES)})) and warnings <@ array[${list(MAIL_MESSAGE_WARNINGS)}]::text[]`,
+        `sender_verification in ('pass', 'fail', 'unverified') and body_state in (${list(MAIL_BODY_STATES)}) and (folder_role is null or folder_role in (${list(MAIL_FOLDER_ROLES)})) and warnings <@ array[${list(MAIL_MESSAGE_WARNINGS)}]::text[] and (pending_action is null or pending_action in (${list(MAIL_PENDING_ACTIONS)})) and ((pending_action is null) = (pending_action_at is null)) and coalesce(pending_action = 'move', false) = (pending_target_folder_id is not null)`,
       ),
     ),
     check(
