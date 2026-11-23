@@ -180,3 +180,12 @@ Minor review daftar & baca email 9A (`docs/design-reviews/2026-11-23-fase9a-baca
 - **m6** "Isinya hanya bisa dibaca pemiliknya." pindah ke tooltip ikon gembok di daftar akun.
 - **m7** "1 dari N", naik/turun, menu "…" di bilah baca (bersama 9B).
 - **m8** mode gelap: tepi kartu iframe isi email (isi tetap putih).
+Minor review tulis 9B (`docs/design-reviews/2026-11-24-fase9b.md`, P1/P2 sudah):
+- **9B-m1/m2** tangkapan `akun-akses` panggil `mailCompose(page)`; `akun-email-daftar` tunggu kartu Preferensi.
+- **9B-m3** mock toast batal kirim 10 dtk (`mocks-mail.ts` `now + 10_000`).
+- **9B-m4** isi dialog utas baru sebut siapa & kapan membalas.
+- **9B-m5** bilah format ringkas (tebal, miring, tautan) di editor tanda tangan, juga di HP.
+- **9B-m6** kutip lurus `"Formal"`/`"Singkat"` → “…”.
+- **9B-m7** HP: tombol "Tambah alias" di bawah deskripsi (≤ 640px).
+- **9B-m8** lebar kartu lampiran seragam; **m9** sembunyikan ruang pesan kosong di panel kode verifikasi; **m10** tombol toast HP `min-height: var(--size-touch)`.
+- **9B-m11/m12** tangkapan `email-baca-presence` dan `email-tautan`.

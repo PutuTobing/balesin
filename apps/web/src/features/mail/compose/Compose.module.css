@@ -176,6 +176,19 @@
   font-size: var(--text-13);
 }
 
+/* Chip penerima bisa membungkus ke baris kedua: label & Cc/Bcc tetap sejajar chip pertama (32px). */
+.row:has(.recipients) {
+  align-items: flex-start;
+}
+
+.row:has(.recipients) > .rowLabel {
+  line-height: var(--space-32);
+}
+
+.row:has(.recipients) > .rowTrailing {
+  min-height: var(--space-32);
+}
+
 .rowValue {
   flex: 1;
   min-width: 0;

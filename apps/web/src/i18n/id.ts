@@ -5237,12 +5237,12 @@ export const t = {
       hint: 'Berlaku untuk semua orang yang mengirim dari akun ini.',
       sentCopyLabel: 'Salinan email terkirim',
       sentCopyOptions: {
-        auto: 'Otomatis — simpan ke Terkirim bila server belum menyimpannya',
-        append: 'Selalu simpan salinan ke folder Terkirim',
+        auto: 'Otomatis (disarankan)',
+        append: 'Selalu simpan ke Terkirim',
         none: 'Jangan simpan salinan',
       } as Record<string, string>,
       sentCopyHint:
-        'Gmail dan Microsoft 365 menyimpan salinan sendiri. Pilihan otomatis mencegah salinan ganda.',
+        'Otomatis: salinan disimpan ke Terkirim hanya bila server belum menyimpannya. Gmail dan Microsoft 365 menyimpan salinan sendiri, jadi tidak ada salinan ganda.',
       warnExternal: 'Peringatkan bila ada penerima di luar domain kantor',
       warnExternalHint:
         'Domain kantor = domain semua alamat pengirim akun email dan channel Email.',
