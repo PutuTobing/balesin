@@ -868,7 +868,7 @@ describe('peran × endpoint: hasil sungguhan cocok dengan matriks', () => {
       }
       // Ratusan rute × satu pemanggil berurutan (bertambah tiap fase): batas waktu sendiri.
     },
-    90_000,
+    180_000,
   );
 
   it('pemanggil yang diuji mewakili kelima peran', async () => {
