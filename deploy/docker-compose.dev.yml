@@ -13,7 +13,7 @@ name: balesin-dev
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:19-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: balesin
@@ -33,7 +33,7 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     restart: unless-stopped
     command: ['redis-server', '--requirepass', 'balesin', '--appendonly', 'yes']
     ports:
@@ -50,7 +50,7 @@ services:
   # Login SMTP diwajibkan (balesin/balesin) supaya alur "password salah" bisa diuji.
   # Kredensial ini hanya untuk dev/CI lokal, bukan rahasia produksi.
   mailpit:
-    image: axllent/mailpit:v1.33.1
+    image: axllent/mailpit:v1.34.0
     restart: unless-stopped
     environment:
       MP_SMTP_AUTH: 'balesin:balesin'

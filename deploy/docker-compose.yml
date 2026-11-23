@@ -58,7 +58,7 @@ x-app-env: &app-env
 
 services:
   postgres:
-    image: postgres:16.15-alpine3.24@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139
+    image: postgres:19.0-alpine3.24@sha256:8b0ff4cdf221f0c53d7fcda681d3b461be725c492cd881c5ec9c0ad25023f188
     restart: unless-stopped
     # Entrypoint resmi mulai sebagai root hanya untuk menyiapkan folder data lalu turun ke pengguna
     # `postgres` (gosu): cukup capability berkas + ganti pengguna; sisanya dibuang.
@@ -91,7 +91,7 @@ services:
       start_period: 30s
 
   redis:
-    image: redis:7.4.12-alpine3.22@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe
+    image: redis:8.4.8-alpine3.22@sha256:ff72f74e4f471df79ed920aa8bbc35efe72ff8a1f8acdc50aad5dbb9b14a4034
     restart: unless-stopped
     # Pengguna `redis` (uid 999, pemilik /data di image) sejak awal: tanpa root, tanpa capability.
     user: redis
@@ -242,7 +242,7 @@ services:
   # Mode C: Cloudflare Tunnel (tanpa port terbuka). Rute publik di dasbor Cloudflare →
   # http://web:8080. Token tunnel hanya di .env.
   cloudflared:
-    image: cloudflare/cloudflared:2026.11.0@sha256:b94b96edf2c9c4360f8879c8580cfaa99077f19c849ec595ca2f711b27d4f344
+    image: cloudflare/cloudflared:2026.11.1@sha256:e613aadbc2d9511785d2e67a86b0c8ac18dd63a3f9af0d06faf04cbfdcb35f2d
     profiles: [tunnel]
     restart: unless-stopped
     read_only: true
