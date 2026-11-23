@@ -76,8 +76,6 @@ const deletedAttachmentResponseSchema = z.object({
   draft: z.object({ version: z.number().int().positive() }),
 });
 const mailPreferencesResponseSchema = mailPreferencesSchema;
-/** Jawaban setujui/tolak belum dikunci kontrak (§20): cukup sukses; data identitas dimuat ulang. */
-const approvalDecisionResponseSchema = z.object({}).loose();
 
 /** Parameter daftar email (kontrak §7). */
 export interface MailMessageListParams {
@@ -314,7 +312,8 @@ export function createMailEndpoints(client: ApiClient) {
         client.request(apiPath(routes.identityApproval, { identityId }), {
           method: 'POST',
           body,
-          schema: approvalDecisionResponseSchema,
+          // Kontrak §20: 200 `{ identity }` (identitas dengan `approval` terbaru).
+          schema: mailIdentityResponseSchema,
         }),
       /** Tanda tangan efektif siap sisip (variabel terisi). */
       identitySignature: (identityId: string, purpose: 'new' | 'reply', signal?: AbortSignal) =>
