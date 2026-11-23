@@ -774,6 +774,9 @@ export const updateMailAccountRequestSchema = z
     imap: mailImapInputSchema.optional(),
     smtp: mailSmtpInputSchema.optional(),
     trustedAuthServIds: mailTrustedAuthServIdsSchema.optional(),
+    /** 9B (level Kelola). */
+    sentCopyMode: z.enum(['auto', 'append', 'none']).optional(),
+    warnExternalRecipients: z.boolean().optional(),
     confirmation: identityConfirmationSchema.optional(),
   })
   .strict();
@@ -837,6 +840,16 @@ export const mailAccountSchema = z.object({
   trustedAuthServIds: z.array(z.string()).nullable(),
   syncWindowDays: mailSyncWindowDaysSchema,
   periodicSyncMinutes: z.number().int(),
+  /** 9B: salinan email terkirim (`auto` = cari dulu di Terkirim, `append`, `none`). */
+  sentCopyMode: z.enum(['auto', 'append', 'none']),
+  /** 9B: peringatan penerima di luar domain kantor saat menulis. */
+  warnExternalRecipients: z.boolean(),
+  /**
+   * 9B: peringatan akun. `system_sender_conflict` = kotak surat ini juga Email pengirim sistem
+   * (tautan reset password/undangan & kode verifikasi bisa terbaca pembaca akun) → verifikasi alamat
+   * terkunci sampai Email pengirim diganti.
+   */
+  warnings: z.array(z.enum(['system_sender_conflict', 'identity_unverified'])),
   sync: mailAccountSyncSchema,
   stats: z.object({
     messageCount: z.number().int().nonnegative(),
@@ -1017,10 +1030,29 @@ export const mailSettingsSchema = z.object({
     .min(MAIL_CACHE_RETENTION_DAYS.min, 'Retensi minimal 7 hari.')
     .max(MAIL_CACHE_RETENTION_DAYS.max, 'Retensi maksimal 3.650 hari.'),
   defaultSyncWindowDays: mailSyncWindowDaysSchema,
+  /** 9B: penerima per email (Kepada + Cc + Bcc), 1–100, bawaan 50. Menaikkan = konfirmasi identitas. */
+  maxRecipientsPerEmail: z
+    .number({ error: 'Batas penerima harus angka.' })
+    .int()
+    .min(1, 'Batas penerima minimal 1.')
+    .max(100, 'Batas penerima maksimal 100.'),
+  /** 9B: total lampiran per email (MB), 1–25, bawaan 20. */
+  maxAttachmentTotalMb: z
+    .number({ error: 'Batas lampiran harus angka.' })
+    .int()
+    .min(1, 'Batas lampiran minimal 1 MB.')
+    .max(25, 'Batas lampiran maksimal 25 MB.'),
 });
 export type MailSettings = z.infer<typeof mailSettingsSchema>;
 export const mailSettingsResponseSchema = z.object({ settings: mailSettingsSchema });
-export const updateMailSettingsRequestSchema = mailSettingsSchema.strict();
+export const updateMailSettingsRequestSchema = mailSettingsSchema
+  .extend({
+    maxRecipientsPerEmail: mailSettingsSchema.shape.maxRecipientsPerEmail.optional(),
+    maxAttachmentTotalMb: mailSettingsSchema.shape.maxAttachmentTotalMb.optional(),
+    confirmation: identityConfirmationSchema.optional(),
+  })
+  .strict();
+export type UpdateMailSettingsRequest = z.infer<typeof updateMailSettingsRequestSchema>;
 
 // ── Folder (kontrak §6) ────────────────────────────────────────────────────
 
@@ -1072,6 +1104,8 @@ export const mailStreamEventSchemas = [
     folderId: z.uuid(),
     messageId: z.uuid(),
     receivedAt: isoDateTimeSchema,
+    /** 9B: kunci utas opak (HMAC) — bilah "ada email baru di utas ini" di jendela tulis. */
+    threadKey: z.string().max(64).optional(),
   }),
   z.object({
     type: z.literal('mail.message.updated'),
@@ -1122,6 +1156,38 @@ export const mailStreamEventSchemas = [
   }),
   z.object({ type: z.literal('mail.access.changed') }),
   z.object({ type: z.literal('mail.resync'), accountId: z.uuid() }),
+  // ── 9B (KONTRAK-API-EMAIL-TULIS §14): outbox/draf hanya ke pembuatnya (`userIds`) ──
+  z.object({
+    type: z.literal('mail.outbox.updated'),
+    accountId: z.uuid(),
+    outboxId: z.uuid(),
+    draftId: z.uuid().nullable(),
+    status: z.enum(['pending', 'queued', 'sending', 'sent', 'failed', 'canceled']),
+    holdReason: z.string().max(40).nullable(),
+    sendAfter: isoDateTimeSchema.nullable(),
+    nextAttemptAt: isoDateTimeSchema.nullable(),
+    failureReason: z.string().max(40).nullable(),
+  }),
+  z.object({
+    type: z.literal('mail.draft.updated'),
+    accountId: z.uuid(),
+    draftId: z.uuid(),
+    version: z.number().int().positive(),
+    serverCopyState: z.enum(['pending', 'synced', 'error', 'disabled']),
+  }),
+  z.object({ type: z.literal('mail.draft.deleted'), accountId: z.uuid(), draftId: z.uuid() }),
+  z.object({
+    type: z.literal('mail.identity.updated'),
+    accountId: z.uuid(),
+    identityId: z.uuid(),
+    verificationState: z.enum(['unverified', 'pending', 'verified']),
+  }),
+  z.object({
+    type: z.literal('mail.compose.presence'),
+    accountId: z.uuid(),
+    threadKey: z.string().max(64),
+    users: z.array(z.object({ id: z.uuid(), name: z.string().max(100) })).max(20),
+  }),
 ] as const;
 
 export const mailStreamEventSchema = z.discriminatedUnion('type', [...mailStreamEventSchemas]);

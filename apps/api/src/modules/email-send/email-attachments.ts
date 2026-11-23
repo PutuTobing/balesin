@@ -72,6 +72,7 @@ const FETCH_REASONS: Readonly<Record<RemoteFileError, string>> = {
   too_large: 'berkas lebih dari 20 MB',
   http: 'server menjawab galat',
   host_not_allowed: 'pengalihan ke host yang tidak diizinkan',
+  content_rejected: 'isi berkas tidak didukung',
 };
 
 const tooLarge = (field: string) =>

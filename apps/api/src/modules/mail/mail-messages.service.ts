@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   AppError,
   fetchRemoteFile,
@@ -12,14 +14,18 @@ import {
 } from '@balesin/core';
 import {
   accessibleMailAccountsOf,
+  auditLogs,
   mailAccessUsersOf,
   mailAccounts,
   mailAttachments,
+  mailCacheRoom,
+  mailCacheUsage,
   mailFolders,
   mailGrantsOf,
   mailMessageBodies,
   mailMessages,
   mailRemoteImageAllow,
+  mailRemoteImageCache,
   userSessions,
   type Database,
   type DbExecutor,
@@ -36,7 +42,18 @@ import {
   MAIL_ATTACHMENT_PREVIEW_MAX_BYTES,
   MAIL_ATTACHMENT_TOO_LARGE_MESSAGE,
   MAIL_ATTACHMENT_WARN_MESSAGE,
+  MAIL_BULK_MOVE_AUDIT_MIN,
+  MAIL_CACHE_ACCOUNT_MAX_BYTES,
+  MAIL_CACHE_FULL_MESSAGE,
+  MAIL_CACHE_MESSAGE_MAX_BYTES,
+  MAIL_CACHE_ORGANIZATION_MAX_BYTES,
+  MAIL_DELETE_LIMIT_MESSAGE,
+  MAIL_DELETE_PERMANENT_DAILY_MAX,
   MAIL_MOVE_ACTIONS,
+  MAIL_REMOTE_IMAGE_CACHE_MIN_FILE_BYTES,
+  MAIL_REMOTE_IMAGE_CACHE_ORGANIZATION_MAX_BYTES,
+  MAIL_REMOTE_IMAGE_CACHE_ORGANIZATION_MAX_ENTRIES,
+  MAIL_REMOTE_IMAGE_CACHE_TTL_MS,
   MAIL_REMOTE_IMAGE_MAX_BYTES,
   MAIL_REMOTE_IMAGE_SENDERS_MAX,
   MAIL_VERIFICATION_LABELS,
@@ -68,6 +85,7 @@ import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { ClientInfo } from '../../http/client-info';
+import { rateLimited } from '../../http/rate-limit';
 import type { MailJobEnqueuer } from '../../queues/mail-queue';
 import { recordAudit } from '../audit/audit';
 import { ACCESS_RULES, type AccessDeniedRecorder } from '../auth/access-denied';
@@ -105,8 +123,43 @@ export interface MailMessagesServiceDeps {
   appOrigin: string;
   /** HANYA tes: pengganti unduhan gambar luar. */
   fetchRemote?: (request: RemoteFileRequest) => Promise<RemoteFileResult>;
+  /**
+   * Cache proksi gambar luar 24 jam (review 9A-2 S5/R8). Bawaan aktif bila `store` ada; `false` HANYA
+   * untuk tes yang menghitung unduhan.
+   */
+  imageCache?: boolean;
+  /** Batas unduhan gambar luar bersamaan (review 9A-2 S5). Bawaan 8 per pengguna, 32 per proses. */
+  imageConcurrency?: { perUser: number; perProcess: number };
+  /**
+   * Review 9A-2 R10 (sebagian): rem per pengguna sebelum mengantre pengambilan BARU dari server email
+   * (isi/lampiran = satu LOGIN IMAP per job). Melempar 429 bila lewat batas.
+   */
+  serverFetchGate?: (userId: string) => Promise<void>;
+  /** 9B (KONTRAK-API-EMAIL-TULIS §7, §11): kunci utas, presence, draf milikku di folder Draf. */
+  compose?: {
+    threadKey(accountId: string, threadRoot: string): string;
+    composing(
+      accountId: string,
+      threadKey: string,
+      excludeUserId: string,
+    ): Promise<{ id: string; name: string }[]>;
+    myDraftIds(
+      organizationId: string,
+      userId: string,
+      serverMessageIds: readonly string[],
+    ): Promise<Map<string, string>>;
+  };
   now?: () => Date;
 }
+
+/**
+ * Pemeriksaan sesudah token rute publik di-resolve (review 9A-2 S5): batas laju per PENGGUNA dan per
+ * ORGANISASI sesi asal (bukan per token — email lain = token lain).
+ */
+export type MailTokenGuard = (actor: {
+  organizationId: string;
+  user: { id: string };
+}) => Promise<void>;
 
 export interface MailRequestContext {
   client: ClientInfo;
@@ -118,6 +171,12 @@ interface MailActor {
   organizationId: string;
   user: { id: string; role: UserRole };
 }
+
+/** UA peramban umum untuk proksi gambar (review 9A-2 R8: tanpa sidik produk). */
+const REMOTE_IMAGE_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+const IMAGE_CONCURRENCY = { perUser: 8, perProcess: 32 } as const;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const UUID = z.uuid();
 const isUuid = (value: string) => UUID.safeParse(value).success;
@@ -224,6 +283,12 @@ export function createMailMessagesService(deps: MailMessagesServiceDeps) {
   const now = deps.now ?? (() => new Date());
   const fetchRemote = deps.fetchRemote ?? fetchRemoteFile;
   const appOrigin = deps.appOrigin.replace(/\/+$/, '');
+  const imageCacheOn = deps.imageCache !== false && deps.store !== null;
+  const imageConcurrency = deps.imageConcurrency ?? IMAGE_CONCURRENCY;
+  // Review 9A-2 S5: unduhan gambar luar yang sedang berjalan (per pengguna & per proses). Lewat → 429
+  // / 503 GIF kosong SEKETIKA (tidak diantre) supaya memori proses api tetap terbatas.
+  const imageFetchesByUser = new Map<string, number>();
+  let imageFetchesTotal = 0;
 
   async function levelFor(
     executor: DbExecutor,
@@ -439,9 +504,26 @@ export function createMailMessagesService(deps: MailMessagesServiceDeps) {
         and(eq(mailMessages.organizationId, auth.organizationId), inArray(mailMessages.id, page)),
       )
       .orderBy(desc(mailMessages.receivedAt), desc(mailMessages.id));
-    const messages = rows
-      .filter((row) => levels.has(row.account.id) && row.account.deletedAt === null)
-      .map((row) => summaryOf(row.message, row.account));
+    const shown = rows.filter(
+      (row) => levels.has(row.account.id) && row.account.deletedAt === null,
+    );
+    // 9B: salinan draf MILIKKU di folder Draf → `draftId` (draf orang lain = email biasa).
+    const draftHeaders = shown.flatMap((row) =>
+      row.message.folderRole === 'drafts' && row.message.messageIdHeader
+        ? [row.message.messageIdHeader]
+        : [],
+    );
+    const myDrafts =
+      deps.compose && draftHeaders.length > 0
+        ? await deps.compose.myDraftIds(auth.organizationId, auth.user.id, draftHeaders)
+        : new Map<string, string>();
+    const messages = shown.map((row) => {
+      const summary = summaryOf(row.message, row.account);
+      const draftId = row.message.messageIdHeader
+        ? myDrafts.get(row.message.messageIdHeader)
+        : undefined;
+      return draftId ? { ...summary, draftId } : summary;
+    });
     const last = rows.at(-1)?.message;
     return {
       messages,
@@ -463,6 +545,7 @@ export function createMailMessagesService(deps: MailMessagesServiceDeps) {
     if (!body || state === 'none' || state === 'error' || state === 'loading') {
       if (!body || state !== 'loading') {
         // GET tidak menandai dibaca; hanya meminta isi diambil (kontrak §8, keputusan #5).
+        await deps.serverFetchGate?.(auth.user.id);
         await requestBody(message, context.log);
       } else {
         await deps.queue
@@ -535,8 +618,24 @@ export function createMailMessagesService(deps: MailMessagesServiceDeps) {
           },
         },
         attachments: attachmentRows.map(attachmentView),
+        ...(await composeExtras(auth, message, account)),
       },
     };
+  }
+
+  /** 9B: `threadKey` + rekan yang sedang membalas (akun bersama saja). */
+  async function composeExtras(
+    auth: AuthContext,
+    message: { threadRoot: string | null },
+    account: { id: string; kind: string },
+  ) {
+    if (!deps.compose || !message.threadRoot) return { threadKey: null, composing: [] };
+    const threadKey = deps.compose.threadKey(account.id, message.threadRoot);
+    const users =
+      account.kind === 'shared'
+        ? await deps.compose.composing(account.id, threadKey, auth.user.id).catch(() => [])
+        : [];
+    return { threadKey, composing: users.map((user) => ({ user })) };
   }
 
   // ── Dokumen tampilan ber-token ────────────────────────────────────────────
@@ -552,9 +651,11 @@ export function createMailMessagesService(deps: MailMessagesServiceDeps) {
       throw conflict('body_not_ready', BODY_NOT_READY);
     }
     const count = body.remoteImages.length;
+    // Review 9A-2 R9: "selalu tampilkan" otomatis HANYA untuk pengirim yang lolos verifikasi (`pass`)
+    // — `From` tanpa SPF/DKIM/DMARC tepercaya mudah dipalsukan (pelacakan buka + permintaan keluar).
     const allowed =
       images === 'show' ||
-      (message.senderVerification !== 'fail' && (await senderAllowed(auth, message.fromAddress)));
+      (message.senderVerification === 'pass' && (await senderAllowed(auth, message.fromAddress)));
     const shown = count > 0 && allowed;
     const issued = tokens.issue(
       { messageId: message.id, sessionRef: auth.sessionRef, images: shown },
@@ -614,8 +715,9 @@ export function createMailMessagesService(deps: MailMessagesServiceDeps) {
     ].join('; ');
   }
 
-  async function viewDocument(token: string): Promise<MailBinaryResponse> {
+  async function viewDocument(token: string, guard?: MailTokenGuard): Promise<MailBinaryResponse> {
     const { claims, message, actor } = await resolveToken(token);
+    await guard?.(actor);
     const body = await bodyOf(actor.organizationId, message.id);
     if (!body) throw unauthenticated();
     const inline = await db
@@ -659,8 +761,129 @@ export function createMailMessagesService(deps: MailMessagesServiceDeps) {
     body: Buffer.from(MAIL_BLANK_IMAGE.slice(MAIL_BLANK_IMAGE.indexOf(',') + 1), 'base64'),
   });
 
-  async function viewImage(token: string, index: number): Promise<MailBinaryResponse> {
+  const imageHeaders = (type: string) => ({
+    ...viewHeaders(type),
+    'content-disposition': 'inline',
+    'content-security-policy': "default-src 'none'; sandbox",
+    // Dokumen iframe ber-origin opak: gambar harus boleh dimuat lintas origin (token tetap wajib).
+    'cross-origin-resource-policy': 'cross-origin',
+  });
+
+  /** Cache gambar luar (24 jam, per akun + `sha256(url)`); `null` = belum ada / kedaluwarsa / hilang. */
+  async function cachedImage(organizationId: string, accountId: string, urlHash: string) {
+    if (!imageCacheOn) return null;
+    const [row] = await db
+      .select()
+      .from(mailRemoteImageCache)
+      .where(
+        and(
+          eq(mailRemoteImageCache.organizationId, organizationId),
+          eq(mailRemoteImageCache.accountId, accountId),
+          eq(mailRemoteImageCache.urlHash, urlHash),
+        ),
+      )
+      .limit(1);
+    if (!row || row.expiresAt.getTime() <= now().getTime()) return null;
+    const file = await openStored(row.storageKey);
+    return file ? { row, file } : null;
+  }
+
+  /** Simpan hasil unduhan ke cache selama kuota cache gambar organisasi masih cukup. */
+  async function rememberImage(
+    organizationId: string,
+    accountId: string,
+    urlHash: string,
+    body: Buffer,
+    type: string,
+  ) {
+    if (!imageCacheOn || !deps.store) return;
+    const at = now();
+    // Review 9A-2 P2-S8: SEMUA baris dihitung (yang kedaluwarsa tetap memakai disk sampai retensi
+    // memangkasnya), tiap berkas minimal satu blok 4 KB, plus batas jumlah entri. Penuh → tidak
+    // disimpan (gambar tetap disajikan dengan batas S5 yang sama).
+    const [usage] = await db
+      .select({
+        entries: sql<string>`count(*)`,
+        total: sql<string>`coalesce(sum(greatest(${mailRemoteImageCache.sizeBytes}, ${MAIL_REMOTE_IMAGE_CACHE_MIN_FILE_BYTES})), 0)`,
+      })
+      .from(mailRemoteImageCache)
+      .where(eq(mailRemoteImageCache.organizationId, organizationId));
+    if (Number(usage?.entries ?? 0) >= MAIL_REMOTE_IMAGE_CACHE_ORGANIZATION_MAX_ENTRIES) return;
+    const cost = Math.max(body.length, MAIL_REMOTE_IMAGE_CACHE_MIN_FILE_BYTES);
+    if (Number(usage?.total ?? 0) + cost > MAIL_REMOTE_IMAGE_CACHE_ORGANIZATION_MAX_BYTES) return;
+    const saved = await deps.store.save('mail', body);
+    const expiresAt = new Date(at.getTime() + MAIL_REMOTE_IMAGE_CACHE_TTL_MS);
+    const [previous] = await db
+      .select({ storageKey: mailRemoteImageCache.storageKey })
+      .from(mailRemoteImageCache)
+      .where(
+        and(
+          eq(mailRemoteImageCache.accountId, accountId),
+          eq(mailRemoteImageCache.urlHash, urlHash),
+        ),
+      )
+      .limit(1);
+    try {
+      await db
+        .insert(mailRemoteImageCache)
+        .values({
+          organizationId,
+          accountId,
+          urlHash,
+          storageKey: saved.storageKey,
+          contentType: type,
+          sizeBytes: saved.sizeBytes,
+          fetchedAt: at,
+          expiresAt,
+        })
+        .onConflictDoUpdate({
+          target: [mailRemoteImageCache.accountId, mailRemoteImageCache.urlHash],
+          set: {
+            storageKey: saved.storageKey,
+            contentType: type,
+            sizeBytes: saved.sizeBytes,
+            fetchedAt: at,
+            expiresAt,
+            updatedAt: sql`now()`,
+          },
+        });
+    } catch {
+      // Akun diputus di tengah jalan (FK) dsb.: cache bukan kebenaran — cukup buang berkasnya.
+      await deps.store.remove(saved.storageKey).catch(() => undefined);
+      return;
+    }
+    if (previous && previous.storageKey !== saved.storageKey) {
+      await deps.store.remove(previous.storageKey).catch(() => undefined);
+    }
+  }
+
+  /** Jatah unduhan bersamaan; `null` = dapat (wajib `release`), selain itu status penolakan. */
+  function acquireImageSlot(userId: string): { release: () => void } | 429 | 503 {
+    const mine = imageFetchesByUser.get(userId) ?? 0;
+    if (mine >= imageConcurrency.perUser) return 429;
+    if (imageFetchesTotal >= imageConcurrency.perProcess) return 503;
+    imageFetchesByUser.set(userId, mine + 1);
+    imageFetchesTotal += 1;
+    let released = false;
+    return {
+      release: () => {
+        if (released) return;
+        released = true;
+        imageFetchesTotal -= 1;
+        const left = (imageFetchesByUser.get(userId) ?? 1) - 1;
+        if (left <= 0) imageFetchesByUser.delete(userId);
+        else imageFetchesByUser.set(userId, left);
+      },
+    };
+  }
+
+  async function viewImage(
+    token: string,
+    index: number,
+    guard?: MailTokenGuard,
+  ): Promise<MailBinaryResponse> {
     const { claims, message, actor } = await resolveToken(token);
+    await guard?.(actor);
     if (!claims.images) {
       throw new AppError('FORBIDDEN', { message: 'Gambar luar email ini belum diizinkan tampil.' });
     }
@@ -669,28 +892,50 @@ export function createMailMessagesService(deps: MailMessagesServiceDeps) {
     if (!url) throw notFound('Gambar tidak ditemukan.');
     // URL dari daftar yang disimpan sanitizer (bukan dari klien) → bukan proksi terbuka.
     if (!/^https:\/\//i.test(url)) return blankImage(415);
-    const result = await fetchRemote({
-      url,
-      privateCidrs: [],
-      maxBytes: MAIL_REMOTE_IMAGE_MAX_BYTES,
-      timeoutMs: 8_000,
-      maxRedirects: 3,
-      headers: { accept: 'image/png,image/jpeg,image/gif,image/webp;q=0.9,*/*;q=0.1' },
-    });
-    if (!result.ok) return blankImage(result.error === 'too_large' ? 413 : 502);
+    // Review 9A-2 S5/R8: cache 24 jam per akun — membuka ulang tidak mengunduh (dan tidak memberi tahu
+    // pengirim) lagi.
+    const urlHash = createHash('sha256').update(url).digest('hex');
+    const cached = await cachedImage(actor.organizationId, message.accountId, urlHash);
+    if (cached) {
+      return {
+        status: 200,
+        headers: {
+          ...imageHeaders(cached.row.contentType),
+          'content-length': String(cached.file.sizeBytes),
+        },
+        body: cached.file.stream,
+      };
+    }
+    const slot = acquireImageSlot(actor.user.id);
+    if (slot === 429 || slot === 503) {
+      const busy = blankImage(slot);
+      return { ...busy, headers: { ...busy.headers, 'retry-after': '2' } };
+    }
+    let result: RemoteFileResult;
+    try {
+      result = await fetchRemote({
+        url,
+        privateCidrs: [],
+        maxBytes: MAIL_REMOTE_IMAGE_MAX_BYTES,
+        timeoutMs: 8_000,
+        maxRedirects: 3,
+        userAgent: REMOTE_IMAGE_USER_AGENT,
+        // Bukan raster dari 12 byte pertama → diputus tanpa menampung sisanya.
+        acceptHead: { bytes: 12, accept: (head) => sniffRasterImage(head) !== null },
+        headers: { accept: 'image/png,image/jpeg,image/gif,image/webp;q=0.9,*/*;q=0.1' },
+      });
+    } finally {
+      slot.release();
+    }
+    if (!result.ok) {
+      return blankImage(
+        result.error === 'too_large' ? 413 : result.error === 'content_rejected' ? 415 : 502,
+      );
+    }
     const type = sniffRasterImage(result.body);
     if (!type) return blankImage(415);
-    return {
-      status: 200,
-      headers: {
-        ...viewHeaders(type),
-        'content-disposition': 'inline',
-        'content-security-policy': "default-src 'none'; sandbox",
-        // Dokumen iframe ber-origin opak: gambar harus boleh dimuat lintas origin (token tetap wajib).
-        'cross-origin-resource-policy': 'cross-origin',
-      },
-      body: result.body,
-    };
+    await rememberImage(actor.organizationId, message.accountId, urlHash, result.body, type);
+    return { status: 200, headers: imageHeaders(type), body: result.body };
   }
 
   async function openStored(storageKey: string) {
@@ -702,8 +947,13 @@ export function createMailMessagesService(deps: MailMessagesServiceDeps) {
     }
   }
 
-  async function viewCid(token: string, attachmentId: string): Promise<MailBinaryResponse> {
+  async function viewCid(
+    token: string,
+    attachmentId: string,
+    guard?: MailTokenGuard,
+  ): Promise<MailBinaryResponse> {
     const { message, actor } = await resolveToken(token);
+    await guard?.(actor);
     if (!isUuid(attachmentId)) return blankImage(404);
     const [row] = await db
       .select()
@@ -828,6 +1078,23 @@ export function createMailMessagesService(deps: MailMessagesServiceDeps) {
     }
     const file = row.storageKey ? await openStored(row.storageKey) : null;
     if (!file) {
+      // Review 9A-2 S7: kuota cache dicek SEBELUM mengantre (worker juga memeriksa ulang).
+      const room = mailCacheRoom(
+        await mailCacheUsage(db, {
+          organizationId: auth.organizationId,
+          accountId: message.accountId,
+          messageId: message.id,
+        }),
+        {
+          account: MAIL_CACHE_ACCOUNT_MAX_BYTES,
+          organization: MAIL_CACHE_ORGANIZATION_MAX_BYTES,
+          message: MAIL_CACHE_MESSAGE_MAX_BYTES,
+        },
+      );
+      if (Math.floor((row.sizeBytes * 3) / 4) > room) {
+        throw conflict('cache_full', MAIL_CACHE_FULL_MESSAGE);
+      }
+      await deps.serverFetchGate?.(auth.user.id);
       if (row.storageKey) {
         await db
           .update(mailAttachments)
@@ -995,6 +1262,23 @@ export function createMailMessagesService(deps: MailMessagesServiceDeps) {
     return created ?? null;
   }
 
+  /**
+   * Review 9A-2 R11: jumlah permintaan pindah pengguna ini dalam sejam terakhir (termasuk yang ini),
+   * penghitung di memori proses — hanya untuk memutuskan perlu dicatat di audit; batas keras tetap
+   * 120 permintaan/menit per pengguna di rute.
+   */
+  const moveRequests = new Map<string, number[]>();
+  function moveRequestsLastHour(auth: AuthContext): number {
+    const nowMs = now().getTime();
+    const recent = (moveRequests.get(auth.user.id) ?? []).filter(
+      (at) => nowMs - at < 60 * 60 * 1000,
+    );
+    recent.push(nowMs);
+    moveRequests.set(auth.user.id, recent.slice(-1_000));
+    if (moveRequests.size > 10_000) moveRequests.clear();
+    return recent.length;
+  }
+
   async function act(
     auth: AuthContext,
     input: MailActionRequest,
@@ -1111,8 +1395,36 @@ export function createMailMessagesService(deps: MailMessagesServiceDeps) {
     const events: MailBusEventInput[] = [];
     const touchedFolders = new Set<string>();
     const touchedAccounts = new Map<string, string>();
+    const movedAccounts = new Set<string>();
+    let movedCount = 0;
     const at = now();
-    await db.transaction(async (tx) => {
+    const deleteLimit = await db.transaction(async (tx) => {
+      // Review 9A-2 R11 + P2-R13: rem hapus permanen per pengguna per 24 jam (dihitung dari audit
+      // log). Kunci advisory per pengguna (dilepas saat transaksi selesai) + hitung ulang di DALAM
+      // transaksi: permintaan paralel antre, dan masing-masing melihat audit hapus yang sudah
+      // di-commit permintaan sebelumnya.
+      if (action === 'delete_permanently' && accepted.length > 0) {
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${`mail-delete:${auth.user.id}`}, 0))`,
+        );
+        const [row] = await tx
+          .select({
+            total: sql<string>`coalesce(sum((${auditLogs.metadata} ->> 'count')::int), 0)`,
+          })
+          .from(auditLogs)
+          .where(
+            and(
+              eq(auditLogs.organizationId, auth.organizationId),
+              eq(auditLogs.actorUserId, auth.user.id),
+              eq(auditLogs.action, AUDIT_ACTIONS.mailMessagesDeletedPermanently),
+              sql`${auditLogs.createdAt} > ${new Date(now().getTime() - DAY_MS)}`,
+            ),
+          );
+        const deletedLast24h = Number(row?.total ?? 0);
+        if (deletedLast24h + accepted.length > MAIL_DELETE_PERMANENT_DAILY_MAX) {
+          return { deletedLast24h };
+        }
+      }
       const deletedByFolder = new Map<
         string,
         { accountId: string; folderId: string; count: number }
@@ -1266,6 +1578,10 @@ export function createMailMessagesService(deps: MailMessagesServiceDeps) {
               );
             touchedFolders.add(destination.id);
           }
+          if (pending === 'move') {
+            movedCount += 1;
+            movedAccounts.add(account.id);
+          }
           if (pending === 'delete') {
             const key = message.folderId;
             const entry = deletedByFolder.get(key) ?? {
@@ -1301,7 +1617,42 @@ export function createMailMessagesService(deps: MailMessagesServiceDeps) {
           client: context.client,
         });
       }
+      // Review 9A-2 R11: pindah/Sampah/Spam MASSAL tercatat (tanpa subjek/alamat): ≥ 10 email sekali
+      // minta, atau setiap permintaan pindah setelah > 60 permintaan dalam sejam.
+      if (movedCount > 0) {
+        const recentMoves = moveRequestsLastHour(auth);
+        if (movedCount >= MAIL_BULK_MOVE_AUDIT_MIN || recentMoves > 60) {
+          await recordAudit(tx, {
+            organizationId: auth.organizationId,
+            actorUserId: auth.user.id,
+            action: AUDIT_ACTIONS.mailMessagesMoved,
+            targetType: 'user',
+            targetId: auth.user.id,
+            metadata: {
+              action,
+              count: movedCount,
+              accountIds: [...movedAccounts],
+              targetFolderId: target?.id ?? null,
+            },
+            client: context.client,
+          });
+        }
+      }
+      return null;
     });
+    if (deleteLimit) {
+      // Di luar transaksi aksi: transaksi di atas tidak mengubah apa pun saat batas tercapai.
+      await recordAudit(db, {
+        organizationId: auth.organizationId,
+        actorUserId: auth.user.id,
+        action: AUDIT_ACTIONS.mailMessagesDeleteLimitReached,
+        targetType: 'user',
+        targetId: auth.user.id,
+        metadata: { requested: accepted.length, deletedLast24h: deleteLimit.deletedLast24h },
+        client: context.client,
+      });
+      throw rateLimited(60 * 60, MAIL_DELETE_LIMIT_MESSAGE);
+    }
     if (touchedFolders.size > 0) {
       const counts = await db
         .select({

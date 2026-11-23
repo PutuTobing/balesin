@@ -29,6 +29,35 @@ export const MAIL_RAW_HEADERS_MAX_BYTES = 64 * 1024;
 export const MAIL_VIEW_TOKEN_TTL_SECONDS = 10 * 60;
 export const MAIL_ACTION_MAX_IDS = 100;
 export const MAIL_REMOTE_IMAGE_SENDERS_MAX = 500;
+/**
+ * Review 9A-2 S7: kuota cache email (lampiran + gambar inline + isi). Lampiran yang membuat cache lewat
+ * kuota DITOLAK (`cache_full`); isi lama yang paling jarang dibuka digusur supaya isi baru muat.
+ */
+export const MAIL_CACHE_ACCOUNT_MAX_BYTES = 2 * 1024 * 1024 * 1024;
+export const MAIL_CACHE_ORGANIZATION_MAX_BYTES = 20 * 1024 * 1024 * 1024;
+/** Total berkas cache satu email (lampiran + gambar inline). */
+export const MAIL_CACHE_MESSAGE_MAX_BYTES = 200 * 1024 * 1024;
+/** Review 9A-2 S5: cache proksi gambar luar — 24 jam, kuota per organisasi. */
+export const MAIL_REMOTE_IMAGE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+export const MAIL_REMOTE_IMAGE_CACHE_ORGANIZATION_MAX_BYTES = 1024 * 1024 * 1024;
+/**
+ * Review 9A-2 P2-S8: kuota cache gambar luar menghitung SEMUA baris (termasuk yang kedaluwarsa tetapi
+ * belum dipangkas), tiap berkas minimal 4 KB (blok disk), dan maksimal 200.000 entri per organisasi.
+ * Penuh → gambar tetap disajikan, hanya tidak disimpan.
+ */
+export const MAIL_REMOTE_IMAGE_CACHE_ORGANIZATION_MAX_ENTRIES = 200_000;
+export const MAIL_REMOTE_IMAGE_CACHE_MIN_FILE_BYTES = 4096;
+/**
+ * Review 9A-2 R11: hapus permanen per pengguna per 24 jam (rem penyalahgunaan akun dibobol). Aksi
+ * pindah/Sampah/Spam massal (≥ `MAIL_BULK_MOVE_AUDIT_MIN` email sekali minta, atau > 60 permintaan pindah
+ * per jam) dicatat di audit log.
+ */
+export const MAIL_DELETE_PERMANENT_DAILY_MAX = 500;
+export const MAIL_BULK_MOVE_AUDIT_MIN = 10;
+export const MAIL_DELETE_LIMIT_MESSAGE =
+  'Batas hapus permanen hari ini sudah tercapai (500 email per 24 jam). Coba lagi besok, atau minta Owner/Admin bila memang perlu.';
+export const MAIL_CACHE_FULL_MESSAGE =
+  'Ruang cache email penuh, jadi lampiran ini belum bisa diunduh lewat aplikasi. Buka lewat webmail penyedia.';
 
 // ── Daftar (kontrak §7) ────────────────────────────────────────────────────
 
@@ -116,6 +145,11 @@ export const mailMessageSummarySchema = z.object({
   warnings: z.array(mailWarningTypeSchema),
   /** Aksi lokal belum tercermin di server email (mis. tandai dibaca saat akun dijeda). */
   pending: z.boolean(),
+  /**
+   * 9B: salinan draf MILIKKU di folder Draf server → ID draf (web membuka jendela tulis). Draf orang
+   * lain tampil sebagai email biasa (tanpa isian ini).
+   */
+  draftId: z.uuid().optional(),
 });
 export type MailMessageSummary = z.infer<typeof mailMessageSummarySchema>;
 
@@ -196,6 +230,10 @@ export const mailMessageDetailSchema = mailMessageSummarySchema.extend({
     }),
   }),
   attachments: z.array(mailAttachmentSchema),
+  /** 9B: kunci utas opak (HMAC) — dibandingkan dengan `mail.message.created.threadKey`. */
+  threadKey: z.string().nullable().optional(),
+  /** 9B: rekan yang sedang membalas utas ini (presence; diri sendiri tidak ikut). */
+  composing: z.array(z.object({ user: z.object({ id: z.uuid(), name: z.string() }) })).optional(),
 });
 export type MailMessageDetail = z.infer<typeof mailMessageDetailSchema>;
 

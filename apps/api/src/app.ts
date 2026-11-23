@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import websocket from '@fastify/websocket';
 import {
   createInboxEventPublisher,
+  createMailComposeKeys,
   createMetaGraphClient,
   createTelegramBotClient,
   createSessionRevocationPublisher,
@@ -32,7 +33,7 @@ import type { ApiConfig } from './config';
 import { handleError, handleNotFound } from './http/error-handler';
 import { createForwardedForGuard } from './http/forwarded-for-guard';
 import { trackRoutesForMethodNotAllowed } from './http/method-not-allowed';
-import { createRateLimiter } from './http/rate-limit';
+import { createRateLimiter, enforceRateLimit } from './http/rate-limit';
 import { enforceRouteDeclarations } from './http/route-access';
 import { applyBaselineHeaders, securityPlugin } from './http/security';
 import { createAccessDeniedRecorder } from './modules/auth/access-denied';
@@ -144,10 +145,19 @@ import type { EmailNotifier } from './queues/email-queue';
 import type { MailJobEnqueuer } from './queues/mail-queue';
 import { createMailAccessService } from './modules/mail/mail-access.service';
 import { mailRoutes } from './modules/mail/mail.routes';
-import { mailMessagesRoutes } from './modules/mail/mail-messages.routes';
+import {
+  MAIL_SERVER_FETCH_MESSAGE,
+  MAIL_SERVER_FETCH_RULE,
+  mailMessagesRoutes,
+} from './modules/mail/mail-messages.routes';
 import { createMailMessagesService } from './modules/mail/mail-messages.service';
 import { createMailViewTokens } from './modules/mail/mail-view-token';
 import { createMailService } from './modules/mail/mail.service';
+import { mailComposeRoutes } from './modules/mail/mail-compose.routes';
+import { createMailDraftsService } from './modules/mail/mail-drafts.service';
+import { createMailIdentitiesService } from './modules/mail/mail-identities.service';
+import { createMailOutboxService } from './modules/mail/mail-outbox.service';
+import { createMailSignaturesService } from './modules/mail/mail-signatures.service';
 import type { MailDetectionDns, RemoteFetcher } from './modules/mail/mail-detection';
 import {
   createMailEventPublisher,
@@ -228,6 +238,8 @@ export interface AppDeps {
       allowLoopback?: boolean;
       detectionDns?: MailDetectionDns;
       fetchRemote?: RemoteFetcher;
+      /** `false` = cache proksi gambar luar mati (tes yang menghitung unduhan). */
+      imageCache?: boolean;
       connector?: MailImapConnector;
       smtpVerifier?: MailSmtpVerifier;
       imapTimeouts?: Partial<ImapTimeouts>;
@@ -613,6 +625,14 @@ export async function buildApp(deps: AppDeps) {
   });
   // Fase 9 — modul Email (akun, akses, folder). Dibuat sebelum rute auth: `navigation.mail`.
   const mailOverrides = deps.overrides?.mail;
+  // 9B: Email pengirim sistem dari env (konflik verifikasi / peringatan akun).
+  const systemSenderFallback = config.smtpFallback
+    ? {
+        fromAddress: config.smtpFallback.fromAddress,
+        host: config.smtpFallback.host,
+        username: config.smtpFallback.username,
+      }
+    : null;
   const mailPublisher = createMailEventPublisher(deps.redis, {
     prefix: redisPrefix,
     logger: app.log,
@@ -644,6 +664,8 @@ export async function buildApp(deps: AppDeps) {
     },
     ...(mailOverrides?.connector ? { connector: mailOverrides.connector } : {}),
     ...(mailOverrides?.smtpVerifier ? { smtpVerifier: mailOverrides.smtpVerifier } : {}),
+    systemSenderFallback,
+    store: createMediaStore(config.mediaDir),
   });
   await app.register(authRoutes, {
     auth,
@@ -892,6 +914,23 @@ export async function buildApp(deps: AppDeps) {
     cookieSecure: config.cookieSecure,
   });
   // Fase 9 bagian 2 — daftar, baca (dokumen tampilan ber-token), lampiran, aksi dua arah.
+  // Tahap 9B — tulis, balas, teruskan: identitas & verifikasi, tanda tangan, draf, outbox.
+  const mailComposeKeys = createMailComposeKeys(
+    config.masterKey ? config.masterKey.reveal() : sessionSecret.reveal(),
+  );
+  const mailSignatures = createMailSignaturesService({ db, accessDenied });
+  const mailDrafts = createMailDraftsService({
+    db,
+    redis: deps.redis,
+    redisPrefix,
+    keys: mailComposeKeys,
+    accessDenied,
+    publisher: mailPublisher,
+    limiter,
+    store: createMediaStore(config.mediaDir),
+    signatures: mailSignatures,
+    ...(deps.mailQueue ? { queue: deps.mailQueue } : {}),
+  });
   await app.register(mailMessagesRoutes, {
     limiter,
     messages: createMailMessagesService({
@@ -906,7 +945,45 @@ export async function buildApp(deps: AppDeps) {
       sessions,
       appOrigin: new URL(config.appUrl).origin,
       ...(mailOverrides?.fetchRemote ? { fetchRemote: mailOverrides.fetchRemote } : {}),
+      ...(mailOverrides?.imageCache === false ? { imageCache: false } : {}),
+      serverFetchGate: async (userId) => {
+        await enforceRateLimit(limiter, MAIL_SERVER_FETCH_RULE, userId, MAIL_SERVER_FETCH_MESSAGE);
+      },
+      compose: {
+        threadKey: (accountId, threadRoot) => mailComposeKeys.threadKey(accountId, threadRoot),
+        composing: (accountId, threadKey, excludeUserId) =>
+          mailDrafts.composing(accountId, threadKey, excludeUserId),
+        myDraftIds: (organizationId, userId, headers) =>
+          mailDrafts.myDraftIds(organizationId, userId, headers),
+      },
     }),
+  });
+  await app.register(mailComposeRoutes, {
+    identities: createMailIdentitiesService({
+      db,
+      secretBox,
+      keys: mailComposeKeys,
+      twoFactor,
+      notifier: deps.notifier,
+      accessDenied,
+      publisher: mailPublisher,
+      limiter,
+      systemSenderFallback,
+      ...(deps.mailQueue ? { queue: deps.mailQueue } : {}),
+    }),
+    signatures: mailSignatures,
+    drafts: mailDrafts,
+    outbox: createMailOutboxService({
+      db,
+      accessDenied,
+      publisher: mailPublisher,
+      limiter,
+      sendingLimits,
+      drafts: mailDrafts,
+      signatures: mailSignatures,
+    }),
+    limiter,
+    cookieSecure: config.cookieSecure,
   });
   // Publik: penerima webhook Meta (keaslian dari tanda tangan App Secret, bukan sesi).
   await app.register(whatsAppWebhookRoutes, { guard: webhookGuard, webhooks: whatsAppWebhooks });

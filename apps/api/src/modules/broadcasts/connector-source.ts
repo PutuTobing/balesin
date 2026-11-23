@@ -52,6 +52,7 @@ function failureCode(
     case 'http':
       return httpStatus === 401 || httpStatus === 403 ? 'auth_failed' : 'http_error';
     case 'redirect':
+    case 'content_rejected':
       return 'http_error';
     case 'network':
       return 'network';

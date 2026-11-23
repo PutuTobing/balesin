@@ -1,4 +1,24 @@
 import {
+  MAIL_COMPOSE_MAINTENANCE_INTERVAL_MS,
+  MAIL_COPY_JOB_OPTIONS,
+  MAIL_DRAFT_REMOTE_DELETE_JOB_OPTIONS,
+  MAIL_PRESENCE_TICK_INTERVAL_MS,
+  MAIL_SEND_JOB_OPTIONS,
+  MAIL_SEND_JOBS,
+  MAIL_SEND_TICK_INTERVAL_MS,
+  mailAppendSentJobId,
+  mailDraftJobPayloadSchema,
+  mailDraftRemoteDeleteJobId,
+  mailDraftRemoteDeletePayloadSchema,
+  mailDraftSyncJobId,
+  mailIdentityJobPayloadSchema,
+  mailOutboxJobPayloadSchema,
+  mailSendJobId,
+  mailVerifyCheckJobId,
+  type MailDraftJobPayload,
+  type MailDraftRemoteDeletePayload,
+  type MailIdentityJobPayload,
+  type MailOutboxJobPayload,
   MAIL_ACTION_JOB_OPTIONS,
   MAIL_CACHE_RETENTION_INTERVAL_MS,
   MAIL_FETCH_JOB_OPTIONS,
@@ -34,6 +54,8 @@ import {
   mailFolders,
   mailMessageBodies,
   mailMessages,
+  mailOutbox,
+  mailRemoteImageCache,
   mailSettings,
   type Database,
 } from '@balesin/db';
@@ -42,6 +64,9 @@ import { DelayedError, Queue, UnrecoverableError, Worker, type Job } from 'bullm
 import { and, eq, inArray, isNotNull, isNull, lte, notInArray, sql } from 'drizzle-orm';
 
 import type { MailActions } from '../mail/actions';
+import type { ComposeMaintenance } from '../mail/compose-maintenance';
+import type { CopyResult, createMailCopies } from '../mail/copies';
+import { MailSendBusyError, type MailSender } from '../mail/send';
 import { acquireLease, mailWorkLeaseKey } from '../mail/lease';
 import { MailReadError, type MailReader } from '../mail/read';
 import type { MailSync } from '../mail/sync';
@@ -57,7 +82,8 @@ import type { QueueConnectionOptions } from './system';
  *  - `mail-sync-folders` / `mail-sync-folder`: butuh sewa SATU sambungan kerja per akun (Redis); tidak
  *    kebagian → ditunda 5 dtk (bukan gagal).
  *  - `mail-purge-account`: hapus pesan per 1.000 + berkas cache, lalu baris akun.
- *  - `mail-cache-retention` (harian): pangkas isi/lampiran yang tidak dibuka > retensi.
+ *  - `mail-cache-retention` (tiap jam): pangkas isi/lampiran yang tidak dibuka > retensi, dan cache
+ *    gambar luar kedaluwarsa sampai habis (review 9A-2 P2-S8).
  */
 
 export interface MailJobDeps {
@@ -74,6 +100,10 @@ export interface MailJobDeps {
   enqueueSync(payload: MailAccountJobPayload): Promise<void>;
   enqueuePurge(payload: Omit<MailAccountJobPayload, 'force'>): Promise<void>;
   enqueueAction?(payload: Omit<MailAccountJobPayload, 'force'>): Promise<void>;
+  /** 9B: kirim (tick + job), salinan server (Terkirim/Draf/verifikasi), presence & pemeliharaan. */
+  sender?: MailSender;
+  copies?: ReturnType<typeof createMailCopies>;
+  compose?: ComposeMaintenance;
   now?: () => Date;
 }
 
@@ -83,6 +113,9 @@ const DELAY_WHEN_BUSY_MS = 5_000;
 const TICK_LEASE_MS = 10 * 60 * 1000;
 const PURGE_BATCH = 1_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Review 9A-2 P2-S8: retensi cache gambar per batch, maks. 2 menit per jalan (jalan tiap jam). */
+const IMAGE_RETENTION_BATCH = 5_000;
+const IMAGE_RETENTION_BUDGET_MS = 2 * 60 * 1000;
 
 export async function runMailTick(
   deps: MailJobDeps,
@@ -162,6 +195,8 @@ export async function runMailPurge(
     )
     .limit(1);
   if (!row || row.deletedAt === null) return { status: 'skipped', messages: 0 };
+  // 9B: berkas lampiran draf & `.eml` outbox akun ini (barisnya ikut terhapus kaskade).
+  await deps.compose?.purgeAccountFiles(payload.organizationId, row.id);
   let removed = 0;
   for (;;) {
     const batch = await db
@@ -195,6 +230,27 @@ export async function runMailPurge(
         and(eq(mailMessages.organizationId, payload.organizationId), inArray(mailMessages.id, ids)),
       );
     removed += ids.length;
+  }
+  // Review 9A-2 S5: cache proksi gambar akun ini (baris ikut terhapus kaskade; berkasnya di sini).
+  for (;;) {
+    const images = await db
+      .select({ id: mailRemoteImageCache.id, storageKey: mailRemoteImageCache.storageKey })
+      .from(mailRemoteImageCache)
+      .where(
+        and(
+          eq(mailRemoteImageCache.organizationId, payload.organizationId),
+          eq(mailRemoteImageCache.accountId, row.id),
+        ),
+      )
+      .limit(PURGE_BATCH);
+    if (images.length === 0) break;
+    for (const image of images) await deps.store?.remove(image.storageKey).catch(() => undefined);
+    await db.delete(mailRemoteImageCache).where(
+      inArray(
+        mailRemoteImageCache.id,
+        images.map((image) => image.id),
+      ),
+    );
   }
   await db
     .delete(mailFolders)
@@ -277,6 +333,36 @@ export async function runMailCacheRetention(
       .where(eq(mailAttachments.id, file.id));
     files += 1;
   }
+  // Review 9A-2 S5 + P2-S8: cache proksi gambar luar kedaluwarsa (24 jam). Diulang per batch sampai
+  // habis (dengan anggaran waktu supaya `mail-tick` di slot jadwal yang sama tidak tertahan); sisa
+  // backlog diteruskan jalan berikutnya (tiap jam). Baris dihapus DULU (`returning`) baru berkasnya:
+  // baris yang baru diperbarui `rememberImage` (kedaluwarsa → segar) tidak ikut terhapus.
+  const imagesDeadline = performance.now() + IMAGE_RETENTION_BUDGET_MS;
+  for (;;) {
+    const expiredIds = db
+      .select({ id: mailRemoteImageCache.id })
+      .from(mailRemoteImageCache)
+      .where(lte(mailRemoteImageCache.expiresAt, now))
+      .limit(IMAGE_RETENTION_BATCH);
+    const removed = await db
+      .delete(mailRemoteImageCache)
+      .where(
+        and(inArray(mailRemoteImageCache.id, expiredIds), lte(mailRemoteImageCache.expiresAt, now)),
+      )
+      .returning({ storageKey: mailRemoteImageCache.storageKey });
+    for (const image of removed) {
+      await deps.store?.remove(image.storageKey).catch(() => undefined);
+      files += 1;
+    }
+    if (removed.length < IMAGE_RETENTION_BATCH) break;
+    if (performance.now() >= imagesDeadline) {
+      deps.logger.warn(
+        { files },
+        'Retensi cache gambar email belum tuntas dalam anggaran waktu; dilanjutkan jalan berikutnya',
+      );
+      break;
+    }
+  }
   return { bodies, files };
 }
 
@@ -312,6 +398,24 @@ async function withWorkSlot<T>(
     clearInterval(renew);
     await lease.release();
   }
+}
+
+/** Hasil `delay` → job yang sama ditunda (BullMQ `moveToDelayed`), bukan gagal. */
+async function settleCopy(
+  job: Job,
+  token: string | undefined,
+  result: CopyResult,
+): Promise<CopyResult> {
+  if (result.status === 'delay' && token) {
+    await job.moveToDelayed(Date.now() + Math.max(1_000, result.delayMs), token);
+    throw new DelayedError();
+  }
+  return result;
+}
+
+function requireCopies(deps: MailJobDeps) {
+  if (!deps.copies) throw new UnrecoverableError('Salinan email belum disiapkan di worker');
+  return deps.copies;
 }
 
 function requireReader(deps: MailJobDeps): MailReader {
@@ -410,6 +514,57 @@ export async function processMailJob(
         actions.run(payload.data, { finalAttempt: isFinalAttempt(job) }),
       );
     }
+    // ── 9B ──
+    case MAIL_JOBS.sendTick:
+      if (!deps.sender) throw new UnrecoverableError('Pengirim email belum disiapkan di worker');
+      return deps.sender.tick();
+    case MAIL_JOBS.presenceTick:
+      return deps.compose?.presenceTick() ?? { changed: 0 };
+    case MAIL_JOBS.composeMaintenance:
+      return deps.compose?.maintenance() ?? {};
+    case MAIL_JOBS.appendSent: {
+      const payload = mailOutboxJobPayloadSchema.safeParse(job.data);
+      if (!payload.success)
+        throw new UnrecoverableError('Payload job mail-append-sent tidak valid');
+      const copies = requireCopies(deps);
+      const [row] = await deps.db
+        .select({ accountId: mailOutbox.accountId })
+        .from(mailOutbox)
+        .where(eq(mailOutbox.id, payload.data.outboxId))
+        .limit(1);
+      if (!row) return { status: 'skipped' };
+      return withWorkSlot(job, token, row.accountId, deps, () => copies.appendSent(payload.data));
+    }
+    case MAIL_JOBS.draftSync: {
+      const payload = mailDraftJobPayloadSchema.safeParse(job.data);
+      if (!payload.success) throw new UnrecoverableError('Payload job mail-draft-sync tidak valid');
+      const copies = requireCopies(deps);
+      const result = await withWorkSlot(job, token, payload.data.accountId, deps, () =>
+        copies.syncDraft(payload.data),
+      );
+      return settleCopy(job, token, result);
+    }
+    case MAIL_JOBS.draftRemoteDelete: {
+      const payload = mailDraftRemoteDeletePayloadSchema.safeParse(job.data);
+      if (!payload.success) {
+        throw new UnrecoverableError('Payload job mail-draft-remote-delete tidak valid');
+      }
+      const copies = requireCopies(deps);
+      return withWorkSlot(job, token, payload.data.accountId, deps, () =>
+        copies.removeDraftCopy(payload.data),
+      );
+    }
+    case MAIL_JOBS.verifyCheck: {
+      const payload = mailIdentityJobPayloadSchema.safeParse(job.data);
+      if (!payload.success) {
+        throw new UnrecoverableError('Payload job mail-identity-verify-check tidak valid');
+      }
+      const copies = requireCopies(deps);
+      const result = await withWorkSlot(job, token, payload.data.accountId, deps, () =>
+        copies.verifyCheck(payload.data),
+      );
+      return settleCopy(job, token, result);
+    }
     default:
       throw new UnrecoverableError(`Job "${job.name}" tidak dikenal di antrian mail`);
   }
@@ -448,6 +603,23 @@ export async function scheduleMailJobs(queue: Queue, legacy?: Queue): Promise<vo
     MAIL_JOBS.cacheRetention,
     { every: MAIL_CACHE_RETENTION_INTERVAL_MS },
     { name: MAIL_JOBS.cacheRetention, data: {}, opts },
+  );
+  // 9B: tick kirim (2 dtk = jeda batal paling banyak +2 dtk), presence (15 dtk), pemeliharaan (jam).
+  const quiet = { attempts: 1, removeOnComplete: true, removeOnFail: { count: 50 } };
+  await queue.upsertJobScheduler(
+    MAIL_JOBS.sendTick,
+    { every: MAIL_SEND_TICK_INTERVAL_MS },
+    { name: MAIL_JOBS.sendTick, data: {}, opts: quiet },
+  );
+  await queue.upsertJobScheduler(
+    MAIL_JOBS.presenceTick,
+    { every: MAIL_PRESENCE_TICK_INTERVAL_MS },
+    { name: MAIL_JOBS.presenceTick, data: {}, opts: quiet },
+  );
+  await queue.upsertJobScheduler(
+    MAIL_JOBS.composeMaintenance,
+    { every: MAIL_COMPOSE_MAINTENANCE_INTERVAL_MS },
+    { name: MAIL_JOBS.composeMaintenance, data: {}, opts },
   );
 }
 
@@ -490,6 +662,37 @@ export function mailEnqueuers(queue: Queue) {
         jobId: mailFetchAttachmentJobId(data.attachmentId),
       });
     },
+    async enqueueAppendSent(payload: MailOutboxJobPayload, delayMs: number) {
+      const data = mailOutboxJobPayloadSchema.parse(payload);
+      await queue.add(MAIL_JOBS.appendSent, data, {
+        ...MAIL_COPY_JOB_OPTIONS,
+        delay: delayMs,
+        jobId: mailAppendSentJobId(data.outboxId),
+      });
+    },
+    async enqueueDraftSync(payload: MailDraftJobPayload, delayMs: number) {
+      const data = mailDraftJobPayloadSchema.parse(payload);
+      await queue.add(MAIL_JOBS.draftSync, data, {
+        ...MAIL_COPY_JOB_OPTIONS,
+        delay: delayMs,
+        jobId: mailDraftSyncJobId(data.draftId),
+      });
+    },
+    async enqueueDraftRemoteDelete(payload: MailDraftRemoteDeletePayload) {
+      const data = mailDraftRemoteDeletePayloadSchema.parse(payload);
+      await queue.add(MAIL_JOBS.draftRemoteDelete, data, {
+        ...MAIL_DRAFT_REMOTE_DELETE_JOB_OPTIONS,
+        jobId: mailDraftRemoteDeleteJobId(data.folderId, data.uid),
+      });
+    },
+    async enqueueVerifyCheck(payload: MailIdentityJobPayload, delayMs: number) {
+      const data = mailIdentityJobPayloadSchema.parse(payload);
+      await queue.add(MAIL_JOBS.verifyCheck, data, {
+        ...MAIL_COPY_JOB_OPTIONS,
+        delay: delayMs,
+        jobId: mailVerifyCheckJobId(data.identityId),
+      });
+    },
     async enqueuePurge(payload: Omit<MailAccountJobPayload, 'force'>) {
       const data = mailAccountJobPayloadSchema.parse(payload);
       await queue.add(MAIL_JOBS.purgeAccount, data, {
@@ -518,5 +721,56 @@ export function createMailScheduleWorker(
     connection: options.connection,
     prefix: options.prefix ?? QUEUE_PREFIX,
     concurrency: 1,
+  });
+}
+
+// ── 9B: antrian `mail-send` (satu job = satu baris outbox) ──────────────────
+
+export function createMailSendQueue(options: QueueConnectionOptions): Queue {
+  return new Queue(QUEUE_NAMES.mailSend, {
+    connection: options.connection,
+    prefix: options.prefix ?? QUEUE_PREFIX,
+  });
+}
+
+export function mailSendEnqueuer(queue: Queue) {
+  return async (payload: MailOutboxJobPayload) => {
+    const data = mailOutboxJobPayloadSchema.parse(payload);
+    await queue.add(MAIL_SEND_JOBS.send, data, {
+      ...MAIL_SEND_JOB_OPTIONS,
+      jobId: mailSendJobId(data.outboxId),
+    });
+  };
+}
+
+const SMTP_BUSY_DELAY_MS = 3_000;
+
+export async function processMailSendJob(
+  job: Job,
+  token: string | undefined,
+  sender: MailSender,
+): Promise<unknown> {
+  if (job.name !== MAIL_SEND_JOBS.send) {
+    throw new UnrecoverableError(`Job "${job.name}" tidak dikenal di antrian mail-send`);
+  }
+  const payload = mailOutboxJobPayloadSchema.safeParse(job.data);
+  if (!payload.success) throw new UnrecoverableError('Payload job mail-send tidak valid');
+  try {
+    return await sender.sendOne(payload.data);
+  } catch (error) {
+    // Satu SMTP bersamaan per akun: sedang dipakai → tunda (bukan gagal).
+    if (error instanceof MailSendBusyError && token) {
+      await job.moveToDelayed(Date.now() + SMTP_BUSY_DELAY_MS, token);
+      throw new DelayedError();
+    }
+    throw error;
+  }
+}
+
+export function createMailSendWorker(options: QueueConnectionOptions, sender: MailSender): Worker {
+  return new Worker(QUEUE_NAMES.mailSend, (job, token) => processMailSendJob(job, token, sender), {
+    connection: options.connection,
+    prefix: options.prefix ?? QUEUE_PREFIX,
+    concurrency: 4,
   });
 }

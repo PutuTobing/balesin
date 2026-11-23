@@ -154,6 +154,8 @@ export function toMailAccount(
   viewer: MailAccessUser,
   myLevel: MailAccessLevel | null,
   owner: OwnerRef | null,
+  /** 9B: `system_sender_conflict` / `identity_unverified` (lihat `mailAccountWarningsOf`). */
+  warnings: MailAccount['warnings'] = [],
 ): MailAccount {
   const administer = canMailAdminister(viewer, {
     kind: row.kind as MailAccountKind,
@@ -194,6 +196,9 @@ export function toMailAccount(
     trustedAuthServIds: administer ? row.trustedAuthServIds : null,
     syncWindowDays: row.syncWindowDays as MailSyncWindowDays,
     periodicSyncMinutes: row.periodicSyncMinutes,
+    sentCopyMode: row.sentCopyMode as MailAccount['sentCopyMode'],
+    warnExternalRecipients: row.warnExternalRecipients,
+    warnings,
     sync: {
       state,
       lastSyncedAt: row.lastSyncedAt?.toISOString() ?? null,

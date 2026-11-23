@@ -11,7 +11,10 @@ import {
   fallbackEmailSettings,
   invitationDeliveryContext,
   invitationEmailPayloadSchema,
+  mailIdentityVerificationContext,
+  mailIdentityVerificationPayloadSchema,
   openStoredEmailSettings,
+  renderMailIdentityVerificationEmail,
   renderAccountLockedEmail,
   renderAdminAccountNoticeEmail,
   renderAdminTwoFactorNoticeEmail,
@@ -44,6 +47,8 @@ import {
   auditLogs,
   emailSettings,
   emailSettingsChangeNotices,
+  mailAccounts,
+  mailIdentities,
   organizationLogos,
   organizations,
   mailAccessIndexOf,
@@ -592,7 +597,8 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
     event === 'email_sender_blocked' ||
     event === 'email_sender_limit_raised' ||
     event === 'mail_account_changed' ||
-    event === 'mail_access_changed';
+    event === 'mail_access_changed' ||
+    event === 'mail_identity_added';
   // Fase 9: password akun email ditolak → penerima dipilih pengantre (pemilik akun pribadi / pemegang
   // Kelola + Owner/Admin), cukup masih aktif.
   const anyActiveRecipient = event === 'mail_account_auth_failed';
@@ -609,6 +615,7 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
     event === 'email_sender_limit_raised' ||
     event === 'mail_account_changed' ||
     event === 'mail_access_changed' ||
+    event === 'mail_identity_added' ||
     event === 'mail_account_auth_failed'
       ? await findUserAnyStateWithEmail(organizationId, subjectUserId, deps)
       : await findActiveUser(organizationId, subjectUserId, deps);
@@ -684,6 +691,7 @@ async function sendSecurityNoticeAdmin(job: EmailJob, deps: EmailJobDeps): Promi
       event === 'email_sender_limit_raised' ||
       event === 'mail_account_changed' ||
       event === 'mail_access_changed' ||
+      event === 'mail_identity_added' ||
       event === 'mail_account_auth_failed'
         ? await findEmailApiDetails(organizationId, auditLogId, deps)
         : undefined;
@@ -1183,7 +1191,169 @@ function profileChangesOf(
   });
 }
 
+/** Kolom verifikasi yang dikosongkan saat verifikasi dibatalkan worker (konflik pengirim sistem). */
+const VERIFICATION_RESET = {
+  verificationState: 'unverified',
+  verifiedAt: null,
+  verifiedMethod: null,
+  verificationSecretEncrypted: null,
+  verificationCodeHash: null,
+  verificationMessageIdHash: null,
+  verificationSentAt: null,
+  verificationExpiresAt: null,
+  verificationAttempts: 0,
+} as const;
+
+const sameText = (a: string | null | undefined, b: string | null | undefined) =>
+  !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/**
+ * 9B — email verifikasi alamat pengirim menu Email (KONTRAK-API-EMAIL-TULIS §3.2): lewat Email
+ * pengirim SISTEM (rute MX asli), BUKAN SMTP akun yang bisa dikuasai pendaftar. Kode + `Message-ID`
+ * dari salinan terenkripsi (dihapus setelah terkirim). Konflik pengirim sistem (kotak surat yang sama
+ * dengan akun) diperiksa ulang di sini → verifikasi dibatalkan, tidak dikirim.
+ */
+async function sendMailIdentityVerification(
+  job: EmailJob,
+  deps: EmailJobDeps,
+): Promise<EmailJobResult> {
+  const payload = mailIdentityVerificationPayloadSchema.safeParse(job.data);
+  if (!payload.success) {
+    throw new UnrecoverableError('Payload job email:mail-identity-verification tidak valid');
+  }
+  const { organizationId, identityId } = payload.data;
+  const [row] = await deps.db
+    .select({ identity: mailIdentities, account: mailAccounts })
+    .from(mailIdentities)
+    .innerJoin(
+      mailAccounts,
+      and(
+        eq(mailAccounts.organizationId, mailIdentities.organizationId),
+        eq(mailAccounts.id, mailIdentities.accountId),
+      ),
+    )
+    .where(
+      and(eq(mailIdentities.organizationId, organizationId), eq(mailIdentities.id, identityId)),
+    )
+    .limit(1);
+  const identity = row?.identity;
+  const sealed = identity?.verificationSecretEncrypted ?? null;
+  if (
+    !row ||
+    !identity ||
+    sealed === null ||
+    identity.verificationState !== 'pending' ||
+    row.account.deletedAt !== null ||
+    !identity.verificationExpiresAt ||
+    identity.verificationExpiresAt.getTime() <= Date.now()
+  ) {
+    return { status: 'skipped', reason: 'no_longer_valid' };
+  }
+  const clearSecret = () =>
+    deps.db
+      .update(mailIdentities)
+      .set({ verificationSecretEncrypted: null })
+      .where(
+        and(eq(mailIdentities.organizationId, organizationId), eq(mailIdentities.id, identityId)),
+      );
+  const transport = await resolveTransport(organizationId, deps);
+  if (transport.kind === 'ready') {
+    const sender = transport.settings;
+    const account = row.account;
+    const smtpUser = account.smtpSameCredentials ? account.imapUsername : account.smtpUsername;
+    const conflict =
+      sameText(sender.sender.fromAddress, account.emailAddress) ||
+      sameText(sender.sender.fromAddress, identity.address) ||
+      (sameText(sender.connection.host, account.smtpHost) &&
+        sameText(sender.connection.username, smtpUser)) ||
+      (sameText(sender.connection.host, account.imapHost) &&
+        sameText(sender.connection.username, account.imapUsername));
+    if (conflict) {
+      await deps.db
+        .update(mailIdentities)
+        .set(VERIFICATION_RESET)
+        .where(
+          and(eq(mailIdentities.organizationId, organizationId), eq(mailIdentities.id, identityId)),
+        );
+      deps.logger.warn(
+        { jobId: job.id, identityId },
+        'Email verifikasi alamat tidak dikirim: kotak surat sama dengan Email pengirim sistem',
+      );
+      return { status: 'skipped', reason: 'no_longer_valid' };
+    }
+  }
+  let secret: { code: string; messageId: string };
+  try {
+    if (!deps.secretBox) throw new SecretDecryptionError();
+    secret = JSON.parse(
+      deps.secretBox.decrypt(sealed, mailIdentityVerificationContext(organizationId, identityId)),
+    ) as { code: string; messageId: string };
+    if (typeof secret.code !== 'string') return { status: 'skipped', reason: 'no_longer_valid' };
+  } catch {
+    await clearSecret();
+    throw new UnrecoverableError('Salinan kode verifikasi alamat tidak bisa dibuka');
+  }
+  const branding = await loadOrganizationBrand(deps.db, organizationId);
+  if (!branding) return { status: 'skipped', reason: 'recipient_unavailable' };
+  const [requester] = identity.verificationRequestedByUserId
+    ? await deps.db
+        .select({ name: users.name })
+        .from(users)
+        .where(
+          and(
+            eq(users.organizationId, organizationId),
+            eq(users.id, identity.verificationRequestedByUserId),
+          ),
+        )
+        .limit(1)
+    : [];
+  const body = renderMailIdentityVerificationEmail({
+    brand: branding.brand,
+    requesterName: requester?.name ?? 'Seseorang',
+    organizationName: branding.brand.organizationName ?? 'organisasimu',
+    address: identity.address,
+    accountName: row.account.displayName,
+    code: secret.code,
+  });
+  let result: EmailJobResult;
+  try {
+    result = await deliverVia(
+      transport,
+      organizationId,
+      {
+        to: identity.address,
+        ...body,
+        inlineImages: branding.inlineImages,
+        thread: { messageId: secret.messageId, inReplyTo: null, references: [] },
+      },
+      job,
+      deps,
+    );
+  } catch (error) {
+    if (error instanceof UnrecoverableError || isFinalAttempt(job)) await clearSecret();
+    throw error;
+  }
+  if (result.status === 'sent' && deps.secretBox) {
+    // KODE dibuang dari salinan; `Message-ID` disimpan terenkripsi (tanpa kode) sampai verifikasi
+    // selesai/kedaluwarsa — dipakai cadangan `UID SEARCH HEADER Message-ID` (§3.2).
+    await deps.db
+      .update(mailIdentities)
+      .set({
+        verificationSecretEncrypted: deps.secretBox.encrypt(
+          JSON.stringify({ messageId: secret.messageId }),
+          mailIdentityVerificationContext(organizationId, identityId),
+        ),
+        verificationSentAt: new Date(),
+      })
+      .where(
+        and(eq(mailIdentities.organizationId, organizationId), eq(mailIdentities.id, identityId)),
+      );
+  }
+  return result;
+}
+
 const PROCESSORS: Record<string, (job: EmailJob, deps: EmailJobDeps) => Promise<EmailJobResult>> = {
+  [EMAIL_JOBS.mailIdentityVerification]: sendMailIdentityVerification,
   [EMAIL_JOBS.accountLocked]: sendAccountLocked,
   [EMAIL_JOBS.securityNotice]: sendSecurityNotice,
   [EMAIL_JOBS.securityNoticeAdmin]: sendSecurityNoticeAdmin,

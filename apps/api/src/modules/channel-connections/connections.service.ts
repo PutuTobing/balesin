@@ -40,6 +40,7 @@ import {
   isPgError,
   lockEmailAddresses,
   mailAccounts,
+  mailIdentities,
   newId,
   PG_ERROR_CODES,
   type Channel,
@@ -224,7 +225,28 @@ async function assertNotMailAccount(
       ),
     )
     .limit(1);
-  if (hit) {
+  // 9B (KONTRAK-API-EMAIL-TULIS §3.3): alias (identitas) akun Email juga dihitung.
+  const [alias] = hit
+    ? [hit]
+    : await tx
+        .select({ id: mailIdentities.id })
+        .from(mailIdentities)
+        .innerJoin(
+          mailAccounts,
+          and(
+            eq(mailAccounts.organizationId, mailIdentities.organizationId),
+            eq(mailAccounts.id, mailIdentities.accountId),
+          ),
+        )
+        .where(
+          and(
+            eq(mailIdentities.organizationId, organizationId),
+            inArray(mailIdentities.address, list),
+            isNull(mailAccounts.deletedAt),
+          ),
+        )
+        .limit(1);
+  if (hit ?? alias) {
     const message =
       'Alamat ini sudah terhubung sebagai akun di menu Email. Satu alamat hanya bisa dipakai di Inbox atau di menu Email. Putuskan dulu akunnya di Pengaturan → Akun email.';
     throw new AppError('CONFLICT', {

@@ -197,79 +197,73 @@ describe('S6 — domain organisasi untuk peringatan penyamaran', () => {
   // diikat ke kotak surat — sisa S4; identitasnya `verified_at = null`). `senderContext` memasukkan
   // semua alamat akun & identitas ke "domain organisasi" → domain penipu dianggap INTERNAL → peringatan
   // domain mirip/penyamaran hilang untuk SEMUA akun organisasi.
-  it.fails(
-    'akun pribadi CS ber-alamat di domain mirip TIDAK membuat domain itu "internal"',
-    async () => {
-      imap.add('INBOX', lookalike());
-      const seed = await seedShared();
-      const cs = await insertUser(db, seed.organizationId, { role: 'cs' });
-      const personalId = newId();
-      await db.insert(mailAccounts).values(
-        accountValues(seed.organizationId, personalId, {
-          kind: 'personal',
-          ownerUserId: cs.id,
-          displayName: 'Pribadi',
-          emailAddress: 'apa.saja@c0ntoh.test',
-          imapUsername: 'cs-sendiri',
-          syncState: 'paused',
-        }),
-      );
-      await db.insert(mailIdentities).values({
-        organizationId: seed.organizationId,
-        accountId: personalId,
-        address: 'apa.saja@c0ntoh.test',
+  it('akun pribadi CS ber-alamat di domain mirip TIDAK membuat domain itu "internal"', async () => {
+    imap.add('INBOX', lookalike());
+    const seed = await seedShared();
+    const cs = await insertUser(db, seed.organizationId, { role: 'cs' });
+    const personalId = newId();
+    await db.insert(mailAccounts).values(
+      accountValues(seed.organizationId, personalId, {
+        kind: 'personal',
+        ownerUserId: cs.id,
         displayName: 'Pribadi',
-        isPrimary: true,
-        verifiedAt: null,
-      });
-      const { message, reader } = await syncedMessage(seed);
-      await reader.fetchBody({ ...seed, messageId: message.id });
-      const [after] = await db.select().from(mailMessages).where(eq(mailMessages.id, message.id));
-      expect(after?.warnings).toContain('lookalike_sender');
-    },
-  );
+        emailAddress: 'apa.saja@c0ntoh.test',
+        imapUsername: 'cs-sendiri',
+        syncState: 'paused',
+      }),
+    );
+    await db.insert(mailIdentities).values({
+      organizationId: seed.organizationId,
+      accountId: personalId,
+      address: 'apa.saja@c0ntoh.test',
+      displayName: 'Pribadi',
+      isPrimary: true,
+      verifiedAt: null,
+    });
+    const { message, reader } = await syncedMessage(seed);
+    await reader.fetchBody({ ...seed, messageId: message.id });
+    const [after] = await db.select().from(mailMessages).where(eq(mailMessages.id, message.id));
+    expect(after?.warnings).toContain('lookalike_sender');
+  });
 });
 
 describe('S7 — kuota cache isi & lampiran', () => {
   // Server IMAP milik CS: email berlampiran banyak × 50 MB; setiap unduhan disimpan ke media store
   // (disk yang sama dengan media WhatsApp) tanpa kuota per akun/organisasi, retensi bawaan 90 hari.
-  it.fails(
-    'akun yang cache lampirannya sudah 20 GB tidak menyimpan lampiran baru (kuota)',
-    async () => {
-      imap.add('INBOX', lookalike());
-      const seed = await seedShared();
-      const { message, reader } = await syncedMessage(seed);
-      await reader.fetchBody({ ...seed, messageId: message.id });
-      // Cache yang sudah ada (baris saja; berkas tidak perlu ada untuk menghitung kuota): 10 × 2 GB.
-      await db.insert(mailAttachments).values(
-        Array.from({ length: 10 }, (_, index) => ({
-          organizationId: seed.organizationId,
-          messageId: message.id,
-          partId: `9.${String(index + 1)}`,
-          filename: `arsip-${String(index)}.bin`,
-          declaredType: 'application/octet-stream',
-          detectedType: 'application/octet-stream',
-          sizeBytes: 2_000_000_000,
-          risk: 'ok',
-          storageKey: `mail/palsu-${randomBytes(6).toString('hex')}`,
-          fetchedAt: new Date(),
-          expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
-        })),
+  it('akun yang cache lampirannya sudah 20 GB tidak menyimpan lampiran baru (kuota)', async () => {
+    imap.add('INBOX', lookalike());
+    const seed = await seedShared();
+    const { message, reader } = await syncedMessage(seed);
+    await reader.fetchBody({ ...seed, messageId: message.id });
+    // Cache yang sudah ada (baris saja; berkas tidak perlu ada untuk menghitung kuota): 10 × 2 GB.
+    await db.insert(mailAttachments).values(
+      Array.from({ length: 10 }, (_, index) => ({
+        organizationId: seed.organizationId,
+        messageId: message.id,
+        partId: `9.${String(index + 1)}`,
+        filename: `arsip-${String(index)}.bin`,
+        declaredType: 'application/octet-stream',
+        detectedType: 'application/octet-stream',
+        sizeBytes: 2_000_000_000,
+        risk: 'ok',
+        storageKey: `mail/palsu-${randomBytes(6).toString('hex')}`,
+        fetchedAt: new Date(),
+        expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+      })),
+    );
+    const [pdf] = await db
+      .select()
+      .from(mailAttachments)
+      .where(
+        and(
+          eq(mailAttachments.messageId, message.id),
+          eq(mailAttachments.filename, 'rekening.pdf'),
+        ),
       );
-      const [pdf] = await db
-        .select()
-        .from(mailAttachments)
-        .where(
-          and(
-            eq(mailAttachments.messageId, message.id),
-            eq(mailAttachments.filename, 'rekening.pdf'),
-          ),
-        );
-      if (!pdf) throw new Error('lampiran');
-      const result = await reader.fetchAttachment({ ...seed, attachmentId: pdf.id });
-      expect(result.status).toBe('failed');
-      const [after] = await db.select().from(mailAttachments).where(eq(mailAttachments.id, pdf.id));
-      expect(after?.storageKey).toBeNull();
-    },
-  );
+    if (!pdf) throw new Error('lampiran');
+    const result = await reader.fetchAttachment({ ...seed, attachmentId: pdf.id });
+    expect(result.status).toBe('failed');
+    const [after] = await db.select().from(mailAttachments).where(eq(mailAttachments.id, pdf.id));
+    expect(after?.storageKey).toBeNull();
+  });
 });

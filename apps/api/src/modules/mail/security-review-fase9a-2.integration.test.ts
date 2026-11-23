@@ -160,6 +160,9 @@ beforeAll(async () => {
     },
     overrides: {
       mail: {
+        // Tes S5 menghitung UNDUHAN keluar; cache 24 jam (yang juga menutup S5/R8) diuji terpisah di
+        // `mail-image-proxy.integration.test.ts`.
+        imageCache: false,
         fetchRemote: (request) => {
           fetches.push(request);
           return fetchRemote(request);
@@ -185,48 +188,40 @@ describe('S5 — proksi gambar luar: batas per pengguna & konkurensi', () => {
   // Kontrak §8: 300/menit/PENGGUNA. Sekarang kuncinya `token.slice(0, 32)` = versi + ID pesan + 7 byte
   // ID sesi → praktis per (pesan, sesi): email lain (server IMAP milik CS bisa memuat ribuan) = jatah
   // 300 baru. Sisanya hanya 600/menit per IP (IPv6 tidak dikelompokkan /64).
-  it.fails(
-    'unduhan gambar ke-301 dalam semenit oleh pengguna yang sama → 429 walau lewat token email lain',
-    async () => {
-      const { message } = await seedMessage();
-      const another = await seedMessage();
-      const first = await view(owner, message.id);
-      const second = await view(owner, another.message.id);
-      for (let batch = 0; batch < 10; batch += 1) {
-        const responses = await Promise.all(
-          Array.from({ length: 30 }, () => get(`${first.url}/images/0`)),
-        );
-        for (const response of responses) expect(response.statusCode).toBe(200);
-      }
-      expect(fetches).toHaveLength(300);
-      const extra = await get(`${second.url}/images/0`);
-      expect(extra.statusCode).toBe(429);
-    },
-    60_000,
-  );
+  it('unduhan gambar ke-301 dalam semenit oleh pengguna yang sama → 429 walau lewat token email lain', async () => {
+    const { message } = await seedMessage();
+    const another = await seedMessage();
+    const first = await view(owner, message.id);
+    const second = await view(owner, another.message.id);
+    for (let batch = 0; batch < 10; batch += 1) {
+      const responses = await Promise.all(
+        Array.from({ length: 30 }, () => get(`${first.url}/images/0`)),
+      );
+      for (const response of responses) expect(response.statusCode).toBe(200);
+    }
+    expect(fetches).toHaveLength(300);
+    const extra = await get(`${second.url}/images/0`);
+    expect(extra.statusCode).toBe(429);
+  }, 60_000);
 
   // Setiap unduhan menampung ≤ 5 MB di memori proses api (`fetchRemoteFile` menimbun potongan lalu
   // `Buffer.concat`) tanpa batas permintaan bersamaan → ratusan unduhan paralel ke server milik
   // penyerang (menetes sampai tenggat 8 dtk) = GB memori → api OOM (termasuk penerima webhook Meta).
-  it.fails(
-    'unduhan gambar bersamaan satu pengguna dibatasi (≤ 8 berjalan sekaligus)',
-    async () => {
-      const { message } = await seedMessage();
-      const issued = await view(owner, message.id);
-      let inFlight = 0;
-      let peak = 0;
-      fetchRemote = async () => {
-        inFlight += 1;
-        peak = Math.max(peak, inFlight);
-        await new Promise((resolve) => setTimeout(resolve, 150));
-        inFlight -= 1;
-        return pngResult();
-      };
-      await Promise.all(Array.from({ length: 30 }, () => get(`${issued.url}/images/0`)));
-      expect(peak).toBeLessThanOrEqual(8);
-    },
-    60_000,
-  );
+  it('unduhan gambar bersamaan satu pengguna dibatasi (≤ 8 berjalan sekaligus)', async () => {
+    const { message } = await seedMessage();
+    const issued = await view(owner, message.id);
+    let inFlight = 0;
+    let peak = 0;
+    fetchRemote = async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      inFlight -= 1;
+      return pngResult();
+    };
+    await Promise.all(Array.from({ length: 30 }, () => get(`${issued.url}/images/0`)));
+    expect(peak).toBeLessThanOrEqual(8);
+  }, 60_000);
 });
 
 describe('regresi 9A-2 — token, cid, lampiran', () => {

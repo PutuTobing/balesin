@@ -157,6 +157,16 @@ export interface MailImapActions {
   fetchSource(uid: number, maxBytes: number): Promise<MailFetchedBytes | null>;
   /** Satu bagian BODYSTRUCTURE (masih ber-transfer-encoding), per potongan sampai `maxBytes`. */
   fetchPart(uid: number, part: string, maxBytes: number): Promise<MailFetchedBytes | null>;
+  /**
+   * Review 9A-2 S7: seperti `fetchPart` tetapi setiap potongan (≤ 3 MB) DIALIRKAN ke `sink` (mis. ke
+   * disk) tanpa ditampung — memori job lampiran tetap kecil. `null` = UID/bagian tidak ada.
+   */
+  fetchPartTo(
+    uid: number,
+    part: string,
+    maxBytes: number,
+    sink: (chunk: Buffer) => Promise<void>,
+  ): Promise<{ sizeBytes: number; truncated: boolean } | null>;
   /** `UID STORE ±FLAGS.SILENT`. `false` = server menolak. */
   storeFlags(
     uids: readonly number[],
@@ -177,6 +187,27 @@ export interface MailImapActions {
   expunge(uids: readonly number[]): Promise<boolean>;
   /** `CREATE` folder (path server lengkap). */
   createFolder(path: string): Promise<boolean>;
+}
+
+/**
+ * Tahap 9B (KONTRAK-API-EMAIL-TULIS §7, §13): salinan draf/Terkirim dan pencarian `Message-ID`.
+ * Terpisah supaya tiruan sinkron di memori tidak wajib mengisinya.
+ */
+export interface MailImapCompose {
+  /** `APPEND` ke `path` dengan bendera. `uid` dari `APPENDUID` (UIDPLUS), atau `null`. */
+  append(
+    path: string,
+    raw: Buffer,
+    flags: readonly string[],
+  ): Promise<{ uid: number | null; uidValidity: number | null } | null>;
+  /** `UID SEARCH [SINCE] HEADER Message-ID <id>` di folder terpilih (≤ 50 UID). */
+  searchMessageId(messageId: string, since: Date | null): Promise<number[]>;
+}
+
+export function hasMailImapCompose(
+  session: MailImapSession,
+): session is MailImapSession & MailImapActions & MailImapCompose {
+  return typeof (session as Partial<MailImapCompose>).append === 'function';
 }
 
 export function hasMailImapActions(
@@ -425,7 +456,7 @@ interface ByteMeter {
   onExceeded: () => void;
 }
 
-class ImapFlowSession implements MailImapSession, MailImapActions {
+class ImapFlowSession implements MailImapSession, MailImapActions, MailImapCompose {
   readonly capabilities: MailServerCapabilities;
 
   private aborted = false;
@@ -695,23 +726,31 @@ class ImapFlowSession implements MailImapSession, MailImapActions {
     maxBytes: number,
     query: (start: number, length: number) => Record<string, unknown>,
     pick: (row: { source?: Buffer; bodyParts?: Map<string, Buffer> }) => Buffer | undefined,
-  ): Promise<MailFetchedBytes | null> {
+    sink?: (chunk: Buffer) => Promise<void>,
+  ): Promise<(MailFetchedBytes & { sizeBytes: number }) | null> {
+    // Dengan `sink`: potongan dialirkan (tidak ditampung) dan `bytes` kosong.
     const chunks: Buffer[] = [];
     let total = 0;
+    const result = (truncated: boolean) => ({
+      bytes: sink ? Buffer.alloc(0) : Buffer.concat(chunks).subarray(0, maxBytes),
+      truncated,
+      sizeBytes: Math.min(total, maxBytes),
+    });
     for (;;) {
       const length = Math.min(MAIL_FETCH_CHUNK_BYTES, maxBytes + 1 - total);
       const row = await this.guard(
         this.client.fetchOne(String(uid), query(total, length), { uid: true }),
       );
-      if (!row) return total === 0 ? null : { bytes: Buffer.concat(chunks), truncated: false };
-      const chunk = pick(row);
-      if (!chunk) return total === 0 ? null : { bytes: Buffer.concat(chunks), truncated: false };
-      chunks.push(chunk);
+      const chunk = row ? pick(row) : undefined;
+      if (!chunk) return total === 0 ? null : result(false);
       total += chunk.length;
       if (total > maxBytes) {
-        return { bytes: Buffer.concat(chunks).subarray(0, maxBytes), truncated: true };
+        if (!sink) chunks.push(chunk);
+        return result(true);
       }
-      if (chunk.length < length) return { bytes: Buffer.concat(chunks), truncated: false };
+      if (sink) await sink(chunk);
+      else chunks.push(chunk);
+      if (chunk.length < length) return result(false);
     }
   }
 
@@ -732,6 +771,23 @@ class ImapFlowSession implements MailImapSession, MailImapActions {
       (start, length) => ({ uid: true, bodyParts: [{ key: part, start, maxLength: length }] }),
       (row) => row.bodyParts?.get(part),
     );
+  }
+
+  async fetchPartTo(
+    uid: number,
+    part: string,
+    maxBytes: number,
+    sink: (chunk: Buffer) => Promise<void>,
+  ): Promise<{ sizeBytes: number; truncated: boolean } | null> {
+    if (!/^\d+(\.\d+){0,20}$/.test(part)) return null;
+    const fetched = await this.fetchChunks(
+      uid,
+      maxBytes,
+      (start, length) => ({ uid: true, bodyParts: [{ key: part, start, maxLength: length }] }),
+      (row) => row.bodyParts?.get(part),
+      sink,
+    );
+    return fetched ? { sizeBytes: fetched.sizeBytes, truncated: fetched.truncated } : null;
   }
 
   async storeFlags(
@@ -797,6 +853,38 @@ class ImapFlowSession implements MailImapSession, MailImapActions {
       );
     }
     return Boolean(await this.guard(this.client.messageDelete(range, { uid: true })));
+  }
+
+  async append(
+    path: string,
+    raw: Buffer,
+    flags: readonly string[],
+  ): Promise<{ uid: number | null; uidValidity: number | null } | null> {
+    try {
+      const result = (await this.guard(this.client.append(path, raw, [...flags]))) as
+        { uid?: number; uidValidity?: bigint | number } | false | undefined;
+      if (!result) return null;
+      return {
+        uid: typeof result.uid === 'number' && result.uid > 0 ? result.uid : null,
+        uidValidity: result.uidValidity !== undefined ? Number(result.uidValidity) : null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async searchMessageId(messageId: string, since: Date | null): Promise<number[]> {
+    // `Message-ID` dari Balesin sendiri (bukan masukan luar); tetap dibatasi bentuknya.
+    if (!/^[A-Za-z0-9._@+=-]{3,200}$/.test(messageId)) return [];
+    const result = await this.guard(
+      this.client.search(
+        { header: { 'message-id': `<${messageId}>` }, ...(since ? { since } : {}) },
+        { uid: true },
+      ),
+      MAIL_SEARCH_MAX_BYTES,
+    );
+    if (!Array.isArray(result)) return [];
+    return result.filter((uid) => Number.isInteger(uid) && uid > 0).slice(0, 50);
   }
 
   async createFolder(path: string): Promise<boolean> {

@@ -27,6 +27,7 @@ import { apiKeys } from './api-keys';
 import { channels } from './channels';
 import { createdAtColumn, idColumn, timestamptz, updatedAtColumn } from './columns';
 import { contacts } from './contacts';
+import { mailAccounts } from './mail';
 import { conversations } from './conversations';
 import { messages } from './messages';
 import { organizations } from './organizations';
@@ -379,6 +380,12 @@ export const emailSenderSettings = pgTable(
       columns: [table.organizationId, table.channelId],
       foreignColumns: [channels.organizationId, channels.id],
     }).onDelete('cascade'),
+    // 9B: FK yang tertinggal dari 9.1.
+    foreignKey({
+      name: 'email_sender_settings_organization_id_mail_account_id_fk',
+      columns: [table.organizationId, table.mailAccountId],
+      foreignColumns: [mailAccounts.organizationId, mailAccounts.id],
+    }).onDelete('cascade'),
     foreignKey({
       name: 'email_sender_settings_organization_id_paused_by_user_id_fk',
       columns: [table.organizationId, table.pausedByUserId],
@@ -436,6 +443,11 @@ export const apiKeyEmailSenders = pgTable(
       name: 'api_key_email_senders_organization_id_channel_id_fk',
       columns: [table.organizationId, table.channelId],
       foreignColumns: [channels.organizationId, channels.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'api_key_email_senders_organization_id_mail_account_id_fk',
+      columns: [table.organizationId, table.mailAccountId],
+      foreignColumns: [mailAccounts.organizationId, mailAccounts.id],
     }).onDelete('cascade'),
     check(
       'api_key_email_senders_sender_one',

@@ -268,7 +268,8 @@ describe('S4 (Sedang) — verifikasi alamat tidak terbawa ke alamat/kotak surat 
     const verifiedAt = new Date('2026-11-01T00:00:00Z');
     await harness.db
       .update(mailIdentities)
-      .set({ verifiedAt })
+      // 9B: `verified` ⇔ `verified_at` terisi (CHECK `mail_identities_verification`).
+      .set({ verifiedAt, verificationState: 'verified', verifiedMethod: 'code' })
       .where(eq(mailIdentities.accountId, account.id));
     const rename = await call(
       harness.app,
@@ -301,6 +302,7 @@ describe('S4 (Sedang) — verifikasi alamat tidak terbawa ke alamat/kotak surat 
     const after = await identity();
     expect(after?.address).toBe(mailAccountResponseSchema.parse(moved.json()).account.emailAddress);
     expect(after?.verifiedAt ?? null).toBeNull();
+    expect(after?.verificationState).toBe('unverified');
   });
 });
 

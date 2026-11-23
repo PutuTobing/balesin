@@ -268,6 +268,8 @@ export async function startFakeMailImap(
       selected: null,
     };
     let idleTag: string | null = null;
+    /** 9B: `APPEND … {n}` — menunggu `n` byte literal. */
+    let pendingAppend: { tag: string; path: string; flags: string[]; size: number } | null = null;
     const write = (line: string | Buffer) => socket.write(line);
     write(`* OK [CAPABILITY ${capability}] Fake Mail IMAP siap\r\n`);
     socket.on('error', () => undefined);
@@ -289,9 +291,34 @@ export async function startFakeMailImap(
     socket.on('data', (chunk: Buffer) => {
       buffer += chunk.toString('latin1');
       let index: number;
-      while ((index = buffer.indexOf('\r\n')) >= 0) {
+      for (;;) {
+        if (pendingAppend) {
+          if (buffer.length < pendingAppend.size) break;
+          const raw = Buffer.from(buffer.slice(0, pendingAppend.size), 'latin1');
+          buffer = buffer.slice(pendingAppend.size);
+          const appending = pendingAppend;
+          pendingAppend = null;
+          const target = folders.get(appending.path);
+          if (!target) {
+            write(`${appending.tag} NO [TRYCREATE] folder tidak ada\r\n`);
+            continue;
+          }
+          const uid = target.nextUid;
+          target.nextUid += 1;
+          target.messages.push({ uid, raw, flags: appending.flags, internalDate: new Date() });
+          notifyIdle(target.path, `* ${String(target.messages.length)} EXISTS\r\n`, socket);
+          write(
+            options.uidplus === false
+              ? `${appending.tag} OK APPEND selesai\r\n`
+              : `${appending.tag} OK [APPENDUID ${String(target.uidValidity)} ${String(uid)}] APPEND selesai\r\n`,
+          );
+          continue;
+        }
+        index = buffer.indexOf('\r\n');
+        if (index < 0) break;
         const line = buffer.slice(0, index);
         buffer = buffer.slice(index + 2);
+        if (line === '') continue;
         if (idleTag !== null) {
           if (line.trim().toUpperCase() === 'DONE') {
             idleClients.delete(state);
@@ -360,6 +387,21 @@ export async function startFakeMailImap(
             write(`${tag} OK CREATE selesai\r\n`);
             break;
           }
+          case 'APPEND': {
+            const match = /^("(?:[^"\\]|\\.)*"|\S+)\s*(?:\(([^)]*)\))?.*\{(\d+)\+?\}$/.exec(args);
+            if (!authed || !match) {
+              write(`${tag} BAD APPEND tidak sah\r\n`);
+              break;
+            }
+            pendingAppend = {
+              tag,
+              path: unquote(match[1] ?? ''),
+              flags: (match[2] ?? '').split(/\s+/).filter((flag) => flag.length > 0),
+              size: Number(match[3]),
+            };
+            if (!args.endsWith('+}')) write('+ Ready for literal data\r\n');
+            break;
+          }
           case 'STATUS': {
             const match = /^("(?:[^"\\]|\\.)*"|\S+)/.exec(args);
             const target = folders.get(unquote(match?.[1] ?? ''));
@@ -419,10 +461,29 @@ export async function startFakeMailImap(
                 .filter((message) => inSet(message.uid, set, maxUid))
                 .map((m) => m.uid);
             if (sub === 'SEARCH') {
-              const criteria = rest.slice(1).join(' ').toUpperCase();
+              const rawCriteria = rest.slice(1).join(' ');
+              const criteria = rawCriteria.toUpperCase();
               const since = criteria.includes('SINCE') ? parseSearchDate(criteria) : null;
+              // 9B: `HEADER <bidang> <nilai>` (substring tanpa beda huruf, RFC 3501).
+              const header = /HEADER\s+("(?:[^"\\]|\\.)*"|\S+)\s+("(?:[^"\\]|\\.)*"|\S+)/i.exec(
+                rawCriteria,
+              );
+              const headerMatches = (message: FakeMailMessage) => {
+                if (!header) return true;
+                const field = unquote(header[1] ?? '').toLowerCase();
+                const value = unquote(header[2] ?? '').toLowerCase();
+                return splitMessage(message.raw)
+                  .headers.toString('latin1')
+                  .replace(/\r\n[ \t]+/g, ' ')
+                  .split('\r\n')
+                  .some((item) => {
+                    const lower = item.toLowerCase();
+                    return lower.startsWith(`${field}:`) && lower.includes(value);
+                  });
+              };
               const uids = folder.messages
                 .filter((message) => !since || message.internalDate.getTime() >= since.getTime())
+                .filter(headerMatches)
                 .map((message) => message.uid);
               write(
                 `* SEARCH${uids.map((uid) => ` ${String(uid)}`).join('')}\r\n${tag} OK SEARCH selesai\r\n`,

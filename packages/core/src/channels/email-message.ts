@@ -465,12 +465,49 @@ const DANGEROUS_EXTENSIONS = new Set([
   'sh',
   'app',
   'url',
+  // Review 9A-2 R7: skrip Windows Script Host, konsol MMC, konektor pencarian, dsb.
+  'ws',
+  'vb',
+  'msc',
+  'msh1',
+  'msh2',
+  'mshxml',
+  'msh1xml',
+  'msh2xml',
+  'ps2',
+  'ps2xml',
+  'psc2',
+  'psd1',
+  'xbap',
+  'ins',
+  'isp',
+  'mst',
+  'its',
+  'cer',
+  'crt',
+  'der',
+  'hlp',
+  'shb',
+  'shs',
+  'search-ms',
+  'searchconnector-ms',
+  'diagcab',
+  'msix',
+  'msixbundle',
+  'appx',
+  'appxbundle',
 ]);
 const OFFICE_EXTENSIONS = new Set(['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']);
 
-function extensionOf(filename: string | null): string {
-  return /\.([A-Za-z0-9]{1,8})$/.exec(filename ?? '')?.[1]?.toLowerCase() ?? '';
+/**
+ * Ekstensi nama berkas (huruf kecil). Review 9A-2 R7: titik/spasi di AKHIR nama dibuang dulu —
+ * Windows/Firefox membuangnya saat menyimpan, jadi `tagihan.pdf.js.` = `tagihan.pdf.js`.
+ */
+export function attachmentExtensionOf(filename: string | null): string {
+  const trimmed = (filename ?? '').replace(/[.\s]+$/u, '');
+  return /\.([A-Za-z0-9-]{1,20})$/.exec(trimmed)?.[1]?.toLowerCase() ?? '';
 }
+const extensionOf = attachmentExtensionOf;
 
 /** Fase 9 (modul Email): nama berkas berekstensi yang bisa dijalankan/ditafsirkan browser/bermakro. */
 export function isDangerousEmailFileName(filename: string | null): boolean {

@@ -267,6 +267,20 @@
       "when": 1795385957976,
       "tag": "0037_mail_baca_aksi",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1795411751377,
+      "tag": "0038_mail_kuota_cache_gambar",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1795412266755,
+      "tag": "0039_mail_tulis",
+      "breakpoints": true
     }
   ]
 }

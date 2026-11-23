@@ -22,7 +22,7 @@ import {
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod';
 
-import { clientInfo } from '../../http/client-info';
+import { clientInfo, ipRateLimitKey } from '../../http/client-info';
 import { enforceRateLimit, type RateLimitRule, type RateLimiter } from '../../http/rate-limit';
 import { PUBLIC, requirePermission } from '../../http/route-access';
 import { requireAuth } from '../auth/auth.hook';
@@ -30,6 +30,7 @@ import type {
   MailBinaryResponse,
   MailMessagesService,
   MailRequestContext,
+  MailTokenGuard,
 } from './mail-messages.service';
 
 export interface MailMessagesRoutesOptions {
@@ -45,18 +46,47 @@ export const MAIL_VIEW_RULE: RateLimitRule = {
   windowSeconds: 60,
 };
 export const MAIL_ACTION_RULE: RateLimitRule = { name: 'mail-aksi', limit: 120, windowSeconds: 60 };
+/**
+ * Review 9A-2 S5: rute token dibatasi per PENGGUNA & per ORGANISASI sesi asal (setelah token
+ * di-resolve) — bukan per token, karena email lain = token lain. Per IP (IPv6 per /64) sebelum itu.
+ */
 export const MAIL_IMAGE_RULE: RateLimitRule = {
-  name: 'mail-gambar',
+  name: 'mail-gambar-pengguna',
   limit: 300,
   windowSeconds: 60,
 };
-/** Rute token (tanpa sesi): per token (= per pengguna & pesan) dan per IP. */
+export const MAIL_IMAGE_ORG_RULE: RateLimitRule = {
+  name: 'mail-gambar-organisasi',
+  limit: 3_000,
+  windowSeconds: 60,
+};
+export const MAIL_VIEW_DOCUMENT_RULE: RateLimitRule = {
+  name: 'mail-dokumen-pengguna',
+  limit: 240,
+  windowSeconds: 60,
+};
+export const MAIL_CID_RULE: RateLimitRule = {
+  name: 'mail-cid-pengguna',
+  limit: 600,
+  windowSeconds: 60,
+};
 export const MAIL_TOKEN_IP_RULE: RateLimitRule = {
   name: 'mail-token-ip',
   limit: 600,
   windowSeconds: 60,
 };
 export const MAIL_READ_RULE: RateLimitRule = { name: 'mail-baca', limit: 240, windowSeconds: 60 };
+/**
+ * Review 9A-2 R10: pengambilan BARU dari server email (isi/lampiran belum di cache) per pengguna —
+ * tiap job = satu LOGIN IMAP; menyisir banyak email bisa membuat server email memblokir IP Balesin.
+ */
+export const MAIL_SERVER_FETCH_RULE: RateLimitRule = {
+  name: 'mail-ambil-server',
+  limit: 60,
+  windowSeconds: 60,
+};
+export const MAIL_SERVER_FETCH_MESSAGE = (wait: string) =>
+  `Terlalu banyak email dibuka sekaligus. Coba lagi dalam ${wait}.`;
 
 const VIEW = requirePermission('mail.view');
 
@@ -105,10 +135,17 @@ export const mailMessagesRoutes: FastifyPluginCallbackZod<MailMessagesRoutesOpti
   });
   const limit = (rule: RateLimitRule, key: string) =>
     enforceRateLimit(limiter, rule, key, waitMessage);
-  const tokenLimit = async (request: FastifyRequest, token: string, rule: RateLimitRule) => {
-    await limit(MAIL_TOKEN_IP_RULE, clientInfo(request).ip ?? 'tanpa-ip');
-    await limit(rule, token.slice(0, 32));
-  };
+  const ipLimit = (request: FastifyRequest) =>
+    limit(MAIL_TOKEN_IP_RULE, ipRateLimitKey(clientInfo(request)));
+  const actorLimit =
+    (rule: RateLimitRule, organizationRule?: RateLimitRule): MailTokenGuard =>
+    async (actor) => {
+      await limit(rule, actor.user.id);
+      if (organizationRule) await limit(organizationRule, actor.organizationId);
+    };
+  const documentGuard = actorLimit(MAIL_VIEW_DOCUMENT_RULE);
+  const imageGuard = actorLimit(MAIL_IMAGE_RULE, MAIL_IMAGE_ORG_RULE);
+  const cidGuard = actorLimit(MAIL_CID_RULE);
 
   app.get(
     routes.messages,
@@ -274,8 +311,8 @@ export const mailMessagesRoutes: FastifyPluginCallbackZod<MailMessagesRoutesOpti
       schema: { params: mailViewTokenParamsSchema },
     },
     async (request, reply) => {
-      await tokenLimit(request, request.params.token, MAIL_VIEW_RULE);
-      return sendBinary(reply, await messages.viewDocument(request.params.token));
+      await ipLimit(request);
+      return sendBinary(reply, await messages.viewDocument(request.params.token, documentGuard));
     },
   );
 
@@ -286,10 +323,10 @@ export const mailMessagesRoutes: FastifyPluginCallbackZod<MailMessagesRoutesOpti
       schema: { params: mailViewImageParamsSchema },
     },
     async (request, reply) => {
-      await tokenLimit(request, request.params.token, MAIL_IMAGE_RULE);
+      await ipLimit(request);
       return sendBinary(
         reply,
-        await messages.viewImage(request.params.token, request.params.index),
+        await messages.viewImage(request.params.token, request.params.index, imageGuard),
       );
     },
   );
@@ -301,10 +338,10 @@ export const mailMessagesRoutes: FastifyPluginCallbackZod<MailMessagesRoutesOpti
       schema: { params: mailViewCidParamsSchema },
     },
     async (request, reply) => {
-      await tokenLimit(request, request.params.token, MAIL_IMAGE_RULE);
+      await ipLimit(request);
       return sendBinary(
         reply,
-        await messages.viewCid(request.params.token, request.params.attachmentId),
+        await messages.viewCid(request.params.token, request.params.attachmentId, cidGuard),
       );
     },
   );

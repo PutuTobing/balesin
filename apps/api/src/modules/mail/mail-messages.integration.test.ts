@@ -223,6 +223,9 @@ beforeAll(async () => {
     },
     overrides: {
       mail: {
+        // Tes ini menguji perilaku SATU unduhan per permintaan (jenis isi, galat); cache 24 jam diuji
+        // di `mail-image-proxy.integration.test.ts`.
+        imageCache: false,
         fetchRemote: (request) => {
           fetches.push(request);
           return Promise.resolve(remote);
@@ -517,6 +520,12 @@ describe('baca email', () => {
       owner,
     );
     expect(add.statusCode, add.body).toBe(200);
+    // Review 9A-2 R9: otomatis HANYA untuk pengirim yang lolos verifikasi; `unverified` tetap diblokir.
+    expect((await view(owner, message.id)).remoteImages.shown).toBe(false);
+    await harness.db
+      .update(mailMessages)
+      .set({ senderVerification: 'pass' })
+      .where(eq(mailMessages.id, message.id));
     expect((await view(owner, message.id)).remoteImages.shown).toBe(true);
     await harness.db
       .update(mailMessages)

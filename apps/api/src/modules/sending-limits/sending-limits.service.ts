@@ -7,6 +7,7 @@ import {
 import {
   apiKeys,
   emailOutbound,
+  mailOutbox,
   messages,
   organizations,
   users,
@@ -113,6 +114,17 @@ export interface SendingLimitsService {
      */
     recipients: number;
   }): Promise<void>;
+  /**
+   * Tahap 9B — email menu Email: rem darurat (423) + SATU batas harian pengguna (pesan Inbox +
+   * penerima email menu Email, 24 jam bergulir). Batas harian organisasi tidak menghitung email.
+   */
+  assertCanSendMail(input: {
+    organizationId: string;
+    userId: string;
+    client: ClientInfo;
+    /** Kepada + Cc + Bcc setelah digabung. */
+    recipients: number;
+  }): Promise<void>;
 }
 
 /**
@@ -151,6 +163,21 @@ async function countOutbound(
       ),
     );
   const messageCount = Number(row?.total ?? 0);
+  if (senderUserId !== undefined && apiKeyId === undefined) {
+    // 9B: email menu Email milik pengguna ini (per penerima) ikut batas harian pengguna.
+    const [mail] = await db
+      .select({ total: sql<number>`coalesce(sum(${mailOutbox.recipientCount}), 0)::int` })
+      .from(mailOutbox)
+      .where(
+        and(
+          eq(mailOutbox.organizationId, organizationId),
+          eq(mailOutbox.createdByUserId, senderUserId),
+          sql`${mailOutbox.status} in ('pending', 'queued', 'sending', 'sent')`,
+          gt(mailOutbox.createdAt, since),
+        ),
+      );
+    return messageCount + Number(mail?.total ?? 0);
+  }
   if (apiKeyId === undefined) return messageCount;
   // Batas harian per key = penerima pesan + penerima email lewat key yang sama (tahap 9.1,
   // review 9.1 S2: email dihitung PER PENERIMA, bukan per email).
@@ -453,6 +480,30 @@ export function createSendingLimitsService(deps: SendingLimitsServiceDeps): Send
           { userId: null, apiKeyId: apiKey.id },
           apiKey.dailySendLimit,
           viaKey,
+          client,
+        );
+      }
+    },
+
+    async assertCanSendMail({ organizationId, userId, client, recipients }) {
+      const [org] = await db
+        .select({
+          pausedAt: organizations.sendingPausedAt,
+          perUser: organizations.sendDailyLimitPerUser,
+        })
+        .from(organizations)
+        .where(eq(organizations.id, organizationId));
+      if (!org) throw new AppError('NOT_FOUND');
+      if (org.pausedAt) throw new AppError('SENDING_PAUSED');
+      const since = new Date(now().getTime() - SENDING_DAY_MS);
+      const mine = await countOutbound(db, organizationId, since, userId);
+      if (mine + Math.max(1, recipients) > org.perUser) {
+        await limitReached(
+          organizationId,
+          'user',
+          { userId, apiKeyId: null },
+          org.perUser,
+          mine,
           client,
         );
       }

@@ -41,14 +41,20 @@ import {
 import { createWebhookWorker, type WebhookJobDeps } from './queues/webhooks';
 import { createIdleSupervisor, type IdleSupervisor } from './mail-idle/supervisor';
 import { createMailActions } from './mail/actions';
+import { createComposeMaintenance } from './mail/compose-maintenance';
+import { createMailCopies, markVerifiedByMailbox } from './mail/copies';
+import { createMailSender, type MailSendDeps } from './mail/send';
 import { createMailReader } from './mail/read';
 import { createMailSync, type MailSyncDeps } from './mail/sync';
 import {
   createMailQueue,
   createMailScheduleQueue,
   createMailScheduleWorker,
+  createMailSendQueue,
+  createMailSendWorker,
   createMailWorker,
   mailEnqueuers,
+  mailSendEnqueuer,
   scheduleMailJobs,
   type MailJobDeps,
 } from './queues/mail';
@@ -99,6 +105,10 @@ export interface WorkerServices {
       prefix?: string;
       /** Origin web (`APP_URL`) — halaman peringatan tautan menipu di dokumen tampilan. */
       appUrl: string;
+      /** 9B: SMTP akun (port tambahan/CA/loopback HANYA tes), pengganti pengirim tes, email Owner. */
+      smtp?: MailSendDeps['smtp'];
+      send?: MailSendDeps['send'];
+      notifyOwner?: MailSendDeps['notifyOwner'];
     };
 }
 
@@ -132,14 +142,20 @@ export function startWorkers(
   let webhookProducer: Queue | undefined;
   let mailQueue: Queue | undefined;
   let mailScheduleQueue: Queue | undefined;
+  let mailSendQueue: Queue | undefined;
   let idleSupervisor: IdleSupervisor | undefined;
   if (services.mail) {
     const queue = createMailQueue(options);
     mailQueue = queue;
     queue.on('error', () => undefined);
     const enqueue = mailEnqueuers(queue);
-    const { store, idle, prefix, appUrl, ...syncDeps } = services.mail;
-    const sync = createMailSync({ ...syncDeps, logger });
+    const { store, idle, prefix, appUrl, smtp, send, notifyOwner, ...syncDeps } = services.mail;
+    const sync = createMailSync({
+      ...syncDeps,
+      logger,
+      verifyByMailbox: (organizationId, identityId, at) =>
+        markVerifiedByMailbox(syncDeps.db, organizationId, identityId, at),
+    });
     const reader = createMailReader({
       db: syncDeps.db,
       logger,
@@ -159,7 +175,50 @@ export function startWorkers(
       enqueueSync: (payload) => enqueue.enqueueSync(payload),
       ...(syncDeps.now ? { now: syncDeps.now } : {}),
     });
+    const sendQueue = createMailSendQueue(options);
+    mailSendQueue = sendQueue;
+    sendQueue.on('error', () => undefined);
+    const queuePrefix = prefix ?? QUEUE_PREFIX;
+    const sender = createMailSender({
+      db: syncDeps.db,
+      logger,
+      redis: options.connection,
+      prefix: queuePrefix,
+      secretBox: syncDeps.secretBox,
+      publisher: syncDeps.publisher,
+      store,
+      smtp: smtp ?? {},
+      ...(send ? { send } : {}),
+      ...(notifyOwner ? { notifyOwner } : {}),
+      enqueueSend: mailSendEnqueuer(sendQueue),
+      enqueueAppendSent: (payload, delayMs) => enqueue.enqueueAppendSent(payload, delayMs),
+      enqueueDraftRemoteDelete: (payload) => enqueue.enqueueDraftRemoteDelete(payload),
+      ...(syncDeps.now ? { now: syncDeps.now } : {}),
+    });
+    const copies = createMailCopies({
+      db: syncDeps.db,
+      logger,
+      secretBox: syncDeps.secretBox,
+      publisher: syncDeps.publisher,
+      store,
+      openSession: (account) => reader.openSession(account),
+      enqueueFolder: (payload) => enqueue.enqueueFolder(payload),
+      ...(syncDeps.now ? { now: syncDeps.now } : {}),
+    });
+    const compose = createComposeMaintenance({
+      db: syncDeps.db,
+      redis: options.connection,
+      prefix: queuePrefix,
+      logger,
+      publisher: syncDeps.publisher,
+      store,
+      enqueueDraftSync: (payload, delayMs) => enqueue.enqueueDraftSync(payload, delayMs),
+      ...(syncDeps.now ? { now: syncDeps.now } : {}),
+    });
     const mailDeps = {
+      sender,
+      copies,
+      compose,
       db: services.mail.db,
       logger,
       redis: options.connection,
@@ -178,7 +237,11 @@ export function startWorkers(
     const scheduleQueue = createMailScheduleQueue(options);
     mailScheduleQueue = scheduleQueue;
     scheduleQueue.on('error', () => undefined);
-    workers.push(createMailWorker(options, mailDeps), createMailScheduleWorker(options, mailDeps));
+    workers.push(
+      createMailWorker(options, mailDeps),
+      createMailScheduleWorker(options, mailDeps),
+      createMailSendWorker(options, sender),
+    );
     scheduleMailJobs(scheduleQueue, queue).catch((err: unknown) => {
       logger.error({ err }, 'Jadwal modul Email gagal didaftarkan');
     });
@@ -325,6 +388,7 @@ export function startWorkers(
         emailOutboundQueue,
         mailQueue,
         mailScheduleQueue,
+        mailSendQueue,
       ]) {
         if (!queue) continue;
         if (force) await queue.disconnect();

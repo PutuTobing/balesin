@@ -1,6 +1,6 @@
 import { domainToASCII } from 'node:url';
 
-import { isDangerousEmailFileName } from '../channels/email-message';
+import { attachmentExtensionOf, isDangerousEmailFileName } from '../channels/email-message';
 import { cleanFileName } from '../meta/contact-identity';
 import { detectMedia } from '../meta/media-sniff';
 import type { MailBodyStructureNode } from './imap-account';
@@ -89,9 +89,7 @@ const BLOCKED_TYPES = [
 const ARCHIVE_TYPES =
   /^application\/(x-)?(zip|zip-compressed|rar|vnd\.rar|7z-compressed|gzip|x-tar|bzip2|x-xz)\b/;
 
-function extensionOf(filename: string | null): string {
-  return /\.([A-Za-z0-9-]{1,20})$/.exec(filename ?? '')?.[1]?.toLowerCase() ?? '';
-}
+const extensionOf = attachmentExtensionOf;
 
 export const MAIL_ATTACHMENT_RISK_REASONS = {
   executable: 'executable',
@@ -162,6 +160,13 @@ export function sniffRasterImage(
 export function classifyMailAttachmentContent(
   bytes: Uint8Array,
   filename: string | null,
+  options: {
+    /**
+     * Review 9A-2 S7: `bytes` hanya KEPALA berkas (berkas utuh dialirkan ke disk) — hasil pemeriksaan
+     * wadah ZIP Office (`officeZipAllowed` atas direktori pusat dari disk) diberikan pemanggil.
+     */
+    officeZipAllowed?: boolean;
+  } = {},
 ): { risk: MailAttachmentRiskLevel; reason: string | null; detectedType: string } {
   const byName = mailAttachmentRiskOf(filename, null);
   const octet = 'application/octet-stream';
@@ -201,7 +206,12 @@ export function classifyMailAttachmentContent(
     return { risk: 'blocked', reason: MAIL_ATTACHMENT_RISK_REASONS.web, detectedType: octet };
   }
   if (startsWith(bytes, [0x50, 0x4b, 0x03, 0x04])) {
-    const office = detectMedia(bytes, filename, { verifyContainer: true });
+    const office =
+      options.officeZipAllowed === undefined
+        ? detectMedia(bytes, filename, { verifyContainer: true })
+        : options.officeZipAllowed
+          ? detectMedia(bytes, filename, { verifyContainer: false })
+          : null;
     const extension = extensionOf(filename);
     if (['docx', 'xlsx', 'pptx'].includes(extension)) {
       return office
@@ -341,6 +351,52 @@ export function decodeTransferEncoding(raw: Buffer, encoding: string | null): Bu
     }
   }
   return out.subarray(0, length);
+}
+
+/**
+ * Review 9A-2 S7: dekoder transfer-encoding BERALIR (lampiran besar dialirkan ke disk per potongan,
+ * tanpa string latin1 utuh). Hasil `push`+`end` = `decodeTransferEncoding` atas gabungan potongan.
+ */
+export function createTransferDecoder(encoding: string | null): {
+  push(chunk: Buffer): Buffer;
+  end(): Buffer;
+} {
+  const kind = (encoding ?? '').toLowerCase();
+  if (kind === 'base64') {
+    let carry = '';
+    return {
+      push(chunk) {
+        const text = carry + chunk.toString('latin1').replace(/[^A-Za-z0-9+/=]/g, '');
+        const usable = text.length - (text.length % 4);
+        carry = text.slice(usable);
+        return Buffer.from(text.slice(0, usable), 'base64');
+      },
+      end() {
+        const rest = carry;
+        carry = '';
+        return Buffer.from(rest, 'base64');
+      },
+    };
+  }
+  if (kind === 'quoted-printable') {
+    let carry: Buffer = Buffer.alloc(0);
+    return {
+      push(chunk) {
+        const joined = carry.length > 0 ? Buffer.concat([carry, chunk]) : chunk;
+        // `=` di dua byte terakhir bisa jadi awal escape/jeda lunak yang terpotong → ditahan.
+        const lastEq = joined.lastIndexOf(0x3d);
+        const cut = lastEq >= 0 && lastEq >= joined.length - 2 ? lastEq : joined.length;
+        carry = Buffer.from(joined.subarray(cut));
+        return decodeTransferEncoding(joined.subarray(0, cut), kind);
+      },
+      end() {
+        const rest = carry;
+        carry = Buffer.alloc(0);
+        return decodeTransferEncoding(rest, kind);
+      },
+    };
+  }
+  return { push: (chunk) => chunk, end: () => Buffer.alloc(0) };
 }
 
 // ── Peringatan pengirim (kontrak §8) ────────────────────────────────────────

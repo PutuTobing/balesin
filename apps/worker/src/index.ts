@@ -2,6 +2,7 @@ import {
   channelTestOverridesFromEnv,
   closeRedis,
   createInboxEventPublisher,
+  createMailComposeKeys,
   createMailEventPublisher,
   createLogger,
   createMediaStore,
@@ -111,6 +112,17 @@ function main(config: WorkerConfig): void {
       appUrl: config.appUrl,
       publisher: createMailEventPublisher(redis, { logger }),
       notify: ownerNotifier.notify,
+      // 9B: kunci utas sama dengan api (HKDF dari master key) + SMTP akun lewat penjaga KETAT.
+      ...(config.masterKey
+        ? {
+            threadKey: (() => {
+              const keys = createMailComposeKeys(config.masterKey.reveal());
+              return (accountId: string, root: string) => keys.threadKey(accountId, root);
+            })(),
+          }
+        : {}),
+      notifyOwner: ownerNotifier.notify,
+      smtp: testOverrides.imap ? { allowLoopback: true } : {},
       imap: {
         ...(testOverrides.imap?.allowedPorts
           ? { extraPorts: testOverrides.imap.allowedPorts }

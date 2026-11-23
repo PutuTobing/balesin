@@ -1,6 +1,19 @@
 import {
   MAIL_ACCESS_LEVELS,
   MAIL_ACCOUNT_COLORS,
+  MAIL_ATTACHMENT_SOURCES,
+  MAIL_COMPOSE_FORMATS,
+  MAIL_DRAFT_ATTACHMENT_STATES,
+  MAIL_DRAFT_MODES,
+  MAIL_DRAFT_SERVER_SYNC_STATES,
+  MAIL_DRAFT_STATES,
+  MAIL_IDENTITY_VERIFICATION_STATES,
+  MAIL_IDENTITY_VERIFIED_METHODS,
+  MAIL_OUTBOX_HOLD_REASONS,
+  MAIL_OUTBOX_STATUSES,
+  MAIL_SEND_FAILURE_REASONS,
+  MAIL_SENT_COPY_MODES,
+  MAIL_SENT_COPY_STATES,
   MAIL_ACCOUNT_KINDS,
   MAIL_AVATAR_STORED_MAX_BYTES,
   MAIL_FOLDER_ROLE_SOURCES,
@@ -16,6 +29,7 @@ import {
   customType,
   foreignKey,
   index,
+  type AnyPgColumn,
   integer,
   jsonb,
   numeric,
@@ -130,6 +144,10 @@ export const mailAccounts = pgTable(
     quotaUsedBytes: bigint('quota_used_bytes', { mode: 'number' }),
     quotaLimitBytes: bigint('quota_limit_bytes', { mode: 'number' }),
     avatarSha256: text('avatar_sha256'),
+    /** 9B: salinan email terkirim — `auto` (cari di Terkirim dulu), `append`, `none`. */
+    sentCopyMode: text('sent_copy_mode').notNull().default('auto'),
+    /** 9B: peringatan penerima di luar domain kantor saat menulis. */
+    warnExternalRecipients: boolean('warn_external_recipients').notNull().default(false),
     createdByUserId: uuid('created_by_user_id'),
     /** Terisi saat pemutusan berjalan (kredensial sudah dimusnahkan; job menghapus bertahap). */
     deletedAt: timestamptz('deleted_at'),
@@ -166,6 +184,10 @@ export const mailAccounts = pgTable(
       sql.raw(
         `kind in (${list(MAIL_ACCOUNT_KINDS)}) and provider in (${list(MAIL_PROVIDERS)}) and color in (${list(MAIL_ACCOUNT_COLORS)}) and sync_state in (${list(MAIL_SYNC_STATES)})`,
       ),
+    ),
+    check(
+      'mail_accounts_sent_copy_mode',
+      sql.raw(`sent_copy_mode in (${list(MAIL_SENT_COPY_MODES)})`),
     ),
     check(
       'mail_accounts_owner',
@@ -316,7 +338,13 @@ export const mailAccountAccess = pgTable(
 
 export type MailAccountAccessRow = typeof mailAccountAccess.$inferSelect;
 
-/** Identitas pengirim akun. 9A: hanya identitas utama (= alamat akun); alias & tanda tangan 9B. */
+/**
+ * Identitas pengirim akun (utama = alamat akun; alias 9B). Kirim HANYA dari identitas `verified`
+ * (KONTRAK-API-EMAIL-TULIS §3): bukti = `Message-ID` rahasia ditemukan di kotak surat akun itu
+ * sendiri ATAU kode 6 digit. Kode & `Message-ID` disimpan sebagai HMAC/SHA-256 + salinan terenkripsi
+ * sementara (dihapus setelah email verifikasi terkirim). Unik org-wide ditegakkan service di bawah
+ * advisory lock `email-address:<org>:<alamat>` (akun `deleting` masih punya baris).
+ */
 export const mailIdentities = pgTable(
   'mail_identities',
   {
@@ -329,25 +357,68 @@ export const mailIdentities = pgTable(
     displayName: text('display_name').notNull(),
     isPrimary: boolean('is_primary').notNull().default(false),
     verifiedAt: timestamptz('verified_at'),
+    replyTo: text('reply_to'),
+    verificationState: text('verification_state').notNull().default('unverified'),
+    verifiedMethod: text('verified_method'),
+    verificationSecretEncrypted: text('verification_secret_encrypted'),
+    verificationCodeHash: text('verification_code_hash'),
+    verificationMessageIdHash: text('verification_message_id_hash'),
+    verificationSentAt: timestamptz('verification_sent_at'),
+    verificationExpiresAt: timestamptz('verification_expires_at'),
+    verificationAttempts: integer('verification_attempts').notNull().default(0),
+    verificationRequestedByUserId: uuid('verification_requested_by_user_id'),
+    /** Hanya tanda tangan BERSAMA akun yang sama (service). FK satu kolom: `set null`. */
+    defaultSignatureNewId: uuid('default_signature_new_id').references(
+      (): AnyPgColumn => mailSignatures.id,
+      { onDelete: 'set null' },
+    ),
+    defaultSignatureReplyId: uuid('default_signature_reply_id').references(
+      (): AnyPgColumn => mailSignatures.id,
+      { onDelete: 'set null' },
+    ),
+    /** Alias: pembuat; utama: `null`. */
+    createdByUserId: uuid('created_by_user_id'),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
   (table) => [
+    unique('mail_identities_organization_id_id_unique').on(table.organizationId, table.id),
     foreignKey({
       name: 'mail_identities_organization_id_account_id_fk',
       columns: [table.organizationId, table.accountId],
       foreignColumns: [mailAccounts.organizationId, mailAccounts.id],
     }).onDelete('cascade'),
+    foreignKey({
+      name: 'mail_identities_organization_id_created_by_user_id_fk',
+      columns: [table.organizationId, table.createdByUserId],
+      foreignColumns: [users.organizationId, users.id],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'mail_identities_organization_id_verification_requested_by_fk',
+      columns: [table.organizationId, table.verificationRequestedByUserId],
+      foreignColumns: [users.organizationId, users.id],
+    }).onDelete('restrict'),
     unique('mail_identities_account_id_address_unique').on(table.accountId, table.address),
     uniqueIndex('mail_identities_one_primary')
       .on(table.accountId)
       .where(sql`${table.isPrimary}`),
+    index('mail_identities_pending_idx')
+      .on(table.accountId, table.verificationMessageIdHash)
+      .where(sql`${table.verificationState} = 'pending'`),
     check(
       'mail_identities_text_lengths',
-      sql`char_length(${table.address}) between 3 and 254 and ${table.address} = lower(${table.address}) and char_length(${table.displayName}) between 1 and 80`,
+      sql`char_length(${table.address}) between 3 and 254 and ${table.address} = lower(${table.address}) and char_length(${table.displayName}) between 1 and 80 and (${table.replyTo} is null or (char_length(${table.replyTo}) between 3 and 254 and ${table.replyTo} = lower(${table.replyTo})))`,
+    ),
+    check(
+      'mail_identities_verification',
+      sql.raw(
+        `verification_state in (${list(MAIL_IDENTITY_VERIFICATION_STATES)}) and (verified_method is null or verified_method in (${list(MAIL_IDENTITY_VERIFIED_METHODS)})) and ((verification_state = 'verified') = (verified_at is not null)) and verification_attempts between 0 and 5 and (verification_code_hash is null or char_length(verification_code_hash) <= 64) and (verification_message_id_hash is null or verification_message_id_hash ~ '^[0-9a-f]{64}$')`,
+      ),
     ),
   ],
 );
+
+export type MailIdentityRow = typeof mailIdentities.$inferSelect;
 
 export const mailFolders = pgTable(
   'mail_folders',
@@ -489,10 +560,18 @@ export const mailMessages = pgTable(
     /** Bendera SEBELUM aksi tertunda pertama — dipakai mengembalikan bila server menolak. */
     pendingRevert: jsonb('pending_revert').$type<MailPendingRevert>(),
     bodystructure: jsonb('bodystructure').$type<unknown>(),
+    /** 9B: kunci utas (`references[1]` → `in_reply_to` → `message_id_header` → `'id:' || id`). */
+    threadRoot: text('thread_root'),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
   (table) => [
+    index('mail_messages_thread_root_idx').on(
+      table.organizationId,
+      table.accountId,
+      table.threadRoot,
+      table.receivedAt.desc(),
+    ),
     unique('mail_messages_organization_id_id_unique').on(table.organizationId, table.id),
     unique('mail_messages_folder_uid_unique').on(table.folderId, table.uidvalidity, table.uid),
     foreignKey({
@@ -533,7 +612,7 @@ export const mailMessages = pgTable(
     ),
     check(
       'mail_messages_sizes',
-      sql`(${table.messageIdHeader} is null or char_length(${table.messageIdHeader}) <= 998) and (${table.inReplyTo} is null or char_length(${table.inReplyTo}) <= 998) and cardinality(${table.references}) <= 20 and (${table.subject} is null or char_length(${table.subject}) <= 998) and (${table.snippet} is null or char_length(${table.snippet}) <= 200) and (${table.fromAddress} is null or char_length(${table.fromAddress}) <= 254) and (${table.fromName} is null or char_length(${table.fromName}) <= 200) and (${table.deliveredTo} is null or char_length(${table.deliveredTo}) <= 254) and jsonb_array_length(${table.to}) <= 100 and jsonb_array_length(${table.cc}) <= 100 and cardinality(${table.keywords}) <= 50 and ${table.uid} > 0 and ${table.sizeBytes} >= 0`,
+      sql`(${table.messageIdHeader} is null or char_length(${table.messageIdHeader}) <= 998) and (${table.inReplyTo} is null or char_length(${table.inReplyTo}) <= 998) and cardinality(${table.references}) <= 20 and (${table.subject} is null or char_length(${table.subject}) <= 998) and (${table.snippet} is null or char_length(${table.snippet}) <= 200) and (${table.fromAddress} is null or char_length(${table.fromAddress}) <= 254) and (${table.fromName} is null or char_length(${table.fromName}) <= 200) and (${table.deliveredTo} is null or char_length(${table.deliveredTo}) <= 254) and jsonb_array_length(${table.to}) <= 100 and jsonb_array_length(${table.cc}) <= 100 and cardinality(${table.keywords}) <= 50 and ${table.uid} > 0 and ${table.sizeBytes} >= 0 and (${table.threadRoot} is null or char_length(${table.threadRoot}) <= 998)`,
     ),
   ],
 );
@@ -607,6 +686,10 @@ export const mailAttachments = pgTable(
     index('mail_attachments_expires_at_idx')
       .on(table.expiresAt)
       .where(sql`${table.storageKey} is not null`),
+    // Review 9A-2 S7: kuota cache per organisasi/akun dihitung dari baris yang TERSIMPAN saja.
+    index('mail_attachments_cached_org_idx')
+      .on(table.organizationId, table.messageId)
+      .where(sql`${table.storageKey} is not null`),
     check(
       'mail_attachments_known',
       sql`${table.risk} in ('ok', 'warn', 'blocked') and char_length(${table.partId}) between 1 and 64 and (${table.filename} is null or char_length(${table.filename}) <= 255) and (${table.declaredType} is null or char_length(${table.declaredType}) <= 255) and (${table.contentId} is null or char_length(${table.contentId}) <= 998) and ${table.sizeBytes} >= 0`,
@@ -641,6 +724,46 @@ export const mailRemoteImageAllow = pgTable(
   ],
 );
 
+/**
+ * Review 9A-2 S5/R8: cache proksi gambar luar email (kontrak §8 "disimpan sementara 24 jam"). Kunci =
+ * akun + `sha256(url)` (tanpa URL mentah); berkas di media store folder `mail/`. Kedaluwarsa = 24 jam
+ * (dipangkas `mail-cache-retention`, dihapus ikut putus akun). Kuota per organisasi di api.
+ */
+export const mailRemoteImageCache = pgTable(
+  'mail_remote_image_cache',
+  {
+    id: idColumn(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    accountId: uuid('account_id').notNull(),
+    urlHash: text('url_hash').notNull(),
+    storageKey: text('storage_key').notNull(),
+    contentType: text('content_type').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    fetchedAt: timestamptz('fetched_at').notNull().defaultNow(),
+    expiresAt: timestamptz('expires_at').notNull(),
+    createdAt: createdAtColumn(),
+    updatedAt: updatedAtColumn(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'mail_remote_image_cache_organization_id_account_id_fk',
+      columns: [table.organizationId, table.accountId],
+      foreignColumns: [mailAccounts.organizationId, mailAccounts.id],
+    }).onDelete('cascade'),
+    unique('mail_remote_image_cache_account_url_unique').on(table.accountId, table.urlHash),
+    index('mail_remote_image_cache_org_expires_idx').on(table.organizationId, table.expiresAt),
+    index('mail_remote_image_cache_expires_idx').on(table.expiresAt),
+    check(
+      'mail_remote_image_cache_values',
+      sql`${table.urlHash} ~ '^[0-9a-f]{64}$' and ${table.storageKey} ~ '^mail/[0-9a-f-]{36}$' and ${table.contentType} in ('image/png', 'image/jpeg', 'image/gif', 'image/webp') and ${table.sizeBytes} between 0 and 5242880`,
+    ),
+  ],
+);
+
+export type MailRemoteImageCacheRow = typeof mailRemoteImageCache.$inferSelect;
+
 /** Pengaturan email satu organisasi (retensi cache, jendela sinkron bawaan). Tanpa baris = bawaan. */
 export const mailSettings = pgTable(
   'mail_settings',
@@ -650,6 +773,10 @@ export const mailSettings = pgTable(
       .references(() => organizations.id, { onDelete: 'restrict' }),
     cacheRetentionDays: integer('cache_retention_days').notNull().default(90),
     defaultSyncWindowDays: integer('default_sync_window_days').default(90),
+    /** 9B: Kepada + Cc + Bcc per email (1–100). */
+    maxRecipientsPerEmail: integer('max_recipients_per_email').notNull().default(50),
+    /** 9B: total lampiran per email (MB, 1–25). */
+    maxAttachmentTotalMb: integer('max_attachment_total_mb').notNull().default(20),
     updatedByUserId: uuid('updated_by_user_id'),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
@@ -663,9 +790,434 @@ export const mailSettings = pgTable(
     }).onDelete('restrict'),
     check(
       'mail_settings_numbers',
-      sql`${table.cacheRetentionDays} between 7 and 3650 and (${table.defaultSyncWindowDays} is null or ${table.defaultSyncWindowDays} in (30, 90, 365))`,
+      sql`${table.cacheRetentionDays} between 7 and 3650 and (${table.defaultSyncWindowDays} is null or ${table.defaultSyncWindowDays} in (30, 90, 365)) and ${table.maxRecipientsPerEmail} between 1 and 100 and ${table.maxAttachmentTotalMb} between 1 and 25`,
     ),
   ],
 );
 
 export type MailSettingsRow = typeof mailSettings.$inferSelect;
+
+// ── Tahap 9B: tulis, balas, teruskan (KONTRAK-API-EMAIL-TULIS §2) ─────────────
+
+/**
+ * Tanda tangan: `owner_user_id` `null` = BERSAMA (per akun); terisi = PRIBADI pengguna itu untuk akun
+ * itu. HTML sudah lewat profil editor. Logo PNG ≤ 320 px, ≤ 128 KB (inline `cid:sig-logo-<id>`).
+ */
+export const mailSignatures = pgTable(
+  'mail_signatures',
+  {
+    id: idColumn(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    accountId: uuid('account_id').notNull(),
+    ownerUserId: uuid('owner_user_id'),
+    name: text('name').notNull(),
+    html: text('html').notNull(),
+    text: text('text').notNull(),
+    logoPng: bytea('logo_png'),
+    logoSha256: text('logo_sha256'),
+    createdByUserId: uuid('created_by_user_id'),
+    updatedByUserId: uuid('updated_by_user_id'),
+    createdAt: createdAtColumn(),
+    updatedAt: updatedAtColumn(),
+  },
+  (table) => [
+    unique('mail_signatures_organization_id_id_unique').on(table.organizationId, table.id),
+    foreignKey({
+      name: 'mail_signatures_organization_id_account_id_fk',
+      columns: [table.organizationId, table.accountId],
+      foreignColumns: [mailAccounts.organizationId, mailAccounts.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'mail_signatures_organization_id_owner_user_id_fk',
+      columns: [table.organizationId, table.ownerUserId],
+      foreignColumns: [users.organizationId, users.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'mail_signatures_organization_id_created_by_user_id_fk',
+      columns: [table.organizationId, table.createdByUserId],
+      foreignColumns: [users.organizationId, users.id],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'mail_signatures_organization_id_updated_by_user_id_fk',
+      columns: [table.organizationId, table.updatedByUserId],
+      foreignColumns: [users.organizationId, users.id],
+    }).onDelete('restrict'),
+    index('mail_signatures_account_owner_idx').on(
+      table.organizationId,
+      table.accountId,
+      table.ownerUserId,
+    ),
+    check(
+      'mail_signatures_sizes',
+      sql`char_length(${table.name}) between 1 and 60 and octet_length(${table.html}) <= 32768 and octet_length(${table.text}) <= 8192 and (${table.logoPng} is null or octet_length(${table.logoPng}) between 1 and 131072) and ((${table.logoPng} is null) = (${table.logoSha256} is null)) and (${table.logoSha256} is null or ${table.logoSha256} ~ '^[0-9a-f]{64}$')`,
+    ),
+  ],
+);
+
+export type MailSignatureRow = typeof mailSignatures.$inferSelect;
+
+/** Pilihan tanda tangan per identitas: `null` = ikut bawaan identitas; `"none"` = tanpa. */
+export type MailSignatureChoicesRow = Record<
+  string,
+  /** ID tanda tangan, `"none"` (tanpa tanda tangan), atau `null` (ikut bawaan identitas). */
+  { new?: string | null; reply?: string | null }
+>;
+
+/** Preferensi tulis PRIBADI pengguna (batalkan kirim, format, pilihan tanda tangan). */
+export const mailUserPreferences = pgTable(
+  'mail_user_preferences',
+  {
+    userId: uuid('user_id').primaryKey(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    undoSendSeconds: integer('undo_send_seconds').notNull().default(10),
+    composeFormat: text('compose_format').notNull().default('html'),
+    signatureChoices: jsonb('signature_choices')
+      .$type<MailSignatureChoicesRow>()
+      .notNull()
+      .default({}),
+    createdAt: createdAtColumn(),
+    updatedAt: updatedAtColumn(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'mail_user_preferences_organization_id_user_id_fk',
+      columns: [table.organizationId, table.userId],
+      foreignColumns: [users.organizationId, users.id],
+    }).onDelete('cascade'),
+    check(
+      'mail_user_preferences_values',
+      sql.raw(
+        `undo_send_seconds between 5 and 30 and compose_format in (${list(MAIL_COMPOSE_FORMATS)}) and jsonb_typeof(signature_choices) = 'object'`,
+      ),
+    ),
+  ],
+);
+
+/** Salinan email asli di draf (balasan tetap benar walau cache email dipangkas). */
+export interface MailSourceSnapshotRow {
+  messageIdHeader: string | null;
+  inReplyTo: string | null;
+  references: string[];
+  from: MailAddressRow | null;
+  to: MailAddressRow[];
+  cc: MailAddressRow[];
+  replyTo: MailAddressRow[];
+  subject: string | null;
+  sentAt: string | null;
+  folderRole: string | null;
+}
+
+export interface MailSendErrorRow {
+  reason: string;
+  message: string;
+  at: string;
+}
+
+/**
+ * Draf email: PRIBADI pembuatnya (juga di akun bersama, juga terhadap Owner). Database = kebenaran;
+ * salinan di folder Draf server (`server_*`) diganti tiap sinkron. `state = sending` selama ada outbox
+ * aktif. `version` naik tiap simpan (konkurensi optimistis).
+ */
+export const mailDrafts = pgTable(
+  'mail_drafts',
+  {
+    id: idColumn(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    accountId: uuid('account_id').notNull(),
+    identityId: uuid('identity_id').notNull(),
+    ownerUserId: uuid('owner_user_id').notNull(),
+    mode: text('mode').notNull(),
+    sourceMessageId: uuid('source_message_id').references((): AnyPgColumn => mailMessages.id, {
+      onDelete: 'set null',
+    }),
+    sourceSnapshot: jsonb('source_snapshot').$type<MailSourceSnapshotRow>(),
+    threadRoot: text('thread_root'),
+    threadSeenAt: timestamptz('thread_seen_at'),
+    to: jsonb('to').$type<MailAddressRow[]>().notNull().default([]),
+    cc: jsonb('cc').$type<MailAddressRow[]>().notNull().default([]),
+    bcc: jsonb('bcc').$type<MailAddressRow[]>().notNull().default([]),
+    subject: text('subject').notNull().default(''),
+    format: text('format').notNull().default('html'),
+    bodyHtml: text('body_html'),
+    bodyText: text('body_text'),
+    includeQuote: boolean('include_quote').notNull().default(false),
+    state: text('state').notNull().default('editing'),
+    version: integer('version').notNull().default(1),
+    lastSendError: jsonb('last_send_error').$type<MailSendErrorRow>(),
+    /** 128 bit acak (base32) — bagian `Message-ID` salinan di folder Draf server. */
+    serverRef: text('server_ref').notNull(),
+    /** Folder Draf server (tanpa FK: daftar folder diganti utuh saat LIST). */
+    serverFolderId: uuid('server_folder_id'),
+    serverUid: bigint('server_uid', { mode: 'number' }),
+    serverUidvalidity: bigint('server_uidvalidity', { mode: 'number' }),
+    serverMessageId: text('server_message_id'),
+    serverSyncedVersion: integer('server_synced_version'),
+    serverSyncState: text('server_sync_state').notNull().default('pending'),
+    serverSyncedAt: timestamptz('server_synced_at'),
+    serverErrorCode: text('server_error_code'),
+    /** Template email terakhir yang disisipkan (statistik `last_used_at`; tanpa FK). */
+    templateId: uuid('template_id'),
+    createdAt: createdAtColumn(),
+    updatedAt: updatedAtColumn(),
+  },
+  (table) => [
+    unique('mail_drafts_organization_id_id_unique').on(table.organizationId, table.id),
+    foreignKey({
+      name: 'mail_drafts_organization_id_account_id_fk',
+      columns: [table.organizationId, table.accountId],
+      foreignColumns: [mailAccounts.organizationId, mailAccounts.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'mail_drafts_organization_id_identity_id_fk',
+      columns: [table.organizationId, table.identityId],
+      foreignColumns: [mailIdentities.organizationId, mailIdentities.id],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'mail_drafts_organization_id_owner_user_id_fk',
+      columns: [table.organizationId, table.ownerUserId],
+      foreignColumns: [users.organizationId, users.id],
+    }).onDelete('cascade'),
+    index('mail_drafts_owner_updated_idx').on(
+      table.organizationId,
+      table.ownerUserId,
+      table.updatedAt.desc(),
+    ),
+    index('mail_drafts_account_thread_idx').on(table.accountId, table.threadRoot),
+    index('mail_drafts_server_pending_idx')
+      .on(table.serverSyncState, table.updatedAt)
+      .where(sql`${table.serverSyncState} = 'pending'`),
+    unique('mail_drafts_server_ref_unique').on(table.serverRef),
+    check(
+      'mail_drafts_known',
+      sql.raw(
+        `mode in (${list(MAIL_DRAFT_MODES)}) and format in (${list(MAIL_COMPOSE_FORMATS)}) and state in (${list(MAIL_DRAFT_STATES)}) and server_sync_state in (${list(MAIL_DRAFT_SERVER_SYNC_STATES)}) and version >= 1`,
+      ),
+    ),
+    check(
+      'mail_drafts_sizes',
+      sql`char_length(${table.subject}) <= 200 and (${table.bodyHtml} is null or octet_length(${table.bodyHtml}) <= 262144) and (${table.bodyText} is null or octet_length(${table.bodyText}) <= 131072) and jsonb_array_length(${table.to}) <= 100 and jsonb_array_length(${table.cc}) <= 100 and jsonb_array_length(${table.bcc}) <= 100 and (${table.threadRoot} is null or char_length(${table.threadRoot}) <= 998) and ${table.serverRef} ~ '^[a-z2-7]{26}$' and (${table.serverMessageId} is null or char_length(${table.serverMessageId}) <= 998) and (${table.serverErrorCode} is null or char_length(${table.serverErrorCode}) <= 64)`,
+    ),
+  ],
+);
+
+export type MailDraftRow = typeof mailDrafts.$inferSelect;
+export type NewMailDraftRow = typeof mailDrafts.$inferInsert;
+
+/**
+ * Lampiran draf: berkas di media store (`email-out/<uuid>`, nama acak), jenis dari ISI (daftar izin
+ * keluar 9.1), nama dibersihkan. `inline` = gambar di badan (`content_id` `img-<8 hex>`).
+ */
+export const mailDraftAttachments = pgTable(
+  'mail_draft_attachments',
+  {
+    id: idColumn(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    draftId: uuid('draft_id').notNull(),
+    position: integer('position').notNull().default(0),
+    filename: text('filename').notNull(),
+    contentType: text('content_type').notNull(),
+    sizeBytes: integer('size_bytes').notNull().default(0),
+    sha256: text('sha256'),
+    storageKey: text('storage_key'),
+    source: text('source').notNull(),
+    sourceAttachmentId: uuid('source_attachment_id').references(
+      (): AnyPgColumn => mailAttachments.id,
+      { onDelete: 'set null' },
+    ),
+    state: text('state').notNull().default('ready'),
+    failureCode: text('failure_code'),
+    inline: boolean('inline').notNull().default(false),
+    contentId: text('content_id'),
+    createdByUserId: uuid('created_by_user_id'),
+    createdAt: createdAtColumn(),
+    updatedAt: updatedAtColumn(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'mail_draft_attachments_organization_id_draft_id_fk',
+      columns: [table.organizationId, table.draftId],
+      foreignColumns: [mailDrafts.organizationId, mailDrafts.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'mail_draft_attachments_organization_id_created_by_user_id_fk',
+      columns: [table.organizationId, table.createdByUserId],
+      foreignColumns: [users.organizationId, users.id],
+    }).onDelete('cascade'),
+    index('mail_draft_attachments_draft_idx').on(table.draftId, table.position),
+    uniqueIndex('mail_draft_attachments_content_id_unique')
+      .on(table.draftId, table.contentId)
+      .where(sql`${table.contentId} is not null`),
+    check(
+      'mail_draft_attachments_known',
+      sql.raw(
+        `source in (${list(MAIL_ATTACHMENT_SOURCES)}) and state in (${list(MAIL_DRAFT_ATTACHMENT_STATES)}) and size_bytes between 0 and 26214400 and char_length(filename) between 1 and 255 and char_length(content_type) between 3 and 128 and (sha256 is null or sha256 ~ '^[0-9a-f]{64}$') and (storage_key is null or storage_key ~ '^(email-out|mail-out)/[0-9a-f-]{36}$') and (content_id is null or content_id ~ '^[A-Za-z0-9._-]{1,64}$') and (failure_code is null or char_length(failure_code) <= 64) and (state <> 'ready' or storage_key is not null)`,
+      ),
+    ),
+  ],
+);
+
+export type MailDraftAttachmentRow = typeof mailDraftAttachments.$inferSelect;
+
+/**
+ * Outbox kirim menu Email — TERPISAH dari `email_outbound` 9.1 (Riwayat kirim API, webhook `email.*`
+ * tidak boleh melihat email pribadi tim). Satu baris per permintaan kirim; `pending` = masa batal
+ * (`send_after`). Klaim worker: `FOR UPDATE SKIP LOCKED` hanya bila `send_after <= now()`; batal =
+ * pembaruan bersyarat — siapa pun yang commit dulu menang. Isi FINAL dibekukan saat kirim.
+ */
+export const mailOutbox = pgTable(
+  'mail_outbox',
+  {
+    id: idColumn(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    accountId: uuid('account_id').notNull(),
+    identityId: uuid('identity_id').references((): AnyPgColumn => mailIdentities.id, {
+      onDelete: 'set null',
+    }),
+    draftId: uuid('draft_id').references((): AnyPgColumn => mailDrafts.id, {
+      onDelete: 'set null',
+    }),
+    createdByUserId: uuid('created_by_user_id').notNull(),
+    mode: text('mode').notNull(),
+    fromAddress: text('from_address').notNull(),
+    fromName: text('from_name').notNull(),
+    replyTo: text('reply_to'),
+    envelopeFrom: text('envelope_from').notNull(),
+    to: jsonb('to').$type<MailAddressRow[]>().notNull().default([]),
+    cc: jsonb('cc').$type<MailAddressRow[]>().notNull().default([]),
+    bcc: jsonb('bcc').$type<MailAddressRow[]>().notNull().default([]),
+    recipientCount: integer('recipient_count').notNull(),
+    newRecipientCount: integer('new_recipient_count').notNull().default(0),
+    attachmentCount: integer('attachment_count').notNull().default(0),
+    subject: text('subject'),
+    html: text('html'),
+    text: text('text'),
+    messageIdHeader: text('message_id_header').notNull(),
+    inReplyTo: text('in_reply_to'),
+    references: text('references')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    status: text('status').notNull().default('pending'),
+    sendAfter: timestamptz('send_after').notNull(),
+    nextAttemptAt: timestamptz('next_attempt_at'),
+    attempts: integer('attempts').notNull().default(0),
+    sendingStartedAt: timestamptz('sending_started_at'),
+    sentAt: timestamptz('sent_at'),
+    failedAt: timestamptz('failed_at'),
+    canceledAt: timestamptz('canceled_at'),
+    failureReason: text('failure_reason'),
+    smtpCode: integer('smtp_code'),
+    rejectedRecipients: jsonb('rejected_recipients').$type<string[]>().notNull().default([]),
+    holdReason: text('hold_reason'),
+    /** Media store `email-out/<uuid>`: MIME final ber-Bcc untuk salinan Terkirim (≤ 7 hari). */
+    rawStorageKey: text('raw_storage_key'),
+    sentCopyState: text('sent_copy_state').notNull().default('pending'),
+    sentCopyAttempts: integer('sent_copy_attempts').notNull().default(0),
+    sentCopyNextAt: timestamptz('sent_copy_next_at'),
+    sentCopyAt: timestamptz('sent_copy_at'),
+    sentMessageId: uuid('sent_message_id').references((): AnyPgColumn => mailMessages.id, {
+      onDelete: 'set null',
+    }),
+    /** Jatah `mail-alamat-baru` yang diambil saat kirim (dikembalikan saat batal). */
+    newAddressUnits: integer('new_address_units').notNull().default(0),
+    templateId: uuid('template_id'),
+    bodyPurgedAt: timestamptz('body_purged_at'),
+    createdAt: createdAtColumn(),
+    updatedAt: updatedAtColumn(),
+  },
+  (table) => [
+    unique('mail_outbox_organization_id_id_unique').on(table.organizationId, table.id),
+    unique('mail_outbox_organization_id_message_id_header_unique').on(
+      table.organizationId,
+      table.messageIdHeader,
+    ),
+    foreignKey({
+      name: 'mail_outbox_organization_id_account_id_fk',
+      columns: [table.organizationId, table.accountId],
+      foreignColumns: [mailAccounts.organizationId, mailAccounts.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'mail_outbox_organization_id_created_by_user_id_fk',
+      columns: [table.organizationId, table.createdByUserId],
+      foreignColumns: [users.organizationId, users.id],
+    }).onDelete('cascade'),
+    index('mail_outbox_due_idx')
+      .on(table.status, table.sendAfter, table.nextAttemptAt)
+      .where(sql`${table.status} in ('pending', 'queued')`),
+    // Idempotensi klik ganda: satu outbox AKTIF per draf.
+    uniqueIndex('mail_outbox_active_draft_unique')
+      .on(table.draftId)
+      .where(sql`${table.status} in ('pending', 'queued', 'sending')`),
+    index('mail_outbox_account_sent_idx').on(table.organizationId, table.accountId, table.sentAt),
+    index('mail_outbox_creator_idx').on(
+      table.organizationId,
+      table.createdByUserId,
+      table.createdAt,
+    ),
+    index('mail_outbox_sent_copy_idx')
+      .on(table.sentCopyState, table.sentCopyNextAt)
+      .where(sql`${table.status} = 'sent' and ${table.sentCopyState} = 'pending'`),
+    check(
+      'mail_outbox_known',
+      sql.raw(
+        `status in (${list(MAIL_OUTBOX_STATUSES)}) and mode in (${list(MAIL_DRAFT_MODES)}) and (failure_reason is null or failure_reason in (${list(MAIL_SEND_FAILURE_REASONS)})) and (hold_reason is null or hold_reason in (${list(MAIL_OUTBOX_HOLD_REASONS)})) and sent_copy_state in (${list(MAIL_SENT_COPY_STATES)}) and ((status = 'failed') = (failure_reason is not null))`,
+      ),
+    ),
+    check(
+      'mail_outbox_sizes',
+      sql`${table.recipientCount} between 1 and 100 and ${table.newRecipientCount} >= 0 and ${table.attempts} >= 0 and ${table.attachmentCount} between 0 and 20 and ${table.newAddressUnits} >= 0 and (${table.subject} is null or char_length(${table.subject}) <= 200) and (${table.html} is null or octet_length(${table.html}) <= 524288) and (${table.text} is null or octet_length(${table.text}) <= 262144) and char_length(${table.messageIdHeader}) between 3 and 998 and (${table.inReplyTo} is null or char_length(${table.inReplyTo}) <= 998) and cardinality(${table.references}) <= 20 and char_length(${table.fromAddress}) between 3 and 254 and char_length(${table.fromName}) between 1 and 80 and (${table.rawStorageKey} is null or ${table.rawStorageKey} ~ '^(email-out|mail-out)/[0-9a-f-]{36}$') and jsonb_array_length(${table.rejectedRecipients}) <= 100`,
+    ),
+  ],
+);
+
+export type MailOutboxRow = typeof mailOutbox.$inferSelect;
+export type NewMailOutboxRow = typeof mailOutbox.$inferInsert;
+
+/**
+ * Korespondensi per akun (pelengkap penerima + "alamat baru"): From email masuk yang tidak `fail`
+ * (`received_count`) dan penerima email terkirim (`sent_count`). Maks. 20.000 per akun.
+ */
+export const mailCorrespondents = pgTable(
+  'mail_correspondents',
+  {
+    id: idColumn(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    accountId: uuid('account_id').notNull(),
+    address: text('address').notNull(),
+    name: text('name'),
+    sentCount: integer('sent_count').notNull().default(0),
+    receivedCount: integer('received_count').notNull().default(0),
+    lastSeenAt: timestamptz('last_seen_at').notNull().defaultNow(),
+    createdAt: createdAtColumn(),
+    updatedAt: updatedAtColumn(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'mail_correspondents_organization_id_account_id_fk',
+      columns: [table.organizationId, table.accountId],
+      foreignColumns: [mailAccounts.organizationId, mailAccounts.id],
+    }).onDelete('cascade'),
+    unique('mail_correspondents_account_id_address_unique').on(table.accountId, table.address),
+    index('mail_correspondents_prefix_idx').on(
+      table.organizationId,
+      table.accountId,
+      table.address.op('text_pattern_ops'),
+    ),
+    check(
+      'mail_correspondents_values',
+      sql`char_length(${table.address}) between 3 and 254 and ${table.address} = lower(${table.address}) and (${table.name} is null or char_length(${table.name}) <= 200) and ${table.sentCount} >= 0 and ${table.receivedCount} >= 0`,
+    ),
+  ],
+);

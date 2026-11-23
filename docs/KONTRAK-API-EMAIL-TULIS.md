@@ -944,3 +944,45 @@ ini sedang diputus atau pemiliknya nonaktif."). Teks balasan server SMTP tidak p
 - **Peta dokumen `CLAUDE.md`** (ditambah orkestrator): `docs/KONTRAK-API-EMAIL-TULIS.md` — Kontrak modul
   Email 9B: identitas & verifikasi, tanda tangan, draf (+ salinan server), lampiran, kirim/batalkan
   kirim/outbox, salinan Terkirim, template di editor, presence & peringatan utas, batas.
+
+## 20. Penyimpangan implementasi (backend 9B)
+
+- **Migrasi `0039_mail_tulis`** (bukan 0038 — nomor itu dipakai `0038_mail_kuota_cache_gambar` 9A-2).
+- **FK `set null` satu kolom**: `mail_outbox.identity_id/draft_id/sent_message_id`, `mail_drafts.source_message_id`,
+  `mail_identities.default_signature_*_id`, `mail_draft_attachments.source_attachment_id` (FK komposit `set null`
+  juga mengosongkan `organization_id`). `mail_drafts.template_id` tanpa FK. Isolasi organisasi di service.
+- **Folder media `email-out/`** untuk lampiran draf & `.eml` (`mail-out/` belum didukung `MediaStore`; CHECK menerima
+  keduanya). `.eml` tanpa akhiran `.eml`.
+- **Galat**: `errorDetailSchema` mendapat isian opsional `attemptsLeft`, `currentVersion`, `updatedAt`, `count`,
+  `latestReceivedAt`, `messageIds`, `cause`. Tanpa konfirmasi identitas (tambah alias bersama, menaikkan batas) →
+  **400** `VALIDATION_ERROR` (pola `requireIdentityConfirmation` yang ada), password salah → 403.
+- **Kuota unggah 500 MB/24 jam** dihitung dari lampiran unggahan yang MASIH ada (database), bukan penghitung Redis.
+- **Verifikasi**: setelah email verifikasi terkirim, salinan terenkripsi berisi `Message-ID` saja (kode dibuang)
+  sampai terverifikasi/kedaluwarsa (dibutuhkan cadangan `SEARCH`). Tanpa produsen antrean (tes) email verifikasi
+  TIDAK dikirim ulang oleh tick.
+- **Kutipan**: bila isi email asli belum/tidak lagi di cache (`mail_message_bodies`), email dikirim TANPA kutipan
+  (bukan menunggu pengambilan isi). Zona waktu kutipan salinan draf server = `Asia/Jakarta` (worker tidak tahu zona
+  organisasi); email terkirim memakai zona organisasi.
+- **Lampiran asli `loading`** diselesaikan malas saat draf dibuka/dicek/dikirim (bukan oleh job ambil lampiran 9A).
+- **Presence**: anggota yang pengguna nonaktif disaring di tick; event saat masuk dikirim api, saat keluar/kedaluwarsa
+  oleh api (DELETE) atau tick worker 15 dtk.
+- **Batas per jam akun** dihitung dari `mail_outbox` saja (`email_outbound` pengirim `acc_` menyusul 9E).
+- **Akun diputus**: outbox `pending/queued` dibatalkan, draf + lampiran dibuang seketika di api.
+- **Belum dibuat (menyusul)**: job `mail-correspondents-backfill` (isi awal dari email lama; saat ini korespondensi
+  terisi dari email masuk baru & email terkirim), notifikasi `blocked` ke pemegang Kelola (saat ini Owner / pemilik
+  akun pribadi), batas "maks. sekali per 24 jam" notifikasi blocked (saat ini sekali per kejadian blocked),
+  penghapusan baris `mail_correspondents` saat kontak dihapus (UU PDP), dan pelepasan `blocked` lewat "Lanjutkan"
+  9.1 untuk pengirim `acc_` (saat ini lewat simpan ulang kredensial akun).
+- **Bentuk respons yang perlu diketahui web** (skema = `packages/shared/src/mail-compose.ts`):
+  `GET /mail/recipients/suggest` → `{ suggestions: [...] }` (bukan array polos); `PUT/DELETE …/presence` →
+  `{ threadKey, users }` (tanpa diri sendiri); `DELETE …/attachments/:id` → `{ deleted, draft: { version } }`;
+  `POST …/attachments/from-message` → **200** `{ attachments, skippedAttachments, draft: { version } }`;
+  `DELETE /mail/identities/:id` → `{ deleted, movedDrafts }`; `DELETE /mail/signatures/:id` → `{ deleted }`;
+  `MailSignature` punya `editable`; draf/identitas punya `cannotSendReason` (`identity_unverified` ·
+  `level_insufficient` · `account_deleting` · `account_unavailable`); kirim klik ganda → 200 `{ outbox, duplicate: true }`.
+  `POST …/attachments` menerima `inline` lewat isian multipart **atau** `?inline=1`.
+  `MailAccount` (9A) kini juga `sentCopyMode`, `warnExternalRecipients`, `warnings[]`
+  (`system_sender_conflict`, `identity_unverified`); PATCH akun menerima `sentCopyMode`/`warnExternalRecipients`
+  (level Kelola). `MailSettings` juga `maxRecipientsPerEmail`, `maxAttachmentTotalMb` (PUT: opsional,
+  menaikkan butuh `confirmation`). Detail email 9A: `threadKey` + `composing[]`; daftar folder Draf: `draftId`
+  (hanya draf milikku).

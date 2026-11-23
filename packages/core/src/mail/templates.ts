@@ -418,6 +418,39 @@ export function renderEmailVerificationEmail(input: EmailVerificationEmailInput)
   });
 }
 
+// ── Verifikasi alamat pengirim menu Email (9B) ──────────────────────────────
+
+export interface MailIdentityVerificationEmailInput {
+  brand: EmailBrand;
+  requesterName: string;
+  organizationName: string;
+  address: string;
+  accountName: string;
+  code: string;
+}
+
+/**
+ * Email verifikasi alamat pengirim (KONTRAK-API-EMAIL-TULIS §3.2): kode 6 digit, TANPA tautan
+ * (tidak ada yang bisa dipancing diklik), dikirim lewat Email pengirim SISTEM.
+ */
+export function renderMailIdentityVerificationEmail(
+  input: MailIdentityVerificationEmailInput,
+): MailBody {
+  const code = /^\d{6}$/.test(input.code) ? input.code : '000000';
+  return compose(input.brand, {
+    subject: `Kode verifikasi alamat pengirim: ${code}`,
+    preheader: `Kode verifikasi untuk mengirim email sebagai ${singleLine(input.address)}.`,
+    heading: 'Verifikasi alamat pengirim',
+    paragraphs: [
+      'Halo,',
+      `${singleLine(input.requesterName)} di ${singleLine(input.organizationName)} ingin mengirim email sebagai ${singleLine(input.address)} lewat akun ${singleLine(input.accountName)}.`,
+      `Kalau ini memang kamu atau timmu, masukkan kode ${code} (berlaku 30 menit). Kalau bukan, abaikan email ini — tanpa kode ini alamatmu tidak bisa dipakai.`,
+      'Jangan berikan kode ini kepada orang yang tidak kamu kenal.',
+    ],
+    details: [{ label: 'Kode verifikasi', value: code }],
+  });
+}
+
 // ── Kunci percobaan masuk ───────────────────────────────────────────────────
 
 export interface AccountLockedEmailInput {
@@ -690,6 +723,7 @@ export interface AdminAccountNoticeEmailInput {
     | 'email_sender_limit_raised'
     | 'mail_account_changed'
     | 'mail_access_changed'
+    | 'mail_identity_added'
     | 'mail_account_auth_failed';
   subject: { name: string; email: string; role: UserRole };
   /**
@@ -873,6 +907,21 @@ export function renderAdminAccountNoticeEmail(input: AdminAccountNoticeEmailInpu
       ],
       details: [{ label: 'Waktu', value: when }],
       notes: [`Perbarui di Pengaturan → Akun email di ${product}, lalu tekan Sinkron sekarang.`],
+    });
+  }
+  if (input.event === 'mail_identity_added') {
+    const address = singleLine(input.emailApi?.senderAddress ?? 'alamat pengirim baru');
+    return compose(input.brand, {
+      subject: `Alamat pengirim baru ${address} di ${product}`,
+      preheader: `${name} menambah alamat pengirim di akun email bersama.`,
+      heading: 'Alamat pengirim baru di akun email bersama',
+      paragraphs: [
+        hello(input.recipientName),
+        `${account} menambahkan ${address} sebagai alamat pengirim (alias) di akun email bersama. Alamat ini baru bisa dipakai mengirim setelah terverifikasi.`,
+        'Kamu menerima email ini karena kamu Owner.',
+      ],
+      details,
+      notes: [`Bila tidak kamu duga, periksa Pengaturan → Akun email dan Audit log di ${product}.`],
     });
   }
   if (input.event === 'mail_account_changed' || input.event === 'mail_access_changed') {

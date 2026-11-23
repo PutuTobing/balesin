@@ -75,12 +75,19 @@ describe('migrasi dari nol', () => {
       'mail_account_avatars',
       'mail_accounts',
       'mail_attachments',
+      'mail_correspondents',
+      'mail_draft_attachments',
+      'mail_drafts',
       'mail_folders',
       'mail_identities',
       'mail_message_bodies',
       'mail_messages',
+      'mail_outbox',
       'mail_remote_image_allow',
+      'mail_remote_image_cache',
       'mail_settings',
+      'mail_signatures',
+      'mail_user_preferences',
       'media_files',
       'message_email_bodies',
       'message_templates',
@@ -165,6 +172,8 @@ describe('migrasi dari nol', () => {
     // Fase 9 (modul Email): nomor bagian MIME IMAP (`1.2`) dan header `Content-ID` lampiran.
     'part_id',
     'content_id',
+    // 9B: `Message-ID` salinan draf di server IMAP (header email, bukan UUID kita).
+    'server_message_id',
   ]);
 
   it('semua kolom waktu bertipe timestamptz dan semua id bertipe uuid', async () => {

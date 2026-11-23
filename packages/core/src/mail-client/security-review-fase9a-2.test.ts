@@ -98,7 +98,7 @@ describe('review 9A-2 — risiko lampiran', () => {
 
   // R7: titik/spasi di akhir nama melewati pemeriksaan ekstensi; Windows/Firefox membuangnya saat
   // menyimpan → `tagihan.js` dijalankan Windows Script Host saat dibuka.
-  it.fails('nama berakhiran titik (`tagihan.pdf.js.`) tetap diblokir seperti `.js`', () => {
+  it('nama berakhiran titik (`tagihan.pdf.js.`) tetap diblokir seperti `.js`', () => {
     expect(mailAttachmentRiskOf('tagihan.pdf.js.', 'application/octet-stream').risk).toBe(
       'blocked',
     );
@@ -121,7 +121,7 @@ describe('review 9A-2 — risiko lampiran', () => {
 
   // R7: skrip Windows Script Host `.ws`/`.vb` dan konektor pencarian `.searchconnector-ms`/`.search-ms`
   // (dipakai kampanye phishing untuk membuka berbagi WebDAV) tidak ada di daftar; isinya teks → `ok`.
-  it.fails('skrip WSH `.ws`/`.vb` dan `.searchconnector-ms`/`.search-ms` diblokir', () => {
+  it('skrip WSH `.ws`/`.vb` dan `.searchconnector-ms`/`.search-ms` diblokir', () => {
     for (const name of [
       'jadwal.ws',
       'jadwal.vb',

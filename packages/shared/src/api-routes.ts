@@ -594,6 +594,57 @@ export const API_ROUTES = {
     attachmentPreview: `${API_PREFIX}/mail/attachments/:attachmentId/preview`,
     /** GET/POST/DELETE — "Selalu tampilkan gambar dari pengirim ini" milik pengguna. */
     remoteImageSenders: `${API_PREFIX}/mail/remote-image-senders`,
+    // ── 9B: tulis, balas, teruskan (docs/KONTRAK-API-EMAIL-TULIS.md) ──
+    /** GET — pilihan "Dari" di jendela tulis (semua akun ber-level ≥ send). */
+    composeIdentities: `${API_PREFIX}/mail/identities`,
+    /** GET — identitas akun (`read`); POST — tambah alias. */
+    accountIdentities: `${API_PREFIX}/mail/accounts/:accountId/identities`,
+    /** PATCH/DELETE — satu identitas. */
+    identity: `${API_PREFIX}/mail/identities/:identityId`,
+    /** POST — mulai/kirim ulang verifikasi (202). */
+    identityVerification: `${API_PREFIX}/mail/identities/:identityId/verification`,
+    /** POST — masukkan kode verifikasi. */
+    identityVerificationConfirm: `${API_PREFIX}/mail/identities/:identityId/verification/confirm`,
+    /** GET — tanda tangan siap sisip (`?purpose=new|reply`). */
+    identitySignature: `${API_PREFIX}/mail/identities/:identityId/signature`,
+    /** GET — tanda tangan bersama + milikku; POST — buat. */
+    accountSignatures: `${API_PREFIX}/mail/accounts/:accountId/signatures`,
+    /** PATCH/DELETE — satu tanda tangan. */
+    signature: `${API_PREFIX}/mail/signatures/:signatureId`,
+    /** GET (`image/png`) / PUT / DELETE — logo tanda tangan. */
+    signatureLogo: `${API_PREFIX}/mail/signatures/:signatureId/logo`,
+    /** GET/PUT — preferensi tulis milik pengguna. */
+    preferences: `${API_PREFIX}/mail/preferences`,
+    /** GET — draf milikku; POST — buat draf. */
+    drafts: `${API_PREFIX}/mail/drafts`,
+    /** GET/PUT (simpan otomatis)/DELETE — satu draf. */
+    draft: `${API_PREFIX}/mail/drafts/:draftId`,
+    /** POST — cek sebelum kirim (tidak mengubah apa pun). */
+    draftCheck: `${API_PREFIX}/mail/drafts/:draftId/check`,
+    /** POST — kirim (202, masa batal). */
+    draftSend: `${API_PREFIX}/mail/drafts/:draftId/send`,
+    /** PUT/DELETE — penanda "sedang membalas". */
+    draftPresence: `${API_PREFIX}/mail/drafts/:draftId/presence`,
+    /** POST — isi snippet (balasan cepat / template email) tanpa mengubah draf. */
+    draftSnippet: `${API_PREFIX}/mail/drafts/:draftId/snippet`,
+    /** POST — unggah lampiran (multipart). */
+    draftAttachments: `${API_PREFIX}/mail/drafts/:draftId/attachments`,
+    /** POST — lampiran dari email asli. */
+    draftAttachmentsFromMessage: `${API_PREFIX}/mail/drafts/:draftId/attachments/from-message`,
+    /** GET (unduh/pratinjau) / DELETE — satu lampiran draf. */
+    draftAttachment: `${API_PREFIX}/mail/drafts/:draftId/attachments/:attachmentId`,
+    /** GET — baki outbox milikku (`?state=active|failed|recent`). */
+    outbox: `${API_PREFIX}/mail/outbox`,
+    /** GET — satu baris outbox. */
+    outboxItem: `${API_PREFIX}/mail/outbox/:outboxId`,
+    /** POST — batalkan kirim. */
+    outboxCancel: `${API_PREFIX}/mail/outbox/:outboxId/cancel`,
+    /** POST — lewati masa batal. */
+    outboxSendNow: `${API_PREFIX}/mail/outbox/:outboxId/send-now`,
+    /** GET — menu `/` (balasan cepat + template email terbit). */
+    composeSnippets: `${API_PREFIX}/mail/compose/snippets`,
+    /** GET — pelengkap Kepada/Cc/Bcc. */
+    recipientSuggest: `${API_PREFIX}/mail/recipients/suggest`,
   },
   /** Quick reply `/` (butir 9): pakai = `inbox.reply`; kelola = `quick_replies.manage`. */
   quickReplies: {

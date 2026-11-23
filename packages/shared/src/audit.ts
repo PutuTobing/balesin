@@ -277,8 +277,29 @@ export const AUDIT_ACTIONS = {
   mailAccessUpdated: 'mail.access.updated',
   /** Bagian 2: hapus permanen dari Sampah/Spam (`accountId`, `folderId`, `count`). */
   mailMessagesDeletedPermanently: 'mail.message.deleted_permanently',
+  /**
+   * Review 9A-2 R11: pindah/Sampah/Spam/Arsip MASSAL (`action`, `count`, `accountIds`,
+   * `targetFolderId`) — ≥ 10 email sekali minta, atau > 60 permintaan pindah per jam.
+   */
+  mailMessagesMoved: 'mail.messages.moved',
+  /** Review 9A-2 R11: batas hapus permanen per 24 jam tercapai (`requested`, `deletedLast24h`). */
+  mailMessagesDeleteLimitReached: 'mail.message.delete_limit_reached',
   settingsMailUpdated: 'settings.mail.updated',
   channelAvatarUpdated: 'channel.avatar_updated',
+  // ── 9B: tulis/kirim (KONTRAK-API-EMAIL-TULIS §16) — tanpa subjek/isi/alamat penerima ──
+  /** `accountId`, `identityId`, `outboxId`, `mode`, `recipientCount`, … (dicatat worker). */
+  mailMessageSent: 'mail.message.sent',
+  /** Alias baru: `address` (akun pribadi: ID saja), `kind`, `actorRole` → `mail_identity_added`. */
+  mailIdentityCreated: 'mail.identity.created',
+  mailIdentityUpdated: 'mail.identity.updated',
+  mailIdentityDeleted: 'mail.identity.deleted',
+  mailIdentityVerificationStarted: 'mail.identity.verification_started',
+  mailIdentityVerified: 'mail.identity.verified',
+  mailIdentityVerificationFailed: 'mail.identity.verification_failed',
+  /** Tanda tangan BERSAMA saja (tanpa isi; `risky` = tautan/angka panjang baru). */
+  mailSignatureCreated: 'mail.signature.created',
+  mailSignatureUpdated: 'mail.signature.updated',
+  mailSignatureDeleted: 'mail.signature.deleted',
 } as const;
 
 export type AuditActionKey = keyof typeof AUDIT_ACTIONS;
@@ -430,8 +451,20 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'mail.account.auth_failed': 'Password akun email ditolak server',
   'mail.access.updated': 'Akses akun email diubah',
   'mail.message.deleted_permanently': 'Email dihapus permanen',
+  'mail.messages.moved': 'Banyak email dipindah sekaligus',
+  'mail.message.delete_limit_reached': 'Batas hapus permanen harian tercapai',
   'settings.mail.updated': 'Pengaturan email diubah',
   'channel.avatar_updated': 'Foto channel diubah',
+  'mail.message.sent': 'Email dikirim dari menu Email',
+  'mail.identity.created': 'Alamat pengirim (alias) ditambahkan',
+  'mail.identity.updated': 'Alamat pengirim diubah',
+  'mail.identity.deleted': 'Alamat pengirim (alias) dihapus',
+  'mail.identity.verification_started': 'Verifikasi alamat pengirim dimulai',
+  'mail.identity.verified': 'Alamat pengirim terverifikasi',
+  'mail.identity.verification_failed': 'Verifikasi alamat pengirim gagal',
+  'mail.signature.created': 'Tanda tangan email bersama dibuat',
+  'mail.signature.updated': 'Tanda tangan email bersama diubah',
+  'mail.signature.deleted': 'Tanda tangan email bersama dihapus',
 };
 
 /** Label untuk aksi yang mungkin belum dikenal klien (versi lama): tampilkan kodenya apa adanya. */
@@ -693,6 +726,8 @@ export const SECURITY_EVENT_KINDS = [
   'mail_account_changed',
   /** Fase 9: akses akun email bersama diubah (`warning` bila diperluas oleh selain Owner). */
   'mail_access_changed',
+  /** 9B: alias baru di akun email BERSAMA (`warning` bila oleh selain Owner). */
+  'mail_identity_added',
 ] as const;
 export const securityEventKindSchema = z.enum(SECURITY_EVENT_KINDS);
 export type SecurityEventKind = z.infer<typeof securityEventKindSchema>;
@@ -732,6 +767,7 @@ export const SECURITY_EVENT_SEVERITY: Readonly<Record<SecurityEventKind, 'warnin
   email_sender_blocked: 'warning',
   mail_account_changed: 'info',
   mail_access_changed: 'info',
+  mail_identity_added: 'info',
 };
 
 export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> = {
@@ -764,6 +800,7 @@ export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> 
   email_sender_blocked: 'Pengirim email API terblokir',
   mail_account_changed: 'Akun email bersama dihubungkan, diubah, atau diputus',
   mail_access_changed: 'Akses akun email bersama diubah',
+  mail_identity_added: 'Alamat pengirim baru di akun email bersama',
 };
 
 export const securityEventSchema = z.object({

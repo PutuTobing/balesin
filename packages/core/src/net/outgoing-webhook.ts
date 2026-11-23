@@ -441,7 +441,9 @@ export type RemoteFileError =
   | 'too_large'
   | 'http'
   /** Tahap 9.1: host (awal ATAU tujuan redirect) di luar allowlist pemanggil (`allowHost`). */
-  | 'host_not_allowed';
+  | 'host_not_allowed'
+  /** Review 9A-2 S5: byte AWAL isi ditolak pemanggil (`acceptHead`) — unduhan dihentikan dini. */
+  | 'content_rejected';
 
 export interface RemoteFileRequest {
   url: string;
@@ -465,6 +467,16 @@ export interface RemoteFileRequest {
    * redirect ke origin lain tidak membawanya. `accept`/`user-agent` bawaan bisa diganti.
    */
   headers?: Readonly<Record<string, string>>;
+  /**
+   * Review 9A-2 R8: User-Agent untuk SEMUA lompatan (bawaan `Balesin-Media/1.0`). Proksi gambar email
+   * memakai UA peramban umum supaya pengirim tidak mendapat sidik produk.
+   */
+  userAgent?: string;
+  /**
+   * Review 9A-2 S5: periksa `bytes` byte PERTAMA isi sebelum sisanya ditampung; `false` →
+   * `content_rejected` dan sambungan diputus (mis. proksi gambar: bukan raster = tidak diunduh).
+   */
+  acceptHead?: { bytes: number; accept(head: Buffer): boolean };
 }
 
 export type RemoteFileResult =
@@ -523,7 +535,16 @@ export async function fetchRemoteFile(request: RemoteFileRequest): Promise<Remot
     const chosen = addresses[0] as LookupAddress;
     originalOrigin ??= url.origin;
     const extraHeaders = url.origin === originalOrigin ? (request.headers ?? {}) : {};
-    const result = await getOnce(url, host, port, chosen, request.maxBytes, deadline, extraHeaders);
+    const result = await getOnce(
+      url,
+      host,
+      port,
+      chosen,
+      request.maxBytes,
+      deadline,
+      { ...(request.userAgent ? { 'user-agent': request.userAgent } : {}), ...extraHeaders },
+      request.acceptHead,
+    );
     if (result.kind === 'redirect') {
       try {
         current = new URL(result.location, url).href;
@@ -570,6 +591,7 @@ function getOnce(
   maxBytes: number,
   deadline: number,
   extraHeaders: Readonly<Record<string, string>> = {},
+  acceptHead?: RemoteFileRequest['acceptHead'],
 ): Promise<HopResult> {
   const send = url.protocol === 'https:' ? httpsRequest : httpRequest;
   return new Promise<HopResult>((resolve) => {
@@ -626,24 +648,47 @@ function getOnce(
           fail('too_large', status);
           return;
         }
+        // Panjang diketahui → satu penyangga (tanpa salinan kedua `Buffer.concat`); tidak diketahui →
+        // potongan lalu digabung. Byte awal bisa diperiksa pemanggil sebelum sisanya ditampung.
+        const known = Number.isFinite(declared) && declared >= 0 ? declared : null;
+        const single = known !== null ? Buffer.allocUnsafe(known) : null;
         const chunks: Buffer[] = [];
         let size = 0;
+        let headChecked = !acceptHead;
+        let head = Buffer.alloc(0);
         response.on('data', (chunk: Buffer) => {
+          if (settled) return;
           size += chunk.length;
-          if (size > maxBytes) {
+          if (size > maxBytes || (known !== null && size > known)) {
             response.destroy();
-            fail('too_large', status);
+            fail(size > maxBytes ? 'too_large' : 'network', status);
             return;
           }
-          chunks.push(chunk);
+          if (!headChecked && acceptHead) {
+            head = Buffer.concat([head, chunk.subarray(0, acceptHead.bytes - head.length)]);
+            if (head.length >= acceptHead.bytes) {
+              headChecked = true;
+              if (!acceptHead.accept(head)) {
+                response.destroy();
+                fail('content_rejected', status);
+                return;
+              }
+            }
+          }
+          if (single) chunk.copy(single, size - chunk.length);
+          else chunks.push(chunk);
         });
         response.on('end', () => {
+          if (!headChecked && acceptHead && !acceptHead.accept(head)) {
+            fail('content_rejected', status);
+            return;
+          }
           const type = response.headers['content-type'];
           done({
             kind: 'done',
             value: {
               ok: true,
-              body: Buffer.concat(chunks),
+              body: single ? single.subarray(0, size) : Buffer.concat(chunks),
               contentType: typeof type === 'string' ? type : null,
               finalUrl: url,
             },

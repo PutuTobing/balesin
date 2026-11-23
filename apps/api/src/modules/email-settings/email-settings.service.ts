@@ -19,7 +19,13 @@ import {
   type SmtpResult,
   type SmtpTimeouts,
 } from '@balesin/core';
-import { organizations, type Database, type DbExecutor, type EmailSettings } from '@balesin/db';
+import {
+  lockEmailAddresses,
+  organizations,
+  type Database,
+  type DbExecutor,
+  type EmailSettings,
+} from '@balesin/db';
 import {
   EMAIL_TEST_MESSAGES,
   type DetectEmailHostResponse,
@@ -39,6 +45,7 @@ import type { ClientInfo } from '../../http/client-info';
 import type { EmailNotifier } from '../../queues/email-queue';
 import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
 import { assertActorStillAuthorized } from '../auth/actor-check';
+import { addressIsMailIdentity } from '../mail/mail-compose.repo';
 import type { AuthContext } from '../auth/session.service';
 import { requireIdentityConfirmation } from '../two-factor/require-confirmation';
 import type { TwoFactorService } from '../two-factor/two-factor.service';
@@ -513,6 +520,22 @@ export function createEmailSettingsService(deps: EmailSettingsServiceDeps): Emai
         const stored = await findEmailSettings(tx, actor.organizationId);
         const prepared = prepare(input, stored, '');
         const values = toValues(actor.organizationId, prepared, stored);
+        // 9B (KONTRAK-API-EMAIL-TULIS §3.3, arah sebaliknya): alamat pengirim sistem BARU tidak boleh
+        // sudah menjadi identitas (alamat/alias) akun di menu Email.
+        const nextAddress = values.fromAddress.trim().toLowerCase();
+        if (!stored || stored.fromAddress.trim().toLowerCase() !== nextAddress) {
+          await lockEmailAddresses(tx, actor.organizationId, [nextAddress]);
+          if (await addressIsMailIdentity(tx, actor.organizationId, nextAddress)) {
+            const message =
+              'Alamat ini sudah dipakai sebagai alamat pengirim di menu Email. Pakai alamat lain (mis. noreply@) untuk Email pengirim sistem.';
+            throw new AppError('CONFLICT', {
+              message,
+              details: [
+                { location: 'body', field: 'fromAddress', message, reason: 'address_in_use' },
+              ],
+            });
+          }
+        }
         const connectionChanged =
           !stored ||
           prepared.passwordSource === 'new' ||

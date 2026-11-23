@@ -5,6 +5,7 @@ import {
   defaultMailImapConnector,
   defaultTrustedAuthServIds,
   hasAttachmentParts,
+  mailMessageIdHash,
   mailSnippetOf,
   openMailAccountSecret,
   parseMailHeaderBlock,
@@ -21,6 +22,8 @@ import {
 import {
   auditLogs,
   departmentMembers,
+  mailCorrespondents,
+  newId,
   mailAccountAccess,
   mailAccounts,
   mailFolders,
@@ -38,6 +41,7 @@ import {
   MAIL_UNSYNCED_FOLDER_ROLES,
   mailFolderDisplayName,
   mailFolderRoleOf,
+  mailThreadRootOf,
   type MailSyncState,
 } from '@balesin/shared';
 import { and, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
@@ -71,6 +75,10 @@ export interface MailSyncDeps {
     timeouts?: ImapPolicy['timeouts'];
   };
   connector?: MailImapConnector;
+  /** 9B: kunci utas opak (HMAC, sama dengan api) untuk `mail.message.created.threadKey`. */
+  threadKey?: (accountId: string, threadRoot: string) => string;
+  /** 9B: identitas `pending` yang `Message-ID` verifikasinya ditemukan → `verified` (`mailbox`). */
+  verifyByMailbox?: (organizationId: string, identityId: string, at: Date) => Promise<boolean>;
   /** Antre email pemberitahuan (pola `createOwnerNotifier`). */
   notify?: (payload: {
     organizationId: string;
@@ -454,7 +462,16 @@ export function createMailSync(deps: MailSyncDeps) {
       : null;
     const outgoingFolder = folder.role === 'sent' || folder.role === 'drafts';
     const receivedAt = message.internalDate ?? header?.sentAt ?? now();
+    const id = newId();
     return {
+      id,
+      // 9B: kunci utas (akar `References` → `In-Reply-To` → `Message-ID` → `id:<id>`).
+      threadRoot: mailThreadRootOf({
+        references: header?.references ?? [],
+        inReplyTo: header?.inReplyTo ?? null,
+        messageIdHeader: header?.messageIdHeader ?? null,
+        id,
+      }),
       organizationId: row.organizationId,
       accountId: row.id,
       folderId: folder.id,
@@ -487,6 +504,90 @@ export function createMailSync(deps: MailSyncDeps) {
       bodyState: 'none',
       bodystructure: boundMailBodyStructure(message.bodyStructure),
     };
+  }
+
+  /**
+   * 9B: (1) verifikasi alamat — `Message-ID` email verifikasi tertunda ditemukan di folder MASUK akun
+   * ini (bukan Terkirim/Draf/Sampah) → identitas `verified` (`mailbox`); (2) korespondensi — From email
+   * masuk yang tidak `fail` (`received_count`).
+   */
+  async function afterInsert(
+    row: MailAccountRow,
+    folder: MailFolderRow,
+    inserted: readonly {
+      id: string;
+      messageIdHeader: string | null;
+      fromAddress: string | null;
+      fromName: string | null;
+      senderVerification: string;
+    }[],
+    outcome: FolderOutcome,
+  ) {
+    if (inserted.length === 0) return;
+    const incomingFolder = !['sent', 'drafts', 'trash', 'all', 'flagged'].includes(
+      folder.role ?? '',
+    );
+    if (!incomingFolder) return;
+    const hashes = inserted.flatMap((item) =>
+      item.messageIdHeader ? [mailMessageIdHash(item.messageIdHeader)] : [],
+    );
+    if (hashes.length > 0 && deps.verifyByMailbox) {
+      const pending = await db
+        .select({ id: mailIdentities.id })
+        .from(mailIdentities)
+        .where(
+          and(
+            eq(mailIdentities.organizationId, row.organizationId),
+            eq(mailIdentities.accountId, row.id),
+            eq(mailIdentities.verificationState, 'pending'),
+            inArray(mailIdentities.verificationMessageIdHash, hashes),
+          ),
+        );
+      for (const identity of pending) {
+        if (await deps.verifyByMailbox(row.organizationId, identity.id, now())) {
+          outcome.events.push({
+            organizationId: row.organizationId,
+            accountId: row.id,
+            event: {
+              type: 'mail.identity.updated',
+              accountId: row.id,
+              identityId: identity.id,
+              verificationState: 'verified',
+            },
+          });
+        }
+      }
+    }
+    const senders = new Map<string, string | null>();
+    for (const item of inserted) {
+      const address = item.fromAddress?.trim().toLowerCase();
+      if (!address || item.senderVerification === 'fail' || address.length > 254) continue;
+      if (!/^[^\s@]+@[^\s@]+$/.test(address)) continue;
+      senders.set(address, item.fromName?.slice(0, 200) ?? null);
+    }
+    if (senders.size > 0) {
+      const at = now();
+      await db
+        .insert(mailCorrespondents)
+        .values(
+          [...senders].map(([address, name]) => ({
+            organizationId: row.organizationId,
+            accountId: row.id,
+            address,
+            name,
+            receivedCount: 1,
+            lastSeenAt: at,
+          })),
+        )
+        .onConflictDoUpdate({
+          target: [mailCorrespondents.accountId, mailCorrespondents.address],
+          set: {
+            receivedCount: sql`${mailCorrespondents.receivedCount} + 1`,
+            lastSeenAt: at,
+            updatedAt: at,
+          },
+        });
+    }
   }
 
   interface FolderOutcome {
@@ -574,7 +675,15 @@ export function createMailSync(deps: MailSyncDeps) {
           .onConflictDoNothing({
             target: [mailMessages.folderId, mailMessages.uidvalidity, mailMessages.uid],
           })
-          .returning({ id: mailMessages.id, receivedAt: mailMessages.receivedAt });
+          .returning({
+            id: mailMessages.id,
+            receivedAt: mailMessages.receivedAt,
+            threadRoot: mailMessages.threadRoot,
+            messageIdHeader: mailMessages.messageIdHeader,
+            fromAddress: mailMessages.fromAddress,
+            fromName: mailMessages.fromName,
+            senderVerification: mailMessages.senderVerification,
+          });
         outcome.created += inserted.length;
         for (const item of inserted) {
           outcome.events.push({
@@ -586,9 +695,13 @@ export function createMailSync(deps: MailSyncDeps) {
               folderId: folder.id,
               messageId: item.id,
               receivedAt: item.receivedAt.toISOString(),
+              ...(deps.threadKey && item.threadRoot
+                ? { threadKey: deps.threadKey(row.id, item.threadRoot) }
+                : {}),
             },
           });
         }
+        await afterInsert(row, folder, inserted, outcome);
       }
       await onProgress(batch.length, 0);
     }
