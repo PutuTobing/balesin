@@ -104,7 +104,7 @@
 ## Fase 9 — Modul Email (berjalan, posisi 06cadd8)
 - **9.0 SELESAI** (5530ec3 … 68af11d): Kepada/Cc/alamat tujuan, alias, Cc/Bcc + Balas semua, batas kirim per penerima, akses per channel. Security AMAN, kritikus LOLOS putaran 3, E2E `email-cc.spec.ts`.
 - **9.1 SELESAI** (5530ec3 … 06cadd8): API publik kirim email + template email (preset ISP) + QRIS + lampiran ber-allowlist + idempotensi + webhook `email.*` + UI (Template email, API key, Email terkirim, batas penerima per pengirim). Security 3 putaran: ReDoS, batas per penerima, sanitize-html sarang dalam (juga email masuk Fase 6), pembengkakan variabel — semua tertutup. Kritikus LOLOS putaran 2.
-- **9A** berjalan: backend bagian 1 (skema `mail_*` 0036, izin `mail.*`, akun + wizard + tes koneksi, akses per akun, worker sinkron IMAP).
+- **9A** berjalan (posisi 1a371c5, dihentikan 23 Nov): backend bagian 1 di-commit (555b471) + layar akun Email (fe8df09). Security 9A-1 PERBAIKI (S1/S2 Tinggi, S3/S4 Sedang; it.fails di 050327c). Kritikus layar akun REVISI P1–P9 (1a371c5). **BELUM di-commit di working tree**: backend 9A bagian 2 (daftar/baca/aksi email, proksi gambar, migrasi 0037 perbaikan CHECK channels) + perbaikan security S1–S4 & R1–R6 + teks P1/P9 di shared — dikerjakan agen backend; revisi layar akun P1–P9 + M1 (kolom daftar 380px), M2, M10 — agen frontend. Lanjutkan: periksa working tree, selesaikan & verifikasi, commit, lalu security putaran 2 9A-1, kritikus putaran 2, UI daftar & baca email.
 
 ## Sedang dikerjakan (posisi 0efafe4)
 - **Berikutnya: Fase 9 — Modul Email** (ditambahkan 22 Nov atas permintaan Tobing): spesifikasi
