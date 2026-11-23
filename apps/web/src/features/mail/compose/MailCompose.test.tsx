@@ -208,6 +208,37 @@ describe('jendela tulis — email baru', () => {
     expect(await within(window).findByText(/Draf tersimpan · /)).toBeVisible();
   });
 
+  it('HP layar penuh: Buang draf dengan konfirmasi yang sama seperti desktop', async () => {
+    act(() => {
+      setMediaQuery(media.desktop, false);
+      setMediaQuery(media.hp, true);
+    });
+    const { api } = await renderApp(
+      '/email',
+      setup({ routes: { [`DELETE ${draftPath()}`]: () => json({ deleted: true }) } }),
+    );
+    fireEvent.click(await screen.findByRole('button', { name: t.mail.compose.fab }));
+    const window = await composeWindow();
+    await waitFor(() => expect(requests(api, 'POST', API_ROUTES.mail.drafts)).toHaveLength(1));
+    fireEvent.click(await within(window).findByRole('button', { name: c.footer.discard }));
+    const confirm = await screen.findByRole('dialog', { name: c.discardConfirm.title });
+    expect(within(confirm).getByText(c.discardConfirm.body)).toBeVisible();
+    // Batal = draf tetap terbuka.
+    fireEvent.click(within(confirm).getByRole('button', { name: c.linkForm.cancel }));
+    expect(requests(api, 'DELETE', draftPath())).toHaveLength(0);
+    fireEvent.click(within(window).getByRole('button', { name: c.footer.discard }));
+    fireEvent.click(
+      within(await screen.findByRole('dialog', { name: c.discardConfirm.title })).getByRole(
+        'button',
+        { name: c.discardConfirm.confirm },
+      ),
+    );
+    await waitFor(() => expect(requests(api, 'DELETE', draftPath())).toHaveLength(1));
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: c.windowLabel(c.titles.new) })).toBeNull(),
+    );
+  });
+
   it('kirim → toast Batalkan dengan hitung mundur → batal membuka lagi drafnya', async () => {
     const draft = fakeDraft({
       to: [{ address: 'rina@contoh.example', name: 'Rina Wulandari' }],

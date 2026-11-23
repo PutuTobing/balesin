@@ -1243,3 +1243,71 @@ export async function mailCompose(
     json(route, { quickReplies: [], emailTemplates: [] }),
   );
 }
+
+// ── Verifikasi alamat & presence (perbaikan sebelum rilis 9B) ─────────────
+
+/** Menu Email: akun Billing belum terverifikasi → banner "Verifikasi alamat Billing …" (9B §3.4). */
+export async function mailUnverified(page: Page): Promise<void> {
+  const accounts = MAIL_ACCOUNTS.map((item) =>
+    item.id === MAIL_PHOTO_IDS.billing ? { ...item, warnings: ['identity_unverified'] } : item,
+  );
+  await page.route(`${API}/mail/accounts`, (route) =>
+    route.request().method() === 'GET'
+      ? json(route, { accounts, canConnectPersonal: true, canManageShared: true })
+      : route.fallback(),
+  );
+}
+
+/** Panel baca NOC: rekan (Citra) sedang membalas utas ini. */
+export async function mailPresence(page: Page): Promise<void> {
+  await page.route(`**/api/v1/mail/messages/${MAIL_MESSAGE_IDS.noc}`, (route) =>
+    json(route, {
+      message: {
+        ...NOC_DETAIL,
+        composing: [{ user: { id: PHOTO_USER_IDS.cs, name: 'Citra Maharani' } }],
+      },
+    }),
+  );
+}
+
+/**
+ * Wizard langkah 5: akun Billing tersimpan → alamat utama belum terverifikasi → web memulai
+ * verifikasi sendiri (202 `pending`), kolom kode sebagai cadangan.
+ */
+export async function mailWizardVerify(page: Page): Promise<void> {
+  const billing = MAIL_ACCOUNTS.find((item) => item.id === MAIL_PHOTO_IDS.billing)!;
+  let state: 'unverified' | 'pending' = 'unverified';
+  const primary = () =>
+    identity({
+      id: COMPOSE_PHOTO_IDS.identityBilling,
+      accountId: MAIL_PHOTO_IDS.billing,
+      address: 'billing@majujaya.co.id',
+      displayName: 'Billing',
+      state,
+    });
+  await page.route(`${API}/mail/accounts`, (route) =>
+    route.request().method() === 'POST'
+      ? json(
+          route,
+          {
+            account: {
+              ...billing,
+              warnings: ['identity_unverified'],
+              sync: { ...billing.sync, state: 'initial_sync', lastSyncedAt: null },
+            },
+          },
+          201,
+        )
+      : route.fallback(),
+  );
+  await page.route(`${API}/mail/accounts/${MAIL_PHOTO_IDS.billing}/identities`, (route) =>
+    json(route, { identities: [primary()] }),
+  );
+  await page.route(
+    `${API}/mail/identities/${COMPOSE_PHOTO_IDS.identityBilling}/verification`,
+    (route) => {
+      state = 'pending';
+      return json(route, { verification: primary().verification }, 202);
+    },
+  );
+}

@@ -630,7 +630,7 @@ token baru sekali, lalu menampilkan "Muat ulang email").
 
 Masuk (memakai ulang `CONNECTION_TEST_MESSAGES` `imap_*` Fase 6, teks disesuaikan "akun email"):
 `ok`; `imap_host_not_found`; `imap_host_blocked` (termasuk privat tanpa allowlist: "Server email di
-jaringan lokal harus didaftarkan dulu di Pengaturan → Integrasi → Jaringan privat."); `imap_port_not_allowed`;
+jaringan lokal harus didaftarkan dulu di Pengaturan → Webhook → Jaringan privat yang diizinkan."); `imap_port_not_allowed`;
 `imap_connection_refused`; `imap_connection_timeout`; `imap_tls_failed`; `imap_certificate_invalid`;
 `imap_auth_failed`; **baru**: `imap_not_enabled` ("Akses IMAP belum diaktifkan di akun ini. Aktifkan di
 pengaturan email penyedia (Gmail: Setelan → Penerusan dan POP/IMAP)."), `imap_app_password_required`

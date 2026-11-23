@@ -287,6 +287,9 @@ export function refreshIdentities(queryClient: QueryClient, accountId?: string):
   void queryClient.invalidateQueries({
     queryKey: accountId ? mailKeys.identities(accountId) : ['mail', 'identities'],
   });
+  // Peringatan akun (`identity_unverified`) ikut berubah: banner menu Email & halaman akun.
+  void queryClient.invalidateQueries({ queryKey: mailKeys.accounts });
+  if (accountId) void queryClient.invalidateQueries({ queryKey: mailKeys.account(accountId) });
 }
 
 export const mailSettingsQuery = queryOptions({

@@ -1,11 +1,19 @@
-import { API_ROUTES, apiPath, type CreateMailAccountInput } from '@balesin/shared';
+import {
+  API_ROUTES,
+  MAIL_VERIFICATION_UNAVAILABLE_MESSAGES,
+  apiPath,
+  type CreateMailAccountInput,
+  type MailIdentity,
+} from '@balesin/shared';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { t } from '../../i18n/id';
 import { apiError, fakeSession, json, type FakeHandler } from '../../test/fake-api';
 import {
+  COMPOSE_IDS,
   MAIL_IDS,
   fakeMailAccount,
+  fakeMailIdentity,
   fakeRedactedAccount,
   fakeTestResult,
 } from '../../test/fake-mail';
@@ -16,6 +24,7 @@ import { expectSecretNowhere, secretSpies } from '../../test/secret-nowhere';
 const m = t.mail;
 const c = t.mail.accounts;
 const w = t.mail.wizard;
+const i = t.mail.identities;
 const SECRET = 'Sandi-Rahasia-Akun-Email-77';
 
 const cs = fakeMailAccount();
@@ -202,10 +211,62 @@ describe('wizard Hubungkan akun email', () => {
       sync: { ...cs.sync, state: 'initial_sync' },
     });
     const spies = secretSpies();
+    // Alamat utama akun baru: belum diverifikasi → wizard memulai verifikasi sendiri (9B §3.4).
+    let primary: MailIdentity = fakeMailIdentity({
+      id: COMPOSE_IDS.identityBilling,
+      accountId: MAIL_IDS.billing,
+      address: 'billing@majujaya.co.id',
+      displayName: 'Billing',
+      verification: {
+        state: 'unverified',
+        verifiedAt: null,
+        method: null,
+        pending: null,
+        available: true,
+        unavailableReason: null,
+      },
+    });
+    const pendingVerification = {
+      ...primary.verification,
+      state: 'pending' as const,
+      pending: {
+        sentAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+        attemptsLeft: 5,
+        autoCheckUntil: null,
+      },
+    };
+    const verificationPath = apiPath(API_ROUTES.mail.identityVerification, {
+      identityId: primary.id,
+    });
+    const confirmPath = apiPath(API_ROUTES.mail.identityVerificationConfirm, {
+      identityId: primary.id,
+    });
     const view = await renderApp(
       '/pengaturan/akun-email',
       wizardRoutes({
         [`POST ${API_ROUTES.mail.accounts}`]: () => json({ account: created }, { status: 201 }),
+        [`GET ${apiPath(API_ROUTES.mail.accountIdentities, { accountId: MAIL_IDS.billing })}`]:
+          () => json({ identities: [primary] }),
+        [`POST ${verificationPath}`]: () => {
+          primary = { ...primary, verification: pendingVerification };
+          return json({ verification: pendingVerification }, { status: 202 });
+        },
+        [`POST ${confirmPath}`]: () => {
+          primary = {
+            ...primary,
+            verification: {
+              ...pendingVerification,
+              state: 'verified',
+              verifiedAt: new Date().toISOString(),
+              method: 'code',
+              pending: null,
+            },
+            canSend: true,
+            cannotSendReason: null,
+          };
+          return json({ identity: primary });
+        },
       }),
     );
     const wizard = await toTestStep();
@@ -248,6 +309,26 @@ describe('wizard Hubungkan akun email', () => {
 
     fireEvent.click(wizard.getByRole('button', { name: w.save }));
     await confirmIdentity(w.confirmTitle, w.save);
+
+    // Langkah 5: akun tersimpan, email verifikasi alamat utama langsung dikirim (sekali).
+    expect(await dialog().findByText(w.createdTitle('Billing'))).toBeVisible();
+    expect(
+      await dialog().findByRole('heading', { name: w.verifyTitle('billing@majujaya.co.id') }),
+    ).toBeVisible();
+    const code = await dialog().findByLabelText(i.codeLabel('billing@majujaya.co.id'));
+    expect(
+      view.api.requests.filter((item) => item.method === 'POST' && item.path === verificationPath),
+    ).toHaveLength(1);
+    // Tidak bisa kembali ke langkah sebelumnya (akun sudah ada).
+    expect(dialog().queryByRole('button', { name: w.back })).toBeNull();
+    fireEvent.change(code, { target: { value: '482913' } });
+    fireEvent.click(dialog().getByRole('button', { name: i.confirmCode }));
+    expect(await dialog().findByText(w.verifiedTitle)).toBeVisible();
+    expect(
+      view.api.requests.find((item) => item.method === 'POST' && item.path === confirmPath)?.body,
+    ).toEqual({ code: '482913' });
+
+    fireEvent.click(dialog().getByRole('button', { name: w.finish }));
     expect(await screen.findByText(c.done.created('Billing'))).toBeVisible();
     await waitFor(() => expect(screen.queryByRole('dialog', { name: w.title })).toBeNull());
 
@@ -346,9 +427,26 @@ describe('wizard Hubungkan akun email', () => {
       displayName: 'Rina',
       emailAddress: 'rina@majujaya.co.id',
     });
+    const personalIdentity = fakeMailIdentity({
+      id: COMPOSE_IDS.identityBilling,
+      accountId: MAIL_IDS.personal,
+      address: 'rina@majujaya.co.id',
+      displayName: 'Rina',
+      approval: { state: 'pending', decidedAt: null },
+      verification: {
+        state: 'unverified',
+        verifiedAt: null,
+        method: null,
+        pending: null,
+        available: false,
+        unavailableReason: 'approval_pending',
+      },
+    });
     const view = await renderApp('/pengaturan/akun-email?tambah=imap', {
       session: fakeSession('cs'),
       routes: {
+        [`GET ${apiPath(API_ROUTES.mail.accountIdentities, { accountId: MAIL_IDS.personal })}`]:
+          () => json({ identities: [personalIdentity] }),
         [`GET ${API_ROUTES.mail.settingsAccounts}`]: settingsList([], {
           canConnectPersonal: true,
           canManageShared: false,
@@ -381,6 +479,17 @@ describe('wizard Hubungkan akun email', () => {
     expect(wizard.getByRole('radio', { name: new RegExp(w.personalTitle) })).toBeChecked();
     fireEvent.click(wizard.getByRole('button', { name: w.save }));
 
+    // Domain organisasi di akun pribadi: verifikasi menunggu persetujuan, tidak dimulai otomatis.
+    expect(
+      await wizard.findByText(MAIL_VERIFICATION_UNAVAILABLE_MESSAGES.approval_pending),
+    ).toBeVisible();
+    expect(
+      view.api.requests.some(
+        (item) => item.method === 'POST' && item.path.endsWith('/verification'),
+      ),
+    ).toBe(false);
+    // Escape / tutup setelah akun tersimpan = selesai (daftar dimuat ulang, bukan dibatalkan).
+    fireEvent.click(wizard.getByRole('button', { name: w.close }));
     expect(await screen.findByText(c.done.created('Rina'))).toBeVisible();
     expect(screen.queryByRole('dialog', { name: w.confirmTitle })).toBeNull();
     const body = view.api.requests.find(
@@ -388,6 +497,49 @@ describe('wizard Hubungkan akun email', () => {
     )?.body as Record<string, unknown>;
     expect(body).toMatchObject({ kind: 'personal', provider: 'imap', access: [] });
     expect(body).not.toHaveProperty('confirmation');
+  });
+
+  it('Gmail: saran server + keterangan sandi aplikasi, dihubungkan sebagai IMAP lain', async () => {
+    const description =
+      'Alamat ini memakai Google. Pakai sandi aplikasi (bukan password biasa) dan aktifkan IMAP; "Masuk dengan Google" segera hadir.';
+    await renderApp(
+      '/pengaturan/akun-email',
+      wizardRoutes({
+        [`POST ${API_ROUTES.mail.detect}`]: () =>
+          json({
+            domain: 'gmail.com',
+            suggestions: [
+              {
+                source: 'known_provider',
+                provider: 'google',
+                imap: { host: 'imap.gmail.com', port: 993, security: 'ssl' },
+                smtp: { host: 'smtp.gmail.com', port: 465, security: 'ssl' },
+                username: 'address',
+                description,
+              },
+            ],
+          }),
+      }),
+    );
+    const wizard = await openWizard();
+    fireEvent.change(wizard.getByLabelText(w.emailLabel), {
+      target: { value: 'tokomajujaya@gmail.com' },
+    });
+    fireEvent.blur(wizard.getByLabelText(w.emailLabel));
+    // Kartu "IMAP lain" ditandai cocok (Gmail sendiri masih "Segera hadir").
+    expect(await wizard.findByText('@gmail.com')).toBeVisible();
+    expect(wizard.getByRole('radio', { name: /IMAP lain/ })).toBeChecked();
+    fireEvent.click(wizard.getByRole('button', { name: w.next }));
+
+    expect(await wizard.findByText(w.detectedTitle('gmail.com'))).toBeVisible();
+    expect(wizard.queryByText(w.notDetectedTitle)).toBeNull();
+    expect(wizard.getByText(description)).toBeVisible();
+    expect(wizard.getByText(w.appPasswordNote)).toBeVisible();
+    const [imapHost, smtpHost] = wizard.getAllByLabelText(w.host);
+    expect(imapHost).toHaveValue('imap.gmail.com');
+    expect(smtpHost).toHaveValue('smtp.gmail.com');
+    expect(wizard.getByLabelText(w.username)).toHaveValue('tokomajujaya@gmail.com');
+    expect(wizard.getAllByText(w.appPasswordHint).length).toBeGreaterThan(0);
   });
 
   it('jatah deteksi habis (429): tetap bisa lanjut dan mengisi server sendiri', async () => {

@@ -22,7 +22,7 @@ import { Dialog, DialogActions } from '../../components/ui/Dialog';
 import { SelectField, TextField } from '../../components/ui/Field';
 import { FormActions } from '../../components/ui/FormActions';
 import { Icon } from '../../components/ui/Icon';
-import { Notice, type NoticeTone } from '../../components/ui/Notice';
+import { Notice } from '../../components/ui/Notice';
 import { Skeleton, SkeletonRegion } from '../../components/ui/Skeleton';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { t } from '../../i18n/id';
@@ -32,7 +32,6 @@ import { zodFieldErrors, type FieldErrors } from '../../lib/form';
 import { useCan, useSession } from '../auth/session';
 import { isConfirmationError } from '../identity/confirmation-error';
 import { IdentityDialog } from '../identity/IdentityDialog';
-import { CodeField } from '../two-factor/CodeField';
 import { readAvatarFile } from './avatar-file';
 import { ComposeEditor, type EditorHandle } from './compose/ComposeEditor';
 import { signatureIdOfLogoCid } from './compose/compose-html';
@@ -46,6 +45,7 @@ import {
   useRequireCode,
 } from './mail-queries';
 import { identityBadge } from './identity-badge';
+import { IdentityVerifyPanel, type IdentityFlash } from './IdentityVerifyPanel';
 import styles from './MailAccounts.module.css';
 import own from './MailComposeSettings.module.css';
 
@@ -53,12 +53,8 @@ const i = t.mail.identities;
 const sg = t.mail.signatures;
 const sd = t.mail.sending;
 const pf = t.mail.preferences;
-const clockFormat = new Intl.DateTimeFormat('id-ID', { hour: '2-digit', minute: '2-digit' });
 
-interface Flash {
-  tone: NoticeTone;
-  text: string;
-}
+type Flash = IdentityFlash;
 
 // ── Alamat pengirim & alias ───────────────────────────────────────────────
 
@@ -217,59 +213,8 @@ function IdentityRow({
   onEdit: () => void;
   onRemove: () => void;
 }) {
-  const queryClient = useQueryClient();
   const { verification } = identity;
-  const [code, setCode] = useState('');
-  const [codeError, setCodeError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<'send' | 'confirm' | null>(null);
-  const pending = verification.state === 'pending';
   const verified = verification.state === 'verified';
-
-  const start = async () => {
-    setBusy('send');
-    try {
-      const response = await endpoints.mail.startVerification(identity.id);
-      queryClient.setQueryData<{ identities: MailIdentity[] }>(
-        mailKeys.identities(identity.accountId),
-        (data) =>
-          data && {
-            identities: data.identities.map((item) =>
-              item.id === identity.id ? { ...item, verification: response.verification } : item,
-            ),
-          },
-      );
-      onFlash({ tone: 'success', text: i.verificationSent(identity.address) });
-    } catch (caught) {
-      onFlash({ tone: 'danger', text: isApiError(caught) ? caught.message : t.api.network });
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const confirm = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!/^\d{6}$/.test(code.trim())) {
-      setCodeError(i.codeShort);
-      return;
-    }
-    setBusy('confirm');
-    setCodeError(null);
-    try {
-      await endpoints.mail.confirmVerification(identity.id, code.trim());
-      setCode('');
-      refreshIdentities(queryClient, identity.accountId);
-      onFlash({ tone: 'success', text: i.verifiedNow(identity.address) });
-    } catch (caught) {
-      setCodeError(isApiError(caught) ? caught.message : t.api.network);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const unavailable =
-    !verification.available && verification.unavailableReason
-      ? MAIL_VERIFICATION_UNAVAILABLE_MESSAGES[verification.unavailableReason]
-      : null;
 
   return (
     <li className={own.identity}>
@@ -318,61 +263,7 @@ function IdentityRow({
           </DropdownMenu.Root>
         ) : null}
       </div>
-      {!verified && manage ? (
-        <div className={own.verify}>
-          {unavailable ? (
-            <Notice tone="warning">{unavailable}</Notice>
-          ) : pending ? (
-            <>
-              <p className={own.verifyText}>
-                {verification.pending?.expiresAt
-                  ? i.pendingBody(
-                      identity.address,
-                      clockFormat.format(new Date(verification.pending.expiresAt)),
-                    )
-                  : i.pendingNoTime(identity.address)}
-              </p>
-              <form className={own.codeForm} onSubmit={(event) => void confirm(event)} noValidate>
-                <CodeField
-                  kind="totp"
-                  label={i.codeLabel(identity.address)}
-                  value={code}
-                  onValueChange={(value) => {
-                    setCode(value);
-                    setCodeError(null);
-                  }}
-                  error={codeError}
-                  hint={
-                    verification.pending
-                      ? i.attemptsLeft(verification.pending.attemptsLeft)
-                      : undefined
-                  }
-                  className={own.codeField}
-                />
-                <div className={own.codeActions}>
-                  <Button type="submit" variant="primary" loading={busy === 'confirm'}>
-                    {busy === 'confirm' ? i.confirming : i.confirmCode}
-                  </Button>
-                  <Button
-                    loading={busy === 'send'}
-                    disabled={busy !== null}
-                    onClick={() => void start()}
-                  >
-                    {busy === 'send' ? i.sending : i.resend}
-                  </Button>
-                </div>
-              </form>
-            </>
-          ) : verification.state === 'unverified' ? (
-            <div className={own.verifyRow}>
-              <p className={own.verifyText}>{i.unverifiedBody}</p>
-              <Button variant="primary" loading={busy === 'send'} onClick={() => void start()}>
-                {busy === 'send' ? i.sending : i.verify}
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+      {!verified && manage ? <IdentityVerifyPanel identity={identity} onFlash={onFlash} /> : null}
     </li>
   );
 }

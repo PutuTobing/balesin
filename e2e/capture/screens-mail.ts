@@ -9,14 +9,18 @@ import {
   mailAccounts,
   mailCompose,
   mailMessages,
+  mailPresence,
+  mailUnverified,
   mailWizard,
+  mailWizardVerify,
   teamMailAccess,
 } from './mocks-mail';
 import type { Screen } from './screens';
 
 /**
  * Fase 9 tahap 9A bagian 1 — menu Email (kosong & kerangka), Pengaturan → Akun email, wizard
- * Hubungkan akun email (4 langkah + galat tes), akses akun, dan Tim → Akses email.
+ * Hubungkan akun email (5 langkah + galat tes; langkah 5 = verifikasi alamat 9B), akses akun, dan
+ * Tim → Akses email.
  */
 
 const WIZARD = 'Hubungkan akun email';
@@ -111,6 +115,20 @@ export const mailScreens: Screen[] = [
       await page.mouse.move(1, 1);
     },
   },
+  // 9B §3.4: akun berperingatan identity_unverified → banner dengan tautan ke Alamat pengirim.
+  {
+    name: 'email-banner-verifikasi',
+    path: '/email',
+    before: async (page) => {
+      await mailAccounts(page);
+      await mailUnverified(page);
+    },
+    waitFor: 'h1',
+    prepare: async (page) => {
+      await page.getByText('Verifikasi alamat Billing supaya bisa mengirim email').waitFor();
+      await settle(page);
+    },
+  },
   {
     name: 'email-memuat',
     path: '/email',
@@ -165,6 +183,28 @@ export const mailScreens: Screen[] = [
       await settle(page);
     },
   },
+  // 9B-m12: rekan sedang membalas utas ini (presence di kepala panel baca).
+  {
+    name: 'email-baca-presence',
+    path: `/email?m=${MAIL_MESSAGE_IDS.noc}`,
+    before: async (page) => {
+      await mailAccounts(page);
+      await mailPresence(page);
+    },
+    waitFor: 'iframe',
+    prepare: async (page) => {
+      await page.getByText(/Citra Maharani sedang membalas/).waitFor();
+      await readyFrame(page);
+    },
+  },
+  // 9B-m11: peringatan tautan menipu (tujuan asli ditampilkan, tanpa pengalihan otomatis).
+  {
+    name: 'email-tautan',
+    path: `/email/tautan?ke=${encodeURIComponent('https://bayar-domain.example-tagihan.top/faktur?id=88213')}&tampil=${encodeURIComponent('https://www.majujaya.co.id/bayar')}`,
+    before: (page) => mailAccounts(page),
+    waitFor: 'h1',
+    prepare: settle,
+  },
   {
     name: 'email-baca-memuat',
     path: `/email?m=${MAIL_MESSAGE_IDS.noc}`,
@@ -204,7 +244,7 @@ export const mailScreens: Screen[] = [
     },
   },
 
-  // Wizard 4 langkah.
+  // Wizard 5 langkah.
   {
     name: 'akun-wizard-1',
     path: '/pengaturan/akun-email?tambah=baru',
@@ -249,6 +289,27 @@ export const mailScreens: Screen[] = [
       await mailWizard(page);
     },
     prepare: wizardStep4,
+  },
+
+  // Langkah 5 (9B §3.4): akun tersimpan, email verifikasi dikirim otomatis, kolom kode cadangan.
+  {
+    name: 'akun-wizard-5',
+    path: '/pengaturan/akun-email?tambah=baru',
+    before: async (page) => {
+      await mailAccounts(page);
+      await mailWizard(page);
+      await mailWizardVerify(page);
+    },
+    prepare: async (page) => {
+      await wizardStep4(page);
+      await wizard(page).getByRole('button', { name: 'Simpan & mulai sinkron' }).click();
+      const confirm = page.getByRole('dialog', { name: 'Konfirmasi akun bersama' });
+      await confirm.getByLabel('Password', { exact: true }).fill('Kopi-Senja-Tenang-42');
+      await confirm.getByLabel('Kode verifikasi').fill('481 902');
+      await confirm.getByRole('button', { name: 'Simpan & mulai sinkron' }).click();
+      await wizard(page).getByLabel('Kode verifikasi untuk billing@majujaya.co.id').waitFor();
+      await settle(page);
+    },
   },
 
   // Satu akun: ringkasan, tampilan, server, akses.

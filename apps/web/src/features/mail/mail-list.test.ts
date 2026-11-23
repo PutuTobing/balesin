@@ -10,6 +10,7 @@ import {
   addressName,
   aliasChip,
   attachmentKind,
+  blockedAttachmentReason,
   dayGroup,
   groupMessages,
   isUnifiedView,
@@ -141,6 +142,20 @@ describe('jenis lampiran', () => {
     expect(attachmentKind('application/zip', 'foto.zip')).toBe('archive');
     expect(attachmentKind('application/octet-stream', 'surat.docx')).toBe('doc');
     expect(attachmentKind('application/octet-stream', 'data')).toBe('other');
+  });
+
+  it('alasan singkat lampiran diblokir (tampil di kartu, selaras golongan server)', () => {
+    expect(blockedAttachmentReason('application/octet-stream', 'pemasang.EXE')).toBe('program');
+    expect(blockedAttachmentReason('application/x-msdownload', 'setup')).toBe('program');
+    expect(blockedAttachmentReason('text/html', 'faktur.html')).toBe('web');
+    expect(blockedAttachmentReason('image/svg+xml', 'logo')).toBe('web');
+    expect(blockedAttachmentReason('application/octet-stream', 'Rekap.xlsm')).toBe('macro');
+    expect(blockedAttachmentReason('application/msword', 'surat.doc')).toBe('legacyOffice');
+    // Nama aman tapi tetap diblokir server = isinya (mis. program berganti nama).
+    expect(blockedAttachmentReason('application/pdf', 'faktur.pdf')).toBe('content');
+    for (const reason of ['program', 'web', 'macro', 'legacyOffice', 'content']) {
+      expect(t.mail.reading.attachments.blockedReasons[reason], reason).toBeTruthy();
+    }
   });
 });
 

@@ -26,8 +26,8 @@ import { emailDomain } from './mail-format';
  * terkendali (`SecretField`) tepat sebelum dikirim.
  */
 
-export const WIZARD_STEPS = 4;
-export type WizardStep = 1 | 2 | 3 | 4;
+export const WIZARD_STEPS = 5;
+export type WizardStep = 1 | 2 | 3 | 4 | 5;
 
 /** Isian server & identitas (state). Port disimpan sebagai teks isian. */
 export interface ServerValues {
@@ -64,7 +64,19 @@ export function displayNameFromAddress(address: string): string {
   return local.charAt(0).toUpperCase() + local.slice(1);
 }
 
-/** Saran server pertama yang bisa dipakai 9A (IMAP + SMTP lengkap, penyedia cPanel/IMAP). */
+/**
+ * Penyedia yang "Masuk dengan Google/Microsoft"-nya belum ada (9E), tetapi servernya bisa dipakai
+ * sekarang lewat IMAP + SMTP dengan sandi aplikasi (deteksi memberi saran server lengkap + catatan).
+ */
+const APP_PASSWORD_PROVIDERS: ReadonlySet<MailServerSuggestion['provider']> = new Set([
+  'google',
+  'microsoft',
+]);
+
+/**
+ * Saran server pertama yang bisa dipakai 9A: IMAP + SMTP lengkap dari penyedia cPanel/IMAP, atau
+ * dari Google/Microsoft (dihubungkan sebagai "IMAP lain" dengan sandi aplikasi).
+ */
 export function usableSuggestion(
   suggestions: readonly MailServerSuggestion[],
 ): MailServerSuggestion | null {
@@ -73,12 +85,24 @@ export function usableSuggestion(
       (item) =>
         item.imap !== null &&
         item.smtp !== null &&
-        (item.provider === 'cpanel' || item.provider === 'imap'),
+        (item.provider === 'cpanel' ||
+          item.provider === 'imap' ||
+          APP_PASSWORD_PROVIDERS.has(item.provider)),
     ) ?? null
   );
 }
 
-/** Saran untuk penyedia yang belum didukung (Gmail/Microsoft): hanya catatan. */
+/** Kartu penyedia yang dipakai untuk saran ini: cPanel tetap cPanel, selainnya "IMAP lain". */
+export function suggestionProvider(suggestion: MailServerSuggestion): MailAvailableProvider {
+  return suggestion.provider === 'cpanel' ? 'cpanel' : 'imap';
+}
+
+/** Saran Google/Microsoft: login password biasa ditolak, jadi wizard menekankan sandi aplikasi. */
+export function needsAppPassword(suggestion: MailServerSuggestion | null): boolean {
+  return suggestion !== null && APP_PASSWORD_PROVIDERS.has(suggestion.provider);
+}
+
+/** Saran tanpa server (catatan penyedia saja): tampil sebagai catatan, isian diisi sendiri. */
 export function unsupportedSuggestion(
   suggestions: readonly MailServerSuggestion[],
 ): MailServerSuggestion | null {

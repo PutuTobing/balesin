@@ -5408,6 +5408,15 @@ export const t = {
         preparing: 'Menyiapkan…',
         preparingLabel: (name: string) => `Menyiapkan ${name}`,
         blocked: 'Diblokir',
+        /** Alasan singkat di kartu lampiran: "Diblokir · berkas program". */
+        blockedReasons: {
+          program: 'berkas program',
+          web: 'halaman web',
+          macro: 'berisi makro',
+          legacyOffice: 'format Office lama',
+          content: 'isinya tidak sesuai jenisnya',
+        } as Record<string, string>,
+        /** Arsip (risiko `warn`): penanda di kartu, unduh lewat konfirmasi. */
         risky: 'Berkas arsip',
         warnTitle: 'Unduh berkas arsip ini?',
         warnConfirm: 'Tetap unduh',
@@ -5454,6 +5463,18 @@ export const t = {
     },
     loadFailedTitle: 'Email belum bisa dimuat',
     actionFailed: 'Perubahan belum tersimpan di server email. Coba lagi.',
+    /** Banner menu Email: akun ber-peringatan `identity_unverified`/`system_sender_conflict` (9B §3.4). */
+    verifyBanner: {
+      one: (name: string) => `Verifikasi alamat ${name} supaya bisa mengirim email`,
+      many: (count: number) =>
+        `Verifikasi alamat ${count.toLocaleString('id-ID')} akun email supaya bisa mengirim email`,
+      locked: 'Verifikasi alamat pengirim sedang dikunci',
+      lockedBody:
+        'Kotak surat Email pengirim sistem juga terhubung di menu Email. Buka Alamat pengirim untuk caranya.',
+      open: 'Verifikasi sekarang',
+      openFirst: (name: string) => `Mulai dari ${name}`,
+      dismiss: 'Nanti saja',
+    },
 
     syncStates: {
       initial_sync: 'Sinkron awal',
@@ -5581,7 +5602,13 @@ export const t = {
 
     wizard: {
       title: 'Hubungkan akun email',
-      steps: ['Penyedia', 'Detail akun', 'Tes koneksi', 'Akses & tampilan'] as readonly string[],
+      steps: [
+        'Penyedia',
+        'Detail akun',
+        'Tes koneksi',
+        'Akses & tampilan',
+        'Verifikasi',
+      ] as readonly string[],
       stepsLabel: 'Langkah',
       stepOf: (step: number, total: number) => `Langkah ${step} dari ${total}`,
       stepDone: 'selesai',
@@ -5619,6 +5646,11 @@ export const t = {
         'Isi host dan port dari penyedia email-mu. Tombol panduan di bawah bisa membantu.',
       unsupportedTitle: 'Penyedia ini belum bisa dihubungkan dengan username dan password biasa',
       detectFailed: 'Pengaturan server belum bisa dikenali otomatis. Isi manual di bawah.',
+      /** Saran Google/Microsoft: dihubungkan sebagai IMAP lain dengan sandi aplikasi. */
+      appPasswordNote:
+        'Isi kolom password dengan sandi aplikasi dari pengaturan keamanan akun itu, bukan password biasa.',
+      appPasswordHint:
+        'Pakai sandi aplikasi. Disimpan terenkripsi dan tidak pernah ditampilkan lagi.',
       displayName: 'Nama akun',
       displayNameHint: 'Tampil di menu Email, mis. “CS” atau “Billing”.',
       fromName: 'Nama pengirim',
@@ -5703,6 +5735,15 @@ export const t = {
         'Akun bersama bisa dibaca orang yang kamu beri akses. Server dites ulang sebelum akun disimpan.',
       avatarFailed:
         'Akun sudah terhubung, tetapi fotonya belum tersimpan. Unggah lagi dari pengaturan akun.',
+      // Langkah 5: verifikasi alamat utama (KONTRAK-API-EMAIL-TULIS §3.4)
+      createdTitle: (name: string) => `${name} terhubung. Sinkron awal sedang berjalan.`,
+      verifyTitle: (address: string) => `Verifikasi ${address}`,
+      verifyIntro: 'Email baru bisa dikirim dari alamat yang sudah dibuktikan milikmu atau timmu.',
+      verifiedTitle: 'Alamat terverifikasi',
+      verifyLater:
+        'Boleh ditutup dulu. Selesaikan nanti di Pengaturan → Akun email → akun ini → Alamat pengirim. Sampai terverifikasi, email sudah bisa dibaca tetapi belum bisa dikirim.',
+      verifyLoadFailed: 'Status verifikasi belum bisa dimuat.',
+      finish: 'Selesai',
     },
 
     access: {

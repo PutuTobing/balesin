@@ -474,6 +474,11 @@ describe('menu Email — lampiran', () => {
     );
     const section = await screen.findByRole('region', { name: /3 lampiran/ });
     expect(within(section).getByText(r.attachments.blocked)).toBeVisible();
+    // Alasan singkat tampil di kartu (bukan hanya untuk pembaca layar); arsip ditandai.
+    expect(
+      within(section).getByText(new RegExp(r.attachments.blockedReasons.program ?? '')),
+    ).toBeVisible();
+    expect(within(section).getByText(r.attachments.risky)).toBeVisible();
     expect(
       within(section).queryByRole('button', { name: r.attachments.download('faktur.exe') }),
     ).toBeNull();

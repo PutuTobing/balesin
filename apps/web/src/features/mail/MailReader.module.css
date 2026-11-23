@@ -475,6 +475,11 @@ ul.attachmentList {
   font-weight: var(--weight-semibold);
 }
 
+.attachmentRisky {
+  color: var(--warning-ink);
+  font-weight: var(--weight-semibold);
+}
+
 .attachmentError {
   color: var(--danger-ink);
   font-size: var(--text-12);

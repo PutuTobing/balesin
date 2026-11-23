@@ -215,3 +215,70 @@ export function attachmentTypeLabel(filename: string, kind: AttachmentKind): str
   if (/^[a-z0-9]{2,5}$/i.test(ext)) return ext.toUpperCase();
   return t.mail.reading.attachments.kinds[kind] ?? t.mail.reading.attachments.kinds.other ?? '';
 }
+
+export type BlockedAttachmentReason = 'program' | 'web' | 'macro' | 'legacyOffice' | 'content';
+
+const WEB_EXTENSIONS = new Set([
+  'html',
+  'htm',
+  'xhtml',
+  'xht',
+  'shtml',
+  'mht',
+  'mhtml',
+  'svg',
+  'svgz',
+  'xml',
+  'xsl',
+]);
+const MACRO_EXTENSIONS = new Set([
+  'docm',
+  'xlsm',
+  'pptm',
+  'dotm',
+  'xltm',
+  'potm',
+  'xlam',
+  'ppam',
+  'xll',
+  'sldm',
+  'ppsm',
+]);
+const LEGACY_OFFICE_EXTENSIONS = new Set(['doc', 'xls', 'ppt', 'dot', 'xlt', 'pot', 'pps', 'msg']);
+/** Jenis yang biasanya aman: bila tetap diblokir, isinya yang tidak cocok (mis. program berganti nama). */
+const COMMON_SAFE_EXTENSIONS = new Set([
+  'pdf',
+  'jpg',
+  'jpeg',
+  'png',
+  'gif',
+  'webp',
+  'docx',
+  'xlsx',
+  'pptx',
+  'odt',
+  'ods',
+  'txt',
+  'csv',
+  'rtf',
+]);
+
+/**
+ * Alasan singkat lampiran diblokir untuk kartu lampiran (tampil, bukan hanya pembaca layar). Server
+ * hanya mengirim `risk: blocked` + pesan umum, jadi alasannya dibaca ulang dari akhiran nama & jenis
+ * yang dinyatakan — selaras dengan golongan `mailAttachmentRiskOf` di server (program, halaman web,
+ * makro, Office lama, isi tidak cocok).
+ */
+export function blockedAttachmentReason(
+  contentType: string,
+  filename: string,
+): BlockedAttachmentReason {
+  const type = contentType.toLowerCase();
+  const dot = filename.lastIndexOf('.');
+  const ext = dot >= 0 ? filename.slice(dot + 1).toLowerCase() : '';
+  if (WEB_EXTENSIONS.has(ext) || /html|svg/.test(type)) return 'web';
+  if (MACRO_EXTENSIONS.has(ext) || type.includes('macroenabled')) return 'macro';
+  if (LEGACY_OFFICE_EXTENSIONS.has(ext)) return 'legacyOffice';
+  if (COMMON_SAFE_EXTENSIONS.has(ext)) return 'content';
+  return 'program';
+}

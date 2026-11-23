@@ -1144,6 +1144,14 @@ function ComposeForm({
           />
           {templateButton}
           {signatureButton}
+          <span className={styles.toolSeparator} aria-hidden="true" />
+          <IconButton
+            label={c.footer.discard}
+            icon={Trash2}
+            className={styles.tool}
+            disabled={sending}
+            onClick={() => setDialog({ kind: 'discard' })}
+          />
         </div>
       ) : (
         <footer className={styles.footer}>

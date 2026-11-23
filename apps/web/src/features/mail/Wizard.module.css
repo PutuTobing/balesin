@@ -595,6 +595,36 @@ button.stepButton:hover .stepName {
   gap: var(--space-8);
 }
 
+/* ---------- Langkah 5: verifikasi alamat ---------- */
+
+.verifyBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.verifyTitle {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+  overflow-wrap: anywhere;
+}
+
+.verifyText {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  line-height: var(--leading-text);
+}
+
+.verifySkeletonTitle {
+  width: 60%;
+  height: var(--space-24);
+}
+
+.verifySkeletonBox {
+  height: calc(var(--size-control) * 3);
+}
+
 /* ---------- Kaki ---------- */
 
 .foot {
@@ -619,6 +649,18 @@ button.stepButton:hover .stepName {
 
 .guideInBody {
   display: none;
+}
+
+/* Tablet & HP: lima nama langkah tidak selalu muat sebaris, jadi hanya langkah yang dibuka bernama. */
+@media (max-width: 1023px) {
+  .stepItem:not([data-state='current']) .stepName {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 /* ---------- HP: layar penuh ---------- */
@@ -647,16 +689,6 @@ button.stepButton:hover .stepName {
 
   .stepper {
     gap: var(--space-4);
-  }
-
-  /* Hanya nama langkah yang sedang dibuka yang tampil; sisanya nomor. */
-  .stepItem:not([data-state='current']) .stepName {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
 
   .stepItem:not(:last-child)::after {

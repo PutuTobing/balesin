@@ -70,6 +70,7 @@ import {
   addressName,
   attachmentKind,
   attachmentTypeLabel,
+  blockedAttachmentReason,
   folderLabel,
   isViewUrl,
   LEAVING_ACTIONS,
@@ -908,9 +909,25 @@ function Attachments({ attachments }: { attachments: readonly MailAttachment[] }
                 </span>
                 <span className={styles.attachmentMeta}>
                   {blocked ? (
-                    <span className={styles.attachmentBlocked}>{r.attachments.blocked}</span>
+                    <>
+                      <span className={styles.attachmentBlocked}>{r.attachments.blocked}</span>
+                      {' · '}
+                      {
+                        r.attachments.blockedReasons[
+                          blockedAttachmentReason(item.contentType, item.filename)
+                        ]
+                      }
+                    </>
                   ) : (
-                    `${attachmentTypeLabel(item.filename, kind)} · ${formatBytes(item.sizeBytes)}`
+                    <>
+                      {item.risk === 'warn' ? (
+                        <>
+                          <span className={styles.attachmentRisky}>{r.attachments.risky}</span>
+                          {' · '}
+                        </>
+                      ) : null}
+                      {`${attachmentTypeLabel(item.filename, kind)} · ${formatBytes(item.sizeBytes)}`}
+                    </>
                   )}
                 </span>
                 {blocked && item.riskMessage ? (

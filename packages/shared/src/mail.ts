@@ -327,8 +327,9 @@ export type MailOutgoingTestCode = z.infer<typeof mailOutgoingTestCodeSchema>;
 
 export type MailTestCode = MailIncomingTestCode | MailOutgoingTestCode;
 
-const PRIVATE_NETWORK_HINT =
-  'Server email di jaringan lokal harus didaftarkan dulu di Pengaturan → Integrasi → Jaringan privat.';
+/** Daftar CIDR privat organisasi = `webhookPrivateCidrs` (Pengaturan → Webhook), dipakai juga akun email. */
+export const MAIL_PRIVATE_NETWORK_HINT =
+  'Server email di jaringan lokal harus didaftarkan dulu di Pengaturan → Webhook → Jaringan privat yang diizinkan.';
 
 /**
  * Pesan tetap per kode (balasan server tidak pernah diteruskan) — SEBAB singkat. Langkah perbaikan ada di
@@ -339,7 +340,7 @@ const PRIVATE_NETWORK_HINT =
 export const MAIL_TEST_MESSAGES: Readonly<Record<MailTestCode, string>> = {
   ok: 'Berhasil.',
   imap_host_not_found: 'Server email masuk (IMAP) tidak ditemukan. Periksa penulisan host-nya.',
-  imap_host_blocked: `Alamat server IMAP ini tidak boleh dipakai untuk akun email. ${PRIVATE_NETWORK_HINT}`,
+  imap_host_blocked: `Alamat server IMAP ini tidak boleh dipakai untuk akun email. ${MAIL_PRIVATE_NETWORK_HINT}`,
   imap_port_not_allowed: 'Port IMAP tidak didukung. Pakai 993 (SSL/TLS) atau 143 (STARTTLS).',
   imap_connection_refused: 'Server menolak sambungan IMAP di port ini.',
   imap_connection_timeout: 'Server IMAP tidak merespons. Periksa host dan port-nya.',
@@ -352,7 +353,7 @@ export const MAIL_TEST_MESSAGES: Readonly<Record<MailTestCode, string>> = {
   imap_too_many_connections: 'Server menolak karena terlalu banyak sambungan dari akun ini.',
   imap_quota_full: 'Kotak surat hampir atau sudah penuh (≥ 95%). Email baru bisa ditolak server.',
   smtp_host_not_found: 'Server email keluar (SMTP) tidak ditemukan. Periksa penulisan host-nya.',
-  smtp_host_blocked: `Alamat server SMTP ini tidak boleh dipakai untuk akun email. ${PRIVATE_NETWORK_HINT}`,
+  smtp_host_blocked: `Alamat server SMTP ini tidak boleh dipakai untuk akun email. ${MAIL_PRIVATE_NETWORK_HINT}`,
   smtp_port_not_allowed: 'Port SMTP tidak didukung. Pakai 465 (SSL/TLS) atau 587 (STARTTLS).',
   smtp_connection_refused: 'Server menolak sambungan SMTP di port ini.',
   smtp_connection_timeout:

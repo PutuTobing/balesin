@@ -13,6 +13,7 @@ import {
   type MailAccountColor,
   type MailAccountKind,
   type MailAvailableProvider,
+  type MailIdentity,
   type MailProviderCard,
   type MailSyncWindowDays,
   type TestMailAccountResponse,
@@ -25,6 +26,7 @@ import { SelectField, TextField } from '../../components/ui/Field';
 import { Icon } from '../../components/ui/Icon';
 import { IconButton } from '../../components/ui/IconButton';
 import { Notice } from '../../components/ui/Notice';
+import { Skeleton, SkeletonRegion } from '../../components/ui/Skeleton';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
@@ -36,6 +38,7 @@ import { IdentityDialog } from '../identity/IdentityDialog';
 import { AvatarPicker } from './AvatarPicker';
 import type { AvatarDraft } from './avatar-file';
 import { GrantsEditor } from './GrantsEditor';
+import { IdentityVerifyPanel, type IdentityFlash } from './IdentityVerifyPanel';
 import { ColorPicker } from './MailControls';
 import { CredentialFields, ServerCards } from './ServerFields';
 import { TestResults } from './TestResults';
@@ -47,14 +50,16 @@ import {
   parseWindow,
   windowValue,
 } from './mail-format';
-import { mailProvidersQuery, useRequireCode } from './mail-queries';
+import { mailIdentitiesQuery, mailProvidersQuery, useRequireCode } from './mail-queries';
 import {
   WIZARD_STEPS,
   createBody,
   initialServerValues,
+  needsAppPassword,
   resultFromSaveFailure,
   serverBody,
   stepOfField,
+  suggestionProvider,
   testPassed,
   testSignature,
   unsupportedSuggestion,
@@ -86,8 +91,10 @@ const EMPTY_TEST: TestState = { pending: false, result: null, error: null, signa
 
 /**
  * Wizard "Hubungkan akun email" (mockup tab Tambah akun, kontrak §4): Penyedia → Detail akun → Tes
- * koneksi → Akses & tampilan. Satu `<dialog>`; semua langkah tetap terpasang (yang tidak aktif
- * `hidden`) supaya password di isian tak terkendali bertahan sampai disimpan, lalu dikosongkan.
+ * koneksi → Akses & tampilan → Verifikasi (9B §3.4: setelah akun tersimpan, email verifikasi alamat
+ * utama langsung dikirim; kode 6 angka sebagai cadangan). Satu `<dialog>`; semua langkah tetap
+ * terpasang (yang tidak aktif `hidden`) supaya password di isian tak terkendali bertahan sampai
+ * disimpan, lalu dikosongkan.
  * Password tidak pernah masuk state, cache Query, atau `useMutation`. Akun bersama = konfirmasi
  * identitas (dialog di luar `<form>`).
  */
@@ -135,6 +142,10 @@ export function AddAccountWizard({
   const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<unknown>(null);
+  /** Akun sudah tersimpan (langkah Verifikasi): tidak bisa kembali ke langkah sebelumnya. */
+  const [created, setCreated] = useState<{ account: MailAccount; warning: string | null } | null>(
+    null,
+  );
   const [invalidTick, setInvalidTick] = useState(0);
 
   useEffect(() => {
@@ -199,6 +210,7 @@ export function AddAccountWizard({
       : null;
   const unsupported =
     detection?.result && !suggestion ? unsupportedSuggestion(detection.result.suggestions) : null;
+  const appPassword = needsAppPassword(suggestion);
   const signature = values ? testSignature(emailAddress, values) : null;
   const testValid = test.signature !== null && test.signature === signature;
   const passed = testValid && testPassed(test.result);
@@ -212,9 +224,7 @@ export function AddAccountWizard({
       const next: Detection = { emailAddress: address, result, error: null };
       setDetection(next);
       const usable = usableSuggestion(result.suggestions);
-      if (usable && (usable.provider === 'cpanel' || usable.provider === 'imap')) {
-        setProvider(usable.provider);
-      }
+      if (usable) setProvider(suggestionProvider(usable));
       return next;
     } catch (caught) {
       const next: Detection = { emailAddress: address, result: null, error: caught };
@@ -254,10 +264,7 @@ export function AddAccountWizard({
     if (!found) found = await detect(address);
     const usable = found.result ? usableSuggestion(found.result.suggestions) : null;
     const chosen: MailAvailableProvider | null =
-      provider ??
-      (usable && (usable.provider === 'cpanel' || usable.provider === 'imap')
-        ? usable.provider
-        : null);
+      provider ?? (usable ? suggestionProvider(usable) : null);
     if (!chosen) {
       invalid({ provider: w.pickProvider }, 1);
       return;
@@ -403,7 +410,8 @@ export function AddAccountWizard({
       }
       clearSecrets();
       setConfirming(false);
-      onCreated(account, warning);
+      setCreated({ account, warning });
+      go(5);
     } catch (caught) {
       if (confirmation && isConfirmationError(caught)) throw caught;
       setConfirming(false);
@@ -428,8 +436,18 @@ export function AddAccountWizard({
 
   // ── Navigasi ─────────────────────────────────────────────────────────────
 
+  /** Akun sudah tersimpan: tutup wizard lewat "Selesai", tombol tutup, atau Escape. */
+  const finish = () => {
+    if (created) onCreated(created.account, created.warning);
+  };
+  const dismiss = () => (created ? finish() : onClose());
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    if (step === 5) {
+      finish();
+      return;
+    }
     if (saving || detecting || test.pending) return;
     if (step === 1) void toDetails();
     else if (step === 2) void runTest();
@@ -457,9 +475,11 @@ export function AddAccountWizard({
             : passed
               ? w.next
               : w.retest
-          : saving
-            ? w.saving
-            : w.save;
+          : step === 4
+            ? saving
+              ? w.saving
+              : w.save
+            : w.finish;
 
   const kindLocked = kind === 'shared' ? !canShared : !canPersonal;
   const guideText = provider ? MAIL_PRESETS[provider].guide : MAIL_PRESETS.imap.guide;
@@ -484,7 +504,7 @@ export function AddAccountWizard({
         aria-labelledby={titleId}
         onCancel={(event) => {
           event.preventDefault();
-          if (!saving && !confirming) onClose();
+          if (!saving && !confirming) dismiss();
         }}
       >
         <form ref={formRef} className={styles.frame} onSubmit={submit} noValidate>
@@ -498,10 +518,14 @@ export function AddAccountWizard({
                 icon={X}
                 className={styles.close}
                 disabled={saving}
-                onClick={onClose}
+                onClick={dismiss}
               />
             </div>
-            <Stepper step={step} onGo={(target) => go(target)} disabled={saving || test.pending} />
+            <Stepper
+              step={step}
+              onGo={(target) => go(target)}
+              disabled={saving || test.pending || created !== null}
+            />
           </header>
 
           <div className={styles.body}>
@@ -562,7 +586,9 @@ export function AddAccountWizard({
                       key={card.id}
                       card={card}
                       selected={provider === card.id}
-                      matched={suggestion?.provider === card.id ? domain : null}
+                      matched={
+                        suggestion && suggestionProvider(suggestion) === card.id ? domain : null
+                      }
                       onSelect={() => {
                         if (card.id === 'cpanel' || card.id === 'imap') {
                           setProvider(card.id);
@@ -592,7 +618,8 @@ export function AddAccountWizard({
                 <Notice tone="warning">{w.detectFailed}</Notice>
               ) : suggestion ? (
                 <Notice tone="success" title={w.detectedTitle(domain)}>
-                  {suggestion.description || w.detectedBody}
+                  <p>{suggestion.description || w.detectedBody}</p>
+                  {appPassword ? <p>{w.appPasswordNote}</p> : null}
                 </Notice>
               ) : unsupported ? (
                 <Notice tone="warning" title={w.unsupportedTitle}>
@@ -630,7 +657,7 @@ export function AddAccountWizard({
                     set={setValue}
                     errors={errors}
                     imapPasswordRef={imapPasswordRef}
-                    passwordHint={w.passwordHint}
+                    passwordHint={appPassword ? w.appPasswordHint : w.passwordHint}
                     onSecretChange={() => setErrors({})}
                   />
                   <ServerCards
@@ -638,7 +665,7 @@ export function AddAccountWizard({
                     set={setValue}
                     errors={errors}
                     smtpPasswordRef={smtpPasswordRef}
-                    passwordHint={w.passwordHint}
+                    passwordHint={appPassword ? w.appPasswordHint : w.passwordHint}
                     onSecretChange={() => setErrors({})}
                   />
                 </>
@@ -758,15 +785,30 @@ export function AddAccountWizard({
               ) : null}
             </section>
 
+            {/* Langkah 5: verifikasi alamat utama (akun sudah tersimpan) */}
+            {created ? (
+              <section className={styles.step} data-step="5" hidden={step !== 5}>
+                <StepHeading
+                  index={4}
+                  setRef={(element) => {
+                    stepRefs.current[4] = element;
+                  }}
+                />
+                <VerifyStep account={created.account} warning={created.warning} />
+              </section>
+            ) : null}
+
             {step < 4 ? guideToggle(styles.guideInBody ?? '') : null}
           </div>
 
           <footer className={styles.foot}>
             {step < 4 ? guideToggle(styles.guideInFoot ?? '') : <span />}
             <div className={styles.footButtons}>
-              <Button disabled={saving} onClick={back}>
-                {step === 1 ? w.cancel : w.back}
-              </Button>
+              {step === 5 ? null : (
+                <Button disabled={saving} onClick={back}>
+                  {step === 1 ? w.cancel : w.back}
+                </Button>
+              )}
               <Button
                 ref={submitRef}
                 type="submit"
@@ -791,6 +833,71 @@ export function AddAccountWizard({
         onCancel={() => setConfirming(false)}
         onConfirm={(confirmation) => send(confirmation)}
       />
+    </>
+  );
+}
+
+const primaryOf = (data: { identities: MailIdentity[] } | undefined) =>
+  data?.identities.find((identity) => identity.isPrimary) ?? null;
+
+/**
+ * Langkah Verifikasi: email verifikasi alamat utama dikirim otomatis sekali (bila tersedia); status
+ * berubah lewat WebSocket `mail.identity.updated`, dengan cadangan cek ulang tiap 5 detik selama
+ * menunggu. Kode 6 angka untuk alamat yang kotak suratnya ada di tempat lain.
+ */
+function VerifyStep({ account, warning }: { account: MailAccount; warning: string | null }) {
+  const headingId = useId();
+  const identities = useQuery({
+    ...mailIdentitiesQuery(account.id),
+    refetchInterval: (query) =>
+      primaryOf(query.state.data)?.verification.state === 'pending' ? 5_000 : false,
+  });
+  const primary = primaryOf(identities.data);
+  const [flash, setFlash] = useState<IdentityFlash | null>(null);
+  const verified = primary?.verification.state === 'verified';
+
+  return (
+    <>
+      <Notice tone="success" role="status" title={w.createdTitle(account.displayName)} />
+      {warning ? <Notice tone="warning">{warning}</Notice> : null}
+      {primary ? (
+        <section className={styles.verifyBlock} aria-labelledby={headingId}>
+          <h3 id={headingId} className={styles.verifyTitle}>
+            {w.verifyTitle(primary.address)}
+          </h3>
+          {verified ? (
+            <Notice tone="success" role="status" title={w.verifiedTitle}>
+              {m.identities.verifiedNow(primary.address)}
+            </Notice>
+          ) : (
+            <>
+              <p className={styles.verifyText}>{w.verifyIntro}</p>
+              {flash ? (
+                <Notice tone={flash.tone} role={flash.tone === 'danger' ? 'alert' : 'status'}>
+                  {flash.text}
+                </Notice>
+              ) : null}
+              <IdentityVerifyPanel identity={primary} onFlash={setFlash} autoStart nested />
+              <p className={styles.verifyText}>{w.verifyLater}</p>
+            </>
+          )}
+        </section>
+      ) : identities.isPending ? (
+        <SkeletonRegion className={styles.verifyBlock}>
+          <Skeleton className={styles.verifySkeletonTitle} />
+          <Skeleton className={styles.verifySkeletonBox} />
+        </SkeletonRegion>
+      ) : identities.isError ? (
+        <Notice
+          tone="danger"
+          title={w.verifyLoadFailed}
+          actions={<Button onClick={() => void identities.refetch()}>{t.common.retry}</Button>}
+        >
+          {isApiError(identities.error) ? identities.error.message : t.api.network}
+        </Notice>
+      ) : (
+        <p className={styles.verifyText}>{w.verifyLater}</p>
+      )}
     </>
   );
 }

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MAIL_INCOMING_TEST_CODES,
   MAIL_OUTGOING_TEST_CODES,
+  MAIL_PRIVATE_NETWORK_HINT,
   MAIL_PROVIDER_CARDS,
   MAIL_TEST_HINTS,
   MAIL_TEST_MESSAGES,
@@ -262,5 +263,16 @@ describe('review desain 9A akun P9 — pesan & petunjuk tes koneksi', () => {
     expect(MAIL_PROVIDER_CARDS.find((card) => card.id === 'cpanel')?.description).toBe(
       'Email hosting dengan domain sendiri. Pengaturan server terisi otomatis.',
     );
+  });
+});
+
+describe('petunjuk jaringan privat (host diblokir)', () => {
+  it('menunjuk ke daftar CIDR yang benar: Pengaturan → Webhook → Jaringan privat yang diizinkan', () => {
+    expect(MAIL_PRIVATE_NETWORK_HINT).toContain(
+      'Pengaturan → Webhook → Jaringan privat yang diizinkan',
+    );
+    expect(MAIL_PRIVATE_NETWORK_HINT).not.toContain('Integrasi');
+    expect(MAIL_TEST_MESSAGES.imap_host_blocked).toContain(MAIL_PRIVATE_NETWORK_HINT);
+    expect(MAIL_TEST_MESSAGES.smtp_host_blocked).toContain(MAIL_PRIVATE_NETWORK_HINT);
   });
 });

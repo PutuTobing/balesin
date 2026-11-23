@@ -29,7 +29,7 @@ melihat menu Email sampai diberi akses ke akun bersama.
 ## 10.2 Untuk Owner dan Admin: menghubungkan akun
 
 Buka **Pengaturan → Akun email**, lalu tekan **Hubungkan akun email** (juga bisa dari tombol
-**Hubungkan akun email** di kolom folder menu Email). Wizard punya 4 langkah.
+**Hubungkan akun email** di kolom folder menu Email). Wizard punya 5 langkah.
 
 **Langkah 1: Penyedia**
 
@@ -42,9 +42,13 @@ Buka **Pengaturan → Akun email**, lalu tekan **Hubungkan akun email** (juga bi
    - **IMAP lain** — server apa pun yang mendukung IMAP + SMTP dengan password (IMAP 993 SSL/TLS,
      SMTP 587 STARTTLS sebagai bawaan).
    - **Microsoft 365 / Outlook**, **Google Workspace / Gmail**, dan **POP3** masih **Segera
-     hadir**. Sementara itu, Gmail bisa dihubungkan lewat **IMAP lain**: aktifkan IMAP di
-     Gmail, buat sandi aplikasi, lalu isi host `imap.gmail.com` (993, SSL/TLS) dan
-     `smtp.gmail.com` (465, SSL/TLS) secara manual.
+     hadir** (tombol "Masuk dengan Google/Microsoft"). Sementara itu, alamat Gmail, Google
+     Workspace, Outlook, atau Microsoft 365 tetap bisa dihubungkan: ketik alamatnya, aplikasi
+     mengenali penyedianya dan memilih **IMAP lain** dengan tanda "Cocok untuk @…". Di langkah 2
+     host dan port terisi otomatis (Gmail: `imap.gmail.com` 993 dan `smtp.gmail.com` 465;
+     Microsoft: `outlook.office365.com` 993 dan `smtp.office365.com` 587) beserta keterangan
+     penyedia. Pakai **sandi aplikasi**, bukan password biasa, dan pastikan IMAP aktif di akun
+     itu.
 
 **Langkah 2: Detail akun**
 
@@ -57,7 +61,9 @@ Buka **Pengaturan → Akun email**, lalu tekan **Hubungkan akun email** (juga bi
 - Centang **Pakai username dan password yang sama dengan server masuk** bila SMTP memakai login
   yang sama.
 - Akun dengan verifikasi dua langkah (mis. Gmail atau Yahoo) biasanya meminta **sandi
-  aplikasi**, bukan password biasa. Tekan **Panduan pengaturan server** untuk petunjuknya.
+  aplikasi**, bukan password biasa. Untuk alamat Gmail atau Microsoft, kotak hijau
+  "Pengaturan server terdeteksi" mengingatkan hal ini dan keterangan kolom password berubah
+  menjadi "Pakai sandi aplikasi". Tekan **Panduan pengaturan server** untuk petunjuknya.
 
 **Langkah 3: Tes koneksi**
 
@@ -95,8 +101,23 @@ Sinkron awal berjalan di latar belakang; folder muncul di menu Email dalam beber
 yang lebih lama dari jangkauan sinkron bisa diambil nanti dengan mengubah **Ambil email sejak** di
 halaman akun.
 
-> **Langkah wajib setelah wizard**: alamat akun harus **diverifikasi** sebelum bisa dipakai
-> mengirim. Buka halaman akun, bagian **Alamat pengirim**, tekan **Verifikasi** (lihat 10.6).
+**Langkah 5: Verifikasi**
+
+Setelah akun tersimpan, wizard langsung pindah ke langkah **Verifikasi** dan **mengirim email
+verifikasi ke alamat akun secara otomatis** (tidak perlu menekan apa pun). Alamat harus
+diverifikasi sebelum bisa dipakai mengirim (lihat 10.6).
+
+- Biasanya alamat **terverifikasi sendiri dalam beberapa detik** karena email verifikasinya masuk
+  ke kotak surat akun ini. Kotak hijau **Alamat terverifikasi** muncul.
+- Bila belum, buka email verifikasinya dan isi **Kode 6 angka**, lalu tekan **Verifikasi kode**.
+  Tekan **Kirim ulang kode** bila emailnya tidak datang.
+- Bila verifikasi belum bisa dimulai, alasannya tampil di sini (mis. Email pengirim sistem belum
+  diatur, atau alamat akun pribadi berdomain organisasi menunggu persetujuan Owner/Admin).
+- Tekan **Selesai** (atau tutup wizard) kapan saja. Akun tetap terhubung dan email bisa dibaca;
+  verifikasi bisa diselesaikan nanti di halaman akun → **Alamat pengirim**. Selama belum
+  terverifikasi, menu Email menampilkan banner **"Verifikasi alamat <akun> supaya bisa mengirim
+  email"** bagi pemegang hak **Kelola**, dengan tombol **Verifikasi sekarang** (membuka halaman
+  akun → Alamat pengirim). **Nanti saja** menyembunyikan banner sampai menu Email dibuka lagi.
 
 **Halaman akun** (klik akun di **Pengaturan → Akun email**): status sinkron, **Sinkron
 sekarang**, **Jeda sinkron** / **Lanjutkan sinkron**, **Tes koneksi**, bagian **Tampilan &
@@ -191,6 +212,9 @@ status **Terverifikasi**, **Menunggu verifikasi**, **Belum diverifikasi**, atau 
 persetujuan**.
 
 **Memverifikasi**
+
+Untuk alamat utama akun baru, langkah 1 sudah dijalankan otomatis oleh wizard (Langkah 5 di
+10.2). Untuk akun lama, alias, atau verifikasi yang diulang:
 
 1. Tekan **Verifikasi**. Email verifikasi dikirim lewat Email pengirim sistem ke alamat itu.
 2. **Otomatis**: bila email verifikasi masuk ke kotak surat akun ini, alamat biasanya
@@ -305,8 +329,11 @@ tujuan**. Pilih **Kembali ke Email** bila ragu, atau **Tetap buka tautan** bila 
   server (**Menyiapkan…**).
 - **Diblokir**: program (mis. `.exe`, `.bat`, `.js`), dokumen Office bermakro (mis. `.docm`,
   `.xlsm`), dokumen Office format lama, serta halaman web dan SVG (`.html`, `.svg`). Berkas
-  seperti ini sering dipakai menyebarkan virus. Minta pengirim mengirim ulang dalam bentuk PDF.
-- **Berkas arsip** (ZIP, RAR, 7z) bisa diunduh setelah konfirmasi **Unduh berkas arsip ini?** →
+  seperti ini sering dipakai menyebarkan virus. Kartu lampiran menulis alasannya singkat, mis.
+  **Diblokir · berkas program**, **Diblokir · berisi makro**, **Diblokir · halaman web**,
+  **Diblokir · format Office lama**, atau **Diblokir · isinya tidak sesuai jenisnya** (berkas yang
+  namanya aman tetapi isinya program). Minta pengirim mengirim ulang dalam bentuk PDF.
+- **Berkas arsip** (ZIP, RAR, 7z; ditandai kuning di kartunya) bisa diunduh setelah konfirmasi **Unduh berkas arsip ini?** →
   **Tetap unduh**. Buka hanya bila Anda mengenal pengirimnya.
 - Lampiran lebih dari 50 MB tidak bisa diunduh lewat aplikasi; buka lewat webmail penyedia.
 
@@ -398,8 +425,10 @@ Tanda tangan bawaan disisipkan otomatis. Tekan **Tanda tangan** untuk menggantin
   terlihat oleh semua yang punya akses ke akun itu (sifat kotak surat bersama). Hanya Anda yang
   bisa melanjutkan dan mengirim draf milik Anda.
 - Buka draf dari folder Draf untuk melanjutkan menulis. Maksimal 100 draf per orang.
-- **Buang draf** (ikon tempat sampah di kaki jendela) menghapus isi, lampiran, dan salinan di
-  server.
+- **Buang draf** menghapus isi, lampiran, dan salinan di server, setelah Anda menekan **Buang
+  draf** sekali lagi di konfirmasi "Buang draf ini?". Di komputer, tombolnya ikon tempat sampah di
+  ujung kanan kaki jendela; di HP (layar penuh), ikon tempat sampah di ujung kanan baris alat di
+  bawah isi email.
 - Bila draf yang sama diubah di tab atau perangkat lain, muncul **Draf ini diubah di tab atau
   perangkat lain**. Pilih **Muat versi terbaru** atau **Timpa dengan versi ini**; versi yang tidak
   dipilih akan tertimpa.
@@ -485,8 +514,9 @@ di server tidak terpengaruh.
 
 **Tes koneksi gagal**
 
-Lihat tabel galat di 10.2. Untuk Gmail, aktifkan IMAP dan pakai sandi aplikasi. Untuk Microsoft
-365, admin harus mengaktifkan *Authenticated SMTP*.
+Lihat tabel galat di 10.2. Untuk Gmail, aktifkan IMAP dan pakai sandi aplikasi (host terisi
+otomatis saat alamatnya dikenali). Untuk Microsoft 365, admin harus mengaktifkan *Authenticated
+SMTP*.
 
 ## 10.11 Akan datang
 

@@ -1,6 +1,7 @@
 import {
   MAIL_FOLDER_ROLE_NAMES,
   MAIL_PROVIDER_CARDS,
+  type MailAccount,
   type MailAccountListResponse,
   type MailMessageSummary,
   type MailSidebarResponse,
@@ -35,6 +36,7 @@ import { mailAccountsQuery, mailMessagesQuery, mailSidebarQuery } from './mail-q
 import { isMailView } from './mail-search';
 import { onMailSignal } from './mail-signals';
 import { MailSkeleton } from './MailSkeleton';
+import { accountsNeedingVerification, verificationLocked } from './mail-verify-banner';
 import { useMailStream } from './use-mail-stream';
 import styles from './Mail.module.css';
 
@@ -275,6 +277,7 @@ function MailScreen({
             <p className={styles.listSub}>{heading.summary}</p>
           </div>
         </header>
+        <VerifyBanner accounts={accounts.accounts} />
         {flash ? (
           <div className={styles.flash}>
             <Notice
@@ -335,6 +338,57 @@ function MailScreen({
           void navigate({ search: (prev) => ({ ...prev, m: id }), replace: !isHp })
         }
       />
+    </div>
+  );
+}
+
+/**
+ * Banner "Verifikasi alamat … supaya bisa mengirim email" (KONTRAK-API-EMAIL-TULIS §3.4) untuk akun
+ * berperingatan `identity_unverified`/`system_sender_conflict` yang bisa kuverifikasi (hak Kelola).
+ * Tautan ke halaman akun → Alamat pengirim. "Nanti saja" menyembunyikannya sampai menu dibuka lagi;
+ * banner hilang sendiri setelah alamatnya terverifikasi (WS `mail.identity.updated`).
+ */
+function VerifyBanner({ accounts }: { accounts: readonly MailAccount[] }) {
+  const [dismissed, setDismissed] = useState(false);
+  const pending = accountsNeedingVerification(accounts);
+  const first = pending[0];
+  if (dismissed || !first) return null;
+  const locked = verificationLocked(pending);
+  const vb = m.verifyBanner;
+  return (
+    <div className={styles.flash}>
+      <Notice
+        tone="warning"
+        title={
+          locked
+            ? vb.locked
+            : pending.length === 1
+              ? vb.one(first.displayName)
+              : vb.many(pending.length)
+        }
+        actions={
+          <>
+            <Button asChild>
+              <Link
+                to="/pengaturan/akun-email/$accountId"
+                params={{ accountId: first.id }}
+                hash="alamat-pengirim"
+              >
+                {pending.length === 1 ? vb.open : vb.openFirst(first.displayName)}
+              </Link>
+            </Button>
+            <Button variant="ghost" onClick={() => setDismissed(true)}>
+              {vb.dismiss}
+            </Button>
+          </>
+        }
+      >
+        {locked
+          ? vb.lockedBody
+          : pending.length > 1
+            ? pending.map((account) => account.displayName).join(' · ')
+            : null}
+      </Notice>
     </div>
   );
 }
