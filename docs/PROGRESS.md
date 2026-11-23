@@ -158,3 +158,14 @@
   baris ditolak N2); banner `webhook_signature_failed` menautkan ke channel (butuh `channelId`).
 - Pose Kak Sky (BUTUH-TOBING #5), kredensial Meta (#3), detail SMTP (#4).
 - Poles desain: tab "Bot" di 360px 42px; bedakan "inbox kosong" vs "belum memilih chat".
+
+### Poles desain (nanti)
+Minor review layar akun Email 9A (`docs/design-reviews/2026-11-23-fase9a-akun.md`) yang sengaja belum
+dikerjakan (M1, M2, M4, M5, M10 sudah; M3, M7, M8, M9 ikut terkerjakan di `wip/9a`):
+- **M6** kutip lurus → “…”: `"CS" atau "Billing"` (`id.ts`, petunjuk nama akun) dan `"Connect Devices"`
+  (teks deteksi autoconfig, termasuk deskripsi saran server di backend).
+- **M11** zona bahaya halaman akun (1440): keterangan "Semua email yang tersimpan…" pindah ke slot `meta`
+  `FormActions danger`, tepat di samping tombol "Putuskan".
+- **M12** lencana jumlah belum dibaca di rail & navigasi bawah "Email" (mockup "14").
+- **M13** titik warna akun berbentuk sama dengan titik status (mis. akun hijau + "● Tersinkron"): titik akun
+  10px bercincin `--surface`, atau titik status 6px.

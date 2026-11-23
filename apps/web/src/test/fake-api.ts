@@ -485,6 +485,9 @@ export function installFakeApi(options: FakeApiOptions = {}): FakeApi {
         accounts: [],
       }),
     ),
+    [`GET ${API_ROUTES.mail.messages}`]: fullSessionOnly(() =>
+      json({ messages: [], nextCursor: null, olderOnServer: false }),
+    ),
     [`GET ${API_ROUTES.mail.settings}`]: fullSessionOnly(() =>
       json({ settings: { cacheRetentionDays: 90, defaultSyncWindowDays: 90 } }),
     ),

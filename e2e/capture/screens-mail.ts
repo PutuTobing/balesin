@@ -1,6 +1,16 @@
 import type { Page } from '@playwright/test';
 import { teamUserDetail, teamUsers, PHOTO_TEAM, PHOTO_USER_IDS } from './mocks-tim';
-import { MAIL_PHOTO_IDS, mailAccess, mailAccounts, mailWizard, teamMailAccess } from './mocks-mail';
+import {
+  CS_INBOX_FOLDER,
+  CS_VENDOR_FOLDER,
+  MAIL_MESSAGE_IDS,
+  MAIL_PHOTO_IDS,
+  mailAccess,
+  mailAccounts,
+  mailMessages,
+  mailWizard,
+  teamMailAccess,
+} from './mocks-mail';
 import type { Screen } from './screens';
 
 /**
@@ -81,7 +91,7 @@ export const mailScreens: Screen[] = [
   },
   {
     name: 'email-folder',
-    path: `/email?f=${MAIL_PHOTO_IDS.cs.slice(0, -2)}f1`,
+    path: `/email?f=${CS_INBOX_FOLDER}`,
     before: (page) => mailAccounts(page),
     waitFor: 'h1',
   },
@@ -106,6 +116,66 @@ export const mailScreens: Screen[] = [
     before: hangSidebar,
     waitUntil: 'domcontentloaded',
     waitFor: 'section [role="status"]',
+  },
+
+  // Daftar email & panel baca (9A bagian 2).
+  {
+    name: 'email-daftar-kosong',
+    path: '/email',
+    before: async (page) => {
+      await mailAccounts(page);
+      await mailMessages(page, { empty: true, zeroCounts: true });
+    },
+    waitFor: 'h1',
+  },
+  {
+    name: 'email-folder-kosong',
+    path: `/email?f=${CS_VENDOR_FOLDER}`,
+    before: (page) => mailAccounts(page),
+    waitFor: 'h1',
+  },
+  // HTML di iframe sandbox, gambar luar diblokir, lampiran (HP: baca layar penuh).
+  {
+    name: 'email-baca',
+    path: `/email?m=${MAIL_MESSAGE_IDS.noc}`,
+    before: (page) => mailAccounts(page),
+    waitFor: 'iframe',
+    prepare: readyFrame,
+  },
+  {
+    name: 'email-baca-gambar',
+    path: `/email?m=${MAIL_MESSAGE_IDS.noc}`,
+    before: (page) => mailAccounts(page),
+    waitFor: 'iframe',
+    prepare: async (page) => {
+      await page.getByRole('button', { name: 'Tampilkan gambar' }).click();
+      await page.getByText('Gambar dari luar disembunyikan').waitFor({ state: 'detached' });
+      await readyFrame(page);
+    },
+  },
+  // Teks polos + gagal verifikasi + pengirim mirip + lampiran diblokir.
+  {
+    name: 'email-baca-peringatan',
+    path: `/email?m=${MAIL_MESSAGE_IDS.faktur}`,
+    before: (page) => mailAccounts(page),
+    waitFor: 'article h2',
+    prepare: async (page) => {
+      await page.getByText('Pengirim email ini tidak lolos pemeriksaan').waitFor();
+      await settle(page);
+    },
+  },
+  {
+    name: 'email-baca-memuat',
+    path: `/email?m=${MAIL_MESSAGE_IDS.noc}`,
+    before: async (page) => {
+      await mailAccounts(page);
+      await mailMessages(page, { bodyLoading: true });
+    },
+    waitFor: 'article h2',
+    prepare: async (page) => {
+      await page.getByText('Mengambil isi email dari server…').waitFor();
+      await settle(page);
+    },
   },
 
   // Pengaturan → Akun email.
@@ -240,6 +310,12 @@ export const mailScreens: Screen[] = [
     tall: true,
   },
 ];
+
+/** Dokumen email di iframe sudah tampil (tabel jadwal), lalu tetikus dan fokus dirapikan. */
+async function readyFrame(page: Page): Promise<void> {
+  await page.frameLocator('iframe').locator('table').waitFor();
+  await settle(page);
+}
 
 async function hangSidebar(page: Page): Promise<void> {
   await mailAccounts(page);

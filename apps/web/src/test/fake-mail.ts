@@ -1,6 +1,8 @@
 import type {
   MailAccount,
   MailFolder,
+  MailMessageDetail,
+  MailMessageSummary,
   MailSidebarResponse,
   RedactedMailAccount,
   TestMailAccountResponse,
@@ -17,7 +19,115 @@ export const MAIL_IDS = {
   csSent: '7a1b2c3d-0000-4000-8000-0000000000a2',
   csVendor: '7a1b2c3d-0000-4000-8000-0000000000a3',
   billingInbox: '7a1b2c3d-0000-4000-8000-0000000000b1',
+  message1: '7a1b2c3d-0000-4000-8000-0000000000e1',
+  message2: '7a1b2c3d-0000-4000-8000-0000000000e2',
+  message3: '7a1b2c3d-0000-4000-8000-0000000000e3',
+  attachmentPdf: '7a1b2c3d-0000-4000-8000-0000000000c1',
+  attachmentZip: '7a1b2c3d-0000-4000-8000-0000000000c2',
+  attachmentExe: '7a1b2c3d-0000-4000-8000-0000000000c3',
 } as const;
+
+/** Ringkasan email di daftar (kontrak §7). */
+export function fakeMailSummary(overrides: Partial<MailMessageSummary> = {}): MailMessageSummary {
+  return {
+    id: MAIL_IDS.message1,
+    accountId: MAIL_IDS.cs,
+    folderId: MAIL_IDS.csInbox,
+    folderRole: 'inbox',
+    account: { id: MAIL_IDS.cs, displayName: 'CS Maju Jaya', color: 'tagBlue' },
+    from: { address: 'noc@nusaraya.example', name: 'NOC Nusaraya' },
+    to: [{ address: 'cs@majujaya.co.id', name: null }],
+    toCount: 1,
+    ccCount: 0,
+    subject: 'Jadwal pemeliharaan 26 November',
+    snippet: 'Yth. tim, kami akan melakukan pemeliharaan terjadwal.',
+    receivedAt: new Date(Date.now() - 30 * 60_000).toISOString(),
+    sentAt: null,
+    isRead: false,
+    isStarred: false,
+    isAnswered: false,
+    hasAttachments: true,
+    sizeBytes: 48_211,
+    deliveredTo: 'cs@majujaya.co.id',
+    deliveredToAlias: false,
+    senderVerification: 'pass',
+    warnings: [],
+    pending: false,
+    ...overrides,
+  };
+}
+
+/** Detail email (kontrak §8) dengan isi HTML siap + satu PDF, satu ZIP, satu berkas diblokir. */
+export function fakeMailDetail(
+  overrides: Partial<MailMessageDetail> = {},
+  summary: Partial<MailMessageSummary> = {},
+): MailMessageDetail {
+  return {
+    ...fakeMailSummary(summary),
+    cc: [{ address: 'tono@majujaya.co.id', name: 'Tono' }],
+    bcc: null,
+    replyTo: [],
+    messageIdHeader: '<abc@nusaraya.example>',
+    myLevel: 'manage',
+    receivedVia: {
+      accountId: MAIL_IDS.cs,
+      displayName: 'CS Maju Jaya',
+      address: 'cs@majujaya.co.id',
+    },
+    verification: {
+      result: 'pass',
+      label: 'Terverifikasi',
+      spf: 'pass',
+      dkim: 'pass',
+      dmarc: 'pass',
+      authServId: 'mail.majujaya.co.id',
+    },
+    warningDetails: [],
+    body: {
+      state: 'ready',
+      hasHtml: true,
+      text: 'Yth. tim, kami akan melakukan pemeliharaan terjadwal.',
+      remoteImages: { count: 2, senderAllowed: false, autoBlocked: false },
+    },
+    attachments: [
+      {
+        id: MAIL_IDS.attachmentPdf,
+        filename: 'Jadwal-Pemeliharaan.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 253_952,
+        isInline: false,
+        risk: 'ok',
+        riskMessage: null,
+        previewable: false,
+        cached: true,
+      },
+      {
+        id: MAIL_IDS.attachmentZip,
+        filename: 'Foto-ODP.zip',
+        contentType: 'application/zip',
+        sizeBytes: 4_404_019,
+        isInline: false,
+        risk: 'warn',
+        riskMessage: null,
+        previewable: false,
+        cached: false,
+      },
+      {
+        id: MAIL_IDS.attachmentExe,
+        filename: 'faktur.exe',
+        contentType: 'application/octet-stream',
+        sizeBytes: 120_000,
+        isInline: false,
+        risk: 'blocked',
+        riskMessage:
+          'Lampiran ini diblokir karena berisiko (program, makro, atau halaman web). Minta pengirim mengirim dalam bentuk PDF.',
+        previewable: false,
+        cached: false,
+      },
+    ],
+    ...overrides,
+  };
+}
 
 export function fakeMailAccount(overrides: Partial<MailAccount> = {}): MailAccount {
   return {

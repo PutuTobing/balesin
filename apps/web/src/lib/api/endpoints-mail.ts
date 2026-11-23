@@ -7,9 +7,14 @@ import {
   mailAccountListResponseSchema,
   mailAccountResponseSchema,
   mailAccountSyncResponseSchema,
+  mailActionResponseSchema,
   mailAvatarResponseSchema,
   mailFolderListResponseSchema,
+  mailMessageDetailResponseSchema,
+  mailMessageListResponseSchema,
+  mailMessageViewResponseSchema,
   mailProvidersResponseSchema,
+  mailRemoteImageSendersResponseSchema,
   mailSettingsAccountListResponseSchema,
   mailSettingsResponseSchema,
   mailSidebarResponseSchema,
@@ -17,6 +22,8 @@ import {
   testMailAccountResponseSchema,
   type CreateMailAccountInput,
   type IdentityConfirmation,
+  type MailActionRequest,
+  type MailListView,
   type MailSettings,
   type TestMailAccountRequest,
   type UpdateMailAccountAccessRequest,
@@ -24,6 +31,20 @@ import {
   type UpdateTeamMailAccessRequest,
 } from '@balesin/shared';
 import type { ApiClient } from './client';
+import { queryString } from './endpoints-crm';
+
+/** Parameter daftar email (kontrak §7). */
+export interface MailMessageListParams {
+  view: MailListView;
+  folderId?: string;
+  accountId?: string;
+  cursor?: string | null;
+  limit?: number;
+}
+
+/** Hasil unduhan lampiran: berkas, atau server masih mengambilnya dari IMAP (202). */
+export type MailAttachmentDownload =
+  { state: 'ready'; blob: Blob; headers: Headers } | { state: 'loading' };
 
 /**
  * Modul Email tahap 9A bagian 1 (docs/KONTRAK-API-EMAIL.md §4–§6): akun, deteksi & tes koneksi,
@@ -145,6 +166,55 @@ export function createMailEndpoints(client: ApiClient) {
           body,
           schema: mailSettingsResponseSchema,
         }),
+      // ── Bagian 2: daftar, baca, aksi (kontrak §7–§9) ──
+      messages: (params: MailMessageListParams, signal?: AbortSignal) =>
+        client.request(`${routes.messages}${queryString({ ...params })}`, {
+          schema: mailMessageListResponseSchema,
+          signal,
+        }),
+      /** Detail; isi belum ada → `body.state: "loading"` (event WS saat siap). Tidak menandai dibaca. */
+      message: (messageId: string, signal?: AbortSignal) =>
+        client.request(apiPath(routes.message, { messageId }), {
+          schema: mailMessageDetailResponseSchema,
+          signal,
+        }),
+      /** URL dokumen tampilan ber-token (10 menit) untuk `<iframe sandbox>`. */
+      view: (messageId: string, images: 'auto' | 'show', signal?: AbortSignal) =>
+        client.request(apiPath(routes.messageView, { messageId }), {
+          method: 'POST',
+          body: { images },
+          schema: mailMessageViewResponseSchema,
+          signal,
+        }),
+      /** Aksi dua arah (≤ 100 ID); sebagian boleh gagal (`results[].ok`). */
+      act: (body: MailActionRequest) =>
+        client.request(routes.messageActions, {
+          method: 'POST',
+          body,
+          schema: mailActionResponseSchema,
+        }),
+      /** "Selalu tampilkan gambar dari pengirim ini". */
+      allowRemoteImages: (address: string) =>
+        client.request(routes.remoteImageSenders, {
+          method: 'POST',
+          body: { address },
+          schema: mailRemoteImageSendersResponseSchema,
+        }),
+      /**
+       * Unduh lampiran. Belum ada di cache server → 202 JSON `{ state: "loading" }` (berkas lampiran
+       * tidak pernah berjenis JSON: server memakai PDF/raster/`octet-stream`).
+       */
+      downloadAttachment: async (
+        attachmentId: string,
+        confirm = false,
+      ): Promise<MailAttachmentDownload> => {
+        const path = `${apiPath(routes.attachment, { attachmentId })}${confirm ? '?confirm=1' : ''}`;
+        const result = await client.download(path, { accept: '*/*' });
+        if (result.headers.get('content-type')?.includes('application/json')) {
+          return { state: 'loading' };
+        }
+        return { state: 'ready', blob: result.blob, headers: result.headers };
+      },
       teamAccess: (userId: string, signal?: AbortSignal) =>
         client.request(apiPath(routes.teamAccess, { userId }), {
           schema: teamMailAccessResponseSchema,

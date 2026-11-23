@@ -112,8 +112,8 @@ export const MAIL_ACCOUNTS = [
     displayName: 'CS Maju Jaya',
     emailAddress: 'cs@majujaya.co.id',
     color: 'tagBlue',
-    // Kotak masuk 6 + folder Vendor 1 (lihat SIDEBAR).
-    unreadCount: 7,
+    // Kotak masuk 2 (lihat SIDEBAR & MAIL_MESSAGES).
+    unreadCount: 2,
   }),
   account({
     id: MAIL_PHOTO_IDS.billing,
@@ -121,7 +121,7 @@ export const MAIL_ACCOUNTS = [
     emailAddress: 'billing@majujaya.co.id',
     color: 'tagTeal',
     lastSyncedAt: ago(2 * MINUTE),
-    unreadCount: 3,
+    unreadCount: 2,
   }),
   account({
     id: MAIL_PHOTO_IDS.personal,
@@ -132,7 +132,7 @@ export const MAIL_ACCOUNTS = [
     provider: 'imap',
     owner: OWNER,
     lastSyncedAt: ago(20_000),
-    unreadCount: 5,
+    unreadCount: 1,
   }),
   account({
     id: MAIL_PHOTO_IDS.notif,
@@ -161,13 +161,21 @@ const REDACTED = {
   sync: { state: 'ready', lastSyncedAt: ago(5 * MINUTE), lastErrorCode: null },
 };
 
+/**
+ * ID folder unik per akun (heksadesimal): 4 digit terakhir ID akun diganti nomor akun + `0` +
+ * akhiran folder, mis. CS `…00000000` + `1` + `0` + `f1`.
+ */
+function folderIdOf(accountId: string, suffix: string): string {
+  return `${accountId.slice(0, -4)}${accountId.slice(-1)}0${suffix}`;
+}
+
 function folder(
   accountId: string,
   suffix: string,
   init: { path: string; name: string; role: string | null; unread?: number; total?: number },
 ) {
   return {
-    id: `${accountId.slice(0, -2)}${suffix}`,
+    id: folderIdOf(accountId, suffix),
     accountId,
     path: init.path,
     name: init.name,
@@ -182,17 +190,17 @@ function folder(
   };
 }
 
-export const CS_INBOX_FOLDER = `${MAIL_PHOTO_IDS.cs.slice(0, -2)}f1`;
+export const CS_INBOX_FOLDER = folderIdOf(MAIL_PHOTO_IDS.cs, 'f1');
 
 /**
- * Angka saling cocok (review 9A M5): Semua kotak masuk = jumlah belum dibaca di INBOX tiap akun
- * (CS 6 + Billing 3 + Kantor Rina 5 + Notifikasi 0 = 14); Belum dibaca = semua folder kecuali Spam
- * & Sampah (14 + Vendor 1 = 15).
+ * Angka saling cocok dengan daftar email foto (review 9A M5): Semua kotak masuk = belum dibaca di
+ * Kotak masuk tiap akun (CS 2 + Billing 2 + Kantor Rina 1 + Notifikasi 0 = 5) = Belum dibaca;
+ * Berbintang 1. Jumlah email per Kotak masuk = baris di `MAIL_MESSAGES`.
  */
 const SIDEBAR = {
-  unified: { unreadCount: 14 },
-  unread: { count: 15 },
-  starred: { count: 4 },
+  unified: { unreadCount: 5 },
+  unread: { count: 5 },
+  starred: { count: 1 },
   accounts: MAIL_ACCOUNTS.map((item) => ({
     account: {
       id: item.id,
@@ -210,8 +218,8 @@ const SIDEBAR = {
               path: 'INBOX',
               name: 'INBOX',
               role: 'inbox',
-              unread: 6,
-              total: 1240,
+              unread: 2,
+              total: 4,
             }),
             folder(item.id, 'f2', {
               path: 'INBOX.Drafts',
@@ -226,7 +234,6 @@ const SIDEBAR = {
               path: 'INBOX.Vendor',
               name: 'Vendor',
               role: null,
-              unread: 1,
             }),
             folder(item.id, 'f8', {
               path: 'INBOX.Pelanggan korporat',
@@ -240,6 +247,12 @@ const SIDEBAR = {
               name: 'INBOX',
               role: 'inbox',
               unread: item.stats.unreadCount,
+              total:
+                item.id === MAIL_PHOTO_IDS.billing
+                  ? 3
+                  : item.id === MAIL_PHOTO_IDS.personal
+                    ? 1
+                    : 0,
             }),
             folder(item.id, 'f3', { path: 'Sent', name: 'Sent', role: 'sent' }),
             folder(item.id, 'f6', { path: 'Trash', name: 'Trash', role: 'trash' }),
@@ -294,6 +307,7 @@ export async function mailAccounts(page: Page, empty = false): Promise<void> {
   for (const item of MAIL_ACCOUNTS) {
     await page.route(`${API}/mail/accounts/${item.id}`, (route) => json(route, { account: item }));
   }
+  await mailMessages(page, { empty });
 }
 
 /** Wizard: deteksi (cPanel dari MX) + hasil tes (Keluar ditolak bila `outgoingOk` false). */
@@ -448,6 +462,380 @@ export async function teamMailAccess(page: Page, userId: string): Promise<void> 
       personalAccounts: [
         { id: MAIL_PHOTO_IDS.other, emailAddress: 'citra.maharani@surel.id', syncState: 'ready' },
       ],
+    }),
+  );
+}
+
+// ── Bagian 2: daftar, baca, aksi (kontrak §7–§9) ───────────────────────────
+
+const DAY = 24 * HOUR;
+
+/** ID email foto (heksadesimal, lolos `?m=` di web). */
+export const MAIL_MESSAGE_IDS = {
+  noc: '7a1b2c3d-0000-4000-8000-0000000000e1',
+  upgrade: '7a1b2c3d-0000-4000-8000-0000000000e2',
+  settlement: '7a1b2c3d-0000-4000-8000-0000000000e3',
+  kabel: '7a1b2c3d-0000-4000-8000-0000000000e4',
+  odp: '7a1b2c3d-0000-4000-8000-0000000000e5',
+  tunggakan: '7a1b2c3d-0000-4000-8000-0000000000e6',
+  rapat: '7a1b2c3d-0000-4000-8000-0000000000e7',
+  faktur: '7a1b2c3d-0000-4000-8000-0000000000e8',
+  vendor: '7a1b2c3d-0000-4000-8000-0000000000e9',
+} as const;
+
+const ACCOUNT_REFS = {
+  cs: { id: MAIL_PHOTO_IDS.cs, displayName: 'CS Maju Jaya', color: 'tagBlue' },
+  billing: { id: MAIL_PHOTO_IDS.billing, displayName: 'Billing', color: 'tagTeal' },
+  personal: { id: MAIL_PHOTO_IDS.personal, displayName: 'Kantor Rina', color: 'tagPurple' },
+} as const;
+
+type AccountKey = keyof typeof ACCOUNT_REFS;
+
+function summary(init: {
+  id: string;
+  account: AccountKey;
+  from: { address: string; name: string | null };
+  subject: string;
+  snippet: string;
+  at: number;
+  read?: boolean;
+  starred?: boolean;
+  attachments?: boolean;
+  deliveredTo?: string;
+  verification?: 'pass' | 'fail' | 'unverified';
+  folderId?: string;
+  folderRole?: string | null;
+}) {
+  const account = ACCOUNT_REFS[init.account];
+  const own = MAIL_ACCOUNTS.find((item) => item.id === account.id)?.emailAddress ?? '';
+  const deliveredTo = init.deliveredTo ?? own;
+  return {
+    id: init.id,
+    accountId: account.id,
+    folderId: init.folderId ?? folderIdOf(account.id, 'f1'),
+    folderRole: init.folderRole === undefined ? 'inbox' : init.folderRole,
+    account,
+    from: init.from,
+    to: [{ address: deliveredTo, name: null }],
+    toCount: 1,
+    ccCount: 0,
+    subject: init.subject,
+    snippet: init.snippet,
+    receivedAt: ago(init.at),
+    sentAt: ago(init.at + MINUTE),
+    isRead: init.read ?? false,
+    isStarred: init.starred ?? false,
+    isAnswered: false,
+    hasAttachments: init.attachments ?? false,
+    sizeBytes: 48_211,
+    deliveredTo,
+    deliveredToAlias: deliveredTo !== own,
+    senderVerification: init.verification ?? 'pass',
+    warnings: [],
+    pending: false,
+  };
+}
+
+/** Jam foto: "hari ini" dihitung dari tengah hari supaya kelompok hari stabil kapan pun difoto. */
+function todayAt(hours: number, minutes = 0): number {
+  const now = new Date();
+  const target = new Date(now);
+  target.setHours(hours, minutes, 0, 0);
+  // Belum lewat jam itu (foto pagi hari): mundur ke beberapa menit lalu supaya tetap "Hari ini".
+  return Math.max(MINUTE * 3, now.getTime() - target.getTime());
+}
+
+export const MAIL_MESSAGES = [
+  summary({
+    id: MAIL_MESSAGE_IDS.noc,
+    account: 'cs',
+    from: { address: 'noc@nusaraya-backbone.id', name: 'NOC Nusaraya Backbone' },
+    subject: 'Jadwal pemeliharaan backbone 26 Nov, 01.00–04.00 WIB',
+    snippet: 'Yth. Tim NOC Maju Jaya, sehubungan dengan peningkatan kapasitas jalur backbone…',
+    at: todayAt(10, 24),
+    attachments: true,
+  }),
+  summary({
+    id: MAIL_MESSAGE_IDS.upgrade,
+    account: 'cs',
+    from: { address: 'rina.wulandari@contoh.id', name: 'Rina Wulandari' },
+    subject: 'Permintaan upgrade paket 50 Mbps untuk kantor cabang',
+    snippet: 'Selamat pagi, kami berencana membuka kantor cabang baru di Sukadana dan…',
+    at: todayAt(9, 12),
+    starred: true,
+  }),
+  summary({
+    id: MAIL_MESSAGE_IDS.settlement,
+    account: 'billing',
+    from: { address: 'laporan@payment-gateway.example', name: 'Sistem Billing' },
+    subject: 'Settlement harian 21 Nov: Rp 4.215.000 (63 transaksi)',
+    snippet: 'Ringkasan pembayaran pelanggan yang masuk lewat virtual account dan QRIS.',
+    at: todayAt(8, 3),
+    attachments: true,
+    deliveredTo: 'tagihan@majujaya.co.id',
+  }),
+  summary({
+    id: MAIL_MESSAGE_IDS.kabel,
+    account: 'personal',
+    from: { address: 'andi@kabelnusantara.example', name: 'Andi Pratama' },
+    subject: 'Penawaran harga kabel FO 24 core & closure',
+    snippet: 'Bu Rina, terlampir penawaran untuk kebutuhan bulan Desember.',
+    at: todayAt(7, 45),
+    attachments: true,
+  }),
+  summary({
+    id: MAIL_MESSAGE_IDS.odp,
+    account: 'cs',
+    from: { address: 'dimas@majujaya.co.id', name: 'Dimas Saputra' },
+    subject: 'Laporan instalasi ODP Desa Sukadana',
+    snippet: 'Instalasi 2 ODP selesai, redaman rata-rata −19,4 dBm. Foto terlampir.',
+    at: DAY + 2 * HOUR,
+    read: true,
+    attachments: true,
+  }),
+  summary({
+    id: MAIL_MESSAGE_IDS.tunggakan,
+    account: 'billing',
+    from: { address: 'sari.anggraini@majujaya.co.id', name: 'Sari Anggraini' },
+    subject: 'Rekap tunggakan November (per desa)',
+    snippet: 'Rekap terbaru sudah saya pisahkan per desa supaya mudah ditagih.',
+    at: DAY + 5 * HOUR,
+    attachments: true,
+  }),
+  summary({
+    id: MAIL_MESSAGE_IDS.rapat,
+    account: 'cs',
+    from: { address: 'sekretariat@forum-isp.example', name: 'Forum ISP Daerah' },
+    subject: 'Undangan rapat koordinasi akhir tahun',
+    snippet: 'Dengan hormat, kami mengundang Bapak/Ibu dalam rapat koordinasi anggota.',
+    at: 3 * DAY,
+    read: true,
+    verification: 'unverified',
+  }),
+  summary({
+    id: MAIL_MESSAGE_IDS.faktur,
+    account: 'billing',
+    from: { address: 'tagihan@hosting.example', name: 'Hosting Nusantara' },
+    subject: 'Faktur perpanjangan domain majujaya.co.id',
+    snippet: 'Domain kamu akan berakhir 14 hari lagi. Faktur terlampir dalam PDF.',
+    at: 4 * DAY,
+    read: true,
+    attachments: true,
+  }),
+];
+
+/** Isi email NOC: tabel + dua gambar luar (diblokir bawaan) + PDF & spreadsheet. */
+const NOC_DETAIL = {
+  ...MAIL_MESSAGES[0],
+  cc: [{ address: 'rina.kartika@majujaya.co.id', name: 'Rina Kartika' }],
+  bcc: null,
+  replyTo: [],
+  messageIdHeader: '<jadwal-26nov@nusaraya-backbone.id>',
+  myLevel: 'manage',
+  receivedVia: {
+    accountId: MAIL_PHOTO_IDS.cs,
+    displayName: 'CS Maju Jaya',
+    address: 'cs@majujaya.co.id',
+  },
+  verification: {
+    result: 'pass',
+    label: 'Terverifikasi',
+    spf: 'pass',
+    dkim: 'pass',
+    dmarc: 'pass',
+    authServId: 'mail.majujaya.co.id',
+  },
+  warningDetails: [],
+  body: {
+    state: 'ready',
+    hasHtml: true,
+    text: 'Yth. Tim NOC Maju Jaya, …',
+    remoteImages: { count: 2, senderAllowed: false, autoBlocked: false },
+  },
+  attachments: [
+    {
+      id: '7a1b2c3d-0000-4000-8000-0000000000c1',
+      filename: 'Jadwal-Pemeliharaan-26Nov.pdf',
+      contentType: 'application/pdf',
+      sizeBytes: 253_952,
+      isInline: false,
+      risk: 'ok',
+      riskMessage: null,
+      previewable: false,
+      cached: true,
+    },
+    {
+      id: '7a1b2c3d-0000-4000-8000-0000000000c2',
+      filename: 'Link-Terdampak.xlsx',
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      sizeBytes: 36_864,
+      isInline: false,
+      risk: 'ok',
+      riskMessage: null,
+      previewable: false,
+      cached: false,
+    },
+  ],
+};
+
+/** Email teks polos yang gagal verifikasi + pengirim mirip domain kita (layar peringatan). */
+const FAKTUR_DETAIL = {
+  ...MAIL_MESSAGES[7],
+  from: { address: 'tagihan@majujaya-co.id.example', name: 'Hosting Nusantara' },
+  senderVerification: 'fail',
+  cc: [],
+  bcc: null,
+  replyTo: [],
+  messageIdHeader: null,
+  myLevel: 'send',
+  receivedVia: {
+    accountId: MAIL_PHOTO_IDS.billing,
+    displayName: 'Billing',
+    address: 'billing@majujaya.co.id',
+  },
+  verification: {
+    result: 'fail',
+    label:
+      'Email ini gagal pemeriksaan keaslian pengirim. Hati-hati dengan tautan dan lampirannya.',
+    spf: 'fail',
+    dkim: null,
+    dmarc: 'fail',
+    authServId: 'mail.majujaya.co.id',
+  },
+  warningDetails: [
+    { type: 'lookalike_sender', message: 'Alamat pengirim mirip domain kita.' },
+    {
+      type: 'dangerous_attachment',
+      message: 'Ada lampiran berisiko yang diblokir (program, makro, atau halaman web).',
+    },
+  ],
+  body: {
+    state: 'ready',
+    hasHtml: false,
+    text: 'Yth. pelanggan,\n\nDomain majujaya.co.id akan berakhir dalam 14 hari. Segera lakukan pembayaran agar layanan email dan situs tidak terhenti.\n\nFaktur terlampir. Pembayaran dapat dilakukan melalui tautan di dalam faktur.\n\nSalam,\nTim Penagihan',
+    remoteImages: { count: 0, senderAllowed: false, autoBlocked: true },
+  },
+  attachments: [
+    {
+      id: '7a1b2c3d-0000-4000-8000-0000000000c3',
+      filename: 'Faktur-Domain.pdf',
+      contentType: 'application/pdf',
+      sizeBytes: 98_304,
+      isInline: false,
+      risk: 'ok',
+      riskMessage: null,
+      previewable: false,
+      cached: true,
+    },
+    {
+      id: '7a1b2c3d-0000-4000-8000-0000000000c4',
+      filename: 'Faktur-Domain.pdf.exe',
+      contentType: 'application/octet-stream',
+      sizeBytes: 412_672,
+      isInline: false,
+      risk: 'blocked',
+      riskMessage:
+        'Lampiran ini diblokir karena berisiko (program, makro, atau halaman web). Minta pengirim mengirim dalam bentuk PDF.',
+      previewable: false,
+      cached: false,
+    },
+  ],
+};
+
+/**
+ * Dokumen tampilan tiruan (bentuk `renderMailViewDocument`: latar putih, padding 16, huruf sistem).
+ * Gambar luar yang diblokir = gambar kosong + teks alt, persis seperti server.
+ */
+const NOC_DOCUMENT = `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body{margin:0;padding:0;background:#fff;color:#1f2328}
+body{padding:16px;font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;overflow-wrap:anywhere}
+img{max-width:100%;height:auto}table{max-width:100%}</style></head><body>
+<p><img alt="Logo Nusaraya" width="120" height="32" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="border:1px dashed #d0d7de"></p>
+<p>Yth. Tim NOC Maju Jaya,</p>
+<p>Sehubungan dengan peningkatan kapasitas jalur backbone Bandar Lampung – Metro, kami akan melakukan pemeliharaan terjadwal dengan rincian berikut:</p>
+<table style="border-collapse:collapse;margin:4px 0 16px;font-size:13px">
+<tr><td style="padding:7px 12px;border:1px solid #d0d7de;color:#57606a;background:#f6f8fa;width:140px">Tanggal</td><td style="padding:7px 12px;border:1px solid #d0d7de">Rabu, 26 November 2026</td></tr>
+<tr><td style="padding:7px 12px;border:1px solid #d0d7de;color:#57606a;background:#f6f8fa">Waktu</td><td style="padding:7px 12px;border:1px solid #d0d7de">01.00–04.00 WIB</td></tr>
+<tr><td style="padding:7px 12px;border:1px solid #d0d7de;color:#57606a;background:#f6f8fa">Dampak</td><td style="padding:7px 12px;border:1px solid #d0d7de">Putus maksimal 2 × 15 menit</td></tr>
+<tr><td style="padding:7px 12px;border:1px solid #d0d7de;color:#57606a;background:#f6f8fa">Link terdampak</td><td style="padding:7px 12px;border:1px solid #d0d7de">SKT-LT-01, SKT-LT-02 (rincian di lampiran)</td></tr>
+</table>
+<p>Mohon informasikan pelanggan korporat yang terdampak. Bila ada pertanyaan, balas email ini atau hubungi NOC kami 24 jam.</p>
+<p style="color:#57606a">Salam,<br>NOC Nusaraya Backbone</p>
+</body></html>`;
+
+/** Folder "Vendor" CS (kosong) untuk foto keadaan kosong folder. */
+export const CS_VENDOR_FOLDER = folderIdOf(MAIL_PHOTO_IDS.cs, 'f7');
+
+/**
+ * Daftar email (`GET /mail/messages`), detail, dokumen tampilan, dan aksi. `empty` = semua tampilan
+ * kosong; `bodyLoading` = isi email NOC belum diambil server.
+ */
+export async function mailMessages(
+  page: Page,
+  options: { empty?: boolean; bodyLoading?: boolean; zeroCounts?: boolean } = {},
+): Promise<void> {
+  if (options.zeroCounts) {
+    // Akun ada tetapi semua email sudah dibaca/kosong: hitungan kolom kiri ikut nol.
+    await page.route(`${API}/mail/sidebar`, (route) =>
+      json(route, {
+        unified: { unreadCount: 0 },
+        unread: { count: 0 },
+        starred: { count: 0 },
+        accounts: SIDEBAR.accounts.map((entry) => ({
+          ...entry,
+          folders: entry.folders.map((item) => ({ ...item, unreadCount: 0, totalCount: 0 })),
+        })),
+      }),
+    );
+  }
+  await page.route(/\/api\/v1\/mail\/messages(\?.*)?$/, (route) => {
+    const url = new URL(route.request().url());
+    const view = url.searchParams.get('view');
+    const folderId = url.searchParams.get('folderId');
+    let messages = options.empty ? [] : MAIL_MESSAGES;
+    if (view === 'unread') messages = messages.filter((item) => !item.isRead);
+    if (view === 'starred') messages = messages.filter((item) => item.isStarred);
+    if (view === 'folder') messages = messages.filter((item) => item.folderId === folderId);
+    return json(route, { messages, nextCursor: null, olderOnServer: false });
+  });
+  await page.route('**/api/v1/mail/messages/actions', (route) => {
+    const body = route.request().postDataJSON() as { messageIds: string[] };
+    return json(route, {
+      results: body.messageIds.map((id) => ({ id, ok: true })),
+      applied: body.messageIds.length,
+    });
+  });
+  const details: Record<string, unknown> = {
+    [MAIL_MESSAGE_IDS.noc]: options.bodyLoading
+      ? {
+          ...NOC_DETAIL,
+          body: { ...NOC_DETAIL.body, state: 'loading', text: null },
+          attachments: [],
+        }
+      : NOC_DETAIL,
+    [MAIL_MESSAGE_IDS.faktur]: FAKTUR_DETAIL,
+  };
+  for (const [id, message] of Object.entries(details)) {
+    await page.route(`**/api/v1/mail/messages/${id}`, (route) => json(route, { message }));
+    await page.route(`**/api/v1/mail/messages/${id}/view`, (route) => {
+      const images = (route.request().postDataJSON() as { images?: string }).images ?? 'auto';
+      return json(route, {
+        url: `/api/v1/mail/view/foto-${id.slice(-2)}-${images}`,
+        expiresAt: new Date(Date.now() + 10 * MINUTE).toISOString(),
+        remoteImages: { count: 2, shown: images === 'show' },
+      });
+    });
+  }
+  await page.route('**/api/v1/mail/view/**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/html; charset=utf-8',
+      headers: {
+        'content-security-policy':
+          "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox allow-popups allow-popups-to-escape-sandbox",
+      },
+      body: NOC_DOCUMENT,
     }),
   );
 }

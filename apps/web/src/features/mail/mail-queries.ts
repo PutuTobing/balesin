@@ -1,11 +1,22 @@
 import type {
   MailAccount,
   MailAccountListResponse,
+  MailMessageDetail,
+  MailMessageListResponse,
+  MailMessageSummary,
   MailSettingsAccountListResponse,
   MailSidebarResponse,
 } from '@balesin/shared';
-import { queryOptions, useQuery, type QueryClient } from '@tanstack/react-query';
+import {
+  infiniteQueryOptions,
+  queryOptions,
+  useQuery,
+  type InfiniteData,
+  type QueryClient,
+} from '@tanstack/react-query';
+import { isApiError } from '../../lib/api/client';
 import { endpoints } from '../../lib/api/endpoints';
+import type { MailMessageListParams } from '../../lib/api/endpoints-mail';
 import { twoFactorStatusQuery } from '../../lib/api/queries';
 import { retryTransient } from '../inbox/inbox-queries';
 
@@ -23,6 +34,16 @@ export const mailKeys = {
   sidebar: ['mail', 'sidebar'] as const,
   settings: ['mail', 'settings'] as const,
   teamAccess: (userId: string) => ['mail', 'team-access', userId] as const,
+  /** Semua daftar email (awalan untuk menyegarkan/menambal semua tampilan sekaligus). */
+  messageLists: ['mail', 'messages'] as const,
+  messages: (params: MailMessageListParams) =>
+    ['mail', 'messages', params.view, params.folderId ?? null] as const,
+  /** Semua detail email (awalan). */
+  messageDetails: ['mail', 'message'] as const,
+  message: (messageId: string) => ['mail', 'message', messageId] as const,
+  /** URL dokumen tampilan ber-token; `images` = `auto`/`show`. */
+  view: (messageId: string, images: 'auto' | 'show') =>
+    ['mail', 'view', messageId, images] as const,
 };
 
 /** Kartu penyedia jarang berubah (daftar tetap di server). */
@@ -67,6 +88,138 @@ export const mailSidebarQuery = queryOptions({
   queryFn: ({ signal }) => endpoints.mail.sidebar(signal),
   retry: retryTransient,
 });
+
+/** Daftar email satu tampilan/folder, bergulir tak terbatas dengan kursor (kontrak §7). */
+export function mailMessagesQuery(params: MailMessageListParams, limit: number) {
+  return infiniteQueryOptions({
+    queryKey: mailKeys.messages(params),
+    queryFn: ({ signal, pageParam }) =>
+      endpoints.mail.messages({ ...params, cursor: pageParam, limit }, signal),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.nextCursor,
+    retry: retryTransient,
+  });
+}
+
+/**
+ * Satu email. Selama isinya masih diambil server (`body.state: "loading"`), ditanya ulang tiap 3
+ * detik sebagai cadangan bila event WS `mail.message.updated` tidak sampai.
+ */
+export function mailMessageQuery(messageId: string) {
+  return queryOptions({
+    queryKey: mailKeys.message(messageId),
+    queryFn: ({ signal }) => endpoints.mail.message(messageId, signal),
+    retry: (count, error) => !isNotFound(error) && retryTransient(count, error),
+    refetchInterval: (query) => {
+      const state = query.state.data?.message.body.state;
+      return state === 'loading' || state === 'none' ? 3_000 : false;
+    },
+  });
+}
+
+/**
+ * URL dokumen tampilan (token 10 menit). Tidak disegarkan otomatis: dokumen di iframe sudah dimuat,
+ * token baru hanya saat isi berubah atau pengguna meminta gambar ditampilkan.
+ */
+export function mailViewQuery(messageId: string, images: 'auto' | 'show') {
+  return queryOptions({
+    queryKey: mailKeys.view(messageId, images),
+    queryFn: ({ signal }) => endpoints.mail.view(messageId, images, signal),
+    staleTime: Infinity,
+    gcTime: 60_000,
+    refetchOnWindowFocus: false,
+    retry: retryTransient,
+  });
+}
+
+export function isNotFound(error: unknown): boolean {
+  return isApiError(error) && error.status === 404;
+}
+
+type MessageListData = InfiniteData<MailMessageListResponse, string | null>;
+
+/** Email di daftar mana pun yang sudah dimuat (untuk kepala panel baca sebelum detail tiba). */
+export function findListedMessage(
+  queryClient: QueryClient,
+  messageId: string,
+): MailMessageSummary | undefined {
+  for (const [, data] of queryClient.getQueriesData<MessageListData>({
+    queryKey: mailKeys.messageLists,
+  })) {
+    for (const page of data?.pages ?? []) {
+      const found = page.messages.find((message) => message.id === messageId);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
+type FlagPatch = Partial<Pick<MailMessageSummary, 'isRead' | 'isStarred'>>;
+
+/** Tambal bendera (dibaca/bintang) di semua daftar & detail yang dimuat, tanpa memuat ulang. */
+export function patchMessageFlags(
+  queryClient: QueryClient,
+  messageIds: readonly string[],
+  patch: FlagPatch,
+): void {
+  const ids = new Set(messageIds);
+  queryClient.setQueriesData<MessageListData>({ queryKey: mailKeys.messageLists }, (data) =>
+    data
+      ? {
+          ...data,
+          pages: data.pages.map((page) => ({
+            ...page,
+            messages: page.messages.map((message) =>
+              ids.has(message.id) ? { ...message, ...patch } : message,
+            ),
+          })),
+        }
+      : data,
+  );
+  for (const id of ids) {
+    queryClient.setQueryData<{ message: MailMessageDetail }>(
+      mailKeys.message(id),
+      (data) => data && { message: { ...data.message, ...patch } },
+    );
+  }
+}
+
+/** Buang email dari semua daftar yang dimuat (dipindah/dihapus: tidak tampil di daftar mana pun). */
+export function removeListedMessages(
+  queryClient: QueryClient,
+  messageIds: readonly string[],
+): void {
+  const ids = new Set(messageIds);
+  queryClient.setQueriesData<MessageListData>({ queryKey: mailKeys.messageLists }, (data) =>
+    data
+      ? {
+          ...data,
+          pages: data.pages.map((page) => ({
+            ...page,
+            messages: page.messages.filter((message) => !ids.has(message.id)),
+          })),
+        }
+      : data,
+  );
+}
+
+/** Lampiran selesai diambil server: unduhan berikutnya langsung berkas (200). */
+export function markAttachmentCached(queryClient: QueryClient, attachmentId: string): void {
+  queryClient.setQueriesData<{ message: MailMessageDetail }>(
+    { queryKey: mailKeys.messageDetails },
+    (data) =>
+      data?.message.attachments.some((item) => item.id === attachmentId)
+        ? {
+            message: {
+              ...data.message,
+              attachments: data.message.attachments.map((item) =>
+                item.id === attachmentId ? { ...item, cached: true } : item,
+              ),
+            },
+          }
+        : data,
+  );
+}
 
 export const mailSettingsQuery = queryOptions({
   queryKey: mailKeys.settings,

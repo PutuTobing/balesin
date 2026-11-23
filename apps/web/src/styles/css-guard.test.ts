@@ -70,6 +70,8 @@ describe('CSS variables dari token', () => {
       '--radius-pill: 999px;',
       '--size-rail: 64px;',
       '--size-list: 360px;',
+      '--size-mail-folders: 248px;',
+      '--size-mail-list: 380px;',
       '--size-detail: 340px;',
       '--size-touch: 44px;',
       '--size-column: 768px;',

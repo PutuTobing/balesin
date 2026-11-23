@@ -378,7 +378,7 @@ export const MAIL_TEST_HINTS: Readonly<Record<MailTestCode, string | null>> = {
   imap_host_blocked: 'Pakai nama host publik dari penyedia email, bukan alamat IP lokal.',
   imap_port_not_allowed: 'Pilih 993 dengan SSL/TLS, atau 143 dengan STARTTLS.',
   imap_connection_refused: 'Cocokkan port dan keamanan: 993 untuk SSL/TLS, 143 untuk STARTTLS.',
-  imap_connection_timeout: 'Kalau isiannya sudah benar, tes ulang setelah port dibuka di firewall.',
+  imap_connection_timeout: 'Bisa juga coba port lain: 143 dengan STARTTLS.',
   imap_tls_failed: 'Ganti pilihan keamanan: 993 memakai SSL/TLS, 143 memakai STARTTLS.',
   imap_certificate_invalid:
     'Pakai nama host resmi dari penyedia email-mu (bukan alamat IP atau alias).',
@@ -395,12 +395,12 @@ export const MAIL_TEST_HINTS: Readonly<Record<MailTestCode, string | null>> = {
   smtp_host_blocked: 'Pakai nama host publik dari penyedia email, bukan alamat IP lokal.',
   smtp_port_not_allowed: 'Pilih 465 dengan SSL/TLS, atau 587 dengan STARTTLS.',
   smtp_connection_refused: 'Cocokkan port dan keamanan: 465 untuk SSL/TLS, 587 untuk STARTTLS.',
-  smtp_connection_timeout: 'Kalau isiannya sudah benar, tes ulang setelah port dibuka.',
+  smtp_connection_timeout: 'Bisa juga coba port lain: 587 dengan STARTTLS.',
   smtp_tls_failed: 'Ganti pilihan keamanan: 465 memakai SSL/TLS, 587 memakai STARTTLS.',
   smtp_certificate_invalid:
     'Pakai nama host resmi dari penyedia email-mu (bukan alamat IP atau alias).',
   smtp_auth_failed:
-    'Periksa username dan password SMTP, atau pilih "Pakai username & password IMAP" bila sama.',
+    'Periksa username dan password SMTP. Kalau sama dengan server masuk, centang “Pakai username dan password yang sama dengan server masuk”.',
   smtp_auth_unsupported:
     'Coba pilihan keamanan lain (SSL/TLS atau STARTTLS), atau tanyakan ke penyedia email-mu.',
   smtp_auth_disabled_m365:

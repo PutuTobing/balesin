@@ -1,7 +1,7 @@
 /*
- * Menu Email (PRD-EMAIL §8): desktop = kolom folder 15,5rem · daftar 23,75rem (380px, mockup
- * docs/design/email; lebih lebar dari daftar Inbox 360px karena baris email memuat subjek +
- * cuplikan, lihat DECISIONS) · panel baca fleksibel.
+ * Menu Email (PRD-EMAIL §8): desktop = kolom folder `--size-mail-folders` (248px) · daftar
+ * `--size-mail-list` (380px, mockup docs/design/email; lebih lebar dari daftar Inbox karena baris
+ * email memuat subjek + cuplikan) · panel baca fleksibel.
  * Tablet = daftar + panel baca, folder menjadi laci. HP = daftar saja, folder menjadi laci.
  */
 
@@ -9,7 +9,7 @@
   position: relative;
   display: grid;
   flex: 1;
-  grid-template-columns: 15.5rem 23.75rem minmax(0, 1fr);
+  grid-template-columns: var(--size-mail-folders) var(--size-mail-list) minmax(0, 1fr);
   min-height: 0;
 }
 
@@ -398,6 +398,12 @@
   background: var(--primary);
 }
 
+/* Pemberitahuan hasil aksi di atas daftar. */
+.flash {
+  flex: none;
+  padding: var(--space-12) var(--space-16) 0;
+}
+
 /* ---------- Panel baca ---------- */
 
 .reading {
@@ -597,7 +603,7 @@
 
 @media (max-width: 1023px) {
   .mail {
-    grid-template-columns: min(23.75rem, 50%) minmax(0, 1fr);
+    grid-template-columns: min(var(--size-mail-list), 50%) minmax(0, 1fr);
   }
 
   .folders {
@@ -663,6 +669,15 @@
 
   .list {
     border-right: 0;
+  }
+
+  /* Email dibuka: panel baca layar penuh menggantikan daftar (layar bertumpuk). */
+  .mail[data-reading='open'] .list {
+    display: none;
+  }
+
+  .mail[data-reading='open'] .reading {
+    display: flex;
   }
 
   .listHead {

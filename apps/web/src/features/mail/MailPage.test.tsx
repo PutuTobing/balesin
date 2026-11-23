@@ -169,7 +169,7 @@ describe('menu Email', () => {
       }),
     );
     expect(await screen.findByText(m.footer.synced(m.time.justNow))).toBeVisible();
-    expect(screen.getByText(m.list.title)).toBeVisible();
+    expect(await screen.findByText(m.list.empty.inboxes.title)).toBeVisible();
   });
 
   it('mail.access.changed → sesi dimuat ulang (menu Email bisa berubah)', async () => {

@@ -67,7 +67,8 @@ untuk isi pesan. Line-height 1.45 untuk teks, 1.2 untuk judul.
 
 ## 2. Pola layar
 - **Desktop ≥ 1024px**: rail navigasi ikon (64px) · daftar percakapan (360px) · ruang chat ·
-  panel detail (340px, bisa disembunyikan).
+  panel detail (340px, bisa disembunyikan). Menu Email: kolom folder `--size-mail-folders` (248px) ·
+  daftar email `--size-mail-list` (380px) · panel baca (isi maks. `--size-column`).
 - **HP ≤ 640px**: navigasi bawah (Inbox, Kontak, Broadcast, Lainnya); daftar → chat →
   detail sebagai layar bertumpuk dengan gesture kembali; composer menempel di bawah dan
   aman dari keyboard; target sentuh ≥ 44px.
