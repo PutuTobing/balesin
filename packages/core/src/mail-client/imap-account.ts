@@ -198,6 +198,16 @@ export const MAIL_TEST_SESSION_MAX_BYTES = 8 * 1024 * 1024;
 export const MAIL_COMMAND_TIMEOUT_MS = 60_000;
 export const MAIL_MAX_FOLDERS = 1_000;
 export const MAIL_MAX_SEARCH_RESULTS = 100_000;
+/**
+ * Byte masuk per PERINTAH (di samping anggaran sambungan): imapflow mengurai setiap respons menjadi
+ * objek token yang jauh lebih besar dari byte mentahnya, dan `LIST`/`SEARCH` menimbun seluruh hasil
+ * sebelum selesai — jadi satu perintah dibatasi jauh di bawah anggaran sambungan. Lewat → putus.
+ */
+export const MAIL_COMMAND_MAX_BYTES = 16 * 1024 * 1024;
+/** `LIST`: 1.000 folder × ± 200 byte jauh di bawah ini. */
+export const MAIL_LIST_MAX_BYTES = 4 * 1024 * 1024;
+/** `UID SEARCH`: 500.000 UID × ± 8 byte. */
+export const MAIL_SEARCH_MAX_BYTES = 8 * 1024 * 1024;
 
 export interface MailSessionLimits {
   /** Byte masuk maksimum untuk seluruh sambungan. */
@@ -406,26 +416,35 @@ function uidSet(uids: readonly number[]): string {
   return [...uids].sort((a, b) => a - b).join(',');
 }
 
+/** Penghitung byte masuk satu sambungan (anggaran sambungan + batas per perintah). */
+interface ByteMeter {
+  received: number;
+  /** Batas `received` selama perintah berjalan (lihat `MAIL_COMMAND_MAX_BYTES`). */
+  commandLimit: number;
+  overBudget: boolean;
+  onExceeded: () => void;
+}
+
 class ImapFlowSession implements MailImapSession, MailImapActions {
   readonly capabilities: MailServerCapabilities;
 
-  private received = 0;
   private aborted = false;
   private readonly commandMs: number;
 
   constructor(
     private readonly client: ImapFlow,
+    private readonly meter: ByteMeter,
     limits: MailSessionLimits = {},
   ) {
     this.capabilities = capabilitiesOf(client);
     this.commandMs = limits.commandMs ?? MAIL_COMMAND_TIMEOUT_MS;
-    const maxBytes = limits.maxBytes ?? MAIL_SESSION_MAX_BYTES;
     limits.signal?.addEventListener('abort', () => this.abort(), { once: true });
-    const socket = (client as unknown as { socket?: NodeJS.EventEmitter }).socket;
-    socket?.on('data', (chunk: Buffer) => {
-      this.received += chunk.length;
-      if (this.received > maxBytes) this.abort();
-    });
+    meter.onExceeded = () => this.abort();
+    if (meter.overBudget) this.abort();
+  }
+
+  private get overBudget(): boolean {
+    return this.meter.overBudget;
   }
 
   abort(): void {
@@ -440,10 +459,14 @@ class ImapFlowSession implements MailImapSession, MailImapActions {
     (this.client as unknown as { socket?: { destroy(): void } }).socket?.destroy();
   }
 
-  /** Satu perintah dengan tenggat; lewat → sambungan diputus. */
-  private async guard<T>(promise: Promise<T>): Promise<T> {
+  /**
+   * Satu perintah dengan tenggat dan batas byte; lewat → sambungan diputus. Dipanggil di ekspresi
+   * yang sama dengan perintahnya, jadi batas sudah terpasang sebelum byte jawaban pertama tiba.
+   */
+  private async guard<T>(promise: Promise<T>, maxBytes = MAIL_COMMAND_MAX_BYTES): Promise<T> {
     promise.catch(() => undefined);
     if (this.aborted) throw new ImapFailure('imap_connection_timeout', 'SESSION_ABORTED');
+    this.meter.commandLimit = this.meter.received + maxBytes;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
@@ -454,15 +477,19 @@ class ImapFlowSession implements MailImapSession, MailImapActions {
     deadline.catch(() => undefined);
     try {
       return await Promise.race([promise, deadline]);
+    } catch (error) {
+      if (this.overBudget) throw new ImapFailure('unknown', 'BYTE_BUDGET');
+      throw error;
     } finally {
       clearTimeout(timer);
+      this.meter.commandLimit = Number.POSITIVE_INFINITY;
     }
   }
 
   async listFolders(): Promise<MailServerFolder[]> {
     // Tanpa `statusQuery` (imapflow menjalankan STATUS untuk SETIAP folder sebelum selesai): STATUS
-    // hanya untuk folder yang disinkron. Banjir LIST dibatasi anggaran byte sambungan.
-    const entries = await this.guard(this.client.list());
+    // hanya untuk folder yang disinkron. Banjir LIST dibatasi `MAIL_LIST_MAX_BYTES`.
+    const entries = await this.guard(this.client.list(), MAIL_LIST_MAX_BYTES);
     return entries.slice(0, MAIL_MAX_FOLDERS).map((entry) => {
       const flags = [...entry.flags].map(String);
       const status = entry.status;
@@ -533,6 +560,7 @@ class ImapFlowSession implements MailImapSession, MailImapActions {
   async searchUids(since: Date | null): Promise<number[]> {
     const result = await this.guard(
       this.client.search(since ? { since } : { all: true }, { uid: true }),
+      MAIL_SEARCH_MAX_BYTES,
     );
     if (!Array.isArray(result)) return [];
     const uids = result.filter((uid) => Number.isInteger(uid) && uid > 0);
@@ -818,12 +846,47 @@ export async function openMailImapSession(
   policy: ImapPolicy,
   limits: MailSessionLimits = {},
 ): Promise<MailImapSession & MailImapActions> {
-  const client = await openImapClient(
-    { ...config },
-    { ...policy, timeouts: { ...DEFAULT_IMAP_TIMEOUTS, ...policy.timeouts } },
-    { maxLiteralBytes: SYNC_LITERAL_BYTES, ...(limits.signal ? { signal: limits.signal } : {}) },
-  );
-  return new ImapFlowSession(client, limits);
+  const maxBytes = limits.maxBytes ?? MAIL_SESSION_MAX_BYTES;
+  // Anggaran byte berlaku SEJAK soket dibuat: server jahat bisa membanjiri sapaan/login atau perintah
+  // awal imapflow (`LIST "" ""`, NAMESPACE) sebelum sesi jadi.
+  const connecting = new AbortController();
+  const meter: ByteMeter = {
+    received: 0,
+    commandLimit: MAIL_LIST_MAX_BYTES,
+    overBudget: false,
+    onExceeded: () => connecting.abort(),
+  };
+  const forward = () => connecting.abort();
+  if (limits.signal?.aborted) connecting.abort();
+  limits.signal?.addEventListener('abort', forward, { once: true });
+  let client: ImapFlow;
+  try {
+    client = await openImapClient(
+      { ...config },
+      { ...policy, timeouts: { ...DEFAULT_IMAP_TIMEOUTS, ...policy.timeouts } },
+      {
+        maxLiteralBytes: SYNC_LITERAL_BYTES,
+        signal: connecting.signal,
+        onBytes: (bytes) => {
+          meter.received += bytes;
+          if (
+            !meter.overBudget &&
+            (meter.received > maxBytes || meter.received > meter.commandLimit)
+          ) {
+            meter.overBudget = true;
+            meter.onExceeded();
+          }
+        },
+      },
+    );
+  } catch (error) {
+    if (meter.overBudget) throw new ImapFailure('unknown', 'BYTE_BUDGET');
+    throw error;
+  } finally {
+    limits.signal?.removeEventListener('abort', forward);
+  }
+  meter.commandLimit = Number.POSITIVE_INFINITY;
+  return new ImapFlowSession(client, meter, limits);
 }
 
 /** Pembuka sesi (bisa diganti di tes). */

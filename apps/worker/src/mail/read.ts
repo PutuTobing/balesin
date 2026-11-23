@@ -1,4 +1,5 @@
 import {
+  abortMailSession,
   classifyMailAttachmentContent,
   classifyMailImapError,
   decodeTransferEncoding,
@@ -65,8 +66,17 @@ export interface MailReaderDeps {
   appUrl: string;
   policyFor(organizationId: string): Promise<ImapPolicy>;
   connector?: MailImapConnector;
+  /** Tenggat total satu sesi kerja (isi/lampiran/aksi). Bawaan `MAIL_WORK_SESSION_MS`. */
+  sessionMs?: number;
   now?: () => Date;
 }
+
+/**
+ * Review 9A-1 S2: tenggat TOTAL sesi kerja isi/lampiran/aksi — lewat → sambungan diputus (termasuk
+ * selama fase sambung). Tanpa ini server tarpit (tiap perintah dijawab tepat sebelum tenggat per
+ * perintah) menahan slot antrean `mail` dan sewa sambungan akun tanpa batas.
+ */
+export const MAIL_WORK_SESSION_MS = 5 * 60 * 1000;
 
 const STOPPED = new Set(['paused', 'auth_failed', 'owner_inactive', 'deleting']);
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -105,6 +115,9 @@ export function createMailReader(deps: MailReaderDeps) {
     } catch {
       throw new MailReadError('secret_unavailable');
     }
+    const deadline = new AbortController();
+    const timer = setTimeout(() => deadline.abort(), deps.sessionMs ?? MAIL_WORK_SESSION_MS);
+    timer.unref();
     let session: MailImapSession;
     try {
       session = await connector(
@@ -116,15 +129,25 @@ export function createMailReader(deps: MailReaderDeps) {
           password,
         },
         await deps.policyFor(row.organizationId),
+        { signal: deadline.signal },
       );
     } catch (error) {
+      clearTimeout(timer);
       throw new MailReadError(classifyMailImapError(error).code);
     }
-    if (!hasMailImapActions(session)) {
-      await session.close().catch(() => undefined);
+    const opened = session;
+    if (deadline.signal.aborted) abortMailSession(opened);
+    else deadline.signal.addEventListener('abort', () => abortMailSession(opened), { once: true });
+    const close = opened.close.bind(opened);
+    opened.close = () => {
+      clearTimeout(timer);
+      return close();
+    };
+    if (!hasMailImapActions(opened)) {
+      await opened.close().catch(() => undefined);
       throw new MailReadError('unknown');
     }
-    return session;
+    return opened;
   }
 
   async function retentionDays(organizationId: string): Promise<number> {

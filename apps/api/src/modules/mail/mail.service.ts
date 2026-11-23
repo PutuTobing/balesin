@@ -1276,12 +1276,15 @@ export function createMailService(deps: MailServiceDeps) {
               ),
             );
         }
-        if (changes.emailAddress || changes.fromName) {
+        if (changes.emailAddress || changes.fromName || resetMailbox) {
           await tx
             .update(mailIdentities)
             .set({
               ...(changes.emailAddress ? { address: changes.emailAddress } : {}),
               ...(changes.fromName ? { displayName: changes.fromName } : {}),
+              // Review 9A-1 S4: alamat lain atau kotak surat lain (host/username IMAP) = verifikasi
+              // lama tidak berlaku lagi; identitas utama harus diverifikasi ulang (9B).
+              ...(resetMailbox ? { verifiedAt: null } : {}),
             })
             .where(
               and(

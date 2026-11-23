@@ -313,7 +313,15 @@ export function createMailSync(deps: MailSyncDeps) {
     session: MailImapSession,
     row: MailAccountRow,
   ): Promise<MailFolderRow[]> {
-    const listed = await session.listFolders();
+    // Review 9A-1 R4: path/pemisah dari server yang tidak bisa disimpan (NUL, kosong, > 1.000
+    // karakter) dilewati SEBELUM peran dibagikan — tidak menggagalkan sinkron seluruh akun.
+    const listed = (await session.listFolders()).filter(
+      (folder) =>
+        folder.path.length > 0 &&
+        folder.path.length <= 1000 &&
+        !folder.path.includes('\u0000') &&
+        !(folder.delimiter ?? '').includes('\u0000'),
+    );
     const existing = await db
       .select()
       .from(mailFolders)
@@ -365,7 +373,6 @@ export function createMailSync(deps: MailSyncDeps) {
           ? { totalCount: folder.status.messages, unreadCount: folder.status.unseen }
           : {}),
       };
-      if (folder.path.length > 1000 || folder.path.includes('\u0000')) continue;
       const current = byPath.get(folder.path);
       if (current) {
         await db.update(mailFolders).set(values).where(eq(mailFolders.id, current.id));

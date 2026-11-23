@@ -47,6 +47,8 @@ export interface IdleSupervisorDeps {
   leaseMs?: number;
   renewMs?: number;
   retryAfterFailureMs?: number;
+  /** HANYA tes: batasi pindaian ke organisasi ini (berkas tes lain memakai database yang sama). */
+  organizationIds?: readonly string[];
 }
 
 interface Running {
@@ -180,6 +182,9 @@ export function createIdleSupervisor(deps: IdleSupervisorDeps): IdleSupervisor {
           sql`coalesce((${mailAccounts.capabilities} ->> 'idle')::boolean, false)`,
           // Review 9A-1 R2: pemilik akun pribadi nonaktif → IDLE ditutup pada pindaian ini juga.
           sql`(${mailAccounts.kind} = 'shared' or exists (select 1 from users u where u.organization_id = ${mailAccounts.organizationId} and u.id = ${mailAccounts.ownerUserId} and u.disabled_at is null))`,
+          deps.organizationIds
+            ? inArray(mailAccounts.organizationId, [...deps.organizationIds])
+            : undefined,
         ),
       );
     const eligible = new Map(rows.map((row) => [row.id, row]));
