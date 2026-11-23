@@ -10,8 +10,8 @@
   "scripts": {
     "dev": "pnpm --parallel --filter \"./apps/*\" dev",
     "build": "pnpm -r build",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
+    "lint": "node --max-old-space-size=8192 node_modules/eslint/bin/eslint.js .",
+    "lint:fix": "node --max-old-space-size=8192 node_modules/eslint/bin/eslint.js . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r typecheck",

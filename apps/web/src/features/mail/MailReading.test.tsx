@@ -465,7 +465,11 @@ describe('menu Email — lampiran', () => {
   const pdfPath = apiPath(API_ROUTES.mail.attachment, { attachmentId: MAIL_IDS.attachmentPdf });
   const zipPath = apiPath(API_ROUTES.mail.attachment, { attachmentId: MAIL_IDS.attachmentZip });
   const file = (type: string) =>
-    new Response(new Blob(['%PDF-1.4']), { status: 200, headers: { 'content-type': type } });
+    // Byte biasa, bukan `Blob` jsdom: undici Node 22 (CI) gagal membaca Blob jsdom (lihat 0efafe4).
+    new Response(new TextEncoder().encode('%PDF-1.4'), {
+      status: 200,
+      headers: { 'content-type': type },
+    });
 
   it('unduh PDF; berkas diblokir tanpa tombol unduh', async () => {
     await renderApp(

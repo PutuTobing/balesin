@@ -66,6 +66,9 @@ const email = fakeConversation({
   channel: EMAIL,
   windowApplies: false,
   windowExpiresAt: null,
+  // Relatif ke sekarang: pelanggan diam > 7 hari = "dingin" → CS tanpa `inbox.initiate` tidak
+  // mendapat kotak tulis (tanggal tetap membuat tes ini gagal sejak 23 Nov 2026).
+  lastInboundAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
   contact: {
     id: 'd0000000-0000-4000-8000-0000000000e1',
     number: 21,
