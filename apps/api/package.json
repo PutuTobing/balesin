@@ -20,7 +20,7 @@
     "@fastify/multipart": "10.1.8",
     "@fastify/websocket": "11.3.7",
     "@node-rs/argon2": "2.2.2",
-    "@zxcvbn-ts/language-common": "3.0.4",
+    "@zxcvbn-ts/language-common": "4.2.0",
     "bullmq": "6.7.2",
     "drizzle-orm": "catalog:",
     "fastify": "5.12.8",
