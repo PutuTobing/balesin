@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  MAIL_INCOMING_TEST_CODES,
+  MAIL_OUTGOING_TEST_CODES,
+  MAIL_PRIVATE_NETWORK_HINT,
+  MAIL_PROVIDER_CARDS,
+  MAIL_TEST_HINTS,
+  MAIL_TEST_MESSAGES,
+  mailTestCodeKind,
   canMailAdminister,
   canMailSend,
   createMailAccountRequestSchema,
@@ -223,5 +230,49 @@ describe('skema permintaan', () => {
       subject: 'rahasia',
     });
     expect(parsed).not.toHaveProperty('subject');
+  });
+});
+
+describe('review 9A-1 R4 — nama folder dari server', () => {
+  it('karakter kendali & pengubah arah dibuang; kosong → "Folder"; ≤ 200 karakter', () => {
+    const rlo = String.fromCharCode(0x202e);
+    const bell = String.fromCharCode(7);
+    const zwsp = String.fromCharCode(0x200b);
+    const nul = String.fromCharCode(0);
+    expect(mailFolderDisplayName(`INBOX/Tagihan${rlo}fdp.exe`, '/', null)).toBe('Tagihanfdp.exe');
+    expect(mailFolderDisplayName(`INBOX.${bell}${zwsp}`, '.', null)).toBe('INBOX.');
+    expect(mailFolderDisplayName(nul, null, null)).toBe('Folder');
+    expect(Array.from(mailFolderDisplayName('x'.repeat(500), null, null))).toHaveLength(200);
+  });
+});
+
+describe('review desain 9A akun P9 — pesan & petunjuk tes koneksi', () => {
+  it('setiap kode punya pesan, petunjuk spesifik (kecuali ok), jenis judul; tanpa "login"/"penyedia server"', () => {
+    for (const code of [...MAIL_INCOMING_TEST_CODES, ...MAIL_OUTGOING_TEST_CODES]) {
+      const message = MAIL_TEST_MESSAGES[code];
+      expect(message, code).toMatch(/\.$/);
+      expect(message, code).not.toMatch(/\blogin\b|penyedia server|<|>/i);
+      if (code !== 'ok') expect(MAIL_TEST_HINTS[code], code).toMatch(/\.$/);
+      expect(MAIL_TEST_HINTS[code] ?? '', code).not.toMatch(/\blogin\b/i);
+    }
+    expect(mailTestCodeKind('smtp_connection_timeout')).toBe('connection');
+    expect(mailTestCodeKind('imap_certificate_invalid')).toBe('connection');
+    expect(mailTestCodeKind('smtp_auth_failed')).toBe('auth');
+    expect(mailTestCodeKind('imap_app_password_required')).toBe('auth');
+    expect(mailTestCodeKind('ok')).toBe('ok');
+    expect(MAIL_PROVIDER_CARDS.find((card) => card.id === 'cpanel')?.description).toBe(
+      'Email hosting dengan domain sendiri. Pengaturan server terisi otomatis.',
+    );
+  });
+});
+
+describe('petunjuk jaringan privat (host diblokir)', () => {
+  it('menunjuk ke daftar CIDR yang benar: Pengaturan → Webhook → Jaringan privat yang diizinkan', () => {
+    expect(MAIL_PRIVATE_NETWORK_HINT).toContain(
+      'Pengaturan → Webhook → Jaringan privat yang diizinkan',
+    );
+    expect(MAIL_PRIVATE_NETWORK_HINT).not.toContain('Integrasi');
+    expect(MAIL_TEST_MESSAGES.imap_host_blocked).toContain(MAIL_PRIVATE_NETWORK_HINT);
+    expect(MAIL_TEST_MESSAGES.smtp_host_blocked).toContain(MAIL_PRIVATE_NETWORK_HINT);
   });
 });

@@ -1,5 +1,7 @@
 export * from './api-smtp';
 export * from './attachment-type';
+export * from './compose-html';
+export * from './compose-keys';
 export * from './dsn';
 export * from './host-guard';
 export * from './html-guard';

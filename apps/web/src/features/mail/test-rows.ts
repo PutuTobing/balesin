@@ -1,4 +1,10 @@
-import { MAIL_FOLDER_ROLE_NAMES, type TestMailAccountResponse } from '@balesin/shared';
+import {
+  MAIL_FOLDER_ROLE_NAMES,
+  MAIL_TEST_HINTS,
+  mailTestCodeKind,
+  type MailTestCode,
+  type TestMailAccountResponse,
+} from '@balesin/shared';
 import { t } from '../../i18n/id';
 import { formatBytes } from './mail-format';
 
@@ -11,7 +17,30 @@ export interface Row {
   tone: Tone;
   title: string;
   body: string;
+  /** Langkah perbaikan spesifik untuk kode galat (baris kedua, lebih redup). */
+  hint?: string;
   durationMs?: number;
+}
+
+/**
+ * Judul baris gagal menurut jenis kode (review 9A P9): galat koneksi (host/port/TLS/timeout) belum
+ * sampai ke proses masuk, jadi judulnya bukan "Masuk ke … gagal".
+ */
+export function failedTitle(side: 'incoming' | 'outgoing', code: MailTestCode): string {
+  const kind = mailTestCodeKind(code);
+  if (side === 'incoming') {
+    return kind === 'connection' ? w.incomingUnreachable : w.incomingFailed;
+  }
+  return kind === 'connection' ? w.outgoingUnreachable : w.outgoingFailed;
+}
+
+/** Semua sisi yang gagal adalah galat koneksi → saran "tes ulang setelah port dibuka". */
+export function onlyConnectionFailures(result: TestMailAccountResponse): boolean {
+  const failed = [result.incoming, result.outgoing].filter((side) => side && !side.ok);
+  return (
+    failed.length > 0 &&
+    failed.every((side) => side && mailTestCodeKind(side.code) === 'connection')
+  );
 }
 
 /** Baris hasil tes Masuk/Keluar (kontrak §4.2), terpisah per sisi dengan sebab galat Indonesia. */
@@ -34,8 +63,9 @@ export function testRows(result: TestMailAccountResponse, emailAddress: string):
         : {
             key: 'incoming',
             tone: 'fail',
-            title: w.incomingFailed,
+            title: failedTitle('incoming', incoming.code),
             body: incoming.message,
+            hint: MAIL_TEST_HINTS[incoming.code] ?? undefined,
             durationMs: incoming.durationMs || undefined,
           },
     );
@@ -69,8 +99,9 @@ export function testRows(result: TestMailAccountResponse, emailAddress: string):
         : {
             key: 'outgoing',
             tone: 'fail',
-            title: w.outgoingFailed,
+            title: failedTitle('outgoing', outgoing.code),
             body: outgoing.message,
+            hint: MAIL_TEST_HINTS[outgoing.code] ?? undefined,
             durationMs: outgoing.durationMs || undefined,
           },
     );

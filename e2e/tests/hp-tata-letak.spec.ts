@@ -169,10 +169,9 @@ test('Pengaturan HP: sub-halaman punya tombol kembali, gesture kembali ke Pengat
     .getByRole('link', { name: /^Notifikasi/ })
     .click();
   await expect(page).toHaveURL(/\/pengaturan\/notifikasi$/);
-  await page
-    .getByRole('link', { name: /^Kembali/ })
-    .first()
-    .click();
+  // Nama lengkap, bukan `/^Kembali/` + first(): selagi sub-halaman (lazy) dimuat, header
+  // Pengaturan lama ("Kembali ke Lainnya") masih terpasang dan bisa terklik lebih dulu.
+  await page.getByRole('link', { name: 'Kembali ke Pengaturan', exact: true }).click();
   await expect(page).toHaveURL(/\/pengaturan$/);
   await page
     .getByRole('main')

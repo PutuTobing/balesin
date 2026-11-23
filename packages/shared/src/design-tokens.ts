@@ -175,6 +175,13 @@ export const size = {
   rail: 64,
   /** Daftar percakapan. */
   list: 360,
+  /** Menu Email: kolom folder & akun (mockup docs/design/email). */
+  mailFolders: 248,
+  /**
+   * Menu Email: daftar email. Lebih lebar dari daftar Inbox (360) karena barisnya memuat pengirim,
+   * subjek, dan cuplikan (mockup docs/design/email, review 9A M1).
+   */
+  mailList: 380,
   /** Panel detail. */
   detail: 340,
   /** Target sentuh minimal di HP. */

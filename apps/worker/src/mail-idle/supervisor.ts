@@ -1,4 +1,5 @@
 import {
+  abortMailSession,
   QUEUE_PREFIX,
   classifyMailImapError,
   defaultMailImapConnector,
@@ -46,11 +47,15 @@ export interface IdleSupervisorDeps {
   leaseMs?: number;
   renewMs?: number;
   retryAfterFailureMs?: number;
+  /** HANYA tes: batasi pindaian ke organisasi ini (berkas tes lain memakai database yang sama). */
+  organizationIds?: readonly string[];
 }
 
 interface Running {
   accountId: string;
   organizationId: string;
+  /** Review 9A-1 R2: host/port/keamanan/username/kredensial saat IDLE dibuka. */
+  fingerprint: string;
   abort: AbortController;
   done: Promise<void>;
 }
@@ -63,6 +68,11 @@ export interface IdleSupervisor {
 }
 
 const ELIGIBLE_STATES = ['initial_sync', 'ready', 'syncing'] as const;
+
+const fingerprintOf = (row: MailAccountRow) =>
+  [row.imapHost, row.imapPort, row.imapSecurity, row.imapUsername, row.imapPasswordEncrypted].join(
+    '|',
+  );
 
 export function createIdleSupervisor(deps: IdleSupervisorDeps): IdleSupervisor {
   const { db, redis, logger } = deps;
@@ -121,7 +131,10 @@ export function createIdleSupervisor(deps: IdleSupervisorDeps): IdleSupervisor {
           password,
         },
         await deps.sync.policyFor(row.organizationId),
+        { signal: abort.signal },
       );
+      const opened = session;
+      abort.signal.addEventListener('abort', () => abortMailSession(opened), { once: true });
       if (!session.capabilities.idle) return;
       await session.select(inbox.path);
       await setIdleActive(row, true);
@@ -141,6 +154,9 @@ export function createIdleSupervisor(deps: IdleSupervisorDeps): IdleSupervisor {
         }, debounceMs);
         pending.unref();
       };
+      // Sinkron susulan: email yang tiba antara sinkron terakhir dan IDLE mulai tidak memicu EXISTS
+      // (QA E2E menu Email: tertunda sampai sinkron berkala).
+      trigger();
       while (!abort.signal.aborted && !closed) {
         await session.idle({ maxMs: idleRefreshMs, signal: abort.signal, onChange: trigger });
       }
@@ -167,12 +183,19 @@ export function createIdleSupervisor(deps: IdleSupervisorDeps): IdleSupervisor {
           isNull(mailAccounts.deletedAt),
           inArray(mailAccounts.syncState, [...ELIGIBLE_STATES]),
           sql`coalesce((${mailAccounts.capabilities} ->> 'idle')::boolean, false)`,
+          // Review 9A-1 R2: pemilik akun pribadi nonaktif → IDLE ditutup pada pindaian ini juga.
+          sql`(${mailAccounts.kind} = 'shared' or exists (select 1 from users u where u.organization_id = ${mailAccounts.organizationId} and u.id = ${mailAccounts.ownerUserId} and u.disabled_at is null))`,
+          deps.organizationIds
+            ? inArray(mailAccounts.organizationId, [...deps.organizationIds])
+            : undefined,
         ),
       );
     const eligible = new Map(rows.map((row) => [row.id, row]));
     // Tutup yang tidak lagi memenuhi syarat.
     for (const [id, run] of runs) {
-      if (!eligible.has(id)) run.abort.abort();
+      const current = eligible.get(id);
+      // Server/kredensial diganti → sambungan lama (host & password LAMA) ditutup.
+      if (!current || fingerprintOf(current) !== run.fingerprint) run.abort.abort();
     }
     const nowMs = Date.now();
     for (const row of rows) {
@@ -194,6 +217,7 @@ export function createIdleSupervisor(deps: IdleSupervisorDeps): IdleSupervisor {
       const run: Running = {
         accountId: row.id,
         organizationId: row.organizationId,
+        fingerprint: fingerprintOf(row),
         abort,
         done: Promise.resolve(),
       };

@@ -1,5 +1,7 @@
 /*
- * Menu Email (PRD-EMAIL §8): desktop = kolom folder 15,5rem · daftar · panel baca fleksibel.
+ * Menu Email (PRD-EMAIL §8): desktop = kolom folder `--size-mail-folders` (248px) · daftar
+ * `--size-mail-list` (380px, mockup docs/design/email; lebih lebar dari daftar Inbox karena baris
+ * email memuat subjek + cuplikan) · panel baca fleksibel.
  * Tablet = daftar + panel baca, folder menjadi laci. HP = daftar saja, folder menjadi laci.
  */
 
@@ -7,7 +9,7 @@
   position: relative;
   display: grid;
   flex: 1;
-  grid-template-columns: 15.5rem var(--size-list) minmax(0, 1fr);
+  grid-template-columns: var(--size-mail-folders) var(--size-mail-list) minmax(0, 1fr);
   min-height: 0;
 }
 
@@ -396,6 +398,12 @@
   background: var(--primary);
 }
 
+/* Pemberitahuan hasil aksi di atas daftar. */
+.flash {
+  flex: none;
+  padding: var(--space-12) var(--space-16) 0;
+}
+
 /* ---------- Panel baca ---------- */
 
 .reading {
@@ -425,6 +433,25 @@
   width: 5rem;
   height: var(--space-24);
   margin-bottom: var(--space-8);
+}
+
+/* Kepala daftar saat memuat: judul (16px) + ringkasan (12px), tinggi sama dengan teks jadi. */
+.skeletonHeadTitle {
+  width: 10rem;
+  height: var(--space-16);
+}
+
+.skeletonHeadSub {
+  width: 6rem;
+  height: var(--space-12);
+  margin-top: var(--space-4);
+}
+
+/* Pengganti tombol menu di kerangka (ukuran IconButton, tanpa isi). */
+.menuPlaceholder {
+  flex: none;
+  width: var(--size-control);
+  height: var(--size-control);
 }
 
 .skeletonRow {
@@ -572,11 +599,48 @@
   text-wrap: pretty;
 }
 
+/* ---------- Tulis (9B) ---------- */
+
+.composeSlot {
+  flex: none;
+  padding: 0 var(--space-12) var(--space-12);
+}
+
+.composeButton {
+  justify-content: flex-start;
+  width: 100%;
+  height: var(--size-touch);
+  padding: 0 var(--space-12);
+}
+
+/* HP: tombol tulis mengambang di atas navigasi bawah (PRD §4.9). */
+.fab {
+  position: absolute;
+  right: var(--space-16);
+  bottom: var(--space-16);
+  z-index: 2;
+  display: none;
+  align-items: center;
+  gap: var(--space-8);
+  height: 3.5rem;
+  padding: 0 var(--space-24) 0 var(--space-16);
+  border-radius: var(--radius-bubble);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: var(--text-16);
+  font-weight: var(--weight-bold);
+  box-shadow: var(--shadow-2);
+}
+
+.fab:active {
+  filter: brightness(0.87);
+}
+
 /* ---------- Tablet: folder jadi laci, daftar + panel baca ---------- */
 
 @media (max-width: 1023px) {
   .mail {
-    grid-template-columns: min(var(--size-list), 50%) minmax(0, 1fr);
+    grid-template-columns: min(var(--size-mail-list), 50%) minmax(0, 1fr);
   }
 
   .folders {
@@ -611,7 +675,8 @@
     z-index: 2;
     border: 0;
     background: var(--on-accent);
-    opacity: 0.5;
+    /* 0,5 nyaris tak terlihat di mode gelap (sama dengan ConfirmDialog). */
+    opacity: 0.7;
   }
 
   .drawerClose,
@@ -641,6 +706,15 @@
 
   .list {
     border-right: 0;
+  }
+
+  /* Email dibuka: panel baca layar penuh menggantikan daftar (layar bertumpuk). */
+  .mail[data-reading='open'] .list {
+    display: none;
+  }
+
+  .mail[data-reading='open'] .reading {
+    display: flex;
   }
 
   .listHead {
@@ -673,10 +747,26 @@
     grid-template-columns: repeat(2, minmax(0, 9rem));
   }
 
+  .fab {
+    display: inline-flex;
+  }
+
+  .mail[data-reading='open'] .fab {
+    display: none;
+  }
+
   .providerTiles > li:last-child {
     grid-column: 1 / -1;
     justify-self: center;
     width: calc(50% - var(--space-4));
+  }
+}
+
+/* Sama dengan IconButton: 44px di HP dan di layar sentuh. */
+@media (max-width: 640px), (pointer: coarse) {
+  .menuPlaceholder {
+    width: var(--size-touch);
+    height: var(--size-touch);
   }
 }
 

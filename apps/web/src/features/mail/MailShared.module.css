@@ -184,7 +184,7 @@
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--radius-input);
-  background: var(--surface-2);
+  background: var(--surface);
 }
 
 .segment {
@@ -206,9 +206,15 @@
   border-left: 1px solid var(--line);
 }
 
+/*
+ * Terpilih = sama dengan segmen Template email: latar `--primary-soft`. Teksnya `--ink` (bukan
+ * `--primary`): pasangan primary/primary-soft hanya dijamin untuk grafis, tidak untuk teks merek
+ * white-label. Penanda grafisnya garis bawah `--primary`.
+ */
 .segment:has(input:checked) {
-  background: var(--surface);
+  background: var(--primary-soft);
   color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--primary);
 }
 
 .segment:has(input:focus-visible) {
@@ -228,6 +234,11 @@
   cursor: inherit;
 }
 
+/*
+ * `<legend>` dirender di luar kotak isi fieldset, jadi `gap` tidak berlaku padanya (gap hanya
+ * untuk isi → petunjuk): jarak legend → kotak memakai margin, sama dengan label → kotak di
+ * `Field` (8px), supaya sejajar Host/Port.
+ */
 .segmentField {
   display: flex;
   flex-direction: column;
@@ -239,6 +250,7 @@
 }
 
 .segmentLabel {
+  margin-bottom: var(--space-8);
   padding: 0;
   color: var(--ink);
   font-size: var(--text-13);

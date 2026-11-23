@@ -3,12 +3,13 @@ import {
   MAIL_PROVIDER_CARDS,
   type MailAccount,
   type MailAccountListResponse,
+  type MailMessageSummary,
   type MailSidebarResponse,
 } from '@balesin/shared';
-import { useQuery } from '@tanstack/react-query';
-import { Link, getRouteApi } from '@tanstack/react-router';
-import { Menu, Plus, X } from 'lucide-react';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { Link, getRouteApi, useRouter } from '@tanstack/react-router';
+import { Menu, Plus, SquarePen, X } from 'lucide-react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   LoadFailedIllustration,
   MailboxIllustration,
@@ -17,16 +18,25 @@ import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Icon } from '../../components/ui/Icon';
 import { IconButton } from '../../components/ui/IconButton';
+import { Notice } from '../../components/ui/Notice';
 import { t } from '../../i18n/id';
 import { isApiError } from '../../lib/api/client';
 import { cx } from '../../lib/cx';
 import { media, useMediaQuery } from '../../lib/media';
 import { usePageTitle } from '../../lib/use-page-title';
+import { useCan } from '../auth/session';
+import { ComposeHost } from './compose/ComposeHost';
+import { openCompose, useComposeStore } from './compose/compose-store';
 import { MailFolders } from './MailFolders';
+import { MailList } from './MailList';
+import { MailReader, type ReaderFlash } from './MailReader';
 import { PROVIDER_ICONS } from './mail-format';
-import { mailAccountsQuery, mailSidebarQuery } from './mail-queries';
+import { MAIL_PAGE_SIZE, listParams } from './mail-list';
+import { mailAccountsQuery, mailMessagesQuery, mailSidebarQuery } from './mail-queries';
 import { isMailView } from './mail-search';
+import { onMailSignal } from './mail-signals';
 import { MailSkeleton } from './MailSkeleton';
+import { accountsNeedingVerification, verificationLocked } from './mail-verify-banner';
 import { useMailStream } from './use-mail-stream';
 import styles from './Mail.module.css';
 
@@ -35,8 +45,8 @@ const routeApi = getRouteApi('/_app/email');
 
 /**
  * Menu Email (Fase 9 tahap 9A, PRD §4.3/§4.9/§8). Desktop: kolom folder · daftar email · panel
- * baca. Tablet & HP: kolom folder menjadi laci. Daftar & panel baca diisi bagian 2 (daftar/baca);
- * untuk sekarang menampilkan keadaan yang jujur. Belum ada akun → ajakan menghubungkan akun.
+ * baca. Tablet: kolom folder menjadi laci, daftar + panel baca. HP: daftar layar penuh → baca
+ * layar penuh (bertumpuk, tombol kembali). Belum ada akun → ajakan menghubungkan akun.
  */
 export function MailPage() {
   usePageTitle(m.title);
@@ -75,6 +85,9 @@ export function MailPage() {
   );
 }
 
+/** Pemberitahuan hasil aksi di atas daftar: sukses hilang sendiri, gagal tetap sampai ditutup. */
+const FLASH_MS = 5_000;
+
 function MailScreen({
   accounts,
   sidebar,
@@ -83,8 +96,12 @@ function MailScreen({
   sidebar: MailSidebarResponse;
 }) {
   const search = routeApi.useSearch();
+  const navigate = routeApi.useNavigate();
+  const router = useRouter();
   const selected = search.f ?? 'semua';
+  const messageId = search.m ?? null;
   const desktop = useMediaQuery(media.desktop);
+  const isHp = useMediaQuery(media.hp);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const menuRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
@@ -92,6 +109,86 @@ function MailScreen({
   const canConnect = accounts.canConnectPersonal || accounts.canManageShared;
   const drawer = !desktop;
   const open = drawer && drawerOpen;
+  const params = useMemo(() => listParams(selected), [selected]);
+  const [flash, setFlash] = useState<ReaderFlash | null>(null);
+  const compose = useComposeStore();
+  // 9B: "Tulis" hanya bila ada akun ber-hak kirim (server tetap memeriksa).
+  const canCompose =
+    useCan('mail.send') && accounts.accounts.some((account) => account.myLevel !== 'read');
+  const currentAccountId =
+    sidebar.accounts.find((entry) => entry.folders.some((folder) => folder.id === selected))
+      ?.account.id ?? null;
+  const startCompose = useCallback(() => {
+    if (drawerOpen) setDrawerOpen(false);
+    openCompose({ kind: 'new', accountId: currentAccountId });
+  }, [currentAccountId, drawerOpen]);
+  const composeFullscreen = isHp && compose.windows.some((window) => window.mode !== 'minimized');
+
+  // "1 dari N" + naik/turun di panel baca (desktop): urutan daftar yang sudah dimuat.
+  const listed = useInfiniteQuery({ ...mailMessagesQuery(params, MAIL_PAGE_SIZE), enabled: false });
+  const ordered = useMemo(
+    () => listed.data?.pages.flatMap((page) => page.messages) ?? [],
+    [listed.data],
+  );
+
+  // HP: email dibuka dari daftar dengan entri riwayat baru, jadi "kembali" = langkah mundur
+  // browser (gesture kembali HP), bukan entri baru. Fokus kembali ke baris yang tadi dibuka.
+  const pushedFromList = useRef(false);
+  const lastOpened = useRef<string | null>(null);
+  const [focusTitle, setFocusTitle] = useState(false);
+
+  const openMessage = useCallback(
+    (message: MailMessageSummary) => {
+      // Salinan draf MILIKKU di folder Draf: buka jendela tulis, bukan panel baca.
+      if (message.draftId) {
+        openCompose({ kind: 'draft', draftId: message.draftId, subject: message.subject });
+        return;
+      }
+      if (message.id === messageId) return;
+      pushedFromList.current = isHp;
+      lastOpened.current = message.id;
+      setFocusTitle(isHp);
+      void navigate({ search: (prev) => ({ ...prev, m: message.id }), replace: !isHp });
+    },
+    [isHp, messageId, navigate],
+  );
+
+  const closeMessage = useCallback(() => {
+    if (pushedFromList.current) {
+      pushedFromList.current = false;
+      router.history.back();
+      return;
+    }
+    void navigate({ search: (prev) => ({ ...prev, m: undefined }), replace: true });
+  }, [navigate, router]);
+
+  useEffect(() => {
+    if (messageId || !isHp || !lastOpened.current) return;
+    const id = lastOpened.current;
+    lastOpened.current = null;
+    const frame = requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(id)}"]`)?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [messageId, isHp]);
+
+  // Sukses hilang sendiri; gagal tetap tampil sampai ditutup.
+  useEffect(() => {
+    if (flash?.tone !== 'success') return;
+    const timer = window.setTimeout(() => setFlash(null), FLASH_MS);
+    return () => window.clearTimeout(timer);
+  }, [flash]);
+
+  // Server mengembalikan aksi yang gagal diterapkan ke server email.
+  useEffect(
+    () =>
+      onMailSignal((signal) => {
+        if (signal.type === 'action.failed') {
+          setFlash({ tone: 'danger', text: m.actionFailed });
+        }
+      }),
+    [],
+  );
 
   const closeDrawer = () => {
     setDrawerOpen(false);
@@ -110,9 +207,16 @@ function MailScreen({
   }, [open]);
 
   const heading = headingFor(selected, sidebar);
+  const reading = messageId !== null;
 
   return (
-    <div className={styles.mail} data-drawer={open ? 'open' : 'closed'}>
+    <div
+      className={styles.mail}
+      data-drawer={open ? 'open' : 'closed'}
+      data-reading={reading ? 'open' : 'closed'}
+      // HP: email terbuka = layar penuh bertumpuk; kerangka aplikasi menyembunyikan navigasi bawah.
+      data-hp-immersive={(reading && isHp) || composeFullscreen ? '' : undefined}
+    >
       <aside
         ref={drawerRef}
         id="kolom-folder-email"
@@ -127,6 +231,7 @@ function MailScreen({
           selected={selected}
           canConnect={canConnect}
           headingId={headingId}
+          onCompose={canCompose ? startCompose : undefined}
           onNavigate={drawer ? () => setDrawerOpen(false) : undefined}
           closeButton={
             drawer ? (
@@ -150,8 +255,13 @@ function MailScreen({
         />
       ) : null}
 
-      {/* Laci terbuka: isi di belakangnya tidak bisa difokus (fokus tetap di laci). */}
-      <section className={styles.list} aria-label={m.list.label} inert={open ? true : undefined}>
+      {/* Laci terbuka: isi di belakangnya tidak bisa difokus (fokus tetap di laci). HP: daftar
+          tersembunyi selama email dibaca. */}
+      <section
+        className={styles.list}
+        aria-label={m.list.label}
+        inert={open || (isHp && reading) ? true : undefined}
+      >
         <header className={styles.listHead}>
           <IconButton
             ref={menuRef}
@@ -167,7 +277,29 @@ function MailScreen({
             <p className={styles.listSub}>{heading.summary}</p>
           </div>
         </header>
-        <ListPlaceholder accounts={accounts.accounts} />
+        <VerifyBanner accounts={accounts.accounts} />
+        {flash ? (
+          <div className={styles.flash}>
+            <Notice
+              tone={flash.tone}
+              role={flash.tone === 'danger' ? 'alert' : 'status'}
+              actions={
+                flash.tone === 'danger' ? (
+                  <Button onClick={() => setFlash(null)}>{t.common.close}</Button>
+                ) : undefined
+              }
+            >
+              {flash.text}
+            </Notice>
+          </div>
+        ) : null}
+        <MailList
+          key={`${params.view}:${params.folderId ?? ''}`}
+          params={params}
+          accounts={accounts.accounts}
+          selectedId={messageId}
+          onOpen={openMessage}
+        />
       </section>
 
       <section
@@ -175,14 +307,105 @@ function MailScreen({
         aria-label={m.reading.label}
         inert={open ? true : undefined}
       >
-        <EmptyState
-          illustration={<MailboxIllustration />}
-          title={m.reading.title}
-          body={m.reading.body}
-        />
+        {messageId ? (
+          <MailReader
+            key={messageId}
+            messageId={messageId}
+            sidebar={sidebar}
+            onBack={isHp ? closeMessage : undefined}
+            onLeave={closeMessage}
+            onFlash={setFlash}
+            focusTitle={focusTitle}
+            canCompose={canCompose}
+            position={desktop ? positionOf(ordered, messageId) : null}
+            onStep={(id) =>
+              void navigate({ search: (prev) => ({ ...prev, m: id }), replace: true })
+            }
+          />
+        ) : (
+          <EmptyState title={m.reading.title} body={m.reading.body} />
+        )}
       </section>
+      {canCompose && !open ? (
+        <button type="button" className={styles.fab} onClick={startCompose}>
+          <Icon icon={SquarePen} size={20} />
+          {m.compose.fab}
+        </button>
+      ) : null}
+      <ComposeHost
+        isHp={isHp}
+        onOpenMessage={(id) =>
+          void navigate({ search: (prev) => ({ ...prev, m: id }), replace: !isHp })
+        }
+      />
     </div>
   );
+}
+
+/**
+ * Banner "Verifikasi alamat … supaya bisa mengirim email" (KONTRAK-API-EMAIL-TULIS §3.4) untuk akun
+ * berperingatan `identity_unverified`/`system_sender_conflict` yang bisa kuverifikasi (hak Kelola).
+ * Tautan ke halaman akun → Alamat pengirim. "Nanti saja" menyembunyikannya sampai menu dibuka lagi;
+ * banner hilang sendiri setelah alamatnya terverifikasi (WS `mail.identity.updated`).
+ */
+function VerifyBanner({ accounts }: { accounts: readonly MailAccount[] }) {
+  const [dismissed, setDismissed] = useState(false);
+  const pending = accountsNeedingVerification(accounts);
+  const first = pending[0];
+  if (dismissed || !first) return null;
+  const locked = verificationLocked(pending);
+  const vb = m.verifyBanner;
+  return (
+    <div className={styles.flash}>
+      <Notice
+        tone="warning"
+        title={
+          locked
+            ? vb.locked
+            : pending.length === 1
+              ? vb.one(first.displayName)
+              : vb.many(pending.length)
+        }
+        actions={
+          <>
+            <Button asChild>
+              <Link
+                to="/pengaturan/akun-email/$accountId"
+                params={{ accountId: first.id }}
+                hash="alamat-pengirim"
+              >
+                {pending.length === 1 ? vb.open : vb.openFirst(first.displayName)}
+              </Link>
+            </Button>
+            <Button variant="ghost" onClick={() => setDismissed(true)}>
+              {vb.dismiss}
+            </Button>
+          </>
+        }
+      >
+        {locked
+          ? vb.lockedBody
+          : pending.length > 1
+            ? pending.map((account) => account.displayName).join(' · ')
+            : null}
+      </Notice>
+    </div>
+  );
+}
+
+/** Posisi email terbuka di daftar yang dimuat (untuk "1 dari N" + sebelumnya/berikutnya). */
+function positionOf(
+  messages: readonly MailMessageSummary[],
+  messageId: string,
+): { index: number; total: number; previous: string | null; next: string | null } | null {
+  const index = messages.findIndex((message) => message.id === messageId);
+  if (index < 0) return null;
+  return {
+    index: index + 1,
+    total: messages.length,
+    previous: messages[index - 1]?.id ?? null,
+    next: messages[index + 1]?.id ?? null,
+  };
 }
 
 /** Judul & ringkasan kepala daftar untuk tampilan/folder yang dibuka. */
@@ -226,33 +449,6 @@ function headingFor(
     title: m.views.inboxes,
     summary: m.summary(sidebar.unified.unreadCount, sidebar.accounts.length),
   };
-}
-
-/** Tempat daftar email (bagian 2): progres sinkron awal, atau keterangan yang jujur. */
-function ListPlaceholder({ accounts }: { accounts: readonly MailAccount[] }) {
-  const initial = accounts.filter((account) => account.sync.state === 'initial_sync');
-  if (initial.length > 0) {
-    const done = initial.reduce((sum, item) => sum + (item.sync.initialProgress?.done ?? 0), 0);
-    const total = initial.reduce((sum, item) => sum + (item.sync.initialProgress?.total ?? 0), 0);
-    const ratio = total > 0 ? Math.min(1, done / total) : 0;
-    return (
-      <div className={styles.listState} role="status">
-        <p className={styles.listStateTitle}>{m.list.initialTitle}</p>
-        <p className={styles.listStateBody}>{m.list.initialBody(done, total)}</p>
-        {total > 0 ? (
-          <progress className={styles.progress} max={total} value={done}>
-            {Math.round(ratio * 100)}%
-          </progress>
-        ) : null}
-      </div>
-    );
-  }
-  return (
-    <div className={styles.listState}>
-      <p className={styles.listStateTitle}>{m.list.title}</p>
-      <p className={styles.listStateBody}>{m.list.body}</p>
-    </div>
-  );
 }
 
 /** Belum ada akun (PRD §8): ajakan menghubungkan akun pertama, kartu penyedia, catatan hak. */

@@ -13,10 +13,12 @@ import {
   Plus,
   RefreshCw,
   Settings,
+  SquarePen,
   Star,
   type LucideIcon,
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
+import { Button } from '../../components/ui/Button';
 import { Icon } from '../../components/ui/Icon';
 import { Tooltip } from '../../components/ui/Tooltip';
 import { t } from '../../i18n/id';
@@ -42,6 +44,8 @@ interface MailFoldersProps {
   /** Tombol tutup laci (HP/tablet). */
   closeButton?: ReactNode;
   headingId: string;
+  /** Tombol "Tulis email" (9B); tanpa hak kirim di akun mana pun = tidak tampil. */
+  onCompose?: () => void;
 }
 
 /**
@@ -57,6 +61,7 @@ export function MailFolders({
   onNavigate,
   closeButton,
   headingId,
+  onCompose,
 }: MailFoldersProps) {
   const selectedAccountId = sidebar.accounts.find((entry) =>
     entry.folders.some((folder) => folder.id === selected),
@@ -92,6 +97,14 @@ export function MailFolders({
         </Tooltip>
         {closeButton}
       </div>
+      {onCompose ? (
+        <div className={styles.composeSlot}>
+          <Button variant="primary" className={styles.composeButton} onClick={onCompose}>
+            <Icon icon={SquarePen} size={20} />
+            {m.compose.button}
+          </Button>
+        </div>
+      ) : null}
       <nav className={styles.foldersScroll} aria-labelledby={headingId}>
         <ul className={styles.folderList}>
           <ViewLink
@@ -178,6 +191,7 @@ function ViewLink({
       <Link
         to="/email"
         search={view === 'semua' ? {} : { f: view }}
+        activeOptions={{ exact: true }}
         className={styles.folderLink}
         aria-current={active ? 'page' : undefined}
         onClick={onNavigate}
@@ -262,6 +276,7 @@ function AccountGroup({
                 <Link
                   to="/email"
                   search={{ f: folder.id }}
+                  activeOptions={{ exact: true }}
                   className={cx(styles.folderLink, styles.subLink)}
                   data-depth={folder.role ? 0 : Math.min(folder.depth - baseDepth, 3)}
                   aria-current={active ? 'page' : undefined}

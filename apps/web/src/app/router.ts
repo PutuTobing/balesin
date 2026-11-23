@@ -28,7 +28,12 @@ import { InboxSkeleton } from '../features/inbox/InboxSkeleton';
 import { parseInboxSearch } from '../features/inbox/inbox-search';
 import { parseContactSearch } from '../features/contacts/contact-search';
 import { MailSkeleton } from '../features/mail/MailSkeleton';
-import { parseMailAccountsSearch, parseMailSearch } from '../features/mail/mail-search';
+import { parseMailLinkWarningSearch } from '../features/mail/mail-link-warning';
+import {
+  parseMailAccountSearch,
+  parseMailAccountsSearch,
+  parseMailSearch,
+} from '../features/mail/mail-search';
 import { parseTicketSearch } from '../features/tickets/ticket-search';
 import { SecuritySkeleton } from '../features/security/SecuritySkeleton';
 import { SetupSkeleton } from '../features/setup/SetupSkeleton';
@@ -221,6 +226,20 @@ const mailRoute = createRoute({
   pendingComponent: MailSkeleton,
 });
 
+/**
+ * Peringatan tautan menipu dari email (`MAIL_LINK_WARNING_PATH`, kontrak §8 `link_mismatch`): hanya
+ * menampilkan tujuan asli (http/https saja), tanpa pengalihan otomatis.
+ */
+const mailLinkWarningRoute = createRoute({
+  getParentRoute,
+  path: 'email/tautan',
+  validateSearch: parseMailLinkWarningSearch,
+  component: lazyRouteComponent(
+    () => import('../features/mail/MailLinkWarningPage'),
+    'MailLinkWarningRoute',
+  ),
+});
+
 const contactsRoute = createRoute({
   getParentRoute,
   path: 'kontak',
@@ -372,6 +391,7 @@ const mailAccountRoute = createRoute({
   getParentRoute,
   path: 'pengaturan/akun-email/$accountId',
   staticData: { page: { title: t.mail.detail.title, parent: 'mailAccounts' } },
+  validateSearch: parseMailAccountSearch,
   beforeLoad: ({ context }) => guardMail(context.session, '/pengaturan'),
   component: lazyRouteComponent(
     () => import('../features/mail/MailAccountPage'),
@@ -784,6 +804,7 @@ const appChildren = [
   indexRoute,
   inboxRoute,
   mailRoute,
+  mailLinkWarningRoute,
   contactsRoute,
   contactImportRoute,
   contactRoute,

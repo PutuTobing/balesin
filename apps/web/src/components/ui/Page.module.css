@@ -55,7 +55,12 @@
   height: var(--space-24);
 }
 
+/*
+ * `position: relative` = leluhur ber-posisi di dalam penggulir, supaya elemen `.sr-only`
+ * (position: absolute) ikut tergulir di sini dan tidak memanjangkan dokumen (review 9A M10).
+ */
 .body {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;

@@ -34,6 +34,8 @@ export * from './outbound';
 export * from './outgoing-webhooks';
 export * from './links';
 export * from './mail';
+export * from './mail-compose';
+export * from './mail-messages';
 export * from './mobichat';
 export * from './notifications';
 export * from './password';

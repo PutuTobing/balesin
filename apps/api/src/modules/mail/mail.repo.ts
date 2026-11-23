@@ -119,6 +119,9 @@ export function avatarUrlOf(row: Pick<MailAccountRow, 'id' | 'avatarSha256'>): s
 
 function errorMessageOf(code: string | null): string | null {
   if (!code) return null;
+  if (code === 'mailbox_too_large') {
+    return 'Kotak surat terlalu besar untuk disinkron (maks. 500.000 email). Persempit jendela sinkron.';
+  }
   return Object.hasOwn(MAIL_TEST_MESSAGES, code)
     ? MAIL_TEST_MESSAGES[code as MailTestCode]
     : 'Sinkron gagal karena sebab yang tidak dikenali. Coba lagi beberapa saat lagi.';
@@ -151,6 +154,8 @@ export function toMailAccount(
   viewer: MailAccessUser,
   myLevel: MailAccessLevel | null,
   owner: OwnerRef | null,
+  /** 9B: `system_sender_conflict` / `identity_unverified` (lihat `mailAccountWarningsOf`). */
+  warnings: MailAccount['warnings'] = [],
 ): MailAccount {
   const administer = canMailAdminister(viewer, {
     kind: row.kind as MailAccountKind,
@@ -191,6 +196,9 @@ export function toMailAccount(
     trustedAuthServIds: administer ? row.trustedAuthServIds : null,
     syncWindowDays: row.syncWindowDays as MailSyncWindowDays,
     periodicSyncMinutes: row.periodicSyncMinutes,
+    sentCopyMode: row.sentCopyMode as MailAccount['sentCopyMode'],
+    warnExternalRecipients: row.warnExternalRecipients,
+    warnings,
     sync: {
       state,
       lastSyncedAt: row.lastSyncedAt?.toISOString() ?? null,

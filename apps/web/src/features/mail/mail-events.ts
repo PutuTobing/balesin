@@ -1,13 +1,20 @@
 import type {
   InboxStreamEvent,
   MailAccountListResponse,
+  MailMessageDetail,
   MailSettingsAccountListResponse,
   MailSidebarResponse,
   MailStreamEvent,
 } from '@balesin/shared';
 import type { QueryClient } from '@tanstack/react-query';
 import { refetchSession } from '../../lib/api/queries';
-import { mailKeys } from './mail-queries';
+import {
+  mailKeys,
+  markAttachmentCached,
+  refreshIdentities,
+  removeListedMessages,
+} from './mail-queries';
+import { emitMailSignal } from './mail-signals';
 
 /** Event `mail.*` dari soket bersama (KONTRAK-API-EMAIL §10: ID & angka saja). */
 export function isMailEvent(event: InboxStreamEvent): event is MailStreamEvent {
@@ -26,6 +33,21 @@ function scheduleSidebarRefresh(queryClient: QueryClient): void {
       sidebarTimers.delete(queryClient);
       void queryClient.invalidateQueries({ queryKey: mailKeys.sidebar });
     }, SIDEBAR_REFRESH_MS),
+  );
+}
+
+/** Sama untuk daftar email: email baru/berubah berturut-turut = satu muat ulang. */
+const LIST_REFRESH_MS = 1_000;
+const listTimers = new WeakMap<QueryClient, ReturnType<typeof setTimeout>>();
+
+function scheduleListRefresh(queryClient: QueryClient): void {
+  if (listTimers.has(queryClient)) return;
+  listTimers.set(
+    queryClient,
+    setTimeout(() => {
+      listTimers.delete(queryClient);
+      void queryClient.invalidateQueries({ queryKey: mailKeys.messageLists });
+    }, LIST_REFRESH_MS),
   );
 }
 
@@ -112,9 +134,29 @@ export function applyMailEvent(queryClient: QueryClient, event: MailStreamEvent)
       scheduleSidebarRefresh(queryClient);
       return;
     case 'mail.message.created':
-    case 'mail.message.updated':
-    case 'mail.message.deleted':
+      scheduleListRefresh(queryClient);
       scheduleSidebarRefresh(queryClient);
+      // 9B: jendela tulis yang membalas utas yang sama menampilkan bilah "Ada email baru".
+      emitMailSignal({
+        type: 'message.created',
+        accountId: event.accountId,
+        messageId: event.messageId,
+        threadKey: event.threadKey ?? null,
+      });
+      return;
+    case 'mail.message.updated':
+      scheduleListRefresh(queryClient);
+      scheduleSidebarRefresh(queryClient);
+      void queryClient.invalidateQueries({ queryKey: mailKeys.message(event.messageId) });
+      // Isi siap/berubah: token tampilan lama menunjuk isi lama.
+      if (event.fields.includes('body')) {
+        void queryClient.invalidateQueries({ queryKey: ['mail', 'view', event.messageId] });
+      }
+      return;
+    case 'mail.message.deleted':
+      removeListedMessages(queryClient, [event.messageId]);
+      scheduleSidebarRefresh(queryClient);
+      void queryClient.invalidateQueries({ queryKey: mailKeys.message(event.messageId) });
       return;
     case 'mail.access.changed':
       // Hak berubah: menu Email bisa tampil/hilang (`navigation.mail`), daftar akun berubah.
@@ -125,8 +167,80 @@ export function applyMailEvent(queryClient: QueryClient, event: MailStreamEvent)
       void queryClient.invalidateQueries({ queryKey: mailKeys.all });
       return;
     case 'mail.attachment.ready':
+      markAttachmentCached(queryClient, event.attachmentId);
+      emitMailSignal({ type: 'attachment.ready', attachmentId: event.attachmentId });
+      return;
+    case 'mail.attachment.failed':
+      emitMailSignal({
+        type: 'attachment.failed',
+        attachmentId: event.attachmentId,
+        code: event.code,
+      });
+      return;
     case 'mail.action.failed':
-      // Daftar & panel baca (bagian 2) menanganinya.
+      // Server mengembalikan perubahan lokal: muat ulang daftar & detail yang terdampak.
+      void queryClient.invalidateQueries({ queryKey: mailKeys.messageLists });
+      for (const id of event.messageIds) {
+        void queryClient.invalidateQueries({ queryKey: mailKeys.message(id) });
+      }
+      scheduleSidebarRefresh(queryClient);
+      emitMailSignal({ type: 'action.failed', messageIds: event.messageIds });
+      return;
+    // ── 9B (KONTRAK-API-EMAIL-TULIS §14) ──
+    case 'mail.outbox.updated':
+      emitMailSignal({
+        type: 'outbox.updated',
+        outboxId: event.outboxId,
+        draftId: event.draftId,
+        accountId: event.accountId,
+        status: event.status,
+        holdReason: event.holdReason,
+        sendAfter: event.sendAfter,
+        failureReason: event.failureReason,
+      });
+      // Terkirim: email muncul di Terkirim setelah salinan disinkron (daftar & hitungan).
+      if (event.status === 'sent') {
+        scheduleListRefresh(queryClient);
+        scheduleSidebarRefresh(queryClient);
+      }
+      return;
+    case 'mail.draft.updated':
+      emitMailSignal({ type: 'draft.updated', draftId: event.draftId, version: event.version });
+      return;
+    case 'mail.draft.deleted':
+      queryClient.removeQueries({ queryKey: mailKeys.draft(event.draftId) });
+      emitMailSignal({ type: 'draft.deleted', draftId: event.draftId });
+      return;
+    case 'mail.identity.updated':
+      refreshIdentities(queryClient, event.accountId);
+      return;
+    case 'mail.compose.presence':
+      patchComposing(queryClient, event.accountId, event.threadKey, event.users);
+      emitMailSignal({
+        type: 'compose.presence',
+        accountId: event.accountId,
+        threadKey: event.threadKey,
+        users: event.users,
+      });
       return;
   }
+}
+
+/** Rekan yang sedang membalas utas ini → detail email yang dimuat (kepala panel baca). */
+function patchComposing(
+  queryClient: QueryClient,
+  accountId: string,
+  threadKey: string,
+  users: readonly { id: string; name: string }[],
+): void {
+  queryClient.setQueriesData<{ message: MailMessageDetail }>(
+    { queryKey: mailKeys.messageDetails },
+    (data) =>
+      data &&
+      data.message.accountId === accountId &&
+      data.message.threadKey &&
+      data.message.threadKey === threadKey
+        ? { message: { ...data.message, composing: users.map((user) => ({ user })) } }
+        : data,
+  );
 }

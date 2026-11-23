@@ -1,6 +1,6 @@
 import {
   MAIL_CACHE_RETENTION_DAYS,
-  mailSettingsSchema,
+  updateMailSettingsRequestSchema,
   type IdentityConfirmation,
   type MailAccount,
   type MailSettings,
@@ -9,7 +9,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, getRouteApi, useNavigate } from '@tanstack/react-router';
 import { DropdownMenu } from 'radix-ui';
-import { Ellipsis, Lock, UsersRound } from 'lucide-react';
+import { Ellipsis, Lock, Plus, UsersRound } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   LoadFailedIllustration,
@@ -37,10 +37,8 @@ import { AddAccountWizard } from './AddAccountWizard';
 import {
   PROVIDER_ICONS,
   WINDOW_OPTIONS,
-  needsAttention,
   parseWindow,
   relativeTime,
-  syncErrorMessage,
   syncStateLabel,
   syncTone,
   windowValue,
@@ -55,6 +53,7 @@ import {
   peekAccountsFlash,
   useRequireCode,
 } from './mail-queries';
+import { MailIdentityApprovalsCard, MailPreferencesCard } from './MailComposeSettings';
 import { useMailStream } from './use-mail-stream';
 import styles from './MailAccounts.module.css';
 
@@ -141,6 +140,7 @@ export function MailAccountsPage() {
               actions={
                 canConnect ? (
                   <Button variant="primary" onClick={openWizard}>
+                    <Icon icon={Plus} size={16} />
                     {c.connect}
                   </Button>
                 ) : undefined
@@ -164,6 +164,11 @@ export function MailAccountsPage() {
             }
           />
         )}
+        {data &&
+        data.accounts.some((account) => !account.redacted && account.myLevel !== 'read') ? (
+          <MailPreferencesCard />
+        ) : null}
+        {data?.canManageShared ? <MailIdentityApprovalsCard /> : null}
         {data?.canManageShared ? <MailSettingsCard /> : null}
       </div>
       {search.tambah && data && canConnect ? (
@@ -324,21 +329,20 @@ function kindLabel(account: AnyAccount, myId: string | undefined, canManageShare
   return c.sharedLevel(m.levels[account.myLevel] ?? account.myLevel);
 }
 
+/**
+ * Satu baris keterangan di bawah lencana status. Galat (`auth_failed`/`error`) sengaja tanpa pesan
+ * lengkap — lencana + tautan ke halaman akun cukup, pesannya di sana (review 9A P5: pesan panjang
+ * membuat baris dua kali lebih tinggi).
+ */
 function statusDetail(account: AnyAccount): string | null {
   const { sync } = account;
   const progress = account.redacted ? null : account.sync.initialProgress;
   if (sync.state === 'initial_sync' && progress) {
     return m.initialProgress(progress.done, progress.total);
   }
-  if (needsAttention(sync.state) || sync.state === 'paused') {
-    if (sync.state === 'paused') return m.pausedHint;
-    if (sync.state === 'owner_inactive') return m.ownerInactiveHint;
-    const message = syncErrorMessage(
-      sync.lastErrorCode,
-      account.redacted ? null : account.sync.lastErrorMessage,
-    );
-    if (message) return message;
-  }
+  if (sync.state === 'paused') return m.pausedHint;
+  if (sync.state === 'owner_inactive') return m.ownerInactiveHint;
+  if (sync.state === 'auth_failed' || sync.state === 'error') return null;
   if (!sync.lastSyncedAt) return null;
   const when = relativeTime(sync.lastSyncedAt);
   // "Terakhir baru saja" janggal: cukup "Baru saja".
@@ -368,7 +372,10 @@ function AccountRow({
     : full?.kind === 'shared'
       ? canManageShared
       : ownsPersonal;
+  /** Sama dengan `administer` di halaman akun: bersama = Owner/Admin, pribadi = pemiliknya. */
+  const canEditServer = full ? (full.kind === 'shared' ? canManageShared : ownsPersonal) : false;
   const state = account.sync.state;
+  const fixesPassword = state === 'auth_failed' && canEditServer;
   const detail = statusDetail(account);
   const ProviderIcon = PROVIDER_ICONS[account.provider];
   const personal = account.kind === 'personal';
@@ -405,14 +412,16 @@ function AccountRow({
         <StatusBadge tone={syncTone(state)} label={syncStateLabel(state)} />
         {detail ? <span className={styles.statusDetail}>{detail}</span> : null}
         {account.redacted ? <span className={styles.statusDetail}>{c.redactedNote}</span> : null}
-        {state === 'auth_failed' && full && (manage || ownsPersonal) ? (
+        {full && (state === 'auth_failed' || state === 'error') ? (
+          // Password ditolak + berhak mengubah server → langsung dialog Ubah server
+          // (`?ubah=server`); selain itu ke halaman akun untuk membaca pesannya.
           <Link
             to="/pengaturan/akun-email/$accountId"
             params={{ accountId: account.id }}
-            hash="server"
+            search={fixesPassword ? { ubah: 'server' } : {}}
             className={styles.fixLink}
           >
-            {c.fixPassword}
+            {fixesPassword ? c.fixPassword : c.viewProblem}
           </Link>
         ) : null}
       </span>
@@ -532,7 +541,7 @@ function SettingsForm({ saved }: { saved: MailSettings }) {
       cacheRetentionDays: /^\d+$/.test(retention.trim()) ? Number(retention.trim()) : Number.NaN,
       defaultSyncWindowDays: parseWindow(syncWindow),
     };
-    const parsed = mailSettingsSchema.safeParse(body);
+    const parsed = updateMailSettingsRequestSchema.safeParse(body);
     if (!parsed.success) {
       setErrors(zodFieldErrors(parsed.error));
       return;

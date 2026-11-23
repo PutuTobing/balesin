@@ -11,6 +11,8 @@ export * from './errors';
 export * from './ids';
 export * from './locks';
 export * from './mail-access';
+export * from './mail-cache';
+export * from './mail-identity-guard';
 export * from './outgoing-events';
 export * from './schema';
 export * from './templates';

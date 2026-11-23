@@ -340,14 +340,17 @@ describe('IDLE', () => {
       expect(supervisor.running()).toContain(seed.accountId);
       await new Promise((resolve) => setTimeout(resolve, 400));
       expect((await accountRow(seed.accountId))?.idleActive).toBe(true);
-      imap.add('INBOX', email('Masuk saat IDLE'));
-      for (let i = 0; i < 40 && queued.length === 0; i += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
       const [inbox] = await db
         .select()
         .from(mailFolders)
         .where(and(eq(mailFolders.accountId, seed.accountId), eq(mailFolders.role, 'inbox')));
+      // Sinkron susulan sekali saat IDLE tersambung (email yang tiba sebelum IDLE mulai).
+      expect(queued).toEqual([inbox?.id]);
+      queued.length = 0;
+      imap.add('INBOX', email('Masuk saat IDLE'));
+      for (let i = 0; i < 40 && queued.length === 0; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
       expect(queued).toContain(inbox?.id);
       // Dijeda → IDLE ditutup di pemindaian berikutnya.
       await db

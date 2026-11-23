@@ -84,13 +84,14 @@ async function main(config: ApiConfig): Promise<void> {
     // Non-produksi saja (stack E2E): Telegram/IMAP tiruan. Produksi dengan variabel ini = gagal start.
     overrides: {
       ...testOverrides,
-      // Modul Email (Fase 9) memakai server IMAP tiruan yang sama di loopback (stack E2E saja).
+      // Modul Email (Fase 9) memakai server IMAP (dan SMTP) tiruan di loopback (stack E2E saja).
       ...(testOverrides.imap
         ? {
             mail: {
               ...(testOverrides.imap.allowedPorts
                 ? { imapPorts: testOverrides.imap.allowedPorts }
                 : {}),
+              ...(testOverrides.mailSmtp ? { smtpPorts: testOverrides.mailSmtp.allowedPorts } : {}),
               ...(testOverrides.imap.testCa ? { testCa: testOverrides.imap.testCa } : {}),
               allowLoopback: true,
             },

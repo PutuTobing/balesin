@@ -612,6 +612,8 @@ export function createInboxStreamHub(options: InboxStreamHubOptions): InboxStrea
     );
     for (const client of group) {
       for (const event of allowed) {
+        // 9B: event pribadi (outbox/draf) membawa `userIds` — hanya pemiliknya, DAN hak akun masih ada.
+        if (event.userIds && !event.userIds.includes(client.userId)) continue;
         if (index.levelOf(client.userId, event.accountId as string) && send(client, event.event)) {
           delivered += 1;
         }

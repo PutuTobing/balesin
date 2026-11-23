@@ -26,9 +26,14 @@ export function MailSkeleton() {
         </SkeletonRegion>
       </aside>
       <section className={styles.list} aria-label={m.list.label}>
+        {/* Bentuk kepala sama dengan halaman jadi: tempat tombol menu (tablet/HP) + judul dan
+            ringkasan sebagai balok, jadi judul tidak bergeser atau berganti teks saat data tiba. */}
         <header className={styles.listHead}>
-          <div className={styles.listHeading}>
-            <h1 className={styles.listTitle}>{m.title}</h1>
+          <h1 className="sr-only">{m.title}</h1>
+          <span className={cx(styles.menuButton, styles.menuPlaceholder)} aria-hidden="true" />
+          <div className={styles.listHeading} aria-hidden="true">
+            <Skeleton className={styles.skeletonHeadTitle} />
+            <Skeleton className={styles.skeletonHeadSub} />
           </div>
         </header>
         <SkeletonRegion className={styles.skeletonList}>

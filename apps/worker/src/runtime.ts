@@ -40,11 +40,21 @@ import {
 } from './queues/webhooks-out';
 import { createWebhookWorker, type WebhookJobDeps } from './queues/webhooks';
 import { createIdleSupervisor, type IdleSupervisor } from './mail-idle/supervisor';
+import { createMailActions } from './mail/actions';
+import { createComposeMaintenance } from './mail/compose-maintenance';
+import { createMailCopies, markVerifiedByMailbox } from './mail/copies';
+import { createMailSender, type MailSendDeps } from './mail/send';
+import { createMailReader } from './mail/read';
 import { createMailSync, type MailSyncDeps } from './mail/sync';
 import {
   createMailQueue,
+  createMailScheduleQueue,
+  createMailScheduleWorker,
+  createMailSendQueue,
+  createMailSendWorker,
   createMailWorker,
   mailEnqueuers,
+  mailSendEnqueuer,
   scheduleMailJobs,
   type MailJobDeps,
 } from './queues/mail';
@@ -90,7 +100,16 @@ export interface WorkerServices {
    * Opsional untuk tes. `idle: false` = tanpa pengawas IDLE (tes antrian saja).
    */
   mail?: Omit<MailSyncDeps, 'logger'> &
-    Pick<MailJobDeps, 'store'> & { idle?: boolean; prefix?: string };
+    Pick<MailJobDeps, 'store'> & {
+      idle?: boolean;
+      prefix?: string;
+      /** Origin web (`APP_URL`) — halaman peringatan tautan menipu di dokumen tampilan. */
+      appUrl: string;
+      /** 9B: SMTP akun (port tambahan/CA/loopback HANYA tes), pengganti pengirim tes, email Owner. */
+      smtp?: MailSendDeps['smtp'];
+      send?: MailSendDeps['send'];
+      notifyOwner?: MailSendDeps['notifyOwner'];
+    };
 }
 
 const ERROR_LOG_INTERVAL_MS = 30_000;
@@ -122,27 +141,110 @@ export function startWorkers(
   let channelsQueue: Queue | undefined;
   let webhookProducer: Queue | undefined;
   let mailQueue: Queue | undefined;
+  let mailScheduleQueue: Queue | undefined;
+  let mailSendQueue: Queue | undefined;
   let idleSupervisor: IdleSupervisor | undefined;
   if (services.mail) {
     const queue = createMailQueue(options);
     mailQueue = queue;
     queue.on('error', () => undefined);
     const enqueue = mailEnqueuers(queue);
-    const { store, idle, prefix, ...syncDeps } = services.mail;
-    const sync = createMailSync({ ...syncDeps, logger });
+    const { store, idle, prefix, appUrl, smtp, send, notifyOwner, ...syncDeps } = services.mail;
+    const sync = createMailSync({
+      ...syncDeps,
+      logger,
+      verifyByMailbox: (organizationId, identityId, at) =>
+        markVerifiedByMailbox(syncDeps.db, organizationId, identityId, at),
+    });
+    const reader = createMailReader({
+      db: syncDeps.db,
+      logger,
+      secretBox: syncDeps.secretBox,
+      publisher: syncDeps.publisher,
+      store,
+      appUrl,
+      policyFor: (organizationId) => sync.policyFor(organizationId),
+      ...(syncDeps.connector ? { connector: syncDeps.connector } : {}),
+      ...(syncDeps.now ? { now: syncDeps.now } : {}),
+    });
+    const actions = createMailActions({
+      db: syncDeps.db,
+      logger,
+      publisher: syncDeps.publisher,
+      reader,
+      enqueueSync: (payload) => enqueue.enqueueSync(payload),
+      ...(syncDeps.now ? { now: syncDeps.now } : {}),
+    });
+    const sendQueue = createMailSendQueue(options);
+    mailSendQueue = sendQueue;
+    sendQueue.on('error', () => undefined);
+    const queuePrefix = prefix ?? QUEUE_PREFIX;
+    const sender = createMailSender({
+      db: syncDeps.db,
+      logger,
+      redis: options.connection,
+      prefix: queuePrefix,
+      secretBox: syncDeps.secretBox,
+      publisher: syncDeps.publisher,
+      store,
+      smtp: smtp ?? {},
+      ...(send ? { send } : {}),
+      ...(notifyOwner ? { notifyOwner } : {}),
+      enqueueSend: mailSendEnqueuer(sendQueue),
+      enqueueAppendSent: (payload, delayMs) => enqueue.enqueueAppendSent(payload, delayMs),
+      enqueueDraftRemoteDelete: (payload) => enqueue.enqueueDraftRemoteDelete(payload),
+      ...(syncDeps.now ? { now: syncDeps.now } : {}),
+    });
+    const copies = createMailCopies({
+      db: syncDeps.db,
+      logger,
+      secretBox: syncDeps.secretBox,
+      publisher: syncDeps.publisher,
+      store,
+      openSession: (account) => reader.openSession(account),
+      redis: options.connection,
+      prefix: queuePrefix,
+      enqueueFolder: (payload) => enqueue.enqueueFolder(payload),
+      ...(syncDeps.now ? { now: syncDeps.now } : {}),
+    });
+    const compose = createComposeMaintenance({
+      db: syncDeps.db,
+      redis: options.connection,
+      prefix: queuePrefix,
+      logger,
+      publisher: syncDeps.publisher,
+      store,
+      enqueueDraftSync: (payload, delayMs) => enqueue.enqueueDraftSync(payload, delayMs),
+      ...(syncDeps.now ? { now: syncDeps.now } : {}),
+    });
+    const mailDeps = {
+      sender,
+      copies,
+      compose,
+      db: services.mail.db,
+      logger,
+      redis: options.connection,
+      ...(prefix ? { prefix } : {}),
+      sync,
+      store,
+      reader,
+      actions,
+      enqueueSync: (payload: Parameters<typeof enqueue.enqueueSync>[0]) =>
+        enqueue.enqueueSync(payload),
+      enqueuePurge: (payload: Parameters<typeof enqueue.enqueuePurge>[0]) =>
+        enqueue.enqueuePurge(payload),
+      enqueueAction: (payload: Parameters<typeof enqueue.enqueueAction>[0]) =>
+        enqueue.enqueueAction(payload),
+    };
+    const scheduleQueue = createMailScheduleQueue(options);
+    mailScheduleQueue = scheduleQueue;
+    scheduleQueue.on('error', () => undefined);
     workers.push(
-      createMailWorker(options, {
-        db: services.mail.db,
-        logger,
-        redis: options.connection,
-        ...(prefix ? { prefix } : {}),
-        sync,
-        store,
-        enqueueSync: (payload) => enqueue.enqueueSync(payload),
-        enqueuePurge: (payload) => enqueue.enqueuePurge(payload),
-      }),
+      createMailWorker(options, mailDeps),
+      createMailScheduleWorker(options, mailDeps),
+      createMailSendWorker(options, sender),
     );
-    scheduleMailJobs(queue).catch((err: unknown) => {
+    scheduleMailJobs(scheduleQueue, queue).catch((err: unknown) => {
       logger.error({ err }, 'Jadwal modul Email gagal didaftarkan');
     });
     if (idle !== false) {
@@ -282,7 +384,14 @@ export function startWorkers(
         if (force) await broadcastQueue.disconnect();
         else await broadcastQueue.close();
       }
-      for (const queue of [channelsQueue, webhookProducer, emailOutboundQueue, mailQueue]) {
+      for (const queue of [
+        channelsQueue,
+        webhookProducer,
+        emailOutboundQueue,
+        mailQueue,
+        mailScheduleQueue,
+        mailSendQueue,
+      ]) {
         if (!queue) continue;
         if (force) await queue.disconnect();
         else await queue.close();

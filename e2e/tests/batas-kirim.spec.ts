@@ -22,7 +22,9 @@ test('Owner membuka Batas kirim dari Pengaturan: nilai server, validasi, dialog 
 
   const perMinute = page.getByLabel('Batas per percakapan per menit');
   await perMinute.fill('500');
-  await page.getByRole('button', { name: 'Simpan batas' }).click();
+  // `exact`: bila channel Email ada (spec lain), tiap pengirim punya tombol "Simpan batas
+  // penerima per jam <nama>" di halaman yang sama (9.1).
+  await page.getByRole('button', { name: 'Simpan batas', exact: true }).click();
   await expect(page.getByText(/paling banyak 120/)).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 

@@ -184,9 +184,16 @@ function AccessForm({
                           </span>
                         ))}
                         <span className={styles.effective}>
-                          {effective
-                            ? tm.effective(m.levels[effective] ?? effective)
-                            : tm.noEffective}
+                          {effective ? (
+                            <>
+                              {tm.effectiveLabel}{' '}
+                              <span className={styles.effectiveValue}>
+                                {m.levels[effective] ?? effective}
+                              </span>
+                            </>
+                          ) : (
+                            <span className={styles.effectiveValue}>{tm.noEffective}</span>
+                          )}
                         </span>
                       </span>
                     </span>

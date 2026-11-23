@@ -42,6 +42,55 @@ function folders() {
   return within(screen.getByRole('complementary', { name: m.foldersLabel }));
 }
 
+describe('menu Email — banner verifikasi alamat', () => {
+  it('akun berperingatan identity_unverified: banner + tautan ke Alamat pengirim; Nanti saja menyembunyikan', async () => {
+    const unverified = fakeMailAccount({ ...billing, warnings: ['identity_unverified'] });
+    const readOnly = fakeMailAccount({
+      ...personal,
+      myLevel: 'send',
+      warnings: ['identity_unverified'],
+    });
+    await renderApp('/email', withAccounts([cs, unverified, readOnly]));
+    const title = await screen.findByText(m.verifyBanner.one('Billing'));
+    expect(title).toBeVisible();
+    // Hak Kirim saja tidak bisa memverifikasi: tidak ikut banner.
+    expect(screen.queryByText(m.verifyBanner.many(2))).toBeNull();
+    expect(screen.getByRole('link', { name: m.verifyBanner.open })).toHaveAttribute(
+      'href',
+      `/pengaturan/akun-email/${MAIL_IDS.billing}#alamat-pengirim`,
+    );
+    fireEvent.click(screen.getByRole('button', { name: m.verifyBanner.dismiss }));
+    expect(screen.queryByText(m.verifyBanner.one('Billing'))).toBeNull();
+  });
+
+  it('beberapa akun: satu banner ringkas, mulai dari akun pertama', async () => {
+    const a = fakeMailAccount({ ...cs, warnings: ['identity_unverified'] });
+    const b = fakeMailAccount({ ...billing, warnings: ['identity_unverified'] });
+    await renderApp('/email', withAccounts([a, b]));
+    expect(await screen.findByText(m.verifyBanner.many(2))).toBeVisible();
+    expect(screen.getByText('CS Maju Jaya · Billing')).toBeVisible();
+    expect(
+      screen.getByRole('link', { name: m.verifyBanner.openFirst('CS Maju Jaya') }),
+    ).toHaveAttribute('href', `/pengaturan/akun-email/${MAIL_IDS.cs}#alamat-pengirim`);
+  });
+
+  it('kotak surat Email pengirim sistem terhubung: verifikasi terkunci dijelaskan', async () => {
+    const locked = fakeMailAccount({
+      ...cs,
+      warnings: ['system_sender_conflict', 'identity_unverified'],
+    });
+    await renderApp('/email', withAccounts([locked]));
+    expect(await screen.findByText(m.verifyBanner.locked)).toBeVisible();
+    expect(screen.getByText(m.verifyBanner.lockedBody)).toBeVisible();
+  });
+
+  it('tanpa peringatan: tidak ada banner', async () => {
+    await renderApp('/email', withAccounts([cs]));
+    await screen.findByRole('heading', { level: 1 });
+    expect(screen.queryByRole('button', { name: m.verifyBanner.dismiss })).toBeNull();
+  });
+});
+
 describe('menu Email', () => {
   it('tampil di rail untuk Owner dan membuka keadaan kosong "Hubungkan akun email pertamamu"', async () => {
     const { router } = await renderApp('/inbox');
@@ -127,6 +176,10 @@ describe('menu Email', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Vendor' })).toBeVisible();
     expect(router.state.location.search).toEqual({ f: MAIL_IDS.csVendor });
     expect(screen.getByText(`CS Maju Jaya · ${m.folderSummary(2, 1200)}`)).toBeVisible();
+    // Hanya satu item aktif (review 9A-baca H1: router membandingkan search secara parsial).
+    const current = column.querySelectorAll('[aria-current="page"]');
+    expect(current).toHaveLength(1);
+    expect(current[0]).toHaveTextContent('Vendor');
 
     const toggle = within(column).getByRole('button', {
       name: m.toggleAccount('CS Maju Jaya', [m.unreadLabel(6)]),
@@ -169,7 +222,7 @@ describe('menu Email', () => {
       }),
     );
     expect(await screen.findByText(m.footer.synced(m.time.justNow))).toBeVisible();
-    expect(screen.getByText(m.list.title)).toBeVisible();
+    expect(await screen.findByText(m.list.empty.inboxes.title)).toBeVisible();
   });
 
   it('mail.access.changed → sesi dimuat ulang (menu Email bisa berubah)', async () => {

@@ -185,6 +185,11 @@
   white-space: nowrap;
 }
 
+.menuWarning {
+  color: var(--warning-ink);
+  font-weight: var(--weight-semibold);
+}
+
 .menuDanger {
   display: inline-flex;
   align-items: center;

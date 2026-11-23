@@ -1,6 +1,12 @@
 import type {
+  MailDraft,
+  MailIdentity,
+  MailOutboxItem,
+  MailSignature,
   MailAccount,
   MailFolder,
+  MailMessageDetail,
+  MailMessageSummary,
   MailSidebarResponse,
   RedactedMailAccount,
   TestMailAccountResponse,
@@ -17,7 +23,115 @@ export const MAIL_IDS = {
   csSent: '7a1b2c3d-0000-4000-8000-0000000000a2',
   csVendor: '7a1b2c3d-0000-4000-8000-0000000000a3',
   billingInbox: '7a1b2c3d-0000-4000-8000-0000000000b1',
+  message1: '7a1b2c3d-0000-4000-8000-0000000000e1',
+  message2: '7a1b2c3d-0000-4000-8000-0000000000e2',
+  message3: '7a1b2c3d-0000-4000-8000-0000000000e3',
+  attachmentPdf: '7a1b2c3d-0000-4000-8000-0000000000c1',
+  attachmentZip: '7a1b2c3d-0000-4000-8000-0000000000c2',
+  attachmentExe: '7a1b2c3d-0000-4000-8000-0000000000c3',
 } as const;
+
+/** Ringkasan email di daftar (kontrak §7). */
+export function fakeMailSummary(overrides: Partial<MailMessageSummary> = {}): MailMessageSummary {
+  return {
+    id: MAIL_IDS.message1,
+    accountId: MAIL_IDS.cs,
+    folderId: MAIL_IDS.csInbox,
+    folderRole: 'inbox',
+    account: { id: MAIL_IDS.cs, displayName: 'CS Maju Jaya', color: 'tagBlue' },
+    from: { address: 'noc@nusaraya.example', name: 'NOC Nusaraya' },
+    to: [{ address: 'cs@majujaya.co.id', name: null }],
+    toCount: 1,
+    ccCount: 0,
+    subject: 'Jadwal pemeliharaan 26 November',
+    snippet: 'Yth. tim, kami akan melakukan pemeliharaan terjadwal.',
+    receivedAt: new Date(Date.now() - 30 * 60_000).toISOString(),
+    sentAt: null,
+    isRead: false,
+    isStarred: false,
+    isAnswered: false,
+    hasAttachments: true,
+    sizeBytes: 48_211,
+    deliveredTo: 'cs@majujaya.co.id',
+    deliveredToAlias: false,
+    senderVerification: 'pass',
+    warnings: [],
+    pending: false,
+    ...overrides,
+  };
+}
+
+/** Detail email (kontrak §8) dengan isi HTML siap + satu PDF, satu ZIP, satu berkas diblokir. */
+export function fakeMailDetail(
+  overrides: Partial<MailMessageDetail> = {},
+  summary: Partial<MailMessageSummary> = {},
+): MailMessageDetail {
+  return {
+    ...fakeMailSummary(summary),
+    cc: [{ address: 'tono@majujaya.co.id', name: 'Tono' }],
+    bcc: null,
+    replyTo: [],
+    messageIdHeader: '<abc@nusaraya.example>',
+    myLevel: 'manage',
+    receivedVia: {
+      accountId: MAIL_IDS.cs,
+      displayName: 'CS Maju Jaya',
+      address: 'cs@majujaya.co.id',
+    },
+    verification: {
+      result: 'pass',
+      label: 'Terverifikasi',
+      spf: 'pass',
+      dkim: 'pass',
+      dmarc: 'pass',
+      authServId: 'mail.majujaya.co.id',
+    },
+    warningDetails: [],
+    body: {
+      state: 'ready',
+      hasHtml: true,
+      text: 'Yth. tim, kami akan melakukan pemeliharaan terjadwal.',
+      remoteImages: { count: 2, senderAllowed: false, autoBlocked: false },
+    },
+    attachments: [
+      {
+        id: MAIL_IDS.attachmentPdf,
+        filename: 'Jadwal-Pemeliharaan.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 253_952,
+        isInline: false,
+        risk: 'ok',
+        riskMessage: null,
+        previewable: false,
+        cached: true,
+      },
+      {
+        id: MAIL_IDS.attachmentZip,
+        filename: 'Foto-ODP.zip',
+        contentType: 'application/zip',
+        sizeBytes: 4_404_019,
+        isInline: false,
+        risk: 'warn',
+        riskMessage: null,
+        previewable: false,
+        cached: false,
+      },
+      {
+        id: MAIL_IDS.attachmentExe,
+        filename: 'faktur.exe',
+        contentType: 'application/octet-stream',
+        sizeBytes: 120_000,
+        isInline: false,
+        risk: 'blocked',
+        riskMessage:
+          'Lampiran ini diblokir karena berisiko (program, makro, atau halaman web). Minta pengirim mengirim dalam bentuk PDF.',
+        previewable: false,
+        cached: false,
+      },
+    ],
+    ...overrides,
+  };
+}
 
 export function fakeMailAccount(overrides: Partial<MailAccount> = {}): MailAccount {
   return {
@@ -50,6 +164,9 @@ export function fakeMailAccount(overrides: Partial<MailAccount> = {}): MailAccou
     trustedAuthServIds: null,
     syncWindowDays: 90,
     periodicSyncMinutes: 5,
+    sentCopyMode: 'auto',
+    warnExternalRecipients: false,
+    warnings: [],
     sync: {
       state: 'ready',
       lastSyncedAt: new Date(Date.now() - 60_000).toISOString(),
@@ -191,6 +308,151 @@ export function fakeTestResult(
           message: 'Username atau password SMTP ditolak server. Periksa lagi keduanya.',
           durationMs: 800,
         },
+    ...overrides,
+  };
+}
+
+// ── 9B: tulis, identitas, draf, outbox ─────────────────────────────────────
+
+export const COMPOSE_IDS = {
+  identityCs: '7a1b2c3d-0000-4000-8000-0000000000d1',
+  identityTagihan: '7a1b2c3d-0000-4000-8000-0000000000d2',
+  identityBilling: '7a1b2c3d-0000-4000-8000-0000000000d3',
+  draft: '7a1b2c3d-0000-4000-8000-0000000000f1',
+  draft2: '7a1b2c3d-0000-4000-8000-0000000000f2',
+  outbox: '7a1b2c3d-0000-4000-8000-0000000000f9',
+  attachment: '7a1b2c3d-0000-4000-8000-0000000000fa',
+  signature: '7a1b2c3d-0000-4000-8000-0000000000fb',
+} as const;
+
+/** Identitas akun (kontrak 9B §3.4). */
+export function fakeMailIdentity(overrides: Partial<MailIdentity> = {}): MailIdentity {
+  const verified = overrides.verification?.state ?? 'verified';
+  return {
+    id: COMPOSE_IDS.identityCs,
+    accountId: MAIL_IDS.cs,
+    address: 'cs@majujaya.co.id',
+    displayName: 'CS Maju Jaya',
+    isPrimary: true,
+    replyTo: null,
+    verification: {
+      state: verified,
+      verifiedAt: verified === 'verified' ? new Date(Date.now() - 86_400_000).toISOString() : null,
+      method: verified === 'verified' ? 'mailbox' : null,
+      pending: null,
+      available: true,
+      unavailableReason: null,
+    },
+    approval: { state: 'not_required', decidedAt: null },
+    defaultSignatures: { new: null, reply: null },
+    canSend: verified === 'verified',
+    cannotSendReason: verified === 'verified' ? null : 'identity_unverified',
+    createdAt: new Date(Date.now() - 30 * 86_400_000).toISOString(),
+    ...overrides,
+  };
+}
+
+/** Pilihan "Dari" (identitas + akun ringkas). */
+export function fakeComposeIdentity(
+  overrides: Partial<MailIdentity> = {},
+  account: Partial<{
+    id: string;
+    displayName: string;
+    color: MailAccount['color'];
+    kind: MailAccount['kind'];
+  }> = {},
+) {
+  const identity = fakeMailIdentity(overrides);
+  return {
+    ...identity,
+    account: {
+      id: identity.accountId,
+      displayName: 'CS Maju Jaya',
+      color: 'tagBlue' as const,
+      kind: 'shared' as const,
+      avatarUrl: null,
+      ...account,
+    },
+  };
+}
+
+/** Draf (kontrak 9B §6.2). */
+export function fakeDraft(overrides: Partial<MailDraft> = {}): MailDraft {
+  const now = new Date().toISOString();
+  return {
+    id: COMPOSE_IDS.draft,
+    accountId: MAIL_IDS.cs,
+    identityId: COMPOSE_IDS.identityCs,
+    mode: 'new',
+    sourceMessageId: null,
+    threadKey: null,
+    to: [],
+    cc: [],
+    bcc: [],
+    subject: '',
+    format: 'html',
+    bodyHtml: '<p><br></p>',
+    bodyText: null,
+    includeQuote: false,
+    quote: { available: false, messageId: null, from: null, sentAt: null, hasHtml: false },
+    attachments: [],
+    attachmentTotalBytes: 0,
+    version: 1,
+    state: 'editing',
+    lastSendError: null,
+    serverCopy: { state: 'pending', syncedAt: null },
+    threadSeenAt: now,
+    canSend: true,
+    cannotSendReason: null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
+/** Outbox (kontrak 9B §9.2): `pending` dengan masa batal 10 dtk. */
+export function fakeOutbox(overrides: Partial<MailOutboxItem> = {}): MailOutboxItem {
+  const created = new Date();
+  return {
+    id: COMPOSE_IDS.outbox,
+    draftId: COMPOSE_IDS.draft,
+    accountId: MAIL_IDS.cs,
+    identity: {
+      id: COMPOSE_IDS.identityCs,
+      address: 'cs@majujaya.co.id',
+      displayName: 'CS Maju Jaya',
+    },
+    status: 'pending',
+    holdReason: null,
+    sendAfter: new Date(created.getTime() + 10_000).toISOString(),
+    nextAttemptAt: null,
+    attempts: 0,
+    subject: 'Penawaran paket',
+    recipientCount: 1,
+    toPreview: ['Rina Wulandari'],
+    sentAt: null,
+    failure: null,
+    rejectedRecipients: [],
+    sentCopy: { state: 'pending' },
+    createdAt: created.toISOString(),
+    ...overrides,
+  };
+}
+
+/** Tanda tangan (kontrak 9B §4). */
+export function fakeSignature(overrides: Partial<MailSignature> = {}): MailSignature {
+  const now = new Date().toISOString();
+  return {
+    id: COMPOSE_IDS.signature,
+    accountId: MAIL_IDS.cs,
+    scope: 'shared',
+    name: 'Formal',
+    html: '<p>Salam hangat,<br>{{nama_agen}}<br>{{nama_organisasi}}</p>',
+    text: 'Salam hangat,\n{{nama_agen}}\n{{nama_organisasi}}',
+    logoUrl: null,
+    editable: true,
+    createdAt: now,
+    updatedAt: now,
     ...overrides,
   };
 }

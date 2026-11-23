@@ -155,6 +155,13 @@ describe('cleanFileName (review kontak R2)', () => {
     const long = cleanFileName(`${'é'.repeat(300)}.pdf`);
     expect(Array.from(long ?? '')).toHaveLength(255);
   });
+
+  it('review 9A-2 R7: titik/spasi di akhir dibuang (nama = nama yang disimpan Windows)', () => {
+    expect(cleanFileName('tagihan.pdf.js.')).toBe('tagihan.pdf.js');
+    expect(cleanFileName('tagihan.pdf.js . . ')).toBe('tagihan.pdf.js');
+    expect(cleanFileName('...')).toBeNull();
+    expect(cleanFileName('.env')).toBe('.env');
+  });
 });
 
 describe('contactIdentityLockKeys', () => {

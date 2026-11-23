@@ -327,57 +327,103 @@ export type MailOutgoingTestCode = z.infer<typeof mailOutgoingTestCodeSchema>;
 
 export type MailTestCode = MailIncomingTestCode | MailOutgoingTestCode;
 
-const PRIVATE_NETWORK_HINT =
-  'Server email di jaringan lokal harus didaftarkan dulu di Pengaturan → Integrasi → Jaringan privat.';
+/** Daftar CIDR privat organisasi = `webhookPrivateCidrs` (Pengaturan → Webhook), dipakai juga akun email. */
+export const MAIL_PRIVATE_NETWORK_HINT =
+  'Server email di jaringan lokal harus didaftarkan dulu di Pengaturan → Webhook → Jaringan privat yang diizinkan.';
 
-/** Pesan tetap per kode (balasan server tidak pernah diteruskan). */
+/**
+ * Pesan tetap per kode (balasan server tidak pernah diteruskan) — SEBAB singkat. Langkah perbaikan ada di
+ * `MAIL_TEST_HINTS`, jenis judul di `mailTestCodeKind` (review desain 9A akun P9: tanpa kata "login",
+ * tanpa "penyedia server" yang ambigu; pesan akun dipakai juga di halaman akun → tidak menunjuk ke
+ * halaman itu sendiri).
+ */
 export const MAIL_TEST_MESSAGES: Readonly<Record<MailTestCode, string>> = {
   ok: 'Berhasil.',
-  imap_host_not_found:
-    'Server email (IMAP) tidak ditemukan. Periksa lagi penulisan host, contoh: mail.perusahaan.co.id.',
-  imap_host_blocked: `Alamat server ini tidak boleh dipakai untuk akun email. ${PRIVATE_NETWORK_HINT}`,
+  imap_host_not_found: 'Server email masuk (IMAP) tidak ditemukan. Periksa penulisan host-nya.',
+  imap_host_blocked: `Alamat server IMAP ini tidak boleh dipakai untuk akun email. ${MAIL_PRIVATE_NETWORK_HINT}`,
   imap_port_not_allowed: 'Port IMAP tidak didukung. Pakai 993 (SSL/TLS) atau 143 (STARTTLS).',
-  imap_connection_refused:
-    'Server menolak sambungan IMAP di port ini. Periksa port dan keamanannya: 993 untuk SSL/TLS, 143 untuk STARTTLS.',
-  imap_connection_timeout:
-    'Server email tidak merespons. Periksa host dan port, lalu pastikan server aplikasi boleh mengakses port itu (firewall).',
-  imap_tls_failed:
-    'Sambungan aman ke server IMAP gagal. Coba ganti keamanan: 993 memakai SSL/TLS, 143 memakai STARTTLS.',
+  imap_connection_refused: 'Server menolak sambungan IMAP di port ini.',
+  imap_connection_timeout: 'Server IMAP tidak merespons. Periksa host dan port-nya.',
+  imap_tls_failed: 'Sambungan aman ke server IMAP gagal.',
   imap_certificate_invalid:
-    'Sertifikat keamanan server IMAP tidak valid atau tidak cocok dengan nama host. Pakai nama host resmi dari penyedia email-mu.',
-  imap_auth_failed:
-    'Username atau password akun email ditolak server. Periksa lagi keduanya (username biasanya alamat email lengkap).',
-  imap_not_enabled:
-    'Akses IMAP belum diaktifkan di akun ini. Aktifkan di pengaturan email penyedia (Gmail: Setelan → Penerusan dan POP/IMAP).',
-  imap_app_password_required:
-    'Penyedia meminta sandi aplikasi, bukan password biasa. Buat sandi aplikasi di pengaturan keamanan akunmu.',
-  imap_too_many_connections:
-    'Server menolak karena terlalu banyak sambungan dari akun ini. Tutup aplikasi email lain sebentar, lalu coba lagi.',
-  imap_quota_full: 'Kotak surat hampir/sudah penuh (≥ 95%). Email baru bisa ditolak server.',
-  smtp_host_not_found:
-    'Server email keluar (SMTP) tidak ditemukan. Periksa lagi penulisan host SMTP, contoh: mail.perusahaan.co.id.',
-  smtp_host_blocked: `Alamat server SMTP ini tidak boleh dipakai untuk akun email. ${PRIVATE_NETWORK_HINT}`,
+    'Sertifikat keamanan server IMAP tidak valid atau tidak cocok dengan nama host.',
+  imap_auth_failed: 'Username atau password akun email ditolak server.',
+  imap_not_enabled: 'Akses IMAP belum diaktifkan di akun email ini.',
+  imap_app_password_required: 'Penyedia email meminta sandi aplikasi, bukan password biasa.',
+  imap_too_many_connections: 'Server menolak karena terlalu banyak sambungan dari akun ini.',
+  imap_quota_full: 'Kotak surat hampir atau sudah penuh (≥ 95%). Email baru bisa ditolak server.',
+  smtp_host_not_found: 'Server email keluar (SMTP) tidak ditemukan. Periksa penulisan host-nya.',
+  smtp_host_blocked: `Alamat server SMTP ini tidak boleh dipakai untuk akun email. ${MAIL_PRIVATE_NETWORK_HINT}`,
   smtp_port_not_allowed: 'Port SMTP tidak didukung. Pakai 465 (SSL/TLS) atau 587 (STARTTLS).',
-  smtp_connection_refused:
-    'Server menolak sambungan SMTP di port ini. Periksa port dan keamanannya: 465 untuk SSL/TLS, 587 untuk STARTTLS.',
+  smtp_connection_refused: 'Server menolak sambungan SMTP di port ini.',
   smtp_connection_timeout:
-    'Server SMTP tidak merespons. Banyak jaringan memblokir port 465/587 keluar; tanyakan ke penyedia server.',
-  smtp_tls_failed:
-    'Sambungan aman ke server SMTP gagal. Coba ganti keamanan: 465 memakai SSL/TLS, 587 memakai STARTTLS.',
+    'Server SMTP tidak merespons. Periksa host dan port-nya. Kalau sudah benar, mungkin jaringan server aplikasi ini memblokir port 465/587 keluar. Tanyakan ke penyedia hosting atau VPS-nya.',
+  smtp_tls_failed: 'Sambungan aman ke server SMTP gagal.',
   smtp_certificate_invalid:
-    'Sertifikat keamanan server SMTP tidak valid atau tidak cocok dengan nama host. Pakai nama host resmi dari penyedia email-mu.',
-  smtp_auth_failed: 'Username atau password SMTP ditolak server. Periksa lagi keduanya.',
-  smtp_auth_unsupported:
-    'Server SMTP tidak menerima cara masuk ini. Coba keamanan lain (SSL/TLS atau STARTTLS), atau hubungi penyedia email-mu.',
-  smtp_auth_disabled_m365:
-    "Microsoft 365 mematikan SMTP AUTH untuk akun ini. Admin Microsoft 365 perlu mengaktifkan 'Authenticated SMTP' untuk kotak surat ini, atau tunggu 'Masuk dengan Microsoft'.",
+    'Sertifikat keamanan server SMTP tidak valid atau tidak cocok dengan nama host.',
+  smtp_auth_failed: 'Username atau password SMTP ditolak server.',
+  smtp_auth_unsupported: 'Server SMTP tidak menerima cara masuk dengan password ini.',
+  smtp_auth_disabled_m365: 'Microsoft 365 mematikan SMTP AUTH untuk kotak surat ini.',
   smtp_app_password_required:
-    'Penyedia meminta sandi aplikasi untuk SMTP, bukan password biasa. Buat sandi aplikasi di pengaturan keamanan akunmu.',
+    'Penyedia email meminta sandi aplikasi untuk SMTP, bukan password biasa.',
   secret_unavailable:
-    'Password akun email yang tersimpan tidak bisa dibuka (kunci server berubah). Masukkan ulang password-nya.',
-  unknown:
-    'Tes gagal karena sebab yang tidak dikenali. Periksa lagi semua isian, lalu coba sekali lagi.',
+    'Password akun email yang tersimpan tidak bisa dibuka karena kunci server berubah.',
+  unknown: 'Tes gagal karena sebab yang tidak dikenali.',
 };
+
+/** Langkah perbaikan spesifik per kode (ditampilkan di bawah pesan). */
+export const MAIL_TEST_HINTS: Readonly<Record<MailTestCode, string | null>> = {
+  ok: null,
+  imap_host_not_found:
+    'Contoh host yang benar: mail.perusahaan.co.id. Salin dari panel email hosting-mu.',
+  imap_host_blocked: 'Pakai nama host publik dari penyedia email, bukan alamat IP lokal.',
+  imap_port_not_allowed: 'Pilih 993 dengan SSL/TLS, atau 143 dengan STARTTLS.',
+  imap_connection_refused: 'Cocokkan port dan keamanan: 993 untuk SSL/TLS, 143 untuk STARTTLS.',
+  imap_connection_timeout: 'Bisa juga coba port lain: 143 dengan STARTTLS.',
+  imap_tls_failed: 'Ganti pilihan keamanan: 993 memakai SSL/TLS, 143 memakai STARTTLS.',
+  imap_certificate_invalid:
+    'Pakai nama host resmi dari penyedia email-mu (bukan alamat IP atau alias).',
+  imap_auth_failed: 'Periksa lagi username (biasanya alamat email lengkap) dan password-nya.',
+  imap_not_enabled:
+    'Aktifkan IMAP di pengaturan email penyedia (Gmail: Setelan → Penerusan dan POP/IMAP), lalu tes ulang.',
+  imap_app_password_required:
+    'Buat sandi aplikasi di pengaturan keamanan akun email-mu, lalu tempel di isian password.',
+  imap_too_many_connections:
+    'Tutup aplikasi email lain yang memakai akun ini sebentar, lalu tes ulang.',
+  imap_quota_full: 'Kosongkan kotak surat atau tambah kuotanya di penyedia email.',
+  smtp_host_not_found:
+    'Contoh host yang benar: mail.perusahaan.co.id. Salin dari panel email hosting-mu.',
+  smtp_host_blocked: 'Pakai nama host publik dari penyedia email, bukan alamat IP lokal.',
+  smtp_port_not_allowed: 'Pilih 465 dengan SSL/TLS, atau 587 dengan STARTTLS.',
+  smtp_connection_refused: 'Cocokkan port dan keamanan: 465 untuk SSL/TLS, 587 untuk STARTTLS.',
+  smtp_connection_timeout: 'Bisa juga coba port lain: 587 dengan STARTTLS.',
+  smtp_tls_failed: 'Ganti pilihan keamanan: 465 memakai SSL/TLS, 587 memakai STARTTLS.',
+  smtp_certificate_invalid:
+    'Pakai nama host resmi dari penyedia email-mu (bukan alamat IP atau alias).',
+  smtp_auth_failed:
+    'Periksa username dan password SMTP. Kalau sama dengan server masuk, centang “Pakai username dan password yang sama dengan server masuk”.',
+  smtp_auth_unsupported:
+    'Coba pilihan keamanan lain (SSL/TLS atau STARTTLS), atau tanyakan ke penyedia email-mu.',
+  smtp_auth_disabled_m365:
+    "Minta admin Microsoft 365 mengaktifkan 'Authenticated SMTP' untuk kotak surat ini, atau tunggu 'Masuk dengan Microsoft'.",
+  smtp_app_password_required:
+    'Buat sandi aplikasi di pengaturan keamanan akun email-mu, lalu tempel di isian password SMTP.',
+  secret_unavailable: 'Masukkan ulang password akun email ini.',
+  unknown: 'Periksa lagi semua isian, lalu tes sekali lagi.',
+};
+
+export type MailTestCodeKind = 'ok' | 'auth' | 'connection' | 'other';
+
+/**
+ * Jenis kode untuk judul galat: `auth` → "Masuk ke IMAP/SMTP gagal"; `connection` → "Server … belum bisa
+ * dihubungi" (belum ada proses masuk sama sekali).
+ */
+export function mailTestCodeKind(code: MailTestCode): MailTestCodeKind {
+  if (code === 'ok' || code === 'imap_quota_full') return 'ok';
+  if (/_(auth|app_password|not_enabled)/.test(code) || code === 'secret_unavailable') return 'auth';
+  if (/_(host|port|connection|tls|certificate|too_many)/.test(code)) return 'connection';
+  return 'other';
+}
 
 export const MAIL_INCOMING_OK_MESSAGE = 'Masuk ke IMAP berhasil.';
 export const MAIL_OUTGOING_OK_MESSAGE =
@@ -532,7 +578,7 @@ export const MAIL_PROVIDER_CARDS: readonly MailProviderCard[] = [
   {
     id: 'cpanel',
     name: 'cPanel / IDCloudHost',
-    description: 'Email dari hosting (cPanel). Server biasanya mail.<domain-mu>.',
+    description: 'Email hosting dengan domain sendiri. Pengaturan server terisi otomatis.',
     available: true,
     note: null,
   },
@@ -729,6 +775,9 @@ export const updateMailAccountRequestSchema = z
     imap: mailImapInputSchema.optional(),
     smtp: mailSmtpInputSchema.optional(),
     trustedAuthServIds: mailTrustedAuthServIdsSchema.optional(),
+    /** 9B (level Kelola). */
+    sentCopyMode: z.enum(['auto', 'append', 'none']).optional(),
+    warnExternalRecipients: z.boolean().optional(),
     confirmation: identityConfirmationSchema.optional(),
   })
   .strict();
@@ -792,6 +841,16 @@ export const mailAccountSchema = z.object({
   trustedAuthServIds: z.array(z.string()).nullable(),
   syncWindowDays: mailSyncWindowDaysSchema,
   periodicSyncMinutes: z.number().int(),
+  /** 9B: salinan email terkirim (`auto` = cari dulu di Terkirim, `append`, `none`). */
+  sentCopyMode: z.enum(['auto', 'append', 'none']),
+  /** 9B: peringatan penerima di luar domain kantor saat menulis. */
+  warnExternalRecipients: z.boolean(),
+  /**
+   * 9B: peringatan akun. `system_sender_conflict` = kotak surat ini juga Email pengirim sistem
+   * (tautan reset password/undangan & kode verifikasi bisa terbaca pembaca akun) → verifikasi alamat
+   * terkunci sampai Email pengirim diganti.
+   */
+  warnings: z.array(z.enum(['system_sender_conflict', 'identity_unverified'])),
   sync: mailAccountSyncSchema,
   stats: z.object({
     messageCount: z.number().int().nonnegative(),
@@ -972,10 +1031,29 @@ export const mailSettingsSchema = z.object({
     .min(MAIL_CACHE_RETENTION_DAYS.min, 'Retensi minimal 7 hari.')
     .max(MAIL_CACHE_RETENTION_DAYS.max, 'Retensi maksimal 3.650 hari.'),
   defaultSyncWindowDays: mailSyncWindowDaysSchema,
+  /** 9B: penerima per email (Kepada + Cc + Bcc), 1–100, bawaan 50. Menaikkan = konfirmasi identitas. */
+  maxRecipientsPerEmail: z
+    .number({ error: 'Batas penerima harus angka.' })
+    .int()
+    .min(1, 'Batas penerima minimal 1.')
+    .max(100, 'Batas penerima maksimal 100.'),
+  /** 9B: total lampiran per email (MB), 1–25, bawaan 20. */
+  maxAttachmentTotalMb: z
+    .number({ error: 'Batas lampiran harus angka.' })
+    .int()
+    .min(1, 'Batas lampiran minimal 1 MB.')
+    .max(25, 'Batas lampiran maksimal 25 MB.'),
 });
 export type MailSettings = z.infer<typeof mailSettingsSchema>;
 export const mailSettingsResponseSchema = z.object({ settings: mailSettingsSchema });
-export const updateMailSettingsRequestSchema = mailSettingsSchema.strict();
+export const updateMailSettingsRequestSchema = mailSettingsSchema
+  .extend({
+    maxRecipientsPerEmail: mailSettingsSchema.shape.maxRecipientsPerEmail.optional(),
+    maxAttachmentTotalMb: mailSettingsSchema.shape.maxAttachmentTotalMb.optional(),
+    confirmation: identityConfirmationSchema.optional(),
+  })
+  .strict();
+export type UpdateMailSettingsRequest = z.infer<typeof updateMailSettingsRequestSchema>;
 
 // ── Folder (kontrak §6) ────────────────────────────────────────────────────
 
@@ -1027,6 +1105,8 @@ export const mailStreamEventSchemas = [
     folderId: z.uuid(),
     messageId: z.uuid(),
     receivedAt: isoDateTimeSchema,
+    /** 9B: kunci utas opak (HMAC) — bilah "ada email baru di utas ini" di jendela tulis. */
+    threadKey: z.string().max(64).optional(),
   }),
   z.object({
     type: z.literal('mail.message.updated'),
@@ -1063,6 +1143,12 @@ export const mailStreamEventSchemas = [
     attachmentId: z.uuid(),
   }),
   z.object({
+    type: z.literal('mail.attachment.failed'),
+    accountId: z.uuid(),
+    attachmentId: z.uuid(),
+    code: z.string().max(60),
+  }),
+  z.object({
     type: z.literal('mail.action.failed'),
     accountId: z.uuid(),
     messageIds: z.array(z.uuid()).max(100),
@@ -1071,6 +1157,46 @@ export const mailStreamEventSchemas = [
   }),
   z.object({ type: z.literal('mail.access.changed') }),
   z.object({ type: z.literal('mail.resync'), accountId: z.uuid() }),
+  // ── 9B (KONTRAK-API-EMAIL-TULIS §14): outbox/draf hanya ke pembuatnya (`userIds`) ──
+  z.object({
+    type: z.literal('mail.outbox.updated'),
+    accountId: z.uuid(),
+    outboxId: z.uuid(),
+    draftId: z.uuid().nullable(),
+    status: z.enum([
+      'pending',
+      'queued',
+      'sending',
+      'sent',
+      'failed',
+      'canceled',
+      'delivery_unknown',
+    ]),
+    holdReason: z.string().max(40).nullable(),
+    sendAfter: isoDateTimeSchema.nullable(),
+    nextAttemptAt: isoDateTimeSchema.nullable(),
+    failureReason: z.string().max(40).nullable(),
+  }),
+  z.object({
+    type: z.literal('mail.draft.updated'),
+    accountId: z.uuid(),
+    draftId: z.uuid(),
+    version: z.number().int().positive(),
+    serverCopyState: z.enum(['pending', 'synced', 'error', 'disabled']),
+  }),
+  z.object({ type: z.literal('mail.draft.deleted'), accountId: z.uuid(), draftId: z.uuid() }),
+  z.object({
+    type: z.literal('mail.identity.updated'),
+    accountId: z.uuid(),
+    identityId: z.uuid(),
+    verificationState: z.enum(['unverified', 'pending', 'verified']),
+  }),
+  z.object({
+    type: z.literal('mail.compose.presence'),
+    accountId: z.uuid(),
+    threadKey: z.string().max(64),
+    users: z.array(z.object({ id: z.uuid(), name: z.string().max(100) })).max(20),
+  }),
 ] as const;
 
 export const mailStreamEventSchema = z.discriminatedUnion('type', [...mailStreamEventSchemas]);
@@ -1166,5 +1292,13 @@ export function mailFolderDisplayName(
   const bare = stripInboxNamespace(path, delimiter);
   const segments = delimiter ? bare.split(delimiter) : [bare];
   const last = segments.at(-1) ?? bare;
-  return last.length > 0 ? last.slice(0, 200) : path.slice(0, 200);
+  // Review 9A-1 R4: nama dari server dibersihkan dari karakter kendali & pengubah arah.
+  const clean = (value: string) =>
+    value
+      // eslint-disable-next-line no-control-regex -- karakter kendali justru dibuang.
+      .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const name = clean(last) || clean(path);
+  return name.length > 0 ? Array.from(name).slice(0, 200).join('') : 'Folder';
 }

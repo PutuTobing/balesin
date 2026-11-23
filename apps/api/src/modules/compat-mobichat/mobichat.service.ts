@@ -154,6 +154,7 @@ function remoteError(error: RemoteFileError): AppError {
         message: 'media_url tidak bisa diunduh: pengalihan tidak valid atau terlalu banyak.',
       });
     case 'http':
+    case 'content_rejected':
       return new AppError('NOT_FOUND', {
         message: 'media_url tidak bisa diakses (server menjawab bukan 2xx).',
       });

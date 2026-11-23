@@ -333,3 +333,20 @@ describe('white-label berkas rilis', () => {
     expect(pemeliharaan).not.toMatch(/sudo balesin rollback/);
   });
 });
+
+describe('review 9A-2 R12 — token tampilan email tidak masuk log nginx', () => {
+  /** Isi blok `location ^~ /api/v1/mail/view/ { … }`. */
+  const viewBlock = (config: string) => {
+    const start = config.indexOf('location ^~ /api/v1/mail/view/ {');
+    if (start < 0) throw new Error('lokasi /api/v1/mail/view/ tidak ada');
+    return config.slice(start, config.indexOf('}', start));
+  };
+
+  it('gateway & contoh Mode A: access_log off + error_log hanya crit di lokasi tampilan', () => {
+    for (const config of [gateway, vmNginx]) {
+      const block = viewBlock(config);
+      expect(block).toMatch(/access_log off;/);
+      expect(block).toMatch(/error_log\s+\S+\s+crit;/);
+    }
+  });
+});

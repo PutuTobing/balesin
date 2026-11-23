@@ -23,10 +23,11 @@ const sharedEmailSpecs = /(tim-tanpa|tim-dengan|keamanan-dengan)-email\.spec\.ts
 /**
  * Spec yang mengubah keadaan seluruh organisasi (ambang broadcast, pesan otomatis & pembagian chat,
  * merek di halaman masuk, akses per channel & channel Email lain dijeda sementara karena kotak masuk
- * IMAP tiruan dipakai bersama) dan peka rem darurat — dijalankan setelah proyek paralel, satu per
+ * IMAP tiruan dipakai bersama; menu Email memakai satu kotak surat tiruan dan Email pengirim yang
+ * diatur `email-pengirim.spec.ts`) dan peka rem darurat — dijalankan setelah proyek paralel, satu per
  * satu.
  */
-const serialSpecs = /(broadcast|jam-kerja|merek|email-cc)\.spec\.ts$/;
+const serialSpecs = /(broadcast|jam-kerja|merek|email-cc|email-menu)\.spec\.ts$/;
 const desktop = { ...devices['Desktop Chrome'], viewport: VIEWPORTS.desktop };
 const hp = {
   ...devices['Desktop Chrome'],

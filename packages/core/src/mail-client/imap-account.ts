@@ -1,5 +1,5 @@
 import type { MailIncomingTestCode } from '@balesin/shared';
-import type { ImapFlow } from 'imapflow';
+import type { FetchMessageObject, ImapFlow } from 'imapflow';
 
 import {
   classifyImapError,
@@ -10,7 +10,6 @@ import {
   type ImapPolicy,
 } from '../channels/email-imap';
 import type { Secret } from '../secret';
-import { withTimeout } from '../timeout';
 import { MAIL_SYNC_HEADER_FIELDS } from './headers';
 
 /**
@@ -103,6 +102,14 @@ export interface MailFlagUpdate {
 
 export type MailIdleChange = 'exists' | 'expunge' | 'flags';
 
+export interface MailFetchedBytes {
+  bytes: Buffer;
+  truncated: boolean;
+}
+
+/** Potongan per FETCH (di bawah batas literal sambungan sinkron 4 MB). */
+export const MAIL_FETCH_CHUNK_BYTES = 3 * 1024 * 1024;
+
 export interface MailImapSession {
   readonly capabilities: MailServerCapabilities;
   listFolders(): Promise<MailServerFolder[]>;
@@ -129,10 +136,168 @@ export interface MailImapSession {
     onChange: (change: MailIdleChange) => void;
   }): Promise<void>;
   close(): Promise<void>;
+  /**
+   * Review 9A-1 S2: putus SEKETIKA (soket ditutup, tanpa LOGOUT) — dipakai saat tenggat habis atau
+   * anggaran byte terlewati. Tiruan di memori boleh tidak mengisinya (pemanggil memakai `close`).
+   */
+  abort?(): void;
+}
+
+/**
+ * Bagian 2 (isi & aksi dua arah). Terpisah dari `MailImapSession` supaya tiruan sinkron di memori
+ * tidak wajib mengisinya; adaptor imapflow mengisi keduanya (`hasMailImapActions`).
+ */
+export interface MailImapActions {
+  /** SELECT baca-tulis (untuk aksi). `select` biasa = EXAMINE (hanya baca). */
+  openWritable(path: string): Promise<MailSelectedFolder>;
+  /**
+   * Sumber RFC 822 satu UID (folder terpilih), diambil per potongan ≤ 4 MB sampai `maxBytes`.
+   * `null` = UID tidak ada lagi. `truncated` = lebih panjang dari `maxBytes`.
+   */
+  fetchSource(uid: number, maxBytes: number): Promise<MailFetchedBytes | null>;
+  /** Satu bagian BODYSTRUCTURE (masih ber-transfer-encoding), per potongan sampai `maxBytes`. */
+  fetchPart(uid: number, part: string, maxBytes: number): Promise<MailFetchedBytes | null>;
+  /**
+   * Review 9A-2 S7: seperti `fetchPart` tetapi setiap potongan (≤ 3 MB) DIALIRKAN ke `sink` (mis. ke
+   * disk) tanpa ditampung — memori job lampiran tetap kecil. `null` = UID/bagian tidak ada.
+   */
+  fetchPartTo(
+    uid: number,
+    part: string,
+    maxBytes: number,
+    sink: (chunk: Buffer) => Promise<void>,
+  ): Promise<{ sizeBytes: number; truncated: boolean } | null>;
+  /** `UID STORE ±FLAGS.SILENT`. `false` = server menolak. */
+  storeFlags(
+    uids: readonly number[],
+    add: readonly string[],
+    remove: readonly string[],
+  ): Promise<boolean>;
+  /**
+   * Pindah ke `targetPath`: `UID MOVE` (RFC 6851) bila ada; tanpa MOVE: `UID COPY` + `\Deleted` +
+   * `UID EXPUNGE` (UIDPLUS); tanpa UIDPLUS: `UID COPY` + `\Deleted` saja (TIDAK PERNAH `EXPUNGE`
+   * biasa yang bisa menghapus email lain bertanda `\Deleted`). `null` = gagal; `uidMap` dari
+   * `COPYUID` bila server memberinya.
+   */
+  move(
+    uids: readonly number[],
+    targetPath: string,
+  ): Promise<{ uidMap: Map<number, number>; uidValidity: number | null } | null>;
+  /** Hapus permanen: `\Deleted` + `UID EXPUNGE` (UIDPLUS); tanpa UIDPLUS hanya `\Deleted`. */
+  expunge(uids: readonly number[]): Promise<boolean>;
+  /** `CREATE` folder (path server lengkap). */
+  createFolder(path: string): Promise<boolean>;
+}
+
+/**
+ * Tahap 9B (KONTRAK-API-EMAIL-TULIS §7, §13): salinan draf/Terkirim dan pencarian `Message-ID`.
+ * Terpisah supaya tiruan sinkron di memori tidak wajib mengisinya.
+ */
+export interface MailImapCompose {
+  /** `APPEND` ke `path` dengan bendera. `uid` dari `APPENDUID` (UIDPLUS), atau `null`. */
+  append(
+    path: string,
+    raw: Buffer,
+    flags: readonly string[],
+  ): Promise<{ uid: number | null; uidValidity: number | null } | null>;
+  /** `UID SEARCH [SINCE] HEADER Message-ID <id>` di folder terpilih (≤ 50 UID). */
+  searchMessageId(messageId: string, since: Date | null): Promise<number[]>;
+}
+
+export function hasMailImapCompose(
+  session: MailImapSession,
+): session is MailImapSession & MailImapActions & MailImapCompose {
+  return typeof (session as Partial<MailImapCompose>).append === 'function';
+}
+
+export function hasMailImapActions(
+  session: MailImapSession,
+): session is MailImapSession & MailImapActions {
+  return typeof (session as Partial<MailImapActions>).fetchSource === 'function';
 }
 
 /** Batas literal satu respons sinkron header (bukan isi). */
 const SYNC_LITERAL_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Review 9A-1 S2 — server IMAP bisa dikendalikan penyerang (akun pribadi). Batas per SAMBUNGAN:
+ * byte masuk total (lewat → sambungan diputus), tenggat per perintah (aliran tanpa akhir tidak memicu
+ * `socketTimeout`), jumlah folder & hasil pencarian.
+ */
+export const MAIL_SESSION_MAX_BYTES = 96 * 1024 * 1024;
+export const MAIL_TEST_SESSION_MAX_BYTES = 8 * 1024 * 1024;
+export const MAIL_COMMAND_TIMEOUT_MS = 60_000;
+export const MAIL_MAX_FOLDERS = 1_000;
+export const MAIL_MAX_SEARCH_RESULTS = 100_000;
+/**
+ * Byte masuk per PERINTAH (di samping anggaran sambungan): imapflow mengurai setiap respons menjadi
+ * objek token yang jauh lebih besar dari byte mentahnya, dan `LIST`/`SEARCH` menimbun seluruh hasil
+ * sebelum selesai — jadi satu perintah dibatasi jauh di bawah anggaran sambungan. Lewat → putus.
+ */
+export const MAIL_COMMAND_MAX_BYTES = 16 * 1024 * 1024;
+/** `LIST`: 1.000 folder × ± 200 byte jauh di bawah ini. */
+export const MAIL_LIST_MAX_BYTES = 4 * 1024 * 1024;
+/** `UID SEARCH`: 500.000 UID × ± 8 byte. */
+export const MAIL_SEARCH_MAX_BYTES = 8 * 1024 * 1024;
+
+export interface MailSessionLimits {
+  /** Byte masuk maksimum untuk seluruh sambungan. */
+  maxBytes?: number;
+  /** Tenggat satu perintah. */
+  commandMs?: number;
+  /** Dibatalkan → sambungan diputus (termasuk selama fase connect). */
+  signal?: AbortSignal;
+}
+
+/** Putus sesi seketika (`abort`) atau, untuk tiruan, `close`. */
+export function abortMailSession(session: MailImapSession): void {
+  if (session.abort) session.abort();
+  else session.close().catch(() => undefined);
+}
+
+/**
+ * Jalankan `run` dengan sesi dari `open` dalam tenggat TOTAL `ms`: lewat tenggat → sesi diputus
+ * (bukan sekadar janji ditolak) dan `ImapFailure('imap_connection_timeout')`. Sesi yang baru jadi
+ * setelah tenggat langsung diputus. Selesai normal → `close()` (LOGOUT).
+ */
+export async function withMailSession<T, S extends MailImapSession = MailImapSession>(
+  open: (signal: AbortSignal) => Promise<S>,
+  ms: number,
+  run: (session: S) => Promise<T>,
+): Promise<T> {
+  const state: { session: S | null; expired: boolean } = { session: null, expired: false };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const controller = new AbortController();
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      state.expired = true;
+      controller.abort();
+      if (state.session) abortMailSession(state.session);
+      reject(new ImapFailure('imap_connection_timeout', 'TOTAL_TIMEOUT'));
+    }, ms);
+  });
+  const work = (async () => {
+    const opened = await open(controller.signal);
+    if (state.expired) {
+      abortMailSession(opened);
+      throw new ImapFailure('imap_connection_timeout', 'TOTAL_TIMEOUT');
+    }
+    state.session = opened;
+    return run(opened);
+  })();
+  // Janji yang kalah tidak boleh menjadi "unhandled rejection".
+  work.catch(() => undefined);
+  deadline.catch(() => undefined);
+  try {
+    return await Promise.race([work, deadline]);
+  } finally {
+    clearTimeout(timer);
+    if (state.session) {
+      if (state.expired) abortMailSession(state.session);
+      else await state.session.close().catch(() => undefined);
+    }
+  }
+}
 export const MAIL_SNIPPET_BYTES = 4096;
 
 /** Sebab khusus dari teks balasan → kode tes (kontrak §12.2). Teks tidak pernah disimpan. */
@@ -196,6 +361,47 @@ function structureOf(node: RawStructure | undefined, depth = 0): MailBodyStructu
   };
 }
 
+export const MAIL_BODYSTRUCTURE_MAX_BYTES = 64 * 1024;
+
+/**
+ * Review 9A-1 S3: struktur MIME yang DISIMPAN per email ≤ 64 KB. Struktur raksasa diringkas jadi
+ * daftar bagian daun (nomor bagian tetap, jadi isi/lampiran masih bisa diambil per bagian), dipangkas
+ * sampai muat; tidak muat sama sekali → `null`.
+ */
+export function boundMailBodyStructure(
+  root: MailBodyStructureNode | null,
+  maxBytes = MAIL_BODYSTRUCTURE_MAX_BYTES,
+): MailBodyStructureNode | null {
+  if (!root) return null;
+  const size = (node: MailBodyStructureNode) => Buffer.byteLength(JSON.stringify(node));
+  if (size(root) <= maxBytes) return root;
+  const leaves: MailBodyStructureNode[] = [];
+  const visit = (node: MailBodyStructureNode) => {
+    if (leaves.length >= 500) return;
+    if (node.childNodes.length === 0) {
+      leaves.push({
+        ...node,
+        filename: node.filename ? node.filename.slice(0, 120) : null,
+        id: node.id ? node.id.slice(0, 200) : null,
+      });
+      return;
+    }
+    for (const child of node.childNodes) visit(child);
+  };
+  visit(root);
+  for (let count = Math.min(leaves.length, 200); count >= 1; count = Math.floor(count / 2)) {
+    const compact: MailBodyStructureNode = {
+      ...root,
+      type: 'multipart/mixed',
+      filename: null,
+      id: null,
+      childNodes: leaves.slice(0, count),
+    };
+    if (size(compact) <= maxBytes) return compact;
+  }
+  return null;
+}
+
 /** Bagian teks pertama (`text/plain` didahulukan, lalu `text/html`) yang bukan lampiran. */
 export function firstTextPart(
   root: MailBodyStructureNode | null,
@@ -241,18 +447,81 @@ function uidSet(uids: readonly number[]): string {
   return [...uids].sort((a, b) => a - b).join(',');
 }
 
-class ImapFlowSession implements MailImapSession {
+/** Penghitung byte masuk satu sambungan (anggaran sambungan + batas per perintah). */
+interface ByteMeter {
+  received: number;
+  /** Batas `received` selama perintah berjalan (lihat `MAIL_COMMAND_MAX_BYTES`). */
+  commandLimit: number;
+  overBudget: boolean;
+  onExceeded: () => void;
+}
+
+class ImapFlowSession implements MailImapSession, MailImapActions, MailImapCompose {
   readonly capabilities: MailServerCapabilities;
 
-  constructor(private readonly client: ImapFlow) {
+  private aborted = false;
+  private readonly commandMs: number;
+
+  constructor(
+    private readonly client: ImapFlow,
+    private readonly meter: ByteMeter,
+    limits: MailSessionLimits = {},
+  ) {
     this.capabilities = capabilitiesOf(client);
+    this.commandMs = limits.commandMs ?? MAIL_COMMAND_TIMEOUT_MS;
+    limits.signal?.addEventListener('abort', () => this.abort(), { once: true });
+    meter.onExceeded = () => this.abort();
+    if (meter.overBudget) this.abort();
+  }
+
+  private get overBudget(): boolean {
+    return this.meter.overBudget;
+  }
+
+  abort(): void {
+    if (this.aborted) return;
+    this.aborted = true;
+    try {
+      this.client.close();
+    } catch {
+      // sudah tertutup
+    }
+    // `close()` imapflow bisa hanya menutup separuh; soket dihancurkan supaya aliran berhenti.
+    (this.client as unknown as { socket?: { destroy(): void } }).socket?.destroy();
+  }
+
+  /**
+   * Satu perintah dengan tenggat dan batas byte; lewat → sambungan diputus. Dipanggil di ekspresi
+   * yang sama dengan perintahnya, jadi batas sudah terpasang sebelum byte jawaban pertama tiba.
+   */
+  private async guard<T>(promise: Promise<T>, maxBytes = MAIL_COMMAND_MAX_BYTES): Promise<T> {
+    promise.catch(() => undefined);
+    if (this.aborted) throw new ImapFailure('imap_connection_timeout', 'SESSION_ABORTED');
+    this.meter.commandLimit = this.meter.received + maxBytes;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        this.abort();
+        reject(new ImapFailure('imap_connection_timeout', 'COMMAND_TIMEOUT'));
+      }, this.commandMs);
+    });
+    deadline.catch(() => undefined);
+    try {
+      return await Promise.race([promise, deadline]);
+    } catch (error) {
+      if (this.overBudget) throw new ImapFailure('unknown', 'BYTE_BUDGET');
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      this.meter.commandLimit = Number.POSITIVE_INFINITY;
+    }
   }
 
   async listFolders(): Promise<MailServerFolder[]> {
-    const entries = await this.client.list({
-      statusQuery: { messages: true, unseen: true, uidNext: true, uidValidity: true },
-    });
-    return entries.slice(0, 1_000).map((entry) => {
+    // Tanpa `statusQuery` (imapflow menjalankan STATUS untuk SETIAP folder sebelum selesai): STATUS
+    // hanya untuk folder yang disinkron. Banjir LIST dibatasi `MAIL_LIST_MAX_BYTES`.
+    const entries = await this.guard(this.client.list(), MAIL_LIST_MAX_BYTES);
+    return entries.slice(0, MAIL_MAX_FOLDERS).map((entry) => {
       const flags = [...entry.flags].map(String);
       const status = entry.status;
       return {
@@ -280,7 +549,7 @@ class ImapFlowSession implements MailImapSession {
   async quota(): Promise<{ usedBytes: number; limitBytes: number } | null> {
     if (!this.capabilities.quota) return null;
     try {
-      const result = await this.client.getQuota('INBOX');
+      const result = await this.guard(this.client.getQuota('INBOX'));
       const storage = result && typeof result === 'object' ? result.storage : undefined;
       if (!storage || typeof storage.limit !== 'number' || storage.limit <= 0) return null;
       return { usedBytes: storage.usage ?? 0, limitBytes: storage.limit };
@@ -290,13 +559,15 @@ class ImapFlowSession implements MailImapSession {
   }
 
   async status(path: string): Promise<MailServerFolderStatus> {
-    const result = await this.client.status(path, {
-      messages: true,
-      unseen: true,
-      uidNext: true,
-      uidValidity: true,
-      ...(this.capabilities.condstore ? { highestModseq: true } : {}),
-    });
+    const result = await this.guard(
+      this.client.status(path, {
+        messages: true,
+        unseen: true,
+        uidNext: true,
+        uidValidity: true,
+        ...(this.capabilities.condstore ? { highestModseq: true } : {}),
+      }),
+    );
     if (!result) throw new ImapFailure('unknown', 'STATUS_FAILED');
     return {
       messages: result.messages ?? 0,
@@ -308,7 +579,7 @@ class ImapFlowSession implements MailImapSession {
   }
 
   async select(path: string): Promise<MailSelectedFolder> {
-    const mailbox = await this.client.mailboxOpen(path, { readOnly: true });
+    const mailbox = await this.guard(this.client.mailboxOpen(path, { readOnly: true }));
     return {
       uidValidity: Number(mailbox.uidValidity),
       uidNext: mailbox.uidNext,
@@ -318,13 +589,47 @@ class ImapFlowSession implements MailImapSession {
   }
 
   async searchUids(since: Date | null): Promise<number[]> {
-    const result = await this.client.search(since ? { since } : { all: true }, { uid: true });
-    return Array.isArray(result) ? result.filter((uid) => Number.isInteger(uid) && uid > 0) : [];
+    const result = await this.guard(
+      this.client.search(since ? { since } : { all: true }, { uid: true }),
+      MAIL_SEARCH_MAX_BYTES,
+    );
+    if (!Array.isArray(result)) return [];
+    const uids = result.filter((uid) => Number.isInteger(uid) && uid > 0);
+    // Hasil raksasa: hanya UID TERBARU yang dipakai (sinkron dari yang terbaru).
+    return uids.length > MAIL_MAX_SEARCH_RESULTS
+      ? uids.sort((a, b) => a - b).slice(-MAIL_MAX_SEARCH_RESULTS)
+      : uids;
+  }
+
+  /**
+   * `UID FETCH` lewat iterator (bukan `fetchAll` yang menimbun semuanya dulu): UID yang tidak
+   * diminta atau jumlah respons melebihi permintaan → sambungan diputus (review 9A-1 S2).
+   */
+  private async fetchBounded<T extends { uid: number }>(
+    range: string,
+    query: Record<string, unknown>,
+    options: Record<string, unknown>,
+    wanted: ReadonlySet<number> | null,
+    max: number,
+  ): Promise<T[]> {
+    const rows: T[] = [];
+    const collect = async () => {
+      for await (const row of this.client.fetch(range, query, options) as AsyncIterable<T>) {
+        if ((wanted && !wanted.has(row.uid)) || rows.length >= max) {
+          this.abort();
+          throw new ImapFailure('unknown', 'UNEXPECTED_FETCH');
+        }
+        rows.push(row);
+      }
+    };
+    await this.guard(collect());
+    return rows;
   }
 
   async fetchHeaders(uids: readonly number[]): Promise<MailServerMessage[]> {
     if (uids.length === 0) return [];
-    const base = await this.client.fetchAll(
+    const wanted = new Set(uids);
+    const base = await this.fetchBounded<FetchMessageObject>(
       uidSet(uids),
       {
         uid: true,
@@ -335,8 +640,9 @@ class ImapFlowSession implements MailImapSession {
         headers: [...MAIL_SYNC_HEADER_FIELDS],
       },
       { uid: true },
+      wanted,
+      wanted.size,
     );
-    const wanted = new Set(uids);
     const messages: MailServerMessage[] = [];
     // Cuplikan: satu FETCH per bagian teks yang sama (biasanya "1"), dikelompokkan.
     const byPart = new Map<string, number[]>();
@@ -358,10 +664,12 @@ class ImapFlowSession implements MailImapSession {
     }
     const byUid = new Map(messages.map((message) => [message.uid, message]));
     for (const [part, partUids] of byPart) {
-      const previews = await this.client.fetchAll(
+      const previews = await this.fetchBounded<FetchMessageObject>(
         uidSet(partUids),
         { uid: true, bodyParts: [{ key: part, start: 0, maxLength: MAIL_SNIPPET_BYTES }] },
         { uid: true },
+        new Set(partUids),
+        partUids.length,
       );
       for (const preview of previews) {
         const message = byUid.get(preview.uid);
@@ -389,12 +697,203 @@ class ImapFlowSession implements MailImapSession {
     const range = uids === 'all' ? '1:*' : uidSet(uids);
     const options: { uid: true; changedSince?: bigint } = { uid: true };
     if (changedSince && this.capabilities.condstore) options.changedSince = BigInt(changedSince);
-    const rows = await this.client.fetchAll(range, { uid: true, flags: true }, options);
+    const rows = await this.fetchBounded<FetchMessageObject>(
+      range,
+      { uid: true, flags: true },
+      options,
+      uids === 'all' ? null : new Set(uids),
+      uids === 'all' ? MAIL_MAX_SEARCH_RESULTS : uids.length,
+    );
     return rows.map((row) => ({
       uid: row.uid,
       flags: [...(row.flags ?? new Set<string>())].map(String),
       modseq: modseqOf(row.modseq),
     }));
+  }
+
+  async openWritable(path: string): Promise<MailSelectedFolder> {
+    const mailbox = await this.guard(this.client.mailboxOpen(path, { readOnly: false }));
+    return {
+      uidValidity: Number(mailbox.uidValidity),
+      uidNext: mailbox.uidNext,
+      exists: mailbox.exists,
+      highestModseq: modseqOf(mailbox.highestModseq),
+    };
+  }
+
+  private async fetchChunks(
+    uid: number,
+    maxBytes: number,
+    query: (start: number, length: number) => Record<string, unknown>,
+    pick: (row: { source?: Buffer; bodyParts?: Map<string, Buffer> }) => Buffer | undefined,
+    sink?: (chunk: Buffer) => Promise<void>,
+  ): Promise<(MailFetchedBytes & { sizeBytes: number }) | null> {
+    // Dengan `sink`: potongan dialirkan (tidak ditampung) dan `bytes` kosong.
+    const chunks: Buffer[] = [];
+    let total = 0;
+    const result = (truncated: boolean) => ({
+      bytes: sink ? Buffer.alloc(0) : Buffer.concat(chunks).subarray(0, maxBytes),
+      truncated,
+      sizeBytes: Math.min(total, maxBytes),
+    });
+    for (;;) {
+      const length = Math.min(MAIL_FETCH_CHUNK_BYTES, maxBytes + 1 - total);
+      const row = await this.guard(
+        this.client.fetchOne(String(uid), query(total, length), { uid: true }),
+      );
+      const chunk = row ? pick(row) : undefined;
+      if (!chunk) return total === 0 ? null : result(false);
+      total += chunk.length;
+      if (total > maxBytes) {
+        if (!sink) chunks.push(chunk);
+        return result(true);
+      }
+      if (sink) await sink(chunk);
+      else chunks.push(chunk);
+      if (chunk.length < length) return result(false);
+    }
+  }
+
+  async fetchSource(uid: number, maxBytes: number): Promise<MailFetchedBytes | null> {
+    return this.fetchChunks(
+      uid,
+      maxBytes,
+      (start, length) => ({ uid: true, source: { start, maxLength: length } }),
+      (row) => row.source,
+    );
+  }
+
+  async fetchPart(uid: number, part: string, maxBytes: number): Promise<MailFetchedBytes | null> {
+    if (!/^\d+(\.\d+){0,20}$/.test(part)) return null;
+    return this.fetchChunks(
+      uid,
+      maxBytes,
+      (start, length) => ({ uid: true, bodyParts: [{ key: part, start, maxLength: length }] }),
+      (row) => row.bodyParts?.get(part),
+    );
+  }
+
+  async fetchPartTo(
+    uid: number,
+    part: string,
+    maxBytes: number,
+    sink: (chunk: Buffer) => Promise<void>,
+  ): Promise<{ sizeBytes: number; truncated: boolean } | null> {
+    if (!/^\d+(\.\d+){0,20}$/.test(part)) return null;
+    const fetched = await this.fetchChunks(
+      uid,
+      maxBytes,
+      (start, length) => ({ uid: true, bodyParts: [{ key: part, start, maxLength: length }] }),
+      (row) => row.bodyParts?.get(part),
+      sink,
+    );
+    return fetched ? { sizeBytes: fetched.sizeBytes, truncated: fetched.truncated } : null;
+  }
+
+  async storeFlags(
+    uids: readonly number[],
+    add: readonly string[],
+    remove: readonly string[],
+  ): Promise<boolean> {
+    if (uids.length === 0) return true;
+    const range = uidSet(uids);
+    if (
+      add.length > 0 &&
+      !(await this.guard(this.client.messageFlagsAdd(range, [...add], { uid: true })))
+    ) {
+      return false;
+    }
+    if (
+      remove.length > 0 &&
+      !(await this.guard(this.client.messageFlagsRemove(range, [...remove], { uid: true })))
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  async move(
+    uids: readonly number[],
+    targetPath: string,
+  ): Promise<{ uidMap: Map<number, number>; uidValidity: number | null } | null> {
+    if (uids.length === 0) return { uidMap: new Map(), uidValidity: null };
+    const range = uidSet(uids);
+    type CopyResult =
+      { uidMap?: Map<number, number>; uidValidity?: bigint | number } | false | undefined;
+    const mapOf = (result: CopyResult) => ({
+      uidMap: result && result.uidMap instanceof Map ? result.uidMap : new Map<number, number>(),
+      uidValidity: result && result.uidValidity !== undefined ? Number(result.uidValidity) : null,
+    });
+    if (this.capabilities.move) {
+      const result = (await this.guard(
+        this.client.messageMove(range, targetPath, { uid: true }),
+      )) as CopyResult;
+      return result ? mapOf(result) : null;
+    }
+    const copied = (await this.guard(
+      this.client.messageCopy(range, targetPath, { uid: true }),
+    )) as CopyResult;
+    if (!copied) return null;
+    if (!(await this.guard(this.client.messageFlagsAdd(range, ['\\Deleted'], { uid: true }))))
+      return null;
+    if (this.capabilities.uidplus) {
+      // UIDPLUS: imapflow memakai `UID EXPUNGE <uid>` (hanya UID ini).
+      await this.guard(this.client.messageDelete(range, { uid: true }));
+    }
+    return mapOf(copied);
+  }
+
+  async expunge(uids: readonly number[]): Promise<boolean> {
+    if (uids.length === 0) return true;
+    const range = uidSet(uids);
+    if (!this.capabilities.uidplus) {
+      // Tanpa UIDPLUS `EXPUNGE` biasa bisa menghapus email lain bertanda \Deleted → hanya ditandai.
+      return Boolean(
+        await this.guard(this.client.messageFlagsAdd(range, ['\\Deleted'], { uid: true })),
+      );
+    }
+    return Boolean(await this.guard(this.client.messageDelete(range, { uid: true })));
+  }
+
+  async append(
+    path: string,
+    raw: Buffer,
+    flags: readonly string[],
+  ): Promise<{ uid: number | null; uidValidity: number | null } | null> {
+    try {
+      const result = (await this.guard(this.client.append(path, raw, [...flags]))) as
+        { uid?: number; uidValidity?: bigint | number } | false | undefined;
+      if (!result) return null;
+      return {
+        uid: typeof result.uid === 'number' && result.uid > 0 ? result.uid : null,
+        uidValidity: result.uidValidity !== undefined ? Number(result.uidValidity) : null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async searchMessageId(messageId: string, since: Date | null): Promise<number[]> {
+    // `Message-ID` dari Balesin sendiri (bukan masukan luar); tetap dibatasi bentuknya.
+    if (!/^[A-Za-z0-9._@+=-]{3,200}$/.test(messageId)) return [];
+    const result = await this.guard(
+      this.client.search(
+        { header: { 'message-id': `<${messageId}>` }, ...(since ? { since } : {}) },
+        { uid: true },
+      ),
+      MAIL_SEARCH_MAX_BYTES,
+    );
+    if (!Array.isArray(result)) return [];
+    return result.filter((uid) => Number.isInteger(uid) && uid > 0).slice(0, 50);
+  }
+
+  async createFolder(path: string): Promise<boolean> {
+    try {
+      const result = await this.guard(this.client.mailboxCreate(path));
+      return Boolean(result);
+    } catch {
+      return false;
+    }
   }
 
   async idle(options: {
@@ -433,19 +932,56 @@ class ImapFlowSession implements MailImapSession {
 export async function openMailImapSession(
   config: MailImapConfig,
   policy: ImapPolicy,
-): Promise<MailImapSession> {
-  const client = await openImapClient(
-    { ...config },
-    { ...policy, timeouts: { ...DEFAULT_IMAP_TIMEOUTS, ...policy.timeouts } },
-    { maxLiteralBytes: SYNC_LITERAL_BYTES },
-  );
-  return new ImapFlowSession(client);
+  limits: MailSessionLimits = {},
+): Promise<MailImapSession & MailImapActions> {
+  const maxBytes = limits.maxBytes ?? MAIL_SESSION_MAX_BYTES;
+  // Anggaran byte berlaku SEJAK soket dibuat: server jahat bisa membanjiri sapaan/login atau perintah
+  // awal imapflow (`LIST "" ""`, NAMESPACE) sebelum sesi jadi.
+  const connecting = new AbortController();
+  const meter: ByteMeter = {
+    received: 0,
+    commandLimit: MAIL_LIST_MAX_BYTES,
+    overBudget: false,
+    onExceeded: () => connecting.abort(),
+  };
+  const forward = () => connecting.abort();
+  if (limits.signal?.aborted) connecting.abort();
+  limits.signal?.addEventListener('abort', forward, { once: true });
+  let client: ImapFlow;
+  try {
+    client = await openImapClient(
+      { ...config },
+      { ...policy, timeouts: { ...DEFAULT_IMAP_TIMEOUTS, ...policy.timeouts } },
+      {
+        maxLiteralBytes: SYNC_LITERAL_BYTES,
+        signal: connecting.signal,
+        onBytes: (bytes) => {
+          meter.received += bytes;
+          if (
+            !meter.overBudget &&
+            (meter.received > maxBytes || meter.received > meter.commandLimit)
+          ) {
+            meter.overBudget = true;
+            meter.onExceeded();
+          }
+        },
+      },
+    );
+  } catch (error) {
+    if (meter.overBudget) throw new ImapFailure('unknown', 'BYTE_BUDGET');
+    throw error;
+  } finally {
+    limits.signal?.removeEventListener('abort', forward);
+  }
+  meter.commandLimit = Number.POSITIVE_INFINITY;
+  return new ImapFlowSession(client, meter, limits);
 }
 
 /** Pembuka sesi (bisa diganti di tes). */
 export type MailImapConnector = (
   config: MailImapConfig,
   policy: ImapPolicy,
+  limits?: MailSessionLimits,
 ) => Promise<MailImapSession>;
 
 export const defaultMailImapConnector: MailImapConnector = openMailImapSession;
@@ -492,46 +1028,50 @@ export async function testMailIncoming(
 ): Promise<MailIncomingTestOutcome> {
   const started = Date.now();
   const timeouts = { ...DEFAULT_IMAP_TIMEOUTS, ...policy.timeouts };
+  const totalMs = Math.min(timeouts.totalMs, 30_000);
   try {
-    const details = await withTimeout(
-      (async () => {
-        const session = await (options.connector ?? defaultMailImapConnector)(config, policy);
-        try {
-          const folders = await session.listFolders();
-          const inbox = folders.find((folder) => folder.path.toUpperCase() === 'INBOX');
-          const roles = new Set<string>();
-          for (const folder of folders) {
-            const role = options.roleOf(folder);
-            if (role && role !== 'inbox' && role !== 'all' && role !== 'flagged') roles.add(role);
-          }
-          const quota = await session.quota();
-          let estimate: number | null = null;
-          if (inbox) {
-            await session.select(inbox.path);
-            const since =
-              options.syncWindowDays === null
-                ? null
-                : new Date(
-                    (options.now ?? (() => new Date()))().getTime() -
-                      options.syncWindowDays * 24 * 60 * 60 * 1000,
-                  );
-            estimate = (await session.searchUids(since)).length;
-          }
-          return {
-            folderCount: folders.length,
-            inboxTotal: inbox?.status?.messages ?? 0,
-            specialFolders: [...roles],
-            idle: session.capabilities.idle,
-            quota,
-            estimatedInitialSync: estimate,
-            capabilities: session.capabilities,
-          } satisfies MailIncomingTestDetails;
-        } finally {
-          await session.close();
+    // Review 9A-1 S2: tenggat yang MEMUTUS sambungan + anggaran byte kecil untuk tes.
+    const details = await withMailSession(
+      (signal) =>
+        (options.connector ?? defaultMailImapConnector)(config, policy, {
+          maxBytes: MAIL_TEST_SESSION_MAX_BYTES,
+          commandMs: totalMs,
+          signal,
+        }),
+      totalMs,
+      async (session) => {
+        const folders = await session.listFolders();
+        const inbox = folders.find((folder) => folder.path.toUpperCase() === 'INBOX');
+        const roles = new Set<string>();
+        for (const folder of folders) {
+          const role = options.roleOf(folder);
+          if (role && role !== 'inbox' && role !== 'all' && role !== 'flagged') roles.add(role);
         }
-      })(),
-      Math.min(timeouts.totalMs, 30_000),
-      'Tes IMAP akun email',
+        const quota = await session.quota();
+        let estimate: number | null = null;
+        let inboxTotal = 0;
+        if (inbox) {
+          inboxTotal = inbox.status?.messages ?? (await session.status(inbox.path)).messages;
+          await session.select(inbox.path);
+          const since =
+            options.syncWindowDays === null
+              ? null
+              : new Date(
+                  (options.now ?? (() => new Date()))().getTime() -
+                    options.syncWindowDays * 24 * 60 * 60 * 1000,
+                );
+          estimate = (await session.searchUids(since)).length;
+        }
+        return {
+          folderCount: folders.length,
+          inboxTotal,
+          specialFolders: [...roles],
+          idle: session.capabilities.idle,
+          quota,
+          estimatedInitialSync: estimate,
+          capabilities: session.capabilities,
+        } satisfies MailIncomingTestDetails;
+      },
     );
     const full =
       details.quota !== null &&

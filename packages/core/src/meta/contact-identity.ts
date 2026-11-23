@@ -86,7 +86,12 @@ export function cleanFileName(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null;
   const visible = value.replace(INVISIBLE_REMOVE, '');
   const base = visible.split(/[\\/]/).at(-1) ?? '';
-  const cleaned = base.replace(/\s+/gu, ' ').trim();
+  // Review 9A-2 R7: titik/spasi di akhir dibuang (Windows membuangnya saat menyimpan, jadi
+  // `tagihan.pdf.js.` sebenarnya `tagihan.pdf.js`) — nama tampilan = nama yang akan tersimpan.
+  const cleaned = base
+    .replace(/\s+/gu, ' ')
+    .replace(/[.\s]+$/u, '')
+    .trim();
   if (cleaned.length === 0 || cleaned === '.' || cleaned === '..') return null;
   const codePoints = Array.from(cleaned);
   return codePoints.length > 255 ? codePoints.slice(0, 255).join('').trimEnd() : cleaned;

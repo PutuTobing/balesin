@@ -101,6 +101,7 @@ const SECURITY_EVENT_CONDITIONS: Readonly<Record<SecurityEventKind, SQL>> = {
   // Fase 9: hanya akun BERSAMA (akun pribadi milik pemiliknya sendiri).
   mail_account_changed: sql`(${auditLogs.action} in (${AUDIT_ACTIONS.mailAccountCreated}, ${AUDIT_ACTIONS.mailAccountCredentialsUpdated}, ${AUDIT_ACTIONS.mailAccountDeleted}) and ${auditLogs.metadata} ->> 'kind' = 'shared')`,
   mail_access_changed: sql`${auditLogs.action} = ${AUDIT_ACTIONS.mailAccessUpdated}`,
+  mail_identity_added: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.mailIdentityCreated} and ${auditLogs.metadata} ->> 'kind' = 'shared')`,
   bot_enabled: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.channelBotUpdated} and ${auditLogs.metadata} ->> 'enabled' = 'true' and ${auditLogs.metadata} ->> 'previousEnabled' = 'false' and ${auditLogs.metadata} ->> 'actorRole' <> 'owner')`,
   // Satu baris audit = satu jenis (`kindOf`): bila bersamaan dengan menyalakan bot, tampil `bot_enabled`.
   bot_verified_sender_disabled: sql`(${auditLogs.action} = ${AUDIT_ACTIONS.channelBotUpdated} and ${auditLogs.metadata} ->> 'requireVerifiedSender' = 'false' and ${auditLogs.metadata} ->> 'previousRequireVerifiedSender' = 'true' and ${auditLogs.metadata} ->> 'actorRole' <> 'owner' and not (${auditLogs.metadata} ->> 'enabled' = 'true' and ${auditLogs.metadata} ->> 'previousEnabled' = 'false'))`,
@@ -165,6 +166,10 @@ const WARNING_WHEN: Partial<
       metadata.loosened === true &&
       typeof metadata.actorRole === 'string' &&
       metadata.actorRole !== 'owner',
+  },
+  mail_identity_added: {
+    sql: sql`(${auditLogs.metadata} ->> 'actorRole' is not null and ${auditLogs.metadata} ->> 'actorRole' <> 'owner')`,
+    test: (metadata) => typeof metadata.actorRole === 'string' && metadata.actorRole !== 'owner',
   },
   account_locked: {
     sql: sql`coalesce(${auditLogs.metadata} ->> 'scope', 'account') in ('account', 'device', 'two_factor')`,
@@ -255,6 +260,8 @@ function kindOf(row: AuditRow): SecurityEventKind | undefined {
       return row.metadata.kind === 'shared' ? 'mail_account_changed' : undefined;
     case AUDIT_ACTIONS.mailAccessUpdated:
       return 'mail_access_changed';
+    case AUDIT_ACTIONS.mailIdentityCreated:
+      return row.metadata.kind === 'shared' ? 'mail_identity_added' : undefined;
     case AUDIT_ACTIONS.channelBotUpdated:
       if (row.metadata.actorRole === 'owner') return undefined;
       if (row.metadata.enabled === true && row.metadata.previousEnabled === false) {
@@ -305,6 +312,7 @@ const DETAIL_KEYS: Readonly<Record<SecurityEventKind, readonly string[]>> = {
   email_sender_blocked: ['senderId', 'address', 'reason'],
   mail_account_changed: ['address', 'provider', 'changedFields', 'actorRole'],
   mail_access_changed: ['address', 'addedCount', 'removedCount', 'loosened', 'actorRole'],
+  mail_identity_added: ['address', 'accountAddress', 'actorRole'],
   webhook_changed: ['change', 'host', 'previousHost', 'events', 'cidrs', 'actorRole'],
   webhook_disabled: ['host', 'failures'],
   // P4-I1: Owner melihat bila perlindungan Email "hanya pengirim terverifikasi" ikut dimatikan.

@@ -21,16 +21,20 @@ import {
   windowValue,
 } from './mail-format';
 import { mailKeys } from './mail-queries';
-import { parseMailAccountsSearch, parseMailSearch } from './mail-search';
-import { testRows } from './test-rows';
+import { accountsNeedingVerification, verificationLocked } from './mail-verify-banner';
+import { fakeMailAccount } from '../../test/fake-mail';
+import { parseMailAccountSearch, parseMailAccountsSearch, parseMailSearch } from './mail-search';
+import { failedTitle, onlyConnectionFailures, testRows } from './test-rows';
 import {
   createBody,
   displayNameFromAddress,
   initialServerValues,
+  needsAppPassword,
   portForSecurity,
   resultFromSaveFailure,
   serverBody,
   stepOfField,
+  suggestionProvider,
   testPassed,
   testSignature,
   unsupportedSuggestion,
@@ -131,6 +135,40 @@ describe('wizard: isian awal & deteksi', () => {
     expect(usableSuggestion([gmail, cpanel])).toBe(cpanel);
     expect(usableSuggestion([gmail])).toBeNull();
     expect(unsupportedSuggestion([gmail])).toBe(gmail);
+    expect(suggestionProvider(cpanel)).toBe('cpanel');
+    expect(needsAppPassword(cpanel)).toBe(false);
+  });
+
+  it('Gmail/Microsoft dengan server lengkap = saran IMAP lain + sandi aplikasi (bukan "belum dikenali")', () => {
+    const google = {
+      source: 'known_provider' as const,
+      provider: 'google' as const,
+      imap: { host: 'imap.gmail.com', port: 993, security: 'ssl' as const },
+      smtp: { host: 'smtp.gmail.com', port: 465, security: 'ssl' as const },
+      username: 'address' as const,
+      description: 'Alamat ini memakai Google. Pakai sandi aplikasi (bukan password biasa).',
+    };
+    const microsoft = {
+      ...google,
+      source: 'mx' as const,
+      provider: 'microsoft' as const,
+      imap: { host: 'outlook.office365.com', port: 993, security: 'ssl' as const },
+      smtp: { host: 'smtp.office365.com', port: 587, security: 'starttls' as const },
+    };
+    expect(usableSuggestion([google])).toBe(google);
+    expect(usableSuggestion([microsoft])).toBe(microsoft);
+    expect(suggestionProvider(google)).toBe('imap');
+    expect(suggestionProvider(microsoft)).toBe('imap');
+    expect(needsAppPassword(google)).toBe(true);
+    expect(needsAppPassword(null)).toBe(false);
+    const values = initialServerValues('rina@gmail.com', 'imap', google, 'Maju Jaya');
+    expect(values).toMatchObject({
+      username: 'rina@gmail.com',
+      imapHost: 'imap.gmail.com',
+      imapPort: '993',
+      smtpHost: 'smtp.gmail.com',
+      smtpPort: '465',
+    });
   });
 
   it('ganti keamanan → port bawaan ikut berganti, port ketikan sendiri tidak ditimpa', () => {
@@ -138,6 +176,32 @@ describe('wizard: isian awal & deteksi', () => {
     expect(portForSecurity('smtp', '465', 'ssl', 'starttls')).toBe('587');
     expect(portForSecurity('smtp', '2525', 'ssl', 'starttls')).toBe('2525');
     expect(portForSecurity('imap', '', 'ssl', 'starttls')).toBe('143');
+  });
+});
+
+describe('banner verifikasi alamat di menu Email', () => {
+  it('hanya akun ber-peringatan yang bisa kuverifikasi (Kelola); terkunci bila semua bentrok', () => {
+    const ok = fakeMailAccount({ id: ACCOUNT_ID, warnings: [] });
+    const unverified = fakeMailAccount({
+      id: '7a1b2c3d-0000-4000-8000-000000000002',
+      warnings: ['identity_unverified'],
+    });
+    const readOnly = fakeMailAccount({
+      id: '7a1b2c3d-0000-4000-8000-000000000003',
+      myLevel: 'send',
+      warnings: ['identity_unverified'],
+    });
+    const conflict = fakeMailAccount({
+      id: '7a1b2c3d-0000-4000-8000-000000000004',
+      warnings: ['system_sender_conflict', 'identity_unverified'],
+    });
+    expect(accountsNeedingVerification([ok, unverified, readOnly, conflict])).toEqual([
+      unverified,
+      conflict,
+    ]);
+    expect(verificationLocked([unverified, conflict])).toBe(false);
+    expect(verificationLocked([conflict])).toBe(true);
+    expect(verificationLocked([])).toBe(false);
   });
 });
 
@@ -292,6 +356,36 @@ describe('hasil tes koneksi', () => {
     expect(rows[0]).toMatchObject({ tone: 'fail', title: t.mail.wizard.incomingFailed });
     expect(rows[0]?.durationMs).toBeUndefined();
   });
+
+  it('judul galat per jenis kode: koneksi ≠ proses masuk (review 9A P9)', () => {
+    const w = t.mail.wizard;
+    expect(failedTitle('outgoing', 'smtp_connection_timeout')).toBe(w.outgoingUnreachable);
+    expect(failedTitle('outgoing', 'smtp_tls_failed')).toBe(w.outgoingUnreachable);
+    expect(failedTitle('outgoing', 'smtp_host_not_found')).toBe(w.outgoingUnreachable);
+    expect(failedTitle('outgoing', 'smtp_auth_failed')).toBe(w.outgoingFailed);
+    expect(failedTitle('outgoing', 'smtp_app_password_required')).toBe(w.outgoingFailed);
+    expect(failedTitle('incoming', 'imap_certificate_invalid')).toBe(w.incomingUnreachable);
+    expect(failedTitle('incoming', 'imap_auth_failed')).toBe(w.incomingFailed);
+
+    const timeout = {
+      testedAt: '2026-11-23T01:00:00.000Z',
+      incoming: null,
+      outgoing: {
+        ok: false,
+        code: 'smtp_connection_timeout',
+        message: 'Server SMTP tidak merespons.',
+        durationMs: 8000,
+      },
+    } as const;
+    expect(onlyConnectionFailures(timeout)).toBe(true);
+    expect(testRows(timeout, 'cs@majujaya.co.id')[0]?.hint).toBeTruthy();
+    expect(
+      onlyConnectionFailures({
+        ...timeout,
+        outgoing: { ...timeout.outgoing, code: 'smtp_auth_failed' },
+      }),
+    ).toBe(false);
+  });
 });
 
 describe('akses', () => {
@@ -400,6 +494,8 @@ describe('format & alamat', () => {
     expect(parseMailAccountsSearch({ tambah: 'baru' })).toEqual({ tambah: 'baru' });
     // Penyedia yang belum tersedia tidak bisa dipilih lewat alamat.
     expect(parseMailAccountsSearch({ tambah: 'google' })).toEqual({});
+    expect(parseMailAccountSearch({ ubah: 'server' })).toEqual({ ubah: 'server' });
+    expect(parseMailAccountSearch({ ubah: 'hapus' })).toEqual({});
   });
 });
 
@@ -422,6 +518,9 @@ describe('event real-time Email', () => {
       trustedAuthServIds: null,
       syncWindowDays: 90,
       periodicSyncMinutes: 5,
+      sentCopyMode: 'auto',
+      warnExternalRecipients: false,
+      warnings: [],
       sync: {
         state: 'initial_sync',
         lastSyncedAt: null,

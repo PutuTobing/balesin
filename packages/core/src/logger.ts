@@ -53,7 +53,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** Hanya path: query string bisa memuat rahasia (mis. `hub.verify_token`) atau data pelanggan. */
 function pathOnly(url: string): string {
   const end = url.search(/[?#]/);
-  return end === -1 ? url : url.slice(0, end);
+  const path = end === -1 ? url : url.slice(0, end);
+  // Modul Email: token dokumen tampilan ada di PATH (`/mail/view/<token>…`) — disensor.
+  return path.replace(/(\/mail\/view\/)[^/]+/, '$1***');
 }
 
 /**

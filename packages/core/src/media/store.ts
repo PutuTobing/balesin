@@ -14,9 +14,9 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
  */
 
 /** `email-out` = lampiran email lewat API (tahap 9.1). */
-export type MediaFolder = 'uploads' | 'inbound' | 'email-out';
+export type MediaFolder = 'uploads' | 'inbound' | 'email-out' | 'mail';
 
-const STORAGE_KEY_PATTERN = /^(uploads|inbound|email-out)\/[0-9a-f-]{36}$/;
+const STORAGE_KEY_PATTERN = /^(uploads|inbound|email-out|mail)\/[0-9a-f-]{36}$/;
 
 export interface StoredFile {
   storageKey: string;

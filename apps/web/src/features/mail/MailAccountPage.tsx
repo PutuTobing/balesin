@@ -35,6 +35,7 @@ import { AccountMark } from './AccountMark';
 import { AvatarPicker } from './AvatarPicker';
 import { EditServerDialog } from './EditServerDialog';
 import { MailAccessCard } from './MailAccessCard';
+import { MailIdentitiesCard, MailSendingCard, MailSignaturesCard } from './MailComposeSettings';
 import { ColorPicker } from './MailControls';
 import { TestResults } from './TestResults';
 import {
@@ -127,6 +128,7 @@ interface Flash {
 function AccountScreen({ account }: { account: MailAccount }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const search = routeApi.useSearch();
   const session = useSession();
   const canManageShared = useCan('mail.accounts.manage');
   const requireCode = useRequireCode();
@@ -134,12 +136,33 @@ function AccountScreen({ account }: { account: MailAccount }) {
   /** Boleh mengubah server/kredensial/putuskan: bersama = Owner/Admin; pribadi = pemiliknya. */
   const administer =
     account.kind === 'shared' ? canManageShared : account.owner?.id === session?.user.id;
+  /** Kartu "Server & password" (dan dialognya) hanya untuk yang berhak mengubah server. */
+  const canEditServer = Boolean(account.imap && account.smtp && administer);
   const [flash, setFlash] = useState<Flash | null>(null);
   const [busy, setBusy] = useState<'sync' | 'pause' | 'resume' | 'test' | null>(null);
   const [test, setTest] = useState<TestMailAccountResponse | null>(null);
-  const [editing, setEditing] = useState(false);
+  // `?ubah=server` (tautan "Perbarui password" di daftar akun): dialog langsung terbuka. Data akun
+  // sudah ada saat komponen ini dipasang, jadi tidak bergantung pada gulir ke `#server`.
+  const [editing, setEditing] = useState(() => search.ubah === 'server' && canEditServer);
   const [disconnecting, setDisconnecting] = useState(false);
   const editRef = useRef<HTMLButtonElement>(null);
+  /** Tombol yang membuka dialog server (kartu Server atau Notice galat) — tujuan fokus kembali. */
+  const editOpenerRef = useRef<HTMLButtonElement | null>(null);
+  const openEditor = (opener: HTMLButtonElement | null) => {
+    editOpenerRef.current = opener;
+    setEditing(true);
+  };
+  const closeEditor = () => {
+    setEditing(false);
+    if (search.ubah) {
+      void navigate({
+        to: '/pengaturan/akun-email/$accountId',
+        params: { accountId: account.id },
+        search: {},
+        replace: true,
+      });
+    }
+  };
   const disconnectRef = useRef<HTMLButtonElement>(null);
 
   const run = async (action: 'sync' | 'pause' | 'resume' | 'test') => {
@@ -212,7 +235,7 @@ function AccountScreen({ account }: { account: MailAccount }) {
               {account.displayName}
             </h2>
             <div className={styles.summaryMeta}>
-              <span>{account.emailAddress}</span>
+              <span className={styles.summaryAddress}>{account.emailAddress}</span>
               <span className={styles.summaryMetaItem}>
                 <Icon icon={ProviderIcon} size={16} />
                 {m.providers[account.provider]}
@@ -223,7 +246,9 @@ function AccountScreen({ account }: { account: MailAccount }) {
               </span>
             </div>
           </div>
-          <StatusBadge tone={syncTone(state)} label={syncStateLabel(state)} />
+          <span className={styles.summaryStatus}>
+            <StatusBadge tone={syncTone(state)} label={syncStateLabel(state)} />
+          </span>
         </div>
         {flash ? (
           <Notice tone={flash.tone} role={flash.tone === 'danger' ? 'alert' : 'status'}>
@@ -233,13 +258,23 @@ function AccountScreen({ account }: { account: MailAccount }) {
         {error ? (
           <Notice
             tone={state === 'auth_failed' ? 'danger' : 'warning'}
-            title={syncStateLabel(state)}
+            title={state === 'auth_failed' ? d.authFailedTitle : syncStateLabel(state)}
+            actions={
+              canEditServer && (state === 'auth_failed' || state === 'error') ? (
+                <Button
+                  variant={state === 'auth_failed' ? 'primary' : 'secondary'}
+                  onClick={(event) => openEditor(event.currentTarget)}
+                >
+                  {state === 'auth_failed' ? d.fixPassword : d.editServer}
+                </Button>
+              ) : undefined
+            }
           >
             <p>{error}</p>
             {account.sync.nextAttemptAt && state === 'error' ? (
               <p>{m.retryAt(formatDateTime(account.sync.nextAttemptAt))}</p>
             ) : null}
-            {state === 'auth_failed' && administer ? <p>{m.authFailedHint}</p> : null}
+            {state === 'auth_failed' && !administer ? <p>{m.authFailedHint}</p> : null}
           </Notice>
         ) : state === 'paused' ? (
           <Notice tone="info">{m.pausedHint}</Notice>
@@ -308,7 +343,15 @@ function AccountScreen({ account }: { account: MailAccount }) {
 
       {manage ? <PhotoCard account={account} /> : null}
 
-      {account.imap && account.smtp && administer ? (
+      {state === 'deleting' ? null : (
+        <>
+          <MailIdentitiesCard account={account} />
+          <MailSignaturesCard account={account} />
+          {manage ? <MailSendingCard account={account} /> : null}
+        </>
+      )}
+
+      {account.imap && account.smtp && canEditServer ? (
         <section className={styles.card} aria-labelledby="akun-email-server" id="server">
           <div className={styles.cardHeadRow}>
             <div className={styles.cardHead}>
@@ -336,7 +379,7 @@ function AccountScreen({ account }: { account: MailAccount }) {
             />
           </dl>
           <div>
-            <Button ref={editRef} onClick={() => setEditing(true)}>
+            <Button ref={editRef} onClick={() => openEditor(editRef.current)}>
               {d.editServer}
             </Button>
           </div>
@@ -369,13 +412,18 @@ function AccountScreen({ account }: { account: MailAccount }) {
         <EditServerDialog
           account={account}
           onClose={() => {
-            setEditing(false);
-            requestAnimationFrame(() => editRef.current?.focus());
+            closeEditor();
+            // Dibuka dari tautan daftar: belum ada tombol pembuka → fokus ke tombol di kartu Server.
+            const target = editOpenerRef.current?.isConnected
+              ? editOpenerRef.current
+              : editRef.current;
+            requestAnimationFrame(() => target?.focus());
           }}
           onSaved={(saved) => {
             storeMailAccount(queryClient, saved);
-            setEditing(false);
+            closeEditor();
             setFlash({ tone: 'success', text: d.serverSaved });
+            requestAnimationFrame(() => editRef.current?.focus());
           }}
         />
       ) : null}

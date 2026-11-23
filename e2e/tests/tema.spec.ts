@@ -127,6 +127,9 @@ test.describe('tema', () => {
   });
 
   test('tema gelap: tidak ada scroll horizontal di semua halaman', async ({ page }) => {
+    // 7 halaman dimuat penuh dari Vite dev (±350 modul per muat, 3–5 dtk di mesin sibuk): batas
+    // bawaan 30 dtk tidak menyisakan ruang. Batas waktu bukan asersi.
+    test.slow();
     await page.addInitScript((k) => localStorage.setItem(k, 'dark'), THEME_KEY);
     for (const path of [
       '/inbox',

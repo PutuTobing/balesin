@@ -56,6 +56,7 @@ export function TestResults({
           <span className={styles.resultText}>
             <span className={styles.resultTitle}>{row.title}</span>
             <span className={styles.resultBody}>{row.body}</span>
+            {row.hint ? <span className={styles.resultHint}>{row.hint}</span> : null}
           </span>
           {row.durationMs ? (
             <span className={styles.resultTime}>{w.seconds(row.durationMs)}</span>

@@ -41,9 +41,32 @@ export const FAKE_IMAP = {
   folder: 'INBOX',
 } as const;
 
+/**
+ * Modul Email (Fase 9A/9B): kotak surat IMAP multi-folder tiruan (`fake-mail-imap.ts` core, TLS
+ * sertifikat tes) + SMTP tiruan ber-TLS (`fake-mail-smtp.ts`) — satu akun saja. Alamat sengaja BUKAN
+ * alamat Channel Email (`FAKE_IMAP`) maupun Email pengirim sistem (alamat harus unik di organisasi).
+ * Portnya acak (dibaca dari `fakeChannelsInfo()`); api & worker mengizinkannya lewat
+ * `BALESIN_TEST_IMAP_PORTS` / `BALESIN_TEST_MAIL_SMTP_PORTS` (hanya non-produksi).
+ */
+export const FAKE_MAIL = {
+  host: 'localhost',
+  address: 'kotak.bersama@majujaya.test',
+  username: 'kotak.bersama@majujaya.test',
+  password: 'rahasia-kotak-e2e',
+} as const;
+
+export interface FakeSmtpMessage {
+  from: string;
+  to: string[];
+  raw: string;
+  receivedAt: string;
+}
+
 export interface FakeChannelsInfo {
   telegramUrl: string;
   imapPort: number;
+  mailImapPort: number;
+  mailSmtpPort: number;
 }
 
 /** Alamat server tiruan yang sedang berjalan (dari server kendali). */
@@ -71,4 +94,32 @@ export async function fakeTelegramCalls(): Promise<
   const response = await fetch(`${FAKE_CHANNELS_CONTROL_URL}/telegram/calls`);
   if (!response.ok) throw new Error(`Server Telegram tiruan tidak menjawab (${response.status})`);
   return (await response.json()) as { token: string; method: string; body: unknown }[];
+}
+
+/** Masukkan email (RFC 822) ke folder kotak surat modul Email tiruan (bawaan `INBOX`; IDLE memberi tahu). */
+export async function deliverFakeMail(raw: string, folder = 'INBOX'): Promise<number> {
+  const response = await fetch(
+    `${FAKE_CHANNELS_CONTROL_URL}/mail/imap/messages?folder=${encodeURIComponent(folder)}`,
+    { method: 'POST', headers: { 'content-type': 'message/rfc822' }, body: raw },
+  );
+  if (!response.ok) throw new Error(`Email tiruan modul Email ditolak (${response.status})`);
+  return ((await response.json()) as { uid: number }).uid;
+}
+
+/** Email yang diterima SMTP tiruan modul Email (urutan tiba). */
+export async function fakeSmtpMessages(): Promise<FakeSmtpMessage[]> {
+  const response = await fetch(`${FAKE_CHANNELS_CONTROL_URL}/mail/smtp/messages`);
+  if (!response.ok) throw new Error(`SMTP tiruan tidak menjawab (${response.status})`);
+  return (await response.json()) as FakeSmtpMessage[];
+}
+
+/** Ringkasan isi folder kotak surat tiruan (mis. salinan di Terkirim/Draf). */
+export async function fakeMailFolder(
+  folder: string,
+): Promise<{ uid: number; flags: string[]; raw: string }[]> {
+  const response = await fetch(
+    `${FAKE_CHANNELS_CONTROL_URL}/mail/imap/messages?folder=${encodeURIComponent(folder)}`,
+  );
+  if (!response.ok) throw new Error(`IMAP tiruan tidak menjawab (${response.status})`);
+  return (await response.json()) as { uid: number; flags: string[]; raw: string }[];
 }

@@ -155,7 +155,20 @@ describe('kontrak autentikasi', () => {
     expect(new Set(urls).size).toBe(urls.length);
     // Segmen huruf kecil, atau parameter `:nama` (diisi `apiPath`) — tidak pernah token.
     // `:file` = nama ikon merek dari daftar tetap `BRAND_ICON_FILES`.
+    // Pengecualian SATU-SATUNYA: dokumen tampilan email (iframe sandbox ber-origin opak, tanpa cookie)
+    // diautentikasi token 10 menit di path `/mail/view/:token` (disensor dari log api & nginx).
+    const viewRoutes = new Set<string>([
+      API_ROUTES.mail.view,
+      API_ROUTES.mail.viewImage,
+      API_ROUTES.mail.viewCid,
+    ]);
     for (const url of urls) {
+      if (viewRoutes.has(url)) {
+        expect(url).toMatch(
+          /^\/api\/v1\/mail\/view\/:token(?:\/images\/:index|\/cid\/:attachmentId)?$/,
+        );
+        continue;
+      }
       expect(url).toMatch(/^\/api\/v1(?:\/(?:[a-z0-9-]+|:[A-Za-z]+Id|:template|:file))+$/);
     }
   });

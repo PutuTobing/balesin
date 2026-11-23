@@ -45,6 +45,8 @@ export interface TestAppOptions {
   messageQueue?: OutboundMessageEnqueuer;
   /** Pengganti pengantre notifikasi (bawaan: mencatat ke `notificationJobs`). */
   notificationQueue?: NotificationEnqueuer;
+  /** Fase 9: antrean modul Email (bawaan: tidak ada — worker memakai jadwalnya). */
+  mailQueue?: AppDeps['mailQueue'];
   overrides?: AppDeps['overrides'];
 }
 
@@ -186,6 +188,7 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<TestAp
       },
     },
     notificationQueue: options.notificationQueue ?? { enqueue: record(notificationJobs) },
+    ...(options.mailQueue ? { mailQueue: options.mailQueue } : {}),
     overrides: {
       ...options.overrides,
       meta: { fetch: offlineMetaFetch, ...options.overrides?.meta },

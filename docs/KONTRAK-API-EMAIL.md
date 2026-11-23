@@ -630,7 +630,7 @@ token baru sekali, lalu menampilkan "Muat ulang email").
 
 Masuk (memakai ulang `CONNECTION_TEST_MESSAGES` `imap_*` Fase 6, teks disesuaikan "akun email"):
 `ok`; `imap_host_not_found`; `imap_host_blocked` (termasuk privat tanpa allowlist: "Server email di
-jaringan lokal harus didaftarkan dulu di Pengaturan → Integrasi → Jaringan privat."); `imap_port_not_allowed`;
+jaringan lokal harus didaftarkan dulu di Pengaturan → Webhook → Jaringan privat yang diizinkan."); `imap_port_not_allowed`;
 `imap_connection_refused`; `imap_connection_timeout`; `imap_tls_failed`; `imap_certificate_invalid`;
 `imap_auth_failed`; **baru**: `imap_not_enabled` ("Akses IMAP belum diaktifkan di akun ini. Aktifkan di
 pengaturan email penyedia (Gmail: Setelan → Penerusan dan POP/IMAP)."), `imap_app_password_required`
@@ -747,3 +747,149 @@ Disetujui sebagai keputusan pelaksana (DECISIONS 2026-11-23); bagian 2 memakai f
 9. **Rute foto channel** (`/channels/:channelId/avatar`) belum dibuat — tabel `channel_avatars` sudah ada.
 10. **Deteksi**: domain/MX Google & Microsoft memberi saran server (`provider: google/microsoft`) dengan
     catatan; tebakan `mail.<domain>` hanya bila semua alamatnya lolos penjaga ketat (privat hanya allowlist).
+
+## 17. Penyimpangan implementasi 9A bagian 2 — daftar, baca, aksi (backend, 2026-11-23)
+
+Disetujui sebagai keputusan pelaksana (DECISIONS 2026-11-23 "9A bagian 2").
+
+1. **Token tampilan**: bukan `base64url(payload).HMAC` berisi organisasi/pengguna/hash sesi, melainkan
+   72 karakter biner `base64url(versi ‖ ID pesan ‖ ID sesi asal ‖ bendera gambar ‖ kedaluwarsa ‖ HMAC-128)`
+   (muat batas parameter rute Fastify 100; tanpa hash sesi di URL). Kunci HKDF `balesin/mail-view/v1` dari
+   master key (cadangan: rahasia sesi). Setiap pemakaian: sesi asal dibaca dari `user_sessions` lalu
+   `sessions.peek` (dicabut/kedaluwarsa/2FA tidak cocok → tolak), hak `read` dihitung ulang. Token tidak
+   sah/kedaluwarsa/sesi dicabut/hak hilang → **410 `TOKEN_INVALID`** (bukan 401 — rute publik dari sisi
+   sesi; web meminta token baru sekali lalu menampilkan "Muat ulang email"). Path token disensor di log
+   api (`/mail/view/***`); log akses nginx dimatikan untuk `^~ /api/v1/mail/view/` (gateway
+   `deploy/docker/gateway/nginx.conf` + contoh Mode A `deploy/nginx/balesin.conf`).
+2. **CSP dokumen**: `default-src 'none'; img-src 'self' <origin> data:; style-src 'unsafe-inline'; font-src
+   data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self' <origin>; sandbox allow-popups
+   allow-popups-to-escape-sandbox`; `X-Frame-Options` dihapus HANYA untuk respons ber-`frame-ancestors`
+   (rute lain tetap `DENY`). Gambar proksi & `cid` memakai **`Cross-Origin-Resource-Policy: cross-origin`**
+   (dokumen iframe ber-origin opak; `same-site` akan memblokirnya) — tetap wajib token.
+3. **Penanda gambar** di `html_sanitized`: `src="balesin-remote:<i>"` / `src="balesin-cid:<cid>"`, diganti
+   saat disajikan. `http:`, `data:` non-raster, `srcset` dibuang. Gambar diblokir = GIF 1×1 +
+   `data-gambar-diblokir="1"`.
+4. **Proksi gambar tanpa cache 24 jam** (ditunda — butuh tabel/berkas sementara); setiap tampil mengambil
+   ulang. Gagal jaringan → 502, bukan raster → 415, > 5 MB → 413, semuanya dengan GIF kosong.
+5. **Batas HTML tampilan** = penjaga 9.1 (HTML mentah ≤ 512 KB + 20.000 tag / kedalaman 200) SEBELUM
+   sanitasi; lewat → hanya teks + catatan `EMAIL_HTML_OMITTED_NOTE` (`body.hasHtml: false`).
+6. **Email > 25 MB**: hanya bagian teks/HTML isi (≤ 1 MB) → `body_state = too_large`. Lampiran ≤ 50 MB diambil
+   per bagian (`BODY.PEEK[<bagian>]` per potongan 3 MB; batas literal sinkron 4 MB tetap). Gambar inline
+   (`cid`) raster ≤ 5 MB disimpan saat isi diambil; lampiran lain saat diunduh.
+7. **Lampiran**: baris `mail_attachments` dibuat saat ISI diambil (dari BODYSTRUCTURE tersimpan), bukan saat
+   sinkron. Risiko dipastikan dari ISI saat diunduh (`classifyMailAttachmentContent`: PE/ELF/Mach-O/shebang,
+   CFB/OLE (Office lama — konsisten keputusan 9.1 putaran 3), HTML/SVG/XML, Office bermakro → `blocked`;
+   ZIP/RAR/7z/gzip → `warn`), tidak pernah turun dari risiko nama. Event baru **`mail.attachment.failed
+   { accountId, attachmentId, code }`** (diblokir, terlalu besar, email hilang). `Content-Type` unduhan: PDF/
+   raster sesuai isi, lainnya `application/octet-stream`.
+8. **Detail**: tambahan `folderRole`, `pending`, `myLevel`, `warningDetails` (`warnings` tetap daftar kode),
+   `body.remoteImages.autoBlocked` (email `fail`). `GET` hanya meminta isi diambil (`loading`), tidak
+   menandai dibaca. `POST …/view` / `GET …/source` saat isi belum siap → 409 `body_not_ready`.
+9. **Aksi**: kolom baru `pending_target_folder_id`, `pending_revert` (bendera sebelum aksi pertama) + indeks
+   `mail_messages_pending_idx` (migrasi **0037**). `pending_action` ∈ `flags`·`move`·`delete`. SATU job
+   `mail-action` per akun (ID job = akun) menerapkan SEMUA aksi tertunda sesuai keadaan database
+   (idempoten); `move` dengan `COPYUID` memindah baris di tempat (cache isi tetap), tanpa itu baris dihapus
+   dan sinkron folder tujuan memuatnya lagi. Folder Arsip/Sampah yang belum ada dibuat lokal (`role_source:
+   created`, `INBOX.<nama>` bila server ber-namespace) lalu `CREATE` di server sebelum pindah. `spam` pada
+   email di Spam / `not_spam` di luar Spam = tanpa perubahan (ok). Keyword `$Junk`/`$NotJunk` belum dikirim.
+   Pesan pindah/hapus tertunda tidak tampil di daftar mana pun (juga belum di folder tujuan). Gagal: dilempar
+   (BullMQ 3×) lalu dikembalikan + `mail.action.failed` (kode `server_rejected`/`folder_missing`/
+   `uidvalidity_changed`/`connection_lost`); akun `paused`/`auth_failed`/`owner_inactive` → menunggu, tick
+   mengantre ulang (≥ 15 dtk) dan mengembalikan yang > 24 jam (`expired`). Sesudah pengembalian, sinkron akun
+   diantre (server = kebenaran).
+10. **Daftar**: kueri `LATERAL` per folder Kotak masuk / per akun di atas indeks §3; `olderOnServer` dari
+    `mail_folders.has_older_on_server`. **`POST /mail/folders/:folderId/load-older` belum dibuat** (menyusul).
+11. **Rute & batas**: daftar 240/mnt, baca/sumber/lampiran 240/mnt, view 120/mnt, aksi & daftar "selalu"
+    120/mnt per pengguna; rute token 600/mnt per IP + 120 (dokumen) / 300 (gambar) per token.
+12. **Isi diambil lewat sambungan kerja tunggal** (`withWorkSlot`, maks. 2 sambungan/akun): selama sinkron
+    awal panjang berjalan, pengambilan isi menunggu slot (job ditunda 5 dtk berulang).
+
+### Perbaikan review keamanan 9A bagian 1 (`docs/security-reviews/2026-11-23-fase9a-1.md`)
+
+- **S1**: password dari database hanya dikirim ke tujuan PERSIS saat disimpan (IMAP; SMTP hanya bila
+  `smtp_same_credentials` tersimpan dan host/port/keamanan/username sama) — selain itu 400
+  `password_required` (tes ber-`accountId` & PATCH).
+- **S2**: `withMailSession` = tenggat TOTAL yang memutus sambungan (juga selama fase connect, lewat
+  `AbortSignal` di `openImapClient`); tenggat per perintah 60 dtk; anggaran byte per sambungan (96 MB sinkron,
+  8 MB tes); `LIST` tanpa `STATUS` (STATUS hanya folder yang disinkron; hitungan lama dipertahankan bila
+  server tidak memberi), maks. 1.000 folder & 100.000 UID pencarian (yang terbaru); `UID FETCH` lewat
+  iterator yang memutus bila server mengirim UID tak diminta/berlebih; sinkron satu job maks. 5 menit;
+  sewa kerja diperpanjang selama job; `mail-tick` & retensi pindah ke antrian **`mail-schedule`**
+  (konkurensi 1); buat akun & PATCH server memakai jatah tes yang sama (10/5 mnt/pengguna) + 60/5 mnt per
+  organisasi.
+- **S3**: maks. 2.000 header baru per job (folder terpotong tetap jatuh tempo; job lanjutan 5 dtk), maks.
+  500.000 email per akun (`last_error_code: mailbox_too_large`), `bodystructure` tersimpan ≤ 64 KB (diringkas
+  jadi daftar bagian daun; nomor bagian tetap).
+- **S4**: identitas utama akun baru **`verified_at = null`** (login IMAP tidak membuktikan alamat — server
+  bisa milik pendaftar); verifikasi email uji menyusul 9B sebelum dipakai sebagai pengirim. 409
+  `address_already_connected` untuk pemegang `mail.accounts.manage` menyebut pemilik akun PRIBADI yang memakai
+  alamat itu (+ jalan keluar: minta diputus / nonaktifkan pengguna lalu putus).
+- **R1** SIIT `::ffff:0:0:0/96` diblokir (webhook keluar, penjaga ketat, deteksi). **R2** IDLE ditutup bila
+  host/port/keamanan/username/kredensial berubah, dan pada pindaian yang sama bila pemilik akun pribadi
+  nonaktif. **R3** tick hanya mengubah `initial_sync/ready/syncing/error` ↔ `owner_inactive`
+  (`paused`/`auth_failed` tetap). **R4** nama folder dibersihkan dari karakter kendali/pengubah arah, kosong →
+  "Folder", path ber-NUL dilewati. **R5** = jatah tes S2. **R6** pemberitahuan password ditolak: hak `manage`
+  penerima dicek ulang saat kirim, maks. satu putaran per akun per 24 jam; galat internal sinkron di-log tanpa
+  `err` mentah; putus akun pribadi pemilik nonaktif dicek ulang di transaksi.
+
+**Bug lama diperbaiki (migrasi 0037)**: CHECK `channels_fase6_formats` memakai regex `{1,1300}` (Postgres
+menolak pengulangan > 255 → galat 2201B setiap `email_trusted_auth_serv_ids` terisi) → `char_length(…) ≤ 1300`
++ regex `+`.
+
+### Perbaikan review keamanan 9A bagian 2 (`docs/security-reviews/2026-11-23-fase9a-2.md`)
+
+Perilaku API yang berubah (menggantikan butir §17.4 dan §17.11 di atas):
+
+- **S5 — proksi gambar luar** (`GET /mail/view/:token/images/:index`):
+  - Batas laju dihitung **per pengguna** sesi asal token (300/menit, `mail-gambar-pengguna`) dan **per
+    organisasi** (3.000/menit, `mail-gambar-organisasi`) — bukan per token. Dokumen tampilan
+    `GET /mail/view/:token` 240/menit/pengguna, `cid` 600/menit/pengguna. Semua rute token juga 600/menit
+    per IP (`ipRateLimitKey`: IPv4 utuh, IPv6 per /64), diperiksa SEBELUM token dibuka. Lewat → **429**
+    amplop galat biasa + `Retry-After`.
+  - **Unduhan bersamaan** dibatasi ≤ 8 per pengguna dan ≤ 32 per proses api. Lewat → **429** (per pengguna)
+    / **503** (per proses) berupa **GIF kosong** + `Retry-After: 2`, SEKETIKA (tidak diantre, tidak
+    mengunduh).
+  - Unduhan: 12 byte pertama harus raster (PNG/JPEG/GIF/WebP) — selain itu sambungan diputus tanpa
+    menampung sisanya → 415 GIF kosong; `Content-Length` > 5 MB ditolak sebelum dibaca; panjang yang
+    diketahui ditampung dalam SATU penyangga (tanpa salinan kedua).
+  - **Cache 24 jam** (tabel baru `mail_remote_image_cache`, migrasi **0038**): kunci = akun + `sha256(url)`
+    (URL mentah tidak disimpan), berkas di media store `mail/`. Membuka ulang (token baru) tidak mengunduh
+    lagi dan tidak memberi tahu pengirim lagi. Kuota cache gambar 1 GB per organisasi (lewat → tetap
+    disajikan, hanya tidak di-cache). Kedaluwarsa tidak disajikan lagi; baris + berkas dipangkas
+    `mail-cache-retention` (harian — berkas bisa tertinggal di disk ≤ 48 jam) dan dihapus saat akun
+    diputus. Cache hanya dipakai bila token sudah berizin `images`.
+- **R8**: User-Agent proksi gambar = UA peramban umum (bukan `Balesin-Media/1.0`).
+- **R9**: `images: "auto"` menampilkan gambar dari pengirim di daftar "selalu" HANYA bila
+  `senderVerification = pass`; `unverified` dan `fail` tetap butuh "Tampilkan gambar".
+- **S7 — kuota cache isi & lampiran**: lampiran + gambar inline + isi (`pg_column_size`) dihitung per akun
+  (**2 GB**) dan per organisasi (**20 GB**), berkas per email maks. **200 MB**.
+  - `GET /mail/attachments/:id` yang belum di cache dan akan melewati kuota → **409 `CONFLICT`** reason
+    **`cache_full`** "Ruang cache email penuh, jadi lampiran ini belum bisa diunduh lewat aplikasi. Buka
+    lewat webmail penyedia." (tanpa mengantre). Worker memeriksa ulang sebelum menyambung dan saat
+    mengalirkan → event `mail.attachment.failed { code: "cache_full" }`, tidak ada yang disimpan.
+  - Gambar inline yang tidak muat kuota tidak disimpan (tampil kosong).
+  - Isi baru selalu disimpan; bila akun/organisasi lewat kuota, ≤ 200 isi yang paling lama tidak dibuka
+    di cakupan itu digusur (`body_state` kembali `none`, diambil ulang saat dibuka).
+  - Job lampiran **dialirkan**: potongan FETCH ≤ 3 MB → dekode base64/QP beralir → disk; di memori hanya
+    kepala 4 KB (risiko dari isi); dokumen Office ZIP diperiksa dari direktori pusat di disk.
+- **R10 (sebagian)**: pengambilan BARU dari server email (isi/lampiran belum di cache) maks. **60/menit per
+  pengguna** (`mail-ambil-server`) → 429 "Terlalu banyak email dibuka sekaligus…". Pemakaian ulang satu
+  sesi IMAP untuk beberapa job ditunda ke 9C (DECISIONS 2026-11-23).
+- **R11**: `POST /mail/messages/actions` — `delete_permanently` maks. **500 email per pengguna per 24 jam**
+  (dihitung dari audit) → **429** + audit `mail.message.delete_limit_reached { requested,
+  deletedLast24h }`. Pindah/Arsip/Sampah/Spam ≥ 10 email sekali minta, atau setiap permintaan pindah
+  setelah > 60 permintaan dalam sejam (penghitung per proses) → audit `mail.messages.moved { action,
+  count, accountIds, targetFolderId }` (tanpa subjek/alamat).
+- **S6**: "domain organisasi" untuk peringatan `impersonation`/`lookalike_sender` hanya dari akun BERSAMA,
+  identitas TERVERIFIKASI milik akun bersama, dan alamat/alias Channel Email (akun pribadi & identitas
+  belum terverifikasi tidak dihitung).
+- **R7**: risiko lampiran memakai nama tanpa titik/spasi di akhir (`tagihan.pdf.js.` = `.js`); nama
+  tampilan/unduhan juga dibersihkan begitu. Daftar blokir ditambah `ws vb msc msh1 msh2 mshxml msh1xml
+  msh2xml ps2 ps2xml psc2 psd1 xbap ins isp mst its cer crt der hlp shb shs search-ms searchconnector-ms
+  diagcab msix msixbundle appx appxbundle` (ekstensi ≤ 20 karakter, boleh `-`).
+- **R12**: lokasi `^~ /api/v1/mail/view/` di gateway & contoh Mode A: `access_log off` + `error_log … crit`
+  (galat upstream/`limit_req` level `error` tidak lagi mencatat baris permintaan ber-token).
+- **Web**: halaman `/email/tautan?ke=&tampil=` (di dalam aplikasi, butuh sesi) hanya menerima `ke`
+  `http:`/`https:` (lainnya → "Tautan ini tidak bisa dibuka", tanpa tautan keluar), menampilkan URL lengkap
+  + domain sebagai teks, tanpa pengalihan otomatis; "Tetap buka tautan" `target="_blank"
+  rel="noopener noreferrer"`. `body.text` dirender sebagai teks React (tidak pernah HTML).

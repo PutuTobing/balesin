@@ -368,6 +368,64 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'PUT /api/v1/mail/accounts/:accountId/access': 'mail.accounts.manage',
   'GET /api/v1/mail/accounts/:accountId/folders': 'mail.view',
   'GET /api/v1/mail/sidebar': 'mail.view',
+  // Fase 9 bagian 2: daftar/baca/aksi (hak per akun di service, diuji mail-messages.integration.test.ts).
+  'GET /api/v1/mail/messages': 'mail.view',
+  'POST /api/v1/mail/messages/actions': 'mail.view',
+  'GET /api/v1/mail/messages/:messageId': 'mail.view',
+  'POST /api/v1/mail/messages/:messageId/view': 'mail.view',
+  'GET /api/v1/mail/messages/:messageId/source': 'mail.view',
+  'GET /api/v1/mail/attachments/:attachmentId': 'mail.view',
+  'GET /api/v1/mail/attachments/:attachmentId/preview': 'mail.view',
+  'GET /api/v1/mail/remote-image-senders': 'mail.view',
+  'POST /api/v1/mail/remote-image-senders': 'mail.view',
+  'DELETE /api/v1/mail/remote-image-senders': 'mail.view',
+  // Dokumen tampilan iframe: tanpa sesi cookie (origin opak) — token bertanda tangan + cek ulang
+  // sesi asal & hak setiap permintaan.
+  'GET /api/v1/mail/view/:token': 'public',
+  'GET /api/v1/mail/view/:token/images/:index': 'public',
+  'GET /api/v1/mail/view/:token/cid/:attachmentId': 'public',
+  // 9B (tulis/kirim): baca identitas/tanda tangan/preferensi = `mail.view`; draf/kirim/outbox =
+  // `mail.send`. Hak NYATA per akun + kepemilikan draf di service (mail-compose.integration.test.ts).
+  'GET /api/v1/mail/identities': 'mail.view',
+  'GET /api/v1/mail/accounts/:accountId/identities': 'mail.view',
+  'POST /api/v1/mail/accounts/:accountId/identities': 'mail.view',
+  'PATCH /api/v1/mail/identities/:identityId': 'mail.view',
+  'DELETE /api/v1/mail/identities/:identityId': 'mail.view',
+  'POST /api/v1/mail/identities/:identityId/verification': 'mail.view',
+  'POST /api/v1/mail/identities/:identityId/verification/confirm': 'mail.view',
+  // Review 9B S3: persetujuan identitas akun pribadi berdomain organisasi (Owner/Admin).
+  'GET /api/v1/mail/identity-approvals': 'mail.accounts.manage',
+  'POST /api/v1/mail/identities/:identityId/approval': 'mail.accounts.manage',
+  'GET /api/v1/mail/identities/:identityId/signature': 'mail.send',
+  'GET /api/v1/mail/accounts/:accountId/signatures': 'mail.view',
+  'POST /api/v1/mail/accounts/:accountId/signatures': 'mail.view',
+  'PATCH /api/v1/mail/signatures/:signatureId': 'mail.view',
+  'DELETE /api/v1/mail/signatures/:signatureId': 'mail.view',
+  'PUT /api/v1/mail/signatures/:signatureId/logo': 'mail.view',
+  'DELETE /api/v1/mail/signatures/:signatureId/logo': 'mail.view',
+  'GET /api/v1/mail/signatures/:signatureId/logo': 'mail.view',
+  'GET /api/v1/mail/preferences': 'mail.view',
+  'PUT /api/v1/mail/preferences': 'mail.view',
+  'GET /api/v1/mail/drafts': 'mail.send',
+  'POST /api/v1/mail/drafts': 'mail.send',
+  'GET /api/v1/mail/drafts/:draftId': 'mail.send',
+  'PUT /api/v1/mail/drafts/:draftId': 'mail.send',
+  'DELETE /api/v1/mail/drafts/:draftId': 'mail.send',
+  'POST /api/v1/mail/drafts/:draftId/check': 'mail.send',
+  'POST /api/v1/mail/drafts/:draftId/send': 'mail.send',
+  'PUT /api/v1/mail/drafts/:draftId/presence': 'mail.send',
+  'DELETE /api/v1/mail/drafts/:draftId/presence': 'mail.send',
+  'POST /api/v1/mail/drafts/:draftId/snippet': 'mail.send',
+  'POST /api/v1/mail/drafts/:draftId/attachments': 'mail.send',
+  'POST /api/v1/mail/drafts/:draftId/attachments/from-message': 'mail.send',
+  'GET /api/v1/mail/drafts/:draftId/attachments/:attachmentId': 'mail.send',
+  'DELETE /api/v1/mail/drafts/:draftId/attachments/:attachmentId': 'mail.send',
+  'GET /api/v1/mail/outbox': 'mail.send',
+  'GET /api/v1/mail/outbox/:outboxId': 'mail.send',
+  'POST /api/v1/mail/outbox/:outboxId/cancel': 'mail.send',
+  'POST /api/v1/mail/outbox/:outboxId/send-now': 'mail.send',
+  'GET /api/v1/mail/compose/snippets': 'mail.send',
+  'GET /api/v1/mail/recipients/suggest': 'mail.view',
   'GET /api/v1/settings/mail': 'mail.accounts.manage',
   'PUT /api/v1/settings/mail': 'mail.accounts.manage',
   'GET /api/v1/settings/team/:userId/mail-access': 'mail.accounts.manage',
@@ -579,6 +637,15 @@ const SAMPLE_PARAMS: Readonly<Record<string, string>> = {
   versionId: '1',
   // Fase 9: modul Email
   accountId: '00000000-0000-4000-8000-0000000000c1',
+  // Fase 9 bagian 2 (token tampilan palsu → 410 TOKEN_INVALID dari handler)
+  attachmentId: '00000000-0000-4000-8000-0000000000c2',
+  // 9B (tulis/kirim)
+  identityId: '00000000-0000-4000-8000-0000000000c4',
+  signatureId: '00000000-0000-4000-8000-0000000000c5',
+  draftId: '00000000-0000-4000-8000-0000000000c6',
+  outboxId: '00000000-0000-4000-8000-0000000000c7',
+  token: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+  index: '0',
 };
 
 function concreteUrl(pattern: string): string {
@@ -801,7 +868,7 @@ describe('peran × endpoint: hasil sungguhan cocok dengan matriks', () => {
       }
       // Ratusan rute × satu pemanggil berurutan (bertambah tiap fase): batas waktu sendiri.
     },
-    90_000,
+    180_000,
   );
 
   it('pemanggil yang diuji mewakili kelima peran', async () => {

@@ -70,6 +70,11 @@ export const securityPlugin = fp<SecurityOptions>(
         ? { maxAge: HSTS_MAX_AGE_SECONDS, includeSubDomains: true }
         : false,
       xFrameOptions: { action: 'deny' },
+      // Halaman web (Vite/nginx) tidak mengirim Origin-Agent-Cluster. Bila hanya dokumen dari API
+      // (isi email `/mail/view/…` di iframe ber-sandbox, origin-nya opaque) yang memintanya, Chrome
+      // memperingatkan "could not be origin-keyed" di console setiap email dibuka (QA E2E menu Email).
+      // Untuk JSON dan dokumen ber-sandbox header ini tidak berpengaruh, jadi tidak dikirim.
+      originAgentCluster: false,
     });
 
     // Preflight CORS diperiksa di sini supaya penolakannya berbentuk amplop error JSON seperti

@@ -214,10 +214,20 @@ export function classifyImapError(error: unknown): ImapFailure {
  * Membuka sambungan IMAP terperiksa (port, penjaga host, TLS wajib, batas waktu & ukuran). Fase 9
  * memakainya untuk akun Email (`mail-client`).
  */
+export interface ImapClientLimits {
+  maxLiteralBytes?: number;
+  signal?: AbortSignal;
+  /**
+   * Dipanggil untuk SETIAP potongan byte masuk sejak soket pertama dibuat (termasuk sapaan, login,
+   * dan perintah awal imapflow) — dasar anggaran byte akun Email (review 9A-1 S2).
+   */
+  onBytes?: (bytes: number) => void;
+}
+
 export async function openImapClient(
   config: Omit<ImapConnectionConfig, 'folder'>,
   policy: ImapPolicy,
-  limits: { maxLiteralBytes?: number } = {},
+  limits: ImapClientLimits = {},
 ): Promise<ImapFlow> {
   return openClient({ ...config, folder: 'INBOX' }, policy, limits);
 }
@@ -225,7 +235,7 @@ export async function openImapClient(
 async function openClient(
   config: ImapConnectionConfig,
   policy: ImapPolicy,
-  limits: { maxLiteralBytes?: number } = {},
+  limits: ImapClientLimits = {},
 ): Promise<ImapFlow> {
   const timeouts = { ...DEFAULT_IMAP_TIMEOUTS, ...policy.timeouts };
   if (!policy.allowedPorts.includes(config.port)) throw new ImapFailure('imap_port_not_allowed');
@@ -270,10 +280,33 @@ async function openClient(
   });
   // Galat setelah tersambung (soket putus) tidak boleh menjatuhkan proses.
   client.on('error', () => undefined);
+  if (limits.onBytes) {
+    // imapflow menyalurkan setiap soket (TCP, lalu TLS setelah STARTTLS) ke `streamer` lewat `pipe`.
+    const onBytes = limits.onBytes;
+    (client as unknown as { streamer: NodeJS.EventEmitter }).streamer.on(
+      'pipe',
+      (source: NodeJS.EventEmitter) => {
+        source.on('data', (chunk: Buffer) => onBytes(chunk.length));
+      },
+    );
+  }
+  // Review 9A-1 S2: tenggat pemanggil bisa memutus sambungan bahkan selama fase connect (server jahat
+  // bisa membanjiri perintah awal seperti `LIST "" ""`).
+  const kill = () => {
+    try {
+      client.close();
+    } catch {
+      // sudah tertutup
+    }
+    (client as unknown as { socket?: { destroy(): void } }).socket?.destroy();
+  };
+  if (limits.signal?.aborted) throw new ImapFailure('imap_connection_timeout', 'ABORTED');
+  limits.signal?.addEventListener('abort', kill, { once: true });
   try {
     await client.connect();
   } catch (error) {
-    client.close();
+    kill();
+    if (limits.signal?.aborted) throw new ImapFailure('imap_connection_timeout', 'ABORTED');
     throw classifyImapError(error);
   }
   return client;

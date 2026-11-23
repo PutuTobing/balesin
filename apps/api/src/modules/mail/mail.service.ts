@@ -14,6 +14,7 @@ import {
   type MailEventPublisher,
   type MailImapConnector,
   type MailSmtpVerifier,
+  type MediaStore,
   type SecretBox,
   type SmtpPolicy,
   type SmtpTimeouts,
@@ -29,7 +30,12 @@ import {
   mailIdentities,
   mailMessages,
   mailSettings,
+  mailDraftAttachments,
+  mailDrafts,
+  mailOutbox,
+  emailSenderSettings,
   newId,
+  mailOrganizationDomains,
   users,
   type Database,
   type DbExecutor,
@@ -38,6 +44,9 @@ import {
 } from '@balesin/db';
 import {
   MAIL_ACCOUNTS_PER_ORGANIZATION_MAX,
+  MAIL_ATTACHMENT_TOTAL_MB,
+  MAIL_COMPOSE_MESSAGES,
+  MAIL_RECIPIENTS_PER_EMAIL,
   MAIL_CACHE_RETENTION_DAYS,
   MAIL_DEFAULT_SYNC_WINDOW_DAYS,
   MAIL_IMAP_PORTS,
@@ -74,6 +83,7 @@ import {
   type TestMailAccountRequest,
   type TestMailAccountResponse,
   type UpdateMailAccountRequest,
+  type UpdateMailSettingsRequest,
   type ErrorDetail,
 } from '@balesin/shared';
 import { and, count, eq, inArray, isNull, sql } from 'drizzle-orm';
@@ -88,6 +98,22 @@ import { findActiveOwners } from '../team/team.repo';
 import { requireIdentityConfirmation } from '../two-factor/require-confirmation';
 import type { TwoFactorContext, TwoFactorService } from '../two-factor/two-factor.service';
 import { processMailAvatar } from './mail-avatar';
+import {
+  IDENTITY_RESET,
+  addressHeldError,
+  addressHoldersOf,
+  addressIsMailIdentity,
+  claimAddressForOrganization,
+  isWeakClaim,
+  notifyApprovalRequest,
+  notifyRevokedClaims,
+  recordApprovalRequest,
+  systemSenderConflicts,
+  systemSenderOf,
+  type AddressHolder,
+  type RevokedClaim,
+  type SystemSenderFallback,
+} from './mail-compose.repo';
 import { detectMailAccount, type MailDetectionOptions } from './mail-detection';
 import {
   ADDRESS_ALREADY_CONNECTED,
@@ -150,6 +176,10 @@ export interface MailServiceDeps {
   detection?: Omit<MailDetectionOptions, 'privateCidrs' | 'allowLoopback'>;
   connector?: MailImapConnector;
   smtpVerifier?: MailSmtpVerifier;
+  /** 9B: cadangan Email pengirim sistem dari env (peringatan `system_sender_conflict`). */
+  systemSenderFallback?: SystemSenderFallback | null;
+  /** 9B: berkas lampiran draf & `.eml` outbox dihapus saat akun diputus. */
+  store?: MediaStore | null;
   now?: () => Date;
 }
 
@@ -302,15 +332,172 @@ export function createMailService(deps: MailServiceDeps) {
     return { viewer, row };
   }
 
+  /**
+   * 409 `address_already_connected`. Review 9A-1 S4: pemegang `mail.accounts.manage` diberi tahu
+   * pemilik akun PRIBADI yang memakai alamat itu (metadata yang sama sudah terlihat di Pengaturan →
+   * Akun email) supaya bisa ditindaklanjuti (minta diputus / nonaktifkan pengguna).
+   */
+  async function alreadyConnected(auth: AuthContext, address: string): Promise<AppError> {
+    if (hasPermission(auth.user.role, 'mail.accounts.manage')) {
+      const [holder] = await db
+        .select({ kind: mailAccounts.kind, ownerName: users.name, ownerId: users.id })
+        .from(mailAccounts)
+        .leftJoin(
+          users,
+          and(
+            eq(users.organizationId, mailAccounts.organizationId),
+            eq(users.id, mailAccounts.ownerUserId),
+          ),
+        )
+        .where(
+          and(
+            eq(mailAccounts.organizationId, auth.organizationId),
+            eq(mailAccounts.emailAddress, address),
+            isNull(mailAccounts.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (holder?.kind === 'personal' && holder.ownerName && holder.ownerId !== auth.user.id) {
+        return conflict(
+          'address_already_connected',
+          `Alamat ini sudah terhubung sebagai akun email pribadi milik ${holder.ownerName}. Minta ia memutusnya, atau nonaktifkan penggunanya lalu putus akunnya di Pengaturan → Akun email.`,
+        );
+      }
+    }
+    return conflict('address_already_connected', ADDRESS_ALREADY_CONNECTED);
+  }
+
+  /**
+   * Review 9B S2: kotak surat Email pengirim sistem (alamat ATAU host + username SMTP/IMAP) TIDAK boleh
+   * dihubungkan sebagai akun Email (pribadi maupun bersama) — salinan tautan reset password, undangan,
+   * dan kode verifikasi di Terkirim terbaca pembaca akun itu. 409 `system_sender_mailbox`.
+   */
+  async function assertNotSystemSenderMailbox(
+    executor: DbExecutor,
+    organizationId: string,
+    candidate: Parameters<typeof systemSenderConflicts>[1],
+  ): Promise<void> {
+    const sender = await systemSenderOf(
+      executor,
+      organizationId,
+      deps.systemSenderFallback ?? null,
+    );
+    if (systemSenderConflicts(sender, candidate)) {
+      throw conflict('system_sender_mailbox', MAIL_COMPOSE_MESSAGES.systemSenderMailbox);
+    }
+  }
+
+  /** Pemegang Channel/pengirim sistem sudah ditangani pemeriksaan sendiri (pesan lebih jelas). */
+  const handledElsewhere = (holder: AddressHolder) =>
+    holder.kind === 'system_sender' || holder.kind === 'channel';
+
+  /**
+   * Larangan alamat ganda untuk alamat akun (9B §3.3). Akun PRIBADI: pemegang apa pun → 409 umum.
+   * Akun BERSAMA (Owner/Admin, review 9B S4): klaim lemah akun pribadi tidak menghalangi — dicabut di
+   * transaksi (`revoke`), pemegang kuat → 409 yang menyebut pemegangnya.
+   */
+  async function guardAccountAddress(
+    executor: DbExecutor,
+    auth: AuthContext,
+    kind: string,
+    address: string,
+    client: MailContext['client'] | null,
+  ): Promise<RevokedClaim[]> {
+    if (kind === 'personal') {
+      if (await addressIsMailIdentity(executor, auth.organizationId, address)) {
+        throw conflict('address_in_use', MAIL_COMPOSE_MESSAGES.addressInUse);
+      }
+      return [];
+    }
+    const sender = await systemSenderOf(
+      executor,
+      auth.organizationId,
+      deps.systemSenderFallback ?? null,
+    );
+    const domains = await mailOrganizationDomains(executor, auth.organizationId);
+    if (!client) {
+      const holders = await addressHoldersOf(executor, auth.organizationId, address, {
+        systemSender: sender,
+      });
+      const strong = holders.find(
+        (holder) => !handledElsewhere(holder) && !isWeakClaim(holder, domains),
+      );
+      if (strong) throw addressHeldError(auth.user.role, strong, 'emailAddress');
+      return [];
+    }
+    return claimAddressForOrganization(executor, {
+      organizationId: auth.organizationId,
+      actorUserId: auth.user.id,
+      role: auth.user.role,
+      address,
+      systemSender: sender,
+      domains,
+      client,
+      field: 'emailAddress',
+      ignore: handledElsewhere,
+    });
+  }
+
+  /**
+   * 9B: peringatan akun — `system_sender_conflict` (kotak surat ini juga Email pengirim sistem:
+   * verifikasi terkunci & salinan email keamanan bisa terbaca pembaca akun) dan `identity_unverified`
+   * (identitas utama belum terverifikasi → belum bisa mengirim).
+   */
+  async function warningsOf(
+    organizationId: string,
+    rows: readonly MailAccountRow[],
+  ): Promise<Map<string, MailAccount['warnings']>> {
+    const result = new Map<string, MailAccount['warnings']>();
+    if (rows.length === 0) return result;
+    const sender = await systemSenderOf(db, organizationId, deps.systemSenderFallback ?? null);
+    const identities = await db
+      .select({
+        accountId: mailIdentities.accountId,
+        address: mailIdentities.address,
+        isPrimary: mailIdentities.isPrimary,
+        state: mailIdentities.verificationState,
+      })
+      .from(mailIdentities)
+      .where(
+        and(
+          eq(mailIdentities.organizationId, organizationId),
+          inArray(
+            mailIdentities.accountId,
+            rows.map((row) => row.id),
+          ),
+        ),
+      );
+    for (const row of rows) {
+      const own = identities.filter((identity) => identity.accountId === row.id);
+      const warnings: MailAccount['warnings'] = [];
+      if (
+        systemSenderConflicts(
+          sender,
+          row,
+          own.map((identity) => identity.address),
+        )
+      ) {
+        warnings.push('system_sender_conflict');
+      }
+      if (own.some((identity) => identity.isPrimary && identity.state !== 'verified')) {
+        warnings.push('identity_unverified');
+      }
+      result.set(row.id, warnings);
+    }
+    return result;
+  }
+
   async function view(auth: AuthContext, row: MailAccountRow, viewer?: MailAccessUser) {
     const subject = viewer ?? (await viewerOf(db, auth));
     const level = await levelOf(db, subject, auth.organizationId, row);
     const owners = await ownersOf(db, auth.organizationId, [row]);
+    const warnings = await warningsOf(auth.organizationId, [row]);
     return toMailAccount(
       row,
       subject,
       level,
       row.ownerUserId ? (owners.get(row.ownerUserId) ?? null) : null,
+      warnings.get(row.id) ?? [],
     );
   }
 
@@ -406,6 +593,12 @@ export function createMailService(deps: MailServiceDeps) {
   ): ResolvedServers & { secretUnavailable: ('imap' | 'smtp')[] } {
     const secretUnavailable: ('imap' | 'smtp')[] = [];
     let imap: ResolvedServers['imap'] = null;
+    /**
+     * Review 9A-1 S1: password yang DIBUKA DARI DATABASE hanya boleh dikirim ke tujuan yang persis
+     * sama dengan saat disimpan (host, port, keamanan, username — IMAP, dan SMTP bila
+     * `smtp_same_credentials`). Tujuan lain → 400 `password_required`.
+     */
+    let imapFromStore = false;
     if (input.imap) {
       let password: Secret<string> | null = input.imap.password
         ? new Secret(input.imap.password)
@@ -428,9 +621,11 @@ export function createMailService(deps: MailServiceDeps) {
         }
         password = openStored(stored, 'imapPassword');
         if (!password) secretUnavailable.push('imap');
+        imapFromStore = true;
       }
       if (password) imap = { ...input.imap, password };
     } else if (stored) {
+      imapFromStore = true;
       const password = openStored(stored, 'imapPassword');
       if (!password) secretUnavailable.push('imap');
       else
@@ -445,6 +640,26 @@ export function createMailService(deps: MailServiceDeps) {
     let smtp: ResolvedServers['smtp'] = null;
     if (input.smtp) {
       if (input.smtp.sameCredentials) {
+        if (
+          imapFromStore &&
+          (!stored ||
+            !stored.smtpSameCredentials ||
+            !sameServer(
+              { ...input.smtp, username: imap?.username ?? stored.imapUsername ?? '' },
+              {
+                host: stored.smtpHost,
+                port: stored.smtpPort,
+                security: stored.smtpSecurity,
+                username: stored.imapUsername,
+              },
+            ))
+        ) {
+          throw validation(
+            'smtp.password',
+            'Server berubah — isi ulang password-nya.',
+            'password_required',
+          );
+        }
         if (imap)
           smtp = {
             ...input.smtp,
@@ -771,8 +986,20 @@ export function createMailService(deps: MailServiceDeps) {
         throw inboxChannelConflict(hasPermission(auth.user.role, 'channels.manage'));
       }
       if (await addressIsMailAccount(db, auth.organizationId, address)) {
-        throw conflict('address_already_connected', ADDRESS_ALREADY_CONNECTED);
+        throw await alreadyConnected(auth, address);
       }
+      // Review 9B S2: kotak surat Email pengirim sistem tidak boleh jadi akun Email.
+      await assertNotSystemSenderMailbox(db, auth.organizationId, {
+        emailAddress: address,
+        imapHost: input.imap.host,
+        imapUsername: input.imap.username,
+        smtpHost: input.smtp.host,
+        smtpUsername: input.smtp.sameCredentials ? null : (input.smtp.username ?? null),
+        smtpSameCredentials: input.smtp.sameCredentials,
+      });
+      // 9B §3.3 + review 9B S4: alamat yang sudah jadi alias akun lain juga ditolak (klaim lemah akun
+      // pribadi tidak menghalangi akun bersama).
+      await guardAccountAddress(db, auth, input.kind, address, null);
 
       const servers = resolveServers(input, null);
       const tested = await runTests(
@@ -833,6 +1060,8 @@ export function createMailService(deps: MailServiceDeps) {
         createdByUserId: auth.user.id,
       };
 
+      let revoked: RevokedClaim[] = [];
+      let approvalAuditId: string | null = null;
       const row = await db.transaction(async (tx) => {
         await assertActorStillAuthorized(
           tx,
@@ -848,8 +1077,17 @@ export function createMailService(deps: MailServiceDeps) {
           throw inboxChannelConflict(hasPermission(auth.user.role, 'channels.manage'));
         }
         if (await addressIsMailAccount(tx, auth.organizationId, address)) {
-          throw conflict('address_already_connected', ADDRESS_ALREADY_CONNECTED);
+          throw await alreadyConnected(auth, address);
         }
+        await assertNotSystemSenderMailbox(tx, auth.organizationId, {
+          emailAddress: address,
+          imapHost: input.imap.host,
+          imapUsername: input.imap.username,
+          smtpHost: input.smtp.host,
+          smtpUsername: input.smtp.sameCredentials ? null : (input.smtp.username ?? null),
+          smtpSameCredentials: input.smtp.sameCredentials,
+        });
+        revoked = await guardAccountAddress(tx, auth, input.kind, address, context.client);
         const [total] = await tx
           .select({ value: count() })
           .from(mailAccounts)
@@ -882,14 +1120,31 @@ export function createMailService(deps: MailServiceDeps) {
         if (!personal) await validateGrants(tx, auth.organizationId, input.access);
         const [inserted] = await tx.insert(mailAccounts).values(values).returning();
         if (!inserted) throw new Error('Akun email tidak tersimpan');
-        await tx.insert(mailIdentities).values({
-          organizationId: auth.organizationId,
-          accountId: id,
-          address,
-          displayName: input.fromName,
-          isPrimary: true,
-          verifiedAt: createdAt,
-        });
+        const [primary] = await tx
+          .insert(mailIdentities)
+          .values({
+            organizationId: auth.organizationId,
+            accountId: id,
+            address,
+            displayName: input.fromName,
+            isPrimary: true,
+            // Review 9A-1 S4: login IMAP tidak membuktikan alamat (server bisa milik pendaftar sendiri).
+            // Verifikasi (email uji ke alamat itu) menyusul 9B sebelum dipakai sebagai pengirim.
+            verifiedAt: null,
+          })
+          .returning();
+        // Review 9B S3: akun PRIBADI berdomain organisasi → menunggu persetujuan Owner/Admin.
+        if (personal && primary) {
+          approvalAuditId = await recordApprovalRequest(tx, {
+            organizationId: auth.organizationId,
+            actorUserId: auth.user.id,
+            accountKind: 'personal',
+            accountId: id,
+            identity: primary,
+            domains: await mailOrganizationDomains(tx, auth.organizationId),
+            client: context.client,
+          });
+        }
         if (input.access.length > 0) {
           await tx.insert(mailAccountAccess).values(
             input.access.map((grant) => ({
@@ -929,6 +1184,20 @@ export function createMailService(deps: MailServiceDeps) {
       });
       await publisher.publish([statusEvent(row)]);
       if (input.access.length > 0) await publishAccessChanged(auth.organizationId, input.access);
+      await notifyRevokedClaims(
+        deps.notifier,
+        { organizationId: auth.organizationId, actorUserId: auth.user.id, occurredAt: now() },
+        revoked,
+      );
+      const requested = approvalAuditId as string | null;
+      if (requested) {
+        await notifyApprovalRequest(db, deps.notifier, {
+          organizationId: auth.organizationId,
+          requesterUserId: auth.user.id,
+          auditLogId: requested,
+          occurredAt: now(),
+        });
+      }
       await enqueueSync(row, context.log);
       return view(auth, row);
     },
@@ -949,6 +1218,7 @@ export function createMailService(deps: MailServiceDeps) {
             )
         : [];
       const owners = await ownersOf(db, auth.organizationId, rows);
+      const warnings = await warningsOf(auth.organizationId, rows);
       return {
         accounts: rows
           .sort((a, b) => a.displayName.localeCompare(b.displayName, 'id', { sensitivity: 'base' }))
@@ -958,6 +1228,7 @@ export function createMailService(deps: MailServiceDeps) {
               viewer,
               levels.get(row.id) ?? null,
               row.ownerUserId ? (owners.get(row.ownerUserId) ?? null) : null,
+              warnings.get(row.id) ?? [],
             ),
           ),
         canConnectPersonal: hasPermission(auth.user.role, 'mail.private.own'),
@@ -976,19 +1247,30 @@ export function createMailService(deps: MailServiceDeps) {
           and(eq(mailAccounts.organizationId, auth.organizationId), isNull(mailAccounts.deletedAt)),
         );
       const owners = await ownersOf(db, auth.organizationId, rows);
+      const warnings = await warningsOf(auth.organizationId, rows);
       const accounts: MailSettingsAccountListResponse['accounts'] = [];
       for (const row of rows.sort((a, b) => a.displayName.localeCompare(b.displayName, 'id'))) {
         const owner = row.ownerUserId ? (owners.get(row.ownerUserId) ?? null) : null;
         if (row.kind === 'personal') {
           if (row.ownerUserId === auth.user.id) {
-            accounts.push(toMailAccount(row, viewer, levels.get(row.id) ?? null, owner));
+            accounts.push(
+              toMailAccount(
+                row,
+                viewer,
+                levels.get(row.id) ?? null,
+                owner,
+                warnings.get(row.id) ?? [],
+              ),
+            );
           } else if (manager && owner) {
             accounts.push(toRedactedMailAccount(row, owner));
           }
           continue;
         }
         const level = levels.get(row.id) ?? null;
-        if (level === 'manage') accounts.push(toMailAccount(row, viewer, level, null));
+        if (level === 'manage') {
+          accounts.push(toMailAccount(row, viewer, level, null, warnings.get(row.id) ?? []));
+        }
       }
       return {
         accounts,
@@ -998,14 +1280,8 @@ export function createMailService(deps: MailServiceDeps) {
     },
 
     async get(auth: AuthContext, accountId: string): Promise<MailAccount> {
-      const { viewer, row, level } = await loadWithLevel(auth, accountId);
-      const owners = await ownersOf(db, auth.organizationId, [row]);
-      return toMailAccount(
-        row,
-        viewer,
-        level,
-        row.ownerUserId ? (owners.get(row.ownerUserId) ?? null) : null,
-      );
+      const { viewer, row } = await loadWithLevel(auth, accountId);
+      return view(auth, row, viewer);
     },
 
     async update(
@@ -1046,7 +1322,21 @@ export function createMailService(deps: MailServiceDeps) {
         changes.periodicSyncMinutes = input.periodicSyncMinutes;
         plainFields.push('periodicSyncMinutes');
       }
+      if (input.sentCopyMode !== undefined && input.sentCopyMode !== row.sentCopyMode) {
+        changes.sentCopyMode = input.sentCopyMode;
+        plainFields.push('sentCopyMode');
+      }
+      if (
+        input.warnExternalRecipients !== undefined &&
+        input.warnExternalRecipients !== row.warnExternalRecipients
+      ) {
+        changes.warnExternalRecipients = input.warnExternalRecipients;
+        plainFields.push('warnExternalRecipients');
+      }
       let resetMailbox = false;
+      // 9B §3.2: alamat, host/username IMAP, atau host/username SMTP berubah = SEMUA identitas akun
+      // kembali `unverified` (kotak surat lain = bukti lama tidak berlaku).
+      let resetIdentities = false;
       if (serverChange) {
         const box = requireBox();
         if (
@@ -1082,8 +1372,9 @@ export function createMailService(deps: MailServiceDeps) {
             throw inboxChannelConflict(hasPermission(auth.user.role, 'channels.manage'));
           }
           if (await addressIsMailAccount(db, auth.organizationId, address, row.id)) {
-            throw conflict('address_already_connected', ADDRESS_ALREADY_CONNECTED);
+            throw await alreadyConnected(auth, address);
           }
+          await guardAccountAddress(db, auth, row.kind, address, null);
           changes.emailAddress = address;
           credentialFields.push('emailAddress');
           resetMailbox = true;
@@ -1120,6 +1411,13 @@ export function createMailService(deps: MailServiceDeps) {
           credentialFields.push(input.imap.password ? 'imap.password' : 'imap');
         }
         if (input.smtp) {
+          const nextSmtpUser = input.smtp.sameCredentials
+            ? (input.imap?.username ?? row.imapUsername)
+            : (input.smtp.username ?? null);
+          const currentSmtpUser = row.smtpSameCredentials ? row.imapUsername : row.smtpUsername;
+          if (input.smtp.host !== row.smtpHost || nextSmtpUser !== currentSmtpUser) {
+            resetIdentities = true;
+          }
           Object.assign(changes, {
             smtpHost: input.smtp.host,
             smtpPort: input.smtp.port,
@@ -1169,7 +1467,20 @@ export function createMailService(deps: MailServiceDeps) {
             : {}),
         } satisfies Partial<NewMailAccountRow>);
       }
+      if (resetMailbox) resetIdentities = true;
       if (plainFields.length === 0 && credentialFields.length === 0) return view(auth, row, viewer);
+      // Review 9B S2: kotak surat hasil ubahan tidak boleh = kotak surat Email pengirim sistem.
+      const candidate = {
+        emailAddress: changes.emailAddress ?? row.emailAddress,
+        imapHost: changes.imapHost ?? row.imapHost,
+        imapUsername: changes.imapUsername ?? row.imapUsername,
+        smtpHost: changes.smtpHost !== undefined ? changes.smtpHost : row.smtpHost,
+        smtpUsername: changes.smtpUsername !== undefined ? changes.smtpUsername : row.smtpUsername,
+        smtpSameCredentials: changes.smtpSameCredentials ?? row.smtpSameCredentials,
+      };
+      // Hanya bila kotak suratnya berganti (akun lama yang bentrok tetap bisa diperbarui password-nya).
+      if (resetIdentities) await assertNotSystemSenderMailbox(db, auth.organizationId, candidate);
+      let revoked: RevokedClaim[] = [];
 
       const updated = await db.transaction(async (tx) => {
         if (credentialFields.length > 0) {
@@ -1187,9 +1498,18 @@ export function createMailService(deps: MailServiceDeps) {
               throw inboxChannelConflict(hasPermission(auth.user.role, 'channels.manage'));
             }
             if (await addressIsMailAccount(tx, auth.organizationId, changes.emailAddress, row.id)) {
-              throw conflict('address_already_connected', ADDRESS_ALREADY_CONNECTED);
+              throw await alreadyConnected(auth, changes.emailAddress);
             }
+            revoked = await guardAccountAddress(
+              tx,
+              auth,
+              row.kind,
+              changes.emailAddress,
+              context.client,
+            );
           }
+          if (resetIdentities)
+            await assertNotSystemSenderMailbox(tx, auth.organizationId, candidate);
         }
         const locked = await loadAccountRow(tx, auth.organizationId, row.id, { forUpdate: true });
         if (!locked) throw mailNotFound();
@@ -1215,7 +1535,15 @@ export function createMailService(deps: MailServiceDeps) {
           await tx
             .update(mailIdentities)
             .set({
-              ...(changes.emailAddress ? { address: changes.emailAddress } : {}),
+              // Review 9B S3: alamat baru = keputusan persetujuan lama gugur.
+              ...(changes.emailAddress
+                ? {
+                    address: changes.emailAddress,
+                    approvalState: null,
+                    approvalDecidedAt: null,
+                    approvalDecidedByUserId: null,
+                  }
+                : {}),
               ...(changes.fromName ? { displayName: changes.fromName } : {}),
             })
             .where(
@@ -1223,6 +1551,31 @@ export function createMailService(deps: MailServiceDeps) {
                 eq(mailIdentities.organizationId, auth.organizationId),
                 eq(mailIdentities.accountId, row.id),
                 eq(mailIdentities.isPrimary, true),
+              ),
+            );
+        }
+        if (resetIdentities) {
+          // Review 9A-1 S4 + 9B §3.2: kotak surat lain = verifikasi lama (utama & alias) gugur.
+          await tx
+            .update(mailIdentities)
+            .set(IDENTITY_RESET)
+            .where(
+              and(
+                eq(mailIdentities.organizationId, auth.organizationId),
+                eq(mailIdentities.accountId, row.id),
+              ),
+            );
+        }
+        if (credentialFields.length > 0) {
+          // 9B: kredensial disimpan ulang = pengirim akun yang `blocked` (login SMTP ditolak) dilepas.
+          await tx
+            .update(emailSenderSettings)
+            .set({ state: 'ok', blockedReason: null, blockedAt: null })
+            .where(
+              and(
+                eq(emailSenderSettings.organizationId, auth.organizationId),
+                eq(emailSenderSettings.mailAccountId, row.id),
+                eq(emailSenderSettings.state, 'blocked'),
               ),
             );
         }
@@ -1260,6 +1613,11 @@ export function createMailService(deps: MailServiceDeps) {
         }
         return saved;
       });
+      await notifyRevokedClaims(
+        deps.notifier,
+        { organizationId: auth.organizationId, actorUserId: auth.user.id, occurredAt: now() },
+        revoked,
+      );
       if (credentialFields.length > 0) {
         await publisher.publish([statusEvent(updated)]);
         await enqueueSync(updated, context.log);
@@ -1393,6 +1751,7 @@ export function createMailService(deps: MailServiceDeps) {
       if (row.deletedAt !== null) throw conflict('account_deleting', ACCOUNT_DELETING, 'accountId');
       await confirm(auth, confirmation, 'mail.account.delete', CONFIRM.delete, context);
       const affected = await affectedUsersOf(db, auth.organizationId, row.id, row);
+      const orphanFiles: string[] = [];
       await db.transaction(async (tx) => {
         await assertActorStillAuthorized(
           tx,
@@ -1402,6 +1761,22 @@ export function createMailService(deps: MailServiceDeps) {
         );
         const locked = await loadAccountRow(tx, auth.organizationId, row.id, { forUpdate: true });
         if (!locked) throw conflict('account_deleting', ACCOUNT_DELETING, 'accountId');
+        if (ownerInactive) {
+          // Review 9A-1 R6: pemilik bisa diaktifkan lagi di antara pemeriksaan & transaksi.
+          const [ownerNow] = await tx
+            .select({ disabledAt: users.disabledAt })
+            .from(users)
+            .where(
+              and(
+                eq(users.organizationId, auth.organizationId),
+                eq(users.id, row.ownerUserId ?? ''),
+              ),
+            )
+            .for('update');
+          if (ownerNow && ownerNow.disabledAt === null) {
+            throw new AppError('FORBIDDEN', { message: PERSONAL_OWNER_ONLY });
+          }
+        }
         // Kredensial dimusnahkan SEKETIKA; isi cache dihapus bertahap oleh job.
         await tx
           .update(mailAccounts)
@@ -1424,6 +1799,36 @@ export function createMailService(deps: MailServiceDeps) {
             and(
               eq(mailAccountAccess.organizationId, auth.organizationId),
               eq(mailAccountAccess.accountId, row.id),
+            ),
+          );
+        // 9B: email yang belum terkirim dibatalkan; draf & lampirannya dibuang (berkas setelah commit).
+        await tx
+          .update(mailOutbox)
+          .set({ status: 'canceled', canceledAt: now(), holdReason: null })
+          .where(
+            and(
+              eq(mailOutbox.organizationId, auth.organizationId),
+              eq(mailOutbox.accountId, row.id),
+              inArray(mailOutbox.status, ['pending', 'queued']),
+            ),
+          );
+        const files = await tx
+          .select({ key: mailDraftAttachments.storageKey })
+          .from(mailDraftAttachments)
+          .innerJoin(mailDrafts, eq(mailDrafts.id, mailDraftAttachments.draftId))
+          .where(
+            and(
+              eq(mailDrafts.organizationId, auth.organizationId),
+              eq(mailDrafts.accountId, row.id),
+            ),
+          );
+        for (const file of files) if (file.key) orphanFiles.push(file.key);
+        await tx
+          .delete(mailDrafts)
+          .where(
+            and(
+              eq(mailDrafts.organizationId, auth.organizationId),
+              eq(mailDrafts.accountId, row.id),
             ),
           );
         await tx
@@ -1450,6 +1855,7 @@ export function createMailService(deps: MailServiceDeps) {
         });
         if (row.kind === 'shared') await notifyOwners(tx, auth, 'mail_account_changed', auditLogId);
       });
+      for (const key of orphanFiles) await deps.store?.remove(key).catch(() => undefined);
       await publisher.publish([
         {
           organizationId: auth.organizationId,
@@ -1588,23 +1994,68 @@ export function createMailService(deps: MailServiceDeps) {
         defaultSyncWindowDays: (row
           ? row.defaultSyncWindowDays
           : MAIL_DEFAULT_SYNC_WINDOW_DAYS) as MailSyncWindowDays,
+        maxRecipientsPerEmail: row?.maxRecipientsPerEmail ?? MAIL_RECIPIENTS_PER_EMAIL.default,
+        maxAttachmentTotalMb: row?.maxAttachmentTotalMb ?? MAIL_ATTACHMENT_TOTAL_MB.default,
       };
     },
 
     async updateSettings(
       auth: AuthContext,
-      input: MailSettings,
+      request: UpdateMailSettingsRequest,
       context: MailContext,
     ): Promise<MailSettings> {
       const before = await service.settings(auth);
+      const { confirmation, ...rest } = request;
+      const input: MailSettings = {
+        cacheRetentionDays: rest.cacheRetentionDays,
+        defaultSyncWindowDays: rest.defaultSyncWindowDays,
+        maxRecipientsPerEmail: rest.maxRecipientsPerEmail ?? before.maxRecipientsPerEmail,
+        maxAttachmentTotalMb: rest.maxAttachmentTotalMb ?? before.maxAttachmentTotalMb,
+      };
+      // 9B §12.1: MENAIKKAN batas penerima/lampiran = melonggarkan rem → konfirmasi identitas.
+      const loosened =
+        input.maxRecipientsPerEmail > before.maxRecipientsPerEmail ||
+        input.maxAttachmentTotalMb > before.maxAttachmentTotalMb;
+      if (loosened) {
+        await confirm(
+          auth,
+          confirmation,
+          'settings.mail.limits',
+          'Masukkan password-mu (dan kode verifikasi dua langkah) untuk menaikkan batas kirim email.',
+          context,
+        );
+      }
       await db.transaction(async (tx) => {
         await assertActorStillAuthorized(tx, auth, 'mail.accounts.manage', context.log);
+        if (!loosened) {
+          // Pemeriksaan "tidak melonggarkan" diulang dengan baris terkunci (balapan dua permintaan).
+          const [locked] = await tx
+            .select({
+              maxRecipients: mailSettings.maxRecipientsPerEmail,
+              maxMb: mailSettings.maxAttachmentTotalMb,
+            })
+            .from(mailSettings)
+            .where(eq(mailSettings.organizationId, auth.organizationId))
+            .for('update');
+          const currentRecipients = locked?.maxRecipients ?? MAIL_RECIPIENTS_PER_EMAIL.default;
+          const currentMb = locked?.maxMb ?? MAIL_ATTACHMENT_TOTAL_MB.default;
+          if (
+            input.maxRecipientsPerEmail > currentRecipients ||
+            input.maxAttachmentTotalMb > currentMb
+          ) {
+            throw new AppError('CONFLICT', {
+              message: 'Pengaturan email baru saja diubah orang lain. Muat ulang lalu coba lagi.',
+            });
+          }
+        }
         await tx
           .insert(mailSettings)
           .values({
             organizationId: auth.organizationId,
             cacheRetentionDays: input.cacheRetentionDays,
             defaultSyncWindowDays: input.defaultSyncWindowDays,
+            maxRecipientsPerEmail: input.maxRecipientsPerEmail,
+            maxAttachmentTotalMb: input.maxAttachmentTotalMb,
             updatedByUserId: auth.user.id,
           })
           .onConflictDoUpdate({
@@ -1612,6 +2063,8 @@ export function createMailService(deps: MailServiceDeps) {
             set: {
               cacheRetentionDays: input.cacheRetentionDays,
               defaultSyncWindowDays: input.defaultSyncWindowDays,
+              maxRecipientsPerEmail: input.maxRecipientsPerEmail,
+              maxAttachmentTotalMb: input.maxAttachmentTotalMb,
               updatedByUserId: auth.user.id,
               updatedAt: now(),
             },
@@ -1620,7 +2073,7 @@ export function createMailService(deps: MailServiceDeps) {
           organizationId: auth.organizationId,
           actorUserId: auth.user.id,
           action: AUDIT_ACTIONS.settingsMailUpdated,
-          metadata: { previous: before, next: input },
+          metadata: { previous: before, next: input, loosened },
           client: context.client,
         });
       });
@@ -1669,7 +2122,8 @@ export function createMailService(deps: MailServiceDeps) {
             inArray(mailMessages.accountId, ids),
             sql`(${mailMessages.isStarred} or not ${mailMessages.isRead})`,
             sql`${mailMessages.folderRole} is distinct from 'junk' and ${mailMessages.folderRole} is distinct from 'trash'`,
-            sql`${mailMessages.pendingAction} is null`,
+            // Bagian 2: aksi bendera tertunda tetap dihitung; pindah/hapus tertunda tidak.
+            sql`(${mailMessages.pendingAction} is null or ${mailMessages.pendingAction} = 'flags')`,
           ),
         );
       let unified = 0;

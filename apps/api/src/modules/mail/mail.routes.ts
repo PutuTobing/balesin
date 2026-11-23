@@ -56,6 +56,16 @@ export const MAIL_DETECT_RULE: RateLimitRule = {
   limit: 10,
   windowSeconds: 300,
 };
+/**
+ * Review 9A-1 S2/R5: semua jalur yang menjalankan tes koneksi IMAP/SMTP (tes, buat akun, ubah server)
+ * memakai jatah tes yang SAMA per pengguna, ditambah batas per organisasi (alat tebak password /
+ * pembuka sambungan ke server pihak ketiga).
+ */
+export const MAIL_TEST_ORG_RULE: RateLimitRule = {
+  name: 'mail-tes-organisasi',
+  limit: 60,
+  windowSeconds: 300,
+};
 /** "Sinkron sekarang": 6/menit per AKUN. */
 export const MAIL_SYNC_RULE: RateLimitRule = { name: 'mail-sinkron', limit: 6, windowSeconds: 60 };
 
@@ -98,6 +108,20 @@ export const mailRoutes: FastifyPluginCallbackZod<MailRoutesOptions> = (app, opt
       userId,
       (wait) => `Terlalu banyak perubahan akun email. Coba lagi dalam ${wait}.`,
     );
+  const testLimit = async (auth: { user: { id: string }; organizationId: string }) => {
+    await enforceRateLimit(
+      limiter,
+      CHANNEL_TEST_RULE,
+      auth.user.id,
+      () => `Batas tes koneksi (${CHANNEL_TEST_RULE.limit} kali per 5 menit) sudah tercapai.`,
+    );
+    await enforceRateLimit(
+      limiter,
+      MAIL_TEST_ORG_RULE,
+      auth.organizationId,
+      (wait) => `Terlalu banyak tes koneksi email di organisasi ini. Coba lagi dalam ${wait}.`,
+    );
+  };
   /** `mail.private.own` ATAU `mail.accounts.manage` (deteksi/tes wizard). */
   async function requireConnectPermission(request: FastifyRequest) {
     const auth = requireAuth(request);
@@ -153,12 +177,7 @@ export const mailRoutes: FastifyPluginCallbackZod<MailRoutesOptions> = (app, opt
     },
     async (request) => {
       const auth = await requireConnectPermission(request);
-      await enforceRateLimit(
-        limiter,
-        CHANNEL_TEST_RULE,
-        auth.user.id,
-        () => `Batas tes koneksi (${CHANNEL_TEST_RULE.limit} kali per 5 menit) sudah tercapai.`,
-      );
+      await testLimit(auth);
       return mail.test(auth, request.body, contextOf(request));
     },
   );
@@ -189,6 +208,7 @@ export const mailRoutes: FastifyPluginCallbackZod<MailRoutesOptions> = (app, opt
         request.body.kind === 'shared' ? 'mail.accounts.manage' : 'mail.private.own',
       );
       await writeLimit(auth.user.id);
+      await testLimit(auth);
       const account = await mail.create(auth, request.body, contextOf(request));
       return reply.code(201).send({ account });
     },
@@ -231,6 +251,8 @@ export const mailRoutes: FastifyPluginCallbackZod<MailRoutesOptions> = (app, opt
     async (request) => {
       const auth = requireAuth(request);
       await writeLimit(auth.user.id);
+      if (request.body.imap || request.body.smtp || request.body.emailAddress)
+        await testLimit(auth);
       return {
         account: await mail.update(
           auth,
@@ -277,12 +299,7 @@ export const mailRoutes: FastifyPluginCallbackZod<MailRoutesOptions> = (app, opt
     },
     async (request) => {
       const auth = requireAuth(request);
-      await enforceRateLimit(
-        limiter,
-        CHANNEL_TEST_RULE,
-        auth.user.id,
-        () => `Batas tes koneksi (${CHANNEL_TEST_RULE.limit} kali per 5 menit) sudah tercapai.`,
-      );
+      await testLimit(auth);
       return mail.testStored(auth, request.params.accountId, contextOf(request));
     },
   );

@@ -662,6 +662,29 @@ export function createMailAccessService(deps: {
       }
       await db.transaction(async (tx) => {
         await assertActorStillAuthorized(tx, auth, 'mail.accounts.manage', context.log);
+        if (wantsGrant) {
+          // Review 9A-1 R6: peran/status target dicek ULANG dengan baris terkunci (bisa dipromosikan
+          // jadi Admin atau dinonaktifkan di antara pemeriksaan awal & transaksi ini).
+          const [lockedTarget] = await tx
+            .select({ role: users.role, disabledAt: users.disabledAt })
+            .from(users)
+            .where(and(eq(users.organizationId, auth.organizationId), eq(users.id, target.id)))
+            .for('update');
+          if (!lockedTarget || lockedTarget.disabledAt !== null) {
+            throw validation(
+              'grants',
+              'Pengguna ini nonaktif, jadi tidak bisa diberi akses.',
+              'principal_invalid',
+            );
+          }
+          if (isMailImplicitManager(lockedTarget.role)) {
+            throw validation(
+              'grants',
+              'Owner dan Admin otomatis punya hak Kelola di semua akun bersama.',
+              'grant_for_admin',
+            );
+          }
+        }
         for (const entry of plan) {
           const locked = await loadAccountRow(tx, auth.organizationId, entry.id, {
             forUpdate: true,
