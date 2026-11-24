@@ -102,7 +102,11 @@ describe('menu Email — daftar', () => {
     const rows = await screen.findAllByRole('button', { name: /NOC Nusaraya|Sistem Billing/ });
     expect(rows).toHaveLength(2);
     // Kelompok hari.
-    expect(list().getByRole('heading', { name: l.groups.today })).toBeVisible();
+    // Email pertama tiba 30 menit lalu: "Kemarin" bila tes berjalan sesaat setelah tengah malam.
+    const halfHourAgo = new Date(Date.now() - 30 * 60_000);
+    const firstGroup =
+      halfHourAgo.getDate() === new Date().getDate() ? l.groups.today : l.groups.yesterday;
+    expect(list().getByRole('heading', { name: firstGroup })).toBeVisible();
     expect(list().getByRole('heading', { name: l.groups.week })).toBeVisible();
     // Pembaca layar mendapat status lengkap; tampilan gabungan menyebut akun asal.
     expect(rows[0]).toHaveAccessibleName(expect.stringContaining(`${l.unread}, ${l.attachment}`));
