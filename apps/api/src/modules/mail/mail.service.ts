@@ -92,7 +92,7 @@ import type { EmailNotifier } from '../../queues/email-queue';
 import type { MailJobEnqueuer } from '../../queues/mail-queue';
 import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
 import { ACCESS_RULES, forbidByRule, type AccessDeniedRecorder } from '../auth/access-denied';
-import { assertActorStillAuthorized } from '../auth/actor-check';
+import { assertActorStillAuthorized, authorityChanged } from '../auth/actor-check';
 import type { AuthContext } from '../auth/session.service';
 import { findActiveOwners } from '../team/team.repo';
 import { requireIdentityConfirmation } from '../two-factor/require-confirmation';
@@ -1774,7 +1774,11 @@ export function createMailService(deps: MailServiceDeps) {
             )
             .for('update');
           if (ownerNow && ownerNow.disabledAt === null) {
-            throw new AppError('FORBIDDEN', { message: PERSONAL_OWNER_ONLY });
+            context.log.warn(
+              { userId: auth.user.id, accountId: row.id },
+              'Pemilik akun email pribadi aktif lagi di tengah permintaan putus akun',
+            );
+            throw authorityChanged(PERSONAL_OWNER_ONLY);
           }
         }
         // Kredensial dimusnahkan SEKETIKA; isi cache dihapus bertahap oleh job.

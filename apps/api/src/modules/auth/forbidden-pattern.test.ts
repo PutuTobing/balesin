@@ -20,6 +20,8 @@ const ALLOWED: Record<string, string> = {
   'modules/auth/actor-check.ts':
     'wewenang berubah DI TENGAH permintaan (review akhir R3): ditolak di transaksi yang dibatalkan; perubahan peran/nonaktifnya sudah diaudit',
   'modules/auth/permission-grant.ts': 'izin tambahan di handler — diaudit lewat record()',
+  'modules/mail/mail-messages.service.ts':
+    'bukan wewenang: kebijakan ISI email — lampiran berisiko `blocked` tidak pernah diunduh siapa pun, dan token tampilan tanpa izin gambar luar (rute publik ber-token). Penolakan wewenang di berkas ini lewat forbidByRule',
   'modules/realtime/inbox-stream.routes.ts':
     'WebSocket dari Origin asing (pembajakan lintas situs, bukan wewenang) — diaudit lewat csrfRejections',
   'modules/setup/setup.service.ts': 'token setup salah (publik, tanpa pengguna)',

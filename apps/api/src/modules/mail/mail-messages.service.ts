@@ -88,7 +88,7 @@ import type { ClientInfo } from '../../http/client-info';
 import { rateLimited } from '../../http/rate-limit';
 import type { MailJobEnqueuer } from '../../queues/mail-queue';
 import { recordAudit } from '../audit/audit';
-import { ACCESS_RULES, type AccessDeniedRecorder } from '../auth/access-denied';
+import { ACCESS_RULES, forbidByRule, type AccessDeniedRecorder } from '../auth/access-denied';
 import type { AuthContext, SessionService } from '../auth/session.service';
 import { avatarUrlOf, mailNotFound } from './mail.repo';
 import type { MailViewTokens } from './mail-view-token';
@@ -1320,13 +1320,11 @@ export function createMailMessagesService(deps: MailMessagesServiceDeps) {
     });
     const moving = MAIL_MOVE_ACTIONS.includes(action);
     if (moving && !hasPermission(auth.user.role, 'mail.send')) {
-      await accessDenied.recordRule({
+      await forbidByRule(accessDenied, {
         auth,
         rule: ACCESS_RULES.mailAccountLevel,
         client: context.client,
         details: { action, permission: 'mail.send' },
-      });
-      throw new AppError('FORBIDDEN', {
         message: 'Peranmu tidak bisa memindah atau menghapus email.',
       });
     }
