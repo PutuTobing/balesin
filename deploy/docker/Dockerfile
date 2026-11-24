@@ -33,14 +33,14 @@ COPY e2e/package.json /repo/e2e/
 
 # ── Dasar: Node + pnpm (versi sama dengan packageManager di package.json) ──────────────────────
 # Dua salinan identik: satu di platform mesin build, satu di platform target.
-FROM --platform=$BUILDPLATFORM node:22.23.5-alpine3.24@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a AS base-build
+FROM --platform=$BUILDPLATFORM node:26.13.1-alpine3.24@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS base-build
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
     CI=true
 RUN npm install --global --no-fund --no-audit pnpm@12.18.0
 WORKDIR /repo
 
-FROM node:22.23.5-alpine3.24@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a AS base-target
+FROM node:26.13.1-alpine3.24@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS base-target
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
     CI=true
@@ -116,7 +116,7 @@ RUN pnpm licenses list --prod --json \
  && grep -q '^@img/sharp-libvips-linuxmusl-arm64@' /out/THIRD-PARTY-NOTICES
 
 # ── Runtime Node bersama ──────────────────────────────────────────────────────────────────────
-FROM node:22.23.5-alpine3.24@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a AS node-runtime
+FROM node:26.13.1-alpine3.24@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS node-runtime
 # tini: PID 1 yang meneruskan sinyal (SIGTERM → shutdown rapi) dan memanen proses zombie.
 # Manajer paket bawaan image node (npm/npx, corepack, yarn) dibuang: runtime, healthcheck, migrasi,
 # dan CLI `balesin` hanya memanggil `node`/`sh`/`tar`. Mengurangi permukaan serangan dan CVE npm
@@ -163,7 +163,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 CMD ["node", "dist/index.js"]
 
 # ── web: berkas statis PWA + gateway (proxy ke api) ───────────────────────────────────────────
-FROM nginxinc/nginx-unprivileged:1.30.6-alpine3.24@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03 AS web
+FROM nginxinc/nginx-unprivileged:1.31.7-alpine3.24@sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e AS web
 USER root
 # Perbaikan keamanan sebelum image upstream dirilis ulang (gerbang CVE Trivy, audit akhir A3):
 #  - nginx (+ modul bawaan image) ≥ 1.30.7 (CVE-2026-113425, -121810, -123007, -123633) dari repo
