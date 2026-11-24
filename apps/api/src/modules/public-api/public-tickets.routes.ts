@@ -57,6 +57,7 @@ function grantOf(key: ApiKeyPrincipal): PermissionGrant {
     scope: 'all',
     userId: key.id,
     organizationId: key.organizationId,
+    principal: 'apiKey',
   };
 }
 

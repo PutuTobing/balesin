@@ -5,7 +5,13 @@
 #  - tag image versi TIDAK boleh ditimpa (gagal bila sudah ada di registry);
 #  - docker-compose.yml rilis merujuk image dengan DIGEST, jadi SHA256SUMS sekaligus mengunci isi image;
 #  - image dan SHA256SUMS ditandatangani cosign keyless (OIDC GitHub, Sigstore); install.sh dan
-#    `balesin update` memverifikasi tanda tangan SHA256SUMS bila cosign terpasang.
+#    `balesin update` WAJIB memverifikasi tanda tangan SHA256SUMS (BALESIN_REQUIRE_SIGNATURE=1
+#    sejak v1.0.0; keduanya memasang cosign versi dipin + checksum bila belum ada).
+# Kanal distribusi (BUTUH-TOBING #18): repo publik, GitHub Release repo ini, image GHCR publik.
+#  - Push pertama MEMBUAT paket GHCR balesin-api/-worker/-web dengan visibilitas PRIVAT. Server
+#    pelanggan menarik image tanpa login, jadi instalasi GAGAL sampai ketiga paket diubah ke Public
+#    (GitHub → profil → Packages → paket → Package settings → Change visibility). Cukup sekali.
+#  - Label org.opencontainers.image.source menautkan paket ke repo ini (izin workflow ikut repo).
 # Catatan: tanda tangan keyless tercatat di log transparansi publik Sigstore (Rekor) beserta nama repo
 # dan workflow ini — lihat DECISIONS 2026-11-22 "Fase 7 — rilis".
 name: Rilis
@@ -54,6 +60,9 @@ jobs:
         run: |
           echo "versi=${TAG#v}" >> "$GITHUB_OUTPUT"
           echo "prefix=ghcr.io/${OWNER,,}/balesin" >> "$GITHUB_OUTPUT"
+          # Versi aplikasi di image = versi tag (build arg Dockerfile). `--build-arg BALESIN_VERSION`
+          # ada di SETIAP build berikut, supaya isi image yang diuji, dipindai, dan didorong sama.
+          echo "BALESIN_VERSION=${TAG#v}" >> "$GITHUB_ENV"
       # Image multi-arsitektur (amd64 + arm64): installer menerima host arm64 (install.sh, DEPLOY.md),
       # jadi image rilis wajib punya varian arm64. arm64 dibangun lewat emulasi QEMU; dependency native
       # (sharp/libvips, @node-rs/argon2, msgpackr) dipasang pnpm di dalam stage platform target, jadi
@@ -78,7 +87,9 @@ jobs:
             docker buildx build -f deploy/docker/Dockerfile --target "$target" \
               --platform "$PLATFORMS" --provenance=false --sbom=false \
               --label "org.opencontainers.image.version=$VERSI" \
-              --label "org.opencontainers.image.revision=$REVISI" .
+              --label "org.opencontainers.image.revision=$REVISI" \
+              --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+              --build-arg BALESIN_VERSION .
           done
       - name: Uji asap tiap arsitektur (modul native termuat sebagai non-root)
         run: |
@@ -86,7 +97,8 @@ jobs:
             arch="${platform#linux/}"
             node_arch="${arch/amd64/x64}" # nama arsitektur versi Node (process.arch)
             docker buildx build -f deploy/docker/Dockerfile --target api --platform "$platform" \
-              --provenance=false --sbom=false --load -t "balesin-uji-api:$arch" .
+              --provenance=false --sbom=false --build-arg BALESIN_VERSION \
+              --load -t "balesin-uji-api:$arch" .
             # Pemberitahuan lisensi (audit akhir A5): identik di setiap arsitektur, jadi satu aset rilis.
             docker run --rm --platform "$platform" --entrypoint cat "balesin-uji-api:$arch" \
               /app/THIRD-PARTY-NOTICES > "$RUNNER_TEMP/notices-$arch.txt"
@@ -138,7 +150,7 @@ jobs:
             arch="${platform#linux/}"
             for target in api worker web; do
               docker buildx build -f deploy/docker/Dockerfile --target "$target" \
-                --platform "$platform" --provenance=false --sbom=false \
+                --platform "$platform" --provenance=false --sbom=false --build-arg BALESIN_VERSION \
                 --output "type=docker,dest=$scan/$target-$arch.tar" .
               echo "::group::Laporan $target ($arch): HIGH/CRITICAL"
               trivy image --input "/pindai/$target-$arch.tar" --scanners vuln --skip-db-update \
@@ -189,6 +201,7 @@ jobs:
         run: |
           for target in api worker web; do
             ref="$PREFIX-$target:$VERSI"
+            # Rilis pertama: paket belum ada → inspect gagal → lolos. Tag yang sudah ada → ditolak.
             if docker manifest inspect "$ref" >/dev/null 2>&1; then
               echo "::error::$ref sudah ada di registry. Versi rilis tidak boleh ditimpa — naikkan nomor versi."
               exit 1
@@ -202,6 +215,8 @@ jobs:
               --platform "$PLATFORMS" --provenance=false --sbom=false \
               --label "org.opencontainers.image.version=$VERSI" \
               --label "org.opencontainers.image.revision=$REVISI" \
+              --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+              --build-arg BALESIN_VERSION \
               -t "$PREFIX-$target:$VERSI" --push --metadata-file "$meta" .
             digest="$(jq -r '."containerimage.digest" // empty' "$meta")"
             [[ "$digest" == sha256:* ]] || { echo "::error::Digest $target tidak terbaca"; exit 1; }
@@ -255,5 +270,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" rilis/* --verify-tag --title "Balesin $TAG" \
-            --notes "Pasang: curl -fsSL <URL>/install.sh | sudo bash — Update: sudo balesin update ${TAG#v}. Panduan: docs/panduan/ (bab 1 Instalasi, bab 8 Pemeliharaan)."
+          # --latest: /releases/latest/download/{install.sh,VERSION} (installer dan `balesin update`)
+          # menunjuk rilis ini.
+          base="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$TAG"
+          gh release create "$TAG" rilis/* --verify-tag --latest --title "Balesin $TAG" \
+            --notes "Pasang: curl -fsSL $base/install.sh | sudo bash — Update: sudo balesin update ${TAG#v}. Berkas rilis ditandatangani cosign (SHA256SUMS.sigstore.json). Panduan: docs/panduan/ (bab 1 Instalasi, bab 8 Pemeliharaan)."

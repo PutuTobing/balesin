@@ -4,6 +4,7 @@ import { withTimeout } from './timeout';
 
 export * from './channels/testing/fake-imap';
 export * from './channels/testing/test-cert';
+export * from './mail-client/testing/fake-mail-imap';
 
 /**
  * Alat bantu tes: logger sungguhan (dengan seluruh redaksi) yang menulis ke memori.

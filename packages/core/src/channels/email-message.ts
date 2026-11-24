@@ -12,6 +12,12 @@ import sanitizeHtml from 'sanitize-html';
 /** Review Fase 6 R1: hasil verifikasi pengirim email. */
 export type EmailSenderVerification = 'pass' | 'fail' | 'unverified';
 
+import {
+  EMAIL_HTML_MAX_DEPTH,
+  EMAIL_HTML_MAX_TAGS,
+  htmlWithinLimits,
+  plainTextFromUntrustedHtml,
+} from '../mail/html-guard';
 import { cleanCustomerText, cleanFileName } from '../meta/contact-identity';
 import { detectMedia } from '../meta/media-sniff';
 
@@ -60,6 +66,15 @@ export interface ParsedInboundEmail {
   authWarning: boolean;
   attachments: EmailAttachmentPart[];
   skippedAttachments: number;
+  /** Tahap 9.0 — header `To`/`Cc` (huruf kecil, tanpa duplikat, maks. `EMAIL_MAX_HEADER_ADDRESSES`). */
+  to: string[];
+  cc: string[];
+  /**
+   * Penerima amplop dari server penerima: `Delivered-To` lalu `X-Original-To`, urut dari atas
+   * (paling baru dulu). Bisa dipalsukan pengirim — hanya dipakai bila COCOK dengan alamat/alias
+   * channel (`emailDestination`).
+   */
+  envelopeTo: string[];
 }
 
 export type EmailParseResult =
@@ -293,10 +308,34 @@ const ALLOWED_TAGS = [
 ];
 
 /**
+ * Review 9.1 putaran 2 S3 — jaring pengaman `sanitizeEmailHtml`: batas umum (`html-guard.ts`) +
+ * ruang untuk bingkai dokumen email keluar (html/body/tabel merek ≈ 8 tingkat, ±25 tag) karena
+ * salinan Inbox email API (`persist`) disanitasi ulang dengan profil ini SETELAH render. Email masuk
+ * diperiksa dengan batas umum di `parseInboundEmail` sebelum sampai sini.
+ */
+const SANITIZE_SAFETY_LIMITS = {
+  maxTags: EMAIL_HTML_MAX_TAGS + 500,
+  maxDepth: EMAIL_HTML_MAX_DEPTH + 20,
+} as const;
+
+/** Catatan di versi teks saat tampilan HTML email masuk dibuang (terlalu besar/rumit). */
+export const EMAIL_HTML_OMITTED_NOTE =
+  '(Tampilan HTML email ini tidak tersedia karena terlalu besar atau terlalu rumit. Yang tampil hanya versi teksnya.)';
+
+/**
  * HTML email → HTML aman. Tanpa `style`/`class`/`id`/event, tanpa gambar, tanpa skrip/form/iframe/
  * svg/math, tautan hanya http(s)/mailto dengan `rel="noopener noreferrer nofollow"` + `target=_blank`.
+ *
+ * Review 9.1 S3: HTML yang melewati batas tag/kedalaman TIDAK disanitasi (sanitize-html super-linear
+ * terhadap kedalaman) — hasilnya string kosong (= tanpa tampilan HTML).
  */
 export function sanitizeEmailHtml(html: string): string {
+  if (!htmlWithinLimits(html, SANITIZE_SAFETY_LIMITS)) return '';
+  return sanitizeInboundProfile(html);
+}
+
+/** Tanpa penjaga — pemanggil WAJIB sudah memeriksa `htmlWithinLimits`. */
+function sanitizeInboundProfile(html: string): string {
   return sanitizeHtml(html, {
     allowedTags: ALLOWED_TAGS,
     allowedAttributes: {
@@ -372,11 +411,13 @@ export function stripQuotedReply(text: string): string {
   return kept.length > 0 ? kept : text.trim();
 }
 
+const EMAIL_TEXT_MAX_CHARS = 65_536;
+
 function cleanBody(text: string | undefined): string | null {
   if (!text) return null;
   const cleaned = stripQuotedReply(text.replaceAll('\u0000', '').replace(/\r\n/g, '\n'));
   if (cleaned.length === 0) return null;
-  return cleaned.length > 65_536 ? cleaned.slice(0, 65_536) : cleaned;
+  return cleaned.length > EMAIL_TEXT_MAX_CHARS ? cleaned.slice(0, EMAIL_TEXT_MAX_CHARS) : cleaned;
 }
 
 // ── Lampiran ────────────────────────────────────────────────────────────────
@@ -424,12 +465,59 @@ const DANGEROUS_EXTENSIONS = new Set([
   'sh',
   'app',
   'url',
+  // Review 9A-2 R7: skrip Windows Script Host, konsol MMC, konektor pencarian, dsb.
+  'ws',
+  'vb',
+  'msc',
+  'msh1',
+  'msh2',
+  'mshxml',
+  'msh1xml',
+  'msh2xml',
+  'ps2',
+  'ps2xml',
+  'psc2',
+  'psd1',
+  'xbap',
+  'ins',
+  'isp',
+  'mst',
+  'its',
+  'cer',
+  'crt',
+  'der',
+  'hlp',
+  'shb',
+  'shs',
+  'search-ms',
+  'searchconnector-ms',
+  'diagcab',
+  'msix',
+  'msixbundle',
+  'appx',
+  'appxbundle',
 ]);
 const OFFICE_EXTENSIONS = new Set(['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']);
 
-function extensionOf(filename: string | null): string {
-  return /\.([A-Za-z0-9]{1,8})$/.exec(filename ?? '')?.[1]?.toLowerCase() ?? '';
+/**
+ * Ekstensi nama berkas (huruf kecil). Review 9A-2 R7: titik/spasi di AKHIR nama dibuang dulu —
+ * Windows/Firefox membuangnya saat menyimpan, jadi `tagihan.pdf.js.` = `tagihan.pdf.js`.
+ */
+export function attachmentExtensionOf(filename: string | null): string {
+  const trimmed = (filename ?? '').replace(/[.\s]+$/u, '');
+  return /\.([A-Za-z0-9-]{1,20})$/.exec(trimmed)?.[1]?.toLowerCase() ?? '';
 }
+const extensionOf = attachmentExtensionOf;
+
+/** Fase 9 (modul Email): nama berkas berekstensi yang bisa dijalankan/ditafsirkan browser/bermakro. */
+export function isDangerousEmailFileName(filename: string | null): boolean {
+  return DANGEROUS_EXTENSIONS.has(extensionOf(filename));
+}
+
+const CFB_SIGNATURE = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+const isCfbContainer = (content: Buffer) =>
+  content.length >= CFB_SIGNATURE.length &&
+  CFB_SIGNATURE.every((value, index) => content[index] === value);
 
 /** Lampiran → jenis aman untuk disimpan, atau `null` (dilewati). */
 export function classifyEmailAttachment(
@@ -439,6 +527,10 @@ export function classifyEmailAttachment(
   if (content.length === 0 || content.length > EMAIL_MAX_ATTACHMENT_BYTES) return null;
   const extension = extensionOf(filename);
   if (DANGEROUS_EXTENSIONS.has(extension)) return null;
+  // Review 9.1 putaran 3 (Info): wadah CFB/OLE (Office 97–2003 `.doc`/`.xls`/`.ppt`, `.msg`, …) selalu
+  // dilewati — apa pun nama berkasnya — sama dengan lampiran email keluar API (R2b). Makro `.ppt` dan
+  // objek OLE/DDE tidak terlihat dari nama aliran, jadi pemeriksaan penanda makro tidak cukup.
+  if (isCfbContainer(content)) return null;
   // Deteksi penuh (wadah Office diperiksa: makro → null).
   const detected = detectMedia(content, filename, { verifyContainer: true });
   if (detected) return { kind: detected.kind, mimeType: detected.mimeType };
@@ -451,6 +543,65 @@ export function classifyEmailAttachment(
 function addressesOf(value: AddressObject | AddressObject[] | undefined): AddressObject['value'] {
   if (!value) return [];
   return (Array.isArray(value) ? value : [value]).flatMap((item) => item.value);
+}
+
+/** Tahap 9.0: paling banyak sekian alamat per header yang disimpan (`To`, `Cc`). */
+export const EMAIL_MAX_HEADER_ADDRESSES = 50;
+
+/** Alamat sah, huruf kecil, tanpa duplikat, maks. `EMAIL_MAX_HEADER_ADDRESSES` (grup ikut diurai). */
+function addressListOf(value: AddressObject | AddressObject[] | undefined): string[] {
+  const out = new Set<string>();
+  const visit = (entries: AddressObject['value']) => {
+    for (const entry of entries) {
+      if (out.size >= EMAIL_MAX_HEADER_ADDRESSES) return;
+      if (entry.group) visit(entry.group);
+      const address = normalizeEmailAddress(entry.address);
+      if (address) out.add(address);
+    }
+  };
+  visit(addressesOf(value));
+  return [...out];
+}
+
+/** `Delivered-To` + `X-Original-To` dari baris header mentah, urut kemunculan (teratas dulu). */
+function envelopeRecipientsOf(lines: readonly { key: string; line: string }[]): string[] {
+  const out = new Set<string>();
+  for (const key of ['delivered-to', 'x-original-to']) {
+    for (const header of lines) {
+      if (header.key !== key || out.size >= 10) continue;
+      const value = header.line.slice(header.line.indexOf(':') + 1).trim();
+      const address = normalizeEmailAddress(/<([^<>]+)>/.exec(value)?.[1] ?? value);
+      if (address) out.add(address);
+    }
+  }
+  return [...out];
+}
+
+/**
+ * Tahap 9.0 — alamat tujuan email masuk: kandidat pertama (`Delivered-To`/`X-Original-To` → `To` →
+ * `Cc`) yang COCOK dengan alamat/alias channel. `null` = tidak ada yang cocok (Bcc, alias belum
+ * didaftarkan). Header amplop bisa dipalsukan, jadi tidak pernah dipakai bila tidak cocok.
+ */
+export function emailDestination(
+  email: Pick<ParsedInboundEmail, 'envelopeTo' | 'to' | 'cc'>,
+  channelAddresses: readonly string[],
+): string | null {
+  const own = new Set(channelAddresses.map((address) => address.toLowerCase()));
+  return (
+    [...email.envelopeTo, ...email.to, ...email.cc].find((address) => own.has(address)) ?? null
+  );
+}
+
+/**
+ * Tahap 9.0 — isi Cc "Balas semua": `To` + `Cc` tanpa alamat sendiri (`exclude`: alamat/alias
+ * channel, alamat SMTP sistem, pengirim).
+ */
+export function emailReplyAll(
+  email: Pick<ParsedInboundEmail, 'to' | 'cc'>,
+  exclude: readonly string[],
+): string[] {
+  const skip = new Set(exclude.map((address) => address.toLowerCase()));
+  return [...new Set([...email.to, ...email.cc])].filter((address) => !skip.has(address));
 }
 
 /**
@@ -476,10 +627,32 @@ export async function parseInboundEmail(
   if (!fromAddress) return { ok: false, reason: 'no_sender' };
   if (ownAddresses.includes(fromAddress)) return { ok: false, reason: 'own_address' };
 
+  // Review 9.1 putaran 2 S3: email mentah boleh 25 MB dari pengirim mana pun di internet. Ukuran
+  // (≤ 512 KB) dan kerumitan (tag/kedalaman) HTML diperiksa SEBELUM sanitize-html (super-linear
+  // terhadap kedalaman). Lewat batas → HTML dibuang, versi teks + catatan dipakai.
   let html: string | null = null;
-  if (typeof parsed.html === 'string' && parsed.html.length > 0) {
-    const clean = sanitizeEmailHtml(parsed.html).trim();
-    html = clean.length > 0 && Buffer.byteLength(clean) <= EMAIL_MAX_HTML_BYTES ? clean : null;
+  let htmlOmitted = false;
+  const rawHtml = typeof parsed.html === 'string' ? parsed.html : '';
+  if (rawHtml.length > 0) {
+    if (
+      rawHtml.length > EMAIL_MAX_HTML_BYTES ||
+      Buffer.byteLength(rawHtml) > EMAIL_MAX_HTML_BYTES ||
+      !htmlWithinLimits(rawHtml)
+    ) {
+      htmlOmitted = true;
+    } else {
+      const clean = sanitizeInboundProfile(rawHtml).trim();
+      if (Buffer.byteLength(clean) > EMAIL_MAX_HTML_BYTES) htmlOmitted = true;
+      else if (clean.length > 0) html = clean;
+    }
+  }
+  let text = cleanBody(parsed.text);
+  if (htmlOmitted) {
+    const body = (text ?? cleanBody(plainTextFromUntrustedHtml(rawHtml)) ?? '').slice(
+      0,
+      EMAIL_TEXT_MAX_CHARS - EMAIL_HTML_OMITTED_NOTE.length - 2,
+    );
+    text = body.length > 0 ? `${body}\n\n${EMAIL_HTML_OMITTED_NOTE}` : EMAIL_HTML_OMITTED_NOTE;
   }
 
   const attachments: EmailAttachmentPart[] = [];
@@ -515,12 +688,15 @@ export async function parseInboundEmail(
       subject: cleanCustomerText(parsed.subject ?? null, 998),
       from: { address: fromAddress, name: cleanCustomerText(sender?.name ?? null) },
       date: parsed.date && !Number.isNaN(parsed.date.getTime()) ? parsed.date : null,
-      text: cleanBody(parsed.text),
+      text,
       html,
       senderVerification: verification,
       authWarning: verification === 'fail',
       attachments,
       skippedAttachments,
+      to: addressListOf(parsed.to),
+      cc: addressListOf(parsed.cc),
+      envelopeTo: envelopeRecipientsOf(parsed.headerLines),
     },
   };
 }

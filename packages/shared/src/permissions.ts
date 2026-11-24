@@ -134,6 +134,21 @@ export const PERMISSIONS = [
    * organisasi (biaya pesan Meta, per kampanye, per bot) hanya untuk cakupan `all`.
    */
   'reports.view',
+  // ── Email (Fase 9, docs/KONTRAK-API-EMAIL.md §1) ──────────────────────────
+  // Semua bercakupan `all`: hak NYATA ditentukan per akun (`resolveMailAccess`, `mail.ts`), bukan
+  // oleh cakupan izin. Tanda "akses hanya departemen sendiri" tidak berlaku untuk Email.
+  /**
+   * Tambah/ubah server & kredensial/putuskan akun email BERSAMA, atur akses semua akun bersama,
+   * Pengaturan email (retensi), putuskan akun pribadi milik pengguna NONAKTIF. Otomatis "Kelola" di
+   * semua akun bersama — tetapi tidak pernah membaca isi akun pribadi orang lain.
+   */
+  'mail.accounts.manage',
+  /** Buka menu Email — hanya akun yang ia punya hak (Baca/Baca & kirim/Kelola) atau miliknya. */
+  'mail.view',
+  /** Kirim (9B) dan pindah/arsip/hapus — hanya di akun berhak "Baca & kirim"/"Kelola". */
+  'mail.send',
+  /** Menghubungkan akun email PRIBADI miliknya sendiri. */
+  'mail.private.own',
 ] as const;
 
 export const permissionSchema = z.enum(PERMISSIONS);
@@ -216,6 +231,10 @@ const MATRIX: Readonly<Record<Permission, Row>> = {
   'tickets.manage': [Y, Y, Y, Y, 'own'],
   'tickets.configure': [Y, Y, Y, N, N],
   'reports.view': [Y, Y, Y, 'own', 'own'],
+  'mail.accounts.manage': [Y, Y, N, N, N],
+  'mail.view': [Y, Y, Y, Y, Y],
+  'mail.send': [Y, Y, Y, Y, Y],
+  'mail.private.own': [Y, Y, Y, Y, N],
 };
 
 function buildRolePermissions(): Record<
@@ -389,6 +408,10 @@ export const PERMISSION_LABELS: Readonly<Record<Permission, string>> = {
   'tickets.manage': 'Kelola tiket',
   'tickets.configure': 'Atur board dan kolom tiket',
   'reports.view': 'Lihat laporan',
+  'mail.accounts.manage': 'Kelola akun email bersama dan aksesnya',
+  'mail.view': 'Buka menu Email (akun yang diberi akses)',
+  'mail.send': 'Kirim dan rapikan email di akun berhak kirim',
+  'mail.private.own': 'Hubungkan akun email pribadi',
 };
 
 /** Arti cakupan terbatas untuk ditampilkan di samping nama izin. */

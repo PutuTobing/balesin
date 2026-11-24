@@ -33,6 +33,11 @@ LOG_DIR="$BALESIN_HOME/logs"
 readonly APP_SERVICES=(api worker web)
 # Batas tunggu layanan sehat (detik).
 HEALTH_TIMEOUT="${BALESIN_HEALTH_TIMEOUT:-180}"
+# cosign untuk verifikasi tanda tangan rilis — versi & SHA-256 SAMA dengan deploy/install.sh (tes
+# penjaga deploy memeriksanya). Dipakai `update` bila tanda tangan wajib tetapi cosign belum ada.
+readonly COSIGN_VERSION="v3.1.4"
+readonly COSIGN_SHA256_AMD64="424e2c97d0b45fd7a6b608a87f090f35633f4c23ece5f092d48bba11aaf4bbfa"
+readonly COSIGN_SHA256_ARM64="ade83b7aac62e131cacfe96d958948b2150cc9efec46a570a2649b8e27dedad2"
 
 # ── Tampilan ────────────────────────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -465,6 +470,37 @@ verify_release_signature() {
   ok "Tanda tangan rilis terverifikasi (cosign)"
 }
 
+# Kebijakan tanda tangan (audit akhir A4): sejak rilis bertanda tangan pertama (v1.0.0) tanda tangan
+# cosign WAJIB. .env tanpa BALESIN_REQUIRE_SIGNATURE (instalasi lama) disetel 1; nilai yang sudah
+# ada (termasuk 0 yang sengaja diisi admin) tidak diubah. Bila wajib dan cosign belum ada, cosign
+# dipasang (versi dipin + checksum) — gagal = update dibatalkan sebelum apa pun berubah.
+ensure_signature_policy() {
+  if ! grep -qE '^BALESIN_REQUIRE_SIGNATURE=' "$ENV_FILE"; then
+    env_set BALESIN_REQUIRE_SIGNATURE 1
+    ok "BALESIN_REQUIRE_SIGNATURE=1 ditambahkan ke .env (tanda tangan rilis wajib)"
+  fi
+  local require
+  require="${BALESIN_REQUIRE_SIGNATURE:-$(env_get BALESIN_REQUIRE_SIGNATURE)}"
+  [[ "$require" == "1" ]] || return 0
+  command -v cosign >/dev/null 2>&1 && return 0
+  local arch expected tmp
+  case "$(uname -m)" in
+    x86_64 | amd64) arch=amd64 expected="$COSIGN_SHA256_AMD64" ;;
+    aarch64 | arm64) arch=arm64 expected="$COSIGN_SHA256_ARM64" ;;
+    *) die "Arsitektur $(uname -m) tidak didukung cosign; tanda tangan rilis wajib. Pasang cosign manual." ;;
+  esac
+  tmp="$(mktemp)"
+  if curl -fsSL --proto '=https' --tlsv1.2 --max-time 120     "https://github.com/sigstore/cosign/releases/download/$COSIGN_VERSION/cosign-linux-$arch" -o "$tmp" &&
+    [[ "$(sha256sum "$tmp" | awk '{print $1}')" == "$expected" ]]; then
+    install -m 755 "$tmp" /usr/local/bin/cosign
+    rm -f "$tmp"
+    ok "cosign $COSIGN_VERSION terpasang (checksum cocok)"
+    return 0
+  fi
+  rm -f "$tmp"
+  die "cosign $COSIGN_VERSION gagal dipasang (unduhan/checksum), padahal tanda tangan rilis wajib. Update dibatalkan; versi sekarang tetap berjalan."
+}
+
 # Versi terbaru: BALESIN_RELEASE_LATEST di .env = URL https atau path berkas berisi nomor versi.
 latest_version() {
   local src
@@ -652,6 +688,7 @@ cmd_update() {
   ((free_kb > 2 * 1024 * 1024)) || die "Ruang disk kurang dari 2 GB di $BALESIN_HOME. Kosongkan dulu."
   service_running postgres || die "Postgres tidak berjalan. Nyalakan dulu: sudo balesin start"
   ok "Disk cukup, layanan data berjalan"
+  ensure_signature_policy
 
   new_work_dir
   stage="$WORK_DIR"
@@ -661,6 +698,11 @@ cmd_update() {
       die "Berkas compose versi $target tidak valid dengan .env ini."
     ok "Berkas rilis $target diunduh dan diperiksa"
   else
+    # Tanpa berkas rilis tidak ada tanda tangan yang bisa diperiksa (image ditarik berdasarkan tag):
+    # bila tanda tangan wajib, update ditolak, bukan diam-diam memakai compose lama.
+    if [[ "${BALESIN_REQUIRE_SIGNATURE:-$(env_get BALESIN_REQUIRE_SIGNATURE)}" == "1" ]]; then
+      die "Berkas rilis $target tidak bisa diunduh dari BALESIN_RELEASE_BASE, padahal tanda tangan rilis wajib. Update dibatalkan; versi sekarang tetap berjalan."
+    fi
     warn "Berkas rilis $target tidak tersedia dari BALESIN_RELEASE_BASE; berkas compose sekarang dipakai."
     cp "$COMPOSE_FILE" "$stage/docker-compose.yml"
     rm -f "$stage/balesin" "$stage/Caddyfile"

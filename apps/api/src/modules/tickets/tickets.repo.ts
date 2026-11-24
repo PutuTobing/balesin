@@ -1,5 +1,6 @@
 import {
   apiKeys,
+  channelAccessSql,
   contacts,
   conversations,
   departments,
@@ -36,7 +37,7 @@ import {
 import { alias } from 'drizzle-orm/pg-core';
 
 import { toAttributeDefinition, listAttributeDefinitions } from '../attributes/attributes.service';
-import { scopeCondition, type PermissionGrant } from '../auth/permission-grant';
+import { grantPrincipal, scopeCondition, type PermissionGrant } from '../auth/permission-grant';
 import { likePattern, type Cursor } from '../inbox/inbox.repo';
 import { toContactSummary } from '../inbox/inbox-view';
 
@@ -59,7 +60,8 @@ const creatorKey = alias(apiKeys, 'ticket_creator_key');
 
 const updatedExact = sql<string>`to_char(${tickets.updatedAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 
-function selectTickets(db: DbExecutor) {
+/** `grant` = penonton (akses per channel percakapan tertaut, review 9.0 R5). */
+function selectTickets(db: DbExecutor, grant: PermissionGrant) {
   return db
     .select({
       ticket: tickets,
@@ -74,6 +76,7 @@ function selectTickets(db: DbExecutor) {
       contactWaUsername: contacts.waUsername,
       conversationNumber: conversations.number,
       conversationStatus: conversations.status,
+      conversationVisible: sql<boolean>`(${conversations.id} is null or ${channelAccessSql(grant.organizationId, grantPrincipal(grant), conversations.channelId)})`,
       creatorName: creator.name,
       creatorKeyName: creatorKey.name,
     })
@@ -150,8 +153,10 @@ export function toTicket(row: SelectedTicket, now: Date): Ticket & { updatedAtEx
             waUsername: row.contactWaUsername,
           })
         : null,
+    conversationUnavailable: ticket.conversationId !== null && row.conversationVisible !== true,
     conversation:
       ticket.conversationId !== null &&
+      row.conversationVisible === true &&
       row.conversationNumber !== null &&
       row.conversationStatus !== null
         ? {
@@ -182,7 +187,7 @@ export async function findTicket(
   ticketId: string,
   now: Date,
 ): Promise<Ticket | undefined> {
-  const [row] = await selectTickets(db)
+  const [row] = await selectTickets(db, grant)
     .where(
       and(
         eq(tickets.organizationId, grant.organizationId),
@@ -262,7 +267,7 @@ export async function listTickets(
   query: Omit<TicketListQuery, 'cursor' | 'limit'>,
   options: { limit: number; cursor?: Cursor | undefined; now: Date },
 ) {
-  const rows = await selectTickets(db)
+  const rows = await selectTickets(db, grant)
     .where(
       and(
         ticketFilter(grant, query, options.now),
@@ -295,7 +300,7 @@ export async function kanbanTickets(
     .from(tickets)
     .where(where)
     .as('ranked');
-  const rows = await selectTickets(db)
+  const rows = await selectTickets(db, grant)
     .innerJoin(ranked, eq(ranked.id, tickets.id))
     .where(lte(ranked.rank, TICKET_LIMITS.kanbanPerColumn))
     .orderBy(asc(tickets.position), asc(tickets.id));

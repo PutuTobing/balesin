@@ -418,6 +418,46 @@ export function renderEmailVerificationEmail(input: EmailVerificationEmailInput)
   });
 }
 
+// ── Verifikasi alamat pengirim menu Email (9B) ──────────────────────────────
+
+export interface MailIdentityVerificationEmailInput {
+  brand: EmailBrand;
+  organizationName: string;
+  address: string;
+  code: string;
+  /**
+   * TIDAK ditampilkan (review 9B R3): nama pengguna & nama tampilan akun bisa diisi bebas oleh
+   * pendaftar, sedangkan email ini dikirim lewat Email pengirim SISTEM ke alamat sembarang.
+   */
+  requesterName?: string;
+  /** TIDAK ditampilkan (review 9B R3) — lihat `requesterName`. */
+  accountName?: string;
+}
+
+/**
+ * Email verifikasi alamat pengirim (KONTRAK-API-EMAIL-TULIS §3.2): kode 6 digit, TANPA tautan
+ * (tidak ada yang bisa dipancing diklik), dikirim lewat Email pengirim SISTEM. Isinya hanya teks
+ * tetap + nama produk/organisasi (Branding, diatur Owner) + alamat yang diverifikasi — tidak ada teks
+ * bebas pendaftar.
+ */
+export function renderMailIdentityVerificationEmail(
+  input: MailIdentityVerificationEmailInput,
+): MailBody {
+  const code = /^\d{6}$/.test(input.code) ? input.code : '000000';
+  return compose(input.brand, {
+    subject: `Kode verifikasi alamat pengirim: ${code}`,
+    preheader: `Kode verifikasi untuk mengirim email sebagai ${singleLine(input.address)}.`,
+    heading: 'Verifikasi alamat pengirim',
+    paragraphs: [
+      'Halo,',
+      `Seorang pengguna ${singleLine(input.brand.productName)} di ${singleLine(input.organizationName)} ingin mengirim email sebagai ${singleLine(input.address)}.`,
+      `Kalau ini memang kamu atau timmu, masukkan kode ${code} (berlaku 30 menit). Kalau bukan, abaikan email ini — tanpa kode ini alamatmu tidak bisa dipakai.`,
+      'Jangan berikan kode ini kepada orang yang tidak kamu kenal.',
+    ],
+    details: [{ label: 'Kode verifikasi', value: code }],
+  });
+}
+
 // ── Kunci percobaan masuk ───────────────────────────────────────────────────
 
 export interface AccountLockedEmailInput {
@@ -684,7 +724,16 @@ export interface AdminAccountNoticeEmailInput {
     | 'sending_paused'
     | 'sending_limit_reached'
     | 'sending_auto_paused'
-    | 'webhook_disabled';
+    | 'webhook_disabled'
+    | 'email_template_risky'
+    | 'email_sender_blocked'
+    | 'email_sender_limit_raised'
+    | 'mail_account_changed'
+    | 'mail_access_changed'
+    | 'mail_identity_added'
+    | 'mail_identity_approval_requested'
+    | 'mail_identity_decided'
+    | 'mail_account_auth_failed';
   subject: { name: string; email: string; role: UserRole };
   /**
    * Untuk `two_factor_reset`, `role_changed`, `user_disabled`: pelakunya. Untuk `member_joined`:
@@ -697,6 +746,20 @@ export interface AdminAccountNoticeEmailInput {
   burst?: { accounts: number; windowMinutes: number };
   /** Untuk `webhook_disabled`: host tujuan + jumlah gagal beruntun (dari baris audit). */
   webhook?: { host?: string; failures?: number };
+  /**
+   * Tahap 9.1 (dari baris audit): `email_template_risky` → nama template + jumlah tautan/angka baru;
+   * `email_sender_blocked` → alamat pengirim + kode alasan; `email_sender_limit_raised` → batas lama
+   * → baru.
+   */
+  emailApi?: {
+    templateName?: string;
+    addedLinks?: number;
+    addedNumbers?: number;
+    senderAddress?: string;
+    blockedReason?: string;
+    previousLimit?: number;
+    nextLimit?: number;
+  };
   /** Untuk `sending_paused` / `sending_limit_reached`: rincian dari baris audit. */
   sending?: {
     reason?: string;
@@ -799,6 +862,152 @@ export function renderAdminAccountNoticeEmail(input: AdminAccountNoticeEmailInpu
       details,
       notes: [
         `Periksa riwayat pengiriman di Pengaturan → Webhook di ${product}, perbaiki penerimanya, lalu aktifkan lagi.`,
+      ],
+    });
+  }
+  if (input.event === 'email_template_risky') {
+    const templateName = singleLine(input.emailApi?.templateName ?? 'tanpa nama');
+    const links = input.emailApi?.addedLinks ?? 0;
+    const numbers = input.emailApi?.addedNumbers ?? 0;
+    return compose(input.brand, {
+      subject: `Template email "${templateName}" diterbitkan dengan tautan/angka baru di ${product}`,
+      preheader: 'Isi template ini langsung terkirim ke pelanggan lewat API tanpa peninjauan lain.',
+      heading: 'Template email berisi tautan/angka baru',
+      paragraphs: [
+        hello(input.recipientName),
+        `${account} menerbitkan template email "${templateName}" yang memuat ${String(links)} tautan dan ${String(numbers)} angka panjang (mis. nomor rekening/VA) baru.`,
+        'Template email langsung dipakai aplikasi billing/n8n untuk mengirim ke banyak pelanggan. Bila ini tidak diduga, bisa jadi tanda akun yang dibobol menyisipkan nomor rekening atau tautan penipuan.',
+        'Kamu menerima email ini karena kamu Owner.',
+      ],
+      details,
+      notes: [
+        `Periksa template itu di Pengaturan → Template email di ${product}. Bila mencurigakan, arsipkan templatenya dan periksa Audit log.`,
+      ],
+    });
+  }
+  if (input.event === 'email_sender_blocked') {
+    const address = singleLine(input.emailApi?.senderAddress ?? 'pengirim email');
+    return compose(input.brand, {
+      subject: `Pengirim email ${address} terblokir di ${product}`,
+      preheader:
+        'Email API dari pengirim ini ditahan di antrean sampai kredensial SMTP diperbaiki.',
+      heading: 'Pengirim email API terblokir',
+      paragraphs: [
+        hello(input.recipientName),
+        `Server SMTP menolak username atau password pengirim ${address} (atau kredensialnya tidak bisa dibuka). Email yang dikirim lewat API dari pengirim ini ditahan di antrean; yang tertahan lebih dari 24 jam dibatalkan sebagai gagal.`,
+        'Kamu menerima email ini karena kamu Owner.',
+      ],
+      details: [{ label: 'Waktu', value: when }],
+      notes: [
+        `Perbaiki username/password SMTP di Pengaturan → Channel di ${product}, lalu tekan Lanjutkan pada pengirim itu di Pengaturan → Batas kirim.`,
+      ],
+    });
+  }
+  if (input.event === 'mail_account_auth_failed') {
+    const address = singleLine(input.emailApi?.senderAddress ?? 'akun email');
+    return compose(input.brand, {
+      subject: `Password akun email ${address} ditolak di ${product}`,
+      preheader: 'Sinkron akun email ini berhenti sampai password-nya diperbarui.',
+      heading: 'Password akun email ditolak',
+      paragraphs: [
+        hello(input.recipientName),
+        `Password akun email ${address} ditolak server email. Supaya akun tidak terkunci penyedia, ${product} berhenti mencoba menyambung.`,
+        'Email baru di akun ini belum masuk ke menu Email sampai password-nya diperbarui.',
+      ],
+      details: [{ label: 'Waktu', value: when }],
+      notes: [`Perbarui di Pengaturan → Akun email di ${product}, lalu tekan Sinkron sekarang.`],
+    });
+  }
+  if (input.event === 'mail_identity_added') {
+    const address = singleLine(input.emailApi?.senderAddress ?? 'alamat pengirim baru');
+    return compose(input.brand, {
+      subject: `Alamat pengirim baru ${address} di ${product}`,
+      preheader: `${name} menambah alamat pengirim di akun email bersama.`,
+      heading: 'Alamat pengirim baru di akun email bersama',
+      paragraphs: [
+        hello(input.recipientName),
+        `${account} menambahkan ${address} sebagai alamat pengirim (alias) di akun email bersama. Alamat ini baru bisa dipakai mengirim setelah terverifikasi.`,
+        'Kamu menerima email ini karena kamu Owner.',
+      ],
+      details,
+      notes: [`Bila tidak kamu duga, periksa Pengaturan → Akun email dan Audit log di ${product}.`],
+    });
+  }
+  if (input.event === 'mail_identity_approval_requested') {
+    const address = singleLine(input.emailApi?.senderAddress ?? 'alamat pengirim');
+    return compose(input.brand, {
+      subject: `Persetujuan alamat pengirim ${address} di ${product}`,
+      preheader: `${name} ingin memakai alamat berdomain organisasi di akun email pribadinya.`,
+      heading: 'Alamat pengirim menunggu persetujuan',
+      paragraphs: [
+        hello(input.recipientName),
+        `${account} menambahkan ${address} ke akun email PRIBADI-nya. Alamat ini memakai domain organisasi, jadi baru bisa diverifikasi dan dipakai mengirim setelah disetujui Owner/Admin.`,
+        'Setujui hanya bila alamat ini memang milik atau ditugaskan ke orang tersebut. Bila tidak kamu kenali, tolak.',
+      ],
+      details,
+      notes: [`Tinjau di Pengaturan → Akun email → Persetujuan alamat di ${product}.`],
+    });
+  }
+  if (input.event === 'mail_identity_decided') {
+    const address = singleLine(input.emailApi?.senderAddress ?? 'alamat pengirim');
+    const decision = input.emailApi?.blockedReason;
+    const text =
+      decision === 'approved'
+        ? `Owner/Admin menyetujui ${address} sebagai alamat pengirim akun email pribadimu. Verifikasi alamatnya dulu supaya bisa dipakai mengirim.`
+        : decision === 'rejected'
+          ? `Owner/Admin menolak ${address} sebagai alamat pengirim akun email pribadimu, jadi alamat ini tidak bisa dipakai mengirim.`
+          : `${address} kini dipakai organisasi (akun email bersama, Channel Email, atau Email pengirim sistem). Klaimmu atas alamat ini di akun email pribadi dicabut karena belum terverifikasi.`;
+    return compose(input.brand, {
+      subject: `Alamat pengirim ${address} di ${product}`,
+      preheader: 'Ada perubahan pada alamat pengirim akun email pribadimu.',
+      heading: 'Perubahan alamat pengirim',
+      paragraphs: [hello(input.recipientName), text],
+      details,
+      notes: [`Lihat di Pengaturan → Akun email di ${product}.`],
+    });
+  }
+  if (input.event === 'mail_account_changed' || input.event === 'mail_access_changed') {
+    const address = singleLine(input.emailApi?.senderAddress ?? 'akun email bersama');
+    const access = input.event === 'mail_access_changed';
+    return compose(input.brand, {
+      subject: access
+        ? `Akses akun email ${address} diperluas di ${product}`
+        : `Akun email bersama ${address} diubah di ${product}`,
+      preheader: access
+        ? `${name} menambah orang atau menaikkan hak di akun email bersama.`
+        : `${name} menambah, mengganti server/kredensial, atau memutus akun email bersama.`,
+      heading: access ? 'Akses akun email diperluas' : 'Akun email bersama diubah',
+      paragraphs: [
+        hello(input.recipientName),
+        access
+          ? `${account} memperluas akses akun email bersama ${address}: orang baru bisa membaca (atau mengirim dari) akun ini.`
+          : `${account} mengubah akun email bersama ${address} (dibuat, server/kredensial diganti, atau diputus).`,
+        'Kamu menerima email ini karena kamu Owner.',
+      ],
+      details,
+      notes: [`Bila tidak kamu duga, periksa Pengaturan → Akun email dan Audit log di ${product}.`],
+    });
+  }
+  if (input.event === 'email_sender_limit_raised') {
+    const address = singleLine(input.emailApi?.senderAddress ?? 'pengirim email');
+    const previous = input.emailApi?.previousLimit;
+    const next = input.emailApi?.nextLimit;
+    const change =
+      previous !== undefined && next !== undefined
+        ? `${previous.toLocaleString('id-ID')} → ${next.toLocaleString('id-ID')} email per jam`
+        : null;
+    return compose(input.brand, {
+      subject: `Batas email per jam ${address} dinaikkan di ${product}`,
+      preheader: `${name} menaikkan batas kirim email API untuk ${address}.`,
+      heading: 'Batas email per jam dinaikkan',
+      paragraphs: [
+        hello(input.recipientName),
+        `${account} menaikkan batas email per jam untuk pengirim ${address}${change ? ` (${change})` : ''}.`,
+        'Batas yang terlalu tinggi bisa membuat server email menandai domainmu sebagai spam. Kamu menerima email ini karena kamu Owner.',
+      ],
+      details: [...details, ...(change ? [{ label: 'Perubahan', value: change }] : [])],
+      notes: [
+        `Bila tidak kamu duga, turunkan lagi di Pengaturan → Batas kirim di ${product} dan periksa Audit log.`,
       ],
     });
   }

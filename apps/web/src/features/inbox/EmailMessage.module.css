@@ -95,3 +95,108 @@
   gap: var(--space-8);
   margin: var(--space-16) 0 0;
 }
+
+/* ---------- Tahap 9.0: Kepada / Cc / Bcc / alamat tujuan ---------- */
+
+.addresses {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  min-width: 0;
+  font-size: var(--text-12);
+}
+
+.addressList {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-4) var(--space-8);
+  min-width: 0;
+  margin: 0;
+}
+
+.addressRow {
+  display: contents;
+}
+
+.addressLabel {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  color: var(--ink-2);
+  font-weight: var(--weight-semibold);
+}
+
+.teamOnly {
+  display: inline-flex;
+  vertical-align: top;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+
+.addressValues {
+  min-width: 0;
+  margin: 0;
+  color: var(--ink);
+}
+
+/* Baris pindah DI ANTARA alamat, bukan di tengah satu alamat (P5). */
+.address {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.more {
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.toggle {
+  position: relative;
+  padding: 0;
+  color: var(--primary);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.toggle:hover {
+  text-decoration: underline;
+}
+
+.toggle:focus-visible {
+  border-radius: var(--radius-input);
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.via {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+.via > svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.viaAddress {
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  /* Area tekan 44px tanpa memperbesar teks. */
+  .toggle::after {
+    content: '';
+    position: absolute;
+    inset: calc((var(--size-touch) - 1rem) / -2) calc(var(--space-8) * -1);
+  }
+}

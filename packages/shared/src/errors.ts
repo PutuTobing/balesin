@@ -125,6 +125,23 @@ export const errorDetailSchema = z.object({
   /** Nama isian, bertitik untuk isian bersarang (mis. `alamat.kota`). Kosong = seluruh bagian. */
   field: z.string(),
   message: z.string(),
+  /**
+   * Kode mesin yang stabil (opsional, tahap 9.1 — mis. `recipient_invalid`, `qris_crc_mismatch`)
+   * untuk integrator. Klien lama mengabaikannya; `ERROR_CODES` tidak bertambah.
+   */
+  reason: z.string().optional(),
+  // ── Tahap 9B (KONTRAK-API-EMAIL-TULIS §15): rincian mesin per `reason` ──
+  /** `verification_code_invalid`: sisa percobaan kode. */
+  attemptsLeft: z.number().int().nonnegative().optional(),
+  /** `draft_version_conflict`: versi draf sekarang + waktu ubahnya. */
+  currentVersion: z.number().int().positive().optional(),
+  updatedAt: z.string().optional(),
+  /** `thread_has_new_messages`: jumlah, waktu terbaru, ID email (≤ 5). */
+  count: z.number().int().nonnegative().optional(),
+  latestReceivedAt: z.string().optional(),
+  messageIds: z.array(z.string()).max(5).optional(),
+  /** `verification_unavailable`: `system_sender_missing` / `system_sender_conflict`. */
+  cause: z.string().optional(),
 });
 export type ErrorDetail = z.infer<typeof errorDetailSchema>;
 

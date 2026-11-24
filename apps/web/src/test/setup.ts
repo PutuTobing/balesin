@@ -9,6 +9,7 @@ import { THEME_ATTRIBUTE } from '../theme/theme';
 import { FakeSocket } from './fake-socket';
 import { clearMediaCache } from '../features/inbox/message-media';
 import { resetOutbox } from '../features/inbox/outbox';
+import { resetComposeStore } from '../features/mail/compose/compose-store';
 import { installMatchMedia, resetMatchMedia } from './match-media';
 
 installMatchMedia();
@@ -56,5 +57,6 @@ afterEach(() => {
   document.title = '';
   FakeSocket.reset();
   resetOutbox();
+  resetComposeStore();
   clearMediaCache();
 });

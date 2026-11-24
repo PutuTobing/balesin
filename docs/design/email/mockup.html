@@ -1,0 +1,1123 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Balesin Email Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
+<!--
+  Mockup modul Email Balesin (Fase 9). Acuan visual untuk agen frontend + kritikus.
+  Semua warna = token docs/DESIGN.md / packages/shared/src/design-tokens.ts. Data contoh fiktif.
+  Parameter URL untuk screenshot: ?v=desk|akun|hp  &s=read|compose|crm|empty  &step=1..4  &t=light|dark  &chrome=0
+-->
+<style>
+:root{
+  --bg:#F6F4EF;--surface:#FFFFFF;--surface-2:#EFECE5;--ink:#14202E;--ink-2:#4A5869;--line:#E2DED5;
+  --primary:#1167D8;--primary-soft:#E3EEFF;--on-primary:#FFFFFF;--accent:#FF7A59;--on-accent:#14202E;
+  --success:#1F9D6B;--success-ink:#15784F;--warning:#D99413;--warning-ink:#8F5F00;--danger:#D64545;--danger-ink:#C03535;
+  --tag-purple:#7A52CC;--tag-teal:#0B8A9E;--tag-blue:#1167D8;
+  --shadow:0 16px 40px rgba(20,32,46,.16),0 2px 8px rgba(20,32,46,.08);
+  --scrim:rgba(20,32,46,.42);
+  --r-input:6px;--r-card:10px;--r-bubble:16px;--r-pill:999px;
+  --font:'Plus Jakarta Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0F1620;--surface:#16202C;--surface-2:#1C2735;--ink:#E8EDF3;--ink-2:#9FB0C3;--line:#263345;
+  --primary:#4D9BFF;--primary-soft:#1A3354;--on-primary:#0F1620;--accent:#FF8F72;--on-accent:#0F1620;
+  --success:#3CC48D;--success-ink:#3CC48D;--warning:#F2B544;--warning-ink:#F2B544;--danger:#F07070;--danger-ink:#F07070;
+  --tag-purple:#A98BF0;--tag-teal:#3CC4D6;--tag-blue:#4D9BFF;
+  --shadow:0 16px 40px rgba(0,0,0,.45),0 2px 8px rgba(0,0,0,.3);--scrim:rgba(5,9,14,.6);color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --bg:#0F1620;--surface:#16202C;--surface-2:#1C2735;--ink:#E8EDF3;--ink-2:#9FB0C3;--line:#263345;
+  --primary:#4D9BFF;--primary-soft:#1A3354;--on-primary:#0F1620;--accent:#FF8F72;--on-accent:#0F1620;
+  --success:#3CC48D;--success-ink:#3CC48D;--warning:#F2B544;--warning-ink:#F2B544;--danger:#F07070;--danger-ink:#F07070;
+  --tag-purple:#A98BF0;--tag-teal:#3CC4D6;--tag-blue:#4D9BFF;
+  --shadow:0 16px 40px rgba(0,0,0,.45),0 2px 8px rgba(0,0,0,.3);--scrim:rgba(5,9,14,.6);color-scheme:dark;}
+
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--font);-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:0;padding:0}
+a{color:var(--primary);text-decoration:none}
+.i{width:20px;height:20px;flex:none;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.i.s16{width:16px;height:16px}.i.s14{width:14px;height:14px}.i.s24{width:24px;height:24px}
+.trunc{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-width:0}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+kbd{font:500 11px/1 var(--mono);padding:3px 5px;border:1px solid var(--line);border-radius:4px;color:var(--ink-2);background:var(--surface)}
+:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+
+/* ---------- Bilah mockup (bukan bagian aplikasi) ---------- */
+.doc{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;min-height:52px;padding:8px 16px;background:var(--surface);border-bottom:1px solid var(--line)}
+.doc .brand{display:flex;align-items:center;gap:10px;font-weight:700}
+.doc .brand small{font-weight:500;color:var(--ink-2)}
+.seg{display:inline-flex;padding:3px;gap:2px;background:var(--surface-2);border-radius:8px}
+.seg button{height:30px;padding:0 12px;border-radius:6px;font-size:13px;font-weight:600;color:var(--ink-2);white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(20,32,46,.12)}
+.doc .spacer{flex:1}
+.theme-btn{display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 12px;border:1px solid var(--line);border-radius:var(--r-input);font-size:13px;font-weight:600}
+body.nochrome .doc{display:none}
+.view{display:none}.view.on{display:block}
+.stage{height:calc(100vh - 52px);overflow:auto}
+body.nochrome .stage{height:100vh}
+
+/* ---------- Shell aplikasi ---------- */
+.app{position:relative;display:grid;grid-template-columns:64px auto 380px minmax(0,1fr) auto;height:100%;min-width:1180px;min-height:640px;background:var(--bg);overflow:hidden}
+.rail{grid-row:1;grid-column:1;display:flex;flex-direction:column;align-items:center;gap:16px;padding:6px 0 12px;border-right:1px solid var(--line);background:var(--bg)}
+.rail .logo{display:grid;place-items:center;width:44px;height:44px}
+.rail nav{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1}
+.rl{position:relative;display:grid;place-items:center;width:44px;height:44px;border-radius:var(--r-card);color:var(--ink-2)}
+.rl:hover{background:var(--surface-2);color:var(--ink)}
+.rl.on{background:var(--primary-soft);color:var(--primary)}
+.rl.on::before{content:'';position:absolute;left:-10px;top:50%;width:3px;height:20px;border-radius:0 4px 4px 0;background:var(--primary);transform:translateY(-50%)}
+.rl .bdg{position:absolute;top:4px;right:2px;min-width:18px;height:18px;padding:0 5px;border-radius:var(--r-pill);background:var(--accent);color:var(--on-accent);font-size:11px;font-weight:700;line-height:18px;text-align:center;border:2px solid var(--bg)}
+.rail .foot{margin-top:auto}
+.av{display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:50%;font-size:13px;font-weight:700;color:var(--ink);background:color-mix(in srgb,var(--c,var(--tag-blue)) 18%,var(--surface))}
+.av.me{width:32px;height:32px;font-size:12px;background:var(--primary);color:var(--on-primary)}
+
+/* ---------- Kolom folder ---------- */
+.folders{grid-row:1;grid-column:2;width:248px;display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line);background:var(--bg)}
+.app[data-state="crm"] .folders{display:none}
+.f-head{display:flex;align-items:center;justify-content:space-between;height:56px;padding:0 8px 0 16px}
+.f-head h2{margin:0;font-size:20px;font-weight:700}
+.ib{display:inline-grid;place-items:center;width:36px;height:36px;border-radius:var(--r-input);color:var(--ink-2)}
+.ib:hover{background:var(--surface-2);color:var(--ink)}
+.ib.on{background:var(--primary-soft);color:var(--primary)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 14px;border-radius:var(--r-input);border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:14px;font-weight:600;white-space:nowrap}
+.btn:hover{background:var(--surface-2)}
+.btn.pri{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
+.btn.pri:hover{background:color-mix(in srgb,var(--primary) 88%,var(--ink))}
+.btn.ghost{border-color:transparent;background:none;color:var(--primary)}
+.btn.ghost:hover{background:var(--primary-soft)}
+.btn.lg{height:40px}
+.btn.sm{height:32px;padding:0 10px;font-size:13px}
+.compose-btn{margin:0 12px 12px;justify-content:flex-start;padding:0 12px}
+.compose-btn kbd{margin-left:auto;background:transparent;border-color:color-mix(in srgb,var(--on-primary) 40%,transparent);color:var(--on-primary)}
+.f-scroll{flex:1;overflow:auto;padding:0 8px 12px}
+.fi{display:flex;align-items:center;gap:10px;width:100%;height:34px;padding:0 10px;border-radius:var(--r-input);color:var(--ink-2);font-size:14px;text-align:left}
+.fi:hover{background:var(--surface-2);color:var(--ink)}
+.fi.on{background:var(--primary-soft);color:var(--primary);font-weight:600}
+.fi .n{margin-left:auto;font-size:12px;font-weight:700;color:var(--ink)}
+.fi.on .n{color:var(--primary)}
+.fi.sub{padding-left:32px}
+.f-label{display:flex;align-items:center;justify-content:space-between;padding:16px 4px 4px 10px;font-size:12px;font-weight:700;letter-spacing:.04em;color:var(--ink-2)}
+.f-label .ib{width:28px;height:28px}
+.acc{margin-top:4px}
+.acc-h{display:grid;grid-template-columns:16px 8px minmax(0,1fr) auto;align-items:center;gap:8px;width:100%;padding:8px 10px 8px 6px;border-radius:var(--r-input);text-align:left}
+.acc-h:hover{background:var(--surface-2)}
+.acc-h .chev{color:var(--ink-2);transition:transform .15s}
+.acc:not(.open) .chev{transform:rotate(-90deg)}
+.acc:not(.open) .acc-f{display:none}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--c,var(--tag-blue));flex:none}
+.acc-h b{display:block;font-size:14px;font-weight:600;color:var(--ink)}
+.acc-h small{display:block;font-size:12px;color:var(--ink-2)}
+.acc-h .n{font-size:12px;font-weight:700}
+.kind{display:inline-flex;margin-left:4px;color:var(--ink-2);vertical-align:-2px}
+.warn-ic{color:var(--warning-ink)}
+.f-foot{display:flex;flex-direction:column;gap:4px;padding:10px 16px 12px;border-top:1px solid var(--line);font-size:12px;color:var(--ink-2)}
+.f-foot div{display:flex;align-items:center;gap:6px}
+.f-foot .w{color:var(--warning-ink);font-weight:600}
+
+/* ---------- Daftar email ---------- */
+.list{grid-row:1;grid-column:3;display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line);background:var(--surface)}
+.l-head{display:flex;align-items:center;gap:4px;height:56px;padding:0 8px 0 16px}
+.l-head .t{flex:1;min-width:0}
+.l-head h3{margin:0;font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
+.l-head p{margin:0;font-size:12px;color:var(--ink-2)}
+.search{display:flex;align-items:center;gap:8px;height:36px;margin:0 16px;padding:0 8px 0 10px;border-radius:var(--r-input);background:var(--surface-2);color:var(--ink-2);font-size:14px}
+.search span{flex:1}
+.tabs{display:flex;gap:4px;padding:8px 12px 0;border-bottom:1px solid var(--line)}
+.tab{position:relative;display:inline-flex;white-space:nowrap;align-items:center;gap:6px;height:40px;padding:0 8px;font-size:13px;font-weight:600;color:var(--ink-2)}
+.tab.on{color:var(--ink)}
+.tab.on::after{content:'';position:absolute;left:8px;right:8px;bottom:-1px;height:2px;border-radius:2px;background:var(--primary)}
+.tab .c{padding:0 6px;border-radius:var(--r-pill);background:var(--surface-2);font-size:11px;line-height:18px}
+.l-scroll{flex:1;overflow:auto}
+.grp{position:sticky;top:0;z-index:1;padding:12px 16px 6px;background:var(--surface);font-size:12px;font-weight:700;color:var(--ink-2)}
+.mail{position:relative;display:grid;grid-template-columns:36px minmax(0,1fr);gap:12px;padding:12px 16px;cursor:pointer;border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent)}
+.mail:hover{background:color-mix(in srgb,var(--surface-2) 60%,var(--surface))}
+.mail.sel{background:var(--primary-soft)}
+.mail.sel::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--primary)}
+.mail .chk{display:none;place-items:center;width:36px;height:36px}
+.mail .chk i{display:block;width:18px;height:18px;border:1.75px solid var(--ink-2);border-radius:4px;background:var(--surface)}
+.mail:hover .av{display:none}.mail:hover .chk{display:grid}
+.m-r1,.m-r2,.m-r3{display:flex;align-items:center;gap:6px;min-width:0}
+.m-r1 .from{flex:1;font-size:14px;font-weight:500}
+.m-r1 time{font-size:12px;color:var(--ink-2);flex:none}
+.m-r2{margin-top:1px}
+.m-r2 .subj{font-size:14px;color:var(--ink)}
+.m-r3{margin-top:2px;color:var(--ink-2)}
+.m-r3 .snip{flex:1;font-size:13px}
+.thr{flex:none;padding:0 6px;border:1px solid var(--line);border-radius:var(--r-pill);font-size:11px;font-weight:700;line-height:16px;color:var(--ink-2)}
+.mail.unread .from,.mail.unread .subj{font-weight:700}
+.mail.unread time{color:var(--primary);font-weight:700}
+.udot{width:8px;height:8px;border-radius:50%;background:var(--primary);flex:none}
+.star{color:var(--warning)}.star .i{fill:var(--warning)}
+.acc-tip{width:8px;height:8px;border-radius:2px;background:var(--c);flex:none}
+
+.to-chip{flex:none;padding:0 6px;border-radius:4px;background:var(--surface-2);font-size:11px;font-weight:600;line-height:18px;color:var(--ink-2)}
+.asg{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:-8px 0 20px;font-size:13px;color:var(--ink-2)}
+.asg .dd{height:30px;gap:8px}
+.asg .dd .av{width:20px;height:20px;font-size:9px}
+.typing{display:inline-flex;align-items:center;gap:6px;margin-left:auto;padding:0 10px;height:28px;border-radius:var(--r-pill);background:color-mix(in srgb,var(--warning) 16%,var(--surface));color:var(--warning-ink);font-size:12px;font-weight:700}
+.typing i{width:6px;height:6px;border-radius:50%;background:currentColor;display:block}
+.pop{position:absolute;top:52px;right:8px;z-index:25;width:340px;padding:8px 0;border:1px solid var(--line);border-radius:var(--r-card);background:var(--surface);box-shadow:var(--shadow)}
+.pop h5{margin:0;padding:10px 16px 6px;font-size:12px;font-weight:700;letter-spacing:.04em;color:var(--ink-2)}
+.pop .opt{display:flex;align-items:center;gap:10px;padding:6px 16px;font-size:13px}
+.pop .opt .n{margin-left:auto;font-size:12px;color:var(--ink-2)}
+.pop .lbls{display:flex;flex-wrap:wrap;gap:6px;padding:4px 16px 8px}
+.pop .foot{display:flex;gap:8px;padding:10px 16px 6px;margin-top:6px;border-top:1px solid var(--line)}
+.list{position:relative}
+.app:not([data-state="filter"]) .pop{display:none}
+/* ---------- Panel baca ---------- */
+.read{grid-row:1;grid-column:4;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--surface)}
+.r-bar{display:flex;align-items:center;gap:2px;height:56px;padding:0 12px;border-bottom:1px solid var(--line)}
+.vsep{width:1px;height:20px;margin:0 6px;background:var(--line)}
+.r-bar .pos{margin-left:auto;margin-right:4px;font-size:12px;color:var(--ink-2)}
+.r-scroll{flex:1;overflow:auto}
+.r-in{max-width:768px;margin:0 auto;padding:24px 32px 32px}
+.subject{margin:0 0 10px;font-size:24px;line-height:1.3;font-weight:700;letter-spacing:-.01em}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+.chip{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:var(--r-pill);background:var(--surface-2);font-size:12px;font-weight:600;color:var(--ink-2)}
+.thread{border:1px solid var(--line);border-radius:var(--r-card);overflow:hidden}
+.thread .more{display:flex;align-items:center;gap:8px;width:100%;height:36px;padding:0 16px;font-size:12px;font-weight:600;color:var(--primary);background:var(--surface-2)}
+.tr{display:grid;grid-template-columns:28px auto minmax(0,1fr) auto;align-items:center;gap:10px;height:48px;padding:0 16px;border-top:1px solid var(--line);font-size:13px}
+.tr .av{width:28px;height:28px;font-size:11px}
+.tr b{font-weight:600}
+.tr .trunc{color:var(--ink-2)}
+.tr time{font-size:12px;color:var(--ink-2)}
+.msg{margin-top:16px;padding:20px 24px 24px;border:1px solid var(--line);border-radius:var(--r-card)}
+.msg-h{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:12px;align-items:start}
+.msg-h .av{width:40px;height:40px;font-size:14px}
+.who{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
+.who b{font-size:14px;font-weight:700}
+.who span{font-size:13px;color:var(--ink-2)}
+.ver{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;border-radius:var(--r-pill);background:color-mix(in srgb,var(--success) 14%,var(--surface));color:var(--success-ink);font-size:12px;font-weight:700}
+.ver.ext{background:color-mix(in srgb,var(--warning) 16%,var(--surface));color:var(--warning-ink)}
+.to{margin-top:2px;font-size:12px;color:var(--ink-2)}
+.msg-h .meta{display:flex;align-items:center;gap:2px;font-size:12px;color:var(--ink-2)}
+.msg-h .meta time{margin-right:6px}
+.blocked{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:16px 0 4px;padding:10px 12px;border-radius:var(--r-input);background:var(--surface-2);font-size:13px;color:var(--ink-2)}
+.blocked .lnk{font-weight:700;color:var(--primary)}
+.body{margin-top:16px;font-size:14px;line-height:1.65}
+.body p{margin:0 0 12px}
+.body ul{margin:0 0 12px;padding-left:20px}
+.body table{border-collapse:collapse;margin:4px 0 16px;font-size:13px}
+.body td{padding:7px 12px;border:1px solid var(--line);vertical-align:top}
+.body td:first-child{color:var(--ink-2);width:150px;background:color-mix(in srgb,var(--surface-2) 50%,var(--surface))}
+.imgph{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 12px;margin-bottom:12px;border:1px dashed var(--line);border-radius:var(--r-input);font-size:12px;color:var(--ink-2)}
+.sig{color:var(--ink-2)}
+.atts-h{display:flex;align-items:center;justify-content:space-between;margin:20px 0 10px;font-size:13px;font-weight:700}
+.atts{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.att{display:flex;align-items:center;gap:12px;padding:10px 8px 10px 12px;border:1px solid var(--line);border-radius:var(--r-card);background:var(--surface)}
+.att .fic{display:grid;place-items:center;width:36px;height:36px;border-radius:var(--r-input);flex:none}
+.fic.pdf{background:color-mix(in srgb,var(--danger) 14%,var(--surface));color:var(--danger-ink)}
+.fic.xls{background:color-mix(in srgb,var(--success) 14%,var(--surface));color:var(--success-ink)}
+.fic.img{background:color-mix(in srgb,var(--tag-purple) 14%,var(--surface));color:var(--tag-purple)}
+.att b{display:block;font-size:13px;font-weight:600}
+.att small{font-size:12px;color:var(--ink-2)}
+.att .t{flex:1;min-width:0}
+.r-act{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+.r-act .push{margin-left:auto}
+.qr{padding:12px 24px 16px;border-top:1px solid var(--line);background:var(--surface)}
+.qr-box{max-width:768px;margin:0 auto;display:flex;align-items:center;gap:8px;padding:6px 6px 6px 8px;border:1px solid var(--line);border-radius:var(--r-card);background:var(--bg)}
+.from-pill{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border-radius:var(--r-input);background:var(--surface);border:1px solid var(--line);font-size:12px;font-weight:600;color:var(--ink-2);white-space:nowrap}
+.qr-box .ph{flex:1;color:var(--ink-2);font-size:14px;padding-left:4px}
+
+/* ---------- Panel info kontak ---------- */
+.crm{grid-row:1;grid-column:5;display:none;width:320px;flex-direction:column;min-height:0;border-left:1px solid var(--line);background:var(--bg)}
+.app[data-state="crm"] .crm{display:flex}
+.crm-h{display:flex;align-items:center;justify-content:space-between;height:56px;padding:0 8px 0 16px;border-bottom:1px solid var(--line);font-weight:700}
+.crm-s{flex:1;overflow:auto;padding:16px}
+.card{padding:16px;border:1px solid var(--line);border-radius:var(--r-card);background:var(--surface)}
+.crm .who-c{display:flex;gap:12px;align-items:center}
+.crm .who-c .av{width:48px;height:48px;font-size:16px}
+.crm h4{margin:0;font-size:16px;font-weight:700}
+.kv{display:grid;grid-template-columns:96px 1fr;gap:6px 8px;margin-top:14px;font-size:13px}
+.kv dt{color:var(--ink-2)}.kv dd{margin:0;font-weight:500}
+.sec{margin:20px 0 8px;font-size:12px;font-weight:700;letter-spacing:.04em;color:var(--ink-2)}
+.row-it{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-card);background:var(--surface);font-size:13px}
+.row-it+.row-it{margin-top:8px}
+.row-it small{display:block;color:var(--ink-2);font-size:12px}
+.st{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:var(--r-pill);font-size:11px;font-weight:700}
+.st.ok{background:color-mix(in srgb,var(--success) 14%,var(--surface));color:var(--success-ink)}
+.st.new{background:var(--primary-soft);color:var(--primary)}
+.st.warn{background:color-mix(in srgb,var(--warning) 16%,var(--surface));color:var(--warning-ink)}
+.crm .btns{display:grid;gap:8px;margin-top:16px}
+
+/* ---------- Jendela tulis mengambang ---------- */
+.compose{position:absolute;right:24px;bottom:0;z-index:20;display:none;flex-direction:column;width:600px;height:min(600px,calc(100% - 40px));border:1px solid var(--line);border-bottom:0;border-radius:var(--r-card) var(--r-card) 0 0;background:var(--surface);box-shadow:var(--shadow)}
+.app[data-state="compose"] .compose{display:flex}
+.c-top{display:flex;align-items:center;gap:2px;height:44px;padding:0 6px 0 16px;border-radius:var(--r-card) var(--r-card) 0 0;background:var(--surface-2)}
+.c-top b{flex:1;font-size:14px}
+.c-top .ib{width:32px;height:32px}
+.c-row{position:relative;display:flex;align-items:center;gap:8px;min-height:44px;padding:4px 16px;border-bottom:1px solid var(--line);font-size:14px}
+.c-row>label{width:56px;flex:none;font-size:13px;color:var(--ink-2)}
+.c-row .grow{flex:1;min-width:0}
+.from-sel{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 8px;margin-left:-8px;border-radius:var(--r-input);font-weight:600}
+.from-sel:hover{background:var(--surface-2)}
+.from-sel span{font-weight:400;color:var(--ink-2)}
+.rc{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 6px 0 3px;border-radius:var(--r-pill);background:var(--surface-2);font-size:13px;font-weight:600}
+.rc .av{width:22px;height:22px;font-size:10px}
+.cc{font-size:13px;font-weight:600;color:var(--ink-2)}
+.c-tools{display:flex;align-items:center;gap:2px;height:40px;padding:0 10px;border-bottom:1px solid var(--line)}
+.c-tools .ib{width:30px;height:30px}
+.c-tools .mode{margin-left:auto;font-size:12px;font-weight:600;color:var(--ink-2)}
+.c-body{flex:1;overflow:auto;padding:14px 16px;font-size:14px;line-height:1.6}
+.c-body p{margin:0 0 10px}.c-body ul{margin:0 0 10px;padding-left:20px}
+.quote-chip{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;margin:4px 0 12px;border-radius:var(--r-pill);border:1px solid var(--line);font-size:12px;font-weight:600;color:var(--ink-2)}
+.c-atts{display:flex;flex-wrap:wrap;gap:8px;padding:0 16px 12px}
+.c-att{display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 6px 0 8px;border:1px solid var(--line);border-radius:var(--r-input);font-size:13px}
+.c-att small{color:var(--ink-2)}
+.c-att .fic{width:24px;height:24px;display:grid;place-items:center;border-radius:4px}
+.c-foot{display:flex;align-items:center;gap:4px;height:60px;padding:0 12px;border-top:1px solid var(--line)}
+.split{display:inline-flex;margin-right:8px}
+.split .btn{border-radius:var(--r-input) 0 0 var(--r-input)}
+.split .btn+.btn{width:34px;padding:0;border-radius:0 var(--r-input) var(--r-input) 0;border-left:1px solid color-mix(in srgb,var(--on-primary) 35%,var(--primary))}
+.c-foot .saved{margin-left:auto;margin-right:4px;font-size:12px;color:var(--ink-2)}
+.menu{position:absolute;z-index:5;min-width:320px;padding:6px;border:1px solid var(--line);border-radius:var(--r-card);background:var(--surface);box-shadow:var(--shadow)}
+.menu[hidden]{display:none}
+.mi{display:grid;grid-template-columns:8px minmax(0,1fr) auto;align-items:center;gap:10px;width:100%;padding:8px 10px;border-radius:var(--r-input);text-align:left;font-size:13px}
+.mi:hover{background:var(--surface-2)}
+.mi b{display:block;font-weight:600}.mi small{display:block;color:var(--ink-2);font-size:12px}
+.mi.dis{opacity:.55;cursor:not-allowed}
+.toast{position:absolute;left:50%;bottom:96px;z-index:30;display:none;align-items:center;gap:16px;padding:10px 12px 10px 16px;border-radius:var(--r-input);background:var(--ink);color:var(--bg);font-size:14px;box-shadow:var(--shadow);transform:translateX(-50%)}
+.toast.on{display:flex}
+.toast button{font-weight:700;text-decoration:underline;text-underline-offset:3px}
+.toast .cd{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;border:2px solid color-mix(in srgb,var(--bg) 45%,transparent);font-size:11px;font-weight:700}
+
+/* ---------- Keadaan kosong ---------- */
+.empty{display:none;grid-row:1;grid-column:2 / -1;place-items:center;padding:32px;background:var(--surface)}
+.app[data-state="empty"] .folders,.app[data-state="empty"] .list,.app[data-state="empty"] .read,.app[data-state="empty"] .crm{display:none}
+.app[data-state="empty"] .empty{display:grid}
+.empty-in{max-width:640px;text-align:center}
+.empty h2{margin:20px 0 8px;font-size:24px;font-weight:700}
+.empty p{margin:0 auto;max-width:520px;color:var(--ink-2);font-size:16px}
+.mini-prov{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:28px 0 16px}
+.mini-prov button{display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 8px;border:1px solid var(--line);border-radius:var(--r-card);background:var(--surface);font-size:12px;font-weight:600}
+.mini-prov button:hover{border-color:var(--primary)}
+.pic{display:grid;place-items:center;width:40px;height:40px;border-radius:var(--r-card)}
+.empty .note{margin-top:20px;font-size:13px}
+
+/* ---------- Pengaturan: Akun email + wizard ---------- */
+.set{display:grid;grid-template-columns:64px minmax(0,1fr);height:100%;min-width:1040px;min-height:720px;position:relative;background:var(--bg);overflow:hidden}
+.set-main{grid-row:1;grid-column:2;overflow:auto;background:var(--surface)}
+.set-bar{display:flex;align-items:center;gap:8px;height:56px;padding:0 24px;border-bottom:1px solid var(--line);font-size:14px;color:var(--ink-2)}
+.set-bar b{color:var(--ink)}
+.set-in{max-width:1040px;margin:0 auto;padding:28px 32px}
+.set-title{display:flex;align-items:flex-start;gap:16px}
+.set-title h1{margin:0;font-size:24px;font-weight:700}
+.set-title p{margin:4px 0 0;color:var(--ink-2)}
+.set-title .btn{margin-left:auto}
+.acc-table{margin-top:24px;border:1px solid var(--line);border-radius:var(--r-card);overflow:hidden}
+.at-row{display:grid;grid-template-columns:minmax(0,2.2fr) 1.2fr 1fr 1.4fr 40px;align-items:center;gap:16px;padding:14px 16px;border-top:1px solid var(--line);font-size:13px}
+.at-row:first-child{border-top:0;background:var(--surface-2);padding:10px 16px;font-size:12px;font-weight:700;color:var(--ink-2)}
+.at-acc{display:flex;align-items:center;gap:12px;min-width:0}
+.at-acc b{display:block;font-size:14px}
+.at-acc small{display:block;color:var(--ink-2)}
+.prov{display:inline-flex;align-items:center;gap:6px;color:var(--ink-2)}
+.stat{display:inline-flex;align-items:center;gap:6px;font-weight:600}
+.stat.ok{color:var(--success-ink)}.stat.w{color:var(--warning-ink)}
+.stack{display:flex}.stack .av{width:26px;height:26px;font-size:10px;border:2px solid var(--surface);margin-left:-6px}.stack .av:first-child{margin-left:0}
+.scrim{position:absolute;inset:0;z-index:40;display:grid;place-items:center;padding:32px;background:var(--scrim)}
+.modal{display:flex;flex-direction:column;width:min(780px,100%);max-height:100%;border-radius:var(--r-card);background:var(--surface);box-shadow:var(--shadow);overflow:hidden}
+.mo-h{display:flex;align-items:center;gap:8px;padding:18px 16px 0 24px}
+.mo-h h2{flex:1;margin:0;font-size:20px;font-weight:700}
+.steps{display:flex;align-items:center;gap:8px;padding:16px 24px;border-bottom:1px solid var(--line)}
+.stp{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ink-2)}
+.stp .nb{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--line);font-size:12px;font-weight:700}
+.stp.done .nb{background:var(--success);border-color:var(--success);color:var(--on-primary)}
+.stp.cur{color:var(--ink)}.stp.cur .nb{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
+.stp-line{flex:1;height:1.5px;min-width:16px;background:var(--line)}
+.mo-b{flex:1;overflow:auto;padding:20px 24px 24px}
+.mo-f{display:flex;align-items:center;gap:8px;padding:14px 24px;border-top:1px solid var(--line);background:var(--surface)}
+.mo-f .help{flex:1;font-size:13px;display:inline-flex;align-items:center;gap:6px}
+.pane{display:none}.pane.on{display:block}
+.fld{display:block}
+.fld>span{display:block;margin-bottom:6px;font-size:13px;font-weight:600}
+.fld .hint{display:block;margin-top:6px;font-size:12px;color:var(--ink-2)}
+.inp{display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;border:1px solid var(--line);border-radius:var(--r-input);background:var(--surface);font-size:14px}
+.inp.big{height:48px;font-size:16px}
+.inp.focus{border-color:var(--primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--primary) 22%,transparent)}
+.inp .ph{color:var(--ink-2)}
+.inp .end{margin-left:auto;color:var(--ink-2);display:inline-flex}
+.mono{font-family:var(--mono);font-size:13px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:minmax(0,1fr) 96px 190px;gap:12px}
+.or{display:flex;align-items:center;gap:12px;margin:20px 0 14px;font-size:12px;font-weight:700;letter-spacing:.04em;color:var(--ink-2)}
+.or::before,.or::after{content:'';flex:1;height:1px;background:var(--line)}
+.provs{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.pv{position:relative;display:flex;flex-direction:column;gap:10px;padding:16px;border:1.5px solid var(--line);border-radius:var(--r-card);background:var(--surface);text-align:left}
+.pv:hover{border-color:color-mix(in srgb,var(--primary) 50%,var(--line))}
+.pv.on{border-color:var(--primary);background:color-mix(in srgb,var(--primary-soft) 55%,var(--surface))}
+.pv b{font-size:14px;font-weight:700}
+.pv p{margin:0;font-size:12px;line-height:1.45;color:var(--ink-2)}
+.pv .tagx{align-self:flex-start;padding:0 8px;border-radius:var(--r-pill);font-size:11px;font-weight:700;line-height:20px}
+.pv .tick{position:absolute;top:12px;right:12px;display:none;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--primary);color:var(--on-primary)}
+.pv.on .tick{display:grid}
+.banner{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:var(--r-input);font-size:13px}
+.banner.ok{background:color-mix(in srgb,var(--success) 12%,var(--surface));color:var(--ink)}
+.banner.ok .i{color:var(--success-ink)}
+.banner.info{background:var(--primary-soft)}
+.banner.info .i{color:var(--primary)}
+.banner b{display:block}
+.srv{margin-top:20px;padding:16px;border:1px solid var(--line);border-radius:var(--r-card)}
+.srv h4{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-size:14px}
+.srv h4 .seg{margin-left:auto}
+.srv+.srv{margin-top:12px}
+.segm{display:inline-flex;height:40px;padding:3px;border:1px solid var(--line);border-radius:var(--r-input);background:var(--surface-2)}
+.fld .segm{display:flex;width:100%}.segm span{flex:1;white-space:nowrap;display:grid;place-items:center;padding:0 12px;border-radius:4px;font-size:13px;font-weight:600;color:var(--ink-2)}
+.segm span.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(20,32,46,.12)}
+.chk-row{display:flex;align-items:center;gap:10px;margin-top:14px;font-size:13px}
+.cbox{display:grid;place-items:center;width:18px;height:18px;border-radius:4px;background:var(--primary);color:var(--on-primary);flex:none}
+.cbox.off{background:var(--surface);border:1.75px solid var(--ink-2)}
+.tests{border:1px solid var(--line);border-radius:var(--r-card);overflow:hidden}
+.test{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:12px;align-items:center;padding:14px 16px;border-top:1px solid var(--line)}
+.test:first-child{border-top:0}
+.test .ok{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:color-mix(in srgb,var(--success) 14%,var(--surface));color:var(--success-ink)}
+.test .inf{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--primary-soft);color:var(--primary)}
+.test b{display:block;font-size:14px}
+.test small{display:block;font-size:12px;color:var(--ink-2)}
+.test em{font-style:normal;font-size:12px;color:var(--ink-2)}
+.kinds{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.kinds .pv{flex-direction:row;align-items:flex-start;gap:12px}
+.acl{margin-top:8px;border:1px solid var(--line);border-radius:var(--r-card);overflow:hidden}
+.acl-r{display:grid;grid-template-columns:32px minmax(0,1fr) 170px 32px;gap:12px;align-items:center;padding:10px 12px;border-top:1px solid var(--line);font-size:13px}
+.acl-r:first-child{border-top:0}
+.acl-r .av{width:32px;height:32px;font-size:11px}
+.acl-r b{display:block;font-size:13px}.acl-r small{display:block;color:var(--ink-2);font-size:12px}
+.dd{display:flex;align-items:center;justify-content:space-between;height:34px;padding:0 10px;border:1px solid var(--line);border-radius:var(--r-input);font-size:13px;font-weight:600;background:var(--surface)}
+.acl-add{display:flex;width:100%;align-items:center;gap:8px;padding:10px 12px;border-top:1px solid var(--line);font-size:13px;font-weight:700;color:var(--primary)}
+.sw{display:flex;gap:8px}
+.sw i{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:var(--c);color:#fff}
+.sw i.on{box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--c)}
+.lbl{margin:20px 0 8px;font-size:13px;font-weight:600}
+.toggle{display:inline-block;width:36px;height:20px;border-radius:var(--r-pill);background:var(--primary);position:relative;flex:none}
+.toggle::after{content:'';position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:var(--on-primary)}
+
+/* ---------- HP ---------- */
+.hp{display:flex;flex-wrap:wrap;justify-content:center;gap:40px 32px;padding:32px 16px 48px}
+.ph-wrap{display:flex;flex-direction:column;align-items:center;gap:14px}
+.ph-cap{font-size:13px;font-weight:600;color:var(--ink-2)}
+.phone{width:410px;height:864px;padding:10px;border-radius:52px;background:#0B1118;box-shadow:var(--shadow);flex:none}
+.scr{position:relative;display:flex;flex-direction:column;height:100%;border-radius:42px;overflow:hidden;background:var(--surface)}
+.sbar{display:flex;align-items:center;justify-content:space-between;height:44px;padding:0 28px 0 32px;font-size:15px;font-weight:700;flex:none;background:var(--surface)}
+.sbar .r{display:flex;gap:6px;align-items:center}
+.sbar .r i{display:block;background:var(--ink);border-radius:2px}
+.m-bar{display:flex;align-items:center;gap:4px;height:56px;padding:0 8px;flex:none;background:var(--surface)}
+.m-bar .ib{width:44px;height:44px}
+.m-bar .t{flex:1;min-width:0}
+.m-bar h3{margin:0;font-size:16px;font-weight:700}
+.m-bar p{margin:0;font-size:12px;color:var(--ink-2)}
+.m-chips{display:flex;gap:8px;padding:4px 16px 10px;overflow:hidden;flex:none;border-bottom:1px solid var(--line)}
+.m-chip{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:1px solid var(--line);border-radius:var(--r-pill);font-size:13px;font-weight:600;color:var(--ink-2);white-space:nowrap}
+.m-chip.on{background:var(--primary-soft);border-color:transparent;color:var(--primary)}
+.m-list{flex:1;overflow:hidden;position:relative}
+.m-list .mail{padding:12px 16px}
+.m-list .mail:hover .av{display:grid}.m-list .mail:hover .chk{display:none}
+.swipe{position:relative;overflow:hidden;background:var(--success)}
+.swipe .act{position:absolute;right:0;top:0;bottom:0;width:96px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--on-primary);font-size:12px;font-weight:700}
+.swipe .mail{background:var(--surface);transform:translateX(-96px)}
+.fab{position:absolute;right:16px;bottom:96px;display:inline-flex;align-items:center;gap:10px;height:52px;padding:0 20px 0 18px;border-radius:var(--r-bubble);background:var(--primary);color:var(--on-primary);font-size:15px;font-weight:700;box-shadow:var(--shadow)}
+.bnav{display:flex;flex:none;height:76px;padding-bottom:20px;border-top:1px solid var(--line);background:var(--surface)}
+.bnav a{position:relative;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:12px;font-weight:600;color:var(--ink-2)}
+.bnav a.on{color:var(--primary)}
+.bnav .bdg{position:absolute;top:4px;left:calc(50% + 6px);min-width:18px;height:18px;padding:0 5px;border-radius:var(--r-pill);background:var(--accent);color:var(--on-accent);font-size:11px;font-weight:700;line-height:18px;text-align:center}
+.home-ind{position:absolute;left:50%;bottom:8px;width:134px;height:5px;border-radius:3px;background:var(--ink);opacity:.85;transform:translateX(-50%)}
+.drawer-scrim{position:absolute;inset:0;z-index:5;background:var(--scrim)}
+.drawer{position:absolute;top:0;bottom:0;left:0;z-index:6;width:316px;display:flex;flex-direction:column;background:var(--bg);box-shadow:var(--shadow)}
+.drawer .f-scroll{padding-bottom:8px}
+.drawer .d-foot{display:grid;gap:8px;padding:12px 16px 32px;border-top:1px solid var(--line)}
+.m-read{flex:1;overflow:hidden;padding:4px 16px 16px}
+.m-read .subject{font-size:20px}
+.m-read .chips{margin-bottom:16px}
+.m-sender{display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:10px;align-items:center}
+.m-sender b{font-size:14px}
+.m-sender small{display:block;font-size:12px;color:var(--ink-2)}
+.m-atts{display:flex;gap:10px;overflow:hidden;margin-top:4px}
+.m-atts .att{min-width:240px}
+.m-actions{display:flex;flex:none;gap:8px;padding:10px 16px 30px;border-top:1px solid var(--line);background:var(--surface)}
+.m-actions .btn{flex:1;height:44px}
+.m-comp .c-row{padding:4px 16px}
+.m-tools{display:flex;align-items:center;justify-content:space-around;flex:none;height:52px;padding-bottom:0;border-top:1px solid var(--line);background:var(--surface)}
+.m-tools .ib{width:44px;height:44px}
+.send-ic{display:grid;place-items:center;width:44px;height:44px;border-radius:var(--r-card);background:var(--primary);color:var(--on-primary)}
+
+@media (max-width:700px){.doc .brand small{display:none}}
+@media (max-width:440px){.phone{zoom:.86}.hp{padding:20px 8px 40px}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-inbox-chat" viewBox="0 0 24 24"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></symbol>
+    <symbol id="i-mail" viewBox="0 0 24 24"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+    <symbol id="i-megaphone" viewBox="0 0 24 24"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></symbol>
+    <symbol id="i-ticket" viewBox="0 0 24 24"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 17v2"/><path d="M13 11v2"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2m-7.07-17.07 1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol>
+    <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></symbol>
+    <symbol id="i-file-text" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8M16 13H8M16 17H8"/></symbol>
+    <symbol id="i-file-sheet" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h2M14 13h2M8 17h2M14 17h2"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></symbol>
+    <symbol id="i-image-off" viewBox="0 0 24 24"><path d="m2 2 20 20"/><path d="M10.41 10.41a2 2 0 1 1-2.83-2.83"/><path d="M13.5 13.5 6 21"/><path d="m18 12 3 3"/><path d="M3.59 3.59A1.99 1.99 0 0 0 3 5v14a2 2 0 0 0 2 2h14c.55 0 1.052-.22 1.41-.59"/><path d="M21 15V5a2 2 0 0 0-2-2H9"/></symbol>
+    <symbol id="i-archive" viewBox="0 0 24 24"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></symbol>
+    <symbol id="i-shield-alert" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4M12 16h.01"/></symbol>
+    <symbol id="i-shield-check" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><path d="M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/></symbol>
+    <symbol id="i-clip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/></symbol>
+    <symbol id="i-reply" viewBox="0 0 24 24"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></symbol>
+    <symbol id="i-reply-all" viewBox="0 0 24 24"><polyline points="7 17 2 12 7 7"/><polyline points="12 17 7 12 12 7"/><path d="M22 18v-2a4 4 0 0 0-4-4H7"/></symbol>
+    <symbol id="i-forward" viewBox="0 0 24 24"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-max" viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><path d="M21 3l-7 7M3 21l7-7"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><path d="M12 15V3"/></symbol>
+    <symbol id="i-bold" viewBox="0 0 24 24"><path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8"/></symbol>
+    <symbol id="i-italic" viewBox="0 0 24 24"><path d="M19 4h-9M14 20H5M15 4 9 20"/></symbol>
+    <symbol id="i-underline" viewBox="0 0 24 24"><path d="M6 4v6a6 6 0 0 0 12 0V4"/><path d="M4 20h16"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M3 12h.01M3 18h.01M3 6h.01M8 12h13M8 18h13M8 6h13"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+    <symbol id="i-quote" viewBox="0 0 24 24"><path d="M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/><path d="M5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+    <symbol id="i-sign" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"/></symbol>
+    <symbol id="i-template" viewBox="0 0 24 24"><rect width="18" height="7" x="3" y="3" rx="1"/><rect width="9" height="7" x="3" y="14" rx="1"/><rect width="5" height="7" x="16" y="14" rx="1"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></symbol>
+    <symbol id="i-building" viewBox="0 0 24 24"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></symbol>
+    <symbol id="i-plug" viewBox="0 0 24 24"><path d="M12 22v-5M9 8V2M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></symbol>
+    <symbol id="i-pop" viewBox="0 0 24 24"><path d="M12 2v8"/><path d="m16 6-4 4-4-4"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 18h.01M10 18h.01"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4M12 17h.01"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></symbol>
+    <symbol id="i-user-plus" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/></symbol>
+    <symbol id="i-panel-left" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 12h16M4 6h16M4 18h16"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r="1"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/></symbol>
+    <symbol id="i-mail-dot" viewBox="0 0 24 24"><path d="M22 13V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h9"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><circle cx="19" cy="18" r="3"/></symbol>
+  </defs>
+</svg>
+
+<header class="doc" id="doc">
+  <div class="brand">
+    <svg width="24" height="24" viewBox="-27 -1 276 276" aria-hidden="true"><path d="M47 0C65 0 78 14 78 31V60C92 54 108 52 124 52C180 52 222 94 222 149C222 205 180 250 124 250H68V264C68 273 58 278 51 272L5 237C-2 232-2 223 5 218L51 183C58 178 68 182 68 191V210H124C158 210 182 183 182 149C182 117 158 92 124 92C89 92 60 118 53 151C50 165 49 177 38 177C25 177 16 164 16 149V31C16 14 29 0 47 0Z" fill="var(--primary)"/><circle cx="193" cy="39" r="23" fill="var(--accent)"/></svg>
+    Balesin <small>Mockup modul Email · Fase 9</small>
+  </div>
+  <div class="seg" role="group" aria-label="Tampilan">
+    <button data-v="desk">Kotak surat</button>
+    <button data-v="akun">Tambah akun</button>
+    <button data-v="hp">HP</button>
+  </div>
+  <div class="seg" role="group" aria-label="Keadaan" id="stateSeg">
+    <button data-st="read">Baca</button>
+    <button data-st="compose">Tulis</button>
+    <button data-st="crm">Info kontak</button>
+    <button data-st="filter">Saring</button>
+    <button data-st="empty">Belum ada akun</button>
+  </div>
+  <span class="spacer"></span>
+  <button class="theme-btn" id="themeBtn"><i data-i="moon" data-s="16"></i><span>Mode gelap</span></button>
+</header>
+
+<!-- ======================= DESKTOP: KOTAK SURAT ======================= -->
+<section class="view" id="v-desk">
+ <div class="stage">
+  <div class="app" id="app" data-state="read">
+    <aside class="rail" aria-label="Navigasi utama">
+      <div class="logo"><svg width="28" height="28" viewBox="-27 -1 276 276" aria-hidden="true"><path d="M47 0C65 0 78 14 78 31V60C92 54 108 52 124 52C180 52 222 94 222 149C222 205 180 250 124 250H68V264C68 273 58 278 51 272L5 237C-2 232-2 223 5 218L51 183C58 178 68 182 68 191V210H124C158 210 182 183 182 149C182 117 158 92 124 92C89 92 60 118 53 151C50 165 49 177 38 177C25 177 16 164 16 149V31C16 14 29 0 47 0Z" fill="var(--primary)"/><circle cx="193" cy="39" r="23" fill="var(--accent)"/></svg></div>
+      <nav>
+        <a class="rl" href="#" title="Inbox"><i data-i="inbox-chat"></i><span class="sr">Inbox</span></a>
+        <a class="rl on" href="#" title="Email" aria-current="page"><i data-i="mail"></i><span class="bdg">14</span><span class="sr">Email</span></a>
+        <a class="rl" href="#" title="Kontak"><i data-i="users"></i><span class="sr">Kontak</span></a>
+        <a class="rl" href="#" title="Broadcast"><i data-i="megaphone"></i><span class="sr">Broadcast</span></a>
+        <a class="rl" href="#" title="Tiket"><i data-i="ticket"></i><span class="sr">Tiket</span></a>
+        <a class="rl" href="#" title="Laporan"><i data-i="chart"></i><span class="sr">Laporan</span></a>
+        <a class="rl foot" href="#" title="Pengaturan" data-go="akun"><i data-i="settings"></i><span class="sr">Pengaturan</span></a>
+        <button class="rl" title="Tema" data-theme-toggle><i data-i="moon"></i></button>
+        <span class="av me" title="Citra Pratiwi">CP</span>
+      </nav>
+    </aside>
+
+    <aside class="folders" aria-label="Folder email">
+      <div class="f-head"><h2>Email</h2><button class="ib" title="Pengaturan akun email" data-go="akun"><i data-i="settings"></i></button></div>
+      <button class="btn pri lg compose-btn" data-open-compose><i data-i="pen" data-s="16"></i>Tulis email<kbd>C</kbd></button>
+      <div class="f-scroll" id="folderTree"></div>
+      <div class="f-foot">
+        <div><i data-i="refresh" data-s="14"></i>Tersinkron · 1 menit lalu</div>
+        <div class="w"><i data-i="alert" data-s="14"></i>1 akun perlu masuk ulang</div>
+      </div>
+    </aside>
+
+    <section class="list" aria-label="Daftar email">
+      <div class="l-head">
+        <button class="ib" id="showFolders" title="Tampilkan folder" hidden><i data-i="panel-left"></i></button>
+        <div class="t"><h3>Semua kotak masuk</h3><p>14 belum dibaca · 4 akun</p></div>
+        <button class="ib" title="Sinkron sekarang"><i data-i="refresh"></i></button>
+        <button class="ib" id="filterBtn" title="Saring"><i data-i="sliders"></i></button>
+      </div>
+      <div class="pop" role="dialog" aria-label="Saring email">
+        <h5>AKUN</h5>
+        <label class="opt"><span class="cbox"><i data-i="check" data-s="14"></i></span><span class="dot" style="--c:var(--tag-blue)"></span>CS Sky Tech<span class="n">6</span></label>
+        <label class="opt"><span class="cbox"><i data-i="check" data-s="14"></i></span><span class="dot" style="--c:var(--tag-teal)"></span>Billing Sky Tech<span class="n">3</span></label>
+        <label class="opt"><span class="cbox off"></span><span class="dot" style="--c:var(--tag-purple)"></span>Outlook Kantor<span class="n">5</span></label>
+        <h5>DIKIRIM KE</h5>
+        <label class="opt"><span class="cbox off"></span>cs@skytech.net.id</label>
+        <label class="opt"><span class="cbox"><i data-i="check" data-s="14"></i></span>info@skytech.net.id <span class="to-chip">alias</span></label>
+        <h5>KEADAAN</h5>
+        <label class="opt"><span class="cbox"><i data-i="check" data-s="14"></i></span>Belum dibalas</label>
+        <label class="opt"><span class="cbox off"></span>Ditugaskan ke saya</label>
+        <label class="opt"><span class="cbox off"></span>Berlampiran</label>
+        <h5>LABEL</h5>
+        <div class="lbls"><span class="chip"><span class="dot" style="--c:var(--tag-teal)"></span>Vendor</span><span class="chip" style="background:var(--primary-soft);color:var(--primary)"><span class="dot" style="--c:var(--tag-blue)"></span>Pelanggan korporat</span><span class="chip"><span class="dot" style="--c:var(--accent)"></span>Komplain</span><span class="chip"><span class="dot" style="--c:var(--tag-purple)"></span>Pajak</span></div>
+        <div class="foot"><button class="btn sm">Atur ulang</button><button class="btn ghost sm" style="margin-left:auto"><i data-i="star" data-s="16"></i>Simpan sebagai tampilan</button></div>
+      </div>
+      <div class="search"><i data-i="search" data-s="16"></i><span>Cari email, dari:, ada:lampiran…</span><kbd>/</kbd></div>
+      <div class="tabs" role="tablist">
+        <button class="tab on" role="tab" aria-selected="true">Prioritas <span class="c">11</span></button>
+        <button class="tab" role="tab">Lainnya <span class="c">3</span></button>
+        <button class="tab" role="tab">Untuk saya <span class="c">2</span></button>
+      </div>
+      <div class="l-scroll" id="mailList"></div>
+    </section>
+
+    <section class="read" aria-label="Isi email">
+      <div class="r-bar">
+        <button class="ib" title="Arsip (E)"><i data-i="archive"></i></button>
+        <button class="ib" title="Hapus (#)"><i data-i="trash"></i></button>
+        <button class="ib" title="Tandai spam"><i data-i="shield-alert"></i></button>
+        <span class="vsep"></span>
+        <button class="ib" title="Pindah ke folder"><i data-i="folder"></i></button>
+        <button class="ib" title="Label"><i data-i="tag"></i></button>
+        <button class="ib" title="Tandai belum dibaca"><i data-i="mail-dot"></i></button>
+        <span class="pos" id="pos">1 dari 14</span>
+        <button class="ib" title="Sebelumnya (K)"><i data-i="up"></i></button>
+        <button class="ib" title="Berikutnya (J)"><i data-i="down"></i></button>
+        <span class="vsep"></span>
+        <button class="ib" id="crmToggle" title="Info pengirim"><i data-i="panel"></i></button>
+        <button class="ib" title="Lainnya"><i data-i="more"></i></button>
+      </div>
+      <div class="r-scroll"><div class="r-in" id="reading"></div></div>
+      <div class="qr">
+        <div class="qr-box">
+          <i data-i="reply" data-s="16" style="color:var(--ink-2)"></i>
+          <span class="ph trunc" id="qrPh">Balas ke NOC Nusaraya Backbone…</span>
+          <span class="from-pill"><span class="dot" style="--c:var(--tag-blue)"></span>cs@skytech.net.id<i data-i="down" data-s="14"></i></span>
+          <button class="btn pri sm" data-open-compose><i data-i="send" data-s="16"></i>Balas</button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="crm" aria-label="Info pengirim">
+      <div class="crm-h">Info pengirim<button class="ib" id="crmClose" title="Tutup"><i data-i="x"></i></button></div>
+      <div class="crm-s" id="crmBody"></div>
+    </aside>
+
+    <div class="empty">
+      <div class="empty-in">
+        <svg width="176" height="128" viewBox="0 0 176 128" aria-hidden="true">
+          <rect x="20" y="30" width="120" height="84" rx="12" fill="var(--surface-2)" stroke="var(--line)" stroke-width="2"/>
+          <path d="M22 38l58 40 58-40" fill="none" stroke="var(--ink-2)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity=".55"/>
+          <rect x="56" y="12" width="96" height="64" rx="10" fill="var(--surface)" stroke="var(--primary)" stroke-width="2.5"/>
+          <path d="M70 32h52M70 44h68M70 56h40" stroke="var(--primary)" stroke-width="2.5" stroke-linecap="round" opacity=".6"/>
+          <circle cx="152" cy="18" r="10" fill="var(--accent)"/>
+          <path d="M147 18l3.5 3.5 6-7" fill="none" stroke="var(--on-accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <h2>Hubungkan akun email pertamamu</h2>
+        <p>Baca dan balas email <b>cs@</b>, <b>billing@</b>, atau Outlook kantor langsung dari Balesin. Semua akun di satu tempat, tetap tersinkron dengan server.</p>
+        <div class="mini-prov" id="miniProv"></div>
+        <button class="btn pri lg" data-go="akun"><i data-i="plus" data-s="16"></i>Tambah akun email</button>
+        <p class="note">Akun <b>bersama</b> hanya bisa ditambah Owner/Admin. Kamu tetap bisa menghubungkan akun <b>pribadi</b> milikmu sendiri.</p>
+      </div>
+    </div>
+
+    <div class="compose" role="dialog" aria-label="Tulis email">
+      <div class="c-top"><b class="trunc">Balas: Permintaan upgrade paket 50 Mbps</b>
+        <button class="ib" title="Perkecil"><i data-i="minus" data-s="16"></i></button>
+        <button class="ib" title="Layar penuh"><i data-i="max" data-s="16"></i></button>
+        <button class="ib" title="Tutup (draf disimpan)" data-close-compose><i data-i="x" data-s="16"></i></button>
+      </div>
+      <div class="c-row"><label>Dari</label>
+        <button class="from-sel" id="fromBtn"><span class="dot" style="--c:var(--tag-blue)"></span>CS Sky Tech <span>&lt;cs@skytech.net.id&gt;</span><i data-i="down" data-s="16"></i></button>
+        <div class="menu" id="fromMenu" hidden style="top:42px;left:72px">
+          <button class="mi"><span class="dot" style="--c:var(--tag-blue)"></span><span><b>CS Sky Tech</b><small>cs@skytech.net.id · Bersama</small></span><i data-i="check" data-s="16" style="color:var(--primary)"></i></button>
+          <button class="mi"><span class="dot" style="--c:var(--tag-teal)"></span><span><b>Billing Sky Tech</b><small>billing@skytech.net.id · Bersama</small></span><span></span></button>
+          <button class="mi"><span class="dot" style="--c:var(--tag-purple)"></span><span><b>Outlook Kantor</b><small>kantor.skytech@outlook.com · Pribadi (milikmu)</small></span><span></span></button>
+          <button class="mi dis" disabled><span class="dot" style="--c:var(--accent)"></span><span><b>Notifikasi Balesin</b><small>Perlu masuk ulang sebelum dipakai</small></span><i data-i="alert" data-s="16" class="warn-ic"></i></button>
+        </div>
+      </div>
+      <div class="c-row"><label>Kepada</label><span class="grow"><span class="rc"><span class="av" style="--c:var(--tag-teal)">RW</span>Rina Wulandari<i data-i="x" data-s="14"></i></span></span></div>
+      <div class="c-row"><label>Cc</label><span class="grow"><span class="rc"><span class="av" style="--c:var(--tag-purple)">AS</span>Agus (Sales)<i data-i="x" data-s="14"></i></span></span></div>
+      <div class="c-row"><label>Bcc</label><span class="grow"><span class="rc"><span class="av" style="--c:var(--success)">AR</span>arsip@skytech.net.id<i data-i="x" data-s="14"></i></span></span><span class="cc" title="Penerima Bcc tidak terlihat oleh penerima lain">Tersembunyi</span></div>
+      <div class="c-row"><label>Subjek</label><span class="grow trunc">Re: Permintaan upgrade paket 50 Mbps untuk kantor cabang</span></div>
+      <div class="c-tools">
+        <button class="ib" title="Tebal"><i data-i="bold" data-s="16"></i></button>
+        <button class="ib" title="Miring"><i data-i="italic" data-s="16"></i></button>
+        <button class="ib" title="Garis bawah"><i data-i="underline" data-s="16"></i></button>
+        <span class="vsep"></span>
+        <button class="ib" title="Daftar"><i data-i="list" data-s="16"></i></button>
+        <button class="ib" title="Tautan"><i data-i="link" data-s="16"></i></button>
+        <button class="ib" title="Kutipan"><i data-i="quote" data-s="16"></i></button>
+        <button class="ib" title="Gambar"><i data-i="image" data-s="16"></i></button>
+        <span class="mode">Teks biasa</span>
+      </div>
+      <div class="c-body">
+        <p>Halo Bu Rina,</p>
+        <p>Terima kasih atas permintaannya. Berikut penawaran untuk kantor cabang Sukadana:</p>
+        <ul><li>Paket Bisnis 50 Mbps (rasio 1:2) dengan 1 IP publik statis</li><li>Biaya pemasangan gratis untuk kontrak 12 bulan</li><li>Pemasangan 3 hari kerja setelah konfirmasi, aman sebelum 10 Desember</li></ul>
+        <p>Rincian harga ada di lampiran. Kalau sudah cocok, cukup balas email ini ya, Bu.</p>
+        <p class="sig">—<br>Salam hangat,<br><b style="color:var(--ink)">Tim Layanan Pelanggan Sky Tech</b><br>PT Sky Base Technology Digital · Lampung Timur</p>
+        <span class="quote-chip"><i data-i="more" data-s="14"></i>Tampilkan kutipan email Rina</span>
+      </div>
+      <div class="c-atts"><span class="c-att"><span class="fic pdf"><i data-i="file-text" data-s="14"></i></span>Penawaran-Bisnis-50Mbps.pdf <small>312 KB</small><button class="ib" style="width:24px;height:24px" title="Hapus lampiran"><i data-i="x" data-s="14"></i></button></span></div>
+      <div class="c-foot">
+        <div class="split"><button class="btn pri" id="sendBtn">Kirim</button><button class="btn pri" title="Jadwalkan kirim"><i data-i="down" data-s="16"></i></button></div>
+        <button class="ib" title="Lampirkan berkas"><i data-i="clip"></i></button>
+        <button class="ib" title="Template email"><i data-i="template"></i></button>
+        <button class="ib" title="Tanda tangan"><i data-i="sign"></i></button>
+        <button class="ib" title="Jadwalkan kirim"><i data-i="clock"></i></button>
+        <span class="saved">Draf tersimpan · 09.41</span>
+        <button class="ib" title="Buang draf"><i data-i="trash"></i></button>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" role="status"><span>Email terkirim dari cs@skytech.net.id</span><button id="undo">Batalkan</button><span class="cd" id="cd">10</span></div>
+  </div>
+ </div>
+</section>
+
+<!-- ======================= DESKTOP: PENGATURAN + WIZARD ======================= -->
+<section class="view" id="v-akun">
+ <div class="stage">
+  <div class="set">
+    <aside class="rail" aria-label="Navigasi utama">
+      <div class="logo"><svg width="28" height="28" viewBox="-27 -1 276 276" aria-hidden="true"><path d="M47 0C65 0 78 14 78 31V60C92 54 108 52 124 52C180 52 222 94 222 149C222 205 180 250 124 250H68V264C68 273 58 278 51 272L5 237C-2 232-2 223 5 218L51 183C58 178 68 182 68 191V210H124C158 210 182 183 182 149C182 117 158 92 124 92C89 92 60 118 53 151C50 165 49 177 38 177C25 177 16 164 16 149V31C16 14 29 0 47 0Z" fill="var(--primary)"/><circle cx="193" cy="39" r="23" fill="var(--accent)"/></svg></div>
+      <nav>
+        <a class="rl" href="#" title="Inbox"><i data-i="inbox-chat"></i></a>
+        <a class="rl" href="#" title="Email" data-go="desk"><i data-i="mail"></i><span class="bdg">14</span></a>
+        <a class="rl" href="#" title="Kontak"><i data-i="users"></i></a>
+        <a class="rl" href="#" title="Broadcast"><i data-i="megaphone"></i></a>
+        <a class="rl" href="#" title="Tiket"><i data-i="ticket"></i></a>
+        <a class="rl" href="#" title="Laporan"><i data-i="chart"></i></a>
+        <a class="rl on foot" href="#" title="Pengaturan"><i data-i="settings"></i></a>
+        <button class="rl" title="Tema" data-theme-toggle><i data-i="moon"></i></button>
+        <span class="av me">CP</span>
+      </nav>
+    </aside>
+    <main class="set-main">
+      <div class="set-bar">Pengaturan <i data-i="right" data-s="16"></i> <b>Akun email</b></div>
+      <div class="set-in">
+        <div class="set-title">
+          <div><h1>Akun email</h1><p>Hubungkan kotak surat tim dan pribadi. Email dibaca, dibalas, dan dikirim dari menu Email.</p></div>
+          <button class="btn pri" data-open-wiz><i data-i="plus" data-s="16"></i>Tambah akun</button>
+        </div>
+        <div class="acc-table">
+          <div class="at-row"><span>Akun</span><span>Penyedia</span><span>Jenis</span><span>Status</span><span></span></div>
+          <div class="at-row"><span class="at-acc"><span class="dot" style="--c:var(--tag-blue)"></span><span class="trunc"><b>CS Sky Tech</b><small>cs@skytech.net.id</small></span></span><span class="prov"><i data-i="server" data-s="16"></i>cPanel · IMAP</span><span><span class="stack"><span class="av" style="--c:var(--tag-blue)">CP</span><span class="av" style="--c:var(--tag-teal)">DS</span><span class="av" style="--c:var(--accent)">+4</span></span></span><span class="stat ok"><i data-i="check" data-s="16"></i>Tersinkron · 1 mnt lalu</span><button class="ib"><i data-i="more"></i></button></div>
+          <div class="at-row"><span class="at-acc"><span class="dot" style="--c:var(--tag-teal)"></span><span class="trunc"><b>Billing Sky Tech</b><small>billing@skytech.net.id</small></span></span><span class="prov"><i data-i="server" data-s="16"></i>cPanel · IMAP</span><span><span class="stack"><span class="av" style="--c:var(--success)">SA</span><span class="av" style="--c:var(--tag-blue)">CP</span><span class="av" style="--c:var(--tag-purple)">+1</span></span></span><span class="stat ok"><i data-i="check" data-s="16"></i>Tersinkron · 2 mnt lalu</span><button class="ib"><i data-i="more"></i></button></div>
+          <div class="at-row"><span class="at-acc"><span class="dot" style="--c:var(--tag-purple)"></span><span class="trunc"><b>Outlook Kantor</b><small>kantor.skytech@outlook.com</small></span></span><span class="prov"><i data-i="cloud" data-s="16"></i>Microsoft 365</span><span class="prov"><i data-i="lock" data-s="16"></i>Pribadi · Tobing</span><span class="stat ok"><i data-i="check" data-s="16"></i>Tersinkron · baru saja</span><button class="ib"><i data-i="more"></i></button></div>
+          <div class="at-row"><span class="at-acc"><span class="dot" style="--c:var(--accent)"></span><span class="trunc"><b>Notifikasi Balesin</b><small>balesin@skytech.net.id</small></span></span><span class="prov"><i data-i="server" data-s="16"></i>cPanel · IMAP</span><span><span class="stack"><span class="av" style="--c:var(--tag-blue)">CP</span><span class="av" style="--c:var(--warning)">TB</span></span></span><span class="stat w"><i data-i="alert" data-s="16"></i>Password ditolak · <a href="#">Perbarui</a></span><button class="ib"><i data-i="more"></i></button></div>
+        </div>
+      </div>
+    </main>
+
+    <div class="scrim" id="wiz">
+      <div class="modal" role="dialog" aria-label="Tambah akun email">
+        <div class="mo-h"><h2>Tambah akun email</h2><button class="ib" title="Tutup" data-close-wiz><i data-i="x"></i></button></div>
+        <div class="steps" id="steps">
+          <button class="stp" data-step="1"><span class="nb">1</span>Penyedia</button><span class="stp-line"></span>
+          <button class="stp" data-step="2"><span class="nb">2</span>Detail akun</button><span class="stp-line"></span>
+          <button class="stp" data-step="3"><span class="nb">3</span>Tes koneksi</button><span class="stp-line"></span>
+          <button class="stp" data-step="4"><span class="nb">4</span>Akses &amp; tampilan</button>
+        </div>
+        <div class="mo-b">
+          <!-- Langkah 1 -->
+          <div class="pane" data-pane="1">
+            <label class="fld"><span>Alamat email</span>
+              <div class="inp big focus"><i data-i="mail" style="color:var(--ink-2)"></i>cs@skytech.net.id<span class="end"><i data-i="sparkles" data-s="16" style="color:var(--primary)"></i></span></div>
+              <span class="hint">Ketik alamatnya dulu, Balesin mencoba mengenali penyedia dan mengisi pengaturan server otomatis.</span>
+            </label>
+            <div class="or">ATAU PILIH PENYEDIA</div>
+            <div class="provs" id="provs"></div>
+          </div>
+          <!-- Langkah 2 -->
+          <div class="pane" data-pane="2">
+            <div class="banner ok"><i data-i="sparkles" data-s="16"></i><span><b>Pengaturan server terdeteksi untuk skytech.net.id (cPanel)</b>Periksa sekali lagi. Kalau ragu, lihat menu “Konfigurasi klien email” di cPanel.</span></div>
+            <div class="grid2" style="margin-top:20px">
+              <label class="fld"><span>Nama akun di Balesin</span><div class="inp">CS Sky Tech</div></label>
+              <label class="fld"><span>Nama pengirim</span><div class="inp">Layanan Pelanggan Sky Tech</div></label>
+              <label class="fld"><span>Username</span><div class="inp">cs@skytech.net.id</div></label>
+              <label class="fld"><span>Password atau sandi aplikasi</span><div class="inp focus"><span class="mono">••••••••••••</span><span class="end"><i data-i="eye" data-s="16"></i></span></div><span class="hint"><i data-i="lock" data-s="14" style="vertical-align:-2px"></i> Disimpan terenkripsi. Setelah disimpan tidak pernah ditampilkan lagi.</span></label>
+            </div>
+            <div class="srv">
+              <h4><i data-i="inbox" data-s="16"></i>Server masuk<span class="segm" style="margin-left:auto;height:32px"><span class="on">IMAP</span><span>POP3</span></span></h4>
+              <div class="grid3">
+                <label class="fld"><span>Host</span><div class="inp mono">mail.skytech.net.id</div></label>
+                <label class="fld"><span>Port</span><div class="inp mono">993</div></label>
+                <label class="fld"><span>Keamanan</span><div class="segm"><span class="on">SSL/TLS</span><span>STARTTLS</span></div></label>
+              </div>
+            </div>
+            <div class="srv">
+              <h4><i data-i="send" data-s="16"></i>Server keluar (SMTP)</h4>
+              <div class="grid3">
+                <label class="fld"><span>Host</span><div class="inp mono">mail.skytech.net.id</div></label>
+                <label class="fld"><span>Port</span><div class="inp mono">465</div></label>
+                <label class="fld"><span>Keamanan</span><div class="segm"><span class="on">SSL/TLS</span><span>STARTTLS</span></div></label>
+              </div>
+              <div class="chk-row"><span class="cbox"><i data-i="check" data-s="14"></i></span>Pakai username &amp; password yang sama dengan server masuk</div>
+            </div>
+          </div>
+          <!-- Langkah 3 -->
+          <div class="pane" data-pane="3">
+            <div class="tests">
+              <div class="test"><span class="ok"><i data-i="check" data-s="16"></i></span><span><b>Alamat server aman</b><small>mail.skytech.net.id mengarah ke IP publik, bukan jaringan internal</small></span><em>0,2 dtk</em></div>
+              <div class="test"><span class="ok"><i data-i="check" data-s="16"></i></span><span><b>Sertifikat TLS valid</b><small>Berlaku sampai 14 Februari 2027</small></span><em>0,4 dtk</em></div>
+              <div class="test"><span class="ok"><i data-i="check" data-s="16"></i></span><span><b>Masuk ke IMAP berhasil</b><small>14 folder ditemukan · 3.482 email di Kotak masuk</small></span><em>1,1 dtk</em></div>
+              <div class="test"><span class="ok"><i data-i="check" data-s="16"></i></span><span><b>Folder khusus dikenali</b><small>Terkirim, Draf, Spam, Sampah, dan Arsip dipetakan otomatis</small></span><em>0,3 dtk</em></div>
+              <div class="test"><span class="ok"><i data-i="check" data-s="16"></i></span><span><b>Masuk ke SMTP berhasil</b><small>Siap mengirim sebagai cs@skytech.net.id (tidak ada email yang dikirim saat tes)</small></span><em>0,9 dtk</em></div>
+              <div class="test"><span class="inf"><i data-i="info" data-s="16"></i></span><span><b>Email baru langsung masuk</b><small>Server mendukung IMAP IDLE, jadi email baru muncul dalam hitungan detik</small></span><em></em></div>
+            </div>
+            <div class="banner info" style="margin-top:16px"><i data-i="info" data-s="16"></i><span>Sinkron awal mengambil email <b style="display:inline">90 hari terakhir</b> (sekitar 640 email). Email yang lebih lama tetap bisa dicari dan dibuka kapan saja.</span></div>
+          </div>
+          <!-- Langkah 4 -->
+          <div class="pane" data-pane="4">
+            <div class="kinds">
+              <button class="pv on"><span class="tick"><i data-i="check" data-s="14"></i></span><span class="pic" style="background:var(--primary-soft);color:var(--primary)"><i data-i="users"></i></span><span><b>Akun bersama</b><p>Dipakai tim. Kamu menentukan siapa yang boleh membaca atau mengirim.</p></span></button>
+              <button class="pv"><span class="tick"><i data-i="check" data-s="14"></i></span><span class="pic" style="background:var(--surface-2);color:var(--ink-2)"><i data-i="lock"></i></span><span><b>Akun pribadi</b><p>Hanya kamu. Admin hanya melihat alamat dan status, tidak bisa membaca isinya.</p></span></button>
+            </div>
+            <div class="lbl">Siapa yang boleh mengakses</div>
+            <div class="acl">
+              <div class="acl-r"><span class="av" style="--c:var(--tag-teal)"><i data-i="users" data-s="16"></i></span><span><b>Departemen Layanan Pelanggan</b><small>5 orang</small></span><span class="dd">Baca &amp; kirim<i data-i="down" data-s="16"></i></span><button class="ib" style="width:32px;height:32px"><i data-i="x" data-s="16"></i></button></div>
+              <div class="acl-r"><span class="av" style="--c:var(--tag-blue)">CP</span><span><b>Citra Pratiwi</b><small>Supervisor</small></span><span class="dd">Kelola<i data-i="down" data-s="16"></i></span><button class="ib" style="width:32px;height:32px"><i data-i="x" data-s="16"></i></button></div>
+              <div class="acl-r"><span class="av" style="--c:var(--accent)"><i data-i="users" data-s="16"></i></span><span><b>Departemen Teknis</b><small>4 orang</small></span><span class="dd">Baca saja<i data-i="down" data-s="16"></i></span><button class="ib" style="width:32px;height:32px"><i data-i="x" data-s="16"></i></button></div>
+              <button class="acl-add"><i data-i="user-plus" data-s="16"></i>Tambah orang atau departemen</button>
+            </div>
+            <div class="grid2">
+              <div><div class="lbl">Warna akun</div>
+                <div class="sw"><i class="on" style="--c:var(--tag-blue)"><svg class="i s16" style="color:#fff"><use href="#i-check"/></svg></i><i style="--c:var(--tag-teal)"></i><i style="--c:var(--tag-purple)"></i><i style="--c:var(--accent)"></i><i style="--c:var(--success)"></i><i style="--c:var(--warning)"></i></div></div>
+              <div><div class="lbl">Ambil email sejak</div><div class="dd" style="height:40px">90 hari terakhir<i data-i="down" data-s="16"></i></div></div>
+            </div>
+            <div class="chk-row" style="margin-top:20px"><span class="toggle"></span>Beri notifikasi saat ada email baru di akun ini</div>
+          </div>
+        </div>
+        <div class="mo-f">
+          <a class="help" href="#"><i data-i="book" data-s="16"></i>Panduan: sandi aplikasi &amp; pengaturan server</a>
+          <button class="btn" id="wizBack">Batal</button>
+          <button class="btn pri" id="wizNext">Lanjut</button>
+        </div>
+      </div>
+    </div>
+  </div>
+ </div>
+</section>
+
+<!-- ======================= HP ======================= -->
+<section class="view" id="v-hp">
+  <div class="hp">
+    <!-- 1. Daftar -->
+    <div class="ph-wrap"><div class="phone"><div class="scr">
+      <div class="sbar"><span>09.41</span><span class="r"><i style="width:18px;height:10px"></i><i style="width:16px;height:10px"></i><i style="width:26px;height:12px;border-radius:3px"></i></span></div>
+      <div class="m-bar"><button class="ib" title="Akun & folder"><i data-i="menu"></i></button><div class="t"><h3>Semua kotak masuk</h3><p>14 belum dibaca · 4 akun</p></div><button class="ib" title="Cari"><i data-i="search"></i></button><span class="av me" style="margin-right:6px">CP</span></div>
+      <div class="m-chips"><span class="m-chip on">Semua</span><span class="m-chip">Belum dibaca 14</span><span class="m-chip">Berlampiran</span><span class="m-chip">Disebut</span></div>
+      <div class="m-list" id="mList1"></div>
+      <button class="fab"><i data-i="pen"></i>Tulis</button>
+      <nav class="bnav"><a><i data-i="inbox-chat"></i>Inbox</a><a class="on"><i data-i="mail"></i><span class="bdg">14</span>Email</a><a><i data-i="users"></i>Kontak</a><a><i data-i="megaphone"></i>Broadcast</a><a><i data-i="grid"></i>Lainnya</a></nav>
+      <span class="home-ind"></span>
+    </div></div><div class="ph-cap">1 · Daftar email — geser ke kiri untuk arsip</div></div>
+
+    <!-- 2. Laci -->
+    <div class="ph-wrap"><div class="phone"><div class="scr">
+      <div class="sbar"><span>09.41</span><span class="r"><i style="width:18px;height:10px"></i><i style="width:16px;height:10px"></i><i style="width:26px;height:12px;border-radius:3px"></i></span></div>
+      <div class="m-bar"><button class="ib"><i data-i="menu"></i></button><div class="t"><h3>Semua kotak masuk</h3><p>14 belum dibaca</p></div></div>
+      <div class="m-list" id="mList2"></div>
+      <nav class="bnav"><a><i data-i="inbox-chat"></i>Inbox</a><a class="on"><i data-i="mail"></i>Email</a><a><i data-i="users"></i>Kontak</a><a><i data-i="megaphone"></i>Broadcast</a><a><i data-i="grid"></i>Lainnya</a></nav>
+      <div class="drawer-scrim"></div>
+      <aside class="drawer">
+        <div class="sbar" style="background:var(--bg)"><span>09.41</span><span></span></div>
+        <div class="f-head"><h2>Email</h2><button class="ib"><i data-i="x"></i></button></div>
+        <div class="f-scroll" id="folderTree2"></div>
+        <div class="d-foot"><button class="btn"><i data-i="plus" data-s="16"></i>Tambah akun email</button></div>
+      </aside>
+      <span class="home-ind" style="z-index:7"></span>
+    </div></div><div class="ph-cap">2 · Laci akun &amp; folder</div></div>
+
+    <!-- 3. Baca -->
+    <div class="ph-wrap"><div class="phone"><div class="scr">
+      <div class="sbar"><span>09.41</span><span class="r"><i style="width:18px;height:10px"></i><i style="width:16px;height:10px"></i><i style="width:26px;height:12px;border-radius:3px"></i></span></div>
+      <div class="m-bar"><button class="ib" title="Kembali"><i data-i="back"></i></button><span style="flex:1"></span><button class="ib" title="Arsip"><i data-i="archive"></i></button><button class="ib" title="Hapus"><i data-i="trash"></i></button><button class="ib" title="Tandai belum dibaca"><i data-i="mail-dot"></i></button><button class="ib" title="Lainnya"><i data-i="more"></i></button></div>
+      <div class="m-read">
+        <h1 class="subject">Jadwal maintenance backbone 26 Nov, 01.00–04.00 WIB</h1>
+        <div class="chips"><span class="chip"><span class="dot" style="--c:var(--tag-blue)"></span>CS Sky Tech</span><span class="chip"><span class="dot" style="--c:var(--tag-teal)"></span>Vendor</span><span class="chip">3 email</span></div>
+        <div class="m-sender"><span class="av" style="--c:var(--tag-teal)">NN</span><span class="trunc"><b>NOC Nusaraya Backbone</b><small class="trunc">ke cs@skytech.net.id, cc 1 · 10.24</small></span><span class="ver"><i data-i="shield-check" data-s="14"></i>Terverifikasi</span></div>
+        <div class="blocked" style="font-size:12px"><i data-i="image-off" data-s="16"></i><span style="flex:1">Gambar dari luar disembunyikan.</span><span class="lnk">Tampilkan</span></div>
+        <div class="body" style="font-size:14px">
+          <p>Yth. Tim NOC Sky Tech,</p>
+          <p>Sehubungan dengan peningkatan kapasitas jalur Bandar Lampung – Metro, kami akan melakukan pemeliharaan terjadwal:</p>
+          <table><tr><td style="width:100px">Tanggal</td><td>Rabu, 26 November 2026</td></tr><tr><td>Waktu</td><td>01.00–04.00 WIB</td></tr><tr><td>Dampak</td><td>Putus maks. 2 × 15 menit</td></tr></table>
+        </div>
+        <div class="m-atts"><div class="att"><span class="fic pdf"><i data-i="file-text" data-s="16"></i></span><span class="t"><b class="trunc">Jadwal-Maintenance-26Nov.pdf</b><small>248 KB</small></span></div><div class="att"><span class="fic xls"><i data-i="file-sheet" data-s="16"></i></span><span class="t"><b class="trunc">Link-Terdampak.xlsx</b><small>36 KB</small></span></div></div>
+      </div>
+      <div class="m-actions"><button class="btn"><i data-i="reply" data-s="16"></i>Balas</button><button class="btn"><i data-i="reply-all" data-s="16"></i>Semua</button><button class="btn"><i data-i="forward" data-s="16"></i>Teruskan</button></div>
+      <span class="home-ind"></span>
+    </div></div><div class="ph-cap">3 · Baca email</div></div>
+
+    <!-- 4. Tulis -->
+    <div class="ph-wrap"><div class="phone"><div class="scr">
+      <div class="sbar"><span>09.41</span><span class="r"><i style="width:18px;height:10px"></i><i style="width:16px;height:10px"></i><i style="width:26px;height:12px;border-radius:3px"></i></span></div>
+      <div class="m-bar"><button class="ib" title="Tutup"><i data-i="x"></i></button><div class="t"><h3>Pesan baru</h3><p>Draf tersimpan · 09.41</p></div><button class="ib" title="Lampirkan"><i data-i="clip"></i></button><button class="send-ic" title="Kirim"><i data-i="send"></i></button><span style="width:4px"></span></div>
+      <div class="m-comp">
+        <div class="c-row"><label>Dari</label><span class="from-sel" style="margin-left:-8px"><span class="dot" style="--c:var(--tag-blue)"></span>cs@skytech.net.id<i data-i="down" data-s="16"></i></span></div>
+        <div class="c-row"><label>Kepada</label><span class="grow"><span class="rc"><span class="av" style="--c:var(--tag-teal)">RW</span>Rina Wulandari</span></span><span class="cc">Cc/Bcc</span></div>
+        <div class="c-row"><label>Subjek</label><span class="grow trunc">Re: Permintaan upgrade paket 50 Mbps</span></div>
+      </div>
+      <div class="c-body" style="padding:16px">
+        <p>Halo Bu Rina,</p>
+        <p>Terima kasih atas permintaannya. Penawaran paket Bisnis 50 Mbps untuk kantor cabang Sukadana kami lampirkan, ya.</p>
+        <p class="sig">—<br>Salam hangat,<br>Tim Layanan Pelanggan Sky Tech</p>
+        <div class="c-att" style="margin-top:8px"><span class="fic pdf" style="width:24px;height:24px;display:grid;place-items:center;border-radius:4px"><i data-i="file-text" data-s="14"></i></span>Penawaran-Bisnis-50Mbps.pdf <small>312 KB</small></div>
+      </div>
+      <div class="m-tools" style="margin-bottom:28px"><button class="ib"><i data-i="bold"></i></button><button class="ib"><i data-i="italic"></i></button><button class="ib"><i data-i="list"></i></button><button class="ib"><i data-i="link"></i></button><button class="ib"><i data-i="image"></i></button><button class="ib"><i data-i="template"></i></button><button class="ib"><i data-i="sign"></i></button></div>
+      <span class="home-ind"></span>
+    </div></div><div class="ph-cap">4 · Tulis (layar penuh)</div></div>
+  </div>
+</section>
+
+<script>
+(function(){
+  const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+  const ic=(n,s)=>`<svg class="i${s?' s'+s:''}" aria-hidden="true"><use href="#i-${n}"/></svg>`;
+  const hydrate=(root=document)=>$$('i[data-i]',root).forEach(el=>{el.outerHTML=ic(el.dataset.i,el.dataset.s)});
+
+  const ACC={
+    cs:{name:'CS Sky Tech',addr:'cs@skytech.net.id',c:'var(--tag-blue)',kind:'Bersama',unread:6,open:true,
+      folders:[['inbox','Kotak masuk',6,true],['file','Draf',1],['send','Terkirim'],['archive','Arsip'],['shield-alert','Spam',1],['trash','Sampah'],['folder','Vendor'],['folder','Pelanggan korporat']]},
+    bill:{name:'Billing Sky Tech',addr:'billing@skytech.net.id',c:'var(--tag-teal)',kind:'Bersama',unread:3},
+    ms:{name:'Outlook Kantor',addr:'kantor.skytech@outlook.com',c:'var(--tag-purple)',kind:'Pribadi',unread:5},
+    sys:{name:'Notifikasi Balesin',addr:'balesin@skytech.net.id',c:'var(--accent)',kind:'Bersama',warn:true}
+  };
+  const MAILS=[
+    {g:'Hari ini',id:'e1',acc:'cs',from:'NOC Nusaraya Backbone',em:'noc@nusaraya-backbone.id',ini:'NN',c:'var(--tag-teal)',subj:'Jadwal maintenance backbone 26 Nov, 01.00–04.00 WIB',snip:'Yth. Tim NOC Sky Tech, sehubungan dengan peningkatan kapasitas jalur Bandar Lampung – Metro…',time:'10.24',un:1,att:1,thr:3,label:'Vendor',ver:1},
+    {g:'Hari ini',id:'e2',acc:'cs',from:'Rina Wulandari',em:'rina@majutani.id',ini:'RW',c:'var(--tag-teal)',subj:'Permintaan upgrade paket 50 Mbps untuk kantor cabang',snip:'Selamat pagi, kami berencana membuka kantor cabang di Sukadana bulan depan dan butuh…',time:'09.12',un:1,star:1,label:'Pelanggan korporat',ver:1},
+    {g:'Hari ini',id:'e3',acc:'bill',to:'tagihan@',from:'Sistem Billing',em:'noreply@billing.skytech.net.id',ini:'SB',c:'var(--success)',subj:'Settlement harian 21 Nov: Rp 4.215.000 (63 transaksi)',snip:'Ringkasan pembayaran pelanggan yang masuk kemarin. Rincian per metode bayar ada di lampiran.',time:'08.03',un:1,att:1,ver:1},
+    {g:'Hari ini',id:'e4',acc:'ms',from:'Andi Pratama',em:'andi@fiberandalas.co.id',ini:'AP',c:'var(--accent)',subj:'Penawaran harga kabel FO 24 core & closure',snip:'Pak Tobing, terlampir penawaran untuk kebutuhan ekspansi Desember. Harga berlaku sampai…',time:'07.45',un:1,att:1,thr:2,ver:1},
+    {g:'Kemarin',id:'e5',acc:'cs',from:'Dimas Saputra',em:'dimas@skytech.net.id',ini:'DS',c:'var(--tag-blue)',subj:'Laporan instalasi ODP Desa Sukadana',snip:'Instalasi 2 ODP selesai, redaman rata-rata −19,8 dBm. Foto lokasi terlampir.',time:'Kemarin',att:1,ver:1},
+    {g:'Kemarin',id:'e6',acc:'bill',from:'Sari Anggraini',em:'sari@skytech.net.id',ini:'SA',c:'var(--tag-purple)',subj:'Rekap tunggakan November (per desa)',snip:'Rekap terbaru sudah saya pisahkan per desa. Ada 37 pelanggan lewat jatuh tempo…',time:'Kemarin',un:1,att:1,ver:1},
+    {g:'Kemarin',id:'e7',acc:'ms',from:'Forum ISP Lampung',em:'sekretariat@forumisp-lampung.id',ini:'FL',c:'var(--warning)',subj:'Undangan rapat koordinasi akhir tahun',snip:'Dengan hormat, kami mengundang Bapak/Ibu pada rapat koordinasi yang akan diadakan…',time:'Kemarin',un:1,ver:1},
+    {g:'Minggu ini',id:'e8',acc:'cs',from:'Budi Santoso',em:'budi.santoso@surel.id',ini:'BS',c:'var(--tag-blue)',to:'info@',label:'Komplain',subj:'Komplain: internet lambat sejak Senin malam',snip:'Sudah restart modem berkali-kali tapi masih lambat di jam 19.00–22.00. Mohon dicek…',time:'Sen',star:1,ver:0},
+    {g:'Minggu ini',id:'e9',acc:'sys',from:'Mail Delivery System',em:'mailer-daemon@skytech.net.id',ini:'MD',c:'var(--danger)',subj:'Tidak terkirim: andi@contoh-salah.id',snip:'Alamat tujuan tidak ditemukan. Periksa kembali penulisan alamat lalu kirim ulang.',time:'Sen',ver:1}
+  ];
+  const BODY={
+    e1:`<div class="imgph">${ic('image-off',16)}logo-nusaraya.png · disembunyikan</div>
+      <p>Yth. Tim NOC Sky Tech,</p>
+      <p>Sehubungan dengan peningkatan kapasitas jalur backbone Bandar Lampung – Metro, kami akan melakukan pemeliharaan terjadwal dengan rincian berikut:</p>
+      <table><tr><td>Tanggal</td><td>Rabu, 26 November 2026</td></tr><tr><td>Waktu</td><td>01.00–04.00 WIB</td></tr><tr><td>Dampak</td><td>Putus maksimal 2 × 15 menit</td></tr><tr><td>Link terdampak</td><td>SKT-LT-01, SKT-LT-02 (rincian di lampiran)</td></tr></table>
+      <p>Mohon informasikan kepada pelanggan Anda. Bila ada pertanyaan, balas email ini atau hubungi NOC 24 jam kami.</p>
+      <p class="sig">Salam,<br><b style="color:var(--ink)">Rahmat Hidayat</b><br>NOC Nusaraya Backbone</p>`,
+    e2:`<p>Selamat pagi Tim Sky Tech,</p><p>Kami berencana membuka kantor cabang di Sukadana mulai bulan depan. Kebutuhannya:</p>
+      <ul><li>Internet 50 Mbps untuk 12 komputer dan CCTV</li><li>1 IP publik statis</li><li>Terpasang sebelum 10 Desember</li></ul>
+      <p>Mohon dikirimkan penawaran resminya. Terima kasih.</p><p class="sig">Salam,<br><b style="color:var(--ink)">Rina Wulandari</b><br>Manajer Operasional, CV Maju Tani</p>`
+  };
+  const CRM={
+    e1:{name:'NOC Nusaraya Backbone',ini:'NN',c:'var(--tag-teal)',type:'Vendor · Upstream',kv:[['Perusahaan','PT Nusaraya Backbone'],['Telepon','0721 555 0142'],['Email','noc@nusaraya-backbone.id']],
+      chats:[['WhatsApp · 18 Nov','Link SKT-LT-02 sudah normal kembali, Pak.']],
+      tickets:[['#T-1043','Gangguan link SKT-LT-02','Selesai','ok'],['#T-1088','Persiapan maintenance 26 Nov','Baru','new']]},
+    e2:{name:'Rina Wulandari',ini:'RW',c:'var(--tag-teal)',type:'Pelanggan · Korporat',kv:[['ID pelanggan','SKT-00873'],['Perusahaan','CV Maju Tani'],['Paket','Bisnis 20 Mbps'],['Telepon','0812 5550 4471']],
+      chats:[['WhatsApp · 21 Nov','Siap Bu, penawarannya kami kirim lewat email ya.']],tickets:[]}
+  };
+
+  // ---------- folder tree ----------
+  function tree(){
+    let h=`<button class="fi on">${ic('layers')}Semua kotak masuk<span class="n">14</span></button>
+      <button class="fi">${ic('mail')}Belum dibaca<span class="n">14</span></button>
+      <button class="fi">${ic('star')}Berbintang</button>
+      <button class="fi">${ic('send')}Terkirim</button>
+      <button class="fi">${ic('file')}Draf<span class="n">2</span></button>
+      <div class="f-label">TAMPILAN TERSIMPAN</div>
+      <button class="fi">${ic('sliders')}Tagihan belum dibalas<span class="n">4</span></button>
+      <button class="fi">${ic('sliders')}Komplain pelanggan<span class="n">2</span></button>
+      <div class="f-label">AKUN<button class="ib" title="Tambah akun" data-go="akun">${ic('plus',16)}</button></div>`;
+    for(const k in ACC){const a=ACC[k];
+      const right=a.warn?`<span class="warn-ic" title="Perlu masuk ulang">${ic('alert',16)}</span>`:(a.unread&&!a.open?`<span class="n">${a.unread}</span>`:'');
+      h+=`<div class="acc${a.open?' open':''}"><button class="acc-h" data-acc>${ic('down',16).replace('class="i','class="i chev')}<span class="dot" style="--c:${a.c}"></span><span class="trunc"><b class="trunc">${a.name}${a.kind==='Pribadi'?` <span class="kind" title="Akun pribadi">${ic('lock',14)}</span>`:''}</b><small class="trunc">${a.addr}</small></span>${right}</button>
+      <div class="acc-f">${(a.folders||[]).map(f=>`<button class="fi sub">${ic(f[0],16)}${f[1]}${f[2]?`<span class="n">${f[2]}</span>`:''}</button>`).join('')}</div></div>`;
+    }
+    return h;
+  }
+  $('#folderTree').innerHTML=tree();
+  $('#folderTree2').innerHTML=tree();
+  document.addEventListener('click',e=>{const b=e.target.closest('[data-acc]');if(b)b.parentElement.classList.toggle('open')});
+
+  // ---------- list ----------
+  function item(m,sel){
+    const a=ACC[m.acc];
+    return `<div class="mail${m.un?' unread':''}${sel?' sel':''}" data-id="${m.id}">
+      <span class="av" style="--c:${m.c}">${m.ini}</span><span class="chk"><i></i></span>
+      <div style="min-width:0">
+        <div class="m-r1"><span class="from trunc">${m.from}</span>${m.to?`<span class="to-chip">ke ${m.to}</span>`:''}<span class="acc-tip" style="--c:${a.c}" title="${a.addr}"></span><time>${m.time}</time></div>
+        <div class="m-r2"><span class="subj trunc">${m.subj}</span>${m.thr?`<span class="thr">${m.thr}</span>`:''}</div>
+        <div class="m-r3"><span class="snip trunc">${m.snip}</span>${m.att?ic('clip',14):''}${m.star?`<span class="star">${ic('star',14)}</span>`:''}${m.un?'<span class="udot"></span>':''}</div>
+      </div></div>`;
+  }
+  function list(selId,el,opts={}){
+    let g='',h='';
+    MAILS.forEach((m,i)=>{
+      if(opts.max&&i>=opts.max)return;
+      if(m.g!==g&&!opts.nogrp){g=m.g;h+=`<div class="grp">${g}</div>`}
+      let it=item(m,m.id===selId);
+      if(opts.swipe===m.id) it=`<div class="swipe"><span class="act">${ic('archive')}Arsip</span>${it}</div>`;
+      h+=it;
+    });
+    el.innerHTML=h;
+  }
+
+  // ---------- reading ----------
+  let cur='e1';
+  function reading(id){
+    const m=MAILS.find(x=>x.id===id), a=ACC[m.acc];
+    const thread=m.thr?`<div class="thread"><button class="more">${ic('down',16)}${m.thr-1} email sebelumnya dalam utas ini</button>
+        <div class="tr"><span class="av" style="--c:var(--tag-blue)">CS</span><b>Kamu</b><span class="trunc">Mohon info estimasi durasi dan link mana saja yang terdampak, Pak.</span><time>20 Nov</time></div>
+        ${m.thr>2?`<div class="tr"><span class="av" style="--c:${m.c}">${m.ini}</span><b>${m.from.split(' ')[0]}</b><span class="trunc">Baik, jadwal resminya kami kirim besok pagi beserta daftar link.</span><time>20 Nov</time></div>`:''}</div>`:'';
+    const ver=m.ver?`<span class="ver" title="SPF, DKIM, dan DMARC lolos">${ic('shield-check',14)}Terverifikasi</span>`:`<span class="ver ext" title="Pengirim belum terverifikasi DKIM/DMARC">${ic('alert',14)}Belum terverifikasi</span>`;
+    const atts=m.id==='e1'?`<div class="atts-h"><span>2 lampiran · 284 KB</span><button class="btn ghost sm">${ic('download',16)}Unduh semua</button></div>
+      <div class="atts"><div class="att"><span class="fic pdf">${ic('file-text')}</span><span class="t"><b class="trunc">Jadwal-Maintenance-26Nov.pdf</b><small>PDF · 248 KB</small></span><button class="ib" title="Unduh">${ic('download',16)}</button></div>
+      <div class="att"><span class="fic xls">${ic('file-sheet')}</span><span class="t"><b class="trunc">Link-Terdampak.xlsx</b><small>Excel · 36 KB</small></span><button class="ib" title="Unduh">${ic('download',16)}</button></div></div>`
+      :m.att?`<div class="atts-h"><span>1 lampiran</span></div><div class="atts"><div class="att"><span class="fic ${m.id==='e5'?'img':'xls'}">${ic(m.id==='e5'?'image':'file-sheet')}</span><span class="t"><b class="trunc">${m.id==='e5'?'Foto-ODP-Sukadana.zip':'Lampiran.xlsx'}</b><small>${m.id==='e5'?'ZIP · 4,2 MB':'Excel · 58 KB'}</small></span><button class="ib">${ic('download',16)}</button></div></div>`:'';
+    const blocked=m.id==='e1'?`<div class="blocked">${ic('image-off',16)}<span style="flex:1">Gambar dari luar disembunyikan untuk melindungi privasimu.</span><button class="lnk">Tampilkan gambar</button><button class="lnk">Selalu dari pengirim ini</button></div>`:'';
+    $('#reading').innerHTML=`
+      <h1 class="subject">${m.subj}</h1>
+      <div class="chips"><span class="chip"><span class="dot" style="--c:${a.c}"></span>Kotak masuk · ${a.name}</span>${m.label?`<span class="chip">${ic('tag',14)}${m.label}</span>`:''}${m.thr?`<span class="chip">${m.thr} email</span>`:''}</div>
+      <div class="asg"><span>Ditugaskan</span><span class="dd"><span class="av" style="--c:var(--tag-blue)">CP</span>Citra P.${ic('down',14)}</span><span>Status</span><span class="dd">Terbuka${ic('down',14)}</span>${m.id==='e1'||m.id==='e2'?`<span class="typing"><i></i>Dimas sedang membalas…</span>`:''}</div>
+      ${thread}
+      <article class="msg">
+        <div class="msg-h"><span class="av" style="--c:${m.c}">${m.ini}</span>
+          <div style="min-width:0"><div class="who"><b>${m.from}</b><span>&lt;${m.em}&gt;</span>${ver}</div>
+          <div class="to">kepada ${m.to?m.to+'skytech.net.id':a.addr}${m.id==='e1'?', cc tobing@skytech.net.id':''} · diterima di <b style="color:var(--ink)">${a.name}</b></div></div>
+          <div class="meta"><time>${/^\d/.test(m.time)?'Hari ini, '+m.time:m.time}</time><button class="ib" title="Bintang">${ic('star',16)}</button><button class="ib" title="Balas">${ic('reply',16)}</button><button class="ib" title="Lainnya">${ic('more',16)}</button></div>
+        </div>
+        ${blocked}
+        <div class="body">${BODY[id]||`<p>${m.snip.replace('…','.')}</p><p>Isi email lengkap tampil di sini, dirender di bingkai terisolasi setelah disanitasi server.</p>`}</div>
+        ${atts}
+        <div class="r-act"><button class="btn" data-open-compose>${ic('reply',16)}Balas</button><button class="btn">${ic('reply-all',16)}Balas semua</button><button class="btn">${ic('forward',16)}Teruskan</button><button class="btn ghost push">${ic('ticket',16)}Buat tiket</button></div>
+      </article>`;
+    $('#qrPh').textContent='Balas ke '+m.from+'…';
+    $('#pos').textContent=(MAILS.indexOf(m)+1)+' dari 14';
+    crm(id);
+  }
+  function crm(id){
+    const m=MAILS.find(x=>x.id===id), c=CRM[id];
+    if(!c){$('#crmBody').innerHTML=`<div class="card"><div class="who-c"><span class="av" style="--c:${m.c}">${m.ini}</span><div style="min-width:0"><h4 class="trunc">${m.from}</h4><small class="trunc" style="color:var(--ink-2)">${m.em}</small></div></div>
+      <p style="margin:14px 0 0;font-size:13px;color:var(--ink-2)">Pengirim ini belum ada di kontak Balesin.</p><div class="btns"><button class="btn">${ic('user-plus',16)}Tambah ke kontak</button></div></div>`;return}
+    $('#crmBody').innerHTML=`<div class="card"><div class="who-c"><span class="av" style="--c:${c.c}">${c.ini}</span><div style="min-width:0"><h4 class="trunc">${c.name}</h4><span class="st new" style="margin-top:4px">${c.type}</span></div></div>
+      <dl class="kv">${c.kv.map(k=>`<dt>${k[0]}</dt><dd class="trunc">${k[1]}</dd>`).join('')}</dl></div>
+      <div class="sec">PERCAKAPAN TERAKHIR</div>${c.chats.map(x=>`<div class="row-it">${ic('chat',16)}<span><small>${x[0]}</small>${x[1]}</span></div>`).join('')}
+      <div class="sec">TIKET TERKAIT</div>${c.tickets.length?c.tickets.map(t=>`<div class="row-it">${ic('ticket',16)}<span style="flex:1;min-width:0"><small>${t[0]}</small><span class="trunc" style="display:block">${t[1]}</span></span><span class="st ${t[3]}">${t[2]}</span></div>`).join(''):`<div class="row-it" style="color:var(--ink-2)">Belum ada tiket.</div>`}
+      <div class="btns"><button class="btn pri">${ic('ticket',16)}Buat tiket dari email ini</button><button class="btn">${ic('chat',16)}Buka chat WhatsApp</button></div>`;
+  }
+
+  function select(id){cur=id;list(id,$('#mailList'));reading(id)}
+  $('#mailList').addEventListener('click',e=>{const it=e.target.closest('.mail');if(it)select(it.dataset.id)});
+
+  // ---------- providers ----------
+  const PROV=[
+    ['cloud','Microsoft 365 / Outlook','Masuk dengan akun Microsoft. Password tidak disimpan di Balesin.','OAuth','primary'],
+    ['mail','Google Workspace / Gmail','Masuk dengan Google, atau pakai sandi aplikasi untuk Gmail pribadi.','OAuth','primary'],
+    ['server','cPanel / IDCloudHost','Email hosting domain sendiri. Pengaturan server terisi otomatis.','Cocok untuk @skytech.net.id','success'],
+    ['plug','IMAP lain','Server email apa pun yang mendukung IMAP dan SMTP.','',''],
+    ['pop','POP3','Hanya kotak masuk. Untuk server lama yang tidak mendukung IMAP.','',''],
+    ['building','Yahoo, Zoho, dan lainnya','Preset siap pakai untuk penyedia email populer.','','']
+  ];
+  const tint={primary:'background:var(--primary-soft);color:var(--primary)',success:`background:color-mix(in srgb,var(--success) 14%,var(--surface));color:var(--success-ink)`};
+  $('#provs').innerHTML=PROV.map((p,i)=>`<button class="pv${i===2?' on':''}"><span class="tick">${ic('check',14)}</span><span class="pic" style="${i<2?tint.primary:i===2?tint.success:'background:var(--surface-2);color:var(--ink-2)'}">${ic(p[0])}</span><b>${p[1]}</b><p>${p[2]}</p>${p[3]?`<span class="tagx" style="${tint[p[4]]}">${p[3]}</span>`:''}</button>`).join('');
+  $('#provs').addEventListener('click',e=>{const b=e.target.closest('.pv');if(!b)return;$$('.pv',$('#provs')).forEach(x=>x.classList.toggle('on',x===b))});
+  $('#miniProv').innerHTML=PROV.slice(0,5).map((p,i)=>`<button data-go="akun"><span class="pic" style="${i<2?tint.primary:i===2?tint.success:'background:var(--surface-2);color:var(--ink-2)'}">${ic(p[0])}</span>${p[1].split(' / ')[0]}</button>`).join('');
+  $$('.kinds .pv').forEach(b=>b.addEventListener('click',()=>$$('.kinds .pv').forEach(x=>x.classList.toggle('on',x===b))));
+
+  // ---------- state ----------
+  const P=new URLSearchParams(location.search);
+  const S={v:P.get('v')||(innerWidth<760?'hp':'desk'),s:P.get('s')||'read',step:+(P.get('step')||1),t:P.get('t')||''};
+  if(P.get('chrome')==='0')document.body.classList.add('nochrome');
+  function theme(t){
+    if(t)document.documentElement.dataset.theme=t;
+    const dark=document.documentElement.dataset.theme==='dark'||(!document.documentElement.dataset.theme&&matchMedia('(prefers-color-scheme: dark)').matches);
+    $('#themeBtn').innerHTML=ic(dark?'sun':'moon',16)+`<span>${dark?'Mode terang':'Mode gelap'}</span>`;
+    $$('[data-theme-toggle]').forEach(b=>b.innerHTML=ic(dark?'sun':'moon'));
+    return dark;
+  }
+  function toggleTheme(){const dark=theme();theme(dark?'light':'dark')}
+  function apply(){
+    $$('.view').forEach(v=>v.classList.toggle('on',v.id==='v-'+S.v));
+    $$('[data-v]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.v===S.v));
+    $('#stateSeg').style.display=S.v==='desk'?'':'none';
+    $$('[data-st]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.st===S.s));
+    const app=$('#app');app.dataset.state=S.s;
+    $('#crmToggle').classList.toggle('on',S.s==='crm');$('#filterBtn').classList.toggle('on',S.s==='filter');
+    $('#showFolders').hidden=S.s!=='crm';
+    if(S.s==='compose'&&cur==='e1')select('e2');
+    if(S.s!=='compose'&&!P.has('keep')&&cur!=='e1'&&S._init){}
+    $$('.stp').forEach(b=>{const n=+b.dataset.step;b.classList.toggle('cur',n===S.step);b.classList.toggle('done',n<S.step);b.querySelector('.nb').innerHTML=n<S.step?ic('check',14):n});
+    $$('.pane').forEach(p=>p.classList.toggle('on',+p.dataset.pane===S.step));
+    $('#wizBack').textContent=S.step===1?'Batal':'Kembali';
+    $('#wizNext').textContent=S.step===2?'Tes koneksi':S.step===4?'Simpan & mulai sinkron':'Lanjut';
+  }
+  $$('[data-v]').forEach(b=>b.addEventListener('click',()=>{S.v=b.dataset.v;apply()}));
+  $$('#stateSeg [data-st]').forEach(b=>b.addEventListener('click',()=>{S.s=b.dataset.st;if(S.s==='read'&&cur==='e2')select('e1');apply()}));
+  document.addEventListener('click',e=>{
+    const g=e.target.closest('[data-go]');if(g){e.preventDefault();S.v=g.dataset.go;if(S.v==='desk'&&S.s==='empty')S.s='read';apply();return}
+    if(e.target.closest('[data-open-compose]')){S.s='compose';apply();return}
+    if(e.target.closest('[data-close-compose]')){S.s='read';apply();return}
+    if(e.target.closest('[data-theme-toggle]')){toggleTheme();return}
+    if(e.target.closest('[data-close-wiz]')){$('#wiz').style.display='none';return}
+    if(e.target.closest('[data-open-wiz]')){S.step=1;apply();$('#wiz').style.display='';return}
+    const st=e.target.closest('.stp');if(st){S.step=+st.dataset.step;apply();return}
+    if(!e.target.closest('#fromBtn')&&!e.target.closest('#fromMenu'))$('#fromMenu').hidden=true;
+  });
+  $('#fromBtn').addEventListener('click',()=>{$('#fromMenu').hidden=!$('#fromMenu').hidden});
+  $('#filterBtn').addEventListener('click',()=>{S.s=S.s==='filter'?'read':'filter';apply()});
+  $('#crmToggle').addEventListener('click',()=>{S.s=S.s==='crm'?'read':'crm';apply()});
+  $('#crmClose').addEventListener('click',()=>{S.s='read';apply()});
+  $('#showFolders').addEventListener('click',()=>{S.s='read';apply()});
+  $('#themeBtn').addEventListener('click',toggleTheme);
+  $('#wizNext').addEventListener('click',()=>{if(S.step<4){S.step++;apply()}else{S.v='desk';S.s='read';apply()}});
+  $('#wizBack').addEventListener('click',()=>{if(S.step>1){S.step--;apply()}else $('#wiz').style.display='none'});
+  let timer;
+  $('#sendBtn').addEventListener('click',()=>{S.s='read';apply();const t=$('#toast');t.classList.add('on');let n=10;$('#cd').textContent=n;clearInterval(timer);timer=setInterval(()=>{n--;$('#cd').textContent=n;if(n<=0){clearInterval(timer);t.classList.remove('on')}},1000)});
+  $('#undo').addEventListener('click',()=>{clearInterval(timer);$('#toast').classList.remove('on');S.s='compose';apply()});
+
+  hydrate();
+  theme(S.t);
+  select(S.s==='compose'?'e2':'e1');
+  list('',$('#mList1'),{swipe:'e3'});
+  list('',$('#mList2'),{});
+  apply();
+})();
+</script>
+</body>
+</html>

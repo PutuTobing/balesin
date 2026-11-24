@@ -27,6 +27,8 @@ const API_KEYS = [
     createdBy: RINA,
     createdAt: ago(40 * 24 * HOUR),
     status: 'active',
+    emailSenders: [],
+    emailAttachmentHosts: [],
   },
   {
     id: '7b8c9d0e-0000-4000-8000-000000000002',
@@ -41,6 +43,8 @@ const API_KEYS = [
     createdBy: RINA,
     createdAt: ago(3 * 24 * HOUR),
     status: 'active',
+    emailSenders: [],
+    emailAttachmentHosts: [],
   },
   {
     id: '7b8c9d0e-0000-4000-8000-000000000003',
@@ -55,6 +59,8 @@ const API_KEYS = [
     createdBy: RINA,
     createdAt: ago(90 * 24 * HOUR),
     status: 'revoked',
+    emailSenders: [],
+    emailAttachmentHosts: [],
   },
 ];
 

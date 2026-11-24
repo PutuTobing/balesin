@@ -287,6 +287,9 @@ function TicketDetail({ ticket }: { ticket: Ticket }) {
                     t.inbox.item.status[ticket.conversation.status],
                   )}
                 </Link>
+              ) : ticket.conversationUnavailable ? (
+                // Tahap 9.0: percakapan di channel yang tidak boleh dilihat pengguna ini.
+                <span className={styles.muted}>{k.conversationUnavailable}</span>
               ) : (
                 <span className={styles.muted}>{k.notLinked}</span>
               )}

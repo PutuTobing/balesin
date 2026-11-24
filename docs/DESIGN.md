@@ -67,8 +67,9 @@ untuk isi pesan. Line-height 1.45 untuk teks, 1.2 untuk judul.
 
 ## 2. Pola layar
 - **Desktop ≥ 1024px**: rail navigasi ikon (64px) · daftar percakapan (360px) · ruang chat ·
-  panel detail (340px, bisa disembunyikan).
-- **HP ≤ 640px**: navigasi bawah (Inbox, Kontak, Broadcast, Lainnya); daftar → chat →
+  panel detail (340px, bisa disembunyikan). Menu Email: kolom folder `--size-mail-folders` (248px) ·
+  daftar email `--size-mail-list` (380px) · panel baca (isi maks. `--size-column`).
+- **HP ≤ 640px**: navigasi bawah (Inbox, Email, Kontak, Broadcast, Lainnya — Email tampil bila `navigation.mail`); daftar → chat →
   detail sebagai layar bertumpuk dengan gesture kembali; composer menempel di bawah dan
   aman dari keyboard; target sentuh ≥ 44px.
 - Tablet: dua kolom.
@@ -120,7 +121,9 @@ error API; hindari kata ganti bila kalimatnya tetap wajar.
   **"Hubungkan nomor"** untuk channel. Membuat berkas dari data = **"Ekspor CSV"**; "Unduh" hanya
   untuk berkas yang sudah ada (media, kode cadangan).
 - Nama produk tidak pernah ditulis langsung di teks UI — selalu dari pengaturan merek (white-label).
-- "Balasan cepat" = teks siap pakai lewat `/` di composer (fitur `quick_replies`); "template" HANYA untuk template pesan WhatsApp yang disetujui Meta.
+- "Template WhatsApp" = template pesan yang disetujui Meta. "Template email" = isi email yang dikirim aplikasi
+  lain lewat API (Pengaturan → Template email); di luar halamannya sendiri selalu ditulis lengkap "template
+  email". "Balasan cepat" = teks siap pakai lewat `/` di composer (fitur `quick_replies`).
 
 ## 5. RUBRIK `kritikus-desain`
 

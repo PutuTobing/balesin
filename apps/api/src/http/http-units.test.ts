@@ -321,6 +321,11 @@ describe('deklarasi akses rute (bawaan tolak)', () => {
       // Ikon PWA/favicon dari logo (Fase 7 white-label): hanya nama berkas dari daftar tetap.
       '/api/v1/branding/icons/:file',
       '/api/v1/branding/logo',
+      // Dokumen tampilan email (9A, KONTRAK-API-EMAIL §8): iframe sandbox ber-origin opak tanpa
+      // cookie → diautentikasi token HMAC ber-sesi di path; service memeriksa ulang sesi & hak baca.
+      '/api/v1/mail/view/:token',
+      '/api/v1/mail/view/:token/cid/:attachmentId',
+      '/api/v1/mail/view/:token/images/:index',
       '/api/v1/setup/check-password',
       '/api/v1/setup/complete',
       '/api/v1/setup/email/detect-host',
@@ -340,8 +345,11 @@ describe('deklarasi akses rute (bawaan tolak)', () => {
 
     // Semua rute lain menuntut sesi, dan rute pengaturan email (termasuk pelengkap 405-nya)
     // butuh izin `settings.email.manage`. Matriks lengkap rute × peran: rbac-matrix.integration.test.ts.
-    const emailRoutes = declarations.filter((route) =>
-      route.url.startsWith('/api/v1/settings/email'),
+    // Hanya Pengaturan → Email pengirim (`/settings/email` dan turunannya). Rute 9.1
+    // `/settings/email-templates|email-senders|email-outbound` punya izin sendiri (matriks RBAC).
+    const emailRoutes = declarations.filter(
+      (route) =>
+        route.url === '/api/v1/settings/email' || route.url.startsWith('/api/v1/settings/email/'),
     );
     expect(emailRoutes.length).toBeGreaterThanOrEqual(5);
     for (const route of emailRoutes) {

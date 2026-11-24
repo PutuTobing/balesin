@@ -29,7 +29,10 @@ import {
 } from '@balesin/core';
 import {
   PG_ERROR_CODES,
+  channelAccessSql,
   channels,
+  userPrincipal,
+  contacts,
   conversations,
   isPgError,
   mediaFiles,
@@ -66,6 +69,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { ClientInfo } from '../../http/client-info';
 import type { OutboundMessageEnqueuer } from '../../queues/message-queue';
 import { apiKeyScopeDenied } from '../api-keys/api-key-auth';
+import { AUDIT_ACTIONS, recordAudit } from '../audit/audit';
 import type { PermissionGrant } from '../auth/permission-grant';
 import {
   conversationScope,
@@ -76,6 +80,15 @@ import {
 import type { SendingLimitsService } from '../sending-limits/sending-limits.service';
 import { resolveTemplateSend } from '../templates/template-send';
 import { createConcurrencyGate } from './concurrency';
+import {
+  emailCopiesAuditMetadata,
+  emailCopiesNotSupported,
+  hasEmailCopies,
+  newEmailAddresses,
+  normalizeEmailCopies,
+  threadEmailAddresses,
+  type EmailCopies,
+} from './email-copies';
 import { MediaTooLargeError, type MediaStore, type StoredFile } from './media-store';
 
 /**
@@ -169,8 +182,11 @@ export interface ApiKeySender {
   scopes?: readonly string[];
 }
 
-/** Alasan pesan dianggap memulai percakapan (`isConversationInitiation`). */
-export type InitiationReason = 'resolved' | 'stale';
+/**
+ * Alasan pesan dianggap memulai percakapan: `resolved`/`stale` (`isConversationInitiation`), atau
+ * `new_recipient` = Cc/Bcc email ke alamat yang belum ada di utas (tahap 9.0).
+ */
+export type InitiationReason = 'resolved' | 'stale' | 'new_recipient';
 
 /**
  * Izin "mulai percakapan" untuk pengiriman dari sesi pengguna (audit akhir A1/A6/P2): dihitung rute dari
@@ -178,8 +194,14 @@ export type InitiationReason = 'resolved' | 'stale';
  */
 export interface InitiationGrant {
   allowed: boolean;
-  /** Potong jatah harian mulai-percakapan (dipanggil setelah semua pemeriksaan lolos). */
-  consume?: () => Promise<void>;
+  /**
+   * Potong `units` (bawaan 1) jatah harian mulai-percakapan (dipanggil setelah semua pemeriksaan
+   * lolos). Review 9.0 R1: semua-atau-tidak — jatah habis di tengah = unit yang sudah diambil
+   * dikembalikan lalu 429.
+   */
+  consume?: (units?: number) => Promise<void>;
+  /** Kembalikan jatah yang sudah dipotong bila pesannya akhirnya tidak tersimpan. */
+  refund?: (units: number) => Promise<void>;
   /**
    * Tolak + audit (rute: `forbidByRule` aturan `inbox.initiate.resolved`/`.stale`, QA P2-T1). Selalu
    * melempar.
@@ -204,7 +226,7 @@ export function isConversationInitiation(
   channelType: Parameters<typeof channelHasCustomerWindow>[0],
   messageType: string,
   at: Date,
-): InitiationReason | null {
+): 'resolved' | 'stale' | null {
   if (messageType !== 'template' && channelHasCustomerWindow(channelType)) return null;
   if (conversation.status === 'resolved') return 'resolved';
   const lastInbound = conversation.lastInboundAt?.getTime() ?? null;
@@ -223,6 +245,11 @@ const INITIATION_DENIED = {
     user: 'Pelanggan tidak mengirim pesan dalam 7 hari terakhir. Mengirim template atau pesan baru ke percakapan ini butuh izin memulai percakapan.',
     apiKey:
       'Pelanggan tidak mengirim pesan dalam 7 hari terakhir. Mengirim template atau pesan baru ke percakapan ini butuh scope messages:initiate.',
+  },
+  new_recipient: {
+    user: 'Ada alamat Cc/Bcc yang belum pernah ada di utas email ini. Menambah penerima baru butuh izin memulai percakapan. Hapus alamat baru itu atau minta bantuan Supervisor.',
+    apiKey:
+      'Ada alamat Cc/Bcc yang belum pernah ada di utas email ini. Menambah penerima baru butuh scope messages:initiate.',
   },
 } as const;
 
@@ -247,6 +274,7 @@ function apiKeySender(key: ApiKeySender): Sender {
       scope: 'all',
       userId: key.apiKeyId,
       organizationId: key.organizationId,
+      principal: 'apiKey',
     },
     userId: null,
     apiKey: { id: key.apiKeyId, dailySendLimit: key.dailySendLimit },
@@ -357,11 +385,27 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
     return conversation;
   }
 
-  async function liveChannel(organizationId: string, channelId: string): Promise<Channel> {
+  /**
+   * `visibleTo` (tahap 9.0, akses per channel): channel yang tidak boleh dilihat pengguna itu
+   * dijawab SAMA dengan channel yang tidak ada (keberadaannya tidak terbuka).
+   */
+  async function liveChannel(
+    organizationId: string,
+    channelId: string,
+    visibleTo?: string,
+  ): Promise<Channel> {
     const [channel] = await db
       .select()
       .from(channels)
-      .where(and(eq(channels.organizationId, organizationId), eq(channels.id, channelId)))
+      .where(
+        and(
+          eq(channels.organizationId, organizationId),
+          eq(channels.id, channelId),
+          visibleTo === undefined
+            ? undefined
+            : channelAccessSql(organizationId, userPrincipal(visibleTo), channels.id),
+        ),
+      )
       .limit(1);
     if (
       !channel ||
@@ -780,6 +824,53 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
     }
   }
 
+  /** Alamat email pelanggan percakapan ini (`contacts.external_user_id` channel Email). */
+  async function contactEmailAddress(organizationId: string, contactId: string) {
+    const [row] = await db
+      .select({ externalUserId: contacts.externalUserId, handle: contacts.channelHandle })
+      .from(contacts)
+      .where(and(eq(contacts.organizationId, organizationId), eq(contacts.id, contactId)))
+      .limit(1);
+    return (row?.externalUserId ?? row?.handle ?? '').toLowerCase();
+  }
+
+  /**
+   * Tahap 9.0 — Cc/Bcc channel Email: bentuk baku + alamat yang BELUM ada di utas. `null` = tanpa
+   * Cc/Bcc. Channel lain dengan Cc/Bcc → 400.
+   */
+  async function emailCopyPlan(
+    channel: Channel,
+    organizationId: string,
+    conversationId: string,
+    contactId: string,
+    input: { cc?: readonly string[] | undefined; bcc?: readonly string[] | undefined },
+  ): Promise<{ copies: EmailCopies; fresh: string[]; contactAddress: string } | null> {
+    if (!hasEmailCopies(input)) return null;
+    if (channel.type !== 'email') throw emailCopiesNotSupported();
+    const contactAddress = await contactEmailAddress(organizationId, contactId);
+    // Review 9.0 R8: alamat/alias channel Email LAIN organisasi ini juga ditolak.
+    const others = await db
+      .select({ address: channels.emailAddress, aliases: channels.emailAliases })
+      .from(channels)
+      .where(
+        and(
+          eq(channels.organizationId, organizationId),
+          eq(channels.type, 'email'),
+          isNull(channels.deletedAt),
+          sql`${channels.id} <> ${channel.id}`,
+        ),
+      );
+    const copies = normalizeEmailCopies(
+      input,
+      contactAddress,
+      [channel.emailAddress ?? '', ...channel.emailAliases],
+      others.flatMap((row) => [...(row.address ? [row.address] : []), ...row.aliases]),
+    );
+    if (copies.cc.length + copies.bcc.length === 0) return null;
+    const thread = await threadEmailAddresses(db, organizationId, conversationId, contactAddress);
+    return { copies, fresh: newEmailAddresses(copies, thread), contactAddress };
+  }
+
   async function sendAs(
     sender: Sender,
     conversationId: string,
@@ -837,6 +928,24 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
     if (initiates && initiation.kind === 'check' && !initiation.allowed) {
       await initiation.deny(initiates, INITIATION_DENIED[initiates][initiation.actor]);
     }
+    // Tahap 9.0: Cc/Bcc ke alamat BARU di utas = memulai percakapan dengan orang baru.
+    const copyPlan =
+      input.type === 'text' || input.type === 'media'
+        ? await emailCopyPlan(
+            channel,
+            grant.organizationId,
+            conversation.id,
+            conversation.contact.id,
+            input,
+          )
+        : null;
+    if (copyPlan && copyPlan.fresh.length > 0) {
+      // Jalur "mulai percakapan" template (WhatsApp) tidak pernah membawa Cc/Bcc.
+      if (initiation.kind !== 'check') throw emailCopiesNotSupported();
+      if (!initiation.allowed) {
+        await initiation.deny('new_recipient', INITIATION_DENIED.new_recipient[initiation.actor]);
+      }
+    }
     // Rem pengiriman: rem darurat, batas harian pengguna/organisasi, batas per percakapan.
     await sendingLimits.assertCanSend({
       organizationId: grant.organizationId,
@@ -844,6 +953,8 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
       ...(sender.apiKey ? { apiKey: sender.apiKey } : {}),
       conversationId: conversation.id,
       client,
+      // Review 9.0 S1: tiap tembusan dihitung satu penerima.
+      recipients: 1 + (copyPlan ? copyPlan.copies.cc.length + copyPlan.copies.bcc.length : 0),
     });
 
     const [conversationRow] = await db
@@ -1008,8 +1119,36 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
       }
     }
 
+    if (copyPlan) {
+      // Catatan pesan keluar (Bcc hanya di sini — worker memasukkannya ke amplop SMTP saja).
+      values.extras = {
+        ...(values.extras ?? {}),
+        email: {
+          subject: null,
+          inReplyTo: null,
+          references: [],
+          authWarning: false,
+          skippedAttachments: 0,
+          hasHtml: false,
+          to: [copyPlan.contactAddress],
+          cc: copyPlan.copies.cc,
+          bcc: copyPlan.copies.bcc,
+        },
+      };
+    }
+
     // Jatah harian mulai-percakapan dipotong hanya untuk pesan BARU yang lolos semua pemeriksaan.
-    if (initiates && initiation.kind === 'check') await initiation.consume?.();
+    // Tahap 9.0: + satu unit per alamat Cc/Bcc baru, diambil SEKALIGUS (review 9.0 R1).
+    const initiationUnits =
+      initiation.kind === 'check' ? (initiates ? 1 : 0) + (copyPlan?.fresh.length ?? 0) : 0;
+    if (initiationUnits > 0 && initiation.kind === 'check') {
+      await initiation.consume?.(initiationUnits);
+    }
+    const refundInitiation = async () => {
+      if (initiationUnits > 0 && initiation.kind === 'check') {
+        await initiation.refund?.(initiationUnits);
+      }
+    };
 
     let row: MessageRow;
     try {
@@ -1035,9 +1174,26 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
               eq(conversations.id, conversation.id),
             ),
           );
+        if (copyPlan) {
+          await recordAudit(tx, {
+            organizationId: grant.organizationId,
+            actorUserId: sender.userId,
+            action: AUDIT_ACTIONS.messageEmailCopiesSent,
+            targetType: 'conversation',
+            targetId: conversation.id,
+            metadata: emailCopiesAuditMetadata(copyPlan.copies, copyPlan.fresh.length, {
+              messageId: inserted.id,
+              actor: sender.apiKey ? 'apiKey' : 'user',
+              ...(sender.apiKey ? { apiKeyId: sender.apiKey.id } : {}),
+            }),
+            client,
+          });
+        }
         return inserted;
       });
     } catch (error) {
+      // Pesan tidak tersimpan oleh permintaan ini → jatah mulai-percakapan dikembalikan (R1).
+      await refundInitiation();
       if (
         !isPgError(error, PG_ERROR_CODES.uniqueViolation, 'messages_idempotency_unique') &&
         !isPgError(error, PG_ERROR_CODES.uniqueViolation, 'messages_api_key_idempotency_unique')
@@ -1206,7 +1362,11 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
           conversationId: existing.conversationId,
         };
       }
-      const channel = await liveChannel(organizationId, input.channelId);
+      const channel = await liveChannel(
+        organizationId,
+        input.channelId,
+        sender.userId ?? undefined,
+      );
       if (channel.type !== 'whatsapp') {
         throw new AppError('VALIDATION_ERROR', {
           message: 'Template hanya untuk channel WhatsApp.',
@@ -1347,36 +1507,83 @@ export function createOutboundService(deps: OutboundServiceDeps): OutboundServic
       if (initiates && !initiation.allowed) {
         await initiation.deny(initiates, INITIATION_DENIED[initiates].user);
       }
+      // Tahap 9.0: Cc/Bcc pesan gagal diperiksa lagi terhadap utas SEKARANG (izin pengirim ulang).
+      const stored = message.extras.email;
+      const copyPlan =
+        message.direction === 'outbound' &&
+        ((stored?.cc?.length ?? 0) > 0 || (stored?.bcc?.length ?? 0) > 0)
+          ? await emailCopyPlan(
+              channel,
+              grant.organizationId,
+              message.conversationId,
+              message.contactId,
+              { cc: stored?.cc ?? [], bcc: stored?.bcc ?? [] },
+            )
+          : null;
+      if (copyPlan && copyPlan.fresh.length > 0 && !initiation.allowed) {
+        await initiation.deny('new_recipient', INITIATION_DENIED.new_recipient.user);
+      }
       await sendingLimits.assertCanSend({
         organizationId: grant.organizationId,
         userId: grant.userId,
         conversationId: message.conversationId,
         client,
+        recipients: 1 + (copyPlan ? copyPlan.copies.cc.length + copyPlan.copies.bcc.length : 0),
       });
-      const [updated] = await db
-        .update(messages)
-        .set({
-          status: 'pending',
-          failureReason: null,
-          errorCode: null,
-          wamid: null,
-          sendClaimedAt: null,
-          // Penulis asli (`senderUserId`, pemilik kunci idempotensi) TETAP; yang menekan "Kirim
-          // ulang" dicatat terpisah dan diperiksa ulang worker saat kirim (review ruang chat R2).
-          lastSentByUserId: grant.userId,
-          sendAttempts: sql`${messages.sendAttempts} + 1`,
-          statusUpdatedAt: now(),
-        })
-        .where(
-          and(
-            eq(messages.organizationId, grant.organizationId),
-            eq(messages.id, message.id),
-            eq(messages.status, 'failed'),
-          ),
-        )
-        .returning();
-      if (!updated) throw new AppError('CONFLICT', { message: 'Pesan ini sedang dikirim ulang.' });
-      if (initiates) await initiation.consume?.();
+      // Review 9.0 R1: semua unit jatah sekaligus SEBELUM klaim; dikembalikan bila klaim gagal.
+      const initiationUnits = (initiates ? 1 : 0) + (copyPlan?.fresh.length ?? 0);
+      if (initiationUnits > 0) await initiation.consume?.(initiationUnits);
+      let updated: MessageRow | undefined;
+      try {
+        updated = await db.transaction(async (tx) => {
+          const [claimed] = await tx
+            .update(messages)
+            .set({
+              status: 'pending',
+              failureReason: null,
+              errorCode: null,
+              wamid: null,
+              sendClaimedAt: null,
+              // Penulis asli (`senderUserId`, pemilik kunci idempotensi) TETAP; yang menekan "Kirim
+              // ulang" dicatat terpisah dan diperiksa ulang worker saat kirim (review ruang chat R2).
+              lastSentByUserId: grant.userId,
+              sendAttempts: sql`${messages.sendAttempts} + 1`,
+              statusUpdatedAt: now(),
+            })
+            .where(
+              and(
+                eq(messages.organizationId, grant.organizationId),
+                eq(messages.id, message.id),
+                eq(messages.status, 'failed'),
+              ),
+            )
+            .returning();
+          if (claimed && copyPlan) {
+            // Info 3 review 9.0: audit kirim ulang dalam transaksi yang sama.
+            await recordAudit(tx, {
+              organizationId: grant.organizationId,
+              actorUserId: grant.userId,
+              action: AUDIT_ACTIONS.messageEmailCopiesSent,
+              targetType: 'conversation',
+              targetId: message.conversationId,
+              metadata: emailCopiesAuditMetadata(copyPlan.copies, copyPlan.fresh.length, {
+                messageId: message.id,
+                actor: 'user',
+                retry: true,
+              }),
+              client,
+            });
+          }
+          return claimed;
+        });
+      } catch (error) {
+        if (initiationUnits > 0) await initiation.refund?.(initiationUnits);
+        throw error;
+      }
+      if (!updated) {
+        if (initiationUnits > 0) await initiation.refund?.(initiationUnits);
+        throw new AppError('CONFLICT', { message: 'Pesan ini sedang dikirim ulang.' });
+      }
       const row = await enqueue(updated, updated.sendAttempts);
       await publishFor(row, false);
       logger.info({ messageId: row.id, attempt: row.sendAttempts }, 'Pesan keluar dikirim ulang');

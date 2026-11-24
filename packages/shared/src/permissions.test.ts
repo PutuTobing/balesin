@@ -56,6 +56,11 @@ const EXPECTED: Record<Permission, string> = {
   'tickets.manage': 'all  all      all  all  own',
   'tickets.configure': 'all  all      all  -    -',
   'reports.view': 'all  all      all  own  own',
+  // Fase 9 (Email): hak nyata per akun (`resolveMailAccess`), izin hanya pintu masuk.
+  'mail.accounts.manage': 'all  all      -    -    -',
+  'mail.view': 'all  all      all  all  all',
+  'mail.send': 'all  all      all  all  all',
+  'mail.private.own': 'all  all      all  all  -',
 };
 
 function expectedScope(permission: Permission, role: UserRole): PermissionScope | null {
@@ -140,6 +145,13 @@ describe('matriks izin', () => {
     ]);
   });
 
+  it('Fase 9: akun email bersama hanya dikelola Owner/Admin; Teknisi tidak menghubungkan akun pribadi', () => {
+    expect(rolesWithPermission('mail.accounts.manage')).toEqual(['owner', 'admin']);
+    expect(rolesWithPermission('mail.private.own')).toEqual(['owner', 'admin', 'supervisor', 'cs']);
+    // `mail.view`/`mail.send` hanya pintu: tanpa hak per akun tidak ada yang terbuka.
+    expect(rolesWithPermission('mail.view')).toEqual([...USER_ROLES]);
+  });
+
   it('peran yang bisa mengundang = peran dengan izin team.invite (dua tabel tidak boleh menyimpang)', () => {
     for (const role of USER_ROLES) {
       expect(INVITE_PERMISSIONS[role].length > 0, role).toBe(hasPermission(role, 'team.invite'));
@@ -164,6 +176,8 @@ describe('matriks izin', () => {
       'contacts.view',
       'tickets.manage',
       'reports.view',
+      'mail.view',
+      'mail.send',
     ]);
     expect(permissionsForRole('owner')).toEqual([...PERMISSIONS]);
     expect(Object.isFrozen(ROLE_PERMISSIONS)).toBe(true);

@@ -1,8 +1,9 @@
-import type { Permission } from '@balesin/shared';
+import type { AuthenticatedSession, Permission } from '@balesin/shared';
 import type { LinkProps } from '@tanstack/react-router';
 import {
   ChartColumn,
   Ellipsis,
+  Mail,
   Megaphone,
   MessagesSquare,
   Settings,
@@ -32,7 +33,15 @@ export interface NavItem {
    * `packages/shared/src/permissions.ts`). Tanpa izin = semua pengguna yang masuk.
    */
   permission?: Permission;
+  /**
+   * Menu yang tampil berdasarkan DATA sesi (`navigation` di `/auth/me`), bukan hanya izin: `mail` =
+   * menu Email (KONTRAK-API-EMAIL §1 — `mail.view` DAN punya akun atau boleh menghubungkan akun).
+   */
+  navigation?: keyof NavigationFlags;
 }
+
+/** Penanda menu dari sesi (`AuthenticatedSession.navigation`); tidak ada = `false`. */
+export type NavigationFlags = NonNullable<AuthenticatedSession['navigation']>;
 
 /** Menu utama (PRD §3). Urutan di sini = urutan tampil. */
 export const navItems: readonly NavItem[] = [
@@ -43,6 +52,15 @@ export const navItems: readonly NavItem[] = [
     icon: MessagesSquare,
     placement: 'primary',
     permission: 'inbox.view',
+  },
+  {
+    id: 'mail',
+    to: '/email',
+    label: t.nav.mail,
+    icon: Mail,
+    placement: 'primary',
+    permission: 'mail.view',
+    navigation: 'mail',
   },
   {
     id: 'contacts',
@@ -87,13 +105,19 @@ export const moreMenuItems: readonly NavItem[] = navItems.filter(
 
 /**
  * Menu yang boleh dilihat pemegang izin ini (menyembunyikan saja — server tetap penentu akses).
- * Dipakai rail desktop, navigasi bawah HP, dan layar "Lainnya".
+ * Dipakai rail desktop, navigasi bawah HP, dan layar "Lainnya". `navigation` = penanda menu dari
+ * sesi (mis. Email hanya bila `navigation.mail`).
  */
 export function allowedNavItems(
   items: readonly NavItem[],
   permissions: readonly Permission[],
+  navigation: Partial<NavigationFlags> = {},
 ): NavItem[] {
-  return items.filter((item) => !item.permission || permissions.includes(item.permission));
+  return items.filter(
+    (item) =>
+      (!item.permission || permissions.includes(item.permission)) &&
+      (!item.navigation || navigation[item.navigation] === true),
+  );
 }
 
 /** Izin menu untuk sebuah alamat (penjaga rute memakai sumber yang sama dengan menu). */

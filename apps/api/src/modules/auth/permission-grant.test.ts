@@ -22,6 +22,7 @@ const grant = (scope: PermissionGrant['scope']): PermissionGrant => ({
   scope,
   userId: USER,
   organizationId: ORG,
+  principal: 'user',
 });
 
 describe('scopeCondition (filter daftar bercakupan)', () => {

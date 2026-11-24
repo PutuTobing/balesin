@@ -7,7 +7,15 @@ import {
   conversationListQuerySchema,
   conversationListResponseSchema,
   conversationResponseSchema,
+  emailMediaResponseSchema,
+  emailReplyRequestSchema,
+  emailReplyResponseSchema,
+  emailSendRequestSchema,
+  emailSendResponseSchema,
+  emailStatusResponseSchema,
   errorEnvelopeSchema,
+  publicEmailSendersResponseSchema,
+  publicEmailTemplatesResponseSchema,
   messageListQuerySchema,
   messageListResponseSchema,
   messageResponseSchema,
@@ -45,6 +53,8 @@ interface Operation {
   query?: Schema;
   body?: Schema;
   multipart?: boolean;
+  /** Isian teks tambahan multipart (selain `file`). */
+  multipartFields?: readonly string[];
   idempotency?: boolean;
   responses: Record<number, { description: string; schema: Schema }>;
 }
@@ -258,7 +268,89 @@ const OPERATIONS: readonly Operation[] = [
     body: createTicketCommentRequestSchema,
     responses: { 201: { description: 'Komentar', schema: ticketCommentResponseSchema } },
   },
+  // ── Tahap 9.1: email lewat API (docs/KONTRAK-API-EMAIL-KIRIM.md) ──
+  {
+    method: 'get',
+    path: API_ROUTES.publicEmail.senders,
+    scope: 'email:read',
+    summary: 'Pengirim email yang boleh dipakai key ini',
+    description:
+      'Pengirim = Channel Email (`chn_<uuid>`). `state`: ok · throttled · paused · blocked · disabled. Email ke pengirim throttled/paused/blocked tetap diterima (antre); disabled → 409.',
+    responses: {
+      200: { description: 'Daftar pengirim', schema: publicEmailSendersResponseSchema },
+    },
+  },
+  {
+    method: 'post',
+    path: API_ROUTES.publicEmail.send,
+    scope: 'email:send',
+    summary: 'Kirim satu email (template atau HTML/teks luar)',
+    description:
+      'Template Balesin (`templateId` + `variables`, nilai di-escape) ATAU `subject` + `html`/`text`. QRIS (`qris.payload`, CRC-16 diperiksa) → gambar PNG inline `cid:qris`. Lampiran base64 / `mediaId` / `url` (host harus ada di allowlist key). Kepada+Cc+Bcc ≤ 50; Bcc hanya di amplop SMTP. `conversation: "create"` mencatat ke Inbox. Galat memuat `details[].reason` (mis. `qris_crc_mismatch`, `recipient_invalid`). Webhook: `email.sent`, `email.failed`, `email.bounced`, `email.replied` (membawa `metadata`).',
+    body: emailSendRequestSchema,
+    idempotency: true,
+    responses: {
+      202: { description: 'Diterima (antre)', schema: emailSendResponseSchema },
+      200: {
+        description: 'Ulangan Idempotency-Key (status terkini)',
+        schema: emailSendResponseSchema,
+      },
+    },
+  },
+  {
+    method: 'post',
+    path: API_ROUTES.publicEmail.media,
+    scope: 'email:send',
+    summary: 'Unggah lampiran email (multipart: senderId lalu file ≤ 20 MB)',
+    multipart: true,
+    multipartFields: ['senderId'],
+    responses: { 201: { description: 'Media', schema: emailMediaResponseSchema } },
+  },
+  {
+    method: 'get',
+    path: API_ROUTES.publicEmail.message,
+    scope: 'email:read',
+    summary: 'Status satu email',
+    responses: { 200: { description: 'Email', schema: emailStatusResponseSchema } },
+  },
+  {
+    method: 'post',
+    path: API_ROUTES.publicEmail.cancel,
+    scope: 'email:send',
+    summary: 'Batalkan email scheduled/queued milik key ini',
+    responses: { 200: { description: 'Email', schema: emailStatusResponseSchema } },
+  },
+  {
+    method: 'get',
+    path: API_ROUTES.publicEmail.templates,
+    scope: 'email:read',
+    summary: 'Template email yang sudah diterbitkan + variabelnya',
+    responses: { 200: { description: 'Template', schema: publicEmailTemplatesResponseSchema } },
+  },
+  {
+    method: 'post',
+    path: API_ROUTES.publicEmail.reply,
+    scope: 'email:send',
+    summary: 'Balas email masuk (pesan Inbox) di utasnya',
+    description:
+      '`:emailId` = ID pesan Inbox email MASUK. Kepada = kontak percakapan; Cc hanya alamat di utas. Pengirim gagal verifikasi SPF/DKIM/DMARC → 409 `sender_verification_failed`.',
+    body: emailReplyRequestSchema,
+    idempotency: true,
+    responses: {
+      202: { description: 'Diterima (antre)', schema: emailReplyResponseSchema },
+      200: { description: 'Ulangan Idempotency-Key', schema: emailReplyResponseSchema },
+    },
+  },
 ];
+
+/** Webhook keluar email lewat API (format native; tanda tangan = KONTRAK-WEBHOOK-KELUAR). */
+const EMAIL_WEBHOOKS: Readonly<Record<string, string>> = {
+  'email.sent': 'Email API diterima server SMTP (data.email).',
+  'email.failed': 'Email API gagal final (data.email.failure { reason, message, smtp_code }).',
+  'email.bounced': 'Email API memantul (DSN) — data.bounce.recipients.',
+  'email.replied':
+    'Email API dibalas pelanggan — data.reply { message_id, conversation_id, from, received_at, sender_verification }. Isi balasan tidak dikirim.',
+};
 
 const ERROR_RESPONSES: Record<number, string> = {
   400: 'Isian tidak valid (VALIDATION_ERROR)',
@@ -299,7 +391,16 @@ export function buildOpenApiDocument(serverUrl: string): Record<string, unknown>
         content: { 'application/json': { schema: toJson(response.schema, 'output') } },
       };
     }
-    for (const [status, description] of Object.entries(ERROR_RESPONSES)) {
+    for (const [status, description] of Object.entries({
+      ...ERROR_RESPONSES,
+      ...(operation.scope.startsWith('email:')
+        ? {
+            409: 'Bentrok (Idempotency-Key dipakai isi lain, template belum terbit/diarsip, pengirim nonaktif)',
+            413: 'Body terlalu besar (maks. 28 MB)',
+            423: 'Rem darurat pengiriman sedang ditarik (SENDING_PAUSED)',
+          }
+        : {}),
+    })) {
       responses[status] ??= {
         description,
         content: { 'application/json': { schema: toJson(errorEnvelopeSchema, 'output') } },
@@ -344,8 +445,16 @@ export function buildOpenApiDocument(serverUrl: string): Record<string, unknown>
                 'multipart/form-data': {
                   schema: {
                     type: 'object',
-                    required: ['file'],
-                    properties: { file: { type: 'string', format: 'binary' } },
+                    required: [...(operation.multipartFields ?? []), 'file'],
+                    properties: {
+                      ...Object.fromEntries(
+                        (operation.multipartFields ?? []).map((field) => [
+                          field,
+                          { type: 'string' },
+                        ]),
+                      ),
+                      file: { type: 'string', format: 'binary' },
+                    },
                   },
                 },
               },
@@ -374,5 +483,20 @@ export function buildOpenApiDocument(serverUrl: string): Record<string, unknown>
       },
     },
     paths,
+    webhooks: Object.fromEntries(
+      Object.entries(EMAIL_WEBHOOKS).map(([event, description]) => [
+        event,
+        {
+          post: {
+            summary: event,
+            description,
+            requestBody: {
+              content: { 'application/json': { schema: { type: 'object' } } },
+            },
+            responses: { 200: { description: 'Diterima penerima' } },
+          },
+        },
+      ]),
+    ),
   };
 }

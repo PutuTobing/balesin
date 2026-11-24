@@ -89,6 +89,7 @@ Saringan bersama `GET /conversations` dan `GET /conversations/counts`:
 | `window` | `open` / `expiring` / `expired` / `none` | jendela 24 jam: terbuka (sisa > 2 jam) / hampir habis (sisa ≤ 2 jam, `WINDOW_EXPIRING_SOON_MS`) / kedaluwarsa / belum pernah ada pesan masuk (label UI "Broadcast") — dihitung dari jam server saat query |
 | `unread` | `true` / `false` | punya pesan belum dibaca / tidak |
 | `q` | 2–100 karakter | cari (lihat atas) |
+| `emailRecipient` | alamat email (huruf besar/kecil sama) | tahap 9.0 "Alamat tujuan": hanya percakapan yang pernah menerima email masuk ke alamat/alias channel itu (`messages.email_recipient`). Pilihan dari `ChannelSummary.emailAddresses` (`GET /channels`); tampilkan saringan hanya bila channel Email punya > 1 alamat. Bukan alamat sah → 400 |
 | tag | — | **titik kait**: `tagId` ditambahkan saat tabel tag dibangun |
 
 | Endpoint | Izin | Keterangan |
@@ -236,6 +237,78 @@ Meta ternyata menerima belakangan, wamid tetap disimpan dan status dibetulkan me
 **Pembersih media** (retensi/hapus kontak) juga mengosongkan `filename`, `sha256` (diisi nol) dan ID
 media Meta (review R4). Lokasi: NUL di `name`/`address` → 400.
 
+## Channel Email — Kepada/Cc, alamat tujuan, Cc/Bcc & Balas semua (tahap 9.0)
+
+**Email masuk** (worker `channel-mailboxes.ts`): header `To`/`Cc` disimpan di `messages.extras.email`
+(huruf kecil, tanpa duplikat, grup diurai, maks. 50 per header). **Alamat tujuan** = kandidat pertama
+`Delivered-To` → `X-Original-To` → `To` → `Cc` yang COCOK dengan alamat utama/alias channel
+(`channels.email_aliases`, KONTRAK-API-CHANNEL-LAIN "Email") → kolom `messages.email_recipient`
+(indeks saringan). Header amplop bisa dipalsukan pengirim, jadi tidak pernah dipakai bila tidak
+cocok → `null` (Bcc ke channel, alias belum didaftarkan). Alias juga dihitung "alamat sendiri"
+(email darinya dilewati, anti-loop). Data lama: daftar kosong, alamat tujuan `null`.
+
+**`Message.email` (tambahan, hanya pesan channel Email; server selalu mengisi):**
+
+```json
+{
+  "subject": "Tagihan ganda", "hasHtml": false, "authWarning": false,
+  "senderVerification": "pass", "skippedAttachments": 0,
+  "to": ["billing@contoh.co.id", "andi@pelanggan.co.id"],
+  "cc": ["sari@pelanggan.co.id"],
+  "bcc": [],
+  "recipient": "billing@contoh.co.id",
+  "replyAll": ["andi@pelanggan.co.id", "sari@pelanggan.co.id"]
+}
+```
+
+- Masuk: `to`/`cc` = header; `recipient` = alamat tujuan (`null` = tidak cocok/data lama);
+  `replyAll` = `To` + `Cc` TANPA alamat/alias channel, alamat SMTP sistem, dan pengirim. `bcc` selalu `[]`.
+- Keluar: `to` = `[alamat pelanggan]`, `cc`/`bcc` = alamat tambahan yang dipilih; `recipient` `null`,
+  `replyAll` `[]`. Pesan keluar TANPA Cc/Bcc tetap seperti dulu (`email` baru terisi setelah terkirim).
+- **Balas semua (web)**: ambil `replyAll` dari email MASUK TERAKHIR di ruang chat → isi Cc composer.
+
+**Kirim** (`POST /conversations/:id/messages` dan API publik `POST /public/conversations/:id/messages`):
+`type: 'text' | 'media'` menerima `cc?: string[]`, `bcc?: string[]`:
+
+```json
+{ "type": "text", "clientMessageId": "…", "text": "Sudah kami koreksi.",
+  "cc": ["andi@pelanggan.co.id"], "bcc": ["arsip@lain.co.id"] }
+```
+
+- Hanya channel Email; channel lain dengan Cc/Bcc → **400** "Cc dan Bcc hanya bisa dipakai di channel Email."
+- Format alamat divalidasi (`emailAddressSchema`, huruf kecil; CR/LF/`<>` ditolak) → 400. Duplikat
+  dibuang; alamat di Cc tidak diulang di Bcc; alamat pelanggan (penerima utama) dibuang diam-diam.
+  Alamat/alias channel sendiri → **400** "Alamat channel ini sendiri tidak perlu dimasukkan ke Cc/Bcc.";
+  alamat/alias channel Email LAIN milik organisasi → **400** "Alamat itu milik channel Email lain di
+  Balesin. …" (review 9.0 R8).
+- Maks. **10** alamat (Cc + Bcc, `EMAIL_MAX_EXTRA_RECIPIENTS`) → **400** "Paling banyak 10 alamat
+  tambahan (Cc + Bcc) per balasan."
+- **Izin**: alamat yang SUDAH ada di utas (pelanggan, atau `To`/`Cc` email masuk yang pengirimnya
+  **terverifikasi** `senderVerification = 'pass'` — review 9.0 S1, header email `fail`/`unverified`
+  dikendalikan pengirim luar —, atau `To`/`Cc` email keluar yang benar-benar terkirim
+  `sent`/`delivered`/`read` di percakapan ITU; Bcc tidak dihitung) = cukup `inbox.reply`. Ada alamat
+  **baru** = memulai percakapan: sesi butuh `inbox.initiate` (Owner/Admin/Supervisor) + jatah harian
+  `mulai-percakapan` **satu unit per alamat baru**, diambil sekaligus (habis di tengah → semua unit
+  dikembalikan lalu 429; pesan gagal tersimpan → dikembalikan juga, review 9.0 R1);
+  tanpa izin → **403** `FORBIDDEN` "Ada alamat Cc/Bcc yang belum pernah ada di utas email ini. …"
+  lewat `forbidByRule` aturan `inbox.initiate.email_recipient` (diaudit `auth.access.denied`). API key
+  → scope `messages:initiate` (tanpa itu 403 berpesan scope). Aturan `resolved`/`stale` lama tetap
+  berlaku lebih dulu.
+- **Batas kirim** (review 9.0 S1): pesan ber-Cc/Bcc dihitung **1 + Cc + Bcc penerima** di batas harian
+  per pengguna, per organisasi, dan per API key (`sentLast24Hours` juga menghitung penerima). Batas
+  ditolak bila hitungan + penerima pesan baru melewati batas.
+- **Kirim ulang** pesan gagal ber-Cc/Bcc memeriksa ulang alamatnya terhadap utas SAAT ITU (izin +
+  jatah milik penekan "Kirim ulang").
+- **Audit**: setiap kirim/kirim ulang ber-Cc/Bcc → `message.email_copies_sent` (target `conversation`,
+  metadata `cc`/`bcc` tersamar `maskEmail` mis. `a***@pelanggan.co.id`, `newCount`, `messageId`,
+  `actor` `user`/`apiKey`, `apiKeyId`, `retry`), ditulis dalam transaksi yang sama dengan pesannya.
+- **Bcc** hanya masuk amplop SMTP (`RCPT TO`) — tidak pernah jadi header yang diterima siapa pun;
+  tersimpan di catatan pesan keluar (`extras.email.bcc`, terlihat tim di ruang chat). Server SMTP
+  menolak sebagian tembusan → pesan tetap `sent`, alamatnya di `extras.email.rejectedCopies`;
+  penerima utama ditolak → `failed` (`channel_rejected`); tembusan yang sudah diterima server dicatat di
+  `extras.email.deliveredCopies` dan TIDAK dikirimi lagi saat kirim ulang (tetap tertulis di header Cc,
+  review 9.0 R8). `senderVerification` tidak dikirim untuk pesan keluar.
+
 
 ## Batas kirim & rem darurat (review ruang chat S2)
 
@@ -272,7 +345,7 @@ rem ditarik/dilepas — banner tampil sebelum agen terkena 423.
 | `POST /api/v1/conversations/:id/resolve` | `inbox.reply` + cakupan | `resolved` + `resolvedAt`; agen tetap tercatat (laporan). Idempoten |
 | `POST /api/v1/conversations/:id/reopen` | `inbox.reply` + cakupan | Hanya sesi TERAKHIR kontak × channel dan bila belum ada sesi terbuka → `served` (agen lama bila masih aktif & berizin) atau `unserved`; selain itu 409. Jendela 24 jam tidak menjadi syarat (pengiriman tetap dibatasi jendela). **Tanpa `inbox.initiate`** (CS/Teknisi; audit akhir A1 sisa) hanya bila pelanggan menghubungi dalam 24 jam terakhir — WhatsApp/Messenger/Instagram: jendela 24 jam masih terbuka; Email/Telegram: pesan masuk terakhir < 24 jam — selain itu **403 `FORBIDDEN`** "Percakapan ini sudah selesai dan pelanggan tidak mengirim pesan dalam 24 jam terakhir. Membuka lagi butuh izin memulai percakapan." (diaudit `auth.access.denied`, aturan `inbox.reopen.stale`) |
 | `GET /api/v1/conversations/:id/events` | `inbox.view` + cakupan | Riwayat penanganan (tab "Log"): `{ events: [{ id, kind, actor, assignee, previousAssignee, createdAt }] }` — `kind`: `claimed`/`assigned`/`unassigned`/`resolved`/`reopened`; `actor` `null` = sistem |
-| `GET /api/v1/inbox/agents` | `inbox.assign` | `{ agents: [{ id, name, role, active, openConversations }] }` — semua pengguna berperan `inbox.reply` (termasuk nonaktif untuk saringan percakapan lama; hanya `active` yang bisa ditugaskan). Tanpa email. Teknisi → 403 (review butir 7 Info 1; ia tidak menugaskan/menyaring per agen) |
+| `GET /api/v1/inbox/agents` | `inbox.assign` | `{ agents: [{ id, name, role, active, openConversations }] }` — semua pengguna berperan `inbox.reply` (termasuk nonaktif untuk saringan percakapan lama; hanya `active` yang bisa ditugaskan). Tanpa email. Teknisi → 403 (review butir 7 Info 1; ia tidak menugaskan/menyaring per agen). Tahap 9.0: `?channelId=<uuid>` → hanya agen yang berhak atas channel itu (akses per channel, `KONTRAK-API-CHANNEL.md`); channel yang tidak boleh dilihat pemanggil → 404 |
 
 **Alarm aksi massal** (review butir 7 R1 + R2): > 30 ambil/tugaskan/selesai/kembalikan oleh SATU pengguna dalam
 10 menit → audit `inbox.bulk_action` (`actions`, `windowMinutes`, `kinds`, `actorRole`) + kejadian
@@ -421,7 +494,7 @@ ber-efek-samping, review R1: web memanggil lewat `fetch` lalu `Blob`) → JSON `
 (`Content-Disposition: attachment; filename="kontak-<nomor>.json"`, `Cache-Control: no-store`): data
 kontak (nomor, username, nama tim & profil, email, catatan kontak, atribut, nama tag), percakapan
 (nomor, channel, status, waktu), pesan (arah, jenis, teks, nama/jenis media, lokasi, status, waktu;
-maks. 10.000 — lebih → `truncated: true`). TIDAK memuat ID internal Meta (BSUID, ID media), catatan
+maks. 10.000 — lebih → `truncated: true`). Tahap 9.0 (akses per channel): percakapan/pesan channel yang tidak boleh dilihat pengekspor tidak ikut dan respons memuat `partial: true`, `partialReason`, `excludedConversations` (selain itu `false`/`null`/`0`; juga di audit). TIDAK memuat ID internal Meta (BSUID, ID media), catatan
 sesi internal tim, atau berkas media. Diaudit `contact.exported` (ID + jumlah). Ekspor massal &
 berkas media menyusul (Fase 4).
 

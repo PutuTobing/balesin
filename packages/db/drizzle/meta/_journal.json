@@ -232,6 +232,62 @@
       "when": 1795073130102,
       "tag": "0032_bot_pengirim_terverifikasi",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1795358544255,
+      "tag": "0033_email_kepada_cc_alias",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1795358718019,
+      "tag": "0034_akses_per_channel",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1795363804293,
+      "tag": "0035_email_kirim_api",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1795382434906,
+      "tag": "0036_mail_fondasi",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1795385957976,
+      "tag": "0037_mail_baca_aksi",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1795411751377,
+      "tag": "0038_mail_kuota_cache_gambar",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1795412266755,
+      "tag": "0039_mail_tulis",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1795420411007,
+      "tag": "0040_mail_review_9b",
+      "breakpoints": true
     }
   ]
 }

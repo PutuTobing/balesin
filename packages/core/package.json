@@ -13,11 +13,13 @@
   },
   "dependencies": {
     "@balesin/shared": "workspace:*",
+    "htmlparser2": "12.0.0",
     "imapflow": "2.12.1",
     "ioredis": "catalog:",
     "mailparser": "3.14.5",
     "nodemailer": "10.5.0",
     "pino": "catalog:",
+    "qrcode-generator": "2.0.4",
     "sanitize-html": "2.18.2",
     "zod": "catalog:"
   },

@@ -40,6 +40,7 @@ import { SectionNav } from './SectionNav';
 import './route-state';
 import { TestPanel } from './TestPanel';
 import { BotCard } from './BotCard';
+import { ChannelAccessCard } from './ChannelAccessCard';
 import { useCan } from '../auth/session';
 import { WebhookHealthCard } from './WebhookHealthCard';
 import { WebhookPanel } from './WebhookPanel';
@@ -108,6 +109,7 @@ function ChannelScreen({ channel }: { channel: WhatsAppChannel }) {
         <BusinessProfileCard channel={channel} />
         <RenameCard channel={channel} />
         <CredentialsCard channel={channel} editing={editing} onEdit={setEditing} />
+        <ChannelAccessCard channelId={channel.id} id="akses-tim" />
         <AccessCard channel={channel} />
       </div>
       <SectionNav />

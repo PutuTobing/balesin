@@ -1,0 +1,744 @@
+/*
+ * Panel baca email (mockup docs/design/email): bilah aksi 56px, lalu isi selebar maks.
+ * `--size-column` (768px) di tengah. Isi HTML di iframe sandbox tidak bisa diukur tingginya (tanpa
+ * skrip), jadi bingkainya mengisi sisa tinggi panel (min. 24rem) dan bergulir sendiri.
+ */
+
+.reader {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface);
+}
+
+.state {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ---------- Bilah aksi ---------- */
+
+.back {
+  flex: none;
+}
+
+.bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+  height: var(--size-bar);
+  padding: 0 var(--space-12);
+  border-bottom: 1px solid var(--line);
+}
+
+.barActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.separator {
+  flex: none;
+  width: 1px;
+  height: var(--space-24);
+  margin: 0 var(--space-4);
+  background: var(--line);
+}
+
+.starred {
+  color: var(--warning-ink);
+}
+
+.starred svg {
+  fill: currentColor;
+}
+
+.menuTrigger {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--size-control);
+  height: var(--size-control);
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.menuTrigger:hover,
+.menuTrigger[data-state='open'] {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.menu {
+  z-index: 40;
+  min-width: 13rem;
+  max-width: min(20rem, var(--radix-dropdown-menu-content-available-width));
+  max-height: min(24rem, var(--radix-dropdown-menu-content-available-height));
+  padding: var(--space-4);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+}
+
+.menuLabel {
+  padding: var(--space-8) var(--space-8) var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: var(--size-control);
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-input);
+  color: var(--ink);
+  font-size: var(--text-14);
+  cursor: pointer;
+  user-select: none;
+}
+
+.menuItem[data-highlighted] {
+  outline: none;
+  background: var(--surface-2);
+}
+
+.menuItem > svg {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.menuText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- Isi panel ---------- */
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100%;
+  max-width: var(--size-column);
+  margin: 0 auto;
+  padding: var(--space-24) var(--space-32) var(--space-32);
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.titleGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.subject {
+  font-size: var(--text-24);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-title);
+  letter-spacing: var(--tracking-title);
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+.subject:focus-visible {
+  outline-offset: var(--space-4);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  max-width: 100%;
+  min-height: var(--space-24);
+  padding: 0 var(--space-12);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.sender {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-12);
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--line);
+}
+
+.senderAvatar {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.senderText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-8);
+  min-height: var(--space-24);
+}
+
+.senderName {
+  min-width: 0;
+  font-size: var(--text-14);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-title);
+  overflow-wrap: anywhere;
+}
+
+.senderAddress {
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  overflow-wrap: anywhere;
+}
+
+.date {
+  margin-left: auto;
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: var(--space-24);
+  padding: 0 var(--space-8);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+  white-space: nowrap;
+}
+
+.badge[data-tone='success'] {
+  color: var(--success-ink);
+}
+
+.badge[data-tone='danger'] {
+  border-color: var(--danger);
+  color: var(--danger-ink);
+}
+
+.badge[data-tone='neutral'] {
+  color: var(--ink-2);
+}
+
+.meta {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  line-height: var(--leading-text);
+}
+
+.meta strong {
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+}
+
+.breakable {
+  overflow-wrap: anywhere;
+}
+
+.inlineButton {
+  min-height: var(--space-24);
+  color: var(--primary);
+  font-weight: var(--weight-semibold);
+}
+
+.inlineButton:hover {
+  text-decoration: underline;
+}
+
+.notices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+/* `ul.`: mengalahkan reset `ul[class]` di styles/base.css. */
+ul.warningList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-left: var(--space-16);
+  list-style: disc;
+}
+
+/* ---------- Gambar luar diblokir ---------- */
+
+.imagesBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-12);
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--bg);
+}
+
+.imagesText {
+  display: flex;
+  flex: 1 1 16rem;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.imagesIcon {
+  flex: none;
+}
+
+.imagesActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-16);
+}
+
+/* `--primary` di atas `--bg` lolos 4,5:1 di kedua tema (bukan `--surface-2`, DESIGN §1). */
+.linkButton {
+  min-height: var(--size-control);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-input);
+  color: var(--primary);
+  font-size: var(--text-13);
+  font-weight: var(--weight-bold);
+}
+
+.linkButton:hover {
+  text-decoration: underline;
+}
+
+.linkButton:disabled {
+  color: var(--ink-2);
+  cursor: progress;
+}
+
+.imagesError {
+  flex-basis: 100%;
+  color: var(--danger-ink);
+  font-size: var(--text-13);
+}
+
+.imagesSaved {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--success-ink);
+  font-size: var(--text-13);
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Lampiran ---------- */
+
+.attachments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.attachmentsHead {
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+ul.attachmentList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: var(--space-12);
+}
+
+.attachment {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-width: 0;
+  padding: var(--space-8) var(--space-8) var(--space-8) var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.attachmentIcon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-input);
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.attachmentIcon[data-kind='pdf'],
+.attachmentIcon[data-kind='blocked'] {
+  color: var(--danger-ink);
+}
+
+.attachmentIcon[data-kind='sheet'] {
+  color: var(--success-ink);
+}
+
+.attachmentIcon[data-kind='image'] {
+  color: var(--tag-purple);
+}
+
+.attachmentIcon[data-kind='archive'] {
+  color: var(--warning-ink);
+}
+
+.attachmentIcon[data-kind='doc'] {
+  color: var(--tag-blue);
+}
+
+.attachmentText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  line-height: var(--leading-title);
+}
+
+.attachmentName {
+  overflow: hidden;
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachmentMeta {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachmentBlocked {
+  color: var(--danger-ink);
+  font-weight: var(--weight-semibold);
+}
+
+.attachmentRisky {
+  color: var(--warning-ink);
+  font-weight: var(--weight-semibold);
+}
+
+.attachmentError {
+  color: var(--danger-ink);
+  font-size: var(--text-12);
+  line-height: var(--leading-text);
+}
+
+.attachmentButton {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--size-control);
+  height: var(--size-control);
+  color: var(--ink-2);
+}
+
+.spinning {
+  animation: spin var(--duration-pulse) linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* ---------- Isi email ---------- */
+
+.frame {
+  display: flex;
+  flex: 1 0 24rem;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.iframe {
+  flex: 1;
+  width: 100%;
+  min-height: 24rem;
+  border: 0;
+}
+
+.frameSkeleton,
+.bodySkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding: var(--space-16);
+}
+
+.bodyLoading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.bodyLoadingText {
+  padding: 0 var(--space-16) var(--space-16);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.plain {
+  padding: var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  font-size: var(--text-14);
+  line-height: var(--leading-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.muted {
+  color: var(--ink-2);
+}
+
+/* ---------- Kerangka ---------- */
+
+.headSkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.skeletonSubject {
+  width: 70%;
+  height: var(--space-24);
+}
+
+.skeletonChip {
+  width: 10rem;
+  height: var(--space-24);
+  border-radius: var(--radius-pill);
+}
+
+.skeletonSender {
+  width: 55%;
+  height: var(--space-32);
+}
+
+.skeletonLine {
+  width: 60%;
+  height: var(--space-12);
+}
+
+.skeletonLineLong {
+  width: 85%;
+  height: var(--space-12);
+}
+
+/* ---------- 9B: posisi, balas/teruskan, sedang membalas ---------- */
+
+.position {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+  margin-left: auto;
+}
+
+.positionText {
+  padding: 0 var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.replyBar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-12) var(--space-24);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.replyAllShort {
+  display: none;
+}
+
+.replyNote {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+.composingChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: var(--space-24);
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--warning-ink);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+/* ---------- HP ---------- */
+
+@media (max-width: 640px) {
+  .bar {
+    padding: 0 var(--space-4);
+  }
+
+  /* Tombol kembali di kiri; aksi email didorong ke kanan (pola layar bertumpuk Inbox). */
+  .barActions {
+    margin-left: auto;
+  }
+
+  .separator {
+    margin: 0;
+  }
+
+  .menuTrigger,
+  .attachmentButton {
+    width: var(--size-touch);
+    height: var(--size-touch);
+  }
+
+  .menuItem {
+    min-height: var(--size-touch);
+  }
+
+  .linkButton {
+    min-height: var(--size-touch);
+  }
+
+  /* Tautan sejajar teks pesan (ikon 16 + jarak 8), bukan sejajar ikon. */
+  .imagesActions {
+    margin-left: calc(var(--space-24) - var(--space-4));
+  }
+
+  .inner {
+    padding: var(--space-16);
+  }
+
+  /* Mockup HP: tiga tombol sama lebar di dasar layar baca. */
+  .replyBar {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    padding: var(--space-8) var(--space-12) calc(var(--space-8) + env(safe-area-inset-bottom, 0px));
+  }
+
+  .replyBar > button {
+    padding: 0 var(--space-8);
+  }
+
+  .replyAllLong {
+    display: none;
+  }
+
+  .replyAllShort {
+    display: inline;
+  }
+
+  .replyNote {
+    grid-column: 1 / -1;
+  }
+
+  .subject {
+    font-size: var(--text-20);
+  }
+
+  /* Lampiran bergeser ke samping (mockup HP), bukan bertumpuk memanjang. */
+  ul.attachmentList {
+    grid-auto-columns: minmax(15rem, 80%);
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+
+  .frame {
+    flex-basis: 28rem;
+  }
+}
+
+@media (pointer: coarse) {
+  .menuTrigger {
+    width: var(--size-touch);
+    height: var(--size-touch);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinning {
+    animation: none;
+  }
+
+  .menuTrigger {
+    transition: none;
+  }
+}

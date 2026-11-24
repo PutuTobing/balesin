@@ -64,7 +64,7 @@ function MainNav({ pathname }: { pathname: string }) {
   // Di navigasi bawah HP label sudah tampil, jadi tooltip hanya untuk rail ikon.
   const labelsVisible = useMediaQuery(media.hp);
   const session = useSession();
-  const items = allowedNavItems(navItems, session?.permissions ?? []);
+  const items = allowedNavItems(navItems, session?.permissions ?? [], session?.navigation);
   return (
     <nav className={styles.nav} aria-label={t.nav.label}>
       <Link to="/inbox" className={styles.brand} aria-label={t.nav.home(productName)}>

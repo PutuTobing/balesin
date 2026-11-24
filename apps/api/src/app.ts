@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import websocket from '@fastify/websocket';
 import {
   createInboxEventPublisher,
+  createMailComposeKeys,
   createMetaGraphClient,
   createTelegramBotClient,
   createSessionRevocationPublisher,
@@ -32,13 +33,19 @@ import type { ApiConfig } from './config';
 import { handleError, handleNotFound } from './http/error-handler';
 import { createForwardedForGuard } from './http/forwarded-for-guard';
 import { trackRoutesForMethodNotAllowed } from './http/method-not-allowed';
-import { createRateLimiter } from './http/rate-limit';
+import { createRateLimiter, enforceRateLimit } from './http/rate-limit';
 import { enforceRouteDeclarations } from './http/route-access';
 import { applyBaselineHeaders, securityPlugin } from './http/security';
 import { createAccessDeniedRecorder } from './modules/auth/access-denied';
 import { createCsrfRejectionRecorder } from './modules/auth/csrf-rejection';
 import { createApiKeyAuthenticator } from './modules/api-keys/api-key-auth';
 import { apiKeysRoutes } from './modules/api-keys/api-keys.routes';
+import { emailMessageTemplatesRoutes } from './modules/email-message-templates/email-message-templates.routes';
+import { createEmailMessageTemplatesService } from './modules/email-message-templates/email-message-templates.service';
+import { emailSendRoutes } from './modules/email-send/email-send.routes';
+import { createEmailSendService } from './modules/email-send/email-send.service';
+import { emailSendersRoutes } from './modules/email-send/email-senders.routes';
+import { createEmailSendersService } from './modules/email-send/email-senders.service';
 import { createApiKeysService } from './modules/api-keys/api-keys.service';
 import { outgoingWebhooksRoutes } from './modules/outgoing-webhooks/outgoing-webhooks.routes';
 import { createOutgoingWebhooksService } from './modules/outgoing-webhooks/outgoing-webhooks.service';
@@ -84,6 +91,8 @@ import { createInvitationService } from './modules/invitations/invitations.servi
 import { passwordResetRoutes } from './modules/password-reset/password-reset.routes';
 import { createPasswordResetService } from './modules/password-reset/password-reset.service';
 import { auditRoutes } from './modules/audit/audit.routes';
+import { channelAccessRoutes } from './modules/channel-access/channel-access.routes';
+import { createChannelAccessService } from './modules/channel-access/channel-access.service';
 import { channelsRoutes } from './modules/channels/channels.routes';
 import { createChannelsService } from './modules/channels/channels.service';
 import { connectionsRoutes } from './modules/channel-connections/connections.routes';
@@ -133,6 +142,28 @@ import { channelWebhookRoutes } from './modules/webhooks/channel-webhooks.routes
 import { createChannelWebhooksService } from './modules/webhooks/channel-webhooks.service';
 import { createWhatsAppWebhookService } from './modules/webhooks/whatsapp-webhook.service';
 import type { EmailNotifier } from './queues/email-queue';
+import type { MailJobEnqueuer } from './queues/mail-queue';
+import { createMailAccessService } from './modules/mail/mail-access.service';
+import { mailRoutes } from './modules/mail/mail.routes';
+import {
+  MAIL_SERVER_FETCH_MESSAGE,
+  MAIL_SERVER_FETCH_RULE,
+  mailMessagesRoutes,
+} from './modules/mail/mail-messages.routes';
+import { createMailMessagesService } from './modules/mail/mail-messages.service';
+import { createMailViewTokens } from './modules/mail/mail-view-token';
+import { createMailService } from './modules/mail/mail.service';
+import { mailComposeRoutes } from './modules/mail/mail-compose.routes';
+import { createMailDraftsService } from './modules/mail/mail-drafts.service';
+import { createMailIdentitiesService } from './modules/mail/mail-identities.service';
+import { createMailOutboxService } from './modules/mail/mail-outbox.service';
+import { createMailSignaturesService } from './modules/mail/mail-signatures.service';
+import type { MailDetectionDns, RemoteFetcher } from './modules/mail/mail-detection';
+import {
+  createMailEventPublisher,
+  type MailImapConnector,
+  type MailSmtpVerifier,
+} from '@balesin/core';
 import type { OutboundMessageEnqueuer } from './queues/message-queue';
 import type { NotificationEnqueuer } from './queues/notification-queue';
 import type { WebhookEventEnqueuer } from './queues/webhook-queue';
@@ -173,6 +204,8 @@ export interface AppDeps {
   messageQueue: OutboundMessageEnqueuer;
   /** Pengantre notifikasi Web Push (dikirim worker). */
   notificationQueue: NotificationEnqueuer;
+  /** Fase 9: antrean `mail` (sinkron sekarang, putuskan). Tanpa ini worker memakai jadwalnya. */
+  mailQueue?: MailJobEnqueuer;
   /** Titik ganti untuk tes. Tidak diisi di `index.ts`. */
   overrides?: {
     /** Awalan kunci Redis batas laju, supaya tes tidak saling mengganggu. */
@@ -194,6 +227,23 @@ export interface AppDeps {
      * batas waktu pendek. Produksi: port 993/143, CA sistem.
      */
     imap?: { allowedPorts?: readonly number[]; testCa?: string; timeouts?: Partial<ImapTimeouts> };
+    /**
+     * HANYA tes (modul Email, Fase 9): server IMAP/SMTP tiruan (port, CA, loopback), DNS & unduhan
+     * deteksi tiruan, atau pengganti klien IMAP/SMTP.
+     */
+    mail?: {
+      imapPorts?: readonly number[];
+      smtpPorts?: readonly number[];
+      testCa?: string;
+      allowLoopback?: boolean;
+      detectionDns?: MailDetectionDns;
+      fetchRemote?: RemoteFetcher;
+      /** `false` = cache proksi gambar luar mati (tes yang menghitung unduhan). */
+      imageCache?: boolean;
+      connector?: MailImapConnector;
+      smtpVerifier?: MailSmtpVerifier;
+      imapTimeouts?: Partial<ImapTimeouts>;
+    };
     /** Origin server push TIRUAN yang boleh didaftarkan (tes saja; produksi: layanan push dikenal). */
     pushEndpointOrigins?: readonly string[];
     /** Selang heartbeat/validasi ulang WebSocket inbox dan batas koneksi per pengguna. */
@@ -573,7 +623,55 @@ export async function buildApp(deps: AppDeps) {
     limiter,
     cookieSecure: config.cookieSecure,
   });
-  await app.register(authRoutes, { auth, cookieSecure: config.cookieSecure });
+  // Fase 9 — modul Email (akun, akses, folder). Dibuat sebelum rute auth: `navigation.mail`.
+  const mailOverrides = deps.overrides?.mail;
+  // 9B: Email pengirim sistem dari env (konflik verifikasi / peringatan akun).
+  const systemSenderFallback = config.smtpFallback
+    ? {
+        fromAddress: config.smtpFallback.fromAddress,
+        host: config.smtpFallback.host,
+        username: config.smtpFallback.username,
+      }
+    : null;
+  const mailPublisher = createMailEventPublisher(deps.redis, {
+    prefix: redisPrefix,
+    logger: app.log,
+  });
+  const mail = createMailService({
+    db,
+    secretBox,
+    twoFactor,
+    notifier: deps.notifier,
+    accessDenied,
+    publisher: mailPublisher,
+    ...(deps.mailQueue ? { queue: deps.mailQueue } : {}),
+    imap: {
+      lookup: deps.overrides?.mailLookup,
+      ...(mailOverrides?.testCa ? { testCa: mailOverrides.testCa } : {}),
+      ...(mailOverrides?.imapTimeouts ? { timeouts: mailOverrides.imapTimeouts } : {}),
+      ...(mailOverrides?.imapPorts ? { extraPorts: mailOverrides.imapPorts } : {}),
+      ...(mailOverrides?.allowLoopback ? { allowLoopback: true } : {}),
+    },
+    smtp: {
+      lookup: deps.overrides?.mailLookup,
+      timeouts: deps.overrides?.smtpTimeouts,
+      ...(mailOverrides?.testCa ? { testCa: mailOverrides.testCa } : {}),
+      ...(mailOverrides?.smtpPorts ? { extraPorts: mailOverrides.smtpPorts } : {}),
+    },
+    detection: {
+      ...(mailOverrides?.detectionDns ? { dns: mailOverrides.detectionDns } : {}),
+      ...(mailOverrides?.fetchRemote ? { fetchRemote: mailOverrides.fetchRemote } : {}),
+    },
+    ...(mailOverrides?.connector ? { connector: mailOverrides.connector } : {}),
+    ...(mailOverrides?.smtpVerifier ? { smtpVerifier: mailOverrides.smtpVerifier } : {}),
+    systemSenderFallback,
+    store: createMediaStore(config.mediaDir),
+  });
+  await app.register(authRoutes, {
+    auth,
+    cookieSecure: config.cookieSecure,
+    navigation: (context) => mail.navigation(context),
+  });
   await app.register(twoFactorRoutes, { twoFactor, cookieSecure: config.cookieSecure });
   await app.register(brandingRoutes, { branding: createBrandingService({ db }), limiter });
   await app.register(emailSettingsRoutes, {
@@ -594,6 +692,16 @@ export async function buildApp(deps: AppDeps) {
   await app.register(channelsRoutes, {
     db,
     channels,
+    limiter,
+    cookieSecure: config.cookieSecure,
+  });
+  await app.register(channelAccessRoutes, {
+    channelAccess: createChannelAccessService({
+      db,
+      publisher: inboxEvents,
+      twoFactor,
+      notifications: deps.notificationQueue,
+    }),
     limiter,
     cookieSecure: config.cookieSecure,
   });
@@ -625,6 +733,7 @@ export async function buildApp(deps: AppDeps) {
     publisher: inboxEvents,
     twoFactor,
     purgeMedia: (ids) => outbound.purgeMediaFiles(ids),
+    removeEmailFile: (storageKey) => createMediaStore(config.mediaDir).remove(storageKey),
     logger: deps.logger,
   });
   // Webhook keluar (Fase 3).
@@ -652,6 +761,42 @@ export async function buildApp(deps: AppDeps) {
     outbound,
     contacts: contactsService,
     assignment,
+  });
+  // Tahap 9.1 — email lewat API (n8n/billing) + Pengaturan → Template email & pengirim email.
+  const emailStore = createMediaStore(config.mediaDir);
+  const emailMessageTemplates = createEmailMessageTemplatesService({
+    db,
+    store: emailStore,
+    limiter,
+    notifier: deps.notifier,
+    twoFactor,
+    logger: deps.logger,
+  });
+  await app.register(emailSendRoutes, {
+    templates: emailMessageTemplates,
+    emailSend: createEmailSendService({
+      db,
+      store: emailStore,
+      sendingLimits,
+      publisher: inboxEvents,
+      logger: deps.logger,
+      ...(deps.overrides?.webhookAllowLoopback ? { remote: { allowLoopback: true } } : {}),
+    }),
+  });
+  await app.register(emailMessageTemplatesRoutes, {
+    templates: emailMessageTemplates,
+    limiter,
+    cookieSecure: config.cookieSecure,
+  });
+  await app.register(emailSendersRoutes, {
+    senders: createEmailSendersService({
+      db,
+      twoFactor,
+      notifier: deps.notifier,
+      logger: deps.logger,
+    }),
+    limiter,
+    cookieSecure: config.cookieSecure,
   });
   // Template Meta + mulai percakapan dengan template (Fase 4).
   await app.register(templatesRoutes, {
@@ -755,6 +900,90 @@ export async function buildApp(deps: AppDeps) {
   await app.register(quickRepliesRoutes, {
     limiter,
     quickReplies: createQuickRepliesService({ db }),
+  });
+  await app.register(mailRoutes, {
+    mail,
+    mailAccess: createMailAccessService({
+      db,
+      twoFactor,
+      notifier: deps.notifier,
+      publisher: mailPublisher,
+      accessDenied,
+    }),
+    limiter,
+    cookieSecure: config.cookieSecure,
+  });
+  // Fase 9 bagian 2 — daftar, baca (dokumen tampilan ber-token), lampiran, aksi dua arah.
+  // Tahap 9B — tulis, balas, teruskan: identitas & verifikasi, tanda tangan, draf, outbox.
+  const mailComposeKeys = createMailComposeKeys(
+    config.masterKey ? config.masterKey.reveal() : sessionSecret.reveal(),
+  );
+  const mailSignatures = createMailSignaturesService({ db, accessDenied });
+  const mailDrafts = createMailDraftsService({
+    db,
+    redis: deps.redis,
+    redisPrefix,
+    keys: mailComposeKeys,
+    accessDenied,
+    publisher: mailPublisher,
+    limiter,
+    store: createMediaStore(config.mediaDir),
+    signatures: mailSignatures,
+    ...(deps.mailQueue ? { queue: deps.mailQueue } : {}),
+  });
+  await app.register(mailMessagesRoutes, {
+    limiter,
+    messages: createMailMessagesService({
+      db,
+      accessDenied,
+      publisher: mailPublisher,
+      ...(deps.mailQueue ? { queue: deps.mailQueue } : {}),
+      store: createMediaStore(config.mediaDir),
+      tokens: createMailViewTokens(
+        config.masterKey ? config.masterKey.reveal() : sessionSecret.reveal(),
+      ),
+      sessions,
+      appOrigin: new URL(config.appUrl).origin,
+      ...(mailOverrides?.fetchRemote ? { fetchRemote: mailOverrides.fetchRemote } : {}),
+      ...(mailOverrides?.imageCache === false ? { imageCache: false } : {}),
+      serverFetchGate: async (userId) => {
+        await enforceRateLimit(limiter, MAIL_SERVER_FETCH_RULE, userId, MAIL_SERVER_FETCH_MESSAGE);
+      },
+      compose: {
+        threadKey: (accountId, threadRoot) => mailComposeKeys.threadKey(accountId, threadRoot),
+        composing: (accountId, threadKey, excludeUserId) =>
+          mailDrafts.composing(accountId, threadKey, excludeUserId),
+        myDraftIds: (organizationId, userId, headers) =>
+          mailDrafts.myDraftIds(organizationId, userId, headers),
+      },
+    }),
+  });
+  await app.register(mailComposeRoutes, {
+    identities: createMailIdentitiesService({
+      db,
+      secretBox,
+      keys: mailComposeKeys,
+      twoFactor,
+      notifier: deps.notifier,
+      accessDenied,
+      publisher: mailPublisher,
+      limiter,
+      systemSenderFallback,
+      ...(deps.mailQueue ? { queue: deps.mailQueue } : {}),
+    }),
+    signatures: mailSignatures,
+    drafts: mailDrafts,
+    outbox: createMailOutboxService({
+      db,
+      accessDenied,
+      publisher: mailPublisher,
+      limiter,
+      sendingLimits,
+      drafts: mailDrafts,
+      signatures: mailSignatures,
+    }),
+    limiter,
+    cookieSecure: config.cookieSecure,
   });
   // Publik: penerima webhook Meta (keaslian dari tanda tangan App Secret, bukan sesi).
   await app.register(whatsAppWebhookRoutes, { guard: webhookGuard, webhooks: whatsAppWebhooks });

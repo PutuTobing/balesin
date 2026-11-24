@@ -2,6 +2,8 @@ import {
   channelTestOverridesFromEnv,
   closeRedis,
   createInboxEventPublisher,
+  createMailComposeKeys,
+  createMailEventPublisher,
   createLogger,
   createMediaStore,
   createMetaGraphClient,
@@ -102,6 +104,54 @@ function main(config: WorkerConfig): void {
     notifications: { db, secretBox, appUrl: config.appUrl, throttle: redisThrottle(redis) },
     webhooksOut: { db, secretBox, appUrl: config.appUrl, notifyOwner: ownerNotifier.notify },
     broadcast: { db, meta, secretBox, publisher, notifyOwner: ownerNotifier.notify },
+    // Fase 9: modul Email (akun IMAP multi-akun, sinkron header + IDLE Kotak masuk).
+    mail: {
+      db,
+      secretBox,
+      store: mediaStore,
+      appUrl: config.appUrl,
+      publisher: createMailEventPublisher(redis, { logger }),
+      notify: ownerNotifier.notify,
+      // 9B: kunci utas sama dengan api (HKDF dari master key) + SMTP akun lewat penjaga KETAT.
+      ...(config.masterKey
+        ? {
+            threadKey: (() => {
+              const keys = createMailComposeKeys(config.masterKey.reveal());
+              return (accountId: string, root: string) => keys.threadKey(accountId, root);
+            })(),
+          }
+        : {}),
+      notifyOwner: ownerNotifier.notify,
+      // Stack E2E saja: SMTP tiruan ber-TLS sertifikat tes di loopback (port dari variabel tes).
+      smtp: testOverrides.imap
+        ? {
+            allowLoopback: true,
+            ...(testOverrides.mailSmtp ? { extraPorts: testOverrides.mailSmtp.allowedPorts } : {}),
+            ...(testOverrides.imap.testCa ? { testCa: testOverrides.imap.testCa } : {}),
+          }
+        : {},
+      imap: {
+        ...(testOverrides.imap?.allowedPorts
+          ? { extraPorts: testOverrides.imap.allowedPorts }
+          : {}),
+        ...(testOverrides.imap?.testCa ? { testCa: testOverrides.imap.testCa } : {}),
+        // Stack E2E saja (variabel tes ditolak di produksi): server IMAP tiruan di loopback.
+        ...(testOverrides.imap ? { allowLoopback: true } : {}),
+      },
+    },
+    // Tahap 9.1: email lewat API (pola outbox `email_outbound`, SMTP pengirim Channel Email).
+    emailOutbound: {
+      db,
+      secretBox,
+      store: mediaStore,
+      publisher,
+      notifyOwner: ownerNotifier.notify,
+      smtp: {
+        allowedPorts: config.smtpAllowedPorts,
+        plaintextLogin: plaintextLoginPolicy(config.isProduction),
+        fallback: config.smtpFallback,
+      },
+    },
   });
 
   const shutdown = createShutdown({

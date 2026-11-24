@@ -154,12 +154,17 @@ function remoteError(error: RemoteFileError): AppError {
         message: 'media_url tidak bisa diunduh: pengalihan tidak valid atau terlalu banyak.',
       });
     case 'http':
+    case 'content_rejected':
       return new AppError('NOT_FOUND', {
         message: 'media_url tidak bisa diakses (server menjawab bukan 2xx).',
       });
     case 'too_large':
       return new AppError('PAYLOAD_TOO_LARGE', {
         message: 'Berkas di media_url melebihi batas ukuran WhatsApp untuk jenis media itu.',
+      });
+    case 'host_not_allowed':
+      return new AppError('VALIDATION_ERROR', {
+        message: 'media_url ditolak: host tidak diizinkan.',
       });
     default:
       return new AppError('VALIDATION_ERROR', {
@@ -488,6 +493,7 @@ export function createMobichatService(deps: MobichatServiceDeps) {
           scope: 'all',
           userId: apiKeyId,
           organizationId: key.organizationId,
+          principal: 'apiKey',
         },
         message.id,
         signal,

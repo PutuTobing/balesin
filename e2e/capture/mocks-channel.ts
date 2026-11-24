@@ -194,6 +194,18 @@ export async function channelDetail(
   await page.route(`${base}/webhook`, (route) =>
     json(route, photoWebhook(channel.id, options.webhookWarning ? HTTPS_WARNING : null)),
   );
+  // Tahap 9.0: kartu "Akses tim" (bawaan "Semua tim").
+  await page.route(`${base}/access`, (route) =>
+    json(route, {
+      access: {
+        channelId: channel.id,
+        mode: 'all',
+        departments: [],
+        users: [],
+        exemptRoles: ['owner', 'admin'],
+      },
+    }),
+  );
   await page.route(`${base}/bot`, (route) =>
     json(route, {
       settings:

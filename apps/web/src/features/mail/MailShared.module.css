@@ -1,0 +1,271 @@
+/* Penanda akun email: warna = token tag/status yang sudah ada (DESIGN.md, PRD-EMAIL §8). */
+
+.dot {
+  display: inline-block;
+  flex: none;
+  width: var(--space-8);
+  height: var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--ink-2);
+}
+
+.dot[data-color='tagBlue'] {
+  background: var(--tag-blue);
+}
+
+.dot[data-color='tagTeal'] {
+  background: var(--tag-teal);
+}
+
+.dot[data-color='tagPurple'] {
+  background: var(--tag-purple);
+}
+
+.dot[data-color='accent'] {
+  background: var(--accent);
+}
+
+.dot[data-color='success'] {
+  background: var(--success);
+}
+
+.dot[data-color='warning'] {
+  background: var(--warning);
+}
+
+.avatar {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  overflow: hidden;
+  border: 2px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  object-fit: cover;
+}
+
+.sm {
+  width: var(--space-24);
+  height: var(--space-24);
+  font-size: var(--text-12);
+}
+
+.md {
+  width: var(--size-control);
+  height: var(--size-control);
+  font-size: var(--text-13);
+}
+
+.lg {
+  width: var(--space-48);
+  height: var(--space-48);
+  font-size: var(--text-16);
+}
+
+.sm.avatar {
+  border-width: 1.5px;
+}
+
+.avatar[data-color='tagBlue'] {
+  border-color: var(--tag-blue);
+}
+
+.avatar[data-color='tagTeal'] {
+  border-color: var(--tag-teal);
+}
+
+.avatar[data-color='tagPurple'] {
+  border-color: var(--tag-purple);
+}
+
+.avatar[data-color='accent'] {
+  border-color: var(--accent);
+}
+
+.avatar[data-color='success'] {
+  border-color: var(--success);
+}
+
+.avatar[data-color='warning'] {
+  border-color: var(--warning);
+}
+
+/* ---------- Pilihan warna akun (radio) ---------- */
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.swatch {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--size-touch);
+  height: var(--size-touch);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+.swatchInput {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.swatchFill {
+  display: grid;
+  place-items: center;
+  width: var(--size-control);
+  height: var(--size-control);
+  border: 2px solid var(--surface);
+  border-radius: var(--radius-pill);
+  box-shadow: 0 0 0 1px var(--line);
+  color: var(--surface);
+  /* Ketukan diteruskan ke radio di bawahnya. */
+  pointer-events: none;
+  transition: box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.swatchInput:checked + .swatchFill {
+  box-shadow: 0 0 0 2px var(--ink);
+}
+
+.swatchInput:focus-visible + .swatchFill {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+
+.swatchTick {
+  opacity: 0;
+}
+
+.swatchInput:checked + .swatchFill .swatchTick {
+  opacity: 1;
+}
+
+.swatchFill[data-color='tagBlue'] {
+  background: var(--tag-blue);
+}
+
+.swatchFill[data-color='tagTeal'] {
+  background: var(--tag-teal);
+}
+
+.swatchFill[data-color='tagPurple'] {
+  background: var(--tag-purple);
+}
+
+.swatchFill[data-color='accent'] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.swatchFill[data-color='success'] {
+  background: var(--success);
+}
+
+.swatchFill[data-color='warning'] {
+  background: var(--warning);
+  color: var(--on-accent);
+}
+
+/* ---------- Pilihan tersegmen (SSL/TLS · STARTTLS) ---------- */
+
+.segments {
+  display: inline-flex;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+}
+
+.segment {
+  position: relative;
+  display: grid;
+  flex: 1;
+  place-items: center;
+  min-width: 0;
+  height: calc(var(--size-control) - 2px);
+  padding: 0 var(--space-8);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.segment + .segment {
+  border-left: 1px solid var(--line);
+}
+
+/*
+ * Terpilih = sama dengan segmen Template email: latar `--primary-soft`. Teksnya `--ink` (bukan
+ * `--primary`): pasangan primary/primary-soft hanya dijamin untuk grafis, tidak untuk teks merek
+ * white-label. Penanda grafisnya garis bawah `--primary`.
+ */
+.segment:has(input:checked) {
+  background: var(--primary-soft);
+  color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--primary);
+}
+
+.segment:has(input:focus-visible) {
+  outline: 2px solid var(--primary);
+  outline-offset: -3px;
+}
+
+.segment:has(input:disabled) {
+  cursor: default;
+}
+
+.segmentInput {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+/*
+ * `<legend>` dirender di luar kotak isi fieldset, jadi `gap` tidak berlaku padanya (gap hanya
+ * untuk isi → petunjuk): jarak legend → kotak memakai margin, sama dengan label → kotak di
+ * `Field` (8px), supaya sejajar Host/Port.
+ */
+.segmentField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.segmentLabel {
+  margin-bottom: var(--space-8);
+  padding: 0;
+  color: var(--ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+@media (max-width: 640px) {
+  .segment {
+    height: calc(var(--size-touch) - 2px);
+  }
+}
+
+.hint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}

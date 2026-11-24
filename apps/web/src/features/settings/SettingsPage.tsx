@@ -15,7 +15,9 @@ import {
   KeyRound,
   Webhook,
   type LucideIcon,
+  Inbox,
   Mail,
+  Mails,
   MessageSquareText,
   Palette,
   ShieldCheck,
@@ -23,7 +25,7 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { RadioGroup } from 'radix-ui';
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { defaultBrand, useBrand } from '../../brand/brand';
 import { Icon } from '../../components/ui/Icon';
 import { Page } from '../../components/ui/Page';
@@ -33,7 +35,9 @@ import { cx } from '../../lib/cx';
 import { parsePreference, type ResolvedTheme, type ThemePreference } from '../../theme/theme';
 import { useTheme } from '../../theme/theme-context';
 import { themeOptions } from '../../theme/theme-options';
-import { useCan } from '../auth/session';
+import { useCan, useSession } from '../auth/session';
+import { mailSettingsAccountsQuery } from '../mail/mail-queries';
+import { needsAttention } from '../mail/mail-format';
 import { endpoints } from '../../lib/api/endpoints';
 import { quickRepliesKey } from '../quick-replies/quick-replies-key';
 import { EmailStatusBadge } from '../email-settings/EmailStatusBadge';
@@ -51,6 +55,7 @@ import { TwoFactorBadge } from '../security/TwoFactorBadge';
 import { sendingLimitsQuery } from '../inbox/inbox-queries';
 import { integrationKeys } from '../integrations/integration-queries';
 import { templatesQuery } from '../templates/template-queries';
+import { emailTemplatesQuery } from '../email-templates/email-template-queries';
 import { connectorsQuery, telegramAlarmQuery } from '../broadcast/broadcast-queries';
 import { usePushDevice } from '../notifications/use-push-device';
 import { contactAttributesQuery } from '../contacts/contact-queries';
@@ -85,6 +90,7 @@ export function SettingsPage() {
   const canTemplates = useCan('templates.manage');
   const canWorkspace = useCan('settings.workspace.manage');
   const canBranding = useCan('organization.manage');
+  const canMailShared = useCan('mail.accounts.manage');
 
   return (
     <Page>
@@ -99,7 +105,8 @@ export function SettingsPage() {
         canApiKeys ||
         canWebhooks ||
         canWorkspace ||
-        canBranding ? (
+        canBranding ||
+        canMailShared ? (
           <OrganizationSettings
             showChannels={canChannels}
             showTeam={canTeam}
@@ -112,11 +119,12 @@ export function SettingsPage() {
             showWebhooks={canWebhooks}
             showWorkspace={canWorkspace}
             showBranding={canBranding}
+            showMail={canMailShared}
             canInvite={canInvite}
             canManageTeam={canManageTeam}
           />
         ) : null}
-        <AccountSettings />
+        <AccountSettings showMail={!canMailShared} />
         <section className={styles.card} aria-labelledby={APPEARANCE_HEADING_ID}>
           <div className={styles.cardHead}>
             <h2 id={APPEARANCE_HEADING_ID} className={styles.cardTitle}>
@@ -201,6 +209,7 @@ function OrganizationSettings({
   showWebhooks,
   showWorkspace,
   showBranding,
+  showMail,
   canInvite,
   canManageTeam,
 }: {
@@ -215,6 +224,7 @@ function OrganizationSettings({
   showWebhooks: boolean;
   showWorkspace: boolean;
   showBranding: boolean;
+  showMail: boolean;
   canInvite: boolean;
   canManageTeam: boolean;
 }) {
@@ -232,7 +242,9 @@ function OrganizationSettings({
         {showBranding ? <BrandingMenuItem /> : null}
         {showWorkspace ? <DepartmentsMenuItem /> : null}
         {showEmail ? <EmailMenuItem /> : null}
+        {showMail ? <MailAccountsMenuItem /> : null}
         {showTemplates ? <TemplatesMenuItem /> : null}
+        {showTemplates ? <EmailTemplatesMenuItem /> : null}
         {showQuickReplies ? <QuickRepliesMenuItem /> : null}
         {showWorkspace ? <AttributesMenuItem /> : null}
         {showWorkspace ? <CsatMenuItem /> : null}
@@ -354,6 +366,29 @@ function TemplatesMenuItem() {
         all
           ? t.templates.menuCount(
               all.filter((template) => template.status === 'APPROVED').length,
+              all.length,
+            )
+          : null
+      }
+      loading={list.isPending}
+    />
+  );
+}
+
+/** Template email (tahap 9.1): jumlah yang sudah terbit dari semua template aktif. */
+function EmailTemplatesMenuItem() {
+  const list = useQuery(emailTemplatesQuery(false));
+  const all = list.data?.templates;
+  return (
+    <MenuRow
+      to="/pengaturan/template-email"
+      icon={Mails}
+      label={t.emailTemplates.title}
+      hint={t.emailTemplates.menuHint}
+      status={
+        all
+          ? t.emailTemplates.menuCount(
+              all.filter((template) => template.publishedVersion !== null).length,
               all.length,
             )
           : null
@@ -535,17 +570,19 @@ function MenuRow({
     | '/pengaturan/api-key'
     | '/pengaturan/webhook'
     | '/pengaturan/template'
+    | '/pengaturan/template-email'
     | '/pengaturan/konektor-data'
     | '/pengaturan/alarm'
     | '/pengaturan/atribut-kontak'
     | '/pengaturan/departemen'
     | '/pengaturan/jam-kerja'
     | '/pengaturan/merek'
-    | '/pengaturan/csat';
+    | '/pengaturan/csat'
+    | '/pengaturan/akun-email';
   icon: LucideIcon;
   label: string;
   hint: string;
-  status: string | null;
+  status: ReactNode;
   loading: boolean;
 }) {
   return (
@@ -568,6 +605,35 @@ function MenuRow({
         <Icon icon={ChevronRight} size={16} className={styles.chevron} />
       </Link>
     </li>
+  );
+}
+
+/** Akun email (Fase 9): jumlah akun + yang perlu perhatian (password ditolak, gagal tersambung). */
+function MailAccountsMenuItem() {
+  const list = useQuery(mailSettingsAccountsQuery);
+  const accounts = list.data?.accounts;
+  const attention = accounts?.filter((account) => needsAttention(account.sync.state)).length ?? 0;
+  return (
+    <MenuRow
+      to="/pengaturan/akun-email"
+      icon={Inbox}
+      label={t.mail.accounts.title}
+      hint={t.mail.accounts.menuHint}
+      status={
+        accounts ? (
+          attention > 0 ? (
+            // Bagian "perlu perhatian" = warna peringatan, sama dengan kaki kolom folder Email.
+            <>
+              {t.mail.accounts.menuCount(accounts.length)} ·{' '}
+              <span className={styles.menuWarning}>{t.mail.accounts.menuAttention(attention)}</span>
+            </>
+          ) : (
+            t.mail.accounts.menuCount(accounts.length)
+          )
+        ) : null
+      }
+      loading={list.isPending}
+    />
   );
 }
 
@@ -661,8 +727,11 @@ function AuditMenuItem() {
 }
 
 /** Menu akun pengguna sendiri (semua peran): Keamanan akun dengan status 2FA. */
-function AccountSettings() {
+function AccountSettings({ showMail }: { showMail: boolean }) {
   const status = useQuery(twoFactorStatusQuery);
+  const session = useSession();
+  // Menu Email tampil (punya akun / boleh menghubungkan akun pribadi): Akun email di bagian akun.
+  const mailVisible = showMail && session?.navigation?.mail === true;
   const canNotifications = useCan('inbox.view');
   const queryClient = useQueryClient();
   // Data Keamanan akun dimuat lebih dulu (seperti undangan & anggota untuk baris Tim): dibuka dari
@@ -700,6 +769,7 @@ function AccountSettings() {
           </Link>
         </li>
         {canNotifications ? <NotificationsMenuItem /> : null}
+        {mailVisible ? <MailAccountsMenuItem /> : null}
       </ul>
     </section>
   );

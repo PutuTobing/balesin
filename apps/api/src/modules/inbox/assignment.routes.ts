@@ -8,6 +8,7 @@ import {
   conversationActionResponseSchema,
   conversationBotRequestSchema,
   errorEnvelopeSchema,
+  inboxAgentListQuerySchema,
   inboxAgentListResponseSchema,
 } from '@balesin/shared';
 import type { FastifyRequest } from 'fastify';
@@ -190,11 +191,19 @@ export const assignmentRoutes: FastifyPluginCallbackZod<AssignmentRoutesOptions>
     routes.agents,
     {
       config: { access: requirePermission('inbox.assign') },
-      schema: { response: { 200: inboxAgentListResponseSchema, ...errors } },
+      schema: {
+        querystring: inboxAgentListQuerySchema,
+        response: { 200: inboxAgentListResponseSchema, ...errors },
+      },
     },
     async (request) => {
       const grant = await permissionGrant(request, 'inbox.assign');
-      return { agents: await assignment.agents(grant.organizationId) };
+      return {
+        agents: await assignment.agents(grant.organizationId, {
+          channelId: request.query.channelId,
+          viewerUserId: grant.userId,
+        }),
+      };
     },
   );
 

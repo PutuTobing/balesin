@@ -3,7 +3,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { t } from '../../i18n/id';
 import { media } from '../../lib/media';
-import { fakeSession } from '../../test/fake-api';
+import { fakeSession, json } from '../../test/fake-api';
 import {
   fakeChannelSummary,
   fakeContact,
@@ -187,6 +187,45 @@ describe('panel detail — Info', () => {
     ).toHaveLength(1);
     expect(createObjectURL).toHaveBeenCalledOnce();
     expect(click).toHaveBeenCalledOnce();
+  });
+
+  it('ekspor tidak lengkap (akses per channel): peringatan berisi alasan dari server', async () => {
+    Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:ekspor'), revokeObjectURL: vi.fn() });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const reason = 'Sebagian percakapan ada di channel yang tidak boleh kamu lihat.';
+    const exportPath = apiPath(API_ROUTES.inbox.contactExport, { contactId: contact.id });
+    await openPanel({
+      routes: {
+        [`GET ${exportPath}`]: () =>
+          json({
+            exportedAt: '2026-11-22T04:00:00.000Z',
+            contact: {
+              id: contact.id,
+              number: contact.number,
+              channelType: contact.channelType,
+              phone: contact.phone,
+              waUsername: contact.waUsername,
+              name: contact.name,
+              profileName: contact.profileName,
+              email: contact.email ?? null,
+              notes: null,
+              attributes: [],
+              tags: [],
+              createdAt: contact.createdAt,
+            },
+            conversations: [],
+            messages: [],
+            truncated: false,
+            partial: true,
+            partialReason: reason,
+            excludedConversations: 2,
+          }),
+      },
+    });
+    fireEvent.click(panel().getByRole('button', { name: p.exportContact }));
+    expect(await panel().findByText(p.exportedPartial)).toBeVisible();
+    expect(panel().getByText(reason)).toBeVisible();
+    expect(panel().queryByText(p.exported)).toBeNull();
   });
 
   it('hapus kontak: konfirmasi identitas → chat ditutup', async () => {

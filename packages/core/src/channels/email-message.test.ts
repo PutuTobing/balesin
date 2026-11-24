@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyEmailAttachment,
   defaultTrustedAuthServIds,
+  emailDestination,
+  emailReplyAll,
   emailSenderVerification,
   emailExternalId,
   normalizeMessageId,
@@ -112,6 +114,47 @@ describe('parseInboundEmail', () => {
       ok: false,
       reason: 'own_address',
     });
+  });
+
+  it('tahap 9.0: Kepada/Cc (huruf kecil, tanpa duplikat, grup diurai) + penerima amplop', async () => {
+    const raw = [
+      'Delivered-To: billing@contoh.test',
+      'X-Original-To: <Billing@Contoh.test>',
+      'Delivered-To: cs@contoh.test',
+      testEmail({
+        from: 'budi@pelanggan.test',
+        to: '"Tagihan" <Billing@Contoh.Test>, Andi <andi@pelanggan.test>, andi@pelanggan.test',
+        headers: { Cc: 'Tim: sari@pelanggan.test, bukan-alamat;, CS <cs@contoh.test>' },
+      }),
+    ].join('\r\n');
+    const result = await parseInboundEmail(Buffer.from(raw), OWN);
+    if (!result.ok) throw new Error('harus lolos');
+    expect(result.email.to).toEqual(['billing@contoh.test', 'andi@pelanggan.test']);
+    expect(result.email.cc).toEqual(['sari@pelanggan.test', 'cs@contoh.test']);
+    expect(result.email.envelopeTo).toEqual(['billing@contoh.test', 'cs@contoh.test']);
+    // Alias terdaftar → alamat tujuan = alias dari Delivered-To teratas.
+    expect(emailDestination(result.email, ['cs@contoh.test', 'billing@contoh.test'])).toBe(
+      'billing@contoh.test',
+    );
+    // Alias belum didaftarkan → yang cocok hanya alamat utama.
+    expect(emailDestination(result.email, ['cs@contoh.test'])).toBe('cs@contoh.test');
+    expect(
+      emailReplyAll(result.email, ['cs@contoh.test', 'billing@contoh.test', 'budi@pelanggan.test']),
+    ).toEqual(['andi@pelanggan.test', 'sari@pelanggan.test']);
+  });
+
+  it('tahap 9.0: header amplop palsu / Bcc → tidak ada alamat tujuan; batas 50 alamat per header', async () => {
+    const many = Array.from({ length: 60 }, (_, index) => `orang${String(index)}@lain.test`);
+    const raw = testEmail({
+      from: 'budi@pelanggan.test',
+      to: many.join(', '),
+      headers: { 'Delivered-To': 'penyerang@jahat.test' },
+    });
+    const result = await parseInboundEmail(Buffer.from(raw), OWN);
+    if (!result.ok) throw new Error('harus lolos');
+    expect(result.email.to).toHaveLength(50);
+    expect(result.email.cc).toEqual([]);
+    expect(emailDestination(result.email, ['cs@contoh.test'])).toBeNull();
   });
 
   it('Authentication-Results DMARC gagal → authWarning', async () => {

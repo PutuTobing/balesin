@@ -92,6 +92,19 @@ export interface RequestOptions<S extends z.ZodType> {
 export interface ApiClientOptions {
   /** Bawaan: `fetch` global (dipanggil saat request, jadi tes bisa menggantinya). */
   fetch?: typeof fetch;
+  /**
+   * Unggahan berkas lewat `XMLHttpRequest` supaya progres unggah bisa dilaporkan (`fetch` belum
+   * punya progres unggah). Mati = lewat `fetch` (tes komponen mengganti `fetch` global).
+   */
+  xhrUploads?: boolean;
+}
+
+/** Opsi unggahan multipart dengan progres (0–1). */
+export interface UploadOptions<S extends z.ZodType> {
+  body: FormData;
+  schema: S;
+  signal?: AbortSignal;
+  onProgress?: (fraction: number) => void;
 }
 
 /** Opsi unduhan berkas. `POST` + `body` untuk ekspor yang butuh konfirmasi identitas di body. */
@@ -116,6 +129,11 @@ export interface ApiClient {
    * `request` (401/403/429). Tanpa token di URL: sesi lewat cookie.
    */
   download(path: string, options?: DownloadOptions): Promise<BlobResult>;
+  /**
+   * POST multipart dengan progres unggah. Aturan galat sama dengan `request` (CSRF basi diulang
+   * sekali, 401/403/429). Tanpa progres nyata (mode `fetch`), `onProgress(1)` dipanggil di akhir.
+   */
+  upload<S extends z.ZodType>(path: string, options: UploadOptions<S>): Promise<z.output<S>>;
   setCsrfToken(token: string | null): void;
   getCsrfToken(): string | null;
   /** Dipanggil saat API menjawab 401 `UNAUTHENTICATED` (sesi habis/dicabut). */
@@ -263,6 +281,79 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     }
   }
 
+  /** Satu kirim XHR → `Response` biasa, supaya galat & skema diperlakukan sama dengan `fetch`. */
+  function sendXhr(
+    path: string,
+    body: FormData,
+    signal: AbortSignal | undefined,
+    onProgress: ((fraction: number) => void) | undefined,
+  ): Promise<Response> {
+    return new Promise<Response>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', path);
+      xhr.withCredentials = true;
+      xhr.setRequestHeader('accept', 'application/json');
+      if (csrfToken) xhr.setRequestHeader(CSRF_HEADER_NAME, csrfToken);
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && event.total > 0) onProgress?.(event.loaded / event.total);
+      };
+      xhr.onload = () => {
+        const headers = new Headers();
+        for (const line of xhr.getAllResponseHeaders().trim().split(/\r?\n/)) {
+          const at = line.indexOf(':');
+          if (at > 0) headers.append(line.slice(0, at).trim(), line.slice(at + 1).trim());
+        }
+        // 204/304 tidak boleh punya isi di konstruktor `Response`.
+        const empty = xhr.status === 204 || xhr.status === 304;
+        resolve(new Response(empty ? null : xhr.responseText, { status: xhr.status, headers }));
+      };
+      const fail = () => {
+        if (signal?.aborted) {
+          reject(
+            signal.reason instanceof Error ? signal.reason : new DOMException('', 'AbortError'),
+          );
+          return;
+        }
+        reject(new ApiError({ status: 0, code: 'NETWORK_ERROR', message: t.api.network }));
+      };
+      xhr.onerror = fail;
+      xhr.onabort = fail;
+      signal?.addEventListener('abort', () => xhr.abort(), { once: true });
+      xhr.send(body);
+    });
+  }
+
+  async function upload<S extends z.ZodType>(
+    path: string,
+    { body, schema, signal, onProgress }: UploadOptions<S>,
+  ): Promise<z.output<S>> {
+    if (!options.xhrUploads || typeof XMLHttpRequest === 'undefined') {
+      const result = await request(path, { method: 'POST', body, schema, signal });
+      onProgress?.(1);
+      return result;
+    }
+    let response = await sendXhr(path, body, signal, onProgress);
+    if (!response.ok) {
+      let error = await toError(response);
+      if (error.code === 'CSRF_INVALID' && (await refreshCsrf())) {
+        response = await sendXhr(path, body, signal, onProgress);
+        if (!response.ok) error = await toError(response);
+      }
+      if (!response.ok) throw handleFailure(error);
+    }
+    const payload: unknown = await response.json().catch(() => null);
+    const parsed = schema.safeParse(payload);
+    if (!parsed.success) {
+      throw new ApiError({
+        status: response.status,
+        code: 'INVALID_RESPONSE',
+        message: t.api.invalidResponse,
+      });
+    }
+    onProgress?.(1);
+    return parsed.data;
+  }
+
   function handleFailure(error: ApiError): ApiError {
     if (error.status === 401 && error.code === 'UNAUTHENTICATED') {
       csrfToken = null;
@@ -280,6 +371,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
   return {
     request,
     download,
+    upload,
     setCsrfToken(token) {
       csrfToken = token;
     },
@@ -319,4 +411,4 @@ function fallbackMessage(status: number): string {
 }
 
 /** Klien bersama aplikasi. */
-export const api = createApiClient();
+export const api = createApiClient({ xhrUploads: import.meta.env.MODE !== 'test' });

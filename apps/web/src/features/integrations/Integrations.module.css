@@ -514,3 +514,52 @@ ol.deliveries,
   align-items: center;
   gap: var(--space-8);
 }
+
+/* ---------- Tahap 9.1: kelompok izin/kejadian & akses email ---------- */
+
+.scopeGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-top: var(--space-8);
+}
+
+.scopeGroup + .scopeGroup {
+  border-top: 1px solid var(--line);
+}
+
+.scopeGroupTitle {
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+ul.emailAccess,
+.emailAccess {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-left: var(--space-12);
+  border-left: 2px solid var(--line);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  overflow-wrap: anywhere;
+}
+
+/* Satu fakta tidak dipecah di tengah ("Maks. 2.000 pesan/24 jam"); yang lebih panjang dari baris
+   tetap boleh terlipat di dalamnya. */
+.fact {
+  display: inline-block;
+  max-width: 100%;
+}
+
+/* Izin yang ikut tercakup izin lain: tampak terkunci (tidak bisa diubah sendiri). */
+.options label:has(input:disabled) {
+  border-style: dashed;
+  cursor: not-allowed;
+}
+
+.options label:has(input:disabled) input {
+  cursor: not-allowed;
+}

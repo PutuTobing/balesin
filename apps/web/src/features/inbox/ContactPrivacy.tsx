@@ -1,4 +1,8 @@
-import type { Contact, IdentityConfirmation } from '@balesin/shared';
+import {
+  CONTACT_EXPORT_PARTIAL_REASON,
+  type Contact,
+  type IdentityConfirmation,
+} from '@balesin/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Download, Trash2 } from 'lucide-react';
 import { useRef, useState } from 'react';
@@ -35,11 +39,16 @@ export function ContactPrivacy({
   const canDelete = useCan('contacts.delete');
   const [deleting, setDeleting] = useState(false);
   const [done, setDone] = useState(false);
+  /** Tahap 9.0: alasan ekspor tidak lengkap (akses per channel), `null` = lengkap. */
+  const [partial, setPartial] = useState<string | null>(null);
   const deleteRef = useRef<HTMLButtonElement>(null);
 
   const exportData = useMutation({
     mutationFn: () => endpoints.inbox.exportContact(contact.id),
-    onMutate: () => setDone(false),
+    onMutate: () => {
+      setDone(false);
+      setPartial(null);
+    },
     onSuccess: (data) => {
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -50,6 +59,7 @@ export function ContactPrivacy({
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setPartial(data.partial ? (data.partialReason ?? CONTACT_EXPORT_PARTIAL_REASON) : null);
       setDone(true);
     },
   });
@@ -95,7 +105,11 @@ export function ContactPrivacy({
           </Button>
         ) : null}
       </div>
-      {done ? (
+      {done && partial ? (
+        <Notice tone="warning" role="status" title={p.exportedPartial}>
+          {partial}
+        </Notice>
+      ) : done ? (
         <Notice tone="success" role="status">
           {p.exported}
         </Notice>

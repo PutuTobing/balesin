@@ -1,0 +1,773 @@
+/*
+ * Wizard "Hubungkan akun email" (docs/design/email/mockup.html, tab Tambah akun): dialog 45rem
+ * dengan penunjuk langkah, isi bergulir, dan kaki tetap. HP: layar penuh.
+ */
+
+.dialog {
+  width: min(45rem, calc(100vw - var(--space-32)));
+  max-width: none;
+  max-height: calc(100dvh - var(--space-48));
+  margin: auto;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-2);
+}
+
+.dialog::backdrop {
+  background: var(--on-accent);
+  opacity: 0.7;
+}
+
+.frame {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - var(--space-48));
+}
+
+.head {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding: var(--space-24) var(--space-24) var(--space-16);
+  border-bottom: 1px solid var(--line);
+}
+
+.headRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-20);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-title);
+  letter-spacing: var(--tracking-title);
+}
+
+.close {
+  flex: none;
+  margin-right: calc(var(--space-8) * -1);
+}
+
+/* ---------- Penunjuk langkah ---------- */
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stepItem {
+  display: flex;
+  /* Lebar isi dulu, sisa ruang untuk garis penghubung (judul langkah tidak pernah terpotong). */
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.stepItem:last-child {
+  flex: none;
+}
+
+/* Garis penghubung antar-langkah. */
+.stepItem:not(:last-child)::after {
+  content: '';
+  flex: 1;
+  min-width: var(--space-12);
+  height: 1px;
+  background: var(--line);
+}
+
+.stepButton {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: var(--size-control);
+  border-radius: var(--radius-input);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+
+button.stepButton:hover .stepName {
+  text-decoration: underline;
+}
+
+.stepNumber {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--space-24);
+  height: var(--space-24);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.stepItem[data-state='current'] .stepButton {
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+}
+
+.stepItem[data-state='current'] .stepNumber {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.stepItem[data-state='done'] .stepButton {
+  color: var(--ink);
+}
+
+.stepItem[data-state='done'] .stepNumber {
+  border-color: var(--success);
+  background: var(--success);
+  color: var(--surface);
+}
+
+/* ---------- Isi ---------- */
+
+.body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-16);
+  min-height: 0;
+  padding: var(--space-24);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.step[hidden] {
+  display: none;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--space-16);
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+}
+
+.fieldLabel {
+  color: var(--ink);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.cardTitle {
+  margin-bottom: var(--space-8);
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+}
+
+.fieldHint {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.fieldError {
+  color: var(--danger-ink);
+  font-size: var(--text-13);
+}
+
+.detectButton {
+  flex: none;
+  margin-right: var(--space-4);
+  color: var(--primary);
+}
+
+.pulsing {
+  animation: pulse var(--duration-pulse) ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* ---------- Langkah 1: penyedia ---------- */
+
+.providers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  width: 100%;
+  margin-bottom: var(--space-12);
+  padding: 0;
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.providerGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-12);
+}
+
+.providerCard,
+.kindCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-8);
+  min-width: 0;
+  padding: var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
+}
+
+.providerCard:hover:not([data-disabled]),
+.kindCard:hover:not([data-disabled]) {
+  border-color: var(--ink-2);
+}
+
+.providerCard:has(.cardInput:checked),
+.kindCard:has(.cardInput:checked) {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.providerCard:has(.cardInput:focus-visible),
+.kindCard:has(.cardInput:focus-visible) {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.providerCard[data-disabled],
+.kindCard[data-disabled] {
+  background: var(--surface-2);
+  cursor: default;
+}
+
+.cardInput {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.cardTick {
+  position: absolute;
+  top: var(--space-12);
+  right: var(--space-12);
+  display: grid;
+  place-items: center;
+  width: var(--space-24);
+  height: var(--space-24);
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+  color: var(--on-primary);
+  opacity: 0;
+}
+
+.providerCard:has(.cardInput:checked) .cardTick,
+.kindCard:has(.cardInput:checked) .cardTick {
+  opacity: 1;
+}
+
+.providerIcon,
+.kindIcon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--size-control);
+  height: var(--size-control);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.providerIcon[data-available] {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.providerCard:has(.cardInput:checked) .providerIcon,
+.kindCard:has(.cardInput:checked) .kindIcon {
+  background: var(--surface);
+  color: var(--primary);
+}
+
+.providerCard[data-disabled] .providerIcon {
+  background: var(--surface);
+}
+
+.providerName {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.providerBody {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+/* Lencana boleh dua baris: domain hasil deteksi adalah informasi utamanya, jadi tidak dipotong. */
+.tag {
+  max-width: 100%;
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-input);
+  line-height: var(--leading-title);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  text-align: left;
+}
+
+/* Domain tetap satu kesatuan; baru dipatahkan bila lebih panjang dari kartu. */
+.tagDomain {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.providerCard[data-disabled] .tag {
+  border: 1px solid var(--line);
+}
+
+.tag[data-tone='success'] {
+  background: var(--surface);
+  color: var(--success-ink);
+}
+
+/* ---------- Langkah 2: server ---------- */
+
+.serverCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.serverLegend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  float: left;
+  width: 100%;
+  padding: 0;
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.serverLegend + * {
+  clear: both;
+}
+
+.serverIcon {
+  color: var(--ink-2);
+}
+
+.serverGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 6rem 13rem;
+  align-items: start;
+  gap: var(--space-12);
+}
+
+.hostField,
+.portField,
+.securityField {
+  min-width: 0;
+}
+
+/* ---------- Langkah 3: hasil tes ---------- */
+
+.results {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  list-style: none;
+}
+
+.result {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-16);
+}
+
+.result + .result {
+  border-top: 1px solid var(--line);
+}
+
+.resultIcon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--space-24);
+  height: var(--space-24);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.result[data-tone='ok'] .resultIcon {
+  color: var(--success-ink);
+}
+
+.result[data-tone='fail'] .resultIcon {
+  color: var(--danger-ink);
+}
+
+.result[data-tone='warn'] .resultIcon {
+  color: var(--warning-ink);
+}
+
+.result[data-tone='info'] .resultIcon,
+.result[data-tone='pending'] .resultIcon {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.spin {
+  animation: spin var(--duration-pulse) linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+.resultText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.resultTitle {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.result[data-tone='fail'] .resultTitle {
+  color: var(--danger-ink);
+}
+
+.resultBody {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+
+/* Langkah perbaikan per kode: di bawah sebab, teks sama redupnya tapi dipisah sedikit. */
+.resultHint {
+  margin-top: var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+
+.resultTime {
+  flex: none;
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Langkah 4: jenis, akses, tampilan ---------- */
+
+.kinds {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-12);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.kindCard {
+  flex-direction: row;
+  gap: var(--space-12);
+  padding-right: var(--space-48);
+}
+
+.kindText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.subsection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.subTitle {
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.avatarField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.avatarRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+}
+
+.avatarActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+/* ---------- Langkah 5: verifikasi alamat ---------- */
+
+.verifyBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.verifyTitle {
+  font-size: var(--text-16);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+  overflow-wrap: anywhere;
+}
+
+.verifyText {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  line-height: var(--leading-text);
+}
+
+.verifySkeletonTitle {
+  width: 60%;
+  height: var(--space-24);
+}
+
+.verifySkeletonBox {
+  height: calc(var(--size-control) * 3);
+}
+
+/* ---------- Kaki ---------- */
+
+.foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  padding: var(--space-16) var(--space-24);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.footButtons {
+  display: flex;
+  gap: var(--space-8);
+}
+
+.guideButton {
+  color: var(--primary);
+}
+
+.guideInBody {
+  display: none;
+}
+
+/* Tablet & HP: lima nama langkah tidak selalu muat sebaris, jadi hanya langkah yang dibuka bernama. */
+@media (max-width: 1023px) {
+  .stepItem:not([data-state='current']) .stepName {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* ---------- HP: layar penuh ---------- */
+
+@media (max-width: 640px) {
+  .dialog {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .frame {
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+
+  /* Tepi 16px kiri & kanan (penunjuk langkah simetris); tombol tutup 44px menjorok 8px ke kanan. */
+  .head {
+    gap: var(--space-12);
+    padding: var(--space-8) var(--space-16) var(--space-12);
+  }
+
+  .stepper {
+    gap: var(--space-4);
+  }
+
+  .stepItem:not(:last-child)::after {
+    min-width: var(--space-8);
+  }
+
+  .stepButton {
+    min-height: var(--size-touch);
+  }
+
+  .body {
+    padding: var(--space-16);
+  }
+
+  .row,
+  .kinds,
+  .providerGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .providerCard {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: var(--space-12);
+    row-gap: var(--space-4);
+    padding-right: var(--space-48);
+  }
+
+  .providerCard .providerIcon {
+    grid-row: span 3;
+  }
+
+  .tag {
+    justify-self: start;
+  }
+
+  .serverGrid {
+    grid-template-columns: 6rem minmax(0, 1fr);
+  }
+
+  .hostField {
+    grid-column: 1 / -1;
+  }
+
+  .results .result {
+    align-items: flex-start;
+  }
+
+  .foot {
+    padding: var(--space-12) var(--space-16)
+      calc(var(--space-12) + env(safe-area-inset-bottom, 0px));
+  }
+
+  .footButtons {
+    flex: 1;
+    flex-direction: column-reverse;
+  }
+
+  .footButtons > * {
+    width: 100%;
+  }
+
+  .guideInFoot {
+    display: none;
+  }
+
+  .guideInBody {
+    display: inline-flex;
+    align-self: flex-start;
+  }
+
+  .foot > span:empty {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin,
+  .pulsing {
+    animation: none;
+  }
+}

@@ -140,6 +140,9 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'POST /api/v1/settings/channels/:channelId/webhook/verify-token': 'channels.manage',
   'GET /api/v1/settings/channels/:channelId/business-profile': 'channels.manage',
   'PUT /api/v1/settings/channels/:channelId/business-profile': 'channels.manage',
+  // akses per channel (tahap 9.0) — semua jenis channel
+  'GET /api/v1/settings/channels/:channelId/access': 'channels.manage',
+  'PUT /api/v1/settings/channels/:channelId/access': 'channels.manage',
   // channel selain WhatsApp (Fase 6): Telegram, Email, Messenger, Instagram
   'GET /api/v1/settings/channel-connections': 'channels.manage',
   'POST /api/v1/settings/channel-connections': 'channels.manage',
@@ -319,6 +322,114 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'GET /api/v1/settings/api-keys': 'api_keys.manage',
   'POST /api/v1/settings/api-keys': 'api_keys.manage',
   'POST /api/v1/settings/api-keys/:apiKeyId/revoke': 'api_keys.manage',
+  // tahap 9.1: pengirim email + host lampiran key (konfirmasi identitas), riwayat email API
+  'PATCH /api/v1/settings/api-keys/:apiKeyId': 'api_keys.manage',
+  'GET /api/v1/settings/email-outbound': 'api_keys.manage',
+  // tahap 9.1: Pengaturan → Template email (templates.manage = Owner/Admin/Supervisor)
+  'GET /api/v1/settings/email-templates': 'templates.manage',
+  'POST /api/v1/settings/email-templates': 'templates.manage',
+  'GET /api/v1/settings/email-templates/presets': 'templates.manage',
+  'POST /api/v1/settings/email-templates/presets/:presetId': 'templates.manage',
+  'POST /api/v1/settings/email-templates/preview': 'templates.manage',
+  'GET /api/v1/settings/email-templates/:templateId': 'templates.manage',
+  'PATCH /api/v1/settings/email-templates/:templateId': 'templates.manage',
+  'POST /api/v1/settings/email-templates/:templateId/publish': 'templates.manage',
+  'POST /api/v1/settings/email-templates/:templateId/archive': 'templates.manage',
+  'POST /api/v1/settings/email-templates/:templateId/unarchive': 'templates.manage',
+  'GET /api/v1/settings/email-templates/:templateId/versions': 'templates.manage',
+  'GET /api/v1/settings/email-templates/:templateId/versions/:versionId': 'templates.manage',
+  'POST /api/v1/settings/email-templates/:templateId/versions/:versionId/restore':
+    'templates.manage',
+  'POST /api/v1/settings/email-templates/:templateId/test': 'templates.manage',
+  // tahap 9.1: batas & jeda per pengirim email (lanjutkan = sending.resume)
+  'GET /api/v1/settings/email-senders': 'sending.limits.manage',
+  'PUT /api/v1/settings/email-senders/:senderId': 'sending.limits.manage',
+  'POST /api/v1/settings/email-senders/:senderId/pause': 'sending.limits.manage',
+  'POST /api/v1/settings/email-senders/:senderId/resume': 'sending.resume',
+  // Fase 9 (modul Email): pintu `mail.view`; hak nyata per akun + izin tambahan diperiksa handler
+  // (`mail.private.own`/`mail.accounts.manage`, diuji mail.integration.test.ts).
+  'GET /api/v1/mail/providers': 'mail.view',
+  'POST /api/v1/mail/accounts/detect': 'mail.view',
+  'POST /api/v1/mail/accounts/test': 'mail.view',
+  'GET /api/v1/mail/accounts': 'mail.view',
+  'POST /api/v1/mail/accounts': 'mail.view',
+  'GET /api/v1/settings/mail-accounts': 'mail.view',
+  'GET /api/v1/mail/accounts/:accountId': 'mail.view',
+  'PATCH /api/v1/mail/accounts/:accountId': 'mail.view',
+  'DELETE /api/v1/mail/accounts/:accountId': 'mail.view',
+  'POST /api/v1/mail/accounts/:accountId/test': 'mail.view',
+  'POST /api/v1/mail/accounts/:accountId/sync': 'mail.view',
+  'POST /api/v1/mail/accounts/:accountId/pause': 'mail.view',
+  'POST /api/v1/mail/accounts/:accountId/resume': 'mail.view',
+  'PUT /api/v1/mail/accounts/:accountId/avatar': 'mail.view',
+  'DELETE /api/v1/mail/accounts/:accountId/avatar': 'mail.view',
+  'GET /api/v1/mail/accounts/:accountId/avatar': 'mail.view',
+  'GET /api/v1/mail/accounts/:accountId/access': 'mail.view',
+  'PUT /api/v1/mail/accounts/:accountId/access': 'mail.accounts.manage',
+  'GET /api/v1/mail/accounts/:accountId/folders': 'mail.view',
+  'GET /api/v1/mail/sidebar': 'mail.view',
+  // Fase 9 bagian 2: daftar/baca/aksi (hak per akun di service, diuji mail-messages.integration.test.ts).
+  'GET /api/v1/mail/messages': 'mail.view',
+  'POST /api/v1/mail/messages/actions': 'mail.view',
+  'GET /api/v1/mail/messages/:messageId': 'mail.view',
+  'POST /api/v1/mail/messages/:messageId/view': 'mail.view',
+  'GET /api/v1/mail/messages/:messageId/source': 'mail.view',
+  'GET /api/v1/mail/attachments/:attachmentId': 'mail.view',
+  'GET /api/v1/mail/attachments/:attachmentId/preview': 'mail.view',
+  'GET /api/v1/mail/remote-image-senders': 'mail.view',
+  'POST /api/v1/mail/remote-image-senders': 'mail.view',
+  'DELETE /api/v1/mail/remote-image-senders': 'mail.view',
+  // Dokumen tampilan iframe: tanpa sesi cookie (origin opak) — token bertanda tangan + cek ulang
+  // sesi asal & hak setiap permintaan.
+  'GET /api/v1/mail/view/:token': 'public',
+  'GET /api/v1/mail/view/:token/images/:index': 'public',
+  'GET /api/v1/mail/view/:token/cid/:attachmentId': 'public',
+  // 9B (tulis/kirim): baca identitas/tanda tangan/preferensi = `mail.view`; draf/kirim/outbox =
+  // `mail.send`. Hak NYATA per akun + kepemilikan draf di service (mail-compose.integration.test.ts).
+  'GET /api/v1/mail/identities': 'mail.view',
+  'GET /api/v1/mail/accounts/:accountId/identities': 'mail.view',
+  'POST /api/v1/mail/accounts/:accountId/identities': 'mail.view',
+  'PATCH /api/v1/mail/identities/:identityId': 'mail.view',
+  'DELETE /api/v1/mail/identities/:identityId': 'mail.view',
+  'POST /api/v1/mail/identities/:identityId/verification': 'mail.view',
+  'POST /api/v1/mail/identities/:identityId/verification/confirm': 'mail.view',
+  // Review 9B S3: persetujuan identitas akun pribadi berdomain organisasi (Owner/Admin).
+  'GET /api/v1/mail/identity-approvals': 'mail.accounts.manage',
+  'POST /api/v1/mail/identities/:identityId/approval': 'mail.accounts.manage',
+  'GET /api/v1/mail/identities/:identityId/signature': 'mail.send',
+  'GET /api/v1/mail/accounts/:accountId/signatures': 'mail.view',
+  'POST /api/v1/mail/accounts/:accountId/signatures': 'mail.view',
+  'PATCH /api/v1/mail/signatures/:signatureId': 'mail.view',
+  'DELETE /api/v1/mail/signatures/:signatureId': 'mail.view',
+  'PUT /api/v1/mail/signatures/:signatureId/logo': 'mail.view',
+  'DELETE /api/v1/mail/signatures/:signatureId/logo': 'mail.view',
+  'GET /api/v1/mail/signatures/:signatureId/logo': 'mail.view',
+  'GET /api/v1/mail/preferences': 'mail.view',
+  'PUT /api/v1/mail/preferences': 'mail.view',
+  'GET /api/v1/mail/drafts': 'mail.send',
+  'POST /api/v1/mail/drafts': 'mail.send',
+  'GET /api/v1/mail/drafts/:draftId': 'mail.send',
+  'PUT /api/v1/mail/drafts/:draftId': 'mail.send',
+  'DELETE /api/v1/mail/drafts/:draftId': 'mail.send',
+  'POST /api/v1/mail/drafts/:draftId/check': 'mail.send',
+  'POST /api/v1/mail/drafts/:draftId/send': 'mail.send',
+  'PUT /api/v1/mail/drafts/:draftId/presence': 'mail.send',
+  'DELETE /api/v1/mail/drafts/:draftId/presence': 'mail.send',
+  'POST /api/v1/mail/drafts/:draftId/snippet': 'mail.send',
+  'POST /api/v1/mail/drafts/:draftId/attachments': 'mail.send',
+  'POST /api/v1/mail/drafts/:draftId/attachments/from-message': 'mail.send',
+  'GET /api/v1/mail/drafts/:draftId/attachments/:attachmentId': 'mail.send',
+  'DELETE /api/v1/mail/drafts/:draftId/attachments/:attachmentId': 'mail.send',
+  'GET /api/v1/mail/outbox': 'mail.send',
+  'GET /api/v1/mail/outbox/:outboxId': 'mail.send',
+  'POST /api/v1/mail/outbox/:outboxId/cancel': 'mail.send',
+  'POST /api/v1/mail/outbox/:outboxId/send-now': 'mail.send',
+  'GET /api/v1/mail/compose/snippets': 'mail.send',
+  'GET /api/v1/mail/recipients/suggest': 'mail.view',
+  'GET /api/v1/settings/mail': 'mail.accounts.manage',
+  'PUT /api/v1/settings/mail': 'mail.accounts.manage',
+  'GET /api/v1/settings/team/:userId/mail-access': 'mail.accounts.manage',
+  'PUT /api/v1/settings/team/:userId/mail-access': 'mail.accounts.manage',
   'GET /api/v1/settings/api': 'api_keys.manage',
   'PUT /api/v1/settings/api': 'api_keys.manage',
   // Webhook keluar (Fase 3): Owner/Admin (`integrations.manage`)
@@ -355,6 +466,14 @@ const ROUTES: Readonly<Record<string, Expectation>> = {
   'GET /api/v1/public/tickets/:ticketId': 'apikey:tickets:read',
   'PATCH /api/v1/public/tickets/:ticketId': 'apikey:tickets:write',
   'POST /api/v1/public/tickets/:ticketId/comments': 'apikey:tickets:write',
+  // tahap 9.1: email lewat API (baca = email:read, kirim/batal/balas/unggah = email:send)
+  'GET /api/v1/public/email/senders': 'apikey:email:read',
+  'POST /api/v1/public/email/send': 'apikey:email:send',
+  'POST /api/v1/public/email/media': 'apikey:email:send',
+  'GET /api/v1/public/email/messages/:emailId': 'apikey:email:read',
+  'POST /api/v1/public/email/messages/:emailId/cancel': 'apikey:email:send',
+  'GET /api/v1/public/email/templates': 'apikey:email:read',
+  'POST /api/v1/public/email/messages/:emailId/reply': 'apikey:email:send',
   // kompatibel MobiChat: HANYA header X-API-Key + scope (sesi web apa pun → 401)
   'GET /api/public/messages': 'mobichat:messages:read',
   'POST /api/public/messages': 'mobichat:messages:send',
@@ -512,6 +631,21 @@ const SAMPLE_PARAMS: Readonly<Record<string, string>> = {
   boardId: '00000000-0000-4000-8000-0000000000b5',
   columnId: '00000000-0000-4000-8000-0000000000b6',
   departmentId: '00000000-0000-4000-8000-0000000000b7',
+  // tahap 9.1: email lewat API
+  emailId: '00000000-0000-4000-8000-0000000000b8',
+  senderId: 'chn_00000000-0000-4000-8000-0000000000b9',
+  versionId: '1',
+  // Fase 9: modul Email
+  accountId: '00000000-0000-4000-8000-0000000000c1',
+  // Fase 9 bagian 2 (token tampilan palsu → 410 TOKEN_INVALID dari handler)
+  attachmentId: '00000000-0000-4000-8000-0000000000c2',
+  // 9B (tulis/kirim)
+  identityId: '00000000-0000-4000-8000-0000000000c4',
+  signatureId: '00000000-0000-4000-8000-0000000000c5',
+  draftId: '00000000-0000-4000-8000-0000000000c6',
+  outboxId: '00000000-0000-4000-8000-0000000000c7',
+  token: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+  index: '0',
 };
 
 function concreteUrl(pattern: string): string {
@@ -734,7 +868,7 @@ describe('peran × endpoint: hasil sungguhan cocok dengan matriks', () => {
       }
       // Ratusan rute × satu pemanggil berurutan (bertambah tiap fase): batas waktu sendiri.
     },
-    90_000,
+    180_000,
   );
 
   it('pemanggil yang diuji mewakili kelima peran', async () => {

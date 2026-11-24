@@ -1,6 +1,7 @@
 import { AppError, type InboxEventPublisher } from '@balesin/core';
 import {
   PG_ERROR_CODES,
+  channelAccessDepartments,
   channels,
   conversationEvents,
   conversations,
@@ -30,6 +31,7 @@ import { assertActorStillAuthorized, authorityChanged } from '../auth/actor-chec
 import type { PermissionGrant } from '../auth/permission-grant';
 import type { AuthContext } from '../auth/session.service';
 import { conversationScope } from '../inbox/inbox.repo';
+import { publishReleased, releaseInaccessibleAssignments } from '../channel-access/release';
 import { requireIdentityConfirmation } from '../two-factor/require-confirmation';
 import type { TwoFactorContext, TwoFactorService } from '../two-factor/two-factor.service';
 
@@ -432,7 +434,7 @@ export function createDepartmentsService(deps: {
           'Masukkan password (dan kode verifikasi) untuk memperluas akses departemen pengguna ini.',
         );
       }
-      await db.transaction(async (tx) => {
+      const released = await db.transaction(async (tx) => {
         await assertActorStillAuthorized(tx, auth, 'settings.workspace.manage');
         const [locked] = await tx
           .select({ id: users.id })
@@ -477,6 +479,34 @@ export function createDepartmentsService(deps: {
           .update(users)
           .set({ departmentRestricted: input.restricted })
           .where(and(eq(users.organizationId, org), eq(users.id, userId)));
+        // Review 9.0 R3: departemen baru bisa membuka channel TERBATAS (akses per channel) — dicatat.
+        const gained =
+          added.length === 0
+            ? []
+            : await tx
+                .selectDistinct({ id: channels.id, name: channels.name })
+                .from(channelAccessDepartments)
+                .innerJoin(
+                  channels,
+                  and(
+                    eq(channels.organizationId, channelAccessDepartments.organizationId),
+                    eq(channels.id, channelAccessDepartments.channelId),
+                  ),
+                )
+                .where(
+                  and(
+                    eq(channelAccessDepartments.organizationId, org),
+                    inArray(channelAccessDepartments.departmentId, added),
+                    eq(channels.accessRestricted, true),
+                    isNull(channels.deletedAt),
+                  ),
+                );
+        // Review 9.0 R4: keluar dari departemen yang memberi akses channel → percakapannya ke antrian.
+        const releasedRows = await releaseInaccessibleAssignments(tx, {
+          organizationId: org,
+          actorUserId: auth.user.id,
+          assigneeUserId: userId,
+        });
         await recordAudit(tx, {
           organizationId: org,
           actorUserId: auth.user.id,
@@ -487,10 +517,17 @@ export function createDepartmentsService(deps: {
             restricted: input.restricted,
             departments: input.departmentIds.length,
             loosened,
+            restrictedChannelsGained: gained.slice(0, 50).map((row) => ({
+              id: row.id,
+              name: row.name,
+            })),
+            releasedConversations: releasedRows.length,
           },
           client: context.client,
         });
+        return releasedRows;
       });
+      await publishReleased({ publisher }, org, auth.user.id, released);
       // Socket pengguna itu memuat ulang daftar (data di luar akses barunya hilang dari layar).
       await publisher.publish([{ type: 'access.changed', organizationId: org, userId }]);
       return accessOf(org, userId);
@@ -511,6 +548,7 @@ export function createDepartmentsService(deps: {
           scope,
           userId: auth.user.id,
           organizationId: auth.organizationId,
+          principal: 'user',
         };
         const [current] = await tx
           .select({ id: conversations.id, departmentId: conversations.departmentId })

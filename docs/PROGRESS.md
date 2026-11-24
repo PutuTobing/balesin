@@ -1,7 +1,7 @@
 # Progress
 
-**Fase aktif:** 5–7 berjalan paralel (Fase 2 selesai, Fase 3 & 4 tinggal review/terblokir)
-**Terakhir diperbarui:** 2026-11-23 (Fase 7 butir 1–4 selesai; revisi UI Fase 5, UI channel/jam kerja, stabilisasi tes berjalan)
+**Fase aktif:** 9 — Modul Email (`docs/PRD-EMAIL.md`). 9.0, 9.1, 9A, 9B SELESAI di `dev`; rilis v1.1.0 menunggu langkah Tobing; **9C–9E menunggu keputusan Tobing**
+**Terakhir diperbarui:** 2026-11-24 (9A+9B di-merge ke `dev`, E2E penuh hijau + spec menu Email)
 
 ## Selesai
 
@@ -101,13 +101,28 @@
 - Penutupan: E2E penuh hijau 2× berturut-turut (285 lulus, 0 goyah) dari worktree cache dingin;
   suite api 1.163 lulus; keamanan AMAN putaran 3; desain LOLOS putaran 2.
 
+## Fase 9 — Modul Email (9.0–9B selesai; 9C–9E menunggu Tobing)
+- **9.0 SELESAI** (5530ec3 … 68af11d): Kepada/Cc/alamat tujuan, alias, Cc/Bcc + Balas semua, batas kirim per penerima, akses per channel. Security AMAN, kritikus LOLOS putaran 3, E2E `email-cc.spec.ts`.
+- **9.1 SELESAI** (5530ec3 … 06cadd8): API publik kirim email + template email (preset ISP) + QRIS + lampiran ber-allowlist + idempotensi + webhook `email.*` + UI. Security AMAN (3 putaran), kritikus LOLOS putaran 2.
+- **9A SELESAI**: akun IMAP/SMTP + wizard, sinkron IDLE/berkala, daftar & panel baca (iframe sandbox, proksi gambar, token tampilan kanonik), hak akses per akun. Security 9A-1 & 9A-2 **AMAN**; kritikus 9A-baca LOLOS (H1/H2 diperbaiki).
+- **9B SELESAI**: tulis/balas/teruskan, identitas + verifikasi (kode 6 digit / pencocokan lokal) + persetujuan Owner/Admin untuk identitas pribadi berdomain organisasi, tanda tangan, draf + salinan server, lampiran, batalkan kirim/outbox, salinan Terkirim, presence. Security 9B putaran 2 **AMAN** (+ tambahan 5aa9cd7 AMAN); kritikus 9B LOLOS 1 putaran (minor di "Poles desain"). Langkah Verifikasi di wizard, banner verifikasi, saran Gmail/Microsoft, panduan bab 10 (`docs/panduan/10-modul-email.md`).
+- **Penutupan 9A+9B** (merge `wip/9a` → `dev` sekali, DECISIONS 23 Nov): E2E penuh 287 lulus/0 gagal (3 worker; tes basi diperbaiki 80378ff), spec baru `e2e/tests/email-menu.spec.ts` (wizard + tes koneksi, verifikasi, baca + gambar pelacak diblokir, balas + batalkan kirim, akses CS/Teknisi, HP 390) hijau 2×; lint/prettier/typecheck/build/check:deps bersih. Sinkron susulan saat IDLE tersambung (5aa9cd7).
+- **Ditunda ke 9C:** batas kirim → UI Email, `acc_` di daftar pengirim, baki outbox, security P2-R1/R2/R3 (lihat review 9B), I-5aa-1 (Origin-Agent-Cluster dari gateway), E2E lokal sebaiknya 3 worker.
+- **Berikutnya:** rilis v1.1.0 (PR dev→main, tag, approve, `sudo balesin update`) — langkah Tobing. 9C–9E menunggu keputusan Tobing.
+
 ## Sedang dikerjakan (posisi 0efafe4)
+- **Berikutnya: Fase 9 — Modul Email** (ditambahkan 22 Nov atas permintaan Tobing): spesifikasi
+  `docs/PRD-EMAIL.md`, mockup & screenshot `docs/design/email/`. Urutan: 9.0 (Cc/Bcc + akses per channel di Inbox), 9.1 (API kirim email untuk n8n/billing), lalu 9A; OAuth (9E) menunggu
+  BUTUH-TOBING #20 (opsional).
 - **CI GitHub hijau penuh** di `0efafe4` (run 44881249404): kualitas, tes unit+integrasi, E2E 285 lulus, image + installer, audit. Merah CI #9–#11 karena tiruan media di tes web (Blob jsdom tidak terbaca undici Node 22), bukan bug produk.
 - **Kode siap kandidat rilis 1.0.** Tidak ada tugas ROADMAP Fase 0–7 yang terbuka kecuali Fase 3 mode
   tangkap (terblokir #10).
-- Menunggu Tobing untuk produksi: #6 VM, #7 DNS, #3 kredensial Meta, #4 SMTP, #18 distribusi rilis
-  (kanal, environment `rilis`, ruleset tag, cosign; `BALESIN_REQUIRE_SIGNATURE=1` saat rilis bertanda
-  tangan pertama), #19 deploy produksi. Opsional: #5, #8, #10, #14–#17.
+- **#18 diputuskan** (repo & paket GHCR publik, cosign keyless): rilis bertanda tangan pertama siap —
+  tanda tangan wajib bawaan, versi dari tag, URL `curl` GitHub Release di panduan. Sisa langkah klik
+  Tobing di BUTUH-TOBING #18 (environment `rilis`, ruleset tag, merge PR #1, tag `v1.0.0`, approve,
+  paket GHCR → Public).
+- Menunggu Tobing untuk produksi: #6 VM, #7 DNS, #3 kredensial Meta, #4 SMTP, #19 deploy produksi.
+  Opsional: #5, #8, #10, #14–#17.
 - Kandidat 1.0.1 (tidak menahan rilis): kirim ulang per kampanye broadcast; QA-R2 tes peka beban;
   info gerbang laporan (batal saat klien putus).
 
@@ -147,3 +162,33 @@
   baris ditolak N2); banner `webhook_signature_failed` menautkan ke channel (butuh `channelId`).
 - Pose Kak Sky (BUTUH-TOBING #5), kredensial Meta (#3), detail SMTP (#4).
 - Poles desain: tab "Bot" di 360px 42px; bedakan "inbox kosong" vs "belum memilih chat".
+
+### Poles desain (nanti)
+Minor review layar akun Email 9A (`docs/design-reviews/2026-11-23-fase9a-akun.md`) yang sengaja belum
+dikerjakan (M1, M2, M4, M5, M10 sudah; M3, M7, M8, M9 ikut terkerjakan di `wip/9a`):
+- **M6** kutip lurus → “…”: `"CS" atau "Billing"` (`id.ts`, petunjuk nama akun) dan `"Connect Devices"`
+  (teks deteksi autoconfig, termasuk deskripsi saran server di backend).
+- **M11** zona bahaya halaman akun (1440): keterangan "Semua email yang tersimpan…" pindah ke slot `meta`
+  `FormActions danger`, tepat di samping tombol "Putuskan".
+- **M12** lencana jumlah belum dibaca di rail & navigasi bawah "Email" (mockup "14").
+- **M13** titik warna akun berbentuk sama dengan titik status (mis. akun hijau + "● Tersinkron"): titik akun
+  10px bercincin `--surface`, atau titik status 6px.
+Minor review daftar & baca email 9A (`docs/design-reviews/2026-11-23-fase9a-baca.md`, H1/H2 sudah):
+- **m1** dialog "Ubah server atau password" dari "Perbarui password" fokus ke kolom Password.
+- **m2** hitungan nol di `headingFor`: "Semua sudah dibaca · 4 akun", "CS Maju Jaya · kosong".
+- **m3** gambar luar diblokir tampil ruang kosong → gaya `img[data-gambar-diblokir]` (latar + garis putus) di `display-html.ts`.
+- **m4** mock foto: `email-baca` vs `email-baca-gambar` HTML berbeda; sidebar mock kurangi belum dibaca setelah `mark_read`.
+- **m5** `Wizard.module.css` `.result` → `align-items: flex-start` untuk hasil tes multi-baris.
+- **m6** "Isinya hanya bisa dibaca pemiliknya." pindah ke tooltip ikon gembok di daftar akun.
+- **m7** "1 dari N", naik/turun, menu "…" di bilah baca (bersama 9B).
+- **m8** mode gelap: tepi kartu iframe isi email (isi tetap putih).
+Minor review tulis 9B (`docs/design-reviews/2026-11-24-fase9b.md`, P1/P2 sudah):
+- **9B-m1/m2** tangkapan `akun-akses` panggil `mailCompose(page)`; `akun-email-daftar` tunggu kartu Preferensi.
+- **9B-m3** mock toast batal kirim 10 dtk (`mocks-mail.ts` `now + 10_000`).
+- **9B-m4** isi dialog utas baru sebut siapa & kapan membalas.
+- **9B-m5** bilah format ringkas (tebal, miring, tautan) di editor tanda tangan, juga di HP.
+- **9B-m6** kutip lurus `"Formal"`/`"Singkat"` → “…”.
+- **9B-m7** HP: tombol "Tambah alias" di bawah deskripsi (≤ 640px).
+- **9B-m8** lebar kartu lampiran seragam; **m9** sembunyikan ruang pesan kosong di panel kode verifikasi; **m10** tombol toast HP `min-height: var(--size-touch)`.
+- **9B-m11/m12** tangkapan `email-baca-presence` dan `email-tautan`.
+Celah 9B yang ditunda (dari penulisan panduan bab 10): layar Pengaturan → Batas kirim → Email (`maxRecipientsPerEmail`, `maxAttachmentTotalMb`, naik butuh konfirmasi identitas); akun Email (`acc_`) belum bisa dipilih di "Email per pengirim" (`email-send/senders.ts`, batas per jam per akun tetap bawaan 100); baki outbox gagal. Security 9B Rendah ditunda ke 9C: P2-R1 (cocokkan username pengirim sistem lintas host), P2-R2 (alamat pengirim sistem dari env ikut domain organisasi di 6 pemanggil `mailOrganizationDomains`), P2-R3 (`markVerifiedByMailbox` cek ulang blok S2 & pemegang S4), plus Info: batas harian salinan draf, permintaan persetujuan saat alamat/domain berubah.

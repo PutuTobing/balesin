@@ -96,6 +96,11 @@ export const AUDIT_ACTIONS = {
   channelTested: 'channel.tested',
   /** Saklar bot channel / jam kerja bot / batas waktu bot diubah (Fase 3). */
   channelBotUpdated: 'channel.bot_updated',
+  /**
+   * Akses per channel diubah (tahap 9.0): `mode`/`previousMode`, departemen & pengguna yang
+   * ditambah/dicabut (ID + nama tampilan), jumlah akhir. Tanpa data pelanggan.
+   */
+  channelAccessUpdated: 'channel.access_updated',
   /** Template Meta (Fase 4). */
   templateCreated: 'template.created',
   templateUpdated: 'template.updated',
@@ -224,6 +229,92 @@ export const AUDIT_ACTIONS = {
   workspaceSettingsUpdated: 'settings.workspace.updated',
   /** Ketersediaan/pengecualian agen dari alokasi otomatis diubah (`available`, `excluded`, `self`). */
   allocationAgentUpdated: 'settings.workspace.agent_updated',
+  /**
+   * Tahap 9.0 — balasan channel Email dengan Cc/Bcc (`cc`/`bcc` tersamar `maskEmail`, `newCount` =
+   * alamat baru di utas, `actor` = `user`/`apiKey`). Target = percakapan.
+   */
+  messageEmailCopiesSent: 'message.email_copies_sent',
+  // ── Tahap 9.1: email lewat API (docs/KONTRAK-API-EMAIL-KIRIM.md §11) ──
+  /** Pengirim email / host lampiran API key diubah (`changedFields`, `emailSenders`, `hosts`). */
+  apiKeyUpdated: 'api_key.updated',
+  /**
+   * Template email (tanpa isi HTML/subjek): `templateId`, `slug`, `version`, `changedFields`; terbit
+   * `risky: true` (+ `addedLinks`, `addedNumbers`) bila isi baru memuat tautan/angka panjang baru →
+   * kejadian keamanan `email_template_risky`.
+   */
+  emailTemplateCreated: 'email_template.created',
+  emailTemplateDraftSaved: 'email_template.draft_saved',
+  emailTemplatePublished: 'email_template.published',
+  emailTemplateArchived: 'email_template.archived',
+  emailTemplateUnarchived: 'email_template.unarchived',
+  emailTemplateRestored: 'email_template.restored',
+  emailTemplateTestSent: 'email_template.test_sent',
+  /** Batas email per jam sebuah pengirim diubah (`senderId`, `previous`, `next`). */
+  emailSenderLimitUpdated: 'settings.email_sender_limit.updated',
+  emailSenderPaused: 'settings.email_sender.paused',
+  emailSenderResumed: 'settings.email_sender.resumed',
+  /**
+   * Pengirim email terblokir otomatis (worker; tanpa pelaku): `senderId`, `reason` (kode) →
+   * kejadian keamanan `email_sender_blocked`.
+   */
+  emailSenderBlocked: 'settings.email_sender.blocked',
+  // ── Modul Email (Fase 9, KONTRAK-API-EMAIL §13) ──────────────────────────
+  // Target `mail_account`; metadata TANPA subjek/isi/alamat lawan (akun pribadi: hanya ID + alamat).
+  /** `kind`, `provider`, `address`, `imapHost`, `smtpHost`; bersama + bukan Owner → `mail_account_changed`. */
+  mailAccountCreated: 'mail.account.created',
+  /** `changedFields` (nama/warna/jendela sinkron — bukan kredensial). */
+  mailAccountUpdated: 'mail.account.updated',
+  /** Server/kredensial/alamat diganti (`changedFields`). */
+  mailAccountCredentialsUpdated: 'mail.account.credentials_updated',
+  mailAccountPaused: 'mail.account.paused',
+  mailAccountResumed: 'mail.account.resumed',
+  /** Diputus (cache dihapus bertahap; server email tidak disentuh). */
+  mailAccountDeleted: 'mail.account.deleted',
+  mailAccountAvatarUpdated: 'mail.account.avatar_updated',
+  /** Worker: login ditolak server → sinkron berhenti (tanpa pelaku). */
+  mailAccountAuthFailed: 'mail.account.auth_failed',
+  /** `added`, `removed`, `changed` (principal + level lama/baru), `loosened`. */
+  mailAccessUpdated: 'mail.access.updated',
+  /** Bagian 2: hapus permanen dari Sampah/Spam (`accountId`, `folderId`, `count`). */
+  mailMessagesDeletedPermanently: 'mail.message.deleted_permanently',
+  /**
+   * Review 9A-2 R11: pindah/Sampah/Spam/Arsip MASSAL (`action`, `count`, `accountIds`,
+   * `targetFolderId`) — ≥ 10 email sekali minta, atau > 60 permintaan pindah per jam.
+   */
+  mailMessagesMoved: 'mail.messages.moved',
+  /** Review 9A-2 R11: batas hapus permanen per 24 jam tercapai (`requested`, `deletedLast24h`). */
+  mailMessagesDeleteLimitReached: 'mail.message.delete_limit_reached',
+  settingsMailUpdated: 'settings.mail.updated',
+  channelAvatarUpdated: 'channel.avatar_updated',
+  // ── 9B: tulis/kirim (KONTRAK-API-EMAIL-TULIS §16) — tanpa subjek/isi/alamat penerima ──
+  /** `accountId`, `identityId`, `outboxId`, `mode`, `recipientCount`, … (dicatat worker). */
+  mailMessageSent: 'mail.message.sent',
+  /** Alias baru: `address` (akun pribadi: ID saja), `kind`, `actorRole` → `mail_identity_added`. */
+  mailIdentityCreated: 'mail.identity.created',
+  mailIdentityUpdated: 'mail.identity.updated',
+  mailIdentityDeleted: 'mail.identity.deleted',
+  mailIdentityVerificationStarted: 'mail.identity.verification_started',
+  mailIdentityVerified: 'mail.identity.verified',
+  mailIdentityVerificationFailed: 'mail.identity.verification_failed',
+  /**
+   * Review 9B S3: identitas akun PRIBADI berdomain organisasi menunggu persetujuan (`address`,
+   * `accountId`, `identityId`, `isPrimary`) → email ke Owner/Admin.
+   */
+  mailIdentityApprovalRequested: 'mail.identity.approval_requested',
+  /** Review 9B S3: disetujui / ditolak Owner/Admin (`address`, `ownerUserId`) → email ke pemilik. */
+  mailIdentityApproved: 'mail.identity.approved',
+  mailIdentityRejected: 'mail.identity.rejected',
+  /**
+   * Review 9B S4: klaim alamat akun pribadi yang BELUM terverifikasi dicabut karena Owner/Admin memakai
+   * alamat itu (alias/akun bersama, Channel Email, Email pengirim sistem) → email ke pemilik.
+   */
+  mailIdentityRevoked: 'mail.identity.revoked',
+  /** Review 9B R4: status kirim tidak pasti (worker; tanpa subjek/isi/alamat penerima). */
+  mailMessageDeliveryUnknown: 'mail.message.delivery_unknown',
+  /** Tanda tangan BERSAMA saja (tanpa isi; `risky` = tautan/angka panjang baru). */
+  mailSignatureCreated: 'mail.signature.created',
+  mailSignatureUpdated: 'mail.signature.updated',
+  mailSignatureDeleted: 'mail.signature.deleted',
 } as const;
 
 export type AuditActionKey = keyof typeof AUDIT_ACTIONS;
@@ -287,6 +378,7 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'channel.deleted': 'Channel dihapus',
   'channel.tested': 'Koneksi channel dites',
   'channel.bot_updated': 'Pengaturan bot channel diubah',
+  'channel.access_updated': 'Akses channel diubah',
   'template.created': 'Template pesan dibuat (draf)',
   'template.updated': 'Template pesan diubah',
   'template.submitted': 'Template pesan diajukan ke Meta',
@@ -351,6 +443,49 @@ export const AUDIT_ACTION_LABELS: Readonly<Record<AuditAction, string>> = {
   'webhook.secret_rotated': 'Rahasia webhook keluar dirotasi',
   'webhook.auto_disabled': 'Webhook keluar dinonaktifkan otomatis',
   'settings.private_network.updated': 'Allowlist IP privat diubah',
+  'message.email_copies_sent': 'Email dibalas dengan Cc/Bcc',
+  'api_key.updated': 'API key diubah (pengirim email / host lampiran)',
+  'email_template.created': 'Template email dibuat',
+  'email_template.draft_saved': 'Draf template email disimpan',
+  'email_template.published': 'Template email diterbitkan',
+  'email_template.archived': 'Template email diarsipkan',
+  'email_template.unarchived': 'Template email dipulihkan dari arsip',
+  'email_template.restored': 'Versi lama template email disalin ke draf',
+  'email_template.test_sent': 'Email tes template dikirim',
+  'settings.email_sender_limit.updated': 'Batas email per jam pengirim diubah',
+  'settings.email_sender.paused': 'Pengirim email dijeda',
+  'settings.email_sender.resumed': 'Pengirim email dilanjutkan',
+  'settings.email_sender.blocked': 'Pengirim email terblokir otomatis',
+  'mail.account.created': 'Akun email dihubungkan',
+  'mail.account.updated': 'Akun email diubah',
+  'mail.account.credentials_updated': 'Server atau password akun email diganti',
+  'mail.account.paused': 'Sinkron akun email dijeda',
+  'mail.account.resumed': 'Sinkron akun email dilanjutkan',
+  'mail.account.deleted': 'Akun email diputus',
+  'mail.account.avatar_updated': 'Foto akun email diubah',
+  'mail.account.auth_failed': 'Password akun email ditolak server',
+  'mail.access.updated': 'Akses akun email diubah',
+  'mail.message.deleted_permanently': 'Email dihapus permanen',
+  'mail.messages.moved': 'Banyak email dipindah sekaligus',
+  'mail.message.delete_limit_reached': 'Batas hapus permanen harian tercapai',
+  'settings.mail.updated': 'Pengaturan email diubah',
+  'channel.avatar_updated': 'Foto channel diubah',
+  'mail.message.sent': 'Email dikirim dari menu Email',
+  'mail.identity.created': 'Alamat pengirim (alias) ditambahkan',
+  'mail.identity.updated': 'Alamat pengirim diubah',
+  'mail.identity.deleted': 'Alamat pengirim (alias) dihapus',
+  'mail.identity.verification_started': 'Verifikasi alamat pengirim dimulai',
+  'mail.identity.verified': 'Alamat pengirim terverifikasi',
+  'mail.identity.verification_failed': 'Verifikasi alamat pengirim gagal',
+  'mail.identity.approval_requested':
+    'Alamat pengirim pribadi berdomain organisasi menunggu persetujuan',
+  'mail.identity.approved': 'Alamat pengirim pribadi disetujui',
+  'mail.identity.rejected': 'Alamat pengirim pribadi ditolak',
+  'mail.identity.revoked': 'Klaim alamat pengirim pribadi dicabut',
+  'mail.message.delivery_unknown': 'Status kirim email tidak pasti',
+  'mail.signature.created': 'Tanda tangan email bersama dibuat',
+  'mail.signature.updated': 'Tanda tangan email bersama diubah',
+  'mail.signature.deleted': 'Tanda tangan email bersama dihapus',
 };
 
 /** Label untuk aksi yang mungkin belum dikenal klien (versi lama): tampilkan kodenya apa adanya. */
@@ -383,6 +518,10 @@ export const AUDIT_TARGET_TYPES = [
   'ticket_board',
   'ticket',
   'department',
+  'conversation',
+  'email_template',
+  'email_sender',
+  'mail_account',
 ] as const;
 export const auditTargetTypeSchema = z.enum(AUDIT_TARGET_TYPES, {
   error: 'Jenis target tidak dikenal.',
@@ -411,6 +550,10 @@ export const AUDIT_TARGET_TYPE_LABELS: Readonly<Record<AuditTargetType, string>>
   ticket_board: 'Board tiket',
   ticket: 'Tiket',
   department: 'Departemen',
+  conversation: 'Percakapan',
+  email_template: 'Template email',
+  email_sender: 'Pengirim email',
+  mail_account: 'Akun email',
 };
 
 // ── GET /audit-logs ─────────────────────────────────────────────────────────
@@ -590,6 +733,22 @@ export const SECURITY_EVENT_KINDS = [
    * (review merek B2). `info`; `warning` bila nama aplikasi/maskot baru memuat tautan/angka panjang.
    */
   'branding_changed',
+  /**
+   * Tahap 9.1: template email (langsung terkirim ke banyak pelanggan lewat API) diterbitkan dengan
+   * tautan/angka panjang baru.
+   */
+  'email_template_risky',
+  /** Tahap 9.1: pengirim email API terblokir (login SMTP ditolak / kredensial tidak terbuka). */
+  'email_sender_blocked',
+  /**
+   * Fase 9: akun email BERSAMA dibuat / server-kredensial diganti / diputus (`warning` bila oleh
+   * selain Owner, `info` oleh Owner).
+   */
+  'mail_account_changed',
+  /** Fase 9: akses akun email bersama diubah (`warning` bila diperluas oleh selain Owner). */
+  'mail_access_changed',
+  /** 9B: alias baru di akun email BERSAMA (`warning` bila oleh selain Owner). */
+  'mail_identity_added',
 ] as const;
 export const securityEventKindSchema = z.enum(SECURITY_EVENT_KINDS);
 export type SecurityEventKind = z.infer<typeof securityEventKindSchema>;
@@ -625,6 +784,11 @@ export const SECURITY_EVENT_SEVERITY: Readonly<Record<SecurityEventKind, 'warnin
   auto_message_risky: 'warning',
   owner_password_reset_server: 'warning',
   branding_changed: 'info',
+  email_template_risky: 'warning',
+  email_sender_blocked: 'warning',
+  mail_account_changed: 'info',
+  mail_access_changed: 'info',
+  mail_identity_added: 'info',
 };
 
 export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> = {
@@ -645,7 +809,7 @@ export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> 
   sending_limits_changed: 'Batas kirim diubah',
   inbox_bulk_action: 'Aksi massal di inbox',
   quick_reply_risky: 'Balasan cepat diberi tautan/angka baru',
-  api_key_changed: 'API key dibuat atau dicabut',
+  api_key_changed: 'API key dibuat, diubah, atau dicabut',
   webhook_changed: 'Webhook keluar / allowlist IP privat diubah',
   bot_enabled: 'Bot channel dinyalakan oleh selain Owner',
   bot_verified_sender_disabled: 'Bot Email kembali melayani pengirim yang tidak terverifikasi',
@@ -653,6 +817,11 @@ export const SECURITY_EVENT_LABELS: Readonly<Record<SecurityEventKind, string>> 
   auto_message_risky: 'Pesan otomatis diberi tautan/angka baru',
   owner_password_reset_server: 'Password Owner diatur ulang dari server',
   branding_changed: 'Merek aplikasi diubah',
+  email_template_risky: 'Template email diterbitkan dengan tautan/angka baru',
+  email_sender_blocked: 'Pengirim email API terblokir',
+  mail_account_changed: 'Akun email bersama dihubungkan, diubah, atau diputus',
+  mail_access_changed: 'Akses akun email bersama diubah',
+  mail_identity_added: 'Alamat pengirim baru di akun email bersama',
 };
 
 export const securityEventSchema = z.object({

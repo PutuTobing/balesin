@@ -1,5 +1,11 @@
 import { AppError } from '@balesin/core';
-import { departmentMembers, users } from '@balesin/db';
+import {
+  channelAccessSql,
+  departmentMembers,
+  userPrincipal,
+  users,
+  type ChannelAccessPrincipal,
+} from '@balesin/db';
 import {
   isDepartmentScopedPermission,
   isWithinScope,
@@ -37,8 +43,14 @@ import type { AuthContext } from './session.service';
 export interface PermissionGrant {
   permission: Permission;
   scope: PermissionScope;
+  /** ID pengguna (`principal: 'user'`) atau ID API key (`principal: 'apiKey'`). */
   userId: string;
   organizationId: string;
+  /**
+   * Siapa pemegang grant (review 9.0 R2). WAJIB dinyatakan: akses per channel hanya membatasi
+   * pengguna; API key/bot dilewati secara eksplisit, ID yang bukan pengguna tidak pernah ditebak.
+   */
+  principal: 'user' | 'apiKey';
 }
 
 /** Cakupan izin untuk sesi ini, atau `null`. Sesi terbatas 2FA tidak memegang izin apa pun. */
@@ -68,7 +80,13 @@ export async function permissionGrant(
     });
     throw new AppError('FORBIDDEN');
   }
-  return { permission, scope, userId: auth.user.id, organizationId: auth.organizationId };
+  return {
+    permission,
+    scope,
+    userId: auth.user.id,
+    organizationId: auth.organizationId,
+    principal: 'user',
+  };
 }
 
 /**
@@ -97,6 +115,13 @@ export interface ScopeColumns {
    * hanya melihat data yang ia pegang/terkait tiketnya.
    */
   department?: Column | SQL;
+  /**
+   * Channel data (percakapan: `conversations.channel_id`) — tahap 9.0 "Akses per channel". Bila
+   * diisi, hasil cakupan peran DIIRIS dengan "pengguna boleh melihat channel ini"
+   * (`channelAccessSql`): Owner/Admin dan API key selalu lolos; Supervisor/CS/Teknisi hanya channel
+   * yang tidak dibatasi atau yang mendaftarkan dirinya/departemennya.
+   */
+  channel?: Column | SQL;
 }
 
 /** Pengguna bertanda "akses hanya departemen sendiri" (dibaca segar; API key → tidak pernah). */
@@ -135,9 +160,24 @@ function departmentNarrowed(grant: PermissionGrant, columns: ScopeColumns, held:
  *
  * `switch` lengkap: nilai cakupan baru gagal saat kompilasi di sini. Izin di
  * `DEPARTMENT_SCOPED_PERMISSIONS` dengan cakupan `all` mendapat syarat tambahan "bukan pengguna
- * bertanda departemen, ATAU data departemennya/miliknya" (Fase 5).
+ * bertanda departemen, ATAU data departemennya/miliknya" (Fase 5). Dengan `columns.channel`, hasilnya
+ * diiris akses per channel (tahap 9.0) untuk SEMUA cakupan.
  */
 export function scopeCondition(grant: PermissionGrant, columns: ScopeColumns): SQL {
+  const byRole = roleScopeCondition(grant, columns);
+  if (columns.channel === undefined) return byRole;
+  return and(
+    byRole,
+    channelAccessSql(grant.organizationId, grantPrincipal(grant), columns.channel),
+  ) as SQL;
+}
+
+/** Principal akses per channel untuk grant ini. */
+export function grantPrincipal(grant: PermissionGrant): ChannelAccessPrincipal {
+  return grant.principal === 'apiKey' ? { kind: 'apiKey' } : userPrincipal(grant.userId);
+}
+
+function roleScopeCondition(grant: PermissionGrant, columns: ScopeColumns): SQL {
   const held = (userId: string): SQL =>
     typeof columns.holder === 'function' ? columns.holder(userId) : eq(columns.holder, userId);
   switch (grant.scope) {

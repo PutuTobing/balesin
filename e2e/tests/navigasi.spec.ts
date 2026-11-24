@@ -78,11 +78,16 @@ test.describe('navigasi utama', () => {
     expect(box?.width).toBe(64);
   });
 
-  test('HP: navigasi bawah berisi 4 item, menempel di dasar layar', async ({ page }) => {
+  test('HP: navigasi bawah berisi 5 item, menempel di dasar layar', async ({ page }) => {
     test.skip(!isHp(page), 'Khusus HP');
     await openApp(page, '/inbox');
     const links = mainNav(page).getByRole('link').filter({ visible: true });
-    await expect(links).toHaveCount(4);
+    // Fase 9: Owner selalu melihat menu Email (`mailMenuVisible`), jadi navigasi bawah =
+    // Inbox · Email · Kontak · Broadcast · Lainnya (DECISIONS 2026-11-22, PRD-EMAIL).
+    await expect(links).toHaveCount(5);
+    for (const name of ['Inbox', 'Email', 'Kontak', 'Broadcast', 'Lainnya']) {
+      await expect(links.filter({ hasText: name }), name).toHaveCount(1);
+    }
     const box = await mainNav(page).boundingBox();
     const viewport = page.viewportSize()!;
     expect(box!.y + box!.height).toBeCloseTo(viewport.height, 0);

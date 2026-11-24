@@ -103,6 +103,8 @@ Tugas BELUM selesai sampai semua ini benar:
 | File | Isi |
 |---|---|
 | `docs/PRD.md` | Daftar fitur lengkap & prioritas |
+| `docs/PRD-EMAIL.md` | Spesifikasi modul Email / kotak surat multi-akun (Fase 9) |
+| `docs/design/email/` | Mockup HTML + screenshot terang/gelap modul Email (acuan `frontend` & `kritikus-desain`) |
 | `docs/ARCHITECTURE.md` | Arsitektur, deploy, mode jaringan, struktur repo |
 | `docs/ROADMAP.md` | Fase & tugas berurutan + kriteria selesai |
 | `docs/SECURITY.md` | Standar keamanan wajib |
@@ -121,6 +123,9 @@ Tugas BELUM selesai sampai semua ini benar:
 | `docs/KONTRAK-API-CRM-TIKET.md` | Kontrak CRM (atribut, impor/ekspor, gabung kontak), tiket multi-board, departemen |
 | `docs/KONTRAK-API-LAPORAN.md` | Kontrak laporan kinerja, biaya pesan Meta, ekspor CSV, CSAT |
 | `docs/KONTRAK-API-CHANNEL-LAIN.md` | Kontrak channel Telegram, Email (IMAP/SMTP), Messenger & Instagram |
+| `docs/KONTRAK-API-EMAIL-KIRIM.md` | Kontrak API kirim email untuk n8n/billing (9.1): pengirim, template email + preset ISP, QRIS, lampiran, status, webhook `email.*`, batas per pengirim |
+| `docs/KONTRAK-API-EMAIL.md` | Kontrak modul Email fondasi (9A): skema `mail_*`, izin & hak per akun, akun/wizard/tes, folder, daftar, baca (HTML aman, proksi gambar), aksi dua arah, WS, worker sinkron |
+| `docs/KONTRAK-API-EMAIL-TULIS.md` | Kontrak modul Email 9B: identitas & verifikasi, tanda tangan, draf (+ salinan server), lampiran, kirim/batalkan kirim/outbox, salinan Terkirim, template di editor, presence & peringatan utas, batas |
 | `docs/SETUP-META.md` | Teks wizard koneksi WhatsApp (dipakai di UI) |
 | `docs/BRANDING-PROMPTS.md` | Prompt gambar Kak Sky & logo |
 | `docs/KONTEKS-SKYTECH.md` | Konteks operasional Sky Tech |

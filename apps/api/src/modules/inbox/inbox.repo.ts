@@ -1,4 +1,5 @@
 import {
+  channelAccessSql,
   channels,
   contactTags,
   contacts,
@@ -38,7 +39,7 @@ import {
   type SQL,
 } from 'drizzle-orm';
 
-import { scopeCondition, type PermissionGrant } from '../auth/permission-grant';
+import { grantPrincipal, scopeCondition, type PermissionGrant } from '../auth/permission-grant';
 
 /**
  * Query inbox (baca saja). SEMUA query memakai `grant` (organisasi + cakupan) — bukan
@@ -77,9 +78,12 @@ export function likePattern(text: string): string {
   return `%${text.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
 }
 
-/** Filter cakupan kontak: ada percakapan kontak ini yang dipegang pengguna. */
-function contactHeldBy(userId: string): SQL {
-  return sql`exists (select 1 from ${conversations} where ${conversations.organizationId} = ${contacts.organizationId} and ${conversations.contactId} = ${contacts.id} and ${conversations.assigneeUserId} = ${userId})`;
+/**
+ * Filter cakupan kontak: ada percakapan kontak ini yang dipegang pengguna — di channel yang boleh ia
+ * lihat (review 9.0 R4: Teknisi tanpa akses channel tidak membuka kontaknya lewat penugasan lama).
+ */
+function contactHeldBy(grant: PermissionGrant, userId: string): SQL {
+  return sql`exists (select 1 from ${conversations} where ${conversations.organizationId} = ${contacts.organizationId} and ${conversations.contactId} = ${contacts.id} and ${conversations.assigneeUserId} = ${userId} and ${channelAccessSql(grant.organizationId, grantPrincipal(grant), conversations.channelId)})`;
 }
 
 /**
@@ -104,12 +108,14 @@ export function conversationScope(grant: PermissionGrant): SQL {
     holder: conversations.assigneeUserId,
     linkedTicketHolder: conversationLinkedByTicket,
     department: conversations.departmentId,
+    // Tahap 9.0: percakapan channel terbatas hanya untuk pengguna yang berhak atas channel itu.
+    channel: conversations.channelId,
   });
 }
 
 export function contactScope(grant: PermissionGrant): SQL {
   return scopeCondition(grant, {
-    holder: contactHeldBy,
+    holder: (userId) => contactHeldBy(grant, userId),
     linkedTicketHolder: (userId) => openTicketLinksContact(userId, contacts.id),
   });
 }
@@ -324,6 +330,11 @@ export function conversationFilterCondition(
     filter.tagId === undefined
       ? undefined
       : sql`exists (select 1 from ${contactTags} where ${contactTags.organizationId} = ${conversations.organizationId} and ${contactTags.contactId} = ${conversations.contactId} and ${contactTags.tagId} = ${filter.tagId})`,
+    // Tahap 9.0 "Alamat tujuan": pernah menerima email masuk ke alamat/alias ini (indeks
+    // `messages_email_recipient_idx`).
+    filter.emailRecipient === undefined
+      ? undefined
+      : sql`exists (select 1 from ${messages} where ${messages.organizationId} = ${conversations.organizationId} and ${messages.emailRecipient} = ${filter.emailRecipient} and ${messages.conversationId} = ${conversations.id})`,
   ) as SQL;
 }
 

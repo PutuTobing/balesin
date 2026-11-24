@@ -1,0 +1,317 @@
+/*
+ * Daftar email (mockup docs/design/email, kolom 380px): baris ±82px = avatar 36 + tiga baris
+ * (pengirim · waktu / subjek / cuplikan · penanda). Tebal = belum dibaca.
+ */
+
+.scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.notice {
+  padding: var(--space-16);
+}
+
+/* `ul.` : mengalahkan reset `ul[class]` di styles/base.css. */
+ul.rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.group {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--space-12) var(--space-16) var(--space-4);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-title);
+}
+
+.rowWrap {
+  display: flex;
+}
+
+.row {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  gap: var(--space-12);
+  min-width: 0;
+  padding: var(--space-12) var(--space-16);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  text-align: left;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.row:hover {
+  background: var(--surface-2);
+}
+
+.row[aria-current='true'] {
+  background: var(--primary-soft);
+}
+
+/* Penanda terpilih di tepi kiri (mockup): selain warna latar, ada bentuk. */
+.row[aria-current='true']::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: var(--primary);
+  content: '';
+}
+
+.row:focus-visible {
+  outline-offset: -2px;
+}
+
+.avatar {
+  width: 2.25rem;
+  height: 2.25rem;
+  font-size: var(--text-13);
+}
+
+.lines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+  line-height: var(--leading-title);
+}
+
+.from {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-14);
+  font-weight: var(--weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subject {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-14);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row[data-unread] .from,
+.row[data-unread] .subject {
+  font-weight: var(--weight-bold);
+}
+
+/* Chip alamat tujuan (alias): "ke billing@". */
+.alias {
+  flex: none;
+  max-width: 8rem;
+  overflow: hidden;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-input);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row[aria-current='true'] .alias {
+  background: var(--surface);
+}
+
+.accountTip {
+  display: inline-flex;
+  flex: none;
+}
+
+/*
+ * Penanda akun di baris = kotak kecil (mockup `acc-tip`), beda bentuk dengan titik bulat "belum
+ * dibaca" yang juga biru (review 9A M13).
+ */
+.accountTip .accountSquare {
+  border-radius: calc(var(--radius-input) / 3);
+}
+
+.time {
+  flex: none;
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.row[data-unread] .time {
+  color: var(--primary);
+  font-weight: var(--weight-bold);
+}
+
+.snippet {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marker {
+  flex: none;
+  color: var(--ink-2);
+}
+
+/* Bintang = penanda grafis; `--warning-ink` lolos 3:1 di kedua tema (`--warning` tidak di terang). */
+.star {
+  color: var(--warning-ink);
+  fill: currentColor;
+}
+
+.unreadDot {
+  flex: none;
+  width: var(--space-8);
+  height: var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+}
+
+.sentinel {
+  height: 1px;
+}
+
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8) var(--space-12);
+  padding: var(--space-16);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+/* ---------- Sinkron awal ---------- */
+
+.sync {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin: var(--space-16);
+  padding: var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--bg);
+}
+
+.syncTitle {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.syncBody {
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  text-wrap: pretty;
+}
+
+.progress {
+  width: 100%;
+  height: var(--space-8);
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  appearance: none;
+}
+
+.progress::-webkit-progress-bar {
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+}
+
+.progress::-webkit-progress-value {
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+}
+
+.progress::-moz-progress-bar {
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+}
+
+/* ---------- Kerangka ---------- */
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--space-8);
+}
+
+.skeletonRow {
+  display: flex;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-16);
+  border-bottom: 1px solid var(--line);
+}
+
+.skeletonAvatar {
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-pill);
+}
+
+.skeletonLines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding-top: var(--space-4);
+}
+
+.skeletonShort {
+  width: 45%;
+  height: var(--space-12);
+}
+
+.skeletonMid {
+  width: 80%;
+  height: var(--space-12);
+}
+
+.skeletonLong {
+  width: 92%;
+  height: var(--space-12);
+}
+
+@media (max-width: 640px) {
+  .row {
+    min-height: var(--size-touch);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row {
+    transition: none;
+  }
+}

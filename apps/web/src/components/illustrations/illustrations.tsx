@@ -183,6 +183,44 @@ export function ChannelIllustration() {
   );
 }
 
+/** Template email: lembar email bermerek (kepala, isi, tombol bayar) dengan penanda variabel. */
+export function EmailTemplateIllustration() {
+  return (
+    <Frame>
+      <rect x={40} y={6} width={100} height={70} rx={10} className={styles.cardBack} />
+      <rect x={20} y={20} width={112} height={92} rx={10} className={styles.card} />
+      <rect x={20.75} y={20.75} width={110.5} height={20} rx={9.25} className={styles.tint} />
+      <circle cx={36} cy={30.75} r={5} className={styles.primary} />
+      <Bar x={48} y={28.25} w={30} className={styles.tintBar} />
+      <Bar x={32} y={52} w={58} />
+      <rect x={94} y={49.5} width={26} height={10} rx={5} className={styles.dashed} />
+      <Bar x={32} y={64} w={80} className={styles.soft} />
+      <Bar x={32} y={74} w={64} className={styles.soft} />
+      <rect x={32} y={88} width={40} height={12} rx={6} className={styles.primary} />
+      <circle cx={140} cy={14} r={4} className={styles.accent} />
+    </Frame>
+  );
+}
+
+/** Riwayat email: amplop keluar dengan daftar status di belakangnya. */
+export function EmailSentIllustration() {
+  return (
+    <Frame>
+      <rect x={70} y={12} width={78} height={96} rx={10} className={styles.card} />
+      {[30, 54, 78].map((y) => (
+        <g key={y}>
+          <circle cx={84} cy={y} r={4} className={y === 54 ? styles.accent : styles.primary} />
+          <Bar x={94} y={y - 2.5} w={40} className={styles.soft} />
+        </g>
+      ))}
+      <rect x={10} y={40} width={74} height={50} rx={8} className={styles.card} />
+      <path d="M14 46l33 22 33-22" className={styles.stroke} />
+      <path d="M88 65h-4" className={styles.link} />
+      <circle cx={18} cy={34} r={4} className={styles.accent} />
+    </Frame>
+  );
+}
+
 /** Tidak ditemukan: bingkai kosong dan kaca pembesar. */
 export function NotFoundIllustration() {
   return (
@@ -209,6 +247,25 @@ export function LoadFailedIllustration() {
       <circle cx={128} cy={92} r={17} className={styles.badge} />
       <path d="M128 83.5v10" className={styles.badgeMark} />
       <circle cx={128} cy={100.5} r={2} className={styles.badgeDot} />
+    </Frame>
+  );
+}
+
+/** Email: amplop terbuka berisi surat, dengan lencana centang (akun email terhubung). */
+export function MailboxIllustration() {
+  return (
+    <Frame>
+      <rect x={20} y={50} width={104} height={62} rx={10} className={styles.card} />
+      <rect x={42} y={16} width={82} height={66} rx={8} className={styles.card} />
+      <Bar x={54} y={30} w={44} />
+      <Bar x={54} y={42} w={58} className={styles.tintBar} />
+      <Bar x={54} y={54} w={36} className={styles.soft} />
+      <path
+        d="M20.75 64L72 94l51.25-30v38a9.25 9.25 0 0 1-9.25 9.25H30a9.25 9.25 0 0 1-9.25-9.25z"
+        className={styles.pocket}
+      />
+      <circle cx={126} cy={18} r={11} className={styles.accent} />
+      <path d="M121 18.5l3.5 3.5 6.5-7" className={styles.check} />
     </Frame>
   );
 }

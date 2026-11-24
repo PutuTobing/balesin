@@ -183,3 +183,6 @@
 .item:has(.itemText) > svg {
   margin-top: 1px;
 }
+.assignError {
+  margin-top: var(--space-12);
+}

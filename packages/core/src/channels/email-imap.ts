@@ -5,7 +5,7 @@ import {
 } from '@balesin/shared';
 import { ImapFlow } from 'imapflow';
 
-import { resolveMailHost, type HostLookup } from '../mail/host-guard';
+import { resolveMailHost, type HostLookup, type StrictMailHostRule } from '../mail/host-guard';
 import type { Secret } from '../secret';
 import { TimeoutError, withTimeout } from '../timeout';
 
@@ -39,6 +39,8 @@ export interface ImapPolicy {
   timeouts?: Partial<ImapTimeouts>;
   /** HANYA tes: CA tambahan untuk server IMAP tiruan bersertifikat buatan sendiri. */
   testCa?: string;
+  /** Fase 9 (akun Email): aturan host ketat — privat hanya lewat allowlist organisasi. */
+  strict?: StrictMailHostRule;
 }
 
 export interface ImapTimeouts {
@@ -72,15 +74,42 @@ export type ImapFailureCode = Extract<
   | 'unknown'
 >;
 
+/**
+ * Fase 9: sebab khusus yang DIKENALI dari teks balasan server (teksnya sendiri tidak disimpan):
+ * sandi aplikasi diminta, akses IMAP belum diaktifkan, terlalu banyak sambungan.
+ */
+export type ImapFailureHint = 'app_password_required' | 'not_enabled' | 'too_many_connections';
+
 export class ImapFailure extends Error {
   override readonly name = 'ImapFailure';
   constructor(
     readonly code: ImapFailureCode,
     /** Kode/nama aman untuk log (tanpa teks balasan server). */
     readonly diagnostic: string | null = null,
+    readonly hint: ImapFailureHint | null = null,
   ) {
     super(`IMAP gagal (${code})`);
   }
+}
+
+function imapHintOf(text: string, responseCode: string): ImapFailureHint | null {
+  if (/application-specific password|app(lication)? password|\b5\.7\.9\b/i.test(text)) {
+    return 'app_password_required';
+  }
+  if (
+    /not enabled for imap|imap (access )?(is )?disabled|enable imap|web login required/i.test(text)
+  ) {
+    return 'not_enabled';
+  }
+  if (
+    responseCode === 'LIMIT' ||
+    /too many (simultaneous )?connections|maximum number of connections|connection limit/i.test(
+      text,
+    )
+  ) {
+    return 'too_many_connections';
+  }
+  return null;
 }
 
 const CERT_CODES = new Set([
@@ -108,13 +137,23 @@ export function classifyImapError(error: unknown): ImapFailure {
     mailboxMissing?: unknown;
     serverResponseCode?: unknown;
     message?: unknown;
+    responseText?: unknown;
+    response?: unknown;
     _err?: { code?: unknown };
   };
   const code = typeof record.code === 'string' ? record.code : '';
   const inner = typeof record._err?.code === 'string' ? record._err.code : '';
   const message = typeof record.message === 'string' ? record.message.slice(0, 2_000) : '';
   const diagnostic = (code || inner || 'Error').replace(/[^A-Za-z0-9_]/g, '').slice(0, 64) || null;
-  const done = (value: ImapFailureCode) => new ImapFailure(value, diagnostic);
+  const scanned = [record.message, record.responseText, record.response]
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ')
+    .slice(0, 2_000);
+  const hint = imapHintOf(
+    scanned,
+    typeof record.serverResponseCode === 'string' ? record.serverResponseCode : '',
+  );
+  const done = (value: ImapFailureCode) => new ImapFailure(value, diagnostic, hint);
 
   if (
     CERT_CODES.has(code) ||
@@ -171,12 +210,39 @@ export function classifyImapError(error: unknown): ImapFailure {
   return done('unknown');
 }
 
-async function openClient(config: ImapConnectionConfig, policy: ImapPolicy): Promise<ImapFlow> {
+/**
+ * Membuka sambungan IMAP terperiksa (port, penjaga host, TLS wajib, batas waktu & ukuran). Fase 9
+ * memakainya untuk akun Email (`mail-client`).
+ */
+export interface ImapClientLimits {
+  maxLiteralBytes?: number;
+  signal?: AbortSignal;
+  /**
+   * Dipanggil untuk SETIAP potongan byte masuk sejak soket pertama dibuat (termasuk sapaan, login,
+   * dan perintah awal imapflow) — dasar anggaran byte akun Email (review 9A-1 S2).
+   */
+  onBytes?: (bytes: number) => void;
+}
+
+export async function openImapClient(
+  config: Omit<ImapConnectionConfig, 'folder'>,
+  policy: ImapPolicy,
+  limits: ImapClientLimits = {},
+): Promise<ImapFlow> {
+  return openClient({ ...config, folder: 'INBOX' }, policy, limits);
+}
+
+async function openClient(
+  config: ImapConnectionConfig,
+  policy: ImapPolicy,
+  limits: ImapClientLimits = {},
+): Promise<ImapFlow> {
   const timeouts = { ...DEFAULT_IMAP_TIMEOUTS, ...policy.timeouts };
   if (!policy.allowedPorts.includes(config.port)) throw new ImapFailure('imap_port_not_allowed');
   const resolved = await resolveMailHost(config.host, {
     lookup: policy.lookup,
     timeoutMs: timeouts.dnsMs,
+    ...(policy.strict ? { strict: policy.strict } : {}),
   });
   if (!resolved.ok) {
     throw new ImapFailure(
@@ -208,19 +274,47 @@ async function openClient(config: ImapConnectionConfig, policy: ImapPolicy): Pro
     greetingTimeout: timeouts.greetingMs,
     socketTimeout: timeouts.socketMs,
     maxLineLength: 1024 * 1024,
-    maxLiteralSize: EMAIL_MAX_MESSAGE_BYTES + 1024 * 1024,
-    maxResponseSize: EMAIL_MAX_MESSAGE_BYTES + 2 * 1024 * 1024,
+    maxLiteralSize: (limits.maxLiteralBytes ?? EMAIL_MAX_MESSAGE_BYTES) + 1024 * 1024,
+    maxResponseSize: (limits.maxLiteralBytes ?? EMAIL_MAX_MESSAGE_BYTES) + 2 * 1024 * 1024,
     clientInfo: { name: 'Balesin' },
   });
   // Galat setelah tersambung (soket putus) tidak boleh menjatuhkan proses.
   client.on('error', () => undefined);
+  if (limits.onBytes) {
+    // imapflow menyalurkan setiap soket (TCP, lalu TLS setelah STARTTLS) ke `streamer` lewat `pipe`.
+    const onBytes = limits.onBytes;
+    (client as unknown as { streamer: NodeJS.EventEmitter }).streamer.on(
+      'pipe',
+      (source: NodeJS.EventEmitter) => {
+        source.on('data', (chunk: Buffer) => onBytes(chunk.length));
+      },
+    );
+  }
+  // Review 9A-1 S2: tenggat pemanggil bisa memutus sambungan bahkan selama fase connect (server jahat
+  // bisa membanjiri perintah awal seperti `LIST "" ""`).
+  const kill = () => {
+    try {
+      client.close();
+    } catch {
+      // sudah tertutup
+    }
+    (client as unknown as { socket?: { destroy(): void } }).socket?.destroy();
+  };
+  if (limits.signal?.aborted) throw new ImapFailure('imap_connection_timeout', 'ABORTED');
+  limits.signal?.addEventListener('abort', kill, { once: true });
   try {
     await client.connect();
   } catch (error) {
-    client.close();
+    kill();
+    if (limits.signal?.aborted) throw new ImapFailure('imap_connection_timeout', 'ABORTED');
     throw classifyImapError(error);
   }
   return client;
+}
+
+/** Logout rapi (≤ 5 dtk), selain itu tutup paksa. */
+export async function closeImapClient(client: ImapFlow): Promise<void> {
+  return closeClient(client);
 }
 
 async function closeClient(client: ImapFlow): Promise<void> {

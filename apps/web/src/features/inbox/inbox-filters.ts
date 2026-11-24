@@ -19,6 +19,8 @@ export interface InboxFilters {
   unread?: boolean;
   /** UUID departemen, atau `none` (tanpa departemen). */
   departmentId?: string;
+  /** Tahap 9.0: alamat/alias channel Email yang menerima email masuk (huruf kecil). */
+  emailRecipient?: string;
 }
 
 /** Parameter yang dikirim ke `GET /conversations` dan `/conversations/counts`. */
@@ -72,6 +74,7 @@ export function activeFilterCount(filters: InboxFilters): number {
     filters.window,
     filters.unread || undefined,
     filters.departmentId,
+    filters.emailRecipient,
   ].filter((value) => value !== undefined).length;
 }
 
@@ -91,6 +94,7 @@ export function conversationQueryString(
     ['departmentId', params.departmentId],
     ['assignee', params.assignee],
     ['window', params.window],
+    ['emailRecipient', params.emailRecipient],
     ['unread', params.unread ? 'true' : undefined],
     ['q', params.q],
     ['cursor', params.cursor],
@@ -112,9 +116,46 @@ export function compactParams(params: ConversationParams): ConversationParams {
   if (params.departmentId) result.departmentId = params.departmentId;
   if (params.assignee) result.assignee = params.assignee;
   if (params.window) result.window = params.window;
+  if (params.emailRecipient) result.emailRecipient = params.emailRecipient;
   if (params.unread) result.unread = true;
   if (params.q) result.q = params.q;
   return result;
+}
+
+/**
+ * Pilihan saringan "Alamat tujuan": alamat + alias channel Email yang punya > 1 alamat (channel
+ * yang sedang disaring saja, bila ada). Kosong = bagian saringan tidak tampil.
+ */
+export function emailRecipientOptions(
+  channels: readonly ChannelSummary[],
+  channelId: string | undefined,
+): string[] {
+  const options: string[] = [];
+  for (const channel of channels) {
+    if (channel.type !== 'email' || (channelId && channel.id !== channelId)) continue;
+    const addresses = channel.emailAddresses ?? [];
+    if (addresses.length > 1) options.push(...addresses);
+  }
+  return [...new Set(options)];
+}
+
+/**
+ * Ganti saringan channel: alamat tujuan yang bukan milik channel baru dibuang (kalau tidak, daftar
+ * kosong tanpa sebab yang terlihat).
+ */
+export function withChannel(
+  filters: InboxFilters,
+  channelId: string | undefined,
+  channels: readonly ChannelSummary[],
+): InboxFilters {
+  const next = { ...filters, channelId };
+  if (
+    next.emailRecipient &&
+    !emailRecipientOptions(channels, channelId).includes(next.emailRecipient)
+  ) {
+    next.emailRecipient = undefined;
+  }
+  return next;
 }
 
 export interface AgentOption {
@@ -182,6 +223,9 @@ export function filterChips(filters: InboxFilters, options: FilterOptions, selfI
               f.unknownDepartment),
       ),
     });
+  }
+  if (filters.emailRecipient) {
+    chips.push({ key: 'emailRecipient', label: f.chipEmailRecipient(filters.emailRecipient) });
   }
   if (filters.unread) chips.push({ key: 'unread', label: f.chipUnread });
   return chips;

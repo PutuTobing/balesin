@@ -49,6 +49,26 @@ export const QUEUE_NAMES = {
    * dan `email-poll` per channel (payload hanya ID; ambil email baru lewat IMAP).
    */
   channels: 'channels',
+  /**
+   * Tahap 9.1 — email lewat API: job berkala `tick` (tiap 5 dtk) mengklaim baris `email_outbound`
+   * jatuh tempo (pola outbox, tanpa produsen di api), mengirim lewat SMTP pengirim, dan retensi.
+   */
+  emailOutbound: 'email-outbound',
+  /**
+   * Fase 9 tahap 9A — modul Email (kotak surat multi-akun): tick, sinkron folder/akun, putuskan akun,
+   * retensi cache (`MAIL_JOBS`). IDLE TIDAK lewat antrian (pengawas di proses worker).
+   */
+  mail: 'mail',
+  /**
+   * Review 9A-1 S2: jadwal modul Email (`mail-tick`, retensi cache) di antrian SENDIRI supaya tidak
+   * berebut slot konkurensi dengan job sinkron yang bisa lama (server lambat/jahat).
+   */
+  mailSchedule: 'mail-schedule',
+  /**
+   * Tahap 9B — kirim email menu Email: job `mail-send` per baris `mail_outbox` (payload hanya ID),
+   * diantre tick `mail-send-tick` setelah masa batal. Konkurensi 4, satu SMTP per akun (sewa Redis).
+   */
+  mailSend: 'mail-send',
 } as const;
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
@@ -188,6 +208,15 @@ export const WEBHOOKS_OUT_JOBS = {
 export const WEBHOOKS_OUT_TICK_INTERVAL_MS = 5_000;
 export const webhooksOutJobPayloadSchema = z.strictObject({});
 
+// ── Antrian `email-outbound` (email lewat API, tahap 9.1) ───────────────────
+
+export const EMAIL_OUTBOUND_JOBS = {
+  /** Satu putaran: klaim email jatuh tempo → kirim → retensi. Payload kosong. */
+  tick: 'tick',
+} as const;
+export const EMAIL_OUTBOUND_TICK_INTERVAL_MS = 5_000;
+export const emailOutboundJobPayloadSchema = z.strictObject({});
+
 // ── Antrian `broadcast` ─────────────────────────────────────────────────────
 
 export const BROADCAST_JOBS = {
@@ -326,6 +355,12 @@ export const EMAIL_JOBS = {
    * IP/perangkat) dibaca worker dari baris audit `auditLogId` — payload hanya ID.
    */
   channelChanged: 'channel-changed',
+  /**
+   * 9B: email verifikasi alamat pengirim menu Email — lewat SMTP SISTEM (rute MX asli), bukan SMTP
+   * akun. Kode + `Message-ID` dari salinan terenkripsi `mail_identities.verification_secret_encrypted`
+   * (dihapus setelah terkirim).
+   */
+  mailIdentityVerification: 'mail-identity-verification',
 } as const;
 export type EmailJobName = (typeof EMAIL_JOBS)[keyof typeof EMAIL_JOBS];
 
@@ -424,6 +459,28 @@ export const SECURITY_NOTICE_ADMIN_EVENTS = [
   // Webhook keluar dinonaktifkan otomatis setelah gagal beruntun (Fase 3): ke semua Owner aktif;
   // subjek = pembuat endpoint, rincian (host, jumlah gagal) dari baris audit.
   'webhook_disabled',
+  // Tahap 9.1 — email lewat API: template email diterbitkan dengan tautan/angka baru (subjek =
+  // penerbit), pengirim terblokir otomatis (subjek = penerima sendiri, tanpa pelaku), batas per jam
+  // pengirim dinaikkan oleh Admin (subjek = pelaku). Rincian dari baris audit.
+  'email_template_risky',
+  'email_sender_blocked',
+  'email_sender_limit_raised',
+  // Fase 9 (modul Email): akun email bersama dibuat/server-kredensial diubah/diputus oleh Admin, dan
+  // akses akun bersama diperluas oleh Admin (ke semua Owner; subjek = pelaku). Password akun email
+  // ditolak server (ke pemilik akun pribadi / pemegang Kelola + Owner/Admin; subjek = penerima).
+  // Alamat akun dari baris audit (`address`).
+  'mail_account_changed',
+  'mail_access_changed',
+  'mail_account_auth_failed',
+  // 9B: alias (alamat pengirim) baru di akun email BERSAMA oleh Admin (ke semua Owner; subjek =
+  // pelaku). Alamat alias & akun dari baris audit.
+  'mail_identity_added',
+  // Review 9B S3: alamat pengirim akun PRIBADI berdomain organisasi menunggu persetujuan (ke semua
+  // Owner/Admin = `team.manage`; subjek = pemilik akun pribadi). Alamat dari baris audit.
+  'mail_identity_approval_requested',
+  // Review 9B S3/S4: alamat pengirim akun pribadi disetujui / ditolak / klaimnya dicabut (ke PEMILIK
+  // akun pribadi; subjek = penerima; pelaku = Owner/Admin). Alamat & keputusan (`reason`) dari audit.
+  'mail_identity_decided',
 ] as const;
 export type SecurityNoticeAdminEvent = (typeof SECURITY_NOTICE_ADMIN_EVENTS)[number];
 
@@ -476,6 +533,21 @@ export const accountTokenEmailPayloadSchema = z.strictObject({
   organizationId: z.uuid(),
   tokenId: z.uuid(),
 });
+
+export const mailIdentityVerificationPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  identityId: z.uuid(),
+});
+export type MailIdentityVerificationPayload = z.infer<typeof mailIdentityVerificationPayloadSchema>;
+
+/** Konteks `SecretBox` salinan `{ code, messageId }` verifikasi identitas (api ↔ worker). */
+export function mailIdentityVerificationContext(organizationId: string, identityId: string) {
+  return {
+    organizationId,
+    purpose: 'mail_identities.verification_secret',
+    subjectId: identityId,
+  };
+}
 export type AccountTokenEmailPayload = z.infer<typeof accountTokenEmailPayloadSchema>;
 
 /**
@@ -552,4 +624,190 @@ export const EMAIL_POLL_JOB_OPTIONS = {
   attempts: 1,
   removeOnComplete: true,
   removeOnFail: true,
+};
+
+// ── Antrian `mail` (Fase 9 tahap 9A — modul Email, KONTRAK-API-EMAIL §11) ────
+//
+// Payload HANYA ID. Kredensial/alamat/subjek tidak pernah masuk Redis. Satu job menunggu per sasaran
+// (ID job), selesai/gagal langsung dihapus supaya ID bebas lagi; kegagalan dicatat di
+// `mail_accounts` (backoff) — bukan ulangan BullMQ.
+
+export const MAIL_JOBS = {
+  /** Berkala (30 dtk): pilih akun yang jatuh tempo → `mail-sync-folders`. Payload kosong. */
+  tick: 'mail-tick',
+  /** Satu akun: LIST folder (bila basi/dipaksa) + sinkron semua folder yang jatuh tempo. */
+  syncFolders: 'mail-sync-folders',
+  /** Satu folder (IDLE Kotak masuk / polling 2 menit). */
+  syncFolder: 'mail-sync-folder',
+  /** Putuskan akun: hapus baris `mail_*` + berkas cache bertahap. */
+  purgeAccount: 'mail-purge-account',
+  /** Harian: pangkas isi/lampiran yang tidak dibuka > `cache_retention_days`. */
+  cacheRetention: 'mail-cache-retention',
+  /** Bagian 2: ambil isi satu email dari IMAP (saat dibuka; prioritas tinggi). */
+  fetchBody: 'mail-fetch-body',
+  /** Bagian 2: ambil satu lampiran dari IMAP (saat diunduh). */
+  fetchAttachment: 'mail-fetch-attachment',
+  /** Bagian 2: terapkan aksi dua arah yang tertunda satu akun ke server (berurutan per akun). */
+  action: 'mail-action',
+  // ── 9B (KONTRAK-API-EMAIL-TULIS §13) ──
+  /** Berkala (2 dtk, `mail-schedule`): klaim outbox jatuh tempo → `mail-send`. */
+  sendTick: 'mail-send-tick',
+  /** Salinan email terkirim ke folder Terkirim (`auto`/`append`). */
+  appendSent: 'mail-append-sent',
+  /** Salinan draf ke folder Draf server (APPEND + hapus UID lama). */
+  draftSync: 'mail-draft-sync',
+  /** Hapus salinan draf terakhir di server (draf dibuang/terkirim). */
+  draftRemoteDelete: 'mail-draft-remote-delete',
+  /** Cadangan verifikasi: `UID SEARCH HEADER Message-ID` di Kotak masuk & Spam. */
+  verifyCheck: 'mail-identity-verify-check',
+  /** Berkala (15 dtk): presence "sedang membalas" kedaluwarsa → event. */
+  presenceTick: 'mail-presence-tick',
+  /** Harian: pangkas isi outbox/.eml/baris lama, korespondensi > 20.000, isi `thread_root` lama. */
+  composeMaintenance: 'mail-compose-maintenance',
+} as const;
+export type MailJobName = (typeof MAIL_JOBS)[keyof typeof MAIL_JOBS];
+
+export const MAIL_TICK_INTERVAL_MS = 30_000;
+export const MAIL_SEND_TICK_INTERVAL_MS = 2_000;
+export const MAIL_PRESENCE_TICK_INTERVAL_MS = 15_000;
+export const MAIL_COMPOSE_MAINTENANCE_INTERVAL_MS = 60 * 60 * 1000;
+
+export const MAIL_SEND_JOBS = { send: 'mail-send' } as const;
+
+export const mailOutboxJobPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  outboxId: z.uuid(),
+});
+export type MailOutboxJobPayload = z.infer<typeof mailOutboxJobPayloadSchema>;
+export function mailSendJobId(outboxId: string): string {
+  return `mail-send-${outboxId}`;
+}
+export function mailAppendSentJobId(outboxId: string): string {
+  return `mail-sent-copy-${outboxId}`;
+}
+
+export const mailDraftJobPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  accountId: z.uuid(),
+  draftId: z.uuid(),
+});
+export type MailDraftJobPayload = z.infer<typeof mailDraftJobPayloadSchema>;
+export function mailDraftSyncJobId(draftId: string): string {
+  return `mail-draft-${draftId}`;
+}
+
+/** Hapus satu salinan draf di server: ID folder + UID saja (bukan isi/alamat). */
+export const mailDraftRemoteDeletePayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  accountId: z.uuid(),
+  folderId: z.uuid(),
+  uid: z.number().int().positive(),
+  uidValidity: z.number().int().nonnegative(),
+});
+export type MailDraftRemoteDeletePayload = z.infer<typeof mailDraftRemoteDeletePayloadSchema>;
+export function mailDraftRemoteDeleteJobId(folderId: string, uid: number): string {
+  return `mail-draft-del-${folderId}-${String(uid)}`;
+}
+
+export const mailIdentityJobPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  accountId: z.uuid(),
+  identityId: z.uuid(),
+});
+export type MailIdentityJobPayload = z.infer<typeof mailIdentityJobPayloadSchema>;
+export function mailVerifyCheckJobId(identityId: string): string {
+  return `mail-verify-${identityId}`;
+}
+
+/** Kirim: 1 percobaan BullMQ — coba ulang dijadwalkan lewat `mail_outbox.next_attempt_at`. */
+export const MAIL_SEND_JOB_OPTIONS = { attempts: 1, removeOnComplete: true, removeOnFail: true };
+/** Salinan Terkirim / draf server: coba ulang lewat kolom database (bukan BullMQ). */
+export const MAIL_COPY_JOB_OPTIONS = { attempts: 1, removeOnComplete: true, removeOnFail: true };
+export const MAIL_DRAFT_REMOTE_DELETE_JOB_OPTIONS = {
+  attempts: 3,
+  backoff: { type: 'exponential', delay: 30_000 },
+  removeOnComplete: true,
+  removeOnFail: true,
+};
+export const MAIL_TICK_BATCH = 50;
+/** Review 9A-2 P2-S8: tiap jam (cache gambar luar 24 jam tidak boleh menumpuk lebih lama). */
+export const MAIL_CACHE_RETENTION_INTERVAL_MS = 60 * 60 * 1000;
+
+export const mailAccountJobPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  accountId: z.uuid(),
+  /** `true` = "Sinkron sekarang": LIST ulang + semua folder, tanpa menunggu jadwal. */
+  force: z.boolean().optional(),
+});
+export type MailAccountJobPayload = z.infer<typeof mailAccountJobPayloadSchema>;
+
+export const mailFolderJobPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  accountId: z.uuid(),
+  folderId: z.uuid(),
+});
+export type MailFolderJobPayload = z.infer<typeof mailFolderJobPayloadSchema>;
+
+export const mailMessageJobPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  accountId: z.uuid(),
+  messageId: z.uuid(),
+});
+export type MailMessageJobPayload = z.infer<typeof mailMessageJobPayloadSchema>;
+
+export const mailAttachmentJobPayloadSchema = z.strictObject({
+  organizationId: z.uuid(),
+  accountId: z.uuid(),
+  attachmentId: z.uuid(),
+});
+export type MailAttachmentJobPayload = z.infer<typeof mailAttachmentJobPayloadSchema>;
+
+export function mailFetchBodyJobId(messageId: string): string {
+  return `mail-body-${messageId}`;
+}
+export function mailFetchAttachmentJobId(attachmentId: string): string {
+  return `mail-att-${attachmentId}`;
+}
+export function mailActionJobId(accountId: string): string {
+  return `mail-action-${accountId}`;
+}
+
+/** Ambil isi/lampiran: 2 percobaan (sambungan sesaat putus), gagal → `body_state = error`. */
+export const MAIL_FETCH_JOB_OPTIONS = {
+  attempts: 2,
+  backoff: { type: 'fixed', delay: 3_000 },
+  removeOnComplete: true,
+  removeOnFail: true,
+};
+
+/** Aksi dua arah: 3 percobaan (kontrak §9), lalu dikembalikan + `mail.action.failed`. */
+export const MAIL_ACTION_JOB_OPTIONS = {
+  attempts: 3,
+  backoff: { type: 'exponential', delay: 5_000 },
+  removeOnComplete: true,
+  removeOnFail: true,
+};
+
+export function mailSyncFoldersJobId(accountId: string): string {
+  return `mail-sync-${accountId}`;
+}
+export function mailSyncFolderJobId(folderId: string): string {
+  return `mail-folder-${folderId}`;
+}
+export function mailPurgeJobId(accountId: string): string {
+  return `mail-purge-${accountId}`;
+}
+
+export const MAIL_JOB_OPTIONS = {
+  attempts: 1,
+  removeOnComplete: true,
+  removeOnFail: true,
+};
+
+/** Putuskan akun: dicoba ulang (database sesaat bermasalah tidak meninggalkan data). */
+export const MAIL_PURGE_JOB_OPTIONS = {
+  attempts: 10,
+  backoff: { type: 'exponential', delay: 10_000 },
+  removeOnComplete: true,
+  removeOnFail: { age: 7 * 24 * 60 * 60, count: 1_000 },
 };

@@ -32,6 +32,8 @@ import {
   conversations,
   loadBroadcastSettings,
   messageTemplates,
+  emailOutbound,
+  mailOutbox,
   messages,
   organizations,
   recordAlarm,
@@ -906,7 +908,11 @@ export async function broadcastGuard(deps: BroadcastJobDeps): Promise<Record<str
   const { db, logger } = deps;
   const now = (deps.now ?? (() => new Date()))();
   let braked = 0;
-  const bursts = await db
+  const minuteAgo = new Date(now.getTime() - 60_000);
+  // Tahap 9.1 (review S2): email lewat API ikut dihitung PER PENERIMA; pesan Inbox yang hanya catatan
+  // email API tidak dihitung dua kali.
+  const notEmailRecord = sql`not exists (select 1 from ${emailOutbound} where ${emailOutbound.messageId} = ${messages.id})`;
+  const messageBursts = await db
     .select({
       organizationId: messages.organizationId,
       total: sql<number>`count(*)::int`,
@@ -916,10 +922,39 @@ export async function broadcastGuard(deps: BroadcastJobDeps): Promise<Record<str
       and(
         eq(messages.direction, 'outbound'),
         isNull(messages.broadcastId),
-        sql`${messages.createdAt} > ${new Date(now.getTime() - 60_000)}`,
+        sql`${messages.createdAt} > ${minuteAgo}`,
+        notEmailRecord,
       ),
     )
     .groupBy(messages.organizationId);
+  const emailBursts = await db
+    .select({
+      organizationId: emailOutbound.organizationId,
+      total: sql<number>`coalesce(sum(${emailOutbound.recipientCount}), 0)::int`,
+    })
+    .from(emailOutbound)
+    .where(and(eq(emailOutbound.source, 'api'), sql`${emailOutbound.createdAt} > ${minuteAgo}`))
+    .groupBy(emailOutbound.organizationId);
+  // Review 9B R1 (KONTRAK-API-EMAIL-TULIS §12.2): email menu Email ikut dihitung PER PENERIMA, saat
+  // SMTP dimulai/selesai (`delivery_unknown` = mungkin terkirim).
+  const mailBursts = await db
+    .select({
+      organizationId: mailOutbox.organizationId,
+      total: sql<number>`coalesce(sum(${mailOutbox.recipientCount}), 0)::int`,
+    })
+    .from(mailOutbox)
+    .where(
+      and(
+        inArray(mailOutbox.status, ['sending', 'sent', 'delivery_unknown']),
+        sql`coalesce(${mailOutbox.sentAt}, ${mailOutbox.sendingStartedAt}) > ${minuteAgo}`,
+      ),
+    )
+    .groupBy(mailOutbox.organizationId);
+  const totals = new Map<string, number>();
+  for (const row of [...messageBursts, ...emailBursts, ...mailBursts]) {
+    totals.set(row.organizationId, (totals.get(row.organizationId) ?? 0) + Number(row.total));
+  }
+  const bursts = [...totals].map(([organizationId, total]) => ({ organizationId, total }));
   for (const burst of bursts) {
     const perMinute = Number(burst.total);
     const settings = await loadBroadcastSettings(db, burst.organizationId);
@@ -936,13 +971,24 @@ export async function broadcastGuard(deps: BroadcastJobDeps): Promise<Record<str
             eq(messages.direction, 'outbound'),
             isNull(messages.broadcastId),
             sql`${messages.createdAt} > ${new Date(now.getTime() - 7 * DAY_MS)}`,
+            notEmailRecord,
           ),
         );
-      const average = Number(week?.total ?? 0) / (7 * 24 * 60);
+      const [weekEmails] = await db
+        .select({ total: sql<number>`coalesce(sum(${emailOutbound.recipientCount}), 0)::int` })
+        .from(emailOutbound)
+        .where(
+          and(
+            eq(emailOutbound.organizationId, burst.organizationId),
+            eq(emailOutbound.source, 'api'),
+            sql`${emailOutbound.createdAt} > ${new Date(now.getTime() - 7 * DAY_MS)}`,
+          ),
+        );
+      const average = (Number(week?.total ?? 0) + Number(weekEmails?.total ?? 0)) / (7 * 24 * 60);
       trigger = perMinute > brake.spikeMultiplier * average;
     }
     if (!trigger) continue;
-    const reason = `Rem otomatis: ${String(perMinute)} pesan keluar dalam 1 menit (di luar broadcast).`;
+    const reason = `Rem otomatis: ${String(perMinute)} pesan keluar (termasuk penerima email API) dalam 1 menit, di luar broadcast.`;
     const updated = await db
       .update(organizations)
       .set({ sendingPausedAt: now, sendingPausedByUserId: null, sendingPauseReason: reason })
@@ -970,11 +1016,36 @@ export async function broadcastGuard(deps: BroadcastJobDeps): Promise<Record<str
       .groupBy(messages.senderUserId, messages.apiKeyId)
       .orderBy(sql`count(*) desc`)
       .limit(5);
-    const topSources = sources.map((source) => ({
-      ...(source.userId ? { userId: source.userId } : {}),
-      ...(source.apiKeyId ? { apiKeyId: source.apiKeyId } : {}),
-      count: Number(source.total),
-    }));
+    const emailSources = await db
+      .select({
+        apiKeyId: emailOutbound.apiKeyId,
+        total: sql<number>`coalesce(sum(${emailOutbound.recipientCount}), 0)::int`,
+      })
+      .from(emailOutbound)
+      .where(
+        and(
+          eq(emailOutbound.organizationId, burst.organizationId),
+          eq(emailOutbound.source, 'api'),
+          sql`${emailOutbound.createdAt} > ${minuteAgo}`,
+        ),
+      )
+      .groupBy(emailOutbound.apiKeyId)
+      .orderBy(sql`sum(${emailOutbound.recipientCount}) desc`)
+      .limit(5);
+    const topSources = [
+      ...sources.map((source) => ({
+        ...(source.userId ? { userId: source.userId } : {}),
+        ...(source.apiKeyId ? { apiKeyId: source.apiKeyId } : {}),
+        count: Number(source.total),
+      })),
+      ...emailSources.map((source) => ({
+        ...(source.apiKeyId ? { apiKeyId: source.apiKeyId } : {}),
+        email: true,
+        count: Number(source.total),
+      })),
+    ]
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
     const [audit] = await db
       .insert(auditLogs)
       .values({

@@ -3,7 +3,7 @@ import { createTransport } from 'nodemailer';
 
 import type { Secret } from '../secret';
 import { TimeoutError, withTimeout } from '../timeout';
-import { resolveMailHost, type HostLookup } from './host-guard';
+import { resolveMailHost, type HostLookup, type StrictMailHostRule } from './host-guard';
 
 /**
  * Klien SMTP terpusat (nodemailer) untuk api (tes koneksi, email tes) dan worker (notifikasi).
@@ -41,6 +41,17 @@ export interface MailInlineImage {
 
 export interface MailContent {
   to: string;
+  /**
+   * Tahap 9.0 (channel Email) — tembusan. `bcc` HANYA masuk amplop SMTP (`RCPT TO`), tidak pernah
+   * jadi header (perilaku bawaan nodemailer tanpa `keepBcc`). Alamat SUDAH divalidasi pemanggil.
+   */
+  cc?: readonly string[];
+  bcc?: readonly string[];
+  /**
+   * Review 9.0 R8: tembusan yang SUDAH menerima email ini di percobaan sebelumnya — tetap tertulis di
+   * header Cc, tetapi tidak dikirimi lagi (amplop `RCPT TO` tanpa mereka).
+   */
+  skipCopies?: readonly string[];
   subject: string;
   text: string;
   html?: string;
@@ -110,6 +121,10 @@ export interface SmtpPolicy {
   plaintextLogin?: PlaintextLoginPolicy;
   lookup?: HostLookup;
   timeouts?: Partial<SmtpTimeouts>;
+  /** Fase 9 (akun Email): aturan host ketat — privat hanya lewat allowlist organisasi. */
+  strict?: StrictMailHostRule;
+  /** HANYA tes: CA tambahan untuk server SMTP tiruan bersertifikat buatan sendiri. */
+  testCa?: string;
 }
 
 export type SmtpFailureCode = Exclude<
@@ -123,10 +138,32 @@ export interface SmtpDiagnostic {
   errorCode?: string;
   responseCode?: number;
   command?: string;
+  /**
+   * Fase 9: sebab khusus yang DIKENALI dari teks balasan (teksnya sendiri tidak disimpan):
+   * `m365_auth_disabled` (5.7.139), `app_password_required` (534-5.7.9 / "application-specific").
+   */
+  hint?: 'm365_auth_disabled' | 'app_password_required';
 }
 
 export type SmtpResult =
-  { ok: true } | { ok: false; code: SmtpFailureCode; diagnostic: SmtpDiagnostic };
+  | {
+      ok: true;
+      /**
+       * Tahap 9.0: alamat Cc/Bcc yang DITOLAK server (email tetap diterima untuk penerima utama &
+       * lainnya). Hanya diisi bila ada.
+       */
+      rejectedCopies?: string[];
+    }
+  | {
+      ok: false;
+      code: SmtpFailureCode;
+      diagnostic: SmtpDiagnostic;
+      /**
+       * Review 9.0 R8: penerima utama ditolak, tetapi tembusan ini SUDAH diterima server (jangan
+       * dikirimi lagi saat kirim ulang).
+       */
+      deliveredCopies?: string[];
+    };
 
 const CERTIFICATE_ERROR_CODES = new Set([
   'CERT_HAS_EXPIRED',
@@ -161,6 +198,7 @@ interface SmtpErrorLike {
   message?: unknown;
   cause?: unknown;
   rejected?: unknown;
+  accepted?: unknown;
 }
 
 function asRecord(value: unknown): SmtpErrorLike {
@@ -189,7 +227,20 @@ export function classifySmtpError(error: unknown): {
   const responseCode = typeof record.responseCode === 'number' ? record.responseCode : undefined;
   const command = typeof record.command === 'string' ? record.command.slice(0, 32) : undefined;
   const message = typeof record.message === 'string' ? record.message.slice(0, 2_000) : '';
-  const diagnostic: SmtpDiagnostic = { stage: 'smtp', errorCode, responseCode, command };
+  const hint: SmtpDiagnostic['hint'] = /5\.7\.139|smtp ?auth(entication)? is disabled/i.test(
+    message,
+  )
+    ? 'm365_auth_disabled'
+    : /5\.7\.9\b|application-specific password|app password/i.test(message)
+      ? 'app_password_required'
+      : undefined;
+  const diagnostic: SmtpDiagnostic = {
+    stage: 'smtp',
+    errorCode,
+    responseCode,
+    command,
+    ...(hint ? { hint } : {}),
+  };
   const done = (code: SmtpFailureCode) => ({ code, diagnostic });
   const hasCode = (codes: ReadonlySet<string>) =>
     (errorCode !== undefined && codes.has(errorCode)) ||
@@ -286,6 +337,7 @@ async function withTransport(
   const resolved = await resolveMailHost(config.host, {
     lookup: policy.lookup,
     timeoutMs: timeouts.dnsMs,
+    ...(policy.strict ? { strict: policy.strict } : {}),
   });
   if (!resolved.ok) return { ok: false, code: resolved.code, diagnostic: { stage: 'dns' } };
   if (
@@ -311,6 +363,7 @@ async function withTransport(
       servername: resolved.servername,
       minVersion: 'TLSv1.2',
       rejectUnauthorized: true,
+      ...(policy.testCa ? { ca: policy.testCa } : {}),
     },
     connectionTimeout: timeouts.connectionMs,
     greetingTimeout: timeouts.greetingMs,
@@ -331,6 +384,17 @@ async function withTransport(
   }
 }
 
+/** Alamat dari isi `info.rejected`/`info.accepted` nodemailer (string atau `{ address }`), huruf kecil. */
+function rejectedAddress(item: unknown): string {
+  const value =
+    typeof item === 'string'
+      ? item
+      : typeof item === 'object' && item !== null
+        ? (item as { address?: unknown }).address
+        : null;
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
 /** "Tes koneksi": sambung, (STARTTLS), dan login — tanpa mengirim email. */
 export function verifySmtpConnection(
   config: SmtpConnectionConfig,
@@ -349,10 +413,22 @@ export function sendSmtpMail(
   mail: MailContent,
   policy: SmtpPolicy,
 ): Promise<SmtpResult> {
+  const skip = new Set((mail.skipCopies ?? []).map((address) => address.toLowerCase()));
+  const copies = [...(mail.cc ?? []), ...(mail.bcc ?? [])].map((a) => a.toLowerCase());
   return withTransport(config, policy, async (transport) => {
     const info: unknown = await transport.sendMail({
       from: { name: sender.fromName, address: sender.fromAddress },
+      ...(skip.size > 0
+        ? {
+            envelope: {
+              from: sender.fromAddress,
+              to: [mail.to, ...copies.filter((address) => !skip.has(address))],
+            },
+          }
+        : {}),
       to: mail.to,
+      ...(mail.cc && mail.cc.length > 0 ? { cc: [...mail.cc] } : {}),
+      ...(mail.bcc && mail.bcc.length > 0 ? { bcc: [...mail.bcc] } : {}),
       replyTo: sender.replyTo ?? undefined,
       subject: mail.subject,
       text: mail.text,
@@ -385,11 +461,23 @@ export function sendSmtpMail(
     });
     const rejected = asRecord(info).rejected;
     if (Array.isArray(rejected) && rejected.length > 0) {
-      return {
-        ok: false,
-        code: 'recipient_rejected',
-        diagnostic: { stage: 'smtp', command: 'RCPT TO' },
-      };
+      const addresses = rejected.map((item) => rejectedAddress(item));
+      // Penerima utama ditolak = gagal. Hanya tembusan yang ditolak = terkirim ke yang lain (mengulang
+      // akan menggandakan email ke penerima yang sudah menerimanya).
+      const copySet = new Set(copies);
+      if (copySet.size === 0 || addresses.some((address) => !copySet.has(address))) {
+        const accepted = asRecord(info).accepted;
+        const delivered = Array.isArray(accepted)
+          ? accepted.map((item) => rejectedAddress(item)).filter((address) => copySet.has(address))
+          : [];
+        return {
+          ok: false,
+          code: 'recipient_rejected',
+          diagnostic: { stage: 'smtp', command: 'RCPT TO' },
+          ...(delivered.length > 0 ? { deliveredCopies: delivered } : {}),
+        };
+      }
+      return { ok: true, rejectedCopies: addresses };
     }
     return { ok: true };
   });

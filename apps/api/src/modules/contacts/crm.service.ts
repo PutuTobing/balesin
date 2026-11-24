@@ -193,6 +193,7 @@ export function createCrmService(deps: {
           scope,
           userId: auth.user.id,
           organizationId: auth.organizationId,
+          principal: 'user',
         };
         const where = contactFilterCondition(grant, filter);
         const [count] = await tx

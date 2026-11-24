@@ -64,13 +64,21 @@ Folder instalasi `/opt/balesin`:
 ## 3. Instalasi
 
 ```bash
-curl -fsSL <URL-rilis>/install.sh | sudo bash
+# Versi terbaru
+curl -fsSL https://github.com/PutuTobing/balesin/releases/latest/download/install.sh | sudo bash
+# Versi tertentu (install.sh rilis membawa nomor versinya sendiri)
+curl -fsSL https://github.com/PutuTobing/balesin/releases/download/v1.0.0/install.sh | sudo bash
 ```
+
+Kanal distribusi (BUTUH-TOBING #18): repo GitHub publik, berkas pemasangan di **GitHub Release**,
+image di **GHCR publik** (`ghcr.io/pututobing/balesin-{api,worker,web}`), tanda tangan **cosign
+keyless**. `balesin update` tanpa argumen membaca `BALESIN_RELEASE_LATEST`
+(`…/releases/latest/download/VERSION`).
 
 Installer (bahasa Indonesia, 8 langkah) akan: memeriksa prasyarat → menyiapkan `/opt/balesin` →
 menanyakan **mode jaringan** → membuat **rahasia acak** (`BALESIN_MASTER_KEY`, `SESSION_SECRET`,
 `SETUP_TOKEN`, password Postgres pemilik + peran runtime, password Redis, `BACKUP_PASSPHRASE`) →
-mengunduh berkas rilis (checksum diperiksa) → menarik image → menyalakan layanan (migrasi otomatis)
+mengunduh berkas rilis (checksum + tanda tangan cosign **wajib** valid) → menarik image → menyalakan layanan (migrasi otomatis)
 → memasang backup harian 02:30 (`/etc/cron.d/balesin`) → menampilkan **URL wizard + token setup**.
 
 Pertanyaan per mode:
@@ -252,10 +260,12 @@ mengirim ulang bila perlu. Selama api lama/baru tidak berjalan, gateway menjawab
 mencoba ulang webhook itu sendiri (tidak hilang).
 
 Rilis resmi ditandatangani (cosign keyless dari workflow `rilis.yml`) dan `docker-compose.yml` rilis
-merujuk image dengan **digest**. Installer memasang cosign (versi dipin + checksum, ke
-`/usr/local/bin/cosign`) saat mengunduh rilis; installer dan `balesin update` memverifikasi tanda
-tangan `SHA256SUMS` bila `cosign` terpasang di server; isi `BALESIN_REQUIRE_SIGNATURE=1` di `.env` untuk
-mewajibkannya (disarankan setelah kanal rilis dibuka, lihat BUTUH-TOBING #18).
+merujuk image dengan **digest**. Sejak v1.0.0 tanda tangan **wajib** (`BALESIN_REQUIRE_SIGNATURE=1`,
+bawaan installer; `balesin update` menambahkannya ke `.env` lama yang belum punya baris itu).
+Installer dan `balesin update` memasang cosign bila belum ada (versi dipin + checksum, ke
+`/usr/local/bin/cosign`), lalu menolak rilis tanpa tanda tangan, dengan tanda tangan tidak valid,
+atau yang berkasnya tidak bisa diunduh (update tidak lagi jatuh ke compose lama). `BALESIN_REQUIRE_SIGNATURE=0`
+di `.env` hanya untuk uji/rilis lokal.
 
 Diuji (Fase 7): update berhasil, layanan baru tidak sehat setelah migrasi baru (rollback memulihkan
 skema & data), dan migrasi gagal (dibatalkan tanpa restart).
@@ -357,12 +367,18 @@ Dijalankan Tobing (atau di-approve) setiap membuat tag `vX.Y.Z`:
    (PR Dependabot `docker`/`docker-compose` sudah digabung). Image alat di workflow (Trivy,
    shellcheck) tidak dipantau Dependabot: cek versi baru tiap rilis, pin `tag@sha256` yang berumur
    ≥ 2 minggu.
-4. **Rilis bertanda tangan pertama** (audit akhir A4, BUTUH-TOBING #18): bersamaan dengan tag itu,
-   ubah bawaan `BALESIN_REQUIRE_SIGNATURE` dari `0` menjadi `1` di `deploy/install.sh` dan buat
-   `balesin update` menyetel `BALESIN_REQUIRE_SIGNATURE=1` di `.env` bila belum ada. Sesudah itu
-   update tanpa tanda tangan cosign yang valid ditolak, bukan hanya diberi peringatan.
-5. Setelah workflow selesai: GitHub Release memuat `THIRD-PARTY-NOTICES.txt` dan `SHA256SUMS`
-   mencantumkannya; `cosign verify-blob` atas `SHA256SUMS` berhasil.
+4. **Rilis bertanda tangan pertama** (audit akhir A4, BUTUH-TOBING #18) — **sudah diterapkan untuk
+   v1.0.0**: bawaan `BALESIN_REQUIRE_SIGNATURE` = `1` di `deploy/install.sh`, dan
+   `balesin update` menyetel `BALESIN_REQUIRE_SIGNATURE=1` di `.env` bila belum ada. Update tanpa
+   tanda tangan cosign yang valid ditolak, bukan hanya diberi peringatan.
+5. Versi tidak dinaikkan manual: `rilis.yml` mengambil versi dari tag (`v1.0.0` → `1.0.0`) untuk
+   tag image, `VERSION`, bawaan `install.sh`, label image, dan versi yang tampil di aplikasi (build
+   arg `BALESIN_VERSION` di Dockerfile).
+6. Setelah workflow selesai: GitHub Release (ditandai **Latest**) memuat `THIRD-PARTY-NOTICES.txt` dan
+   `SHA256SUMS` mencantumkannya; `cosign verify-blob` atas `SHA256SUMS` berhasil.
+7. **Rilis pertama saja**: ubah visibilitas paket GHCR `balesin-api`, `balesin-worker`,
+   `balesin-web` ke **Public** (paket baru selalu privat). Sebelum itu instalasi/update di server
+   gagal menarik image. Uji: `docker logout ghcr.io; docker pull ghcr.io/pututobing/balesin-api:1.0.0`.
 
 ## 11. Catatan rilis
 

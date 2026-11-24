@@ -34,6 +34,7 @@ import {
 import { formatDate, formatDateTime, formatDateTimeInline, formatTime } from '../../lib/format';
 import { useCan, useSession } from '../auth/session';
 import { DepartmentAccessCard } from '../departments/DepartmentAccessCard';
+import { TeamMailAccessCard } from '../mail/TeamMailAccessCard';
 import { IdentityDialog } from '../identity/IdentityDialog';
 import { SessionList, SessionListSkeleton } from '../sessions/SessionList';
 import { memberBadges, viewOnlyReason } from '../team/member-status';
@@ -104,6 +105,7 @@ function TeamUserScreen({ user }: { user: TeamUser }) {
   const session = useSession();
   const canAudit = useCan('audit.view');
   const canDepartments = useCan('settings.workspace.manage');
+  const canMailAccess = useCan('mail.accounts.manage');
   const [action, setAction] = useState<PendingAction | null>(null);
   const [result, setResult] = useState<{ lines: string[]; warning: boolean } | null>(null);
   const resultRef = useRef<HTMLDivElement>(null);
@@ -269,6 +271,14 @@ function TeamUserScreen({ user }: { user: TeamUser }) {
       {canDepartments && user.status !== 'disabled' ? (
         <DepartmentAccessCard
           user={user}
+          cardClassName={styles.card ?? ''}
+          headClassName={styles.cardHead ?? ''}
+          titleClassName={styles.cardTitle ?? ''}
+        />
+      ) : null}
+      {canMailAccess && user.status !== 'disabled' ? (
+        <TeamMailAccessCard
+          userId={user.id}
           cardClassName={styles.card ?? ''}
           headClassName={styles.cardHead ?? ''}
           titleClassName={styles.cardTitle ?? ''}

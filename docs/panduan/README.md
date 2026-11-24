@@ -25,16 +25,17 @@ email juga bisa masuk ke inbox yang sama.
 | 7 | [Bot, API, dan n8n](07-bot-api-n8n.md) | API key, webhook keluar, bot eksternal, mode kompatibel MobiChat |
 | 8 | [Pemeliharaan server](08-pemeliharaan.md) | Perintah `balesin`: update, backup, restore, status, log, pemulihan password Owner |
 | 9 | [Tanya jawab](09-tanya-jawab.md) | Masalah yang sering terjadi dan cara mengatasinya |
+| 10 | [Modul Email](10-modul-email.md) | Menu Email: menghubungkan akun, akses per anggota, verifikasi alamat pengirim, membaca, menulis, membalas, batalkan kirim |
 
 ## Siapa membaca apa
 
 | Peran | Bacaan wajib | Bacaan tambahan |
 |---|---|---|
 | **Admin server / tim TI** | 1, 8, 9 | 3 (bagian webhook) |
-| **Owner** | 1 (bagian wizard), 2, 3, 8 (bagian keamanan) | Semua |
-| **Admin** | 2, 3, 5, 7 | 6, 9 |
-| **Supervisor** | 4, 5, 6 | 9 |
-| **CS** | 4 | 6 (kontak dan tiket) |
+| **Owner** | 1 (bagian wizard), 2, 3, 8 (bagian keamanan), 10 (10.2–10.5) | Semua |
+| **Admin** | 2, 3, 5, 7, 10 (10.2–10.5) | 6, 9 |
+| **Supervisor** | 4, 5, 6 | 9, 10 |
+| **CS** | 4 | 6 (kontak dan tiket), 10 (bila memakai menu Email) |
 | **Teknisi** | 4 (bagian "Untuk Teknisi") | 6 (tiket) |
 
 ## Peran dan hak akses singkat
@@ -45,6 +46,8 @@ email juga bisa masuk ke inbox yang sama.
 | Undang dan nonaktifkan anggota | Ya | Ya | – | – | – |
 | API key dan webhook | Ya | Ya | – | – | – |
 | Email pengirim | Ya | Ya | – | – | – |
+| Hubungkan akun email bersama dan atur aksesnya | Ya | Ya | – | – | – |
+| Hubungkan akun email pribadi | Ya | Ya | Ya | Ya | – |
 | Batas kirim, rem darurat, pengaturan broadcast | Ya | Ya | – | – | – |
 | Buat broadcast | Ya | Ya | Ya | – | – |
 | Setujui broadcast besar | Ya | Ya | – | – | – |

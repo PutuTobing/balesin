@@ -71,6 +71,9 @@ test.describe('keyboard dan aksesibilitas dasar', () => {
   });
 
   test('tiap halaman: satu h1, satu main, satu nav utama, lang=id', async ({ page }) => {
+    // 7 halaman dimuat penuh dari Vite dev (±350 modul per muat, 3–5 dtk di mesin sibuk): batas
+    // bawaan 30 dtk tidak menyisakan ruang. Batas waktu bukan asersi.
+    test.slow();
     for (const path of ROUTES) {
       await openApp(page, path);
       await expect(page.getByRole('heading', { level: 1 }), path).toHaveCount(1);
@@ -81,6 +84,9 @@ test.describe('keyboard dan aksesibilitas dasar', () => {
   });
 
   test('tidak ada gambar tanpa alt dan tombol/link tanpa nama', async ({ page }) => {
+    // 7 halaman dimuat penuh dari Vite dev (±350 modul per muat, 3–5 dtk di mesin sibuk): batas
+    // bawaan 30 dtk tidak menyisakan ruang. Batas waktu bukan asersi.
+    test.slow();
     for (const path of ROUTES) {
       await openApp(page, path);
       const bad = await page.evaluate(() => {
@@ -201,6 +207,9 @@ test.describe('ukuran antara dan tata letak', () => {
   });
 
   test('teks tidak terpotong di wadahnya', async ({ page }) => {
+    // 7 halaman dimuat penuh dari Vite dev (±350 modul per muat, 3–5 dtk di mesin sibuk): batas
+    // bawaan 30 dtk tidak menyisakan ruang. Batas waktu bukan asersi.
+    test.slow();
     for (const path of ROUTES) {
       await openApp(page, path);
       const clipped = await page.evaluate(() => {

@@ -13,6 +13,7 @@ import {
   type SecretBox,
 } from '@balesin/core';
 import {
+  channelAccessOf,
   contacts,
   conversations,
   messages,
@@ -91,6 +92,8 @@ interface Audience {
   holderUserId: string | null;
   /** Fase 5: departemen percakapan (penerima bertanda departemen hanya departemennya). */
   departmentId: string | null;
+  /** Tahap 9.0: channel percakapan (penerima harus berhak atas channel itu). */
+  channelId: string | null;
   candidates: string[];
   preference: PreferenceKey | null;
   title: string;
@@ -211,6 +214,12 @@ export async function processNotificationJob(
     payload.organizationId,
     people.map((person) => person.id),
   );
+  // Tahap 9.0: akses per channel (dibaca segar; Owner/Admin selalu lolos).
+  const channelAccess = await channelAccessOf(
+    db,
+    payload.organizationId,
+    people.map((person) => person.id),
+  );
   const allowed = people.filter((person) => {
     const role = person.role;
     const personAccess = access.get(person.id);
@@ -220,6 +229,9 @@ export async function processNotificationJob(
     if (scope === null) return false;
     if (audience.needsAssign && !hasPermission(role, 'inbox.assign')) return false;
     if (audience.conversationId === null) return true;
+    if (audience.channelId !== null && !channelAccess.allows(person.id, audience.channelId)) {
+      return false;
+    }
     return isWithinScope(
       scope,
       person.id,
@@ -398,6 +410,7 @@ async function audienceOf(
       conversationId: null,
       holderUserId: null,
       departmentId: null,
+      channelId: null,
       candidates: [payload.userId],
       preference: null,
       title: 'Notifikasi aktif',
@@ -412,6 +425,7 @@ async function audienceOf(
       status: conversations.status,
       assigneeUserId: conversations.assigneeUserId,
       departmentId: conversations.departmentId,
+      channelId: conversations.channelId,
       contactName: contacts.name,
       contactProfileName: contacts.profileName,
     })
@@ -442,6 +456,7 @@ async function audienceOf(
     conversationId: conversation.id,
     holderUserId: conversation.assigneeUserId,
     departmentId: conversation.departmentId,
+    channelId: conversation.channelId,
   };
 
   if (payload.kind === 'message') {

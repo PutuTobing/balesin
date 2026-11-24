@@ -15,6 +15,7 @@ const SECTIONS = [
   { id: 'profil-bisnis', label: t.channels.profile.title },
   { id: 'nama', label: t.channels.rename.title },
   { id: 'kredensial', label: t.channels.credentials.title },
+  { id: 'akses-tim', label: copy.teamAccess },
   { id: 'akses', label: t.channels.access.title },
 ] as const;
 

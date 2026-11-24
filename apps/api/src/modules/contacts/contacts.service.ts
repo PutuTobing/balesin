@@ -6,6 +6,8 @@ import {
   type Logger,
 } from '@balesin/core';
 import {
+  channelAccessSql,
+  userPrincipal,
   channels,
   contactEvents,
   contactTags,
@@ -20,6 +22,7 @@ import {
 } from '@balesin/db';
 import {
   CONTACT_EXPORT_MESSAGES_MAX,
+  CONTACT_EXPORT_PARTIAL_REASON,
   TAGS_PER_CONTACT_MAX,
   TAGS_PER_ORGANIZATION_MAX,
   type ContactEditableField,
@@ -41,6 +44,7 @@ import type { AuthContext } from '../auth/session.service';
 import { requireIdentityConfirmation } from '../two-factor/require-confirmation';
 import type { TwoFactorContext, TwoFactorService } from '../two-factor/two-factor.service';
 import { attributeRules, attributeValidationError } from '../attributes/attributes.service';
+import { eraseContactEmails } from '../email-send/contact-erasure';
 import { deleteContactData } from './contacts.repo';
 
 /**
@@ -152,6 +156,11 @@ export function createContactsService(deps: {
    * SETELAH commit (R4; review hapus Info: bukan pembersih global di dalam permintaan).
    */
   purgeMedia?: (mediaFileIds: readonly string[]) => Promise<number>;
+  /**
+   * Tahap 9.1: hapus berkas lampiran email lewat API (`email-out/…`) milik kontak yang dihapus —
+   * dipanggil SETELAH commit.
+   */
+  removeEmailFile?: (storageKey: string) => Promise<void>;
   logger?: Pick<Logger, 'warn' | 'info'>;
   now?: () => Date;
 }): ContactsService {
@@ -414,6 +423,7 @@ export function createContactsService(deps: {
             id: conversations.id,
             status: conversations.status,
             assigneeUserId: conversations.assigneeUserId,
+            channelId: conversations.channelId,
           })
           .from(conversations)
           .where(
@@ -422,6 +432,8 @@ export function createContactsService(deps: {
               eq(conversations.contactId, contactId),
             ),
           );
+        // Tahap 9.1: email lewat API ke kontak ini → isi dipangkas, penerima disamarkan (UU PDP).
+        const emails = await eraseContactEmails(tx, auth.organizationId, contactId, now());
         const result = await deleteContactData(tx, auth.organizationId, contactId);
         if (!result) throw new AppError('NOT_FOUND', { message: CONTACT_NOT_FOUND });
         const hadOpenConversation = affected.some((row) => row.status !== 'resolved');
@@ -436,6 +448,7 @@ export function createContactsService(deps: {
             messages: result.messages,
             conversations: result.conversations,
             webhookEvents: result.webhookEvents,
+            emailOutbound: emails.emails,
             hadOpenConversation,
             actorRole: role,
           },
@@ -444,6 +457,7 @@ export function createContactsService(deps: {
         return {
           result,
           affected,
+          emailStorageKeys: emails.storageKeys,
           mediaFileIds: [
             ...new Set(media.map((row) => row.id).filter((id): id is string => id !== null)),
           ],
@@ -460,12 +474,18 @@ export function createContactsService(deps: {
           'Pembersihan media setelah hapus kontak gagal (dicoba lagi berkala)',
         );
       }
+      for (const storageKey of outcome.emailStorageKeys) {
+        await deps.removeEmailFile?.(storageKey).catch((err: unknown) => {
+          deps.logger?.warn({ err }, 'Berkas lampiran email API kontak yang dihapus gagal dibuang');
+        });
+      }
       // Agen pemegang ikut dikirim supaya hub menyaring per cakapan (review hapus Info).
       await publisher.publish(
         outcome.affected.map((row) => ({
           type: 'conversation.deleted' as const,
           organizationId: auth.organizationId,
           conversationId: row.id,
+          channelId: row.channelId,
           ...(row.assigneeUserId ? { previousAssigneeUserId: row.assigneeUserId } : {}),
         })),
       );
@@ -523,6 +543,12 @@ export function createContactsService(deps: {
             and(
               eq(conversations.organizationId, auth.organizationId),
               eq(conversations.contactId, contactId),
+              // Tahap 9.0: percakapan channel yang tidak boleh dilihat pengekspor tidak ikut.
+              channelAccessSql(
+                auth.organizationId,
+                userPrincipal(auth.user.id),
+                conversations.channelId,
+              ),
             ),
           )
           .orderBy(asc(conversations.createdAt));
@@ -544,6 +570,11 @@ export function createContactsService(deps: {
               eq(messages.organizationId, auth.organizationId),
               eq(messages.contactId, contactId),
               ne(messages.type, 'system'),
+              channelAccessSql(
+                auth.organizationId,
+                userPrincipal(auth.user.id),
+                messages.channelId,
+              ),
             ),
           )
           .orderBy(asc(messages.occurredAt), asc(messages.id))
@@ -581,13 +612,34 @@ export function createContactsService(deps: {
             .safeParse(value);
           return parsed.success ? parsed.data : null;
         };
+        // Review 9.0 R6: ekspor parsial (akses per channel) ditandai di respons & audit.
+        const [all] = await tx
+          .select({ total: sql<number>`count(*)::int` })
+          .from(conversations)
+          .where(
+            and(
+              eq(conversations.organizationId, auth.organizationId),
+              eq(conversations.contactId, contactId),
+            ),
+          );
+        const excludedConversations = Math.max(
+          0,
+          Number(all?.total ?? 0) - conversationRows.length,
+        );
+        const partial = excludedConversations > 0;
         await recordAudit(tx, {
           organizationId: auth.organizationId,
           actorUserId: auth.user.id,
           action: AUDIT_ACTIONS.contactExported,
           targetType: 'contact',
           targetId: contactId,
-          metadata: { messages: kept.length, conversations: conversationRows.length, truncated },
+          metadata: {
+            messages: kept.length,
+            conversations: conversationRows.length,
+            truncated,
+            partial,
+            excludedConversations,
+          },
           client,
         });
         return {
@@ -626,6 +678,9 @@ export function createContactsService(deps: {
             createdAt: row.occurredAt.toISOString(),
           })),
           truncated,
+          partial,
+          partialReason: partial ? CONTACT_EXPORT_PARTIAL_REASON : null,
+          excludedConversations,
         };
       });
     },

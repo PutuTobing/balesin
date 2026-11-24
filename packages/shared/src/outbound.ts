@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { emailAddressSchema } from './fields';
 import { MESSAGE_MEDIA_KINDS, type MessageMediaKind } from './inbox';
 import { interactiveMessageSchema } from './interactive';
 import { templateSendParametersSchema } from './templates';
@@ -65,6 +66,28 @@ const messageText = z
   .refine((value) => !value.includes('\u0000'), 'Pesan memuat karakter yang tidak didukung.');
 
 /**
+ * Tahap 9.0 — alamat tambahan (Cc + Bcc) per balasan channel Email. Alamat yang SUDAH ada di utas
+ * cukup `inbox.reply`; alamat BARU = memulai percakapan (`inbox.initiate` + jatah harian, API key
+ * `messages:initiate`). Lebih dari batas ini → 400 (diperiksa server dari gabungan Cc + Bcc).
+ */
+export const EMAIL_MAX_EXTRA_RECIPIENTS = 10;
+
+const emailCopyList = (label: 'Cc' | 'Bcc') =>
+  z
+    .array(emailAddressSchema, { error: `Daftar ${label} tidak valid.` })
+    .max(
+      EMAIL_MAX_EXTRA_RECIPIENTS,
+      `Paling banyak ${String(EMAIL_MAX_EXTRA_RECIPIENTS)} alamat tambahan (Cc + Bcc) per balasan.`,
+    )
+    .optional();
+
+/**
+ * Cc/Bcc — HANYA channel Email (channel lain → 400). Bcc tidak pernah masuk header email yang
+ * diterima siapa pun; hanya tersimpan di catatan pesan keluar.
+ */
+const emailCopies = { cc: emailCopyList('Cc'), bcc: emailCopyList('Bcc') };
+
+/**
  * `POST /conversations/:id/messages`. `clientMessageId` = kunci idempotensi buatan klien (UUID per
  * pesan): mengirim ulang permintaan yang sama tidak menggandakan pesan.
  */
@@ -74,6 +97,7 @@ export const sendMessageRequestSchema = z.discriminatedUnion('type', [
     clientMessageId,
     text: messageText,
     replyToMessageId: replyTo,
+    ...emailCopies,
   }),
   z.object({
     type: z.literal('media'),
@@ -89,6 +113,7 @@ export const sendMessageRequestSchema = z.discriminatedUnion('type', [
       )
       .optional(),
     replyToMessageId: replyTo,
+    ...emailCopies,
   }),
   z.object({
     type: z.literal('location'),
@@ -186,6 +211,13 @@ export const OUTBOUND_FAILURE_REASONS = [
   'channel_rejected',
   /** Fase 6: pelanggan memblokir bot Telegram (atau akunnya dihapus). */
   'recipient_blocked',
+  /**
+   * Tahap 9.1: email lewat API (pesan Inbox catatan `conversation: "create"`/balasan API) gagal
+   * final — status lengkapnya di riwayat email API. TIDAK bisa dikirim ulang dari Inbox.
+   */
+  'email_api_failed',
+  /** Tahap 9.1: email lewat API dibatalkan sebelum dikirim (bukan gagal kirim). */
+  'canceled',
 ] as const;
 export const outboundFailureReasonSchema = z.enum(OUTBOUND_FAILURE_REASONS);
 export type OutboundFailureReason = z.infer<typeof outboundFailureReasonSchema>;
@@ -215,6 +247,10 @@ const REASON_MESSAGES: Readonly<Record<OutboundFailureReason, string>> = {
     'Layanan channel (Telegram atau server email) menolak pesan ini. Periksa isinya dan pengaturan channel, lalu kirim ulang.',
   recipient_blocked:
     'Pelanggan memblokir bot Telegram ini atau akunnya sudah tidak ada, jadi pesan tidak bisa diantar.',
+  email_api_failed:
+    'Email yang dikirim lewat API ini gagal. Rinciannya ada di Pengaturan → API key → Email terkirim; kirim ulang dari aplikasi pengirimnya.',
+  canceled:
+    'Email lewat API ini dibatalkan sebelum dikirim, jadi tidak ada yang terkirim. Kirim lagi dari aplikasi pengirimnya bila masih perlu.',
 };
 
 /**

@@ -130,6 +130,7 @@ export function createPanelService(deps: {
       scope,
       userId: auth.user.id,
       organizationId: auth.organizationId,
+      principal: 'user',
     };
     const [row] = await tx
       .select({ id: conversations.id })

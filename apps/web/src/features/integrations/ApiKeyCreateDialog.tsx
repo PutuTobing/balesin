@@ -1,7 +1,9 @@
 import {
   API_KEY_DAILY_SEND_DEFAULT,
   API_KEY_SCOPES,
+  API_KEY_SCOPE_IMPLIES,
   API_KEY_SCOPE_LABELS,
+  apiKeyHasEmailScope,
   createApiKeyRequestSchema,
   type ApiKeyScope,
   type CreateApiKeyRequest,
@@ -21,9 +23,13 @@ import { apiFieldErrors, zodFieldErrors, type FieldErrors } from '../../lib/form
 import { isConfirmationError } from '../identity/confirmation-error';
 import { IdentityDialog } from '../identity/IdentityDialog';
 import { expiryFrom, impliedScopes, type Expiry } from './api-key-form';
+import { emailErrors, parseAttachmentHosts, scopeGroups } from './api-key-email';
+import { ApiKeyEmailFields } from './ApiKeyEmailFields';
 import styles from './Integrations.module.css';
 
 const copy = t.apiKeys;
+const SCOPE_GROUPS = scopeGroups();
+
 /** Buat API key: isian → konfirmasi identitas → kunci utuh (diserahkan ke pemanggil sekali). */
 export function ApiKeyCreateDialog({
   returnFocusRef,
@@ -40,10 +46,19 @@ export function ApiKeyCreateDialog({
   const [customDate, setCustomDate] = useState('');
   const [ips, setIps] = useState('');
   const [limit, setLimit] = useState(String(API_KEY_DAILY_SEND_DEFAULT));
+  const [emailSenders, setEmailSenders] = useState<Set<string>>(new Set());
+  const [emailHosts, setEmailHosts] = useState('');
   const [errors, setErrors] = useState<FieldErrors>({});
   const [confirming, setConfirming] = useState<CreateApiKeyRequest | null>(null);
   const [failure, setFailure] = useState<unknown>(null);
   const implied = impliedScopes(scopes);
+  const hasEmail = apiKeyHasEmailScope([...scopes, ...implied]);
+  /** Scope terpilih yang membuat `scope` ikut tercakup (untuk teks "termasuk dalam …"). */
+  const impliedBy = (scope: ApiKeyScope) =>
+    API_KEY_SCOPES.find(
+      (item) => scopes.has(item) && API_KEY_SCOPE_IMPLIES[item].includes(scope),
+    ) ?? '';
+  const canSendEmail = scopes.has('email:send');
 
   const toggle = (scope: ApiKeyScope, checked: boolean) => {
     setScopes((current) => {
@@ -67,6 +82,9 @@ export function ApiKeyCreateDialog({
       .split(/[\n,]/)
       .map((line) => line.trim())
       .filter(Boolean);
+    if (hasEmail && emailSenders.size === 0) nextErrors.emailSenderIds = copy.emailSendersRequired;
+    const hostResult = canSendEmail ? parseAttachmentHosts(emailHosts) : null;
+    if (hostResult?.error) nextErrors.emailAttachmentHosts = hostResult.error;
     const parsed = createApiKeyRequestSchema.safeParse({
       name,
       // Hanya pilihan eksplisit; tingkatan dihitung server dari scope tertinggi.
@@ -74,6 +92,10 @@ export function ApiKeyCreateDialog({
       expiresAt: expiresAt ?? null,
       allowedIps: allowedIps.length > 0 ? allowedIps : null,
       dailySendLimit,
+      ...(hasEmail ? { emailSenderIds: [...emailSenders] } : {}),
+      ...(hostResult?.hosts && hostResult.hosts.length > 0
+        ? { emailAttachmentHosts: hostResult.hosts }
+        : {}),
     });
     if (!parsed.success || Object.keys(nextErrors).length > 0) {
       const fieldErrors = parsed.success ? {} : zodFieldErrors(parsed.error);
@@ -121,29 +143,51 @@ export function ApiKeyCreateDialog({
           <fieldset className={styles.fieldset}>
             <legend className={styles.legend}>{copy.scopesLabel}</legend>
             <p className={styles.hint}>{copy.scopesHint}</p>
-            <div className={styles.options}>
-              {API_KEY_SCOPES.map((scope) => {
-                const isImplied = implied.has(scope);
-                return (
-                  <Checkbox
-                    key={scope}
-                    checked={scopes.has(scope) || isImplied}
-                    disabled={isImplied}
-                    onChange={(event) => toggle(scope, event.target.checked)}
-                  >
-                    <span className={styles.optionText}>
-                      <span>{API_KEY_SCOPE_LABELS[scope]}</span>
-                      <span className={styles.optionHint}>
-                        <code className={styles.monoSmall}>{scope}</code>
-                        {isImplied ? ` · ${copy.implied}` : ''}
-                      </span>
-                    </span>
-                  </Checkbox>
-                );
-              })}
-            </div>
+            {SCOPE_GROUPS.map((group) => (
+              <div
+                key={group.key}
+                className={styles.scopeGroup}
+                role="group"
+                aria-labelledby={`izin-${group.key}`}
+              >
+                <p id={`izin-${group.key}`} className={styles.scopeGroupTitle}>
+                  {group.label}
+                </p>
+                <div className={styles.options}>
+                  {group.scopes.map((scope) => {
+                    const isImplied = implied.has(scope);
+                    return (
+                      <Checkbox
+                        key={scope}
+                        checked={scopes.has(scope) || isImplied}
+                        disabled={isImplied}
+                        onChange={(event) => toggle(scope, event.target.checked)}
+                      >
+                        <span className={styles.optionText}>
+                          <span>{API_KEY_SCOPE_LABELS[scope]}</span>
+                          <span className={styles.optionHint}>
+                            <code className={styles.monoSmall}>{scope}</code>
+                            {isImplied ? ` · ${copy.implied(impliedBy(scope))}` : ''}
+                          </span>
+                        </span>
+                      </Checkbox>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
             {errors.scopes ? <p className={styles.fieldError}>{errors.scopes}</p> : null}
           </fieldset>
+          {hasEmail ? (
+            <ApiKeyEmailFields
+              senderIds={emailSenders}
+              onSenderIds={setEmailSenders}
+              hosts={emailHosts}
+              onHosts={setEmailHosts}
+              showHosts={canSendEmail}
+              errors={emailErrors(errors)}
+            />
+          ) : null}
           <SelectField
             label={copy.expiryLabel}
             value={expiry}

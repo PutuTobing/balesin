@@ -34,9 +34,13 @@ import {
 } from '@balesin/core';
 import {
   channels,
+  contacts,
   emailMailboxStates,
   emailSettings,
   isPgError,
+  lockEmailAddresses,
+  mailAccounts,
+  mailOrganizationDomains,
   newId,
   PG_ERROR_CODES,
   type Channel,
@@ -80,6 +84,11 @@ import { recordChannelTest } from '../channels/channels.repo';
 import type { ChannelContext } from '../channels/channels.service';
 import { requireIdentityConfirmation } from '../two-factor/require-confirmation';
 import type { TwoFactorService } from '../two-factor/two-factor.service';
+import {
+  claimAddressForOrganization,
+  notifyRevokedClaims,
+  type RevokedClaim,
+} from '../mail/mail-compose.repo';
 import { connectionWebhookUrl, isConnectionType, toConnectionChannel } from './connection-view';
 
 /**
@@ -103,7 +112,7 @@ export interface ConnectionsServiceDeps {
   meta: MetaGraphClient;
   telegram: TelegramBotClient;
   twoFactor: Pick<TwoFactorService, 'confirmIdentity'>;
-  notifier: Pick<EmailNotifier, 'channelChanged'>;
+  notifier: Pick<EmailNotifier, 'channelChanged' | 'securityNoticeAdmin'>;
   apiUrl: string;
   isProduction: boolean;
   imapPolicy: ImapPolicy;
@@ -172,6 +181,8 @@ const CONFIRM = {
   credentials:
     'Masukkan password-mu (dan kode verifikasi dua langkah) untuk mengganti kredensial channel.',
   delete: 'Masukkan password-mu (dan kode verifikasi dua langkah) untuk menghapus channel.',
+  aliases:
+    'Masukkan password-mu (dan kode verifikasi dua langkah) untuk menambah alias alamat email channel.',
 } as const;
 
 const CONFLICT_MESSAGES: Readonly<Record<string, { field: string; message: string }>> = {
@@ -193,6 +204,79 @@ const CONFLICT_MESSAGES: Readonly<Record<string, { field: string; message: strin
 
 function notFound(): AppError {
   return new AppError('NOT_FOUND', { message: NOT_FOUND_MESSAGE });
+}
+
+/**
+ * Fase 9 (KONTRAK-API-EMAIL §4.3, arah sebaliknya): alamat/alias Channel Email tidak boleh sudah menjadi
+ * akun di menu Email. Advisory lock `email-address:<org>:<alamat>` yang SAMA dengan modul Email
+ * dipegang di transaksi, jadi dua permintaan bersamaan tidak bisa sama-sama lolos.
+ */
+async function assertNotMailAccount(
+  tx: DbExecutor,
+  organizationId: string,
+  addresses: readonly string[],
+  actor: { auth: AuthContext; client: ChannelContext['client'] },
+): Promise<RevokedClaim[]> {
+  const list = [...new Set(addresses.filter((address) => address.length > 0))];
+  if (list.length === 0) return [];
+  await lockEmailAddresses(tx, organizationId, list);
+  const [hit] = await tx
+    .select({ id: mailAccounts.id })
+    .from(mailAccounts)
+    .where(
+      and(
+        eq(mailAccounts.organizationId, organizationId),
+        inArray(mailAccounts.emailAddress, list),
+        isNull(mailAccounts.deletedAt),
+      ),
+    )
+    .limit(1);
+  const mailAccountConflict = (message: string) =>
+    new AppError('CONFLICT', {
+      message,
+      details: [
+        { location: 'body', field: 'emailAddress', message, reason: 'address_is_mail_account' },
+      ],
+    });
+  if (hit) {
+    throw mailAccountConflict(
+      'Alamat ini sudah terhubung sebagai akun di menu Email. Satu alamat hanya bisa dipakai di Inbox atau di menu Email. Putuskan dulu akunnya di Pengaturan → Akun email.',
+    );
+  }
+  // 9B (KONTRAK-API-EMAIL-TULIS §3.3): alias (identitas) akun Email juga dihitung. Review 9B S4: klaim
+  // akun PRIBADI yang belum terverifikasi/disetujui tidak menghalangi Channel Email — dicabut; pemegang
+  // kuat → 409 yang menyebut pemegangnya.
+  const [sender] = await tx
+    .select({ address: emailSettings.fromAddress })
+    .from(emailSettings)
+    .where(eq(emailSettings.organizationId, organizationId))
+    .limit(1);
+  const domains = await mailOrganizationDomains(tx, organizationId);
+  const revoked: RevokedClaim[] = [];
+  for (const address of list) {
+    try {
+      revoked.push(
+        ...(await claimAddressForOrganization(tx, {
+          organizationId,
+          actorUserId: actor.auth.user.id,
+          role: actor.auth.user.role,
+          address,
+          systemSender: sender ? { address: sender.address, host: '', username: null } : null,
+          domains,
+          client: actor.client,
+          field: 'emailAddress',
+          // Channel/pengirim sistem beralamat sama sudah diatur aturannya sendiri (Fase 1/9.0).
+          ignore: (holder) => holder.kind !== 'identity',
+        })),
+      );
+    } catch (error) {
+      if (error instanceof AppError && error.code === 'CONFLICT') {
+        throw mailAccountConflict(error.message);
+      }
+      throw error;
+    }
+  }
+  return revoked;
 }
 
 function bodyDetail(field: string, message: string): ErrorDetail {
@@ -257,6 +341,32 @@ export function createConnectionsService(deps: ConnectionsServiceDeps): Connecti
   function requireBox(): SecretBox {
     if (!secretBox) throw new AppError('SERVICE_UNAVAILABLE', { message: NO_MASTER_KEY_MESSAGE });
     return secretBox;
+  }
+
+  /**
+   * Review 9.0 R7: alias = "alamat sendiri" (email darinya dilewati) — alamat yang sudah menjadi
+   * kontak email di organisasi ini (pelanggan) tidak boleh dijadikan alias, supaya email pelanggan
+   * tidak bisa dibisukan diam-diam.
+   */
+  async function assertAliasesNotContacts(organizationId: string, aliases: readonly string[]) {
+    if (aliases.length === 0) return;
+    const [hit] = await db
+      .select({ address: contacts.externalUserId })
+      .from(contacts)
+      .where(
+        and(
+          eq(contacts.organizationId, organizationId),
+          eq(contacts.channelType, 'email'),
+          inArray(contacts.externalUserId, [...aliases]),
+        ),
+      )
+      .limit(1);
+    if (hit) {
+      throw validation(
+        'aliases',
+        `Alamat ${hit.address ?? ''} sudah tercatat sebagai kontak pelanggan, jadi tidak bisa dijadikan alias channel.`,
+      );
+    }
   }
 
   function confirm(
@@ -726,6 +836,10 @@ export function createConnectionsService(deps: ConnectionsServiceDeps): Connecti
           break;
         }
         case 'email': {
+          await assertAliasesNotContacts(
+            auth.organizationId,
+            (input.aliases ?? []).filter((alias) => alias !== input.emailAddress),
+          );
           if (input.smtp.mode === 'custom') {
             if (input.smtp.password === undefined) {
               throw validation('smtp.password', 'Password SMTP wajib diisi.');
@@ -750,6 +864,7 @@ export function createConnectionsService(deps: ConnectionsServiceDeps): Connecti
             emailPollIntervalMinutes: input.pollIntervalMinutes ?? 2,
             emailMarkAsRead: input.markAsRead ?? true,
             emailTrustedAuthServIds: input.trustedAuthServIds ?? null,
+            emailAliases: (input.aliases ?? []).filter((alias) => alias !== input.emailAddress),
             emailSmtpMode: input.smtp.mode,
             ...(input.smtp.mode === 'custom' && input.smtp.password !== undefined
               ? {
@@ -808,6 +923,7 @@ export function createConnectionsService(deps: ConnectionsServiceDeps): Connecti
         }
       }
 
+      let revoked: RevokedClaim[] = [];
       const row = await db
         .transaction(async (tx) => {
           await assertActorStillAuthorized(tx, auth, 'channels.manage', context.log);
@@ -824,6 +940,14 @@ export function createConnectionsService(deps: ConnectionsServiceDeps): Connecti
             throw new AppError('CONFLICT', {
               message: `Batas ${MAX_CHANNELS_PER_ORGANIZATION} channel per organisasi sudah tercapai. Hapus channel yang tidak dipakai dulu.`,
             });
+          }
+          if (input.type === 'email') {
+            revoked = await assertNotMailAccount(
+              tx,
+              auth.organizationId,
+              [input.emailAddress, ...(input.aliases ?? [])],
+              { auth, client: context.client },
+            );
           }
           const [inserted] = await tx.insert(channels).values(values).returning();
           if (!inserted) throw new Error('Channel tidak tersimpan');
@@ -846,6 +970,11 @@ export function createConnectionsService(deps: ConnectionsServiceDeps): Connecti
           return inserted;
         })
         .catch(rethrowConflict);
+      await notifyRevokedClaims(
+        notifier,
+        { organizationId: auth.organizationId, actorUserId: auth.user.id, occurredAt: now() },
+        revoked,
+      );
 
       let current = row;
       if (row.type === 'telegram') {
@@ -872,6 +1001,8 @@ export function createConnectionsService(deps: ConnectionsServiceDeps): Connecti
       }
       const changes: Partial<NewChannel> = {};
       const credentialFields: string[] = [];
+      /** Review 9.0 R7: ada alias baru → konfirmasi identitas (sekali, bersama kredensial bila ada). */
+      let aliasesAdded = false;
       const plainFields: string[] = [];
       if (input.name !== undefined && input.name !== row.name) {
         changes.name = input.name;
@@ -953,6 +1084,20 @@ export function createConnectionsService(deps: ConnectionsServiceDeps): Connecti
           if (input.emailAddress !== undefined && input.emailAddress !== row.emailAddress) {
             changes.emailAddress = input.emailAddress;
             credentialFields.push('emailAddress');
+          }
+          // Tahap 9.0: alias bukan kredensial (status tes tidak direset); alamat utama dibuang.
+          // Review 9.0 R7: MENAMBAH alias = konfirmasi identitas + alias bukan alamat kontak pelanggan.
+          const mainAddress = changes.emailAddress ?? row.emailAddress;
+          const aliases =
+            input.aliases !== undefined
+              ? input.aliases.filter((alias) => alias !== mainAddress)
+              : row.emailAliases.filter((alias) => alias !== mainAddress);
+          if (JSON.stringify(aliases) !== JSON.stringify(row.emailAliases)) {
+            const added = aliases.filter((alias) => !row.emailAliases.includes(alias));
+            await assertAliasesNotContacts(auth.organizationId, added);
+            if (added.length > 0) aliasesAdded = true;
+            changes.emailAliases = aliases;
+            plainFields.push('aliases');
           }
           if (input.imap) {
             const imap = input.imap;
@@ -1099,6 +1244,9 @@ export function createConnectionsService(deps: ConnectionsServiceDeps): Connecti
       }
 
       if (credentialFields.length === 0 && plainFields.length === 0) return view(row);
+      if (aliasesAdded && credentialFields.length === 0) {
+        await confirm(auth, input.confirmation, 'channel.aliases', CONFIRM.aliases, context);
+      }
       if (credentialFields.length > 0) {
         await confirm(
           auth,
@@ -1122,9 +1270,25 @@ export function createConnectionsService(deps: ConnectionsServiceDeps): Connecti
         }
       }
 
+      let revoked: RevokedClaim[] = [];
       const updated = await db
         .transaction(async (tx) => {
           await assertActorStillAuthorized(tx, auth, 'channels.manage', context.log);
+          if (
+            row.type === 'email' &&
+            (changes.emailAddress !== undefined || changes.emailAliases !== undefined)
+          ) {
+            const previous = new Set([row.emailAddress ?? '', ...row.emailAliases]);
+            revoked = await assertNotMailAccount(
+              tx,
+              auth.organizationId,
+              [
+                changes.emailAddress ?? row.emailAddress ?? '',
+                ...(changes.emailAliases ?? row.emailAliases),
+              ].filter((address) => !previous.has(address)),
+              { auth, client: context.client },
+            );
+          }
           const next = await updateRow(tx, auth, row.id, changes);
           if (resetMailbox) {
             await tx
@@ -1160,6 +1324,11 @@ export function createConnectionsService(deps: ConnectionsServiceDeps): Connecti
           return next;
         })
         .catch(rethrowConflict);
+      await notifyRevokedClaims(
+        notifier,
+        { organizationId: auth.organizationId, actorUserId: auth.user.id, occurredAt: now() },
+        revoked,
+      );
 
       let current = updated;
       if (reRegisterTelegram) {

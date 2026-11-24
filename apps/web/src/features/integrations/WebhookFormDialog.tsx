@@ -28,6 +28,20 @@ import styles from './Integrations.module.css';
 const copy = t.webhooks;
 const MOBICHAT_EVENTS: readonly OutgoingWebhookEvent[] = MOBICHAT_WEBHOOK_EVENTS;
 
+/** Kejadian dikelompokkan menurut awalan (`message.*`, `email.*`, …), urutan tetap. */
+function eventGroups(
+  events: readonly OutgoingWebhookEvent[],
+): { key: string; label: string; events: OutgoingWebhookEvent[] }[] {
+  const groups: { key: string; label: string; events: OutgoingWebhookEvent[] }[] = [];
+  for (const event of events) {
+    const key = event.split('.')[0] ?? event;
+    const group = groups.find((item) => item.key === key);
+    if (group) group.events.push(event);
+    else groups.push({ key, label: t.webhooks.eventGroups[key] ?? key, events: [event] });
+  }
+  return groups;
+}
+
 type Pending =
   | { kind: 'create'; body: CreateOutgoingWebhookRequest }
   | { kind: 'update'; body: UpdateOutgoingWebhookRequest; mobichat: boolean };
@@ -286,24 +300,41 @@ export function WebhookFormDialog({
                 >
                   <strong>{copy.allEvents}</strong>
                 </Checkbox>
-                {chosenEvents.map((item) => (
-                  <Checkbox
-                    key={item}
-                    checked={events.has(item)}
-                    onChange={(event) =>
-                      setEvents((current) => {
-                        const next = new Set(current);
-                        if (event.target.checked) next.add(item);
-                        else next.delete(item);
-                        return next;
-                      })
-                    }
+                {eventGroups(chosenEvents).map((group) => (
+                  <div
+                    key={group.key}
+                    className={styles.scopeGroup}
+                    role="group"
+                    aria-labelledby={`kejadian-${group.key}`}
                   >
-                    <span className={styles.optionText}>
-                      <span>{OUTGOING_WEBHOOK_EVENT_LABELS[item]}</span>
-                      <code className={styles.monoSmall}>{item}</code>
-                    </span>
-                  </Checkbox>
+                    <p id={`kejadian-${group.key}`} className={styles.scopeGroupTitle}>
+                      {group.label}
+                    </p>
+                    {group.key === 'email' ? (
+                      <p className={styles.optionHint}>{copy.emailEventsHint}</p>
+                    ) : null}
+                    <div className={styles.options}>
+                      {group.events.map((item) => (
+                        <Checkbox
+                          key={item}
+                          checked={events.has(item)}
+                          onChange={(event) =>
+                            setEvents((current) => {
+                              const next = new Set(current);
+                              if (event.target.checked) next.add(item);
+                              else next.delete(item);
+                              return next;
+                            })
+                          }
+                        >
+                          <span className={styles.optionText}>
+                            <span>{OUTGOING_WEBHOOK_EVENT_LABELS[item]}</span>
+                            <code className={styles.monoSmall}>{item}</code>
+                          </span>
+                        </Checkbox>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             )}

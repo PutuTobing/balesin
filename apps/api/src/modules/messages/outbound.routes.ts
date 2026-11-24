@@ -76,6 +76,13 @@ export const MEDIA_USER_RULE: RateLimitRule = {
   windowSeconds: 60,
 };
 
+/** Kembalikan `units` jatah mulai-percakapan (usaha terbaik — Redis bermasalah = dilewati). */
+async function refundInitiation(limiter: RateLimiter, userId: string, units: number) {
+  for (let index = 0; index < units; index += 1) {
+    await limiter.refund(INITIATE_USER_RULE, userId).catch(() => undefined);
+  }
+}
+
 /**
  * Izin "mulai percakapan" pengirim (audit akhir A1/A6/P2): `inbox.initiate` + jatah harian
  * `mulai-percakapan` (dipotong service hanya bila pesannya benar-benar memulai).
@@ -93,18 +100,32 @@ function initiationGrant(
         rule:
           reason === 'resolved'
             ? ACCESS_RULES.inboxInitiateResolved
-            : ACCESS_RULES.inboxInitiateStale,
+            : reason === 'stale'
+              ? ACCESS_RULES.inboxInitiateStale
+              : ACCESS_RULES.inboxInitiateEmailRecipient,
         client: clientInfo(request),
         message,
       }),
     allowed: hasPermission(auth.user.role, 'inbox.initiate'),
-    consume: () =>
-      enforceRateLimit(
-        limiter,
-        INITIATE_USER_RULE,
-        auth.user.id,
-        (wait) => `Batas harian memulai percakapan baru tercapai. Coba lagi dalam ${wait}.`,
-      ).then(() => undefined),
+    // Review 9.0 R1: N unit sekaligus — bila jatah habis di tengah, unit yang sudah diambil dikembalikan.
+    consume: async (units = 1) => {
+      let taken = 0;
+      try {
+        while (taken < units) {
+          taken += 1;
+          await enforceRateLimit(
+            limiter,
+            INITIATE_USER_RULE,
+            auth.user.id,
+            (wait) => `Batas harian memulai percakapan baru tercapai. Coba lagi dalam ${wait}.`,
+          );
+        }
+      } catch (error) {
+        await refundInitiation(limiter, auth.user.id, taken);
+        throw error;
+      }
+    },
+    refund: (units) => refundInitiation(limiter, auth.user.id, units),
   };
 }
 

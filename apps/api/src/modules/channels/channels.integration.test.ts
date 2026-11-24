@@ -374,6 +374,7 @@ describe('tes koneksi', () => {
         name: 'CS Utama',
         enabled: true,
         displayPhoneNumber: '+62 811-2345-678',
+        emailAddresses: [],
       },
     ]);
   });
@@ -798,7 +799,7 @@ describe('penyalahgunaan & isolasi', () => {
       expect(list.statusCode).toBe(200);
       expect(
         Object.keys(channelSummaryListResponseSchema.parse(list.json()).channels[0] ?? {}),
-      ).toEqual(['id', 'type', 'name', 'enabled', 'displayPhoneNumber']);
+      ).toEqual(['id', 'type', 'name', 'enabled', 'displayPhoneNumber', 'emailAddresses']);
       expect(list.body).not.toContain(PHONE_ID);
       expect(list.body).not.toContain('••••');
     }

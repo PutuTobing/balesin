@@ -190,7 +190,8 @@ test('Owner: tambah nomor lewat wizard, tes gagal → ganti token → berhasil, 
       'Profil bisnis',
       'Nama channel',
       'Kredensial Meta',
-      'Akses channel',
+      'Akses tim',
+      'Status channel',
     ];
     for (const viaKeyboard of [false, true]) {
       for (const label of labels) {
@@ -209,7 +210,7 @@ test('Owner: tambah nomor lewat wizard, tes gagal → ganti token → berhasil, 
     await page.mouse.move(400, 500);
     for (let i = 0; i < 12; i += 1) await page.mouse.wheel(0, 600);
     await expect(
-      sections.getByRole('link', { name: 'Akses channel', exact: true }),
+      sections.getByRole('link', { name: 'Status channel', exact: true }),
     ).toHaveAttribute('aria-current', 'location');
     await sections.getByRole('link', { name: 'Profil bisnis', exact: true }).click();
 

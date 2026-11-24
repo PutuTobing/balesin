@@ -25,7 +25,14 @@ import { DepartmentDialog } from '../departments/DepartmentDialog';
 import { departmentsQuery } from '../departments/department-queries';
 import styles from './HandlingActions.module.css';
 import { channelBotKey } from '../channels/bot-form';
-import { agentsQuery, forgetConversation, inboxKeys, storeConversation } from './inbox-queries';
+import {
+  channelAgentsQuery,
+  forgetConversation,
+  inboxKeys,
+  storeConversation,
+} from './inbox-queries';
+import { Notice } from '../../components/ui/Notice';
+import { isApiError } from '../../lib/api/client';
 import { RESOLVED_NOTE_ID, useReopenBlocked } from './use-reopen-blocked';
 
 const h = t.inbox.handling;
@@ -107,8 +114,12 @@ export function HandlingActions({
       forgetConversation(queryClient, conversation.id);
       onClosed?.();
     },
-    onError: (error) => {
-      onError(error);
+    onError: (error, variables) => {
+      // Gagal menugaskan: alasannya tampil di dialog (mis. 400 agen tanpa akses ke channel ini) dan
+      // daftar agen dimuat ulang.
+      if (variables.action === 'assign') {
+        void queryClient.invalidateQueries({ queryKey: inboxKeys.agents });
+      } else onError(error);
       // 409 (diambil orang lain, sudah ada sesi terbuka, …): tampilkan keadaan terbaru.
       void queryClient.invalidateQueries({ queryKey: inboxKeys.conversation(conversation.id) });
     },
@@ -263,7 +274,11 @@ export function HandlingActions({
           open={assignOpen}
           conversation={conversation}
           pending={busy === 'assign'}
-          onCancel={() => setAssignOpen(false)}
+          error={mutation.isError && mutation.variables.action === 'assign' ? mutation.error : null}
+          onCancel={() => {
+            setAssignOpen(false);
+            mutation.reset();
+          }}
           onConfirm={(userId) => mutation.mutate({ action: 'assign', userId })}
         />
       ) : null}
@@ -276,16 +291,20 @@ function AssignDialog({
   open,
   conversation,
   pending,
+  error,
   onCancel,
   onConfirm,
 }: {
   open: boolean;
   conversation: Conversation;
   pending: boolean;
+  /** Gagal menugaskan (ditampilkan apa adanya dari server). */
+  error: unknown;
   onCancel: () => void;
   onConfirm: (userId: string) => void;
 }) {
-  const agents = useQuery({ ...agentsQuery, enabled: open });
+  // Tahap 9.0: hanya agen yang berhak atas channel percakapan ini (akses per channel).
+  const agents = useQuery({ ...channelAgentsQuery(conversation.channel.id), enabled: open });
   const [selected, setSelected] = useState('');
   const options = (agents.data?.agents ?? []).filter(
     (agent) => agent.active && agent.id !== conversation.assignee?.id,
@@ -321,6 +340,11 @@ function AssignDialog({
           ))}
         </RadioGroup.Root>
       )}
+      {error ? (
+        <Notice tone="danger" role="alert" className={styles.assignError}>
+          {isApiError(error) ? error.message : t.api.network}
+        </Notice>
+      ) : null}
       <DialogActions>
         <Button onClick={close}>{h.cancel}</Button>
         <Button

@@ -714,7 +714,10 @@ describe('event real-time', () => {
   });
 
   it('webhook keluar: pesan masuk pertama → outbox kontak/percakapan/pesan (ID saja) bila ada langganan', async () => {
-    const before = await db.select().from(outgoingEvents);
+    const before = await db
+      .select()
+      .from(outgoingEvents)
+      .where(eq(outgoingEvents.organizationId, organizationId));
     expect(before).toEqual([]);
     await db.insert(webhookEndpoints).values({
       organizationId,

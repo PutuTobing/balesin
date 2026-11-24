@@ -27,6 +27,13 @@ import { InboxPage } from '../features/inbox/InboxPage';
 import { InboxSkeleton } from '../features/inbox/InboxSkeleton';
 import { parseInboxSearch } from '../features/inbox/inbox-search';
 import { parseContactSearch } from '../features/contacts/contact-search';
+import { MailSkeleton } from '../features/mail/MailSkeleton';
+import { parseMailLinkWarningSearch } from '../features/mail/mail-link-warning';
+import {
+  parseMailAccountSearch,
+  parseMailAccountsSearch,
+  parseMailSearch,
+} from '../features/mail/mail-search';
 import { parseTicketSearch } from '../features/tickets/ticket-search';
 import { SecuritySkeleton } from '../features/security/SecuritySkeleton';
 import { SetupSkeleton } from '../features/setup/SetupSkeleton';
@@ -35,6 +42,7 @@ import { TeamSkeleton } from '../features/team/TeamSkeleton';
 import { TeamUserSkeleton } from '../features/team-user/TeamUserSkeleton';
 import { AuditSkeleton } from '../features/audit/AuditSkeleton';
 import { parseAuditSearch } from '../features/audit/audit-search';
+import { parseEmailOutboundSearch } from '../features/integrations/email-outbound-search';
 import { sessionCan } from '../features/auth/session';
 import { isChannelId } from '../features/channels/channel-status';
 import { EnrollmentSkeleton } from '../features/two-factor/EnrollmentSkeleton';
@@ -60,6 +68,7 @@ import {
   guardNavRoute,
   guardEnrollment,
   guardLogin,
+  guardMail,
   guardPermission,
   guardSetup,
   guardVoluntaryEnrollment,
@@ -204,6 +213,33 @@ const inboxRoute = createRoute({
   pendingComponent: InboxSkeleton,
 });
 
+/**
+ * Menu Email (Fase 9, KONTRAK-API-EMAIL): kolom folder + daftar + panel baca. Hanya bila sesi
+ * `navigation.mail` (punya akun yang bisa diakses atau boleh menghubungkan akun).
+ */
+const mailRoute = createRoute({
+  getParentRoute,
+  path: 'email',
+  validateSearch: parseMailSearch,
+  beforeLoad: ({ context }) => guardMail(context.session),
+  component: lazyRouteComponent(() => import('../features/mail/MailPage'), 'MailPage'),
+  pendingComponent: MailSkeleton,
+});
+
+/**
+ * Peringatan tautan menipu dari email (`MAIL_LINK_WARNING_PATH`, kontrak §8 `link_mismatch`): hanya
+ * menampilkan tujuan asli (http/https saja), tanpa pengalihan otomatis.
+ */
+const mailLinkWarningRoute = createRoute({
+  getParentRoute,
+  path: 'email/tautan',
+  validateSearch: parseMailLinkWarningSearch,
+  component: lazyRouteComponent(
+    () => import('../features/mail/MailLinkWarningPage'),
+    'MailLinkWarningRoute',
+  ),
+});
+
 const contactsRoute = createRoute({
   getParentRoute,
   path: 'kontak',
@@ -335,6 +371,35 @@ const emailSettingsRoute = createRoute({
 });
 
 /**
+ * Pengaturan → Akun email (Fase 9): akun yang bisa kukelola + metadata akun pribadi orang lain
+ * untuk Owner/Admin. `?tambah=` membuka wizard hubungkan akun.
+ */
+const mailAccountsRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/akun-email',
+  staticData: { page: { title: t.mail.accounts.title, parent: 'settings' } },
+  validateSearch: parseMailAccountsSearch,
+  beforeLoad: ({ context }) => guardMail(context.session, '/pengaturan'),
+  component: lazyRouteComponent(
+    () => import('../features/mail/MailAccountsPage'),
+    'MailAccountsPage',
+  ),
+});
+
+/** Pengaturan → Akun email → satu akun (status, tampilan, server, akses, putuskan). */
+const mailAccountRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/akun-email/$accountId',
+  staticData: { page: { title: t.mail.detail.title, parent: 'mailAccounts' } },
+  validateSearch: parseMailAccountSearch,
+  beforeLoad: ({ context }) => guardMail(context.session, '/pengaturan'),
+  component: lazyRouteComponent(
+    () => import('../features/mail/MailAccountPage'),
+    'MailAccountPage',
+  ),
+});
+
+/**
  * Pengaturan → Channel: izin `channels.manage` (Owner, Admin); peran lain dialihkan ke Pengaturan.
  * Data yang gagal dimuat tidak menggagalkan rute: halamannya sendiri menampilkan gagal + coba lagi.
  */
@@ -396,6 +461,45 @@ const templateEditRoute = createRoute({
   component: lazyRouteComponent(
     () => import('../features/templates/TemplateEditorPage'),
     'TemplateEditPage',
+  ),
+});
+
+/**
+ * Pengaturan → Template email (tahap 9.1): `templates.manage` (Owner, Admin, Supervisor). Isi
+ * email yang dikirim aplikasi lain lewat API; terbit = konfirmasi identitas.
+ */
+const emailTemplatesRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/template-email',
+  staticData: { page: { title: t.emailTemplates.title, parent: 'settings' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'templates.manage'),
+  component: lazyRouteComponent(
+    () => import('../features/email-templates/EmailTemplatesPage'),
+    'EmailTemplatesPage',
+  ),
+});
+
+const emailTemplateEditRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/template-email/$templateId',
+  staticData: { page: { title: t.emailTemplates.editTitle, parent: 'emailTemplates' } },
+  beforeLoad: ({ context }) => guardPermission(context.session, 'templates.manage'),
+  component: lazyRouteComponent(
+    () => import('../features/email-templates/EmailTemplateEditorPage'),
+    'EmailTemplateEditorPage',
+  ),
+});
+
+/** Pengaturan → API key → Email terkirim (tahap 9.1): `api_keys.manage`; saringan di URL. */
+const emailOutboundRoute = createRoute({
+  getParentRoute,
+  path: 'pengaturan/api-key/email-terkirim',
+  staticData: { page: { title: t.emailOutbound.title, parent: 'apiKeys' } },
+  validateSearch: parseEmailOutboundSearch,
+  beforeLoad: ({ context }) => guardPermission(context.session, 'api_keys.manage'),
+  component: lazyRouteComponent(
+    () => import('../features/integrations/EmailOutboundPage'),
+    'EmailOutboundPage',
   ),
 });
 
@@ -699,6 +803,8 @@ const notFoundRoute = createRoute({
 const appChildren = [
   indexRoute,
   inboxRoute,
+  mailRoute,
+  mailLinkWarningRoute,
   contactsRoute,
   contactImportRoute,
   contactRoute,
@@ -716,15 +822,20 @@ const appChildren = [
   reportsRoute,
   settingsRoute,
   emailSettingsRoute,
+  mailAccountsRoute,
+  mailAccountRoute,
   channelsRoute,
   quickRepliesRoute,
   templatesRoute,
   templateNewRoute,
   templateEditRoute,
+  emailTemplatesRoute,
+  emailTemplateEditRoute,
   oldQuickRepliesRoute,
   sendingLimitsRoute,
   notificationsRoute,
   apiKeysRoute,
+  emailOutboundRoute,
   webhooksRoute,
   connectorsRoute,
   alarmsRoute,

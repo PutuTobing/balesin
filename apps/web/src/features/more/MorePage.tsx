@@ -48,15 +48,17 @@ export function MorePage() {
       ) : null}
       <nav aria-label={t.more.menuLabel} className={styles.nav}>
         <ul className={styles.menu}>
-          {allowedNavItems(moreMenuItems, session?.permissions ?? []).map((item) => (
-            <li key={item.id} className={styles.menuItem}>
-              <Link to={item.to} className={styles.menuLink}>
-                <Icon icon={item.icon} size={20} className={styles.menuIcon} />
-                <span className={styles.menuLabel}>{item.label}</span>
-                <Icon icon={ChevronRight} size={16} className={styles.chevron} />
-              </Link>
-            </li>
-          ))}
+          {allowedNavItems(moreMenuItems, session?.permissions ?? [], session?.navigation).map(
+            (item) => (
+              <li key={item.id} className={styles.menuItem}>
+                <Link to={item.to} className={styles.menuLink}>
+                  <Icon icon={item.icon} size={20} className={styles.menuIcon} />
+                  <span className={styles.menuLabel}>{item.label}</span>
+                  <Icon icon={ChevronRight} size={16} className={styles.chevron} />
+                </Link>
+              </li>
+            ),
+          )}
         </ul>
       </nav>
       <div className={styles.logoutCard}>

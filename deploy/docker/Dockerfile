@@ -60,8 +60,18 @@ FROM deps AS build
 COPY tsconfig.base.json ./
 COPY packages packages
 COPY apps apps
+# Versi yang tampil di aplikasi ("Balesin versi …", dari apps/web/package.json lewat
+# __APP_VERSION__). rilis.yml mengisinya dari tag `vX.Y.Z`, jadi tidak ada langkah naik versi manual;
+# hanya salinan package.json di stage ini yang diubah. Kosong (build lokal/CI) = versi package.json.
+ARG BALESIN_VERSION=""
 # Source map dan metafile tsup tidak ikut image produksi (review Fase 7 Info 5).
-RUN pnpm --filter @balesin/api --filter @balesin/worker --filter @balesin/web build \
+RUN if [ -n "$BALESIN_VERSION" ]; then \
+      printf '%s' "$BALESIN_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
+        || { echo "BALESIN_VERSION tidak valid: $BALESIN_VERSION" >&2; exit 1; }; \
+      node -e 'const fs=require("fs"),f="apps/web/package.json",p=JSON.parse(fs.readFileSync(f,"utf8"));p.version=process.argv[1];fs.writeFileSync(f,JSON.stringify(p,null,2)+"\n")' "$BALESIN_VERSION"; \
+      echo "versi aplikasi: $BALESIN_VERSION"; \
+    fi \
+ && pnpm --filter @balesin/api --filter @balesin/worker --filter @balesin/web build \
  && rm -f apps/api/dist/*.map apps/worker/dist/*.map apps/*/dist/metafile-esm.json \
  && ! find apps/web/dist -name '*.map' | grep -q .
 

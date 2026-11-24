@@ -94,6 +94,7 @@ export function toConnectionChannel(
         ...base,
         type: 'email',
         emailAddress: row.emailAddress ?? '',
+        aliases: row.emailAliases,
         fromName: row.emailFromName ?? '',
         imap: {
           host: row.emailImapHost ?? '',

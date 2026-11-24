@@ -3,6 +3,8 @@ import {
   auditLogs,
   broadcastCampaigns,
   broadcastRecipients,
+  channelAccessSql,
+  userPrincipal,
   channels,
   contactTags,
   contacts,
@@ -134,11 +136,28 @@ export function createBroadcastsService(deps: BroadcastsServiceDeps) {
   const { db, twoFactor, accessDenied } = deps;
   const now = deps.now ?? (() => new Date());
 
-  async function liveChannel(executor: DbExecutor, organizationId: string, channelId: string) {
+  /**
+   * `visibleTo` (tahap 9.0, akses per channel): channel yang tidak boleh dilihat pengguna itu
+   * dijawab sama dengan channel yang tidak ada.
+   */
+  async function liveChannel(
+    executor: DbExecutor,
+    organizationId: string,
+    channelId: string,
+    visibleTo?: string,
+  ) {
     const [channel] = await executor
       .select()
       .from(channels)
-      .where(and(eq(channels.organizationId, organizationId), eq(channels.id, channelId)))
+      .where(
+        and(
+          eq(channels.organizationId, organizationId),
+          eq(channels.id, channelId),
+          visibleTo === undefined
+            ? undefined
+            : channelAccessSql(organizationId, userPrincipal(visibleTo), channels.id),
+        ),
+      )
       .limit(1);
     if (!channel || channel.type !== 'whatsapp' || channel.deletedAt !== null) {
       throw new AppError('NOT_FOUND', { message: 'Nomor WhatsApp pengirim tidak ditemukan.' });
@@ -550,9 +569,33 @@ export function createBroadcastsService(deps: BroadcastsServiceDeps) {
   }
 
   return {
+    /**
+     * Tahap 9.0: broadcast dari channel yang tidak boleh dilihat pengguna ini = tidak ada (404 sama
+     * dengan ID tak dikenal). Dipanggil hook rute untuk SETIAP rute ber-`:broadcastId`.
+     */
+    async assertVisible(auth: AuthContext, id: string): Promise<void> {
+      const [row] = await db
+        .select({ id: broadcastCampaigns.id })
+        .from(broadcastCampaigns)
+        .where(
+          and(
+            eq(broadcastCampaigns.organizationId, auth.organizationId),
+            eq(broadcastCampaigns.id, id),
+            channelAccessSql(
+              auth.organizationId,
+              userPrincipal(auth.user.id),
+              broadcastCampaigns.channelId,
+            ),
+          ),
+        )
+        .limit(1);
+      if (!row) throw notFound();
+    },
+
     async list(
       organizationId: string,
       query: { status?: BroadcastStatus; cursor?: string; limit: number },
+      viewerUserId?: string,
     ): Promise<BroadcastListResponse> {
       const cursor = decodeCursor(query.cursor);
       const cursorDate = cursor?.[0] ? new Date(cursor[0]) : null;
@@ -562,6 +605,13 @@ export function createBroadcastsService(deps: BroadcastsServiceDeps) {
         .where(
           and(
             eq(broadcastCampaigns.organizationId, organizationId),
+            viewerUserId === undefined
+              ? undefined
+              : channelAccessSql(
+                  organizationId,
+                  userPrincipal(viewerUserId),
+                  broadcastCampaigns.channelId,
+                ),
             query.status ? eq(broadcastCampaigns.status, query.status) : undefined,
             cursorDate && !Number.isNaN(cursorDate.getTime()) && cursor?.[1]
               ? or(
@@ -594,7 +644,7 @@ export function createBroadcastsService(deps: BroadcastsServiceDeps) {
     async create(auth: AuthContext, input: CreateBroadcastRequest, client: ClientInfo) {
       return db.transaction(async (tx) => {
         await assertActorStillAuthorized(tx, auth, 'broadcast.send');
-        const channel = await liveChannel(tx, auth.organizationId, input.channelId);
+        const channel = await liveChannel(tx, auth.organizationId, input.channelId, auth.user.id);
         await usableTemplate(tx, auth.organizationId, channel, input.templateId);
         const settings = await loadBroadcastSettings(tx, auth.organizationId);
         const [row] = await tx
@@ -634,7 +684,7 @@ export function createBroadcastsService(deps: BroadcastsServiceDeps) {
           fields.push('name');
         }
         if (input.templateId !== undefined && input.templateId !== row.templateId) {
-          const channel = await liveChannel(tx, auth.organizationId, row.channelId);
+          const channel = await liveChannel(tx, auth.organizationId, row.channelId, auth.user.id);
           await usableTemplate(tx, auth.organizationId, channel, input.templateId);
           changes.templateId = input.templateId;
           changes.mapping = EMPTY_BROADCAST_MAPPING;
@@ -964,7 +1014,7 @@ export function createBroadcastsService(deps: BroadcastsServiceDeps) {
         await assertActorStillAuthorized(tx, auth, 'broadcast.send');
         const row = await campaignRow(tx, auth.organizationId, id, true);
         requireDraft(row);
-        const channel = await liveChannel(tx, auth.organizationId, row.channelId);
+        const channel = await liveChannel(tx, auth.organizationId, row.channelId, auth.user.id);
         const summary = whatsAppNumberSummarySchema.safeParse(channel.waNumberSummary);
         if (
           summary.success &&

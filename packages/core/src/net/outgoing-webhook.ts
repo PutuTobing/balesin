@@ -49,6 +49,8 @@ for (const [address, prefix] of [
   ['2002::', 16],
   ['64:ff9b:1::', 48],
   ['2001::', 32],
+  // Review 9A-1 R1: IPv4-translated SIIT (`::ffff:0:a.b.c.d`, RFC 2765/6145).
+  ['::ffff:0:0:0', 96],
 ] as const) {
   FORBIDDEN.addSubnet(address, prefix, 'ipv6');
 }
@@ -108,6 +110,11 @@ export function normalizePrivateCidr(value: string): string | null {
             : 10;
   if (prefix < minimum) return null;
   return `${parsed.address.toLowerCase()}/${String(prefix)}`;
+}
+
+/** `true` bila alamat IP ada di salah satu CIDR (bentuk baku `normalizePrivateCidr`). */
+export function addressInCidrs(ip: string, cidrs: readonly string[]): boolean {
+  return inCidrs(ip, cidrs);
 }
 
 function inCidrs(ip: string, cidrs: readonly string[]): boolean {
@@ -427,7 +434,16 @@ export async function deliverWebhook(
 // ── Unduh berkas dari URL (media_url lapisan kompatibel MobiChat) ──────────
 
 export type RemoteFileError =
-  WebhookTargetError | 'timeout' | 'network' | 'redirect' | 'too_large' | 'http';
+  | WebhookTargetError
+  | 'timeout'
+  | 'network'
+  | 'redirect'
+  | 'too_large'
+  | 'http'
+  /** Tahap 9.1: host (awal ATAU tujuan redirect) di luar allowlist pemanggil (`allowHost`). */
+  | 'host_not_allowed'
+  /** Review 9A-2 S5: byte AWAL isi ditolak pemanggil (`acceptHead`) — unduhan dihentikan dini. */
+  | 'content_rejected';
 
 export interface RemoteFileRequest {
   url: string;
@@ -438,6 +454,11 @@ export interface RemoteFileRequest {
   timeoutMs?: number;
   /** Bawaan 3. Setiap lompatan diperiksa ulang aturan SSRF yang sama. */
   maxRedirects?: number;
+  /**
+   * Tahap 9.1 (lampiran email API): allowlist host milik pemanggil, diperiksa SEBELUM DNS di SETIAP
+   * lompatan (URL awal + tiap redirect). `false` → `host_not_allowed` tanpa permintaan keluar.
+   */
+  allowHost?: (hostname: string) => boolean;
   lookup?: Lookup;
   /** HANYA tes: izinkan 127.0.0.1/::1 + port bebas (server tiruan). */
   allowLoopback?: boolean;
@@ -446,6 +467,16 @@ export interface RemoteFileRequest {
    * redirect ke origin lain tidak membawanya. `accept`/`user-agent` bawaan bisa diganti.
    */
   headers?: Readonly<Record<string, string>>;
+  /**
+   * Review 9A-2 R8: User-Agent untuk SEMUA lompatan (bawaan `Balesin-Media/1.0`). Proksi gambar email
+   * memakai UA peramban umum supaya pengirim tidak mendapat sidik produk.
+   */
+  userAgent?: string;
+  /**
+   * Review 9A-2 S5: periksa `bytes` byte PERTAMA isi sebelum sisanya ditampung; `false` →
+   * `content_rejected` dan sambungan diputus (mis. proksi gambar: bukan raster = tidak diunduh).
+   */
+  acceptHead?: { bytes: number; accept(head: Buffer): boolean };
 }
 
 export type RemoteFileResult =
@@ -464,6 +495,18 @@ export async function fetchRemoteFile(request: RemoteFileRequest): Promise<Remot
   let current = request.url;
   let originalOrigin: string | null = null;
   for (let hop = 0; hop <= (request.maxRedirects ?? 3); hop += 1) {
+    if (request.allowHost) {
+      // Allowlist host pemanggil diperiksa PALING DULU di setiap lompatan (sebelum port/DNS).
+      let candidate: string | null;
+      try {
+        candidate = new URL(current).hostname.replace(/^\[|\]$/g, '').toLowerCase();
+      } catch {
+        candidate = null;
+      }
+      if (candidate !== null && !request.allowHost(candidate)) {
+        return { ok: false, error: 'host_not_allowed', httpStatus: null };
+      }
+    }
     const parsed = parseWebhookUrl(current, request.privateCidrs, options);
     if ('error' in parsed) return { ok: false, error: parsed.error, httpStatus: null };
     const { url, port } = parsed;
@@ -492,7 +535,16 @@ export async function fetchRemoteFile(request: RemoteFileRequest): Promise<Remot
     const chosen = addresses[0] as LookupAddress;
     originalOrigin ??= url.origin;
     const extraHeaders = url.origin === originalOrigin ? (request.headers ?? {}) : {};
-    const result = await getOnce(url, host, port, chosen, request.maxBytes, deadline, extraHeaders);
+    const result = await getOnce(
+      url,
+      host,
+      port,
+      chosen,
+      request.maxBytes,
+      deadline,
+      { ...(request.userAgent ? { 'user-agent': request.userAgent } : {}), ...extraHeaders },
+      request.acceptHead,
+    );
     if (result.kind === 'redirect') {
       try {
         current = new URL(result.location, url).href;
@@ -539,6 +591,7 @@ function getOnce(
   maxBytes: number,
   deadline: number,
   extraHeaders: Readonly<Record<string, string>> = {},
+  acceptHead?: RemoteFileRequest['acceptHead'],
 ): Promise<HopResult> {
   const send = url.protocol === 'https:' ? httpsRequest : httpRequest;
   return new Promise<HopResult>((resolve) => {
@@ -595,24 +648,47 @@ function getOnce(
           fail('too_large', status);
           return;
         }
+        // Panjang diketahui → satu penyangga (tanpa salinan kedua `Buffer.concat`); tidak diketahui →
+        // potongan lalu digabung. Byte awal bisa diperiksa pemanggil sebelum sisanya ditampung.
+        const known = Number.isFinite(declared) && declared >= 0 ? declared : null;
+        const single = known !== null ? Buffer.allocUnsafe(known) : null;
         const chunks: Buffer[] = [];
         let size = 0;
+        let headChecked = !acceptHead;
+        let head = Buffer.alloc(0);
         response.on('data', (chunk: Buffer) => {
+          if (settled) return;
           size += chunk.length;
-          if (size > maxBytes) {
+          if (size > maxBytes || (known !== null && size > known)) {
             response.destroy();
-            fail('too_large', status);
+            fail(size > maxBytes ? 'too_large' : 'network', status);
             return;
           }
-          chunks.push(chunk);
+          if (!headChecked && acceptHead) {
+            head = Buffer.concat([head, chunk.subarray(0, acceptHead.bytes - head.length)]);
+            if (head.length >= acceptHead.bytes) {
+              headChecked = true;
+              if (!acceptHead.accept(head)) {
+                response.destroy();
+                fail('content_rejected', status);
+                return;
+              }
+            }
+          }
+          if (single) chunk.copy(single, size - chunk.length);
+          else chunks.push(chunk);
         });
         response.on('end', () => {
+          if (!headChecked && acceptHead && !acceptHead.accept(head)) {
+            fail('content_rejected', status);
+            return;
+          }
           const type = response.headers['content-type'];
           done({
             kind: 'done',
             value: {
               ok: true,
-              body: Buffer.concat(chunks),
+              body: single ? single.subarray(0, size) : Buffer.concat(chunks),
               contentType: typeof type === 'string' ? type : null,
               finalUrl: url,
             },

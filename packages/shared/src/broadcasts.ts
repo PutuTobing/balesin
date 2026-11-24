@@ -1021,6 +1021,8 @@ export const ALARM_KINDS = [
   'broadcast_auto_paused',
   'broadcast_pending_approval',
   'broadcast_completed',
+  /** Tahap 9.1: pengirim email API terblokir (login SMTP ditolak / kredensial tidak terbuka). */
+  'email_sender_blocked',
 ] as const;
 export type AlarmKind = (typeof ALARM_KINDS)[number];
 
@@ -1030,6 +1032,7 @@ const ALARM_TITLES: Readonly<Record<AlarmKind, string>> = {
   broadcast_auto_paused: 'Broadcast dijeda otomatis',
   broadcast_pending_approval: 'Broadcast menunggu persetujuan',
   broadcast_completed: 'Broadcast selesai',
+  email_sender_blocked: 'Pengirim email API terblokir',
 };
 
 /**
@@ -1063,6 +1066,12 @@ export function alarmText(
   }
   if (kind === 'emergency_brake' || kind === 'auto_brake' || kind === 'broadcast_auto_paused') {
     lines.push('Periksa aplikasi, lalu lanjutkan pengiriman bila sudah aman.');
+  }
+  if (kind === 'email_sender_blocked') {
+    if (typeof details.sender === 'string') lines.push(`Pengirim: ${details.sender}`);
+    lines.push(
+      'Email API ditahan di antrean. Perbaiki kredensial SMTP di Pengaturan → Channel, lalu lanjutkan pengirimnya di Pengaturan → Batas kirim.',
+    );
   }
   return lines.join('\n');
 }

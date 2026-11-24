@@ -1,5 +1,6 @@
 import {
   CONNECTION_TEST_MESSAGES,
+  EMAIL_CHANNEL_MAX_ALIASES,
   type ConnectionChannel,
   type ConnectionTestResult,
   type EmailChannel,
@@ -11,7 +12,9 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, getRouteApi, useNavigate } from '@tanstack/react-router';
 import { CheckCircle2, CircleAlert, Trash2 } from 'lucide-react';
-import { useRef, useState, type FormEvent } from 'react';
+import { useId, useRef, useState, type FormEvent } from 'react';
+import { AddressChips } from '../../../components/ui/AddressChips';
+import { FormActions } from '../../../components/ui/FormActions';
 import {
   ChannelIllustration,
   LoadFailedIllustration,
@@ -38,6 +41,7 @@ import { IdentityDialog } from '../../identity/IdentityDialog';
 import { useCan } from '../../auth/session';
 import { isNotFound } from '../../inbox/inbox-queries';
 import { BotCard } from '../BotCard';
+import { ChannelAccessCard } from '../ChannelAccessCard';
 import { ChannelStatusBadge } from '../ChannelBadges';
 import { CHANNEL_TYPE_ICONS, channelTypeLabel } from '../channel-type';
 import { Fact } from '../NumberFacts';
@@ -52,6 +56,7 @@ import {
   takeConnectionFlash,
 } from './connection-queries';
 import styles from './Connections.module.css';
+import { addAliases, sameAliases, type AliasAddResult } from './aliases';
 
 const c = t.connections;
 const routeApi = getRouteApi('/_app/pengaturan/channel/lain/$channelId');
@@ -134,11 +139,13 @@ function ConnectionDetail({ channel }: { channel: ConnectionChannel }) {
 
       {channel.type === 'telegram' ? <TelegramFacts channel={channel} onDone={setFlash} /> : null}
       {channel.type === 'email' ? <EmailFacts channel={channel} /> : null}
+      {channel.type === 'email' ? <AliasesCard channel={channel} /> : null}
       {meta ? <MetaFacts channel={meta} onDone={setFlash} /> : null}
 
       <TestCard channel={channel} />
       {/* Bot berlaku untuk semua jenis channel (KONTRAK-API-CHANNEL-LAIN "Bot"). */}
       {canBot ? <BotCard channelId={channel.id} /> : null}
+      <ChannelAccessCard channelId={channel.id} />
       <SettingsCard channel={channel} onDone={setFlash} />
       <StatusCard channel={channel} onDone={setFlash} />
     </div>
@@ -182,7 +189,7 @@ function TelegramFacts({
             <span className={styles.url}>{channel.webhook.url}</span>
           </span>
         </Fact>
-        <Fact label={c.statusTitle}>
+        <Fact label={c.statusLabel}>
           {channel.webhook.registeredAt ? (
             <span className={styles.ok}>
               <Icon icon={CheckCircle2} size={16} />
@@ -283,6 +290,197 @@ function EmailFacts({ channel }: { channel: EmailChannel }) {
       {mailbox.lastPollOk === false && mailbox.lastPollMessage ? (
         <Notice tone="danger">{mailbox.lastPollMessage}</Notice>
       ) : null}
+    </section>
+  );
+}
+
+const a = c.aliases;
+
+function aliasRejection(result: AliasAddResult): string | null {
+  const first = result.rejected[0];
+  if (!first) return null;
+  if (first.reason === 'invalid') return a.invalid(first.address);
+  if (first.reason === 'primary') return a.primaryNotAlias;
+  return a.limit(EMAIL_CHANNEL_MAX_ALIASES);
+}
+
+/**
+ * Tahap 9.0 — alias alamat channel Email (`aliases`, PATCH mengganti seluruh daftar, tanpa
+ * konfirmasi identitas). Dipakai server menentukan "Alamat tujuan", dibuang dari "Balas semua".
+ */
+function AliasesCard({ channel }: { channel: EmailChannel }) {
+  const queryClient = useQueryClient();
+  const saved = channel.aliases ?? [];
+  const [aliases, setAliases] = useState<string[]>(saved);
+  const [inputError, setInputError] = useState<string | null>(null);
+  /** Ketikan yang belum jadi chip (dikendalikan supaya bisa diperiksa saat simpan). */
+  const [draft, setDraft] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [done, setDone] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [confirming, setConfirming] = useState(false);
+  const saveRef = useRef<HTMLButtonElement>(null);
+  const id = useId();
+  const dirty = !sameAliases(aliases, saved);
+  const full = aliases.length >= EMAIL_CHANNEL_MAX_ALIASES;
+  // Menambah alias = konfirmasi identitas (alias ikut menentukan alamat "milik sendiri" channel);
+  // hanya menghapus tidak perlu.
+  const adding = aliases.some((alias) => !saved.includes(alias));
+
+  /** Tanpa `useMutation`: permintaan berkonfirmasi tidak boleh tersimpan di cache mutasi. */
+  const send = async (confirmation?: IdentityConfirmation) => {
+    const { channel: next } = await endpoints.connections.update(channel.id, {
+      type: 'email',
+      aliases,
+      ...(confirmation ? { confirmation } : {}),
+    });
+    storeConnection(queryClient, next);
+    if (next.type === 'email') setAliases(next.aliases ?? aliases);
+    setDone(true);
+  };
+
+  const submit = async () => {
+    // Ketikan yang tidak sah tidak boleh hilang diam-diam: perbaiki/hapus dulu.
+    if (draft.trim() !== '') {
+      setInputError(a.pendingInvalid(draft.trim()));
+      inputRef.current?.focus();
+      return;
+    }
+    if (!dirty) return;
+    setError(null);
+    setDone(false);
+    if (adding) {
+      setConfirming(true);
+      return;
+    }
+    setPending(true);
+    try {
+      await send();
+    } catch (caught) {
+      if (needsConfirmation(caught)) setConfirming(true);
+      else setError(caught);
+    } finally {
+      setPending(false);
+    }
+  };
+  const hintId = `${id}-petunjuk`;
+
+  return (
+    <section className={styles.card} aria-labelledby="channel-alias">
+      <div>
+        <h2 id="channel-alias" className={styles.cardTitle}>
+          {a.title}
+        </h2>
+        <p className={styles.hint}>{a.hint}</p>
+      </div>
+      <form
+        className={styles.aliasForm}
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit();
+        }}
+      >
+        <p className={styles.aliasPrimary}>
+          <span className={styles.aliasPrimaryLabel}>{a.primary}</span>
+          <span className={styles.aliasPrimaryValue}>{channel.emailAddress}</span>
+        </p>
+        <div className={styles.aliasField}>
+          <label htmlFor={`${id}-alias`} className={styles.aliasLabel}>
+            {a.label}
+          </label>
+          <AddressChips
+            ref={inputRef}
+            id={`${id}-alias`}
+            draft={draft}
+            onDraftChange={(value, reason) => {
+              setDraft(value);
+              if (reason === 'input' && value.trim() === '') setInputError(null);
+            }}
+            error={inputError}
+            inputLabel={a.label}
+            addresses={aliases}
+            onCommit={(raw) => {
+              const result = addAliases(aliases, raw, channel.emailAddress);
+              setAliases(result.aliases);
+              setInputError(aliasRejection(result));
+              setDone(false);
+              return result.rejected
+                .filter((item) => item.reason === 'invalid')
+                .map((item) => item.address)
+                .join(', ');
+            }}
+            onRemove={(address) => {
+              setAliases((current) => current.filter((item) => item !== address));
+              setInputError(null);
+              setDone(false);
+            }}
+            removeLabel={a.remove}
+            removedAnnouncement={a.removed}
+            placeholder={a.placeholder}
+            inputDisabled={full}
+            disabled={pending}
+            describedBy={hintId}
+          />
+          <p id={hintId} className={styles.hint}>
+            {aliases.length === 0
+              ? a.empty
+              : full
+                ? a.full(EMAIL_CHANNEL_MAX_ALIASES)
+                : a.count(aliases.length, EMAIL_CHANNEL_MAX_ALIASES)}
+          </p>
+        </div>
+        {error ? (
+          <Notice tone="danger" role="alert">
+            {isApiError(error) ? error.message : t.api.network}
+          </Notice>
+        ) : done && !dirty ? (
+          <Notice tone="success" role="status">
+            {a.saved}
+          </Notice>
+        ) : null}
+        <FormActions meta={dirty ? a.unsaved : undefined}>
+          {dirty ? (
+            <Button
+              disabled={pending}
+              onClick={() => {
+                setAliases(saved);
+                setDraft('');
+                setInputError(null);
+                setError(null);
+              }}
+            >
+              {a.reset}
+            </Button>
+          ) : null}
+          <Button ref={saveRef} type="submit" variant="primary" loading={pending} disabled={!dirty}>
+            {pending ? a.saving : a.save}
+          </Button>
+        </FormActions>
+      </form>
+      {/* Di luar `<form>`: Enter di dialog tidak mengirim form alias. */}
+      <IdentityDialog
+        open={confirming}
+        title={a.confirmTitle}
+        body={a.confirmBody}
+        confirmLabel={a.save}
+        pendingLabel={a.saving}
+        requireCode
+        returnFocusRef={saveRef}
+        onCancel={() => setConfirming(false)}
+        onConfirm={async (confirmation) => {
+          try {
+            await send(confirmation);
+            setConfirming(false);
+          } catch (caught) {
+            if (isConfirmationError(caught)) throw caught;
+            // Mis. 400 alias sudah tercatat sebagai kontak: tampil apa adanya di kartu.
+            setConfirming(false);
+            setError(caught);
+          }
+        }}
+      />
     </section>
   );
 }

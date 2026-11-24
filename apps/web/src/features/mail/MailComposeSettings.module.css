@@ -1,0 +1,302 @@
+/*
+ * Pengaturan → Akun email → [akun]: Alamat pengirim, Tanda tangan, Pengiriman; dan Preferensi
+ * menulis di daftar akun (9B). Kartu & form memakai MailAccounts.module.css; di sini hanya isi
+ * daftar identitas/tanda tangan.
+ */
+
+.identityList,
+.signatureList {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  list-style: none;
+}
+
+.identity,
+.signature {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding: var(--space-16);
+}
+
+.identity + .identity,
+.signature + .signature {
+  border-top: 1px solid var(--line);
+}
+
+.identityHead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-12);
+}
+
+.identityText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.identityName {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  margin: 0;
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.kindTag {
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  line-height: 1.6;
+}
+
+.identityAddress {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: var(--text-13);
+}
+
+.identityMeta {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-12);
+}
+
+.verify {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding: var(--space-12);
+  border-radius: var(--radius-input);
+  background: var(--surface-2);
+}
+
+.verifyRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+
+.verifyText {
+  flex: 1 1 16rem;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  line-height: var(--leading-text);
+}
+
+.codeForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-12);
+}
+
+.codeField {
+  flex: 0 1 24rem;
+}
+
+/* Di kotak verifikasi (kolom) teks setinggi isinya; di baris "Verifikasi" boleh melebar. */
+.verify > .verifyText {
+  flex: none;
+}
+
+.codeActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  padding-bottom: var(--space-24);
+}
+
+.dialogForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.signatureGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.groupHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.groupTitle {
+  margin: 0;
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.emptyText {
+  margin: 0;
+  padding: var(--space-16);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-card);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+}
+
+.signature {
+  flex-direction: row;
+  align-items: center;
+}
+
+.signatureText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.signatureName {
+  margin: 0;
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.signaturePreview {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  white-space: pre-line;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.signatureActions {
+  display: flex;
+  flex: none;
+  gap: var(--space-4);
+}
+
+.editorField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.editorLabel {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+}
+
+.editorBox {
+  display: flex;
+  min-height: 9rem;
+  padding: var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+}
+
+.editorBox:focus-within {
+  border-color: var(--primary);
+}
+
+.editorHint {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  line-height: var(--leading-text);
+}
+
+.logoRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-16);
+}
+
+.logoPreview {
+  flex: none;
+  max-width: 7.5rem;
+  max-height: 4rem;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--logo-plate);
+  object-fit: contain;
+}
+
+.logoText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.logoActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.checkboxHint {
+  display: block;
+  margin-top: var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-13);
+  font-weight: var(--weight-regular);
+}
+
+@media (max-width: 640px) {
+  .identity,
+  .signature {
+    padding: var(--space-12);
+  }
+
+  /* HP: lencana status turun ke bawah nama supaya alamat tidak terpotong di tengah kata. */
+  .identityHead {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-8) var(--space-12);
+  }
+
+  .identityBadge {
+    grid-row: 2;
+    grid-column: 1;
+    justify-self: start;
+  }
+
+  .identityHead > button {
+    grid-row: 1;
+    grid-column: 2;
+  }
+
+  .signature {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .codeField {
+    flex-basis: 100%;
+  }
+
+  .codeActions {
+    padding-bottom: 0;
+  }
+}

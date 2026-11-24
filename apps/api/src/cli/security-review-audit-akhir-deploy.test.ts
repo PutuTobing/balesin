@@ -31,6 +31,13 @@ const generator = join(root, 'deploy', 'docker', 'third-party-notices.mjs');
 
 const DIGEST = /@sha256:[0-9a-f]{64}$/;
 
+/** Baris tanpa komentar (`#` di awal setelah spasi). */
+const code = (text: string) =>
+  text
+    .split('\n')
+    .filter((line) => !/^\s*#/.test(line))
+    .join('\n');
+
 /** Blok satu stage Dockerfile (dari `FROM … AS <nama>` sampai FROM berikutnya). */
 function stage(name: string): string {
   const stages = dockerfile.split(/^FROM /m);
@@ -227,8 +234,116 @@ describe('A4: verifikasi tanda tangan rilis di checklist', () => {
     expect(checklist).toMatch(/BALESIN_REQUIRE_SIGNATURE/);
     expect(checklist).toMatch(/`balesin update` menyetel `BALESIN_REQUIRE_SIGNATURE=1`/);
     expect(read('docs/BUTUH-TOBING.md')).toMatch(
-      /\| 18 \|.*ubah `BALESIN_REQUIRE_SIGNATURE` ke `1`/,
+      /\| 18 \|.*DIPUTUSKAN.*`BALESIN_REQUIRE_SIGNATURE=1` bawaan `install\.sh`/,
     );
+  });
+});
+
+// BUTUH-TOBING #18 diputuskan (repo & GHCR publik, cosign keyless): rilis bertanda tangan pertama
+// v1.0.0 — tanda tangan WAJIB, tidak bisa dilewati diam-diam.
+describe('A4 diterapkan: tanda tangan rilis wajib sejak v1.0.0', () => {
+  const installer = read('deploy/install.sh');
+  const cli = read('deploy/balesin');
+  const fn = (text: string, name: string) => {
+    const start = text.indexOf(`\n${name}() {`);
+    if (start < 0) throw new Error(`fungsi ${name} tidak ada`);
+    return text.slice(start, text.indexOf('\n}\n', start) + 3);
+  };
+
+  it('install.sh: bawaan BALESIN_REQUIRE_SIGNATURE = 1 (nilai .env lama tetap dihormati)', () => {
+    expect(installer).toMatch(/^readonly DEFAULT_REQUIRE_SIGNATURE=1$/m);
+    expect(installer).toMatch(
+      /^BALESIN_REQUIRE_SIGNATURE=\$\(keep_or BALESIN_REQUIRE_SIGNATURE "\$\{BALESIN_REQUIRE_SIGNATURE:-\$DEFAULT_REQUIRE_SIGNATURE\}"\)$/m,
+    );
+    expect(code(installer)).not.toMatch(/BALESIN_REQUIRE_SIGNATURE:-0\}/);
+    // .env ditulis (write_env) SEBELUM berkas rilis diunduh, jadi cosign wajib terpasang dan
+    // tanda tangan wajib valid pada instalasi baru.
+    const main = fn(installer, 'main');
+    expect(main.indexOf('write_env')).toBeLessThan(main.indexOf('release_files'));
+    const release = fn(installer, 'release_files');
+    expect(release).toMatch(/install_cosign\n/);
+    expect(release.indexOf('install_cosign')).toBeLessThan(
+      release.indexOf('verify_release_signature'),
+    );
+    expect(fn(installer, 'install_cosign')).toMatch(/\[\[ "\$require" == "1" \]\] && die/);
+  });
+
+  it('balesin update: menambahkan =1 bila belum ada, memasang cosign terverifikasi, sebelum unduh rilis', () => {
+    const policy = fn(cli, 'ensure_signature_policy');
+    expect(policy).toMatch(
+      /if ! grep -qE '\^BALESIN_REQUIRE_SIGNATURE=' "\$ENV_FILE"; then\n\s+env_set BALESIN_REQUIRE_SIGNATURE 1/,
+    );
+    expect(policy).toMatch(/sha256sum "\$tmp"/);
+    expect(policy).toMatch(/install -m 755 "\$tmp" \/usr\/local\/bin\/cosign/);
+    expect(policy).toMatch(/die "cosign \$COSIGN_VERSION gagal dipasang/);
+    const update = fn(cli, 'cmd_update');
+    expect(update.indexOf('ensure_signature_policy')).toBeGreaterThan(-1);
+    expect(update.indexOf('ensure_signature_policy')).toBeLessThan(update.indexOf('fetch_release'));
+    // Berkas rilis tidak bisa diunduh + tanda tangan wajib = ditolak (bukan jatuh ke compose lama).
+    expect(update).toMatch(
+      /BALESIN_REQUIRE_SIGNATURE:-\$\(env_get BALESIN_REQUIRE_SIGNATURE\)\}" == "1" \]\]; then\n\s+die "Berkas rilis \$target tidak bisa diunduh/,
+    );
+  });
+
+  it('versi cosign dan SHA-256 di CLI sama dengan installer', () => {
+    for (const name of ['COSIGN_VERSION', 'COSIGN_SHA256_AMD64', 'COSIGN_SHA256_ARM64']) {
+      const pattern = new RegExp(`^readonly ${name}="([^"]+)"$`, 'm');
+      const fromInstaller = pattern.exec(installer)?.[1];
+      expect(fromInstaller, name).toBeTruthy();
+      expect(pattern.exec(cli)?.[1], name).toBe(fromInstaller);
+    }
+  });
+});
+
+describe('#18: kanal rilis GitHub Release publik dan versi dari tag', () => {
+  const installer = read('deploy/install.sh');
+
+  it('installer & update memakai GitHub Release repo (latest + versi tertentu)', () => {
+    expect(installer).toMatch(
+      /^readonly DEFAULT_RELEASE_BASE="https:\/\/github\.com\/PutuTobing\/balesin\/releases\/download\/v\{VERSI\}"$/m,
+    );
+    expect(installer).toMatch(
+      /^readonly DEFAULT_RELEASE_LATEST="https:\/\/github\.com\/PutuTobing\/balesin\/releases\/latest\/download\/VERSION"$/m,
+    );
+    // Aset VERSION (dibaca `balesin update` lewat /releases/latest) dibuat rilis.yml, dan rilis
+    // ditandai Latest.
+    expect(releaseWorkflow).toMatch(/printf '%s\\n' "\$VERSI" > rilis\/VERSION/);
+    expect(releaseWorkflow).toMatch(/gh release create "\$TAG" rilis\/\* --verify-tag --latest/);
+    expect(releaseWorkflow).not.toMatch(/<URL>/);
+  });
+
+  it('panduan & DEPLOY.md menunjuk URL rilis sungguhan, bukan placeholder', () => {
+    const latest =
+      'curl -fsSL https://github.com/PutuTobing/balesin/releases/latest/download/install.sh | sudo bash';
+    const pinned =
+      'curl -fsSL https://github.com/PutuTobing/balesin/releases/download/v1.0.0/install.sh | sudo bash';
+    for (const path of ['docs/panduan/01-instalasi.md', 'docs/DEPLOY.md']) {
+      const text = read(path);
+      expect(text, path).toContain(latest);
+      expect(text, path).toContain(pinned);
+      expect(text, path).not.toMatch(/<alamat-rilis>|<URL-rilis>/);
+    }
+  });
+
+  it('versi aplikasi diambil dari tag: build arg BALESIN_VERSION di setiap build rilis', () => {
+    const build = stage('build');
+    expect(build).toMatch(/^ARG BALESIN_VERSION=""$/m);
+    expect(build).toMatch(/grep -Eq '\^\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\$'/);
+    expect(build).toMatch(/f="apps\/web\/package\.json"/);
+    expect(releaseWorkflow).toMatch(/echo "BALESIN_VERSION=\$\{TAG#v\}" >> "\$GITHUB_ENV"/);
+    const builds = releaseWorkflow.split('docker buildx build ').slice(1);
+    expect(builds.length).toBeGreaterThanOrEqual(4);
+    for (const command of builds) {
+      const invocation = command.slice(0, command.search(/ \.\n|\s\.$/m) + 2);
+      expect(invocation, invocation).toMatch(/--build-arg BALESIN_VERSION\b/);
+    }
+  });
+
+  it('image rilis berlabel sumber repo (paket GHCR tertaut ke repo publik)', () => {
+    const labels = releaseWorkflow.match(
+      /--label "org\.opencontainers\.image\.source=\$GITHUB_SERVER_URL\/\$GITHUB_REPOSITORY"/g,
+    );
+    expect(labels?.length).toBe(2);
   });
 });
 

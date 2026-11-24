@@ -12,7 +12,10 @@ import {
   deleteChannelResponseSchema,
   emailHtmlResponseSchema,
   workspaceSettingsResponseSchema,
+  channelAccessResponseSchema,
+  updateChannelAccessResponseSchema,
   type CreateConnectionChannelRequest,
+  type UpdateChannelAccessInput,
   type IdentityConfirmation,
   type UpdateAllocationAgentRequest,
   type UpdateConnectionChannelRequest,
@@ -86,6 +89,22 @@ export function createChannelEndpoints(client: ApiClient) {
           method: 'POST',
           body: {},
           schema: createConnectionChannelResponseSchema,
+        }),
+    },
+    /**
+     * Tahap 9.0 — akses per channel (semua jenis, `channels.manage`). PUT mengganti seluruh aturan.
+     */
+    channelAccess: {
+      get: (channelId: string, signal?: AbortSignal) =>
+        client.request(apiPath(API_ROUTES.channels.access, { channelId }), {
+          schema: channelAccessResponseSchema,
+          signal,
+        }),
+      update: (channelId: string, body: UpdateChannelAccessInput) =>
+        client.request(apiPath(API_ROUTES.channels.access, { channelId }), {
+          method: 'PUT',
+          body,
+          schema: updateChannelAccessResponseSchema,
         }),
     },
     emailHtml: (messageId: string, signal?: AbortSignal) =>

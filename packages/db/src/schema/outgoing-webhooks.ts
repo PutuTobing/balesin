@@ -15,6 +15,7 @@ import {
 
 import { apiKeys } from './api-keys';
 import { createdAtColumn, idColumn, timestamptz, updatedAtColumn } from './columns';
+import { emailOutbound } from './email-outbound';
 import { organizations } from './organizations';
 import { users } from './users';
 
@@ -42,11 +43,18 @@ export const outgoingEvents = pgTable(
     ticketId: uuid('ticket_id'),
     /** Pelaku pengguna (bila ada) — untuk `data.actor`. */
     actorUserId: uuid('actor_user_id'),
+    /** Tahap 9.1: email lewat API (`email.*`); `message_id` = pesan balasan untuk `email.replied`. */
+    emailOutboundId: uuid('email_outbound_id'),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
   (table) => [
     index('outgoing_events_created_at_idx').on(table.createdAt),
+    foreignKey({
+      name: 'outgoing_events_organization_id_email_outbound_id_fk',
+      columns: [table.organizationId, table.emailOutboundId],
+      foreignColumns: [emailOutbound.organizationId, emailOutbound.id],
+    }).onDelete('cascade'),
     check('outgoing_events_type_format', sql`${table.type} ~ '^[a-z]+\\.[a-z_]+$'`),
   ],
 );

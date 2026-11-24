@@ -58,6 +58,12 @@ export const webServer = process.env.E2E_BASE_URL
  * berjalan di mesin yang sama, dan 10 worker pernah membuat pembuatan context browser > 30 dtk
  * (audit QA akhir D1). CI: bawaan Playwright (setengah inti runner).
  */
-export const workers: number | string | undefined =
-  process.env.E2E_WORKERS ??
-  (process.env.CI ? undefined : Math.max(1, Math.min(5, Math.floor(availableParallelism() / 2))));
+const workersEnv = process.env.E2E_WORKERS?.trim();
+export const workers: number | string | undefined = workersEnv
+  ? // Playwright menolak angka berupa teks ("3"); hanya persen yang boleh berupa teks.
+    /^\d+$/.test(workersEnv)
+    ? Number(workersEnv)
+    : workersEnv
+  : process.env.CI
+    ? undefined
+    : Math.max(1, Math.min(5, Math.floor(availableParallelism() / 2)));
