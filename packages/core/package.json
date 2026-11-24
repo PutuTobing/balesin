@@ -14,10 +14,10 @@
   "dependencies": {
     "@balesin/shared": "workspace:*",
     "htmlparser2": "12.0.0",
-    "imapflow": "2.12.1",
+    "imapflow": "2.12.2",
     "ioredis": "catalog:",
-    "mailparser": "3.14.5",
-    "nodemailer": "10.5.0",
+    "mailparser": "3.15.0",
+    "nodemailer": "10.6.1",
     "pino": "catalog:",
     "qrcode-generator": "2.0.4",
     "sanitize-html": "2.18.2",
